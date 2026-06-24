@@ -1,0 +1,12 @@
+"use client"
+
+export { SettingsAllPage } from "@/features/settings/components/app/settings-all"
+export { default as OrganizationSettingsPage } from "@/features/settings/components/organization/sections/main"
+export { default as MembersSettings } from "@/features/settings/components/members/sections/members"
+export { default as SchedulesSettings } from "@/features/settings/components/general/sections/schedules"
+export { ActivityTrackingSettingsPage } from "@/features/settings/components/activity-tracking/activity-tracking-page"
+export { IntegrationsSettingsPage } from "@/features/settings/components/integrations/integrations-page"
+export { PoliciesSettingsPage } from "@/features/settings/components/policy/policies-settings-page"
+export { EnterpriseSecuritySettingsPage } from "@/features/settings/components/enterprise-security/enterprise-security-page"
+export { SubscriptionPlans } from "@/features/settings/components/billing/sections/plans"
+export { BillingPage } from "@/features/settings/components/billing/billing"

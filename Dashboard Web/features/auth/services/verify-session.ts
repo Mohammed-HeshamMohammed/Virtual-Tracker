@@ -1,0 +1,176 @@
+/* eslint-disable react-doctor/js-combine-iterations */
+import { apiFetch } from "@/infrastructure/api/http"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { parseAuthSessionErrorCode, type AuthSessionErrorCode } from "@/features/auth/services/auth-session-errors"
+import { handleSuspiciousAuthFailure, isSuspiciousAuthError } from "@/features/auth/services/browser-state-hygiene"
+import { throwIfQuotaExceeded } from "@/features/auth/services/firestore-quota"
+import { ServiceUnavailableError } from "@/features/auth/services/service-unavailable"
+import type { User } from "firebase/auth"
+
+export type AuthProfileIdentity = {
+  provider: string
+  identifier: string | null
+  federatedUid?: string | null
+  displayName?: string | null
+  photoURL?: string | null
+}
+
+export type AuthProfileSnapshot = {
+  uid: string
+  primaryEmail: string | null
+  emailVerified: boolean
+  displayName: string | null
+  photoURL: string | null
+  phoneNumber: string | null
+  disabled: boolean
+  providers: string[]
+  identities: AuthProfileIdentity[]
+  authCreationTime: string | null
+  authLastSignInTime: string | null
+  /** Legacy Firebase Storage path when present (uploaded before in-doc images). */
+  avatarStoragePath?: string | null
+  /** Base64-encoded profile image stored in Firestore (no Firebase Storage). */
+  profileImageData?: string
+  profileImageMimeType?: string
+  profileImageUpdatedAt?: string | null
+  /** App-managed fields merged from Firestore (see `PATCH` via profile settings API). */
+  firstName?: string | null
+  lastName?: string | null
+  payRateUsdPerHour?: number | null
+  twoFactorEnabled?: boolean
+  /** Server-set: user must set a new password (pre-provisioned account). */
+  mustChangePassword?: boolean
+  /** Server-set: first login after admin pre-provision. */
+  firstLogin?: boolean
+  /** App-managed contact phone (User_profiles.phone). */
+  phone?: string | null
+  phoneVerified?: boolean
+}
+
+export function parseAuthProfileSnapshot(raw: unknown): AuthProfileSnapshot | undefined {
+  return parseProfile(raw)
+}
+
+function parseProfile(raw: unknown): AuthProfileSnapshot | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as Record<string, unknown>
+  if (typeof o.uid !== "string") return undefined
+  const identitiesRaw = Array.isArray(o.identities) ? o.identities : []
+// eslint-disable-next-line react-doctor/js-flatmap-filter
+  const identities: AuthProfileIdentity[] = identitiesRaw
+    .filter((row): row is Record<string, unknown> => row !== null && typeof row === "object")
+    .map((row) => ({
+      provider: typeof row.provider === "string" ? row.provider : "",
+      identifier: typeof row.identifier === "string" || row.identifier === null ? (row.identifier as string | null) : null,
+      federatedUid: typeof row.federatedUid === "string" || row.federatedUid === null ? (row.federatedUid as string | null) : undefined,
+      displayName: typeof row.displayName === "string" || row.displayName === null ? (row.displayName as string | null) : undefined,
+      photoURL: typeof row.photoURL === "string" || row.photoURL === null ? (row.photoURL as string | null) : undefined,
+    }))
+    .filter((i) => i.provider.length > 0)
+
+  const providers = Array.isArray(o.providers) ? o.providers.filter((p): p is string => typeof p === "string") : []
+
+  const avatarStoragePath =
+    typeof o.avatarStoragePath === "string" || o.avatarStoragePath === null
+      ? (o.avatarStoragePath as string | null)
+      : undefined
+
+  const firstName =
+    "firstName" in o && (typeof o.firstName === "string" || o.firstName === null)
+      ? (o.firstName as string | null)
+      : undefined
+  const lastName =
+    "lastName" in o && (typeof o.lastName === "string" || o.lastName === null)
+      ? (o.lastName as string | null)
+      : undefined
+  const payRateUsdPerHour =
+    "payRateUsdPerHour" in o &&
+    (typeof o.payRateUsdPerHour === "number" || o.payRateUsdPerHour === null) &&
+    (typeof o.payRateUsdPerHour !== "number" || !Number.isNaN(o.payRateUsdPerHour))
+      ? (o.payRateUsdPerHour as number | null)
+      : undefined
+  const twoFactorEnabled =
+    "twoFactorEnabled" in o && typeof o.twoFactorEnabled === "boolean" ? o.twoFactorEnabled : undefined
+  const mustChangePasswordRaw = o.must_change_password ?? o.mustChangePassword
+  const mustChangePassword =
+    typeof mustChangePasswordRaw === "boolean" ? mustChangePasswordRaw : undefined
+  const firstLoginRaw = o.first_login ?? o.firstLogin
+  const firstLogin = typeof firstLoginRaw === "boolean" ? firstLoginRaw : undefined
+  const profileImageData = typeof o.profileImageData === "string" ? o.profileImageData : undefined
+  const profileImageMimeType =
+    typeof o.profileImageMimeType === "string" ? o.profileImageMimeType : undefined
+  const profileImageUpdatedAt =
+    typeof o.profileImageUpdatedAt === "string" || o.profileImageUpdatedAt === null
+      ? (o.profileImageUpdatedAt as string | null)
+      : undefined
+  const phone = "phone" in o && (typeof o.phone === "string" || o.phone === null) ? (o.phone as string | null) : undefined
+  const phoneVerified = "phoneVerified" in o && typeof o.phoneVerified === "boolean" ? o.phoneVerified : undefined
+
+  return {
+    uid: o.uid,
+    primaryEmail: typeof o.primaryEmail === "string" || o.primaryEmail === null ? (o.primaryEmail as string | null) : null,
+    emailVerified: Boolean(o.emailVerified),
+    displayName: typeof o.displayName === "string" || o.displayName === null ? (o.displayName as string | null) : null,
+    photoURL: typeof o.photoURL === "string" || o.photoURL === null ? (o.photoURL as string | null) : null,
+    phoneNumber: typeof o.phoneNumber === "string" || o.phoneNumber === null ? (o.phoneNumber as string | null) : null,
+    disabled: Boolean(o.disabled),
+    providers,
+    identities,
+    authCreationTime: typeof o.authCreationTime === "string" || o.authCreationTime === null ? (o.authCreationTime as string | null) : null,
+    authLastSignInTime: typeof o.authLastSignInTime === "string" || o.authLastSignInTime === null ? (o.authLastSignInTime as string | null) : null,
+    ...(avatarStoragePath !== undefined ? { avatarStoragePath } : {}),
+    ...(firstName !== undefined ? { firstName } : {}),
+    ...(lastName !== undefined ? { lastName } : {}),
+    ...(payRateUsdPerHour !== undefined ? { payRateUsdPerHour } : {}),
+    ...(twoFactorEnabled !== undefined ? { twoFactorEnabled } : {}),
+    ...(mustChangePassword !== undefined ? { mustChangePassword } : {}),
+    ...(firstLogin !== undefined ? { firstLogin } : {}),
+    ...(profileImageData !== undefined ? { profileImageData } : {}),
+    ...(profileImageMimeType !== undefined ? { profileImageMimeType } : {}),
+    ...(profileImageUpdatedAt !== undefined ? { profileImageUpdatedAt } : {}),
+    ...(phone !== undefined ? { phone } : {}),
+    ...(phoneVerified !== undefined ? { phoneVerified } : {}),
+  }
+}
+
+export type VerifyIdTokenResult =
+  | { success: true; profile?: AuthProfileSnapshot; memberId?: string; authorized?: boolean }
+  | { success: false; error: string; code?: AuthSessionErrorCode }
+
+/**
+ * Verifies the ID token and upserts the Firestore `User_profiles/{uid}` document on the Backend.
+ */
+export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
+  let res: Response
+  try {
+    res = await apiFetch(`${getApiBaseUrl()}/api/auth/verify`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+  } catch {
+    return { success: false, error: "Failed to fetch" }
+  }
+  const data: unknown = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err =
+      data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
+        ? (data as { error: string }).error
+        : `HTTP ${res.status}`
+    const code = parseAuthSessionErrorCode(data)
+    if (isSuspiciousAuthError(err)) {
+      await handleSuspiciousAuthFailure()
+    }
+    throwIfQuotaExceeded(res.status, err, code)
+    if (res.status === 503 || code === "SERVICE_UNAVAILABLE") {
+      throw new ServiceUnavailableError(err || "Service temporarily unavailable", code ?? "SERVICE_UNAVAILABLE")
+    }
+    return { success: false, error: err, ...(code ? { code } : {}) }
+  }
+  if (!data || typeof data !== "object" || (data as { success?: unknown }).success !== true) {
+    return { success: false, error: "Invalid verify response" }
+  }
+  const profile = parseProfile((data as { profile?: unknown }).profile)
+  const memberIdRaw = (data as { memberId?: unknown }).memberId
+  const memberId = typeof memberIdRaw === "string" && memberIdRaw.trim() ? memberIdRaw.trim() : undefined
+  return { success: true, ...(profile ? { profile } : {}), ...(memberId ? { memberId } : {}) }
+}
