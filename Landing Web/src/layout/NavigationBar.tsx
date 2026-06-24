@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 
 const Platform_TABS = [
@@ -427,12 +428,12 @@ export default function NavigationBar() {
 
       {/* Nav bar row — z-60 so it always paints above the dropdown (z-40) */}
       <div className="relative z-60 max-w-full px-16 h-16 flex items-center justify-between" style={{ overflow: "visible" }}>
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <div className="w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden">
             <img src={isTransparent ? "/stopwatch-green.png" : "/stopwatch-black.png"} alt="Virtual Tracker" className="w-8 h-8" />
           </div>
           <span className={`font-bold text-lg tracking-tight ${isTransparent ? "text-white" : "text-[#0f172a]"}`}>Virtual Tracker</span>
-        </div>
+        </Link>
 
         <div className="hidden md:flex items-center gap-1">
           <button onClick={() => toggle("Platform")} className={navBtnClass("Platform")}>
@@ -446,8 +447,12 @@ export default function NavigationBar() {
           </button>
 
           <div className={`w-px h-5 mx-2 ${isTransparent ? "bg-white/20" : "bg-slate-200"}`} />
-          <button className={`px-3 py-2 text-sm font-medium transition-colors ${isTransparent ? "text-white/80 hover:text-white" : "text-[#374151] hover:text-[#0f172a]"}`}>Pricing</button>
-          <button className={`px-3 py-2 text-sm font-medium transition-colors ${isTransparent ? "text-white/80 hover:text-white" : "text-[#374151] hover:text-[#0f172a]"}`}>Demo</button>
+          <Link href="/pricing" className={`px-3 py-2 text-sm font-medium transition-colors ${isTransparent ? "text-white/80 hover:text-white" : "text-[#374151] hover:text-[#0f172a]"}`}>
+            Pricing
+          </Link>
+          <Link href="/demo" className={`px-3 py-2 text-sm font-medium transition-colors ${isTransparent ? "text-white/80 hover:text-white" : "text-[#374151] hover:text-[#0f172a]"}`}>
+            Demo
+          </Link>
         </div>
 
         <div className="hidden md:flex items-center gap-16" style={{ overflow: "visible" }}>
