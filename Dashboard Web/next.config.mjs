@@ -4,7 +4,8 @@ import { dirname } from "path"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const backendBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5712").replace(/\/$/, "")
+const authBackendBase = (process.env.NEXT_PUBLIC_AUTH_API_URL || "http://localhost:5712").replace(/\/$/, "")
+const dashboardBackendBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:5713").replace(/\/$/, "")
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -20,7 +21,10 @@ const nextConfig = {
   },
   async rewrites() {
     if (process.env.NODE_ENV !== "development") return []
-    return [{ source: "/api/:path*", destination: `${backendBase}/api/:path*` }]
+    return [
+      { source: "/api/auth/:path*", destination: `${authBackendBase}/api/auth/:path*` },
+      { source: "/api/:path*", destination: `${dashboardBackendBase}/api/:path*` },
+    ]
   },
   async headers() {
     return [

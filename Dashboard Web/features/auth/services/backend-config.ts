@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
 import type { FirebaseOptions } from "firebase/app"
 
 let cached: FirebaseOptions | null = null
@@ -35,7 +35,7 @@ export async function fetchPhoneVerificationMode(): Promise<"dev" | "firebase"> 
 export async function fetchFirebaseWebConfigFromBackend(): Promise<FirebaseOptions> {
   if (cached) return cached
 
-  const res = await apiFetch(`${getApiBaseUrl()}/api/auth/firebase-config`, {}, { requireAuth: false })
+  const res = await apiFetch(`${getAuthApiBaseUrl()}/api/auth/firebase-config`, {}, { requireAuth: false })
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
     const err =

@@ -1,12 +1,7 @@
 // Bootstrap: load and validate configuration before other modules run.
 import { getEnv, initConfig } from "./src/config/env/index.js";
 
-const config = initConfig();
-
-if (config.security.disableTlsVerificationInDev) {
-  // Node.js Windows SSL workaround for Firebase Admin in local development only.
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
-}
+initConfig();
 
 import { createServer } from "./src/server.js";
 import { readFileSync } from "node:fs";
@@ -25,10 +20,7 @@ function resolvePort(rawPort) {
 function registerServerErrorHandler(server, port) {
   server.on("error", (err) => {
     if (err?.code === "EADDRINUSE") {
-      console.error(
-        `Port ${port} is already in use. Stop the other process or set PORT in Backend/.env, e.g.:` +
-          `\n  $env:PORT=5712; npm start`,
-      );
+      console.error(`Port ${port} is already in use. Set PORT in Coolify environment variables.`);
       process.exit(1);
     }
     logError(err, "server");
@@ -36,7 +28,6 @@ function registerServerErrorHandler(server, port) {
   });
 }
 
-// Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("\n[shutdown] SIGTERM received, closing server...");
   if (activeServer) {
@@ -45,6 +36,7 @@ process.on("SIGTERM", () => {
   }
   process.exit(0);
 });
+
 process.on("SIGINT", () => {
   console.log("\n[shutdown] SIGINT received, closing server...");
   if (activeServer) {
@@ -54,12 +46,12 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-export function startServer(port = getEnv().server.port) {
+export function startServer(port = getEnv().server.port, host = getEnv().server.host) {
   const server = createServer();
   activeServer = server;
   registerServerErrorHandler(server, port);
 
-  server.listen(port, async () => {
+  server.listen(port, host, async () => {
     const db = getDb();
     logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
 
@@ -110,7 +102,7 @@ export function startServer(port = getEnv().server.port) {
 
     await logEmailDeliveryStatusAsync();
 
-    console.log(`API server listening on http://localhost:${port}`);
+    console.log(`Auth API listening on ${host}:${port} (${getEnv().nodeEnv})`);
   });
   return server;
 }

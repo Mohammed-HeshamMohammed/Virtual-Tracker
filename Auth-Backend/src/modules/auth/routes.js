@@ -309,7 +309,7 @@ export async function routeAuth(req, res, url, origin) {
       sendJson(res, origin, 503, {
         success: false,
         error:
-          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then run `npm run sync:firebase-local` in Backend/ or set FIREBASE_* in Backend/.env.",
+          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then run `npm run sync:firebase-local` in Auth-Backend/ or set FIREBASE_* in Auth-Backend/.env.",
       });
       return true;
     }
@@ -401,7 +401,7 @@ export async function routeAuth(req, res, url, origin) {
           sent: false,
           channel: result.channel,
           error:
-            "Outbound email is not configured on the server. Use Firebase's built-in verification email or configure SMTP_* / RESEND_API_KEY in Backend/.env.",
+            "Outbound email is not configured on the server. Use Firebase's built-in verification email or configure SMTP_* / RESEND_API_KEY in Auth-Backend/.env.",
         });
         return true;
       }

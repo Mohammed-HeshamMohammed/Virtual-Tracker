@@ -1,0 +1,114 @@
+Landing Web/
+|-- public/
+|   |-- apple-icon.png
+|   |-- icon.svg
+|   |-- llms-full.txt
+|   |-- llms.txt
+|   |-- manifest.webmanifest
+|   |-- robots.txt
+|   |-- sitemap.xml
+|   |-- stopwatch-black.png
+|   +-- stopwatch-green.png
+|-- src/
+|   |-- app/
+|   |   |-- [[...slug]]/
+|   |   |   +-- page.tsx
+|   |   |-- about/
+|   |   |   +-- page.tsx
+|   |   |-- blog/
+|   |   |   |-- [slug]/
+|   |   |   |   +-- page.tsx
+|   |   |   +-- page.tsx
+|   |   |-- contact/
+|   |   |   +-- page.tsx
+|   |   |-- demo/
+|   |   |   +-- page.tsx
+|   |   |-- features/
+|   |   |   +-- page.tsx
+|   |   |-- feed.xml/
+|   |   |   +-- route.ts
+|   |   |-- pricing/
+|   |   |   +-- page.tsx
+|   |   |-- resources/
+|   |   |   +-- page.tsx
+|   |   |-- solutions/
+|   |   |   +-- page.tsx
+|   |   |-- favicon.ico
+|   |   |-- layout.tsx
+|   |   |-- manifest.ts
+|   |   |-- not-found.tsx
+|   |   |-- opengraph-image.tsx
+|   |   |-- page.tsx
+|   |   |-- robots.ts
+|   |   |-- sitemap.ts
+|   |   +-- twitter-image.tsx
+|   |-- components/
+|   |   +-- PageShell.tsx
+|   |-- features/
+|   |   |-- blog/
+|   |   |   |-- components/
+|   |   |   |   |-- BlogListView.tsx
+|   |   |   |   +-- BlogPostView.tsx
+|   |   |   +-- index.ts
+|   |   |-- landing/
+|   |   |   |-- components/
+|   |   |   |   |-- CtaDemoSection.tsx
+|   |   |   |   |-- FeaturesSection.tsx
+|   |   |   |   |-- FinalCtaSection.tsx
+|   |   |   |   |-- HeroSection.tsx
+|   |   |   |   |-- index.ts
+|   |   |   |   |-- IndustriesSection.tsx
+|   |   |   |   |-- StatsSection.tsx
+|   |   |   |   |-- TestimonialsSection.tsx
+|   |   |   |   +-- TrustSection.tsx
+|   |   |   +-- index.tsx
+|   |   +-- shared/
+|   |       |-- components/
+|   |       |   |-- FinalCtaSection.tsx
+|   |       |   |-- Footer.tsx
+|   |       |   +-- NavigationBar.tsx
+|   |       +-- index.ts
+|   |-- layout/
+|   |   |-- Footer.tsx
+|   |   +-- NavigationBar.tsx
+|   |-- sections/
+|   |   |-- CtaDemoSection/
+|   |   |   |-- CtaDemoSection.tsx
+|   |   |   +-- index.ts
+|   |   |-- FeaturesSection/
+|   |   |   |-- FeaturesSection.tsx
+|   |   |   +-- index.ts
+|   |   |-- FinalCtaSection/
+|   |   |   |-- FinalCtaSection.tsx
+|   |   |   +-- index.ts
+|   |   |-- HeroSection/
+|   |   |   |-- Announcement.tsx
+|   |   |   |-- EmailForm.tsx
+|   |   |   |-- HeroSection.tsx
+|   |   |   |-- HeroSlides.tsx
+|   |   |   |-- HeroSubtitle.tsx
+|   |   |   |-- HeroTabs.tsx
+|   |   |   |-- HeroTitle.tsx
+|   |   |   +-- index.ts
+|   |   |-- IndustriesSection/
+|   |   |   |-- index.ts
+|   |   |   +-- IndustriesSection.tsx
+|   |   |-- StatsSection/
+|   |   |   |-- index.ts
+|   |   |   +-- StatsSection.tsx
+|   |   |-- TestimonialsSection/
+|   |   |   |-- index.ts
+|   |   |   +-- TestimonialsSection.tsx
+|   |   +-- TrustSection/
+|   |       |-- index.ts
+|   |       +-- TrustSection.tsx
+|   +-- styles/
+|       +-- globals.css
+|-- next-env.d.ts
+|-- next.config.mjs
+|-- package-lock.json
+|-- package.json
+|-- postcss.config.mjs
++-- tsconfig.json
+
+Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage

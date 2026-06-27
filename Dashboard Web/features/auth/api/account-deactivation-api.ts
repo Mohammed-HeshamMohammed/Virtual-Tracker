@@ -1,11 +1,11 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getDirectApiBaseUrl } from "@/infrastructure/api/url"
+import { getDirectAuthApiBaseUrl } from "@/infrastructure/api/url"
 import { EmailAuthProvider, reauthenticateWithCredential, type User } from "firebase/auth"
 import { formatPasswordChangeError } from "@/features/auth/services/change-password"
 
 function normalizeAccountApiError(message: string): string {
   if (message.includes("ECONNRESET") || message.includes("Failed to fetch") || message.includes("NetworkError")) {
-    return "Could not reach the server. Ensure the Backend is running on port 5712."
+    return "Could not reach the server. Ensure Auth-Backend is running on port 5712."
   }
   return message
 }
@@ -29,7 +29,7 @@ export async function reauthenticateEmailPasswordUser(user: User, password: stri
 export async function submitAccountDeactivationRequest(): Promise<{ id: string; alreadyPending: boolean }> {
   let res: Response
   try {
-    res = await apiFetch(`${getDirectApiBaseUrl()}/api/auth/deactivation-request`, {
+    res = await apiFetch(`${getDirectAuthApiBaseUrl()}/api/auth/deactivation-request`, {
       method: "POST",
       body: JSON.stringify({}),
     })
@@ -56,7 +56,7 @@ export async function submitAccountDeactivationRequest(): Promise<{ id: string; 
 export async function deleteViewerAccountWithBackend(): Promise<void> {
   let res: Response
   try {
-    res = await apiFetch(`${getDirectApiBaseUrl()}/api/auth/delete-account`, {
+    res = await apiFetch(`${getDirectAuthApiBaseUrl()}/api/auth/delete-account`, {
       method: "POST",
       body: JSON.stringify({}),
     })

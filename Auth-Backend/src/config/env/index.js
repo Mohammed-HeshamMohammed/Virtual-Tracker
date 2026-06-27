@@ -1,16 +1,5 @@
-import { loadEnvFile } from "node:process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { validateEnvSource } from "./schema.js";
 import { toPublicEnv } from "./public.js";
-
-const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-
-try {
-  loadEnvFile(path.join(BACKEND_ROOT, ".env"));
-} catch {
-  // Optional — npm scripts also pass --env-file-if-exists=.env
-}
 
 /** @typedef {ReturnType<typeof buildEnv>} AppEnv */
 
@@ -57,12 +46,18 @@ function readCsv(source, key, fallback) {
   return items.length ? items : fallback;
 }
 
-const DEFAULT_CORS_ORIGINS = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost:3001",
-  "http://127.0.0.1:3001",
-];
+/** @param {NodeJS.ProcessEnv} source */
+function resolveCorsOrigins(source, isProduction) {
+  const explicit = readCsv(source, "CORS_ORIGINS", []);
+  if (explicit.length > 0) return explicit;
+
+  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", "");
+  const appPublicUrl = readString(source, "APP_PUBLIC_URL", "");
+  const derived = frontendOrigin || appPublicUrl;
+  if (derived) return [derived];
+
+  return [];
+}
 
 /**
  * Parse process environment into a typed, frozen configuration object.
@@ -77,11 +72,14 @@ export function buildEnv(source = process.env) {
     validateEnvSource(source);
   }
 
-  const nodeEnv = readString(source, "NODE_ENV", "development");
+  const nodeEnv = readString(source, "NODE_ENV", "production");
   const isProduction = nodeEnv === "production";
 
   const captureModeRaw = readString(source, "ACTIVITY_CAPTURE_MODE", "agent").toLowerCase();
   const captureMode = captureModeRaw === "web" ? "web" : "agent";
+
+  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", "");
+  const appPublicUrl = readString(source, "APP_PUBLIC_URL", "");
 
   return Object.freeze({
     nodeEnv,
@@ -89,22 +87,22 @@ export function buildEnv(source = process.env) {
     isDevelopment: !isProduction,
 
     server: Object.freeze({
-      port: readPositiveInt(source, "PORT", 5712),
+      port: readPositiveInt(source, "PORT", 3000),
+      host: readString(source, "HOST", "0.0.0.0"),
     }),
 
     security: Object.freeze({
       allowInsecureHttp: readBool(source, "ALLOW_INSECURE_HTTP", false),
-      /** Dev-only TLS workaround for Firebase on Windows. */
-      disableTlsVerificationInDev: !isProduction,
+      disableTlsVerificationInDev: false,
     }),
 
     cors: Object.freeze({
-      origins: Object.freeze(readCsv(source, "CORS_ORIGINS", DEFAULT_CORS_ORIGINS)),
+      origins: Object.freeze(resolveCorsOrigins(source, isProduction)),
     }),
 
     urls: Object.freeze({
-      frontendOrigin: readString(source, "FRONTEND_ORIGIN", "http://localhost:3000"),
-      appPublicUrl: readString(source, "APP_PUBLIC_URL", ""),
+      frontendOrigin: frontendOrigin || appPublicUrl,
+      appPublicUrl,
     }),
 
     firebase: Object.freeze({
@@ -155,7 +153,7 @@ export function buildEnv(source = process.env) {
       captureMode,
       webCaptureEnabled: readBool(source, "ACTIVITY_WEB_CAPTURE_ENABLED", true),
       taskScreenshotsEnabled: readBool(source, "ACTIVITY_TASK_SCREENSHOTS_ENABLED", false),
-      desktopAgentIngestEnabled: readBool(source, "ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED", !isProduction),
+      desktopAgentIngestEnabled: readBool(source, "ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED", false),
       sessionStaleMs: readPositiveInt(source, "ACTIVITY_SESSION_STALE_MS", 120_000),
       vtAuthPort: readPositiveInt(source, "VT_AUTH_PORT", 17_389),
     }),
@@ -167,9 +165,8 @@ export function buildEnv(source = process.env) {
       signalMinIntervalMs: readPositiveInt(source, "PRESENCE_SIGNAL_MIN_INTERVAL_MS", 60_000),
     }),
 
-    /** When true, OTP is logged to the server console instead of Firebase SMS. */
     phoneVerification: Object.freeze({
-      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", !isProduction),
+      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", false),
     }),
   });
 }

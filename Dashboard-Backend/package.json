@@ -1,0 +1,30 @@
+{
+  "name": "virtual-tracker-dashboard-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node --use-system-ca --env-file-if-exists=.env index.js",
+    "dev": "node --use-system-ca --env-file-if-exists=.env index.js"
+  },
+  "dependencies": {
+    "@zxcvbn-ts/core": "^4.1.2",
+    "@zxcvbn-ts/language-common": "^4.1.2",
+    "@zxcvbn-ts/language-en": "^4.1.1",
+    "firebase-admin": "^13.8.0",
+    "nodemailer": "^9.0.1",
+    "ws": "^8.21.0",
+    "zod": "^3.25.76"
+  },
+  "overrides": {
+    "protobufjs": ">=7.5.5",
+    "@tootallnate/once": ">=3.0.0",
+    "http-proxy-agent": ">=7.0.0",
+    "teeny-request": ">=9.0.0",
+    "uuid": ">=14.0.0",
+    "google-gax": ">=4.6.0"
+  }
+}

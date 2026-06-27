@@ -23,7 +23,7 @@ export function logEmailDeliveryStatus() {
   }
   console.warn(
     "[email] Outbound delivery NOT configured — invite/account emails are logged to the console only.\n" +
-      "  Add to Backend/.env (pick one):\n" +
+      "  Add to Auth-Backend/.env (pick one):\n" +
       "    RESEND_API_KEY=re_...  and  RESEND_FROM=Virtual Tracker <onboarding@yourdomain.com>\n" +
       "  OR SMTP (Gmail/Outlook):\n" +
       "    SMTP_HOST=smtp.gmail.com  SMTP_PORT=587  SMTP_USER=you@gmail.com  SMTP_PASS=app-password  SMTP_FROM=Virtual Tracker <you@gmail.com>",
