@@ -1,4 +1,4 @@
-// Bootstrap: load and validate configuration before other modules run.
+﻿// Bootstrap: load and validate configuration before other modules run.
 import { getEnv, initConfig } from "./src/config/env/index.js";
 
 initConfig();
@@ -11,11 +11,6 @@ import { logStartup, logDbStatus, logError } from "./src/core/utils/logger.js";
 import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email/email-config.js";
 
 let activeServer = null;
-
-function resolvePort(rawPort) {
-  const parsed = Number.parseInt(rawPort ?? "", 10);
-  return Number.isFinite(parsed) ? parsed : getEnv().server.port;
-}
 
 function registerServerErrorHandler(server, port) {
   server.on("error", (err) => {
@@ -102,7 +97,13 @@ export function startServer(port = getEnv().server.port, host = getEnv().server.
 
     await logEmailDeliveryStatusAsync();
 
-    console.log(`Auth API listening on ${host}:${port} (${getEnv().nodeEnv})`);
+    const { urls, deployment } = getEnv();
+    console.log(
+      `Auth API listening on ${host}:${port} (${getEnv().nodeEnv}, ${deployment.containerName})`,
+    );
+    console.log(`  Public URL: ${urls.authPublicUrl}`);
+    console.log(`  Dashboard Web: ${urls.dashboardWebUrl}`);
+    console.log(`  Landing Web: ${urls.landingWebUrl}`);
   });
   return server;
 }

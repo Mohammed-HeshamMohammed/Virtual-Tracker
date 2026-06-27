@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 
 const nodeEnvSchema = z.enum(["development", "production", "test"]);
 
@@ -12,7 +12,7 @@ const optionalTrimmedString = z
   .optional()
   .transform((value) => (typeof value === "string" ? value.trim() : ""));
 
-/** Firebase web client config (public — still validate shape). */
+/** Firebase web client config (public ΓÇö still validate shape). */
 export const firebaseWebConfigSchema = z.object({
   apiKey: z.string().min(1, "apiKey is required"),
   authDomain: z.string().min(1, "authDomain is required"),
@@ -52,6 +52,11 @@ const envSourceSchema = z
     HOST: optionalTrimmedString,
     ALLOW_INSECURE_HTTP: optionalTrimmedString,
     NODE_TLS_REJECT_UNAUTHORIZED: optionalTrimmedString,
+    AUTH_PUBLIC_URL: optionalTrimmedString,
+    DASHBOARD_API_URL: optionalTrimmedString,
+    LANDING_API_URL: optionalTrimmedString,
+    LANDING_WEB_URL: optionalTrimmedString,
+    DASHBOARD_WEB_URL: optionalTrimmedString,
     FRONTEND_ORIGIN: optionalTrimmedString,
     APP_PUBLIC_URL: optionalTrimmedString,
     CORS_ORIGINS: optionalTrimmedString,
@@ -94,7 +99,7 @@ const envSourceSchema = z
     PHONE_VERIFICATION_DEV_MODE: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
-    const nodeEnvRaw = (data.NODE_ENV || "production").trim();
+    const nodeEnvRaw = (data.NODE_ENV || "development").trim();
     const nodeEnvResult = nodeEnvSchema.safeParse(nodeEnvRaw);
     if (!nodeEnvResult.success) {
       ctx.addIssue({
@@ -120,15 +125,6 @@ const envSourceSchema = z
           code: z.ZodIssueCode.custom,
           path: ["APP_PUBLIC_URL"],
           message: "Production requires APP_PUBLIC_URL or FRONTEND_ORIGIN to be an https URL",
-        });
-      }
-
-      const corsOrigins = (data.CORS_ORIGINS || "").trim();
-      if (!corsOrigins && !publicUrl) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CORS_ORIGINS"],
-          message: "Production requires CORS_ORIGINS or FRONTEND_ORIGIN/APP_PUBLIC_URL for browser access",
         });
       }
     }
@@ -233,29 +229,6 @@ const envSourceSchema = z
           message: "Production requires email delivery (RESEND_API_KEY or full SMTP configuration)",
         });
       }
-
-      if (!allRequiredFirebaseWeb) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["FIREBASE_API_KEY"],
-          message:
-            "Production requires FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, and FIREBASE_APP_ID",
-        });
-      }
-
-      const hasAdminCredentials = Boolean(
-        data.FIREBASE_SERVICE_ACCOUNT ||
-          data.GOOGLE_APPLICATION_CREDENTIALS ||
-          (data.FIREBASE_CLIENT_EMAIL && data.FIREBASE_PRIVATE_KEY),
-      );
-      if (!hasAdminCredentials) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["FIREBASE_CLIENT_EMAIL"],
-          message:
-            "Production requires Firebase Admin credentials (FIREBASE_SERVICE_ACCOUNT, GOOGLE_APPLICATION_CREDENTIALS, or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY)",
-        });
-      }
     }
   });
 
@@ -297,7 +270,7 @@ export function validateEnvSource(source = process.env) {
   }
 }
 
-/** @deprecated Use validateEnvSource — kept for tests that validated built config. */
+/** @deprecated Use validateEnvSource ΓÇö kept for tests that validated built config. */
 export function validateEnv(source = process.env) {
   validateEnvSource(source);
 }

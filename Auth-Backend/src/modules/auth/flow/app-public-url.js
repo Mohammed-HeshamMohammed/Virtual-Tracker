@@ -5,6 +5,6 @@ export function resolveAppPublicUrl(override) {
     return override.trim().replace(/\/+$/, "");
   }
   const { urls } = getEnv();
-  const fromEnv = urls.appPublicUrl || urls.frontendOrigin || "http://localhost:3000";
+  const fromEnv = urls.appPublicUrl || urls.dashboardWebUrl || urls.frontendOrigin;
   return fromEnv.replace(/\/+$/, "");
 }

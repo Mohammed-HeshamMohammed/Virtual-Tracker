@@ -1,3 +1,4 @@
+﻿import { defaultCorsOrigins, getServiceProfile } from "../deployment-profiles.js";
 import { validateEnvSource } from "./schema.js";
 import { toPublicEnv } from "./public.js";
 
@@ -47,16 +48,10 @@ function readCsv(source, key, fallback) {
 }
 
 /** @param {NodeJS.ProcessEnv} source */
-function resolveCorsOrigins(source, isProduction) {
+function resolveCorsOrigins(source, nodeEnv) {
   const explicit = readCsv(source, "CORS_ORIGINS", []);
   if (explicit.length > 0) return explicit;
-
-  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", "");
-  const appPublicUrl = readString(source, "APP_PUBLIC_URL", "");
-  const derived = frontendOrigin || appPublicUrl;
-  if (derived) return [derived];
-
-  return [];
+  return [...defaultCorsOrigins(nodeEnv)];
 }
 
 /**
@@ -74,21 +69,28 @@ export function buildEnv(source = process.env) {
 
   const nodeEnv = readString(source, "NODE_ENV", "production");
   const isProduction = nodeEnv === "production";
+  const profile = getServiceProfile(nodeEnv);
 
   const captureModeRaw = readString(source, "ACTIVITY_CAPTURE_MODE", "agent").toLowerCase();
   const captureMode = captureModeRaw === "web" ? "web" : "agent";
 
-  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", "");
-  const appPublicUrl = readString(source, "APP_PUBLIC_URL", "");
+  const dashboardWebUrl = readString(source, "APP_PUBLIC_URL", profile.dashboardWeb.publicUrl);
+  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", profile.dashboardWeb.publicUrl);
+  const authPublicUrl = readString(source, "AUTH_PUBLIC_URL", profile.authApi.publicUrl);
 
   return Object.freeze({
     nodeEnv,
     isProduction,
     isDevelopment: !isProduction,
 
+    deployment: Object.freeze({
+      tier: profile.tier,
+      containerName: profile.authApi.containerName,
+    }),
+
     server: Object.freeze({
-      port: readPositiveInt(source, "PORT", 3000),
-      host: readString(source, "HOST", "0.0.0.0"),
+      port: readPositiveInt(source, "PORT", profile.authApi.port),
+      host: readString(source, "HOST", profile.authApi.host),
     }),
 
     security: Object.freeze({
@@ -97,12 +99,17 @@ export function buildEnv(source = process.env) {
     }),
 
     cors: Object.freeze({
-      origins: Object.freeze(resolveCorsOrigins(source, isProduction)),
+      origins: Object.freeze(resolveCorsOrigins(source, nodeEnv)),
     }),
 
     urls: Object.freeze({
-      frontendOrigin: frontendOrigin || appPublicUrl,
-      appPublicUrl,
+      authPublicUrl,
+      dashboardApiUrl: readString(source, "DASHBOARD_API_URL", profile.dashboardApi.publicUrl),
+      landingApiUrl: readString(source, "LANDING_API_URL", profile.landingApi.publicUrl),
+      landingWebUrl: readString(source, "LANDING_WEB_URL", profile.landingWeb.publicUrl),
+      dashboardWebUrl: readString(source, "DASHBOARD_WEB_URL", profile.dashboardWeb.publicUrl),
+      frontendOrigin,
+      appPublicUrl: dashboardWebUrl,
     }),
 
     firebase: Object.freeze({
