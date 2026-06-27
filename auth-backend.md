@@ -1,7 +1,7 @@
 # Auth-Backend — Revision & Branch Guide
 
 **Last updated:** 2026-06-27  
-**Canonical code:** `main` @ `1be9b36` — *Complete AuthN-only split: slim Auth-Backend, Dashboard identity routes, and boot resilience.*
+**Canonical code:** `main` @ `a3b64e8` (includes **`1be9b36`** — AuthN-only split: slim Auth-Backend, Dashboard identity routes, boot resilience).
 
 | Doc | Role |
 | --- | --- |
@@ -52,10 +52,12 @@ Production email requirement was removed from `src/config/env-schema.js`.
 ```text
 app/handle-request.js
 config/          env, firebase, deployment-profiles, password-policy/
-core/            create-server, logger, metrics
+core/            create-server, logger, metrics.js
 http/            cors, rate-limit, response, security, tls, auth-token, …
 modules/auth/    authn-paths.js, routes.js
 ```
+
+**`metrics.js`:** in-memory request counters (fed by `logger.js` on each request). No public HTTP route on Auth-Backend — no `GET /metrics` or `/monitor` here (ops dashboard is on Dashboard-Backend).
 
 Root extras: `Dockerfile`, `firebase.json`, `hosting-public/__/auth/action.html` (Firebase Hosting only, not Node API).
 
@@ -126,7 +128,7 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 | **Scope** | Full monorepo | `Auth-Backend/` only | `Dashboard-Backend/` only |
 | **Auth router** | 6 AuthN routes | ✅ same as `main` + `COOLIFY.md` | N/A (deny list for Auth paths) |
 | **Identity auth** | Dashboard modules | N/A | ✅ `identity-routes.js`, `session-bootstrap.js`, `GET /api/readiness` |
-| **Remote** | `origin/main` @ `a3e7268` | `origin/Auth-Production` @ `c50b836` | `origin/DashboardBackend-Prod` @ `983549d` |
+| **Remote** | `origin/main` @ `a3b64e8` | `origin/Auth-Production` @ `c50b836` | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
   main ──► Auth-Production     (0373304 + merge → pushed)
@@ -145,6 +147,9 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 - [ ] Redeploy **`vt-dashboard-api`** from `DashboardBackend-Prod`
 - [ ] Redeploy **`vt-dashboard-web`** from `main` (or your dashboard web prod branch)
 - [ ] Confirm gateway routes six Auth paths to auth (`deploy/Caddyfile`)
+- [x] Remove dead deps (`nodemailer`, `ws`) from `Auth-Backend` on `main` — verified no `src/` imports
+- [ ] Sync `package.json` + `package-lock.json` to `Auth-Production` before auth redeploy
+
 - [ ] Smoke test (below)
 
 ---
@@ -184,14 +189,13 @@ curl -s http://localhost:5713/api/readiness
 
 ---
 
-## 8. Optional follow-ups (not in `1be9b36`)
+## 8. Optional follow-ups
 
 | Item | Notes |
 | --- | --- |
-| Remove `nodemailer`, `ws` from `Auth-Backend/package.json` | Likely unused after slim; verify no imports |
-| Push `main` to `origin` | ✅ Done (`a3e7268`) |
 | Multi-instance rate limiting | In-memory limiter today; add gateway or Redis at scale |
 | Delete dead `Dashboard-Backend/src/modules/auth/routes.js` | Old fat router if nothing imports it |
+| Sync `Auth-Production` after dep cleanup | Copy `package.json` + `package-lock.json` from `main` before redeploy |
 
 ---
 
@@ -202,8 +206,9 @@ curl -s http://localhost:5713/api/readiness
 | **`1be9b36`** | `main` | **Full AuthN slim + Dashboard identity + boot resilience** |
 | `df2b2ce` | `main` | `.env.example` AuthN scope (pre-route slim) |
 | `f9837dc` | `main` | Removed scripts/duplicate tree; invites→Dashboard; routes still fat |
-| `cec99e2` | `Auth-Production` | Production `.env` Firebase-only |
-| `06c1600` | `Auth-Production` | Partial sync from main (routes still fat) |
+| **`c50b836`** | `Auth-Production` | Slim Auth-Backend from `main` + remote merge, pushed |
+| **`983549d`** | `DashboardBackend-Prod` | Identity routes + session-bootstrap from `main`, pushed |
+| `cec99e2` | `Auth-Production` | (superseded) Production `.env` Firebase-only |
 
 ---
 
