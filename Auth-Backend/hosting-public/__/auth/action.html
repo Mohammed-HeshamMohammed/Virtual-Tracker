@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Verify email — Virtual Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        color-scheme: light;
+        --shell: #f6fafe;
+        --card: rgba(255, 255, 255, 0.92);
+        --card-border: rgba(203, 195, 215, 0.35);
+        --heading: #171c1f;
+        --body: #64748b;
+        --accent: #6b38d4;
+        --accent-dark: #5a2db8;
+        --success: #059669;
+        --error: #dc2626;
+        --glow-a: rgba(107, 56, 212, 0.08);
+        --glow-b: rgba(90, 45, 184, 0.06);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--shell);
+        color: var(--heading);
+      }
+
+      .ambient {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+      }
+
+      .ambient span {
+        position: absolute;
+        width: 24rem;
+        height: 24rem;
+        border-radius: 9999px;
+        filter: blur(100px);
+      }
+
+      .ambient .a {
+        top: -8rem;
+        left: -8rem;
+        background: var(--glow-a);
+      }
+
+      .ambient .b {
+        right: -8rem;
+        bottom: -8rem;
+        background: var(--glow-b);
+      }
+
+      .page {
+        position: relative;
+        z-index: 1;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem 1.25rem;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.65rem;
+      }
+
+      .brand-mark {
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: 0.75rem;
+        background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+        box-shadow: 0 8px 24px rgba(107, 56, 212, 0.25);
+      }
+
+      .brand-title {
+        font-size: 1.05rem;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+
+      .brand-sub {
+        margin-top: 0.15rem;
+        font-size: 0.68rem;
+        color: rgba(23, 28, 31, 0.55);
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1.25rem 3rem;
+      }
+
+      .card {
+        width: min(100%, 28rem);
+        padding: 1.75rem 1.5rem 1.5rem;
+        border-radius: 1rem;
+        border: 1px solid var(--card-border);
+        background: var(--card);
+        box-shadow:
+          0 20px 60px rgba(107, 56, 212, 0.07),
+          0 8px 32px rgba(0, 0, 0, 0.06);
+        backdrop-filter: blur(16px);
+        text-align: center;
+      }
+
+      .icon {
+        width: 2.5rem;
+        height: 2.5rem;
+        margin: 0 auto 1rem;
+      }
+
+      .icon.loading {
+        border: 3px solid rgba(107, 56, 212, 0.15);
+        border-top-color: var(--accent);
+        border-radius: 9999px;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+
+      p {
+        margin: 0.85rem 0 0;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        color: var(--body);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        margin-top: 1.5rem;
+        padding: 0.72rem 1rem;
+        border: 0;
+        border-radius: 0.75rem;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+        color: #fff;
+        font: inherit;
+        font-size: 0.92rem;
+        font-weight: 700;
+        text-decoration: none;
+        cursor: pointer;
+        box-shadow: 0 4px 20px rgba(107, 56, 212, 0.28);
+      }
+
+      .btn:disabled {
+        opacity: 0.65;
+        cursor: wait;
+      }
+
+      .hidden {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="ambient" aria-hidden="true">
+      <span class="a"></span>
+      <span class="b"></span>
+    </div>
+
+    <div class="page">
+      <header class="header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"></div>
+          <div>
+            <div class="brand-title">Virtual Tracker</div>
+            <div class="brand-sub">virtualtracker.com</div>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="card" aria-live="polite">
+          <div id="status-icon" class="icon loading" aria-hidden="true"></div>
+          <h1 id="title">Verify your email</h1>
+          <p id="message">Verifying your email…</p>
+          <a id="action-btn" class="btn hidden" href="#">Continue to sign in</a>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var mode = params.get("mode") || "";
+        var oobCode = params.get("oobCode") || "";
+        var apiKey = params.get("apiKey") || "";
+        var continueUrl = params.get("continueUrl") || "";
+        var lang = params.get("lang") || "en";
+
+        var titleEl = document.getElementById("title");
+        var messageEl = document.getElementById("message");
+        var iconEl = document.getElementById("status-icon");
+        var actionBtn = document.getElementById("action-btn");
+
+        function projectIdFromHost() {
+          var host = window.location.hostname || "";
+          if (host.endsWith(".firebaseapp.com")) {
+            return host.replace(".firebaseapp.com", "");
+          }
+          if (host.endsWith(".web.app")) {
+            return host.replace(".web.app", "");
+          }
+          return host.split(".")[0] || "virtual-tracker";
+        }
+
+        function resolveContinuePath() {
+          if (!continueUrl) return "/?emailVerified=1";
+          try {
+            var url = new URL(continueUrl);
+            if (!url.searchParams.has("emailVerified")) {
+              url.searchParams.set("emailVerified", "1");
+            }
+            return url.pathname + url.search + url.hash;
+          } catch (e) {
+            return "/?emailVerified=1";
+          }
+        }
+
+        function showState(kind, title, message, buttonLabel, buttonHref) {
+          iconEl.className = "icon";
+          iconEl.textContent = "";
+          if (kind === "loading") {
+            iconEl.classList.add("loading");
+          } else if (kind === "success") {
+            iconEl.innerHTML =
+              '<svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>';
+          } else {
+            iconEl.innerHTML =
+              '<svg viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>';
+          }
+          titleEl.textContent = title;
+          messageEl.textContent = message;
+          if (buttonLabel && buttonHref) {
+            actionBtn.textContent = buttonLabel;
+            actionBtn.href = buttonHref;
+            actionBtn.classList.remove("hidden");
+          } else {
+            actionBtn.classList.add("hidden");
+          }
+        }
+
+        function formatError(err) {
+          var code = err && err.code ? String(err.code) : "";
+          if (code === "auth/invalid-action-code" || code === "auth/expired-action-code") {
+            return "This verification link has expired or was already used. Request a new verification email from the sign-in page.";
+          }
+          if (code === "auth/user-disabled") {
+            return "This account has been disabled. Contact your administrator.";
+          }
+          if (err && err.message) return err.message;
+          return "We could not verify your email. Request a new verification email and try again.";
+        }
+
+        if (mode !== "verifyEmail") {
+          showState(
+            "error",
+            "Unsupported link",
+            "This sign-in link is not supported here. Return to Virtual Tracker and try again.",
+            "Back to sign in",
+            continueUrl || "/",
+          );
+          return;
+        }
+
+        if (!oobCode || !apiKey) {
+          showState(
+            "error",
+            "Invalid link",
+            "This verification link is incomplete. Request a new verification email from the sign-in page.",
+            "Back to sign in",
+            continueUrl || "/",
+          );
+          return;
+        }
+
+        firebase.initializeApp({
+          apiKey: apiKey,
+          authDomain: window.location.hostname,
+          projectId: projectIdFromHost(),
+        });
+
+        firebase
+          .auth()
+          .applyActionCode(oobCode)
+          .then(function () {
+            var next = resolveContinuePath();
+            showState(
+              "success",
+              "Email verified",
+              "Your email has been verified. You can sign in now.",
+              "Continue to sign in",
+              next,
+            );
+            window.setTimeout(function () {
+              window.location.replace(next);
+            }, 1800);
+          })
+          .catch(function (err) {
+            showState(
+              "error",
+              "Try verifying your email again",
+              formatError(err),
+              "Back to sign in",
+              continueUrl || "/",
+            );
+          });
+      })();
+    </script>
+  </body>
+</html>

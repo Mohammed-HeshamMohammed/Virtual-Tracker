@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
 import { FALLBACK_PASSWORD_POLICY } from "@/features/auth/services/password-policy/defaults"
 import type { PasswordPolicyResponse } from "@/features/auth/services/password-policy/types"
 
@@ -42,7 +42,7 @@ export function getCachedPasswordPolicy(): PasswordPolicyResponse | null {
 }
 
 async function fetchPasswordPolicyFromNetwork(): Promise<PasswordPolicyResponse> {
-  const endpoint = `${getAuthApiBaseUrl()}/api/auth/password-policy`
+  const endpoint = `${getApiBaseUrl()}/api/auth/password-policy`
   const res = await apiFetch(endpoint, { method: "GET" }, { requireAuth: false })
   const data = (await res.json().catch(() => ({}))) as {
     success?: boolean

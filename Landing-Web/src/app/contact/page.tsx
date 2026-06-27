@@ -17,8 +17,8 @@ export default function ContactPage() {
             <h2 className="text-xl font-semibold">Book a guided walkthrough</h2>
             <p className="mt-3 text-sm text-slate-600">We’ll show you how Virtual Tracker supports staffing, project delivery, payroll, and executive reporting.</p>
             <div className="mt-6 space-y-3 text-sm text-slate-700">
-              <div className="rounded-xl border border-slate-200 bg-white p-4">Email: hello@virtualtracker.com</div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">Phone: +1 (800) 555-0199</div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">Use the dashboard sign-in flow (Firebase Auth)</div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">For deployment questions, reach out via your project contact channel</div>
             </div>
           </div>
         </section>

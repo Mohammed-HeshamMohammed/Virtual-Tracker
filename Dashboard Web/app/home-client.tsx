@@ -10,7 +10,8 @@ import {
   CompleteRegistrationGate,
   useBodyScrollLock,
 } from "@/features/auth/components"
-
+import { LauncherGoogleOAuthBanner } from "@/features/auth/components/launcher-google-oauth-banner"
+import { GOOGLE_OAUTH_REDIRECT_MESSAGE } from "@/features/auth"
 import { AuthGateShell } from "@/features/auth/components/auth-gate-shell"
 import { DashboardShell } from "@/app/dashboard-shell"
 import { InviteAcceptForm } from "@/features/members"
@@ -44,11 +45,13 @@ function HomeClientInner() {
   const mustChangePassword = Boolean(isLoggedIn && profile?.mustChangePassword)
   useBodyScrollLock(mustChangePassword)
 
+  const googleRedirectPending = sessionStatusMessage === GOOGLE_OAUTH_REDIRECT_MESSAGE
+
   const awaitingSession =
     Boolean(initError) ||
     Boolean(sessionConnectionError) ||
     loading ||
-    !sessionReady ||
+    (!sessionReady && !googleRedirectPending) ||
     Boolean(user && !isLoggedIn)
 
   if (!isLoggedIn && awaitingSession) {
@@ -57,7 +60,7 @@ function HomeClientInner() {
         message={sessionStatusMessage ?? "Checking your session..."}
         error={sessionConnectionError ?? initError}
         onRetry={() => retryConnection()}
-        onCancel={undefined}
+        onCancel={googleRedirectPending ? cancelPendingOAuthSignIn : undefined}
       />
     )
   }
@@ -74,6 +77,7 @@ function HomeClientInner() {
     if (linkToken) {
       return (
         <AuthGateShell>
+          <LauncherGoogleOAuthBanner message={sessionStatusMessage} onCancel={cancelPendingOAuthSignIn} />
           <div className="mx-auto mb-6 max-w-md rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center text-sm text-emerald-100">
             Sign in below, then click <span className="font-semibold text-white">Link this account</span> to finish
             connecting Virtual Tracker Agent.
@@ -82,7 +86,12 @@ function HomeClientInner() {
         </AuthGateShell>
       )
     }
-    return <AuthPage1 />
+    return (
+      <>
+        <LauncherGoogleOAuthBanner message={sessionStatusMessage} onCancel={cancelPendingOAuthSignIn} />
+        <AuthPage1 />
+      </>
+    )
   }
 
   if (transferToken && isLoggedIn) {

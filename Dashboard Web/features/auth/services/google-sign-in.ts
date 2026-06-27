@@ -1,4 +1,10 @@
 import { GoogleAuthProvider, signInWithPopup, signInWithRedirect, type Auth } from "firebase/auth"
+import {
+  buildLauncherGoogleOAuthUrl,
+  isEmbeddedInLauncherFrame,
+  navigateLauncherHost,
+  shouldUseGoogleRedirect,
+} from "@/features/auth/services/launcher-runtime"
 
 function googleProvider(): GoogleAuthProvider {
   const provider = new GoogleAuthProvider()
@@ -21,10 +27,21 @@ function isLocalDevHost(): boolean {
 }
 
 /**
+ * Launcher / embedded shell: redirect in the host window (popups often open the system browser).
  * Local dev in a normal tab: popup first, redirect fallback when blocked.
  */
 export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
   const provider = googleProvider()
+
+  if (isEmbeddedInLauncherFrame()) {
+    navigateLauncherHost(buildLauncherGoogleOAuthUrl())
+    return
+  }
+
+  if (shouldUseGoogleRedirect()) {
+    await signInWithRedirect(auth, provider)
+    return
+  }
 
   if (isLocalDevHost()) {
     try {

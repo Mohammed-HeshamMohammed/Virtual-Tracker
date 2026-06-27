@@ -14,6 +14,9 @@ import {
   notifyBackendConnectionLost,
   notifyBackendConnectionRestored,
 } from "@/infrastructure/api/backend-connection-events"
+import { apiPath } from "@/infrastructure/api/path"
+import { resolveApiBaseUrlForPath } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { assertSecureFetchUrl } from "@/infrastructure/api/secure-transport"
 
 export type RequestOptions = {
@@ -161,20 +164,38 @@ async function performApiFetch(
   }
 }
 
+function normalizeApiFetchInput(input: RequestInfo | URL): RequestInfo | URL {
+  const urlStr = resolveRequestUrl(input);
+  if (urlStr.startsWith("/api/")) {
+    return apiPath(urlStr);
+  }
+
+  try {
+    const parsed = new URL(urlStr);
+    if (!parsed.pathname.startsWith("/api/")) return input;
+    const targetBase = resolveApiBaseUrlForPath(parsed.pathname);
+    if (parsed.origin === new URL(targetBase).origin) return input;
+    return `${targetBase}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return input;
+  }
+}
+
 /** `fetch` with API base paths, HTTPS validation, and optional Firebase auth (default on). */
 export async function apiFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},
   options: ApiFetchOptions = {},
 ): Promise<Response> {
-  assertSecureFetchUrl(resolveRequestUrl(input))
+  const resolvedInput = normalizeApiFetchInput(input);
+  assertSecureFetchUrl(resolveRequestUrl(resolvedInput))
   const requireAuth = options.requireAuth !== false
   const headers = await apiAuthHeaders(init, options)
-  let res = await performApiFetch(input, init, headers)
+  let res = await performApiFetch(resolvedInput, init, headers)
 
   if (res.status === 401 && requireAuth && options.forceRefresh !== true) {
     const retryHeaders = await apiAuthHeaders(init, { ...options, forceRefresh: true })
-    res = await performApiFetch(input, init, retryHeaders)
+    res = await performApiFetch(resolvedInput, init, retryHeaders)
   }
 
   return res

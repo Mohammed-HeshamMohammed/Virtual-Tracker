@@ -76,8 +76,8 @@ export function formatAddMembersSuccess(result: AddMembersResult): { message: st
       tone: "info",
       message:
         result.inviteUrls.length > 0
-          ? `Email delivery is not configured on the server. Invite created — copy this link and send it to the recipient manually:${linkBlock}\n\nAdd RESEND_API_KEY or SMTP settings to Auth-Backend/.env to send email automatically.`
-          : `${result.count} invite(s) created, but no invite link was returned. Configure Auth-Backend/.env (RESEND_API_KEY or SMTP_*).`,
+          ? `Email delivery is not configured on the server. Invite created — copy this link and send it to the recipient manually:${linkBlock}\n\nAdd RESEND_API_KEY or SMTP settings to Backend/.env to send email automatically.`
+          : `${result.count} invite(s) created, but no invite link was returned. Configure Backend/.env (RESEND_API_KEY or SMTP_*).`,
     }
   }
 
@@ -90,7 +90,7 @@ export function formatAddMembersSuccess(result: AddMembersResult): { message: st
   if (result.tempPassword) {
     return {
       tone: "info",
-      message: `Account created. Email delivery is not configured — share these credentials securely:\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nThey must change their password on first sign-in.\n\nAdd RESEND_API_KEY or SMTP_* to Auth-Backend/.env to email credentials automatically.`,
+      message: `Account created. Email delivery is not configured — share these credentials securely:\n\nEmail: ${result.email}\nTemporary password: ${result.tempPassword}\n\nThey must change their password on first sign-in.\n\nAdd RESEND_API_KEY or SMTP_* to Backend/.env to email credentials automatically.`,
     }
   }
   return { tone: "info", message: `Account created for ${result.email}.` }
@@ -315,24 +315,6 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     prevModeRef.current = mode
   }
 
-  const tabVariants = {
-    initial: (dir: number) =>
-      reduceMotion
-        ? { opacity: 0 }
-        : {
-            opacity: 0,
-            x: dir >= 0 ? TAB_SLIDE_PX : -TAB_SLIDE_PX,
-          },
-    animate: { opacity: 1, x: 0 },
-    exit: (dir: number) =>
-      reduceMotion
-        ? { opacity: 0 }
-        : {
-            opacity: 0,
-            x: dir >= 0 ? -TAB_SLIDE_PX : TAB_SLIDE_PX,
-          }
-  }
-
   return (
     <motion.div
       initial={reduceMotion ? false : { opacity: 0 }}
@@ -401,12 +383,25 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
             <motion.div
               key={mode}
               custom={tabDirection}
-              variants={tabVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
               className="col-start-1 row-start-1 min-h-0 overflow-y-auto px-5 py-3.5 [&::-webkit-scrollbar]:hidden"
               style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
+              initial={
+                reduceMotion
+                  ? false
+                  : (dir: number) => ({
+                      opacity: 0,
+                      x: dir >= 0 ? TAB_SLIDE_PX : -TAB_SLIDE_PX,
+                    })
+              }
+              animate={{ opacity: 1, x: 0 }}
+              exit={
+                reduceMotion
+                  ? undefined
+                  : (dir: number) => ({
+                      opacity: 0,
+                      x: dir >= 0 ? -TAB_SLIDE_PX : TAB_SLIDE_PX,
+                    })
+              }
               transition={paneTransition}
             >
               {mode === "invites" ? (

@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl, getDirectAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { prepareProfileImageForUpload } from "@/features/auth/services/compress-profile-image"
 import type { User } from "firebase/auth"
 import { parseAuthProfileSnapshot, type AuthProfileSnapshot } from "@/features/auth/services/verify-session"
@@ -21,7 +21,7 @@ function isTransientUploadError(message: string): boolean {
 
 function normalizeAvatarApiError(message: string): string {
   if (isTransientUploadError(message)) {
-    return "Upload failed — could not reach the server. Ensure Auth-Backend is running (port 5712). If you use `npm run dev` in Auth-Backend, wait for it to finish restarting and try again."
+    return "Upload failed — could not reach Auth-Backend (port 5712). Ensure Auth-Backend and Dashboard-Backend are running."
   }
   if (message.toLowerCase().includes("request body too large")) {
     return "Image is too large after encoding. Try a smaller photo."
@@ -34,11 +34,7 @@ function avatarUploadUrls(): string[] {
   if (typeof window !== "undefined" && process.env.NODE_ENV === "development") {
     urls.push("/api/auth/profile-avatar")
   }
-  const configured = getAuthApiBaseUrl()
-  if (configured) {
-    urls.push(`${configured}/api/auth/profile-avatar`)
-  }
-  urls.push(`${getDirectAuthApiBaseUrl()}/api/auth/profile-avatar`)
+  urls.push(apiPath("/api/auth/profile-avatar"))
   return [...new Set(urls)]
 }
 

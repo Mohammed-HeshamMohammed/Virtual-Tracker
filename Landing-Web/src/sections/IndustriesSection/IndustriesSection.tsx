@@ -1,8 +1,14 @@
 "use client"
 
-const INDUSTRIES = [
-  "Marketing agencies", "Real estate", "BPO",
-  "VAs", "Staffing and recruiting", "Software development",
+import Link from "next/link"
+import { SOLUTIONS } from "@/lib/product-content"
+import { clampIndex } from "@/lib/safe"
+
+const CARD_BACKGROUNDS = [
+  "linear-gradient(135deg, #334155, #1e293b)",
+  "linear-gradient(135deg, #1e3a5f, #0f2744)",
+  "linear-gradient(135deg, #7c3aed, #4c1d95)",
+  "linear-gradient(135deg, #0f172a, #1e293b)",
 ]
 
 function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -21,23 +27,27 @@ export default function IndustriesSection() {
   return (
     <Section className="py-20">
       <h2 className="text-3xl md:text-5xl font-extrabold text-[#0f172a] text-center mb-4">
-        Global time tracking that<br />adapts to any industry
+        Built for teams that need<br />visibility without guesswork
       </h2>
-      <p className="text-slate-500 text-center mb-12">Seamlessly manage your global team from one powerful platform.</p>
-      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4 mb-12">
-        {INDUSTRIES.map((ind, i) => (
-          <div key={ind} className="relative rounded-2xl overflow-hidden group cursor-pointer" style={{ height: 180 }}>
-            <div className="absolute inset-0 flex items-center justify-center" style={{
-              background: ["linear-gradient(135deg, #334155, #1e293b)", "linear-gradient(135deg, #1e3a5f, #0f2744)", "linear-gradient(135deg, #1a2744, #0f172a)", "linear-gradient(135deg, #1e293b, #0f172a)", "linear-gradient(135deg, #7c3aed, #4c1d95)", "linear-gradient(135deg, #0f172a, #1e293b)"][i]
-            }}>
-              <div className="text-slate-600 text-6xl font-black opacity-10 select-none">{ind[0]}</div>
+      <p className="text-slate-500 text-center mb-12 max-w-2xl mx-auto">
+        Virtual Tracker targets operations leaders running remote teams, client delivery, and trial rollouts on Firebase.
+      </p>
+      <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
+        {SOLUTIONS.map((item, i) => (
+          <Link
+            key={item.title}
+            href={item.href}
+            className="relative rounded-2xl overflow-hidden group p-6 min-h-[140px] flex flex-col justify-end"
+            style={{ background: CARD_BACKGROUNDS[clampIndex(i, CARD_BACKGROUNDS.length)] }}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-white font-bold text-lg">{item.title}</span>
+                <p className="text-white/70 text-sm mt-2 max-w-sm">{item.description}</p>
+              </div>
+              <ArrowRight className="w-5 h-5 text-white/70 group-hover:translate-x-1 transition-transform" />
             </div>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
-            <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-              <span className="text-white font-bold text-sm">{ind}</span>
-              <ArrowRight className="w-4 h-4 text-white/70" />
-            </div>
-          </div>
+          </Link>
         ))}
       </div>
     </Section>

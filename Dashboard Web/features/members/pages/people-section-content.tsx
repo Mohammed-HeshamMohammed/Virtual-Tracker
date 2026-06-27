@@ -91,33 +91,30 @@ function PeopleSectionContentInner({
 
   const transition = reduceMotion ? { duration: 0 } : { duration: 0.22, ease: EASE_OUT }
 
-  const subpageVariants = {
-    initial: (dir: number) =>
-      reduceMotion
-        ? { opacity: 0 }
-        : dir === 0
-        ? { opacity: 0 }
-        : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX },
-    animate: { opacity: 1, x: 0 },
-    exit: (dir: number) =>
-      reduceMotion
-        ? { opacity: 0 }
-        : dir === 0
-        ? { opacity: 0 }
-        : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }
-  }
-
   return (
     <div className="relative h-full min-h-0 overflow-hidden">
       <AnimatePresence initial={false} custom={direction}>
         <motion.div
           key={activeItem}
           custom={direction}
-          variants={subpageVariants}
-          initial="initial"
-          animate="animate"
-          exit="exit"
           className="absolute inset-0 flex min-h-0 flex-col"
+          initial={
+            reduceMotion
+              ? false
+              : (dir: number) =>
+                  dir === 0
+                    ? { opacity: 0 }
+                    : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX }
+          }
+          animate={{ opacity: 1, x: 0 }}
+          exit={
+            reduceMotion
+              ? undefined
+              : (dir: number) =>
+                  dir === 0
+                    ? { opacity: 0 }
+                    : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }
+          }
           transition={transition}
         >
           {renderMemberSubpage(activeItem, onNavigate)}

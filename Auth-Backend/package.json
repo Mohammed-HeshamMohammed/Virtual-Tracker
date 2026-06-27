@@ -1,5 +1,5 @@
-﻿{
-  "name": "virtual-tracker-auth-api",
+{
+  "name": "virtual-tracker-auth-backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,12 +8,15 @@
   },
   "scripts": {
     "start": "node --use-system-ca --env-file-if-exists=.env index.js",
-    "dev": "node --use-system-ca --env-file-if-exists=.env index.js"
+    "dev": "node scripts/dev-watch.mjs",
+    "assign-owner": "node --use-system-ca --env-file-if-exists=.env scripts/assign-owner.mjs",
+    "verify-user-email": "node --use-system-ca --env-file-if-exists=.env scripts/verify-user-email.mjs",
+    "migrate:profile-images": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-profile-images.mjs",
+    "migrate:phone-verification": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-phone-verification.mjs",
+    "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
+    "lint:config": "node scripts/lint-env-access.mjs"
   },
   "dependencies": {
-    "@zxcvbn-ts/core": "^4.1.2",
-    "@zxcvbn-ts/language-common": "^4.1.2",
-    "@zxcvbn-ts/language-en": "^4.1.1",
     "firebase-admin": "^13.8.0",
     "nodemailer": "^9.0.1",
     "ws": "^8.21.0",

@@ -1,5 +1,8 @@
 "use client"
 
+import AppCtaLink from "@/components/AppCtaLink"
+import { getTrialHref } from "@/lib/site-urls"
+
 export default function EmailForm() {
   return (
     <div className="flex items-center justify-center mb-4">
@@ -9,11 +12,13 @@ export default function EmailForm() {
           placeholder="Enter your work email"
           className="px-6 py-4 text-sm text-slate-700 placeholder-slate-400 outline-none bg-transparent flex-1 min-w-0"
         />
-        <button className="m-1.5 px-6 py-3 rounded-full text-sm font-bold text-white whitespace-nowrap flex-shrink-0" style={{
-          background: "linear-gradient(135deg, #7c3aed, #6d28d9)"
-        }}>
+        <AppCtaLink
+          href={getTrialHref()}
+          className="m-1.5 px-6 py-3 rounded-full text-sm font-bold text-white whitespace-nowrap flex-shrink-0"
+          style={{ background: "linear-gradient(135deg, #7c3aed, #6d28d9)" }}
+        >
           Create account
-        </button>
+        </AppCtaLink>
       </div>
     </div>
   )

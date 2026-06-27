@@ -1,7 +1,8 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { resolveApiBaseUrlForPath } from "@/infrastructure/api/url"
 
-/** Full URL for a Backend API path (path must start with `/api/`). */
+/** Full URL for a Backend API path (path must start with `/api/`). Routes auth vs dashboard automatically. */
 export function apiPath(path: string): string {
-  const base = getApiBaseUrl()
-  return path.startsWith("/") ? `${base}${path}` : `${base}/${path}`
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const base = resolveApiBaseUrlForPath(normalized);
+  return `${base}${normalized}`;
 }

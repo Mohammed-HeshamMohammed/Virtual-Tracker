@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
 
 export type ResolvedIdentity = {
   provider: string
@@ -24,7 +24,7 @@ export async function resolveSignInMethodsFromApi(email: string): Promise<Resolv
   if (!trimmed) return null
   try {
     const res = await apiFetch(
-      `${getAuthApiBaseUrl()}/api/auth/resolve-sign-in-methods`,
+      `${getApiBaseUrl()}/api/auth/resolve-sign-in-methods`,
       {
         method: "POST",
         body: JSON.stringify({ email: trimmed }),

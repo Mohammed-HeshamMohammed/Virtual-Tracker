@@ -1,94 +1,53 @@
 # Virtual-Tracker
 
-Multi-app workspace for the Virtual Tracker platform: auth API, dashboard API, dashboard web app, and marketing landing site.
+Split layout for containerized VPS deployment.
 
-## Projects (main branch)
+| Folder | Role | Container |
+|--------|------|-----------|
+| [Auth-Backend](./Auth-Backend) | Auth, invites, onboarding | `vt-auth-backend` |
+| [Dashboard-Backend](./Dashboard-Backend) | Projects, members, activity, API | `vt-dashboard-backend` |
+| [Dashboard Web](./Dashboard%20Web) | Next.js dashboard app | `vt-dashboard-web` |
+| [Landing-Web](./Landing-Web) | Marketing site | `vt-landing-web` |
+| [deploy](./deploy) | Docker Compose + Caddy gateway | `vt-gateway` |
 
-| Folder | Purpose | Local port |
-|--------|---------|------------|
-| `Auth-Backend/` | Authentication, profiles, email, phone verification | 5712 |
-| `Dashboard-Backend/` | Dashboard REST API (skeleton — routes added over time) | 5713 |
-| `Dashboard Web/` | Next.js dashboard (React 19, TypeScript) | 3000 |
-| `Landing-Web/` | Next.js marketing / landing site | 3001 |
-
-## Production branches (Coolify / VPS)
-
-Each branch contains **only** the service it deploys. Point Coolify at the folder in the **Base Directory** column.
-
-| # | Service | Public domain | Coolify / container name | Branch | Base directory |
-|---|---------|---------------|--------------------------|--------|----------------|
-| 1 | Auth Backend | `auth.myvirtualtracker.com` | `vt-auth-api` | `Auth-Production` | `Auth-Backend` |
-| 2 | Dashboard Backend | `dashapi.myvirtualtracker.com` | `vt-dashboard-api` | `DashboardBackend-Prod` | `Dashboard-Backend` |
-| 3 | Landing Web Backend | `api.myvirtualtracker.com` | `vt-landing-api` | `LandingWebBackend-Prod` | `Landing-Backend` |
-| 4 | Landing Web | `myvirtualtracker.com` | `vt-landing-web` | `LandingWeb-Prod` | `Landing-Web` |
-| 5 | Dashboard Web | `app.myvirtualtracker.com` | `vt-dashboard-web` | *(main build)* | `Dashboard Web` |
-
-Auth-Backend reads platform URLs from `Auth-Backend/src/config/deployment-profiles.js` (local defaults on `main`, production domains when `NODE_ENV=production` on `Auth-Production`).
-
-## Tech stack
-
-- **Backends:** Node.js 20+, Firebase Admin, Zod, Nodemailer
-- **Dashboard Web:** Next.js 16, React 19, TypeScript, Tailwind CSS, Radix UI
-- **Landing-Web:** Next.js 15, React 19, TypeScript, Tailwind CSS
-
-## Local development
-
-### 1. Auth-Backend
+## Production (Hostinger / any VPS)
 
 ```bash
-cd Auth-Backend
-npm install
-npm run dev
+cd deploy
+cp .env.example .env
+# Edit .env — domains, Firebase, email
+docker compose up -d --build
 ```
 
-Copy `.env.example` to `.env` and fill Firebase/email values (`.env` is not committed). Defaults target local ports in `src/config/deployment-profiles.js` (auth **5712**, dashboard API **5713**, dashboard web **3000**, landing **3001**).
+See **[deploy/README.md](./deploy/README.md)** for DNS, Firebase, and verification steps.
 
-### 2. Dashboard-Backend
+| Public URL | Service |
+|------------|---------|
+| `https://api.yourdomain.com` | API gateway → both backends |
+| `https://app.yourdomain.com` | Dashboard Web |
+| `https://yourdomain.com` | Landing-Web |
+
+## Local development (without Docker)
 
 ```bash
-cd Dashboard-Backend
-npm install
-npm run dev
+# Terminals 1–2: backends
+cd Auth-Backend && npm install && npm start       # :5712
+cd Dashboard-Backend && npm install && npm start # :5713
+
+# Terminal 3: dashboard
+cd "Dashboard Web" && npm install && npm run dev  # :3000
+
+# Terminal 4: landing (optional)
+cd Landing-Web && npm install && npm run dev -- -p 3001
 ```
 
-### 3. Dashboard Web
+For local split dev, Dashboard Web uses ports `5712` / `5713` automatically. For production-like testing, set `NEXT_PUBLIC_API_URL` to a local gateway or use `docker compose`.
+
+## Re-sync from monolith
 
 ```bash
-cd "Dashboard Web"
-npm install
-npm run dev
+node app/Backend/scripts/copy-auth-backend.mjs
+node app/Backend/scripts/copy-dashboard-backend.mjs
+node app/Frontend/scripts/copy-dashboard-web.mjs
+# Re-apply Dashboard Web/infrastructure/api/* if the copy overwrote split routing
 ```
-
-Set `NEXT_PUBLIC_AUTH_API_URL` / `NEXT_PUBLIC_API_URL` only when not using default dev ports (5712 / 5713).
-
-### 4. Landing-Web
-
-```bash
-cd Landing-Web
-npm install
-npm run dev
-```
-
-## Project structure (main)
-
-```text
-Virtual-Tracker/
-├── Auth-Backend/          # Auth API (local dev)
-├── Dashboard-Backend/     # Dashboard API (local dev)
-├── Dashboard Web/         # Dashboard Next.js app
-├── Landing-Web/           # Landing Next.js app
-├── landing-page-tree.txt  # Landing-Web file tree
-├── LLM-Design-Prinicples-Backend.md
-├── LLM-Security-GuideLine.md
-└── README.md
-```
-
-## Environment
-
-- Each app keeps its own `.env` (gitignored).
-- Never commit secrets, Firebase service account JSON, or `node_modules/`.
-
-## Notes
-
-- Dashboard Web dev proxy rewrites `/api/auth/*` → Auth-Backend and other `/api/*` → Dashboard-Backend.
-- Production builds use env vars `NEXT_PUBLIC_AUTH_API_URL` and `NEXT_PUBLIC_API_URL` on Dashboard Web.

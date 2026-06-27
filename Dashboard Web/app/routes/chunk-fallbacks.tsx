@@ -1,6 +1,7 @@
 "use client"
 
-import { OverviewSkeleton, ProjectsPageSkeleton, ProjectsSkeleton } from "@/features/projects"
+import { OverviewSkeleton } from "@/features/projects"
+import { ProjectsPageSkeleton } from "@/features/projects"
 import { TasksPageSkeleton } from "@/features/tasks/components/skeletons/tasks-skeleton"
 import { ClientsPageSkeleton } from "@/features/clients/components/skeletons/clients-page-skeleton"
 import { MemberTreePageSkeleton, MembersPageSkeleton } from "@/features/members"

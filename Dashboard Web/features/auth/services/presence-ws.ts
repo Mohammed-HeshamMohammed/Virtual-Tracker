@@ -1,10 +1,10 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
 
 const HEARTBEAT_MS = 30_000
 const RECONNECT_MS = 5_000
 
 function wsBaseUrl(): string {
-  const httpBase = getApiBaseUrl()
+  const httpBase = getDashboardApiBaseUrl()
   return httpBase.replace(/^http/i, (scheme) => (scheme.toLowerCase() === "https" ? "wss" : "ws"))
 }
 

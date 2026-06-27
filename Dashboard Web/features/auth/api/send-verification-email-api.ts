@@ -1,5 +1,5 @@
 import { apiFetch, readJsonSafe } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
 import { logSafeWarn } from "@/infrastructure/logging/logger"
 
 type SendVerificationEmailResponse = {
@@ -17,7 +17,7 @@ export type SendVerificationEmailResult =
 export async function sendVerificationEmailWithBackend(
   continueUrl: string,
 ): Promise<SendVerificationEmailResult> {
-  const endpoint = `${getAuthApiBaseUrl()}/api/auth/send-verification-email`
+  const endpoint = `${getApiBaseUrl()}/api/auth/send-verification-email`
   try {
     const res = await apiFetch(
       endpoint,

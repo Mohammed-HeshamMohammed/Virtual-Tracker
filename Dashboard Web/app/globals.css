@@ -142,6 +142,221 @@ tr[style*="height"] > td {
   height: inherit;
 }
 
+.launcher-shell {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.launcher-shell:not(.in-launcher) {
+  display: block;
+  height: auto;
+  overflow: visible;
+}
+
+.launcher-shell-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.launcher-chrome {
+  flex-shrink: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 0 0 0;
+  background: rgba(8, 10, 16, 0.96);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+  z-index: 100;
+  user-select: none;
+}
+
+.launcher-chrome-drag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 8px 0 12px;
+  cursor: default;
+}
+
+.launcher-chrome-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.launcher-chrome-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #d5deea;
+  letter-spacing: 0.01em;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.launcher-chrome-close {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #c5cedb;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+
+.launcher-chrome-controls {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+}
+
+.launcher-chrome-minimize {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #c5cedb;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+
+.launcher-chrome-minimize svg {
+  width: 12px;
+  height: 12px;
+}
+
+.launcher-chrome-minimize:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.launcher-chrome-maximize {
+  width: 46px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: #c5cedb;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+
+.launcher-chrome-maximize svg {
+  width: 11px;
+  height: 11px;
+}
+
+.launcher-chrome-maximize:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.launcher-chrome-close svg {
+  width: 12px;
+  height: 12px;
+}
+
+.launcher-chrome-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.launcher-oauth-return {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 8, 12, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.launcher-oauth-return-card {
+  max-width: 420px;
+  padding: 24px 28px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(12, 16, 24, 0.96);
+  color: #d5deea;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.launcher-oauth-return-title {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.launcher-oauth-return-body {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  color: #9fb0c4;
+}
+
+.launcher-google-oauth-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(75, 226, 119, 0.28);
+  background: rgba(8, 14, 24, 0.94);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  transform: translateX(-50%);
+}
+
+.launcher-google-oauth-banner-text {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #d5deea;
+}
+
+.launcher-google-oauth-banner-cancel {
+  border: none;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.08);
+  color: #c5cedb;
+  transition: background 0.12s, color 0.12s;
+}
+
+.launcher-google-oauth-banner-cancel:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
 
 /* Accessibility: Respect user prefers-reduced-motion system setting */
 @media (prefers-reduced-motion: reduce) {

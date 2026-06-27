@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import PageShell from "@/components/PageShell"
+import SafeSection from "@/components/SafeSection"
 import {
   HeroSection,
   StatsSection,
@@ -18,14 +19,30 @@ export function HomeView() {
 
   return (
     <PageShell>
-      <HeroSection />
-      <StatsSection />
-      <CtaDemoSection />
-      <FeaturesSection activeFeature={activeFeature} setActiveFeature={setActiveFeature} />
-      <TestimonialsSection />
-      <TrustSection />
-      <IndustriesSection />
-      <FinalCtaSection />
+      <SafeSection name="hero">
+        <HeroSection />
+      </SafeSection>
+      <SafeSection name="stats">
+        <StatsSection />
+      </SafeSection>
+      <SafeSection name="demo call-to-action">
+        <CtaDemoSection />
+      </SafeSection>
+      <SafeSection name="features">
+        <FeaturesSection activeFeature={activeFeature} setActiveFeature={setActiveFeature} />
+      </SafeSection>
+      <SafeSection name="value props">
+        <TestimonialsSection />
+      </SafeSection>
+      <SafeSection name="trust">
+        <TrustSection />
+      </SafeSection>
+      <SafeSection name="use cases">
+        <IndustriesSection />
+      </SafeSection>
+      <SafeSection name="final call-to-action">
+        <FinalCtaSection />
+      </SafeSection>
     </PageShell>
   )
 }

@@ -1,6 +1,6 @@
 import { BACKEND_UNAVAILABLE_MESSAGE } from "@/infrastructure/api/backend-connection-events"
+import { apiPath } from "@/infrastructure/api/path"
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
 
 export type BackendReadiness =
   | { ok: true }
@@ -26,8 +26,7 @@ function parseReadinessFailure(
 /** True when the Node API and Firestore are reachable for auth bootstrap. */
 export async function checkBackendReadiness(signal?: AbortSignal): Promise<BackendReadiness> {
   try {
-    const base = getAuthApiBaseUrl()
-    const url = base ? `${base}/api/auth/readiness` : "/api/auth/readiness"
+    const url = apiPath("/api/auth/readiness")
     const res = await apiFetch(url, { signal }, { requireAuth: false })
     const data: unknown = await res.json().catch(() => null)
     if (

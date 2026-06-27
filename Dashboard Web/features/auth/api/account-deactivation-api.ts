@@ -1,5 +1,5 @@
+import { apiPath } from "@/infrastructure/api/path"
 import { apiFetch } from "@/infrastructure/api/http"
-import { getDirectAuthApiBaseUrl } from "@/infrastructure/api/url"
 import { EmailAuthProvider, reauthenticateWithCredential, type User } from "firebase/auth"
 import { formatPasswordChangeError } from "@/features/auth/services/change-password"
 
@@ -29,7 +29,7 @@ export async function reauthenticateEmailPasswordUser(user: User, password: stri
 export async function submitAccountDeactivationRequest(): Promise<{ id: string; alreadyPending: boolean }> {
   let res: Response
   try {
-    res = await apiFetch(`${getDirectAuthApiBaseUrl()}/api/auth/deactivation-request`, {
+    res = await apiFetch(apiPath("/api/auth/deactivation-request"), {
       method: "POST",
       body: JSON.stringify({}),
     })
@@ -56,7 +56,7 @@ export async function submitAccountDeactivationRequest(): Promise<{ id: string; 
 export async function deleteViewerAccountWithBackend(): Promise<void> {
   let res: Response
   try {
-    res = await apiFetch(`${getDirectAuthApiBaseUrl()}/api/auth/delete-account`, {
+    res = await apiFetch(apiPath("/api/auth/delete-account"), {
       method: "POST",
       body: JSON.stringify({}),
     })

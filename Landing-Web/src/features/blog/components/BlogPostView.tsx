@@ -2,31 +2,31 @@ import Link from "next/link"
 import PageShell from "@/components/PageShell"
 
 const posts: Record<string, { title: string; date: string; content: string[] }> = {
-  "how-modern-teams-track-time-without-friction": {
-    title: "How modern teams track time without friction",
-    date: "June 24, 2026",
+  "desktop-agent-setup": {
+    title: "Setting up the Virtual Tracker desktop agent",
+    date: "June 2026",
     content: [
-      "Good time tracking should feel like a normal part of work, not a separate admin task.",
-      "Modern teams adopt tools that reduce friction with simple timers, automatic reminders, and clear approvals.",
-      "The result is better reporting, stronger trust, and less time lost to manual reconciliation.",
+      "The Python agent in app/Python-App-Extension runs on Windows and macOS. It links to your workspace through a secure token exchange while the web dashboard timer is active.",
+      "Once linked, the agent ingests screenshots on a random 90–210 second interval, logs foreground apps every 30 seconds, and captures browser URLs via platform-specific scripts.",
+      "Enable ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED=true on the API, restart the backend, and use the dashboard link flow (?link=) to complete pairing.",
     ],
   },
-  "the-rise-of-workforce-productivity-ops": {
-    title: "The rise of workforce productivity operations",
-    date: "June 18, 2026",
+  "org-hierarchy-and-invites": {
+    title: "Org hierarchy, invites, and member onboarding",
+    date: "June 2026",
     content: [
-      "Leaders are increasingly treating productivity data as an operational input for planning and delivery.",
-      "That shift is driving demand for dashboards that combine time tracking, workload visibility, and performance context.",
-      "The best systems support decision-making without becoming invasive or overly complex.",
+      "Virtual Tracker models organizations with member relationships, role ladders, and hierarchy-aware visibility enforced on the backend.",
+      "Admins can invite members in bulk, share open-link registration URLs, or pre-provision accounts before first sign-in.",
+      "The people workspace includes a visual member tree, team rosters, ban management, and real-time presence over WebSocket and SSE.",
     ],
   },
-  "why-billing-accuracy-starts-with-better-tracking": {
-    title: "Why billing accuracy starts with better tracking",
-    date: "June 10, 2026",
+  "task-linked-time-tracking": {
+    title: "Task-linked time tracking in the dashboard",
+    date: "June 2026",
     content: [
-      "Billing errors often come from broken handoffs, delayed entries, or inconsistent client-specific reporting.",
-      "Accurate time capture creates a stronger foundation for invoices, budgets, and forecasts.",
-      "Teams that standardize their workflow gain fewer disputes and faster payment cycles.",
+      "The web dashboard exposes a top-bar timer tied to active tasks and projects. Time entries flow into the timesheets view for review and editing.",
+      "Task assignments include a review queue so leads can reconcile work against delivery. Submit, approve, and reject APIs exist on the backend.",
+      "The timesheet approvals UI is still gated as coming soon, but view & edit time entries is available in the trial client today.",
     ],
   },
 }
@@ -41,7 +41,7 @@ export function BlogPostView({ slug }: { slug: string }) {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-10 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-[0.25em] text-violet-600">Blog</p>
             <h1 className="mt-4 text-3xl font-semibold tracking-tight">Article not found</h1>
-            <p className="mt-4 text-slate-600">This article is not available yet. Return to the blog index to browse the latest posts.</p>
+            <p className="mt-4 text-slate-600">This article is not available. Return to the blog index.</p>
             <Link href="/blog" className="mt-6 inline-flex text-sm font-semibold text-slate-900 hover:text-violet-700">
               Back to blog →
             </Link>

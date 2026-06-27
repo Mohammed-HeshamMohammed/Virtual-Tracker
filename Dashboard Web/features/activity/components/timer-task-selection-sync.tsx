@@ -27,7 +27,10 @@ export function TimerTaskSelectionSync({ selectedTaskForTimer }: TimerTaskSelect
   const syncedTaskIdRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!selectedTaskForTimer) {
+    const nextId = selectedTaskForTimer?.id ?? null
+
+    // Do not wipe the running timer when sidebar state flickers or reloads with null.
+    if (!nextId) {
       if (phase === "online") {
         syncedTaskIdRef.current = null
         setCurrentTask(null)
@@ -35,8 +38,6 @@ export function TimerTaskSelectionSync({ selectedTaskForTimer }: TimerTaskSelect
       }
       return
     }
-
-    const nextId = selectedTaskForTimer.id
 
     if (syncedTaskIdRef.current === nextId) return
 

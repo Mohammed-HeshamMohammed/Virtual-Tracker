@@ -1,0 +1,2 @@
+.env
+secrets/firebase-admin.local.json

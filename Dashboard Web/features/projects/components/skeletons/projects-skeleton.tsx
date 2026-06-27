@@ -22,7 +22,6 @@ interface ProjectsSkeletonProps {
   rowCount?: number
   fillHeight?: boolean
   maxRowsPerPage?: number
-  minRowsPerPage?: number
   showSelectColumn?: boolean
   showActionsColumn?: boolean
 }

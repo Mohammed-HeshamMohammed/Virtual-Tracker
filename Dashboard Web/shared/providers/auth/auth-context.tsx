@@ -35,6 +35,10 @@ import { cleanFirebaseAuthUrl, consumeAuthRedirectResultOnce } from "@/features/
 import { signInWithGoogleAccount } from "@/features/auth/services/google-sign-in"
 import {
   broadcastAuthSessionReady,
+  consumeLauncherOAuthIntent,
+  GOOGLE_OAUTH_REDIRECT_MESSAGE,
+  isLauncherHost,
+  shouldUseGoogleRedirect,
   subscribeAuthSessionReady,
 } from "@/features/auth"
 import { verifyIdTokenWithBackend, type AuthProfileSnapshot } from "@/features/auth/services/verify-session"
@@ -674,7 +678,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
           await completeSessionAfterVerify(nextProfile, memberId)
           setSessionConnectionError(null)
           setInitError(null)
-
+          if (isLauncherHost() && !window.pywebview?.api) {
+            broadcastAuthSessionReady()
+          }
         } catch (e) {
           setBackendReconnecting(false)
           setSessionStatusMessage(null)
@@ -754,7 +760,20 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (cancelled) return
 
-
+      const launcherOAuthIntent = consumeLauncherOAuthIntent()
+      if (launcherOAuthIntent === "google" && !auth.currentUser) {
+        try {
+          setSessionStatusMessage(GOOGLE_OAUTH_REDIRECT_MESSAGE)
+          const provider = new GoogleAuthProvider()
+          provider.setCustomParameters({ prompt: "select_account" })
+          await signInWithRedirect(auth, provider)
+        } catch (e) {
+          if (!cancelled && !isBenignAuthCancellation(e)) {
+            const msg = formatAuthError(e)
+            if (msg) setAuthError(msg)
+          }
+        }
+      }
 
       try {
         const redirectCred = await consumeAuthRedirectResultOnce(auth)
@@ -836,7 +855,12 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }, [connectionAttempt])
 
-
+  useEffect(() => {
+    if (!isLauncherHost() || !window.pywebview?.api) return
+    return subscribeAuthSessionReady(() => {
+      window.location.reload()
+    })
+  }, [])
 
   const withError = async (fn: () => Promise<void>) => {
     setAuthError(null)
@@ -898,6 +922,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signInWithGoogle = (rememberMe = true) =>
     runOAuthSignIn(rememberMe, async () => {
       const auth = getFirebaseAuth()
+      if (shouldUseGoogleRedirect()) {
+        setSessionStatusMessage(GOOGLE_OAUTH_REDIRECT_MESSAGE)
+      }
       await signInWithGoogleAccount(auth)
     })
 

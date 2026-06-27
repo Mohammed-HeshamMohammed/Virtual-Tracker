@@ -1,6 +1,6 @@
 /* eslint-disable react-doctor/js-combine-iterations */
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
 import { parseAuthSessionErrorCode, type AuthSessionErrorCode } from "@/features/auth/services/auth-session-errors"
 import { handleSuspiciousAuthFailure, isSuspiciousAuthError } from "@/features/auth/services/browser-state-hygiene"
 import { throwIfQuotaExceeded } from "@/features/auth/services/firestore-quota"
@@ -143,7 +143,7 @@ export type VerifyIdTokenResult =
 export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
   let res: Response
   try {
-    res = await apiFetch(`${getAuthApiBaseUrl()}/api/auth/verify`, {
+    res = await apiFetch(`${getApiBaseUrl()}/api/auth/verify`, {
       method: "POST",
       body: JSON.stringify({}),
     })

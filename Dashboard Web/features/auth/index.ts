@@ -29,6 +29,15 @@ export {
 } from "@/features/auth/permissions/member-role-access";
 export { registerDashboardPresence, subscribeAgentLinked, broadcastAgentLinked, pingDashboardTab } from "@/features/auth/services/agent-link-broadcast";
 export { broadcastAuthSessionReady, subscribeAuthSessionReady } from "@/features/auth/services/auth-cross-tab-sync";
+export {
+  isLauncherHost,
+  isEmbeddedInLauncherFrame,
+  shouldUseGoogleRedirect,
+  withLauncherQuery,
+  consumeLauncherOAuthIntent,
+  closeLauncherAppWindow,
+  GOOGLE_OAUTH_REDIRECT_MESSAGE,
+} from "@/features/auth/services/launcher-runtime";
 export { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation";
 export { PasswordPolicyProvider } from "@/features/auth/services/password-policy";
 export { useAppShellReady } from "@/features/auth/hooks/use-app-shell-ready";

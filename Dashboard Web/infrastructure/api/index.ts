@@ -1,5 +1,13 @@
 // API Services Export
-export { getApiBaseUrl, getAuthApiBaseUrl, getDirectApiBaseUrl, getDirectAuthApiBaseUrl } from "@/infrastructure/api/url"
+export {
+  getApiBaseUrl,
+  getAuthApiBaseUrl,
+  getDashboardApiBaseUrl,
+  getDirectApiBaseUrl,
+  isUnifiedApiGatewayMode,
+  resolveApiBaseUrlForPath,
+} from "@/infrastructure/api/url"
+export { isAuthBackendApiPath } from "@/infrastructure/api/api-backend-routes"
 export { apiPath } from "@/infrastructure/api/path"
 export { resolveCurrentMemberId } from "@/features/members/services/current-member"
 export {

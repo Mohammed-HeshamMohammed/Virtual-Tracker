@@ -1,21 +1,21 @@
 "use client"
 
+import Link from "next/link"
+
 export default function Announcement() {
   return (
     <div className="flex items-center justify-center mb-10">
       <div className="flex items-center gap-2 border border-white/20 rounded-full bg-white/5 px-1 py-0.5 text-xs text-white">
         <span className="bg-white/10 border border-white/20 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap">
-          New
+          Trial client
         </span>
-        <span className="whitespace-nowrap pl-0.5">AI-powered analytics is now available</span>
-
-        <button className="learn-more">
+        <span className="whitespace-nowrap pl-0.5">Desktop agent for Windows & macOS is available</span>
+        <Link href="/desktop-agent" className="learn-more">
           <span className="circle" aria-hidden="true">
             <span className="icon arrow" />
           </span>
-          <span className="button-text">Learn More</span>
-        </button>
-
+          <span className="button-text">Agent setup</span>
+        </Link>
         <style jsx>{`
           .learn-more {
             position: relative;

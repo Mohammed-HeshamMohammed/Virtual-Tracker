@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "@/app/globals.css"
 import { ThemeProvider, AuthProvider } from "@/shared/providers/app"
+import { LauncherShell } from "@/app/launcher-shell"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -40,7 +41,7 @@ export default function RootLayout({
       <body className={`${inter.className} font-sans antialiased`}>
         <ThemeProvider>
           <AuthProvider>
-            {children}
+            <LauncherShell>{children}</LauncherShell>
           </AuthProvider>
         </ThemeProvider>
       </body>

@@ -305,7 +305,7 @@ export async function getMembersPage(
   } catch (error) {
     if (error instanceof TypeError) {
       throw new Error(
-        "Could not reach the API. Ensure Dashboard-Backend is running on port 5713 (`npm run dev` in Dashboard-Backend).",
+        "Could not reach the API. Ensure Auth-Backend (:5712) and Dashboard-Backend (:5713) are running.",
       )
     }
     throw error
@@ -315,7 +315,7 @@ export async function getMembersPage(
     if (res.status === 0 || res.status >= 500) {
       throw new Error(
         json?.error ||
-          "Could not reach the API. Ensure Dashboard-Backend is running on port 5713 (`npm run dev` in Dashboard-Backend).",
+          "Could not reach the API. Ensure Auth-Backend (:5712) and Dashboard-Backend (:5713) are running.",
       )
     }
     throw extractApiError(res.status, "Failed to fetch members", json)

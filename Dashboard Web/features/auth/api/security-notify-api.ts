@@ -1,9 +1,9 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
+import { getApiBaseUrl } from "@/infrastructure/api/url"
 
 export async function notifyPasswordChanged(): Promise<void> {
   try {
-    await apiFetch(`${getAuthApiBaseUrl()}/api/auth/notify-password-changed`, {
+    await apiFetch(`${getApiBaseUrl()}/api/auth/notify-password-changed`, {
       method: "POST",
       body: JSON.stringify({}),
     })
@@ -16,7 +16,7 @@ export async function notifyPasswordResetCompleted(email: string): Promise<void>
   const normalized = email.trim().toLowerCase()
   if (!normalized) return
   try {
-    await apiFetch(`${getAuthApiBaseUrl()}/api/auth/notify-password-reset`, {
+    await apiFetch(`${getApiBaseUrl()}/api/auth/notify-password-reset`, {
       method: "POST",
       body: JSON.stringify({ email: normalized }),
     })
@@ -29,7 +29,7 @@ export async function notifyEmailVerified(email: string): Promise<void> {
   const normalized = email.trim().toLowerCase()
   if (!normalized) return
   try {
-    await apiFetch(`${getAuthApiBaseUrl()}/api/auth/notify-email-verified`, {
+    await apiFetch(`${getApiBaseUrl()}/api/auth/notify-email-verified`, {
       method: "POST",
       body: JSON.stringify({ email: normalized }),
     })
