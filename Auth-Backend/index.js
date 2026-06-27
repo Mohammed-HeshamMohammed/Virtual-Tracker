@@ -1,4 +1,4 @@
-// Auth-Backend entry: Firebase authentication and identity APIs.
+// Auth-Backend entry: Firebase authentication API.
 import { getEnv, initConfig } from "./src/config/env.js";
 
 const config = initConfig();
@@ -12,7 +12,6 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { getDb } from "./src/config/firebase.js";
 import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
-import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email-config.js";
 
 let activeServer = null;
 
@@ -66,7 +65,15 @@ export function startServer(port = getEnv().server.port) {
       // Keep default version fallback.
     }
 
-    const routes = ["/health", "/api/auth/*"];
+    const routes = [
+      "/health",
+      "/api/auth/firebase-config",
+      "/api/auth/readiness",
+      "/api/auth/password-policy",
+      "/api/auth/validate-password",
+      "/api/auth/verify",
+      "/api/auth/resolve-sign-in-methods",
+    ];
 
     logStartup({
       version,
@@ -75,7 +82,6 @@ export function startServer(port = getEnv().server.port) {
       routes,
     });
 
-    await logEmailDeliveryStatusAsync();
     console.log(`Auth-Backend listening on http://localhost:${port}`);
   });
   return server;

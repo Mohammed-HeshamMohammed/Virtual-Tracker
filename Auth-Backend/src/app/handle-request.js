@@ -1,10 +1,10 @@
-import { getDb } from "../config/firebase.js";
 import { applyCors, corsHeaders } from "../http/cors.js";
 import { checkRateLimit } from "../http/rate-limit.js";
 import { rejectSensitiveQueryParams } from "../http/password-request-guard.js";
 import { assertSecureTransport } from "../http/tls-enforcement.js";
 import { getSecurityHeaders } from "../http/security-headers.js";
 import { routeAuth } from "../modules/auth/routes.js";
+import { isAuthnApiPath } from "../modules/auth/authn-paths.js";
 
 export async function handleRequest(req, res) {
   const origin = req.headers.origin;
@@ -48,6 +48,7 @@ export async function handleRequest(req, res) {
     }
   }
 
+  // Liveness before authn allowlist — /health is not in authn-paths.js.
   if (req.method === "GET" && url.pathname === "/health") {
     applyCors(res, origin);
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
@@ -56,6 +57,12 @@ export async function handleRequest(req, res) {
   }
 
   if (url.pathname.startsWith("/api/auth/") || url.pathname.startsWith("/api/v1/auth/")) {
+    if (!isAuthnApiPath(url.pathname)) {
+      applyCors(res, origin);
+      res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
+      res.end(JSON.stringify({ success: false, error: "Not found" }));
+      return;
+    }
     const rateLimited = await checkRateLimit(req, url);
     if (rateLimited) {
       applyCors(res, origin);
@@ -76,14 +83,6 @@ export async function handleRequest(req, res) {
     applyCors(res, origin);
     res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
     res.end(JSON.stringify({ success: false, error: "Not found" }));
-    return;
-  }
-
-  const db = getDb();
-  if (!db && url.pathname.startsWith("/api/")) {
-    applyCors(res, origin);
-    res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
-    res.end(JSON.stringify({ success: false, error: "Firestore is not configured" }));
     return;
   }
 
