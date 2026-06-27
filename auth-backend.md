@@ -1,7 +1,7 @@
 # Auth-Backend — Revision & Branch Guide
 
 **Last updated:** 2026-06-27  
-**Canonical code:** `main` @ `a3b64e8` (includes **`1be9b36`** — AuthN-only split: slim Auth-Backend, Dashboard identity routes, boot resilience).
+**Canonical code:** `main` @ `0f95db1` (includes **`1be9b36`** — the AuthN split commit).
 
 | Doc | Role |
 | --- | --- |
@@ -128,7 +128,7 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 | **Scope** | Full monorepo | `Auth-Backend/` only | `Dashboard-Backend/` only |
 | **Auth router** | 6 AuthN routes | ✅ same as `main` + `COOLIFY.md` | N/A (deny list for Auth paths) |
 | **Identity auth** | Dashboard modules | N/A | ✅ `identity-routes.js`, `session-bootstrap.js`, `GET /api/readiness` |
-| **Remote** | `origin/main` @ `a3b64e8` | `origin/Auth-Production` @ `c50b836` | `origin/DashboardBackend-Prod` @ `983549d` |
+| **Remote** | `origin/main` @ `0f95db1` | `origin/Auth-Production` (pending dep sync push) | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
   main ──► Auth-Production     (0373304 + merge → pushed)
@@ -148,7 +148,7 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 - [ ] Redeploy **`vt-dashboard-web`** from `main` (or your dashboard web prod branch)
 - [ ] Confirm gateway routes six Auth paths to auth (`deploy/Caddyfile`)
 - [x] Remove dead deps (`nodemailer`, `ws`) from `Auth-Backend` on `main` — verified no `src/` imports
-- [ ] Sync `package.json` + `package-lock.json` to `Auth-Production` before auth redeploy
+- [x] Sync `package.json` + `package-lock.json` to `Auth-Production` (with next push)
 
 - [ ] Smoke test (below)
 
@@ -195,7 +195,6 @@ curl -s http://localhost:5713/api/readiness
 | --- | --- |
 | Multi-instance rate limiting | In-memory limiter today; add gateway or Redis at scale |
 | Delete dead `Dashboard-Backend/src/modules/auth/routes.js` | Old fat router if nothing imports it |
-| Sync `Auth-Production` after dep cleanup | Copy `package.json` + `package-lock.json` from `main` before redeploy |
 
 ---
 
