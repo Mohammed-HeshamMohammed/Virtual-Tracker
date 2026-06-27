@@ -1,7 +1,7 @@
 # Auth-Backend — Revision & Branch Guide
 
 **Last updated:** 2026-06-27  
-**Canonical code:** `main` @ `0f95db1` (includes **`1be9b36`** — the AuthN split commit).
+**Canonical code:** `main` @ `c249ec1` (includes **`1be9b36`** — the AuthN split commit).
 
 | Doc | Role |
 | --- | --- |
@@ -128,7 +128,7 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 | **Scope** | Full monorepo | `Auth-Backend/` only | `Dashboard-Backend/` only |
 | **Auth router** | 6 AuthN routes | ✅ same as `main` + `COOLIFY.md` | N/A (deny list for Auth paths) |
 | **Identity auth** | Dashboard modules | N/A | ✅ `identity-routes.js`, `session-bootstrap.js`, `GET /api/readiness` |
-| **Remote** | `origin/main` @ `0f95db1` | `origin/Auth-Production` (pending dep sync push) | `origin/DashboardBackend-Prod` @ `983549d` |
+| **Remote** | `origin/main` @ `c249ec1` | `origin/Auth-Production` @ `90ac407` | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
   main ──► Auth-Production     (0373304 + merge → pushed)
