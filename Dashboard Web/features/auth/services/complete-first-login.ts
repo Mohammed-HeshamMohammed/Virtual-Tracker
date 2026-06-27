@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
 import { parseAuthProfileSnapshot, type AuthProfileSnapshot } from "@/features/auth/services/verify-session"
 
 export type CompleteFirstLoginInput = {
@@ -21,7 +21,7 @@ export type CompleteFirstLoginResult = {
 export async function completeFirstLoginWithBackend(
   input: CompleteFirstLoginInput,
 ): Promise<CompleteFirstLoginResult> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/auth/complete-first-login`, {
+  const res = await apiFetch(`${getAuthApiBaseUrl()}/api/auth/complete-first-login`, {
     method: "POST",
     body: JSON.stringify({
       currentPassword: input.currentPassword,

@@ -152,7 +152,7 @@ export async function sendTransactionalEmail(input) {
 
   console.info(
     `${logPrefix} Email for ${to} (no mail provider configured — copy content below):\n${input.text}\n` +
-      "Configure RESEND_API_KEY or SMTP_* in Backend/.env to deliver real email.",
+      "Configure RESEND_API_KEY or SMTP_* in Auth-Backend/.env to deliver real email.",
   );
   return { sent: false, channel: "console" };
 }

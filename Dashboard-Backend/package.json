@@ -1,5 +1,5 @@
 {
-  "name": "virtual-tracker-api",
+  "name": "virtual-tracker-dashboard-api",
   "version": "0.1.0",
   "private": true,
   "type": "module",

@@ -91,7 +91,7 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
             setData(null)
             setMembers([])
             setDisabledReason(null)
-            setError("Could not load activity data. Check that the backend is running on port 5712.")
+            setError("Could not load activity data. Check that Dashboard-Backend is running on port 5713.")
           }
           return
         }

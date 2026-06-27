@@ -78,7 +78,7 @@ export function InviteRowActionsMenu({
             tone: "info",
             message: result.inviteUrl
               ? `Email delivery is not configured. Copy this link and send it manually:\n\n${result.inviteUrl}`
-              : "Email could not be sent. Configure RESEND_API_KEY or SMTP_* in Backend/.env.",
+              : "Email could not be sent. Configure RESEND_API_KEY or SMTP_* in Auth-Backend/.env.",
           })
         }
         return

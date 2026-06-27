@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
 import type { BackendPasswordRequirements } from "@/features/auth/services/password-policy/use-password-backend-check"
 
 /**
@@ -49,7 +49,7 @@ export async function validatePasswordWithBackend(
   password: string,
   confirmPassword?: string,
 ): Promise<ValidatePasswordResult> {
-  const endpoint = `${getApiBaseUrl()}/api/auth/validate-password`
+  const endpoint = `${getAuthApiBaseUrl()}/api/auth/validate-password`
   const res = await apiFetch(
     endpoint,
     {

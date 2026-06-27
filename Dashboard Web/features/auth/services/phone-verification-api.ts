@@ -1,8 +1,8 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { getAuthApiBaseUrl } from "@/infrastructure/api/url"
 import { apiFetch, getApiAuthToken } from "@/infrastructure/api/http"
 import { bearerAuthHeaders } from "@/features/auth/services/bearer-headers"
 
-const API_BASE = getApiBaseUrl()
+const API_BASE = getAuthApiBaseUrl()
 
 type ApiEnvelope<T> = {
   success?: boolean

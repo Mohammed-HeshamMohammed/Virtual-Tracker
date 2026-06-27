@@ -13,7 +13,6 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { getDb } from "./src/core/database/firebase.js";
 import { logStartup, logDbStatus, logError } from "./src/core/utils/logger.js";
-import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email/email-config.js";
 
 let activeServer = null;
 
@@ -26,8 +25,8 @@ function registerServerErrorHandler(server, port) {
   server.on("error", (err) => {
     if (err?.code === "EADDRINUSE") {
       console.error(
-        `Port ${port} is already in use. Stop the other process or set PORT in Backend/.env, e.g.:` +
-          `\n  $env:PORT=5712; npm start`,
+        `Port ${port} is already in use. Stop the other process or set PORT in Dashboard-Backend/.env, e.g.:` +
+          `\n  $env:PORT=5713; npm start`,
       );
       process.exit(1);
     }
@@ -74,32 +73,7 @@ export function startServer(port = getEnv().server.port) {
       // Keep default version fallback.
     }
 
-    const routes = [
-      "/health",
-      "/api/auth/complete-first-login",
-      "/api/auth/notify-password-changed",
-      "/api/auth/notify-password-reset",
-      "/api/auth/notify-email-verified",
-      "/api/auth/promote-pending-member",
-      "/api/auth/password-policy",
-      "/api/auth/readiness",
-      "/api/auth/validate-password",
-      "/api/auth/firebase-config",
-      "/api/auth/send-verification-email",
-      "/api/auth/verify",
-      "/api/auth/profile",
-      "/api/auth/profile-avatar",
-      "/api/auth/resolve-sign-in-methods",
-      "/api/auth/check-email",
-      "/api/auth/phone-verification/send",
-      "/api/auth/phone-verification/confirm",
-      "/api/auth/phone-verification/exchange",
-      "/api/auth/deactivation-request",
-      "/api/auth/deactivation-requests",
-      "/api/auth/deactivation-requests/:id/approve",
-      "/api/auth/deactivation-requests/:id/reject",
-      "/api/auth/delete-account",
-    ];
+    const routes = ["/health"];
 
     logStartup({
       version,
@@ -108,9 +82,7 @@ export function startServer(port = getEnv().server.port) {
       routes,
     });
 
-    await logEmailDeliveryStatusAsync();
-
-    console.log(`API server listening on http://localhost:${port}`);
+    console.log(`Dashboard API server listening on http://localhost:${port}`);
   });
   return server;
 }

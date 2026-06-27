@@ -1,5 +1,5 @@
 // API Services Export
-export { getApiBaseUrl } from "@/infrastructure/api/url"
+export { getApiBaseUrl, getAuthApiBaseUrl, getDirectApiBaseUrl, getDirectAuthApiBaseUrl } from "@/infrastructure/api/url"
 export { apiPath } from "@/infrastructure/api/path"
 export { resolveCurrentMemberId } from "@/features/members/services/current-member"
 export {
