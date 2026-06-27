@@ -1,30 +1,54 @@
 # Virtual-Tracker
 
-Virtual-Tracker is a multi-app workspace for a tracker platform with a backend service, a dashboard web app, and a landing web experience.
+Multi-app workspace for the Virtual Tracker platform: auth API, dashboard API, dashboard web app, and marketing landing site.
 
-## Projects
+## Projects (main branch)
 
-- Backend: Node.js-based API and service layer with Firebase integration, mail support, and WebSocket capabilities.
-- Dashboard Web: Next.js dashboard application for managing the product experience.
-- Landing-Web: Next.js marketing/landing site.
+| Folder | Purpose | Local port |
+|--------|---------|------------|
+| `Auth-Backend/` | Authentication, profiles, email, phone verification | 5712 |
+| `Dashboard-Backend/` | Dashboard REST API (skeleton — routes added over time) | 5713 |
+| `Dashboard Web/` | Next.js dashboard (React 19, TypeScript) | 3000 |
+| `Landing-Web/` | Next.js marketing / landing site | 3001 |
 
-## Tech Stack
+## Production branches (Coolify / VPS)
 
-- Backend: Node.js, Firebase Admin SDK, Zod, Nodemailer, WS
-- Dashboard Web: Next.js 16, React 19, TypeScript, Tailwind CSS, Radix UI
-- Landing-Web: Next.js 15, React 19, TypeScript, Tailwind CSS
+Each branch contains **only** the service it deploys. Point Coolify at the folder in the **Base Directory** column.
 
-## Getting Started
+| Branch | Folder | Base Directory |
+|--------|--------|----------------|
+| `Auth-Production` | Auth API + Docker | `Auth-Backend` |
+| `DashboardBackend-Prod` | Dashboard API + Docker | `Dashboard-Backend` |
+| `LandingWeb-Prod` | Landing site + Docker | `Landing-Web` |
+| `LandingWebBackend-Prod` | Landing API + Docker | `Landing-Backend` |
 
-### 1. Backend
+## Tech stack
+
+- **Backends:** Node.js 20+, Firebase Admin, Zod, Nodemailer
+- **Dashboard Web:** Next.js 16, React 19, TypeScript, Tailwind CSS, Radix UI
+- **Landing-Web:** Next.js 15, React 19, TypeScript, Tailwind CSS
+
+## Local development
+
+### 1. Auth-Backend
 
 ```bash
-cd Backend
+cd Auth-Backend
 npm install
 npm run dev
 ```
 
-### 2. Dashboard Web
+Copy `.env` values from Firebase Console (see `Auth-Backend/.env` — not committed).
+
+### 2. Dashboard-Backend
+
+```bash
+cd Dashboard-Backend
+npm install
+npm run dev
+```
+
+### 3. Dashboard Web
 
 ```bash
 cd "Dashboard Web"
@@ -32,7 +56,9 @@ npm install
 npm run dev
 ```
 
-### 3. Landing-Web
+Set `NEXT_PUBLIC_AUTH_API_URL` / `NEXT_PUBLIC_API_URL` only when not using default dev ports (5712 / 5713).
+
+### 4. Landing-Web
 
 ```bash
 cd Landing-Web
@@ -40,19 +66,26 @@ npm install
 npm run dev
 ```
 
-## Environment Notes
-
-Local configuration files such as Firebase credentials and environment-specific settings are expected in the relevant app folders. Keep secret files out of version control.
-
-## Project Structure
+## Project structure (main)
 
 ```text
-Backend/
-Dashboard Web/
-Landing-Web/
+Virtual-Tracker/
+├── Auth-Backend/          # Auth API (local dev)
+├── Dashboard-Backend/     # Dashboard API (local dev)
+├── Dashboard Web/         # Dashboard Next.js app
+├── Landing-Web/           # Landing Next.js app
+├── landing-page-tree.txt  # Landing-Web file tree
+├── LLM-Design-Prinicples-Backend.md
+├── LLM-Security-GuideLine.md
+└── README.md
 ```
+
+## Environment
+
+- Each app keeps its own `.env` (gitignored).
+- Never commit secrets, Firebase service account JSON, or `node_modules/`.
 
 ## Notes
 
-- Use the app-specific package.json files for scripts and dependencies.
-- The dashboard app includes additional utilities such as type checking and a cleanup script for local Next.js artifacts.
+- Dashboard Web dev proxy rewrites `/api/auth/*` → Auth-Backend and other `/api/*` → Dashboard-Backend.
+- Production builds use env vars `NEXT_PUBLIC_AUTH_API_URL` and `NEXT_PUBLIC_API_URL` on Dashboard Web.

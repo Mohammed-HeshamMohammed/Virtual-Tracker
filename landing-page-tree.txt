@@ -1,4 +1,6 @@
 Landing-Web/
+Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
+
 |-- public/
 |   |-- apple-icon.png
 |   |-- icon.svg
@@ -110,5 +112,3 @@ Landing-Web/
 |-- package.json
 |-- postcss.config.mjs
 +-- tsconfig.json
-
-Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
