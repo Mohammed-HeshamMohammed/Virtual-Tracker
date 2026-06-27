@@ -1,0 +1,18 @@
+# Virtual Tracker
+
+Virtual Tracker is a workforce productivity and time-tracking platform for modern teams. It helps organizations capture work accurately, improve visibility, manage projects, and streamline billing and reporting.
+
+## Core value
+- Precise time tracking for remote, hybrid, and field teams
+- Project and task-level visibility
+- Payroll, invoicing, and reporting workflows
+
+## Main pages
+- https://virtualtracker.com/
+- https://virtualtracker.com/features
+- https://virtualtracker.com/pricing
+- https://virtualtracker.com/solutions
+- https://virtualtracker.com/about
+- https://virtualtracker.com/demo
+- https://virtualtracker.com/contact
+- https://virtualtracker.com/resources
