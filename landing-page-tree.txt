@@ -1,4 +1,4 @@
-Landing Web/
+Landing-Web/
 |-- public/
 |   |-- apple-icon.png
 |   |-- icon.svg

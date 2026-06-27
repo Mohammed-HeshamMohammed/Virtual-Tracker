@@ -6,13 +6,13 @@ Virtual-Tracker is a multi-app workspace for a tracker platform with a backend s
 
 - Backend: Node.js-based API and service layer with Firebase integration, mail support, and WebSocket capabilities.
 - Dashboard Web: Next.js dashboard application for managing the product experience.
-- Landing Web: Next.js marketing/landing site.
+- Landing-Web: Next.js marketing/landing site.
 
 ## Tech Stack
 
 - Backend: Node.js, Firebase Admin SDK, Zod, Nodemailer, WS
 - Dashboard Web: Next.js 16, React 19, TypeScript, Tailwind CSS, Radix UI
-- Landing Web: Next.js 15, React 19, TypeScript, Tailwind CSS
+- Landing-Web: Next.js 15, React 19, TypeScript, Tailwind CSS
 
 ## Getting Started
 
@@ -32,10 +32,10 @@ npm install
 npm run dev
 ```
 
-### 3. Landing Web
+### 3. Landing-Web
 
 ```bash
-cd "Landing Web"
+cd Landing-Web
 npm install
 npm run dev
 ```
@@ -49,7 +49,7 @@ Local configuration files such as Firebase credentials and environment-specific 
 ```text
 Backend/
 Dashboard Web/
-Landing Web/
+Landing-Web/
 ```
 
 ## Notes
