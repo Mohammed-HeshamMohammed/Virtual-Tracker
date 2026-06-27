@@ -1,22 +1,5 @@
 import PageShell from "../../components/PageShell"
-
-const featureGroups = [
-  {
-    title: "Time tracking that feels effortless",
-    description: "Capture work from desktop, mobile, and field devices without slowing your team down.",
-    points: ["Automatic reminders", "Project and task-level tracking", "One-click timesheets"],
-  },
-  {
-    title: "Visibility for every manager",
-    description: "Give leaders dashboards that show focus, availability, and output in real time.",
-    points: ["Live activity feeds", "Workload balancing", "Proof-of-work snapshots"],
-  },
-  {
-    title: "Operations that scale",
-    description: "Handle remote, hybrid, and field operations with the same control plane.",
-    points: ["Flexible approval flows", "Role-based permissions", "Custom reporting"],
-  },
-]
+import { FEATURE_GROUPS, PRODUCT_DESCRIPTION } from "@/lib/product-content"
 
 export default function FeaturesPage() {
   return (
@@ -28,15 +11,13 @@ export default function FeaturesPage() {
               Features overview
             </span>
             <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-              Built for teams that need clarity without friction.
+              What the trial client ships today
             </h1>
-            <p className="text-lg text-slate-600">
-              Virtual Tracker brings together time capture, productivity insight, and billing workflows in a single experience.
-            </p>
+            <p className="text-lg text-slate-600">{PRODUCT_DESCRIPTION}</p>
           </div>
 
           <div className="grid gap-6 lg:grid-cols-3">
-            {featureGroups.map((group) => (
+            {FEATURE_GROUPS.map((group) => (
               <div key={group.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-8 shadow-sm">
                 <h2 className="text-xl font-semibold text-slate-900">{group.title}</h2>
                 <p className="mt-3 text-sm leading-7 text-slate-600">{group.description}</p>
@@ -50,6 +31,10 @@ export default function FeaturesPage() {
                 </ul>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950">
+            <strong className="font-semibold">Roadmap areas (UI present, not fully live):</strong> command center dashboard, reports hub, financials, settings integrations, and timesheet approvals UI. Backend APIs exist for several of these but are gated in the app.
           </div>
         </section>
       </main>

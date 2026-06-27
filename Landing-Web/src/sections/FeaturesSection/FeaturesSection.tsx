@@ -1,39 +1,10 @@
 "use client"
 
-const FEATURES = [
-  {
-    tag: "TIME TRACKING INSIGHTS",
-    title: "Master time management",
-    body: "Connect employee time data with live insights, reporting, and costs so teams can act on what they see in real time.",
-    points: ["Real-time productivity metrics", "Detect unusual activity", "Automatic timesheets"],
-    cta: "Explore time tracking",
-    stat: "44:27", statLabel: "Time tracked",
-  },
-  {
-    tag: "REPORTING & OPERATIONAL VISIBILITY",
-    title: "Automate team operations",
-    body: "Virtual Tracker automatically tracks billable hours to reduce manual work around timesheets, payroll, and invoicing.",
-    points: ["Advanced reporting", "Easy-to-use dashboards", "20+ customizable reports"],
-    cta: "View time reports",
-    stat: "63%", statLabel: "Activity rate",
-  },
-  {
-    tag: "TIME-DRIVEN COST CONTROL",
-    title: "Find and fix money leaks",
-    body: "See where billable hours leak with time reports and customizable dashboards. Real-time widgets provide data on project spend, hours worked, and PTO.",
-    points: ["Get your priorities straight", "Control expenses", "Project cost tracking"],
-    cta: "Project cost tracking",
-    stat: "$5,592", statLabel: "Total amount",
-  },
-  {
-    tag: "SMART TIME APPROVALS",
-    title: "Time tracking that simplifies payroll",
-    body: "Stop relying on manual timesheets. Virtual Tracker converts tracked time into intuitive online timesheets that streamline approvals and accelerate payroll.",
-    points: ["Automatic timesheets", "Versatile payroll", "Multi-provider payments"],
-    cta: "Intuitive timesheets",
-    stat: "228:23", statLabel: "Hours logged",
-  },
-]
+import Link from "next/link"
+import AppCtaLink from "@/components/AppCtaLink"
+import { getTrialHref } from "@/lib/site-urls"
+import { HOME_FEATURES } from "@/lib/product-content"
+import { clampIndex } from "@/lib/safe"
 
 function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`px-6 md:px-12 lg:px-20 ${className}`}>{children}</section>
@@ -65,22 +36,25 @@ function ArrowRight({ className = "" }: { className?: string }) {
 }
 
 export default function FeaturesSection({ activeFeature, setActiveFeature }: { activeFeature: number; setActiveFeature: (i: number) => void }) {
+  const featureIndex = clampIndex(activeFeature, HOME_FEATURES.length)
+  const active = HOME_FEATURES[featureIndex]
+
   return (
     <Section className="py-20">
       <div className="text-center mb-4">
-        <span className="text-[#7c3aed] text-xs font-bold uppercase tracking-widest">Better team and time management starts with</span>
+        <span className="text-[#7c3aed] text-xs font-bold uppercase tracking-widest">What ships in the trial client</span>
       </div>
       <h2 className="text-3xl md:text-5xl font-extrabold text-[#0f172a] text-center mb-4">
-        Tangible time tracking data<br />for more profitable decisions
+        Time tracking, activity, and delivery<br />in one Firebase-backed platform
       </h2>
       <p className="text-slate-500 text-center max-w-xl mx-auto mb-14 leading-relaxed">
-        Time tracking is more useful when it provides clarity. Connect employee time data with live insights, reporting, and costs so teams can act on what they see in real time.
+        These are the workspaces and APIs implemented today in the dashboard, backend, and desktop agent.
       </p>
 
       <div className="max-w-5xl mx-auto flex flex-col md:flex-row gap-8 items-start">
         <div className="flex-1 space-y-2">
-          {FEATURES.map((f, i) => {
-            const open = activeFeature === i
+          {HOME_FEATURES.map((f, i) => {
+            const open = featureIndex === i
             return (
               <div
                 key={f.title}
@@ -95,16 +69,16 @@ export default function FeaturesSection({ activeFeature, setActiveFeature }: { a
                       <div className="mt-3 space-y-3">
                         <p className="text-sm text-slate-500 leading-relaxed">{f.body}</p>
                         <ul className="space-y-1.5">
-                          {f.points.map(p => (
+                          {f.points.map((p) => (
                             <li key={p} className="flex items-center gap-2 text-sm text-slate-700">
                               <CheckCircle className="w-4 h-4 text-[#7c3aed] flex-shrink-0" />
                               {p}
                             </li>
                           ))}
                         </ul>
-                        <button className="flex items-center gap-1.5 text-sm font-semibold text-[#7c3aed] hover:gap-2.5 transition-all">
+                        <Link href={f.href} className="flex items-center gap-1.5 text-sm font-semibold text-[#7c3aed] hover:gap-2.5 transition-all">
                           {f.cta} <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
+                        </Link>
                       </div>
                     )}
                   </div>
@@ -118,11 +92,11 @@ export default function FeaturesSection({ activeFeature, setActiveFeature }: { a
         <div className="w-full md:w-72 lg:w-80 flex-shrink-0 sticky top-24">
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-5 shadow-xl">
             <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">
-              {FEATURES[activeFeature].tag}
+              {active.tag}
             </div>
-            <div className="text-white font-bold mb-4 text-sm">{FEATURES[activeFeature].title}</div>
+            <div className="text-white font-bold mb-4 text-sm">{active.title}</div>
             <div className="space-y-2">
-              {FEATURES[activeFeature].points.map(p => (
+              {active.points.map((p) => (
                 <div key={p} className="flex items-center gap-2.5 bg-white/5 rounded-lg px-3 py-2.5">
                   <div className="w-5 h-5 rounded-full bg-violet-500/30 flex items-center justify-center flex-shrink-0">
                     <CheckCircle className="w-3.5 h-3.5 text-violet-400" />
@@ -133,8 +107,8 @@ export default function FeaturesSection({ activeFeature, setActiveFeature }: { a
             </div>
             <div className="mt-4 h-24 bg-white/5 rounded-xl flex items-center justify-center">
               <div className="text-center">
-                <div className="text-2xl font-black text-white tabular-nums">{FEATURES[activeFeature].stat}</div>
-                <div className="text-[10px] text-slate-400 mt-1">{FEATURES[activeFeature].statLabel}</div>
+                <div className="text-2xl font-black text-white tabular-nums">{active.stat}</div>
+                <div className="text-[10px] text-slate-400 mt-1">{active.statLabel}</div>
               </div>
             </div>
           </div>
@@ -142,12 +116,16 @@ export default function FeaturesSection({ activeFeature, setActiveFeature }: { a
       </div>
 
       <div className="flex justify-center gap-4 mt-14">
-        <button className="px-6 py-3 rounded-full font-bold text-sm text-white shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 transition-shadow" style={{ background: "linear-gradient(135deg, #7c3aed, #2563eb)" }}>
-          Start free 14-day trial
-        </button>
-        <button className="px-6 py-3 rounded-full font-semibold text-sm text-[#374151] hover:text-[#0f172a] flex items-center gap-1.5">
-          See all features <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        <AppCtaLink
+          href={getTrialHref()}
+          className="px-6 py-3 rounded-full font-bold text-sm text-white shadow-lg shadow-violet-500/30 hover:shadow-violet-500/50 transition-shadow"
+          style={{ background: "linear-gradient(135deg, #7c3aed, #2563eb)" }}
+        >
+          Open the dashboard
+        </AppCtaLink>
+        <Link href="/features" className="px-6 py-3 rounded-full font-semibold text-sm text-[#374151] hover:text-[#0f172a] flex items-center gap-1.5">
+          All features <ArrowRight className="w-3.5 h-3.5" />
+        </Link>
       </div>
     </Section>
   )

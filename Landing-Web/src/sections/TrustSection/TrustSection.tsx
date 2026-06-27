@@ -1,22 +1,7 @@
 "use client"
 
-const TRUST_CARDS = [
-  {
-    title: "Privacy-first guiding principles",
-    body: "Transparency, Access, and Control - how we give autonomy to every member of the team.",
-    cta: "View our approach",
-  },
-  {
-    title: "Enterprise-Grade Solutions",
-    body: "GDPR, HIPAA, SOC 2 Type II compliance credentials, and more.",
-    cta: "Explore our credentials",
-  },
-  {
-    title: "Over 35 integrations",
-    body: "Level up your workflows with high-end tools like Salesforce, Jira, Slack, Deel, and PayPal.",
-    cta: "See all integrations",
-  },
-]
+import Link from "next/link"
+import { TRUST_CARDS } from "@/lib/product-content"
 
 function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`px-6 md:px-12 lg:px-20 ${className}`}>{children}</section>
@@ -35,13 +20,13 @@ export default function TrustSection() {
     <div style={{ background: "linear-gradient(160deg, #1e1b4b 0%, #4c1d95 60%, #6d28d9 100%)" }} className="py-20">
       <Section>
         <div className="text-center mb-4">
-          <span className="text-violet-300/70 text-xs font-bold uppercase tracking-widest">Trust through transparency</span>
+          <span className="text-violet-300/70 text-xs font-bold uppercase tracking-widest">Security & architecture</span>
         </div>
         <h2 className="text-3xl md:text-5xl font-extrabold text-white text-center mb-4">
-          Built on transparency, security,<br />and seamless integration
+          Firebase-backed with backend-owned rules
         </h2>
         <p className="text-white/50 text-center max-w-xl mx-auto mb-12 leading-relaxed">
-          Designed to give you full visibility, protect your data with enterprise-grade security, and connect effortlessly with the tools you already use.
+          Auth, domain data, and activity ingestion follow the engineering constitution: Firestore for truth, RTDB for presence, API for business logic.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto">
           {TRUST_CARDS.map((c, i) => (
@@ -56,9 +41,9 @@ export default function TrustSection() {
               <div className="p-5">
                 <h3 className="font-bold text-white mb-2">{c.title}</h3>
                 <p className="text-white/50 text-sm leading-relaxed mb-4">{c.body}</p>
-                <button className="flex items-center gap-1.5 text-sm font-semibold text-violet-300 hover:gap-2.5 transition-all">
+                <Link href={c.href} className="flex items-center gap-1.5 text-sm font-semibold text-violet-300 hover:gap-2.5 transition-all">
                   {c.cta} <ArrowRight className="w-3.5 h-3.5" />
-                </button>
+                </Link>
               </div>
             </div>
           ))}

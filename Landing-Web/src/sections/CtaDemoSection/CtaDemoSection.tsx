@@ -1,5 +1,9 @@
 "use client"
 
+import Link from "next/link"
+import AppCtaLink from "@/components/AppCtaLink"
+import { getTrialHref } from "@/lib/site-urls"
+
 function Section({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <section className={`px-6 md:px-12 lg:px-20 ${className}`}>{children}</section>
 }
@@ -16,15 +20,15 @@ export default function CtaDemoSection() {
           <div className="flex-1">
             <h2 className="text-3xl font-extrabold text-white mb-4">See Virtual Tracker in action</h2>
             <p className="text-white/75 mb-6 leading-relaxed">
-              Discover how our time tracking software brings together productivity insights, automated payments, and more â try our interactive demo or start a trial today!
+              Discover how our time tracking software brings together productivity insights, automated payments, and more — try our interactive demo or start a trial today!
             </p>
             <div className="flex flex-wrap gap-3">
-              <button className="px-5 py-3 rounded-full bg-white/10 border border-white/30 text-white font-semibold text-sm hover:bg-white/20 transition-colors">
+              <Link href="/demo" className="px-5 py-3 rounded-full bg-white/10 border border-white/30 text-white font-semibold text-sm hover:bg-white/20 transition-colors">
                 Try a demo now
-              </button>
-              <button className="px-5 py-3 rounded-full bg-white text-[#2563eb] font-semibold text-sm hover:bg-white/90 transition-colors">
+              </Link>
+              <AppCtaLink href={getTrialHref()} className="px-5 py-3 rounded-full bg-white text-[#2563eb] font-semibold text-sm hover:bg-white/90 transition-colors">
                 Start a free trial
-              </button>
+              </AppCtaLink>
             </div>
           </div>
           <div className="w-full md:w-80 bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -41,7 +45,7 @@ export default function CtaDemoSection() {
             <div className="p-4">
               <div className="text-lg font-bold text-slate-800 mb-3">Dashboard</div>
               <div className="grid grid-cols-2 gap-2">
-                {[["$1,852.50", "Spent this week", "â ¬ $211"], ["80:22:23", "Worked today", "â¬ 1:52"], ["131:42", "This week", "â¬ 1:22"], ["81%", "Activity", "â¬ 3%"]].map(([v, l, d]) => (
+                {[["$1,852.50", "Spent this week", "↑ $211"], ["80:22:23", "Worked today", "↑ 1:52"], ["131:42", "This week", "↑ 1:22"], ["81%", "Activity", "↑ 3%"]].map(([v, l, d]) => (
                   <div key={l} className="bg-slate-50 rounded-lg p-2.5">
                     <div className="text-[9px] text-slate-400 mb-0.5">{l}</div>
                     <div className="text-sm font-bold text-slate-800">{v}</div>

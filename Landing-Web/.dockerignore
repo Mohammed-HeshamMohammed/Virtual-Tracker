@@ -1,9 +1,11 @@
 node_modules
 .next
+.git
 .env
 .env.*
 !.env.example
-.git
-*.log
 npm-debug.log*
-README.md
+.DS_Store
+coverage
+*.md
+!README.md
