@@ -27,11 +27,7 @@ const PUBLIC_API_ROUTES = [
   { method: "POST", pattern: /^\/api\/auth\/complete-first-login$/ },
   { method: "POST", pattern: /^\/api\/auth\/notify-password-reset$/ },
   { method: "POST", pattern: /^\/api\/auth\/notify-email-verified$/ },
-  { method: "GET", pattern: /^\/api\/public\/invites\/[^/]+$/ },
-  { method: "POST", pattern: /^\/api\/public\/invites\/[^/]+\/register$/ },
   { method: "GET", pattern: /^\/api\/public\/member-transfer-requests\/[^/]+$/ },
-  { method: "POST", pattern: /^\/api\/activity\/agent\/link\/init$/ },
-  { method: "POST", pattern: /^\/api\/activity\/agent\/link\/exchange$/ },
 ];
 
 /**

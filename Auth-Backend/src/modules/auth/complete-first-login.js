@@ -4,7 +4,7 @@ import { validateRegistrationPassword } from "../../http/password-validation.js"
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
-import { promotePendingMemberCore } from "../members/routes/member-invites.routes.js";
+import { promotePendingMemberCore } from "./promote-pending-member.js";
 import { notifyPasswordUpdated } from "./security-login-alerts.js";
 
 /**

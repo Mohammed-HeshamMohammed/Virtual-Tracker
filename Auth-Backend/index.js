@@ -1,4 +1,4 @@
-// Auth-Backend entry: Firebase auth, invites, onboarding APIs.
+// Auth-Backend entry: Firebase authentication and identity APIs.
 import { getEnv, initConfig } from "./src/config/env.js";
 
 const config = initConfig();
@@ -66,15 +66,7 @@ export function startServer(port = getEnv().server.port) {
       // Keep default version fallback.
     }
 
-    const routes = [
-      "/health",
-      "/api/auth/*",
-      "/api/public/invites/*",
-      "/api/invites/*",
-      "/api/members/preprovision",
-      "/api/members/validate-add",
-      "/api/member-onboarding/*",
-    ];
+    const routes = ["/health", "/api/auth/*"];
 
     logStartup({
       version,

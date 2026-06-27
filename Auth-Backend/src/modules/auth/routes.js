@@ -12,7 +12,7 @@ import { clearProfileAvatar, setProfileAvatarFromUpload, stripBase64DataUrl } fr
 import { deleteViewerSelfAccount, listPendingDeactivationRequests, resolveDeactivationRequest, submitAccountDeactivationRequest } from "./account-deactivation.js";
 import { validateSessionAuthorization, isPasswordProviderUser } from "./session-authorization.js";
 import { completeFirstLoginPasswordChange } from "./complete-first-login.js";
-import { promotePendingMemberCore } from "../members/routes/member-invites.routes.js";
+import { promotePendingMemberCore } from "./promote-pending-member.js";
 import { ensureMemberLinkedRecordsForUserRecord } from "../members/services/ensure-member-linked-records.js";
 import { alignMemberRoleTables } from "../members/services/relation-sync.js";
 import { enforceUnauthorizedPrivilegedRole } from "../members/services/privileged-role-governance.js";
@@ -306,7 +306,7 @@ export async function routeAuth(req, res, url, origin) {
       sendJson(res, origin, 503, {
         success: false,
         error:
-          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then run `npm run sync:firebase-local` in Backend/ or set FIREBASE_* in Backend/.env.",
+          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then set FIREBASE_* in .env or provide firebase-web.local.json.",
       });
       return true;
     }
