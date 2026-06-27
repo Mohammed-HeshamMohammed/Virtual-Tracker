@@ -1,6 +1,0 @@
-export { InfoTab } from "@/features/members/components/modals/member-manage/tabs/info-tab"
-export { EmploymentTab } from "@/features/members/components/modals/member-manage/tabs/employment-tab"
-export { RolesTab } from "@/features/members/components/modals/member-manage/tabs/roles-tab"
-export { PayBillTab } from "@/features/members/components/modals/member-manage/tabs/pay-bill-tab"
-export { WorkLimitsTab } from "@/features/members/components/modals/member-manage/tabs/work-limits-tab"
-export { SettingsTab } from "@/features/members/components/modals/member-manage/tabs/settings-tab"
