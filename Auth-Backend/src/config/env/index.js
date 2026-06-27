@@ -1,6 +1,7 @@
 ﻿import { loadEnvFile } from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultCorsOrigins, getServiceProfile } from "../deployment-profiles.js";
 import { validateEnvSource } from "./schema.js";
 import { toPublicEnv } from "./public.js";
 
@@ -57,12 +58,12 @@ function readCsv(source, key, fallback) {
   return items.length ? items : fallback;
 }
 
-const DEFAULT_CORS_ORIGINS = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost:3001",
-  "http://127.0.0.1:3001",
-];
+/** @param {NodeJS.ProcessEnv} source */
+function resolveCorsOrigins(source, nodeEnv) {
+  const explicit = readCsv(source, "CORS_ORIGINS", []);
+  if (explicit.length > 0) return explicit;
+  return [...defaultCorsOrigins(nodeEnv)];
+}
 
 /**
  * Parse process environment into a typed, frozen configuration object.
@@ -79,17 +80,28 @@ export function buildEnv(source = process.env) {
 
   const nodeEnv = readString(source, "NODE_ENV", "development");
   const isProduction = nodeEnv === "production";
+  const profile = getServiceProfile(nodeEnv);
 
   const captureModeRaw = readString(source, "ACTIVITY_CAPTURE_MODE", "agent").toLowerCase();
   const captureMode = captureModeRaw === "web" ? "web" : "agent";
+
+  const dashboardWebUrl = readString(source, "APP_PUBLIC_URL", profile.dashboardWeb.publicUrl);
+  const frontendOrigin = readString(source, "FRONTEND_ORIGIN", profile.dashboardWeb.publicUrl);
+  const authPublicUrl = readString(source, "AUTH_PUBLIC_URL", profile.authApi.publicUrl);
 
   return Object.freeze({
     nodeEnv,
     isProduction,
     isDevelopment: !isProduction,
 
+    deployment: Object.freeze({
+      tier: profile.tier,
+      containerName: profile.authApi.containerName,
+    }),
+
     server: Object.freeze({
-      port: readPositiveInt(source, "PORT", 5712),
+      port: readPositiveInt(source, "PORT", profile.authApi.port),
+      host: readString(source, "HOST", profile.authApi.host),
     }),
 
     security: Object.freeze({
@@ -99,12 +111,17 @@ export function buildEnv(source = process.env) {
     }),
 
     cors: Object.freeze({
-      origins: Object.freeze(readCsv(source, "CORS_ORIGINS", DEFAULT_CORS_ORIGINS)),
+      origins: Object.freeze(resolveCorsOrigins(source, nodeEnv)),
     }),
 
     urls: Object.freeze({
-      frontendOrigin: readString(source, "FRONTEND_ORIGIN", "http://localhost:3000"),
-      appPublicUrl: readString(source, "APP_PUBLIC_URL", ""),
+      authPublicUrl,
+      dashboardApiUrl: readString(source, "DASHBOARD_API_URL", profile.dashboardApi.publicUrl),
+      landingApiUrl: readString(source, "LANDING_API_URL", profile.landingApi.publicUrl),
+      landingWebUrl: readString(source, "LANDING_WEB_URL", profile.landingWeb.publicUrl),
+      dashboardWebUrl: readString(source, "DASHBOARD_WEB_URL", profile.dashboardWeb.publicUrl),
+      frontendOrigin,
+      appPublicUrl: dashboardWebUrl,
     }),
 
     firebase: Object.freeze({
@@ -205,7 +222,7 @@ export function getPublicEnv() {
   return toPublicEnv(getEnv());
 }
 
-/** @internal Tests only ΓÇö re-read process.env after mutations. */
+/** @internal Tests only — re-read process.env after mutations. */
 export function __resetEnvForTests() {
   cached = null;
 }

@@ -15,12 +15,15 @@ Multi-app workspace for the Virtual Tracker platform: auth API, dashboard API, d
 
 Each branch contains **only** the service it deploys. Point Coolify at the folder in the **Base Directory** column.
 
-| Branch | Folder | Base Directory |
-|--------|--------|----------------|
-| `Auth-Production` | Auth API + Docker | `Auth-Backend` |
-| `DashboardBackend-Prod` | Dashboard API + Docker | `Dashboard-Backend` |
-| `LandingWeb-Prod` | Landing site + Docker | `Landing-Web` |
-| `LandingWebBackend-Prod` | Landing API + Docker | `Landing-Backend` |
+| # | Service | Public domain | Coolify / container name | Branch | Base directory |
+|---|---------|---------------|--------------------------|--------|----------------|
+| 1 | Auth Backend | `auth.myvirtualtracker.com` | `vt-auth-api` | `Auth-Production` | `Auth-Backend` |
+| 2 | Dashboard Backend | `dashapi.myvirtualtracker.com` | `vt-dashboard-api` | `DashboardBackend-Prod` | `Dashboard-Backend` |
+| 3 | Landing Web Backend | `api.myvirtualtracker.com` | `vt-landing-api` | `LandingWebBackend-Prod` | `Landing-Backend` |
+| 4 | Landing Web | `myvirtualtracker.com` | `vt-landing-web` | `LandingWeb-Prod` | `Landing-Web` |
+| 5 | Dashboard Web | `app.myvirtualtracker.com` | `vt-dashboard-web` | *(main build)* | `Dashboard Web` |
+
+Auth-Backend reads platform URLs from `Auth-Backend/src/config/deployment-profiles.js` (local defaults on `main`, production domains when `NODE_ENV=production` on `Auth-Production`).
 
 ## Tech stack
 
@@ -38,7 +41,7 @@ npm install
 npm run dev
 ```
 
-Copy `.env` values from Firebase Console (see `Auth-Backend/.env` — not committed).
+Copy `.env.example` to `.env` and fill Firebase/email values (`.env` is not committed). Defaults target local ports in `src/config/deployment-profiles.js` (auth **5712**, dashboard API **5713**, dashboard web **3000**, landing **3001**).
 
 ### 2. Dashboard-Backend
 

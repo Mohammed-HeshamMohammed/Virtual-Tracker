@@ -19,13 +19,28 @@ export function toPublicEnv(config) {
   return Object.freeze({
     nodeEnv: config.nodeEnv,
     isProduction: config.isProduction,
-    server: Object.freeze({ port: config.server.port }),
+    deployment: Object.freeze({
+      tier: config.deployment.tier,
+      containerName: config.deployment.containerName,
+    }),
+    server: Object.freeze({
+      port: config.server.port,
+      host: config.server.host,
+    }),
     security: Object.freeze({
       allowInsecureHttp: config.security.allowInsecureHttp,
       disableTlsVerificationInDev: config.security.disableTlsVerificationInDev,
     }),
-    cors: Object.freeze({ originCount: config.cors.origins.length }),
+    cors: Object.freeze({
+      originCount: config.cors.origins.length,
+      origins: Object.freeze([...config.cors.origins]),
+    }),
     urls: Object.freeze({
+      authPublicUrl: config.urls.authPublicUrl,
+      dashboardApiUrl: config.urls.dashboardApiUrl,
+      landingApiUrl: config.urls.landingApiUrl,
+      landingWebUrl: config.urls.landingWebUrl,
+      dashboardWebUrl: config.urls.dashboardWebUrl,
       frontendOrigin: config.urls.frontendOrigin,
       appPublicUrl: config.urls.appPublicUrl || null,
     }),

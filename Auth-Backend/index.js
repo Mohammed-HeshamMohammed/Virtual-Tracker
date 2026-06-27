@@ -54,12 +54,12 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-export function startServer(port = getEnv().server.port) {
+export function startServer(port = getEnv().server.port, host = getEnv().server.host) {
   const server = createServer();
   activeServer = server;
   registerServerErrorHandler(server, port);
 
-  server.listen(port, async () => {
+  server.listen(port, host, async () => {
     const db = getDb();
     logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
 
@@ -110,7 +110,12 @@ export function startServer(port = getEnv().server.port) {
 
     await logEmailDeliveryStatusAsync();
 
-    console.log(`Auth API server listening on http://localhost:${port}`);
+    const { urls, deployment } = getEnv();
+    console.log(
+      `Auth API listening on ${host}:${port} (${getEnv().nodeEnv}, ${deployment.containerName})`,
+    );
+    console.log(`  Public URL: ${urls.authPublicUrl}`);
+    console.log(`  Dashboard Web: ${urls.dashboardWebUrl}`);
   });
   return server;
 }
