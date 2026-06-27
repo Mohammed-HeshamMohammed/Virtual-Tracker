@@ -119,48 +119,33 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 
 ---
 
-## 4. `main` vs `Auth-Production`
+## 4. Production branches (synced 2026-06-27)
 
-| | **`main` (`1be9b36`)** | **`Auth-Production` (`cec99e2`)** |
-| --- | --- | --- |
-| **Router** | 6 AuthN routes | ~20+ fat `/api/auth/*` routes |
-| **`authn-paths.js`** | ✅ | ❌ |
-| **`src/` size** | 33 files | ~116+ files (old modules) |
-| **`.env.example`** | Local DEV + Production; Firebase only | Production-only block; Firebase only |
-| **`README.md`** | Full service doc | Short outdated blurb |
-| **`COOLIFY.md`** | ❌ (use `deploy/README.md`) | ✅ Coolify cheat sheet |
-| **`scripts/`** | ❌ removed | ✅ still present |
-| **Coolify deploy** | **Not updated until you merge & redeploy** | **Still runs old fat API** |
+| | **`main`** | **`Auth-Production`** | **`DashboardBackend-Prod`** |
+| --- | --- | --- | --- |
+| **Scope** | Full monorepo | `Auth-Backend/` only | `Dashboard-Backend/` only |
+| **Auth router** | 6 AuthN routes | ✅ same as `main` + `COOLIFY.md` | N/A (deny list for Auth paths) |
+| **Identity auth** | Dashboard modules | N/A | ✅ `identity-routes.js`, `session-bootstrap.js`, `GET /api/readiness` |
+| **Remote** | `origin/main` @ `a3e7268` | `origin/Auth-Production` @ `c50b836` | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
-  main (1be9b36)  ──►  target for all new work
-        │
-        │  merge / cherry-pick + redeploy vt-auth-api
-        ▼
-  Auth-Production  ──►  what Coolify builds today (behind)
+  main ──► Auth-Production     (0373304 + merge → pushed)
+  main ──► DashboardBackend-Prod (983549d → pushed)
 ```
 
-### After merging to `Auth-Production`, keep:
-
-- `Auth-Backend/COOLIFY.md` — add back if merge deletes it; or point Coolify doc to `deploy/README.md`.
-- Production `.env.example` — merge with `main`'s `#Local DEV` block if devs use that branch locally.
-
-### Drop or relocate from production branch:
-
-- `Auth-Backend/scripts/` — ops scripts; move to repo tooling or Dashboard if still needed.
-- Any duplicate `src/app.js` / old `core/middleware/` tree if merge reintroduces them.
+**Diff vs `main` (intentional):** each prod branch keeps its own `COOLIFY.md` in the service folder.
 
 ---
 
-## 5. Sync checklist (`Auth-Production`)
+## 5. Deploy checklist (Coolify)
 
-- [ ] Merge `main` into `Auth-Production` (or cherry-pick `1be9b36`).
-- [ ] Resolve conflicts — **keep slim `routes.js` + `authn-paths.js` from `main`**.
-- [ ] Preserve `COOLIFY.md` (or copy settings into deploy docs).
-- [ ] Redeploy **`vt-auth-api`** on Coolify from updated branch.
-- [ ] Redeploy **`vt-dashboard-api`** and **`vt-dashboard-web`** (same commit — identity routes + client routing).
-- [ ] Confirm gateway sends only six Auth paths to auth container (`deploy/Caddyfile`).
-- [ ] Smoke test (below).
+- [x] `Auth-Production` — slim Auth-Backend copied from `main`, pushed
+- [x] `DashboardBackend-Prod` — identity routes + session-bootstrap from `main`, pushed
+- [ ] Redeploy **`vt-auth-api`** from `Auth-Production`
+- [ ] Redeploy **`vt-dashboard-api`** from `DashboardBackend-Prod`
+- [ ] Redeploy **`vt-dashboard-web`** from `main` (or your dashboard web prod branch)
+- [ ] Confirm gateway routes six Auth paths to auth (`deploy/Caddyfile`)
+- [ ] Smoke test (below)
 
 ---
 
@@ -204,7 +189,7 @@ curl -s http://localhost:5713/api/readiness
 | Item | Notes |
 | --- | --- |
 | Remove `nodemailer`, `ws` from `Auth-Backend/package.json` | Likely unused after slim; verify no imports |
-| Push `main` to `origin` | Local branch is ahead 3 commits |
+| Push `main` to `origin` | ✅ Done (`a3e7268`) |
 | Multi-instance rate limiting | In-memory limiter today; add gateway or Redis at scale |
 | Delete dead `Dashboard-Backend/src/modules/auth/routes.js` | Old fat router if nothing imports it |
 
@@ -224,4 +209,4 @@ curl -s http://localhost:5713/api/readiness
 
 ## 10. One-line summary
 
-**`main` ships the final 6-route Auth-Backend; `Auth-Production` still runs the old fat router until you merge `1be9b36`, redeploy Coolify, and deploy matching Dashboard + frontend from the same commit.**
+**`main`, `Auth-Production`, and `DashboardBackend-Prod` are aligned on code. Redeploy all three Coolify services + dashboard web to activate the split in production.**
