@@ -23,12 +23,9 @@ import { routeTasks } from "../modules/tasks/routes.js";
 import { routeNotifications } from "../modules/notifications/routes.js";
 import { routeDashboard } from "../modules/dashboard/routes.js";
 import { routeBootstrap } from "../modules/bootstrap/routes.js";
-
-/** HTTP routes served by Auth-Backend (not this service). */
-function isAuthBackendRoute(pathname) {
-  const path = pathname.replace(/^\/api\/v1\//, "/api/");
-  return path.startsWith("/api/auth/");
-}
+import { routeAuthIdentity } from "../modules/auth/identity-routes.js";
+import { isAuthnApiPath } from "../modules/auth/authn-paths.js";
+import { probeFirestoreReadiness } from "../modules/auth/readiness.js";
 
 export async function handleRequest(req, res) {
   const origin = req.headers.origin;
@@ -79,17 +76,66 @@ export async function handleRequest(req, res) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/readiness") {
+    applyCors(res, origin);
+    const readiness = await probeFirestoreReadiness(getDb());
+    if (readiness.ok) {
+      sendJson(res, origin, 200, { success: true, firestore: "ok" });
+      return;
+    }
+    sendJson(res, origin, readiness.status, {
+      success: false,
+      code: readiness.code,
+      error: readiness.error,
+    });
+    return;
+  }
+
   if (url.pathname.startsWith("/monitor")) {
     if (await routeMonitor(req, res, url)) return;
   }
 
-  if (isAuthBackendRoute(url.pathname)) {
+  if (url.pathname.startsWith("/api/auth/") || url.pathname.startsWith("/api/v1/auth/")) {
+    if (isAuthnApiPath(url.pathname)) {
+      applyCors(res, origin);
+      sendJson(res, origin, 404, {
+        success: false,
+        error: "This route is handled by Auth-Backend.",
+        code: "AUTH_BACKEND_ROUTE",
+      });
+      return;
+    }
+
+    const db = getDb();
+    if (!db) {
+      applyCors(res, origin);
+      res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
+      res.end(JSON.stringify({ success: false, error: "Firestore is not configured" }));
+      return;
+    }
+
+    const rateLimited = await checkRateLimit(req, url);
+    if (rateLimited) {
+      applyCors(res, origin);
+      res.writeHead(429, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Retry-After": String(rateLimited.retryAfterSec),
+        ...corsHeaders(origin),
+      });
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: "Too many requests. Please try again later.",
+        }),
+      );
+      return;
+    }
+
+    if (await routeAuthIdentity(req, res, url, origin)) return;
+
     applyCors(res, origin);
-    sendJson(res, origin, 404, {
-      success: false,
-      error: "This route is handled by Auth-Backend.",
-      code: "AUTH_BACKEND_ROUTE",
-    });
+    res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
+    res.end(JSON.stringify({ success: false, error: "Not found" }));
     return;
   }
 

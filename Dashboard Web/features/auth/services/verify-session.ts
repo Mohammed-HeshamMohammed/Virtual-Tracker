@@ -1,6 +1,5 @@
 /* eslint-disable react-doctor/js-combine-iterations */
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
 import { parseAuthSessionErrorCode, type AuthSessionErrorCode } from "@/features/auth/services/auth-session-errors"
 import { handleSuspiciousAuthFailure, isSuspiciousAuthError } from "@/features/auth/services/browser-state-hygiene"
 import { throwIfQuotaExceeded } from "@/features/auth/services/firestore-quota"
@@ -138,39 +137,77 @@ export type VerifyIdTokenResult =
   | { success: false; error: string; code?: AuthSessionErrorCode }
 
 /**
- * Verifies the ID token and upserts the Firestore `User_profiles/{uid}` document on the Backend.
+ * Verifies the ID token (Auth-Backend) then bootstraps the session (Dashboard-Backend).
  */
 export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
-  let res: Response
+  let verifyRes: Response
   try {
-    res = await apiFetch(`${getApiBaseUrl()}/api/auth/verify`, {
+    verifyRes = await apiFetch("/api/auth/verify", {
       method: "POST",
       body: JSON.stringify({}),
     })
   } catch {
     return { success: false, error: "Failed to fetch" }
   }
-  const data: unknown = await res.json().catch(() => ({}))
-  if (!res.ok) {
+
+  const verifyData: unknown = await verifyRes.json().catch(() => ({}))
+  if (!verifyRes.ok) {
+    const err =
+      verifyData && typeof verifyData === "object" && "error" in verifyData && typeof (verifyData as { error: unknown }).error === "string"
+        ? (verifyData as { error: string }).error
+        : `HTTP ${verifyRes.status}`
+    const code = parseAuthSessionErrorCode(verifyData)
+    if (isSuspiciousAuthError(err)) {
+      await handleSuspiciousAuthFailure()
+    }
+    throwIfQuotaExceeded(verifyRes.status, err, code)
+    if (verifyRes.status === 503 || code === "SERVICE_UNAVAILABLE") {
+      throw new ServiceUnavailableError(err || "Service temporarily unavailable", code ?? "SERVICE_UNAVAILABLE")
+    }
+    return { success: false, error: err, ...(code ? { code } : {}) }
+  }
+  if (!verifyData || typeof verifyData !== "object" || (verifyData as { success?: unknown }).success !== true) {
+    return { success: false, error: "Invalid verify response" }
+  }
+
+  let bootstrapRes: Response
+  try {
+    bootstrapRes = await apiFetch("/api/auth/session-bootstrap", {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+  } catch {
+    return { success: false, error: "Failed to fetch" }
+  }
+
+  const data: unknown = await bootstrapRes.json().catch(() => ({}))
+  if (!bootstrapRes.ok) {
     const err =
       data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
         ? (data as { error: string }).error
-        : `HTTP ${res.status}`
+        : `HTTP ${bootstrapRes.status}`
     const code = parseAuthSessionErrorCode(data)
     if (isSuspiciousAuthError(err)) {
       await handleSuspiciousAuthFailure()
     }
-    throwIfQuotaExceeded(res.status, err, code)
-    if (res.status === 503 || code === "SERVICE_UNAVAILABLE") {
+    throwIfQuotaExceeded(bootstrapRes.status, err, code)
+    if (bootstrapRes.status === 503 || code === "SERVICE_UNAVAILABLE") {
       throw new ServiceUnavailableError(err || "Service temporarily unavailable", code ?? "SERVICE_UNAVAILABLE")
     }
     return { success: false, error: err, ...(code ? { code } : {}) }
   }
   if (!data || typeof data !== "object" || (data as { success?: unknown }).success !== true) {
-    return { success: false, error: "Invalid verify response" }
+    return { success: false, error: "Invalid session bootstrap response" }
   }
   const profile = parseProfile((data as { profile?: unknown }).profile)
   const memberIdRaw = (data as { memberId?: unknown }).memberId
   const memberId = typeof memberIdRaw === "string" && memberIdRaw.trim() ? memberIdRaw.trim() : undefined
-  return { success: true, ...(profile ? { profile } : {}), ...(memberId ? { memberId } : {}) }
+  const authorizedRaw = (data as { authorized?: unknown }).authorized
+  const authorized = typeof authorizedRaw === "boolean" ? authorizedRaw : undefined
+  return {
+    success: true,
+    ...(profile ? { profile } : {}),
+    ...(memberId ? { memberId } : {}),
+    ...(authorized !== undefined ? { authorized } : {}),
+  }
 }

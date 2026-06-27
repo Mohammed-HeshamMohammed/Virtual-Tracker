@@ -32,26 +32,21 @@ const nextConfig = {
       return [{ source: "/api/:path*", destination: `${gatewayBase}/api/:path*` }]
     }
 
+    const authnPaths = [
+      "firebase-config",
+      "readiness",
+      "password-policy",
+      "validate-password",
+      "verify",
+      "resolve-sign-in-methods",
+    ]
+    const authRewrites = authnPaths.flatMap((segment) => [
+      { source: `/api/auth/${segment}`, destination: `${authDevBase}/api/auth/${segment}` },
+      { source: `/api/v1/auth/${segment}`, destination: `${authDevBase}/api/v1/auth/${segment}` },
+    ])
+
     return [
-      { source: "/api/auth/:path*", destination: `${authDevBase}/api/auth/:path*` },
-      { source: "/api/v1/auth/:path*", destination: `${authDevBase}/api/v1/auth/:path*` },
-      { source: "/api/public/invites/:path*", destination: `${authDevBase}/api/public/invites/:path*` },
-      { source: "/api/invites/open-link", destination: `${authDevBase}/api/invites/open-link` },
-      { source: "/api/members/preprovision", destination: `${authDevBase}/api/members/preprovision` },
-      { source: "/api/members/validate-add", destination: `${authDevBase}/api/members/validate-add` },
-      { source: "/api/member-onboarding/:path*", destination: `${authDevBase}/api/member-onboarding/:path*` },
-      {
-        source: "/api/invites/:id/resend",
-        destination: `${authDevBase}/api/invites/:id/resend`,
-      },
-      {
-        source: "/api/invites/:id/link",
-        destination: `${authDevBase}/api/invites/:id/link`,
-      },
-      {
-        source: "/api/invites/:id/renew",
-        destination: `${authDevBase}/api/invites/:id/renew`,
-      },
+      ...authRewrites,
       { source: "/api/:path*", destination: `${dashboardDevBase}/api/:path*` },
     ]
   },

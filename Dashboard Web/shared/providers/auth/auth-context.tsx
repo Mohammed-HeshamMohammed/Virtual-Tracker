@@ -75,7 +75,8 @@ import {
   messageForAccountExistsWithDifferentCredential,
 } from "@/features/auth/services/sign-in-method-guard"
 import { isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
-import { checkBackendReadiness } from "@/features/auth/services/backend-availability"
+import { prefetchAuthBootResources } from "@/features/auth/services/auth-boot-prefetch"
+import { checkAllBackendsReady } from "@/features/auth/services/backend-availability"
 import {
   BACKEND_CONNECTION_LOST,
   BACKEND_CONNECTION_RESTORED,
@@ -531,7 +532,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setBackendReconnecting(true)
       void (async () => {
         try {
-          const readiness = await checkBackendReadiness()
+          const readiness = await checkAllBackendsReady()
           if (readiness.ok) {
             notifyBackendConnectionRestored()
             setSessionConnectionError(null)
@@ -563,7 +564,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let cancelled = false
 
     ; (async () => {
-      const readiness = await checkBackendReadiness()
+      const readiness = await prefetchAuthBootResources()
       if (!readiness.ok) {
         if (!cancelled) {
           setInitError(readiness.error)

@@ -6,7 +6,7 @@ Next.js frontend for Virtual-Tracker, configured for the split backend layout.
 
 | Service | Dev port | Routes |
 |---------|----------|--------|
-| [Auth-Backend](../Auth-Backend) | 5712 | `/api/auth/*`, invites, onboarding |
+| [Auth-Backend](../Auth-Backend) | 5712 | AuthN only (`/api/auth/verify`, firebase-config, password policy, …) |
 | [Dashboard-Backend](../Dashboard-Backend) | 5713 | projects, members, tasks, activity, … |
 | [deploy gateway](../deploy) (production) | 443 | both via `https://api.yourdomain.com` |
 

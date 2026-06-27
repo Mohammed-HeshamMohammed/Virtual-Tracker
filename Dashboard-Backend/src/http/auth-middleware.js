@@ -13,13 +13,10 @@ import { resolveMemberRoleNameCached } from "./role-cache.js";
  * All other `/api/*` routes require a valid Firebase ID token + members row.
  */
 const PUBLIC_API_ROUTES = [
-  { method: "GET", pattern: /^\/api\/auth\/firebase-config$/ },
-  { method: "GET", pattern: /^\/api\/auth\/readiness$/ },
-  { method: "GET", pattern: /^\/api\/auth\/password-policy$/ },
-  { method: "POST", pattern: /^\/api\/auth\/verify$/ },
-  { method: "POST", pattern: /^\/api\/auth\/resolve-sign-in-methods$/ },
+  { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
+  { method: "GET", pattern: /^\/api\/auth\/sign-in-client-extras$/ },
+  { method: "POST", pattern: /^\/api\/auth\/send-verification-email$/ },
   { method: "POST", pattern: /^\/api\/auth\/access-request$/ },
-  { method: "POST", pattern: /^\/api\/auth\/validate-password$/ },
   { method: "POST", pattern: /^\/api\/auth\/phone-verification\/send$/ },
   { method: "POST", pattern: /^\/api\/auth\/phone-verification\/confirm$/ },
   { method: "POST", pattern: /^\/api\/auth\/phone-verification\/exchange$/ },
@@ -47,10 +44,9 @@ export function isPublicApiRoute(method, pathname) {
  * Routes allowed while `must_change_password` is true (first-login onboarding only).
  */
 const MUST_CHANGE_PASSWORD_ALLOWED = [
-  { method: "POST", pattern: /^\/api\/auth\/verify$/ },
+  { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
   { method: "POST", pattern: /^\/api\/auth\/complete-first-login$/ },
   { method: "POST", pattern: /^\/api\/auth\/promote-pending-member$/ },
-  { method: "POST", pattern: /^\/api\/auth\/validate-password$/ },
   { method: "GET", pattern: /^\/api\/auth\/password-policy$/ },
   { method: "GET", pattern: /^\/api\/auth\/firebase-config$/ },
   { method: "GET", pattern: /^\/api\/auth\/readiness$/ },

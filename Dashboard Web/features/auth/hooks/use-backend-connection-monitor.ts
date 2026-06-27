@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
-import { checkBackendReadiness } from "@/features/auth/services/backend-availability"
+import { checkAllBackendsReady } from "@/features/auth/services/backend-availability"
 
 const PROBE_INTERVAL_MS = 20_000
 
@@ -14,7 +14,7 @@ export function useBackendConnectionMonitor(enabled: boolean): void {
 
     const probe = async () => {
       if (cancelled) return
-      await checkBackendReadiness()
+      await checkAllBackendsReady()
     }
 
     void probe()

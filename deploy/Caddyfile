@@ -9,7 +9,7 @@
 {$API_DOMAIN} {
 	encode gzip
 
-	@auth_api path /api/auth/* /api/v1/auth/*
+	@auth_api path_regexp ^/api/(v1/)?auth/(firebase-config|readiness|password-policy|validate-password|verify|resolve-sign-in-methods)$
 
 	handle @auth_api {
 		reverse_proxy auth-backend:5712

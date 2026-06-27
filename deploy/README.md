@@ -143,7 +143,8 @@ docker compose up -d --build   # after code changes
 
 | Path | Backend |
 |------|---------|
-| `/api/auth/*` | Auth-Backend |
+| `/api/auth/firebase-config`, `readiness`, `password-policy`, `validate-password`, `verify`, `resolve-sign-in-methods` | Auth-Backend |
+| `/api/auth/*` (else — session-bootstrap, profile, phone verification, deactivation, …) | Dashboard-Backend |
 | `/api/presence/ws` | Dashboard-Backend |
 | `/api/*` (else — invites, members, onboarding, projects, …) | Dashboard-Backend |
 

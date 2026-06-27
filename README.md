@@ -4,7 +4,7 @@ Split layout for containerized VPS deployment.
 
 | Folder | Role | Container |
 |--------|------|-----------|
-| [Auth-Backend](./Auth-Backend) | Authentication & identity API | `vt-auth-backend` |
+| [Auth-Backend](./Auth-Backend) | Firebase authentication API (token verify, config, password policy) | `vt-auth-backend` |
 | [Dashboard-Backend](./Dashboard-Backend) | Members, invites, projects, activity API | `vt-dashboard-backend` |
 | [Dashboard Web](./Dashboard%20Web) | Next.js dashboard app | `vt-dashboard-web` |
 | [Landing-Web](./Landing-Web) | Marketing site | `vt-landing-web` |

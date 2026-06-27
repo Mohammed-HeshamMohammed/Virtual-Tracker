@@ -216,19 +216,6 @@ const envSourceSchema = z
         });
       }
     }
-
-    if (isProduction) {
-      const emailConfigured = Boolean(
-        data.RESEND_API_KEY || (smtpHost && smtpUser && smtpPass),
-      );
-      if (!emailConfigured) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["RESEND_API_KEY"],
-          message: "Production requires email delivery (RESEND_API_KEY or full SMTP configuration)",
-        });
-      }
-    }
   });
 
 /**

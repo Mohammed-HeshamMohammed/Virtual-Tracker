@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import type { FirebaseOptions } from "firebase/app"
 
 let cached: FirebaseOptions | null = null
@@ -19,7 +19,7 @@ export function clearFirebaseWebConfigCache(): void {
 
 export async function fetchPhoneVerificationConfig(): Promise<PhoneVerificationConfig> {
   if (cachedPhoneVerificationConfig) return cachedPhoneVerificationConfig
-  await fetchFirebaseWebConfigFromBackend()
+  await prefetchSignInClientExtras()
   return cachedPhoneVerificationConfig ?? { mode: "firebase", allowFirebaseInDev: false }
 }
 
@@ -28,14 +28,40 @@ export async function fetchPhoneVerificationMode(): Promise<"dev" | "firebase"> 
   return config.mode
 }
 
+async function loadSignInClientExtras(): Promise<void> {
+  if (cachedPhoneVerificationConfig) return
+  const res = await apiFetch(apiPath("/api/auth/sign-in-client-extras"), {}, { requireAuth: false })
+  const data: unknown = await res.json().catch(() => ({}))
+  if (!res.ok || !data || typeof data !== "object" || (data as { success?: unknown }).success !== true) {
+    cachedPhoneVerificationConfig = { mode: "firebase", allowFirebaseInDev: false }
+    return
+  }
+  const phoneVerificationRaw = (data as { phoneVerification?: { mode?: unknown; allowFirebaseInDev?: unknown } })
+    .phoneVerification
+  const modeRaw = typeof phoneVerificationRaw?.mode === "string" ? phoneVerificationRaw.mode : "firebase"
+  cachedPhoneVerificationConfig = {
+    mode: modeRaw === "dev" ? "dev" : "firebase",
+    allowFirebaseInDev: phoneVerificationRaw?.allowFirebaseInDev === true,
+  }
+}
+
+/** Dashboard-Backend sign-in UI flags (parallel with other boot calls). */
+export function prefetchSignInClientExtras(): Promise<void> {
+  return loadSignInClientExtras()
+}
+
+/** Auth-Backend Firebase web config (parallel with other boot calls). */
+export function prefetchFirebaseWebConfig(): Promise<FirebaseOptions> {
+  return fetchFirebaseWebConfigFromBackend()
+}
+
 /**
- * Fetches the public Firebase web config from the Backend (not embedded in the client bundle as secrets).
- * Same values the Firebase client SDK would read from `NEXT_PUBLIC_*` in a monolithic app.
+ * Fetches the public Firebase web config from Auth-Backend (not embedded in the client bundle).
  */
 export async function fetchFirebaseWebConfigFromBackend(): Promise<FirebaseOptions> {
   if (cached) return cached
 
-  const res = await apiFetch(`${getApiBaseUrl()}/api/auth/firebase-config`, {}, { requireAuth: false })
+  const res = await apiFetch(apiPath("/api/auth/firebase-config"), {}, { requireAuth: false })
   const data: unknown = await res.json().catch(() => ({}))
   if (!res.ok) {
     const err =
@@ -56,14 +82,5 @@ export async function fetchFirebaseWebConfigFromBackend(): Promise<FirebaseOptio
     throw new Error("Invalid firebase-config response from API")
   }
   cached = (data as { config: FirebaseOptions }).config
-  const phoneVerificationRaw =
-    data && typeof data === "object" && "phoneVerification" in data
-      ? (data as { phoneVerification?: { mode?: unknown; allowFirebaseInDev?: unknown } }).phoneVerification
-      : undefined
-  const modeRaw = typeof phoneVerificationRaw?.mode === "string" ? phoneVerificationRaw.mode : "firebase"
-  cachedPhoneVerificationConfig = {
-    mode: modeRaw === "dev" ? "dev" : "firebase",
-    allowFirebaseInDev: phoneVerificationRaw?.allowFirebaseInDev === true,
-  }
   return cached
 }

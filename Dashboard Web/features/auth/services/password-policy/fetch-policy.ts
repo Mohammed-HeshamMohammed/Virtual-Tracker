@@ -43,7 +43,7 @@ export function getCachedPasswordPolicy(): PasswordPolicyResponse | null {
 
 async function fetchPasswordPolicyFromNetwork(): Promise<PasswordPolicyResponse> {
   const endpoint = `${getApiBaseUrl()}/api/auth/password-policy`
-  const res = await apiFetch(endpoint, { method: "GET" }, { requireAuth: false })
+  const res = await apiFetch(endpoint, { method: "GET", cache: "no-cache" }, { requireAuth: false })
   const data = (await res.json().catch(() => ({}))) as {
     success?: boolean
     version?: string
@@ -63,26 +63,29 @@ async function fetchPasswordPolicyFromNetwork(): Promise<PasswordPolicyResponse>
   }
 }
 
+/**
+ * Always revalidates against the server (version field). Uses sessionStorage only as offline fallback.
+ */
 export async function fetchPasswordPolicy(): Promise<PasswordPolicyResponse> {
   if (memoryCache) return memoryCache
   if (inFlight) return inFlight
 
   inFlight = (async () => {
     const sessionCached = readSessionCache()
-    if (sessionCached) {
-      memoryCache = sessionCached
-      return sessionCached
-    }
-
     try {
-      const policy = await fetchPasswordPolicyFromNetwork()
-      memoryCache = policy
-      writeSessionCache(policy)
-      return policy
+      const fresh = await fetchPasswordPolicyFromNetwork()
+      memoryCache = fresh
+      if (!sessionCached || sessionCached.version !== fresh.version) {
+        writeSessionCache(fresh)
+      }
+      return fresh
     } catch {
-      const fallback = FALLBACK_PASSWORD_POLICY
-      memoryCache = fallback
-      return fallback
+      if (sessionCached) {
+        memoryCache = sessionCached
+        return sessionCached
+      }
+      memoryCache = FALLBACK_PASSWORD_POLICY
+      return FALLBACK_PASSWORD_POLICY
     } finally {
       inFlight = null
     }
