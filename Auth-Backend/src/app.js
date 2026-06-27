@@ -5,6 +5,7 @@ import { rejectSensitiveQueryParams } from "./core/middleware/security/password-
 import { assertSecureTransport } from "./core/middleware/security/tls-enforcement.js";
 import { getSecurityHeaders } from "./core/middleware/security/security-headers.js";
 import { routeAuth } from "./modules/auth/routes.js";
+import { routeInvites } from "./modules/invites/routes.js";
 
 export async function handleRequest(req, res) {
   const origin = req.headers.origin;
@@ -85,6 +86,52 @@ export async function handleRequest(req, res) {
     });
     res.end(JSON.stringify({ success: false, error: "Not found" }));
     return;
+  }
+
+  const db = getDb();
+  if (!db && url.pathname.startsWith("/api/")) {
+    applyCors(res, origin);
+    res.writeHead(503, {
+      "Content-Type": "application/json; charset=utf-8",
+      ...corsHeaders(origin),
+      ...getSecurityHeaders(req),
+    });
+    res.end(JSON.stringify({ success: false, error: "Firestore is not configured" }));
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/") && db) {
+    const rateLimited = await checkRateLimit(req, url);
+    if (rateLimited) {
+      applyCors(res, origin);
+      res.writeHead(429, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Retry-After": String(rateLimited.retryAfterSec),
+        ...corsHeaders(origin),
+      });
+      res.end(
+        JSON.stringify({
+          success: false,
+          error: "Too many requests. Please try again later.",
+        }),
+      );
+      return;
+    }
+
+    const { enforceApiAuthentication } = await import("./core/middleware/auth/auth-middleware.js");
+    const authGate = await enforceApiAuthentication(req, url, db);
+    if (!authGate.allowed) {
+      applyCors(res, origin);
+      res.writeHead(authGate.status, {
+        "Content-Type": "application/json; charset=utf-8",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end(JSON.stringify({ success: false, error: authGate.error, code: authGate.code }));
+      return;
+    }
+
+    if (await routeInvites(req, res, url, origin)) return;
   }
 
   // Reject all other endpoints cleanly with a 404

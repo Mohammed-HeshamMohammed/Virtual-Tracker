@@ -1,5 +1,7 @@
 export {
   PASSWORD_POLICY,
+  PASSWORD_POLICY_VERSION,
+  PASSWORD_POLICY_LAST_UPDATED,
 } from "./definition.js";
 
 export {

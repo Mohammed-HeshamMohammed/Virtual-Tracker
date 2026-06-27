@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+﻿import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import admin from "firebase-admin";
@@ -11,12 +11,12 @@ let testDbOverride = null;
 /** @type {import("firebase-admin/auth").Auth | null} */
 let testAuthOverride = null;
 
-/** @internal Test simulation only — in-memory Firestore stand-in. */
+/** @internal Test simulation only ΓÇö in-memory Firestore stand-in. */
 export function __setTestDb(override) {
   testDbOverride = override ?? null;
 }
 
-/** @internal Test simulation only — mock Firebase Auth Admin. */
+/** @internal Test simulation only ΓÇö mock Firebase Auth Admin. */
 export function __setTestAuth(override) {
   testAuthOverride = override ?? null;
 }
@@ -106,7 +106,7 @@ export function warnIfDatabaseUrlMismatch() {
 }
 
 export function readFirebaseWebConfigFromEnv() {
-  const fromFile = getEnv().isProduction ? null : readFirebaseWebConfigFromLocalFile();
+  const fromFile = readFirebaseWebConfigFromLocalFile();
   const web = getEnv().firebase.web;
   const pick = (envValue, fileKey) => {
     if (typeof envValue === "string" && envValue.trim() && !isPlaceholderFirebaseWebValue(envValue)) {
@@ -198,7 +198,7 @@ export function getDb() {
     } catch (err) { initError = `Failed using GOOGLE_APPLICATION_CREDENTIALS: ${err.message}`; return null; }
   }
   const localPath = getLocalServiceAccountPath();
-  if (!getEnv().isProduction && existsSync(localPath)) {
+  if (existsSync(localPath)) {
     try {
       const creds = JSON.parse(readFileSync(localPath, "utf8"));
       if (!creds || typeof creds !== "object" || creds.type !== "service_account") { initError = `Invalid ${LOCAL_SERVICE_ACCOUNT_FILENAME}: expected a Firebase service account JSON (type: service_account).`; return null; }

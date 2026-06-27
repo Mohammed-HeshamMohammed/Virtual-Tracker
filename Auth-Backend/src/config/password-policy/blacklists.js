@@ -1,28 +1,64 @@
 /**
- * Custom blacklists injected into zxcvbn as a user-supplied dictionary.
- *
- * zxcvbn already ships with tens of thousands of common English passwords,
- * l33t-speak tables, keyboard spatial maps, and date patterns. The lists
- * below add *application-specific* terms an attacker would try first:
- * brand names, product terms, and example passwords shown in the UI.
- *
- * All entries are lowercased at init time and matched case-insensitively
- * by zxcvbn's dictionary matcher.
+ * Internal password blacklists and pattern data.
+ * Never expose these lists via public APIs.
  */
 
-/** Application-specific terms that should never appear as passwords. */
-export const CUSTOM_DICTIONARY = [
-  /* Brand / product terms */
-  "virtualtracker",
-  "virtual-tracker",
-  "virtualcallers",
-  "virtual-callers",
-  "thevirtualcallers",
+/** @type {readonly string[]} */
+export const COMMON_PASSWORDS = [
+  "password",
+  "password123",
+  "password123!",
+  "admin123",
+  "admin12345",
+  "admin123!",
+  "qwerty123",
+  "qwerty123!",
+  "welcome123",
+  "welcome123!",
+  "letmein123",
+  "123456789",
+  "1234567890",
+  "1234567890!",
+  "qwertyuiop",
+  "abc123456",
+  "letmein",
+  "monkey",
+  "dragon",
+  "master",
+  "sunshine",
+  "princess",
+  "football",
+  "iloveyou",
+];
 
-  /* Example passwords shown in the UI or documentation */
-  "bluecoffee!train2026",
+/** @type {readonly string[]} */
+export const EXAMPLE_PASSWORDS = [
   "password123!",
   "qwerty123!",
   "admin123!",
   "welcome123!",
+  "bluecoffee!train2026",
+  "password123",
+  "admin123",
+  "letmein123",
 ];
+
+/** @type {readonly string[]} */
+export const SEQUENTIAL_PATTERNS = [
+  "0123456789",
+  "9876543210",
+  "abcdefghijklmnopqrstuvwxyz",
+  "zyxwvutsrqponmlkjihgfedcba",
+  "qwertyuiop",
+  "asdfghjkl",
+  "zxcvbnm",
+  "123456",
+  "123456789",
+  "abcdef",
+  "qwerty",
+  "asdfgh",
+  "zxcvbn",
+];
+
+export const COMMON_PASSWORD_SET = new Set(COMMON_PASSWORDS.map((p) => p.toLowerCase()));
+export const EXAMPLE_PASSWORD_SET = new Set(EXAMPLE_PASSWORDS.map((p) => p.toLowerCase()));

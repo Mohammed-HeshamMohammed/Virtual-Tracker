@@ -1,11 +1,17 @@
-import { PASSWORD_POLICY } from "./definition.js";
+import {
+  PASSWORD_POLICY,
+  PASSWORD_POLICY_LAST_UPDATED,
+  PASSWORD_POLICY_VERSION,
+} from "./definition.js";
 
 /**
  * Public-safe password policy payload for UI guidance.
- * Consumers: GET /api/auth/password-policy
+ * Does not expose blacklists, scoring algorithms, or internal security data.
  */
 export function getPublicPasswordPolicyResponse() {
   return {
+    version: PASSWORD_POLICY_VERSION,
+    lastUpdated: PASSWORD_POLICY_LAST_UPDATED,
     passwordPolicy: {
       minLength: PASSWORD_POLICY.minLength,
       maxLength: PASSWORD_POLICY.maxLength,
@@ -19,8 +25,6 @@ export function getPublicPasswordPolicyResponse() {
       examplePasswordBlacklistEnabled: PASSWORD_POLICY.examplePasswordBlacklistEnabled,
       passwordExpirationDays: PASSWORD_POLICY.passwordExpirationDays,
       requireMfa: PASSWORD_POLICY.requireMfa,
-      entropyCheckEnabled: true,
-      minZxcvbnScore: PASSWORD_POLICY.minZxcvbnScore,
     },
   };
 }

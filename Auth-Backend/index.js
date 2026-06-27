@@ -1,21 +1,27 @@
-﻿// Bootstrap: load and validate configuration before other modules run.
-import { getEnv, initConfig } from "./src/config/env/index.js";
+// Auth-Backend entry: Firebase auth, invites, onboarding APIs.
+import { getEnv, initConfig } from "./src/config/env.js";
 
-initConfig();
+const config = initConfig();
 
-import { createServer } from "./src/server.js";
+if (config.security.disableTlsVerificationInDev) {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
+import { createServer } from "./server.js";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { getDb } from "./src/core/database/firebase.js";
-import { logStartup, logDbStatus, logError } from "./src/core/utils/logger.js";
-import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email/email-config.js";
+import { getDb } from "./src/config/firebase.js";
+import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
+import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email-config.js";
 
 let activeServer = null;
 
 function registerServerErrorHandler(server, port) {
   server.on("error", (err) => {
     if (err?.code === "EADDRINUSE") {
-      console.error(`Port ${port} is already in use. Set PORT in Coolify environment variables.`);
+      console.error(
+        `Port ${port} is already in use. Stop the other process or set PORT in Auth-Backend/.env.`,
+      );
       process.exit(1);
     }
     logError(err, "server");
@@ -31,7 +37,6 @@ process.on("SIGTERM", () => {
   }
   process.exit(0);
 });
-
 process.on("SIGINT", () => {
   console.log("\n[shutdown] SIGINT received, closing server...");
   if (activeServer) {
@@ -41,12 +46,12 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-export function startServer(port = getEnv().server.port, host = getEnv().server.host) {
+export function startServer(port = getEnv().server.port) {
   const server = createServer();
   activeServer = server;
   registerServerErrorHandler(server, port);
 
-  server.listen(port, host, async () => {
+  server.listen(port, async () => {
     const db = getDb();
     logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
 
@@ -63,29 +68,12 @@ export function startServer(port = getEnv().server.port, host = getEnv().server.
 
     const routes = [
       "/health",
-      "/api/auth/complete-first-login",
-      "/api/auth/notify-password-changed",
-      "/api/auth/notify-password-reset",
-      "/api/auth/notify-email-verified",
-      "/api/auth/promote-pending-member",
-      "/api/auth/password-policy",
-      "/api/auth/readiness",
-      "/api/auth/validate-password",
-      "/api/auth/firebase-config",
-      "/api/auth/send-verification-email",
-      "/api/auth/verify",
-      "/api/auth/profile",
-      "/api/auth/profile-avatar",
-      "/api/auth/resolve-sign-in-methods",
-      "/api/auth/check-email",
-      "/api/auth/phone-verification/send",
-      "/api/auth/phone-verification/confirm",
-      "/api/auth/phone-verification/exchange",
-      "/api/auth/deactivation-request",
-      "/api/auth/deactivation-requests",
-      "/api/auth/deactivation-requests/:id/approve",
-      "/api/auth/deactivation-requests/:id/reject",
-      "/api/auth/delete-account",
+      "/api/auth/*",
+      "/api/public/invites/*",
+      "/api/invites/*",
+      "/api/members/preprovision",
+      "/api/members/validate-add",
+      "/api/member-onboarding/*",
     ];
 
     logStartup({
@@ -96,14 +84,7 @@ export function startServer(port = getEnv().server.port, host = getEnv().server.
     });
 
     await logEmailDeliveryStatusAsync();
-
-    const { urls, deployment } = getEnv();
-    console.log(
-      `Auth API listening on ${host}:${port} (${getEnv().nodeEnv}, ${deployment.containerName})`,
-    );
-    console.log(`  Public URL: ${urls.authPublicUrl}`);
-    console.log(`  Dashboard Web: ${urls.dashboardWebUrl}`);
-    console.log(`  Landing Web: ${urls.landingWebUrl}`);
+    console.log(`Auth-Backend listening on http://localhost:${port}`);
   });
   return server;
 }

@@ -1,4 +1,4 @@
-# Auth Backend — Coolify deployment
+﻿# Auth Backend ΓÇö Coolify deployment
 
 | Setting | Value |
 |---------|--------|
@@ -19,4 +19,4 @@
 | Landing Web | `myvirtualtracker.com` |
 | Dashboard Web | `app.myvirtualtracker.com` |
 
-Set environment variables in Coolify — see `.env.example`. With `NODE_ENV=production`, unset vars fall back to the production profile above.
+Set environment variables in Coolify ΓÇö see `.env.example`. With `NODE_ENV=production`, unset vars fall back to the production profile above.

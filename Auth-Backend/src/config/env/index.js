@@ -1,6 +1,17 @@
-﻿import { defaultCorsOrigins, getServiceProfile } from "../deployment-profiles.js";
+﻿import { loadEnvFile } from "node:process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defaultCorsOrigins, getServiceProfile } from "../deployment-profiles.js";
 import { validateEnvSource } from "./schema.js";
 import { toPublicEnv } from "./public.js";
+
+const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+
+try {
+  loadEnvFile(path.join(BACKEND_ROOT, ".env"));
+} catch {
+  // Optional — npm scripts also pass --env-file-if-exists=.env
+}
 
 /** @typedef {ReturnType<typeof buildEnv>} AppEnv */
 
@@ -67,7 +78,7 @@ export function buildEnv(source = process.env) {
     validateEnvSource(source);
   }
 
-  const nodeEnv = readString(source, "NODE_ENV", "production");
+  const nodeEnv = readString(source, "NODE_ENV", "development");
   const isProduction = nodeEnv === "production";
   const profile = getServiceProfile(nodeEnv);
 
@@ -95,7 +106,8 @@ export function buildEnv(source = process.env) {
 
     security: Object.freeze({
       allowInsecureHttp: readBool(source, "ALLOW_INSECURE_HTTP", false),
-      disableTlsVerificationInDev: false,
+      /** Dev-only TLS workaround for Firebase on Windows. */
+      disableTlsVerificationInDev: !isProduction,
     }),
 
     cors: Object.freeze({
@@ -160,7 +172,7 @@ export function buildEnv(source = process.env) {
       captureMode,
       webCaptureEnabled: readBool(source, "ACTIVITY_WEB_CAPTURE_ENABLED", true),
       taskScreenshotsEnabled: readBool(source, "ACTIVITY_TASK_SCREENSHOTS_ENABLED", false),
-      desktopAgentIngestEnabled: readBool(source, "ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED", false),
+      desktopAgentIngestEnabled: readBool(source, "ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED", !isProduction),
       sessionStaleMs: readPositiveInt(source, "ACTIVITY_SESSION_STALE_MS", 120_000),
       vtAuthPort: readPositiveInt(source, "VT_AUTH_PORT", 17_389),
     }),
@@ -172,8 +184,9 @@ export function buildEnv(source = process.env) {
       signalMinIntervalMs: readPositiveInt(source, "PRESENCE_SIGNAL_MIN_INTERVAL_MS", 60_000),
     }),
 
+    /** When true, OTP is logged to the server console instead of Firebase SMS. */
     phoneVerification: Object.freeze({
-      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", false),
+      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", !isProduction),
     }),
   });
 }

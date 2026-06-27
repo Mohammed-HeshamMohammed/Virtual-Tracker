@@ -1,37 +1,11 @@
-import { ZxcvbnFactory, Options } from "@zxcvbn-ts/core";
-import { adjacencyGraphs, dictionary as commonDictionary } from "@zxcvbn-ts/language-common";
-import { translations, dictionary as enDictionary } from "@zxcvbn-ts/language-en";
 import { PASSWORD_POLICY } from "./definition.js";
-import { CUSTOM_DICTIONARY } from "./blacklists.js";
-
-/* ------------------------------------------------------------------ */
-/*  One-time zxcvbn configuration (runs on first import)              */
-/* ------------------------------------------------------------------ */
-
-const zxcvbnOptions = new Options({
-  translations,
-  graphs: adjacencyGraphs,
-  dictionary: {
-    ...commonDictionary,
-    ...enDictionary,
-    /* Application-specific terms injected alongside the standard dicts */
-    userInputs: CUSTOM_DICTIONARY.map((w) => w.toLowerCase()),
-  },
-});
-
-const zxcvbnInstance = new ZxcvbnFactory(zxcvbnOptions);
-
-/* ------------------------------------------------------------------ */
-/*  Strength labels                                                   */
-/* ------------------------------------------------------------------ */
+import {
+  COMMON_PASSWORD_SET,
+  EXAMPLE_PASSWORD_SET,
+  SEQUENTIAL_PATTERNS,
+} from "./blacklists.js";
 
 export const STRENGTH_LABELS = ["Weak", "Fair", "Good", "Strong", "Very Strong"];
-
-const SCORE_TO_STRENGTH = ["weak", "fair", "good", "strong", "very-strong"];
-
-/* ------------------------------------------------------------------ */
-/*  Structural pre-checks (fast, before calling zxcvbn)               */
-/* ------------------------------------------------------------------ */
 
 const UPPERCASE_RE = /[A-Z]/;
 const LOWERCASE_RE = /[a-z]/;
@@ -39,10 +13,176 @@ const NUMBER_RE = /[0-9]/;
 const SPECIAL_RE = /[^A-Za-z0-9]/;
 
 /**
- * Returns the first structural (character-class / length) error, or null.
- * These run before zxcvbn so callers get instant feedback on basic rules.
+ * @param {string} password
  */
-function getStructuralError(password) {
+function hasSequentialPattern(password) {
+  if (!PASSWORD_POLICY.sequenceDetectionEnabled) return false;
+  const lower = password.toLowerCase();
+  for (const seq of SEQUENTIAL_PATTERNS) {
+    const minChunk = Math.min(6, seq.length);
+    for (let len = seq.length; len >= minChunk; len--) {
+      for (let i = 0; i <= seq.length - len; i++) {
+        const chunk = seq.slice(i, i + len);
+        if (chunk.length >= 4 && lower.includes(chunk)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * @param {string} password
+ */
+function hasRepeatedPattern(password) {
+  if (!PASSWORD_POLICY.repeatedPatternDetectionEnabled) return false;
+  if (!password) return false;
+  if (/(.)\1{5,}/.test(password)) return true;
+  if (password.length >= PASSWORD_POLICY.minLength && /^(.)\1+$/.test(password)) return true;
+  if (/(.{2})\1{4,}/.test(password)) return true;
+  if (/(.{3})\1{3,}/.test(password)) return true;
+  return false;
+}
+
+/**
+ * @param {string} password
+ */
+function isCommonPassword(password) {
+  if (!PASSWORD_POLICY.blockedPasswordsEnabled) return false;
+  const normalized = password.trim().toLowerCase();
+  if (COMMON_PASSWORD_SET.has(normalized)) return true;
+  const alnum = normalized.replace(/[^a-z0-9]/g, "");
+  return alnum.length > 0 && COMMON_PASSWORD_SET.has(alnum);
+}
+
+/**
+ * @param {string} password
+ */
+function isExamplePassword(password) {
+  if (!PASSWORD_POLICY.examplePasswordBlacklistEnabled) return false;
+  return EXAMPLE_PASSWORD_SET.has(password.trim().toLowerCase());
+}
+
+/**
+ * @param {string} password
+ */
+function isSimplePattern(password) {
+  return hasSequentialPattern(password) || hasRepeatedPattern(password);
+}
+
+/**
+ * @param {string} password
+ * @param {{ confirmPassword?: string }} [options]
+ */
+export function analyzePassword(password, options = {}) {
+  const confirmPassword = options.confirmPassword;
+  const hasConfirm = typeof confirmPassword === "string";
+
+  const requirements = {
+    minLength: password.length >= PASSWORD_POLICY.minLength,
+    maxLength: password.length <= PASSWORD_POLICY.maxLength,
+    uppercase: !PASSWORD_POLICY.requireUppercase || UPPERCASE_RE.test(password),
+    lowercase: !PASSWORD_POLICY.requireLowercase || LOWERCASE_RE.test(password),
+    number: !PASSWORD_POLICY.requireNumber || NUMBER_RE.test(password),
+    special: !PASSWORD_POLICY.requireSpecial || SPECIAL_RE.test(password),
+    notBlocked:
+      password.length > 0 ? !isCommonPassword(password) && !isExamplePassword(password) : false,
+    notSimplePattern: password.length > 0 ? !isSimplePattern(password) : false,
+    passwordsMatch: hasConfirm ? password === confirmPassword && password.length > 0 : null,
+  };
+
+  const coreValid =
+    requirements.minLength &&
+    requirements.maxLength &&
+    requirements.uppercase &&
+    requirements.lowercase &&
+    requirements.number &&
+    requirements.special &&
+    requirements.notBlocked &&
+    requirements.notSimplePattern;
+
+  const valid = coreValid && (hasConfirm ? requirements.passwordsMatch === true : true);
+
+  return {
+    requirements,
+    strength: calculateStrength(password, requirements),
+    valid,
+    firstError: getFirstPasswordError(password, options),
+  };
+}
+
+/**
+ * @param {string} password
+ * @param {ReturnType<typeof analyzePassword>["requirements"]} requirements
+ * @returns {"weak" | "fair" | "good" | "strong" | "very-strong"}
+ */
+function calculateStrength(password, requirements) {
+  if (!password) return "weak";
+
+  let score = 0;
+  const length = password.length;
+
+  if (length >= PASSWORD_POLICY.minLength) score += 12;
+  if (length >= 12) score += 8;
+  if (length >= 16) score += 10;
+  if (length >= 20) score += 10;
+  if (length >= 24) score += 5;
+
+  const variety =
+    Number(UPPERCASE_RE.test(password)) +
+    Number(LOWERCASE_RE.test(password)) +
+    Number(NUMBER_RE.test(password)) +
+    Number(SPECIAL_RE.test(password));
+  score += variety * 4;
+
+  const uniqueChars = new Set(password).size;
+  score += Math.round((uniqueChars / password.length) * 12);
+
+  if (requirements.notBlocked) score += 8;
+  if (requirements.notSimplePattern) score += 8;
+
+  if (isCommonPassword(password) || isExamplePassword(password)) {
+    score = Math.min(score, 15);
+  } else if (isSimplePattern(password)) {
+    score = Math.min(score, 25);
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  if (score < 20) return "weak";
+  if (score < 40) return "fair";
+  if (score < 60) return "good";
+  if (score < 80) return "strong";
+  return "very-strong";
+}
+
+/**
+ * @param {"weak" | "fair" | "good" | "strong" | "very-strong"} strength
+ */
+export function strengthToLabel(strength) {
+  switch (strength) {
+    case "weak":
+      return "Weak";
+    case "fair":
+      return "Fair";
+    case "good":
+      return "Good";
+    case "strong":
+      return "Strong";
+    case "very-strong":
+      return "Very Strong";
+    default:
+      return "Weak";
+  }
+}
+
+/**
+ * @param {string} password
+ * @param {{ confirmPassword?: string, requireConfirm?: boolean }} [options]
+ * @returns {string | null}
+ */
+export function getFirstPasswordError(password, options = {}) {
   if (!password) return "Password is required.";
 
   if (password.length < PASSWORD_POLICY.minLength) {
@@ -63,101 +203,16 @@ function getStructuralError(password) {
   if (PASSWORD_POLICY.requireSpecial && !SPECIAL_RE.test(password)) {
     return "Password must contain at least one special character.";
   }
-  return null;
-}
-
-/* ------------------------------------------------------------------ */
-/*  Core analysis (zxcvbn-powered)                                    */
-/* ------------------------------------------------------------------ */
-
-/**
- * Full password analysis. This is the main entry point.
- *
- * @param {string} password
- * @param {{ confirmPassword?: string; userInputs?: string[] }} [options]
- */
-export function analyzePassword(password, options = {}) {
-  const confirmPassword = options.confirmPassword;
-  const hasConfirm = typeof confirmPassword === "string";
-
-  /* --- Structural requirements (character-class checks) --- */
-  const structReqs = {
-    minLength: password.length >= PASSWORD_POLICY.minLength,
-    maxLength: password.length <= PASSWORD_POLICY.maxLength,
-    uppercase: !PASSWORD_POLICY.requireUppercase || UPPERCASE_RE.test(password),
-    lowercase: !PASSWORD_POLICY.requireLowercase || LOWERCASE_RE.test(password),
-    number: !PASSWORD_POLICY.requireNumber || NUMBER_RE.test(password),
-    special: !PASSWORD_POLICY.requireSpecial || SPECIAL_RE.test(password),
-  };
-
-  const structuralOk = Object.values(structReqs).every(Boolean);
-
-  /* --- zxcvbn entropy analysis --- */
-  const zResult = password.length > 0 ? zxcvbnInstance.check(password) : null;
-  const score = zResult ? zResult.score : 0; // 0-4
-  const meetsEntropy = score >= PASSWORD_POLICY.minZxcvbnScore;
-
-  /* --- Derived requirements exposed in the API response --- */
-  const requirements = {
-    ...structReqs,
-    // `notBlocked` and `notSimplePattern` are kept for backward compat.
-    // zxcvbn subsumes both: a blocked/patterned password scores 0-1.
-    notBlocked: meetsEntropy,
-    notSimplePattern: meetsEntropy,
-    passwordsMatch: hasConfirm ? password === confirmPassword && password.length > 0 : null,
-  };
-
-  const coreValid =
-    structuralOk &&
-    meetsEntropy &&
-    (hasConfirm ? requirements.passwordsMatch === true : true);
-
-  return {
-    requirements,
-    strength: SCORE_TO_STRENGTH[score] || "weak",
-    valid: coreValid,
-    firstError: getFirstPasswordError(password, options),
-    /* zxcvbn details (useful for debugging; not exposed to the client) */
-    zxcvbn: zResult
-      ? {
-          score: zResult.score,
-          warning: zResult.feedback?.warning || "",
-          suggestions: zResult.feedback?.suggestions || [],
-          guesses: zResult.guesses,
-          calcTime: zResult.calcTime,
-        }
-      : null,
-  };
-}
-
-/* ------------------------------------------------------------------ */
-/*  Error messages                                                    */
-/* ------------------------------------------------------------------ */
-
-/**
- * Returns the first human-readable validation error, or null if valid.
- *
- * @param {string} password
- * @param {{ confirmPassword?: string; requireConfirm?: boolean; userInputs?: string[] }} [options]
- */
-export function getFirstPasswordError(password, options = {}) {
-  /* Fast structural check */
-  const structError = getStructuralError(password);
-  if (structError) return structError;
-
-  /* zxcvbn entropy check */
-  const zResult = zxcvbnInstance.check(password);
-
-  if (zResult.score < PASSWORD_POLICY.minZxcvbnScore) {
-    // Return the library's own user-friendly warning when available
-    if (zResult.feedback?.warning) {
-      return zResult.feedback.warning;
-    }
-    // Otherwise fall back to a generic message
-    return "This password is too easy to guess. Try adding more uncommon words or mixing in symbols.";
+  if (isExamplePassword(password)) {
+    return "This password is not allowed. Choose a unique password that is not used in examples.";
+  }
+  if (isCommonPassword(password)) {
+    return "This password is too common. Choose a more unique password.";
+  }
+  if (isSimplePattern(password)) {
+    return "This password contains an obvious pattern. Choose something less predictable.";
   }
 
-  /* Confirm check */
   const confirmPassword = options.confirmPassword;
   if (options.requireConfirm || typeof confirmPassword === "string") {
     if (password !== confirmPassword) {
@@ -168,36 +223,13 @@ export function getFirstPasswordError(password, options = {}) {
   return null;
 }
 
-/* ------------------------------------------------------------------ */
-/*  Convenience helpers                                               */
-/* ------------------------------------------------------------------ */
-
-export function strengthToLabel(strength) {
-  switch (strength) {
-    case "weak":
-      return "Weak";
-    case "fair":
-      return "Fair";
-    case "good":
-      return "Good";
-    case "strong":
-      return "Strong";
-    case "very-strong":
-      return "Very Strong";
-    default:
-      return "Weak";
-  }
-}
-
 /**
- * Top-level validate helper — backward-compatible return shape.
- *
  * @param {string} password
- * @param {{ confirmPassword?: string; requireConfirm?: boolean; userInputs?: string[] }} [options]
+ * @param {{ confirmPassword?: string, requireConfirm?: boolean }} [options]
  */
 export function validatePassword(password, options = {}) {
   const analysis = analyzePassword(password, options);
-  const error = analysis.firstError;
+  const error = getFirstPasswordError(password, options);
   return {
     valid: analysis.valid && !error,
     error,

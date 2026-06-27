@@ -1,39 +1,36 @@
-import { getAuthAdmin, getDb, readFirebaseWebConfigFromEnv } from "../../core/database/firebase.js";
-import { getEnv } from "../../config/env/index.js";
-import { requireManagementRole } from "../../core/middleware/auth/auth-context.js";
-import { authenticateRequest } from "../../core/middleware/auth/auth-middleware.js";
-import { readIdToken } from "../../core/middleware/auth/auth-token.js";
-import { readJsonBody, MAX_AVATAR_JSON_BODY_BYTES } from "../../core/middleware/http/read-json-body.js";
-import { assertMaxLength, assertValidPhone, rejectUnknownFields } from "../../core/middleware/http/validate-body.js";
-import { sendJson } from "../../core/middleware/http/response.js";
-import { upsertProfileFromUserRecord } from "./profile/profile-sync.js";
-import { patchProfileSettings } from "./profile/profile-settings.js";
-import { clearProfileAvatar, setProfileAvatarFromUpload, stripBase64DataUrl } from "./profile/profile-avatar.js";
-import { deleteViewerSelfAccount, listPendingDeactivationRequests, resolveDeactivationRequest, submitAccountDeactivationRequest } from "./flow/account-deactivation.js";
-import { validateSessionAuthorization, isPasswordProviderUser } from "./flow/session-authorization.js";
-import { completeFirstLoginPasswordChange } from "./flow/complete-first-login.js";
-import {
-  promotePendingMemberCore,
-  ensureMemberLinkedRecordsForUserRecord,
-  alignMemberRoleTables,
-  enforceUnauthorizedPrivilegedRole,
-  resolveMemberRoleName,
-  assertDeviceNotBanned,
-  assertMemberNotBanned,
-} from "../shared/services/auth-helpers.js";
+import { getAuthAdmin, getDb, readFirebaseWebConfigFromEnv } from "../../config/firebase.js";
+import { getEnv } from "../../config/env.js";
+import { requireManagementRole } from "../../http/auth-context.js";
+import { authenticateRequest } from "../../http/auth-middleware.js";
+import { readIdToken } from "../../http/auth-token.js";
+import { readJsonBody, MAX_AVATAR_JSON_BODY_BYTES } from "../../http/read-json-body.js";
+import { assertMaxLength, assertValidPhone, rejectUnknownFields } from "../../http/validate-body.js";
+import { sendJson } from "../../http/response.js";
+import { upsertProfileFromUserRecord } from "./profile-sync.js";
+import { patchProfileSettings } from "./profile-settings.js";
+import { clearProfileAvatar, setProfileAvatarFromUpload, stripBase64DataUrl } from "./profile-avatar.js";
+import { deleteViewerSelfAccount, listPendingDeactivationRequests, resolveDeactivationRequest, submitAccountDeactivationRequest } from "./account-deactivation.js";
+import { validateSessionAuthorization, isPasswordProviderUser } from "./session-authorization.js";
+import { completeFirstLoginPasswordChange } from "./complete-first-login.js";
+import { promotePendingMemberCore } from "../members/routes/member-invites.routes.js";
+import { ensureMemberLinkedRecordsForUserRecord } from "../members/services/ensure-member-linked-records.js";
+import { alignMemberRoleTables } from "../members/services/relation-sync.js";
+import { enforceUnauthorizedPrivilegedRole } from "../members/services/privileged-role-governance.js";
+import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { validatePassword } from "../../config/password-policy/index.js";
 import { getPublicPasswordPolicyResponse } from "../../config/password-policy/index.js";
-import { normalizePasswordInput } from "../../core/middleware/security/password-request-guard.js";
-import { logSafeError, logSafeWarn } from "../../core/middleware/http/sanitize-error.js";
-import { quotaErrorHttpResponse } from "../../core/middleware/http/quota-error.js";
-import { probeFirestoreReadiness } from "./flow/readiness.js";
+import { normalizePasswordInput } from "../../http/password-request-guard.js";
+import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
+import { quotaErrorHttpResponse } from "../../http/quota-error.js";
+import { probeFirestoreReadiness } from "./readiness.js";
 import {
   resolveAuthContinueUrl,
   sendEmailVerificationEmail,
   withEmailVerifiedContinueUrl,
-} from "./email/verification-email.js";
-import { getEmailDeliveryConfig } from "./email/email-config.js";
-import { getRequestIp } from "../../core/middleware/http/request-ip.js";
+} from "./verification-email.js";
+import { getEmailDeliveryConfig } from "./email-config.js";
+import { assertDeviceNotBanned, assertMemberNotBanned } from "../members/services/member-ban-service.js";
+import { getRequestIp } from "../../http/request-ip.js";
 import {
   sendPhoneVerificationCode,
   confirmPhoneVerificationCode,
@@ -41,7 +38,7 @@ import {
   phonesMatch,
   exchangeFirebasePhoneVerification,
   isPhoneVerificationDevMode,
-} from "./flow/phone-verification.service.js";
+} from "./phone-verification.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -309,7 +306,7 @@ export async function routeAuth(req, res, url, origin) {
       sendJson(res, origin, 503, {
         success: false,
         error:
-          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then run `npm run sync:firebase-local` in Auth-Backend/ or set FIREBASE_* in Auth-Backend/.env.",
+          "Firebase web app config is missing. In Firebase Console open project settings → Your apps → Add Web app, then run `npm run sync:firebase-local` in Backend/ or set FIREBASE_* in Backend/.env.",
       });
       return true;
     }
@@ -401,7 +398,7 @@ export async function routeAuth(req, res, url, origin) {
           sent: false,
           channel: result.channel,
           error:
-            "Outbound email is not configured on the server. Use Firebase's built-in verification email or configure SMTP_* / RESEND_API_KEY in Auth-Backend/.env.",
+            "Outbound email is not configured on the server. Use Firebase's built-in verification email or configure SMTP_* / RESEND_API_KEY in Backend/.env.",
         });
         return true;
       }
@@ -490,7 +487,18 @@ export async function routeAuth(req, res, url, origin) {
               }
             }
 
-            // first-login notifications to team omitted in minimal auth backend
+            // Notify adder + upline on first successful sign-in (team-added members only)
+            try {
+              const { maybeNotifyTeamMemberFirstLogin } = await import("../notifications/first-login-notify.js");
+              await maybeNotifyTeamMemberFirstLogin(db, {
+                memberId,
+                memberData: memberData || {},
+                profile,
+                userRecord,
+              });
+            } catch (notifyErr) {
+              logSafeWarn("[auth/verify] failed to notify team of first login:", notifyErr);
+            }
           }
         } catch (dbErr) {
           logSafeWarn("[auth/verify] Firestore operations failed:", dbErr);
