@@ -1,5 +1,5 @@
 // Bootstrap: load and validate configuration before other modules run.
-import { getEnv, initConfig } from "./src/config/env/index.js";
+import { getEnv, initConfig } from "./src/config/env.js";
 
 const config = initConfig();
 
@@ -8,11 +8,16 @@ if (config.security.disableTlsVerificationInDev) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
-import { createServer } from "./src/server.js";
+import { createServer } from "./server.js";
+import { initPresenceGateway } from "./src/modules/presence/index.js";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { getDb } from "./src/core/database/firebase.js";
-import { logStartup, logDbStatus, logError } from "./src/core/utils/logger.js";
+import { getDb } from "./src/config/firebase.js";
+import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
+import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
+import { removeProjectOfficeMemberRoles } from "./src/modules/projects/migrate-remove-office-member-roles.js";
+import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
+import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email-config.js";
 
 let activeServer = null;
 
@@ -26,7 +31,7 @@ function registerServerErrorHandler(server, port) {
     if (err?.code === "EADDRINUSE") {
       console.error(
         `Port ${port} is already in use. Stop the other process or set PORT in Dashboard-Backend/.env, e.g.:` +
-          `\n  $env:PORT=5713; npm start`,
+          `\n  $env:PORT=5712; npm start`,
       );
       process.exit(1);
     }
@@ -55,12 +60,20 @@ process.on("SIGINT", () => {
 
 export function startServer(port = getEnv().server.port) {
   const server = createServer();
+  initPresenceGateway(server);
   activeServer = server;
   registerServerErrorHandler(server, port);
 
   server.listen(port, async () => {
     const db = getDb();
     logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
+    if (db) {
+      scheduleOrganizationMaintenance(db, "server-startup");
+      scheduleTeamWeeklyReports(db);
+      removeProjectOfficeMemberRoles().catch((err) => {
+        logError(err, "project-office-member-roles-migration");
+      });
+    }
 
     let version = "0.0.0";
     try {
@@ -73,7 +86,38 @@ export function startServer(port = getEnv().server.port) {
       // Keep default version fallback.
     }
 
-    const routes = ["/health"];
+    const routes = [
+      "/health",
+      "/api/members",
+      "/api/roles",
+      "/api/member-roles",
+      "/api/member-onboarding",
+      "/api/member-relationships",
+      "/api/invites",
+      "/api/invite-projects",
+      "/api/job-titles",
+      "/api/departments",
+      "/api/job-types",
+      "/api/tax-types",
+      "/api/employment",
+      "/api/clients",
+      "/api/client-budgets",
+      "/api/client-invoicing",
+      "/api/client-projects",
+      "/api/projects",
+      "/api/project-members",
+      "/api/project-budgets",
+      "/api/project-member-limits",
+      "/api/tasks",
+      "/api/task-comments",
+      "/api/task-attachments",
+      "/api/teams",
+      "/api/team-members",
+      "/api/team-projects",
+      "/api/pay-rates",
+      "/api/time-settings",
+      "/api/limits",
+    ];
 
     logStartup({
       version,
@@ -82,7 +126,9 @@ export function startServer(port = getEnv().server.port) {
       routes,
     });
 
-    console.log(`Dashboard API server listening on http://localhost:${port}`);
+    await logEmailDeliveryStatusAsync();
+
+    console.log(`Dashboard-Backend listening on http://localhost:${port}`);
   });
   return server;
 }
