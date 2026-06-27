@@ -4,9 +4,9 @@
  * Bootstrap: `loadEnvFile` runs once when this module is first imported.
  * Access: `import { getEnv, getPublicEnv, initConfig } from "./config/env.js"`
  *
- * Do not read `process.env` elsewhere in application code (enforced by `npm run lint:config`).
+ * Do not read `process.env` elsewhere in application code — use getEnv() from this module.
  *
- * @see Backend/.env.example
+ * @see Auth-Backend/.env.example
  */
 
 import { loadEnvFile } from "node:process";

@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { logSafeWarn } from "../http/sanitize-error.js";
 import { initializeMemberRelationships } from "../modules/member-relationships/migrate.js";
 import { ensureUserProfileImageFields } from "../modules/auth/migrate-profile-image-fields.js";
-import { removeClientBudgetStartDates } from "../modules/clients/migrate-remove-budget-start-date.js";
 import { ensureMemberScopedEntities } from "../modules/members/services/member-entity-bootstrap.js";
 import { normalizeLegacyMemberDocumentIds } from "../modules/members/services/normalize-member-doc-ids.js";
 import { ensureDefaultRoles } from "../modules/members/services/relation-sync.js";
@@ -190,15 +189,6 @@ async function runOrganizationMaintenance(db, actor) {
     }
   } catch (err) {
     logSafeWarn("[entity-bootstrap] user profile image field migration failed:", err);
-  }
-
-  try {
-    const budgetStartDates = await removeClientBudgetStartDates();
-    if (budgetStartDates.updated > 0) {
-      created.push("client_budgets:start_date_removed");
-    }
-  } catch (err) {
-    logSafeWarn("[entity-bootstrap] client budget start date migration failed:", err);
   }
 
   try {

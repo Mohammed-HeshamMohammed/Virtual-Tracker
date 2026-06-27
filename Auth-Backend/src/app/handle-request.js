@@ -1,13 +1,10 @@
 import { getDb } from "../config/firebase.js";
-import { enforceApiAuthentication } from "../http/auth-middleware.js";
 import { applyCors, corsHeaders } from "../http/cors.js";
 import { checkRateLimit } from "../http/rate-limit.js";
 import { rejectSensitiveQueryParams } from "../http/password-request-guard.js";
 import { assertSecureTransport } from "../http/tls-enforcement.js";
 import { getSecurityHeaders } from "../http/security-headers.js";
 import { routeAuth } from "../modules/auth/routes.js";
-import { routeMemberInvites } from "../modules/members/routes/member-invites.routes.js";
-import { routeMemberOnboarding } from "../modules/member-onboarding/routes.js";
 
 export async function handleRequest(req, res) {
   const origin = req.headers.origin;
@@ -88,39 +85,6 @@ export async function handleRequest(req, res) {
     res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });
     res.end(JSON.stringify({ success: false, error: "Firestore is not configured" }));
     return;
-  }
-
-  if (url.pathname.startsWith("/api/") && db) {
-    const rateLimited = await checkRateLimit(req, url);
-    if (rateLimited) {
-      applyCors(res, origin);
-      res.writeHead(429, {
-        "Content-Type": "application/json; charset=utf-8",
-        "Retry-After": String(rateLimited.retryAfterSec),
-        ...corsHeaders(origin),
-      });
-      res.end(
-        JSON.stringify({
-          success: false,
-          error: "Too many requests. Please try again later.",
-        }),
-      );
-      return;
-    }
-
-    const authGate = await enforceApiAuthentication(req, url, db);
-    if (!authGate.allowed) {
-      applyCors(res, origin);
-      res.writeHead(authGate.status, {
-        "Content-Type": "application/json; charset=utf-8",
-        ...corsHeaders(origin),
-      });
-      res.end(JSON.stringify({ success: false, error: authGate.error, code: authGate.code }));
-      return;
-    }
-
-    if (await routeMemberInvites(req, res, url, origin)) return;
-    if (await routeMemberOnboarding(req, res, url, origin)) return;
   }
 
   applyCors(res, origin);

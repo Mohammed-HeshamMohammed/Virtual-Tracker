@@ -144,12 +144,8 @@ docker compose up -d --build   # after code changes
 | Path | Backend |
 |------|---------|
 | `/api/auth/*` | Auth-Backend |
-| `/api/public/invites/*`, `/api/invites/open-link` | Auth-Backend |
-| `/api/invites/*/resend\|link\|renew`, `/api/invites/pa_*` | Auth-Backend |
-| `/api/members/preprovision`, `/api/members/validate-add` | Auth-Backend |
-| `/api/member-onboarding*` | Auth-Backend |
 | `/api/presence/ws` | Dashboard-Backend |
-| `/api/*` (else) | Dashboard-Backend |
+| `/api/*` (else — invites, members, onboarding, projects, …) | Dashboard-Backend |
 
 ## Troubleshooting
 
@@ -163,4 +159,4 @@ docker compose up -d --build   # after code changes
 
 ## Alternative: Nginx on host
 
-See `deploy/nginx/` if you prefer host Nginx instead of the Caddy container. Update invite action routes to match `Caddyfile`.
+See `deploy/nginx/` if you prefer host Nginx instead of the Caddy container.

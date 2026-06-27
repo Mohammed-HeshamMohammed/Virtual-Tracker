@@ -1,16 +1,18 @@
 # Auth-Backend
 
-Authentication-focused API extracted from `app/Backend` for the Virtual-Tracker monorepo layout.
+Firebase authentication and identity API for the Virtual-Tracker monorepo.
 
 ## Routes
 
-- `/api/auth/*` — Firebase config, verify, profile, password policy, phone verification, deactivation
-- `/api/public/invites/*` — Public invite registration
-- `/api/invites/*`, `/api/members/preprovision`, `/api/members/validate-add` — Invite management (authenticated)
-- `/api/member-onboarding/*` — Post-signup onboarding checklist
+- `/api/auth/*` — Firebase config, session verify, profile, password policy, phone verification, deactivation, security notifications
+- `/health` — liveness probe
+
+Member invites, preprovision, and onboarding live on **Dashboard-Backend** (`../Dashboard-Backend`).
 
 ## Setup
 
-1. Copy `.env.example` to `.env` and configure Firebase (see `firebase-*.local.json.example`).
+1. Copy the `#Local DEV` or `#Production` block from `.env.example` into `.env`.
 2. `npm install`
-3. `npm start` (default port from `PORT`, usually 5712)
+3. `npm start` (default port from `PORT`, usually `5712`)
+
+Pair with **Dashboard-Backend** on port `5713` and **Dashboard Web** for the full app.

@@ -10,24 +10,8 @@
 	encode gzip
 
 	@auth_api path /api/auth/* /api/v1/auth/*
-	@auth_invites path /api/public/invites/* /api/invites/open-link
-	@auth_invite_actions path /api/invites/*/resend /api/invites/*/link /api/invites/*/renew /api/invites/pa_*
-	@auth_members path /api/members/preprovision /api/members/validate-add
-	@auth_onboarding path /api/member-onboarding /api/member-onboarding/*
 
 	handle @auth_api {
-		reverse_proxy auth-backend:5712
-	}
-	handle @auth_invites {
-		reverse_proxy auth-backend:5712
-	}
-	handle @auth_invite_actions {
-		reverse_proxy auth-backend:5712
-	}
-	handle @auth_members {
-		reverse_proxy auth-backend:5712
-	}
-	handle @auth_onboarding {
 		reverse_proxy auth-backend:5712
 	}
 

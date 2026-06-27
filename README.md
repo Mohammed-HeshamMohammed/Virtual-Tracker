@@ -4,8 +4,8 @@ Split layout for containerized VPS deployment.
 
 | Folder | Role | Container |
 |--------|------|-----------|
-| [Auth-Backend](./Auth-Backend) | Auth, invites, onboarding | `vt-auth-backend` |
-| [Dashboard-Backend](./Dashboard-Backend) | Projects, members, activity, API | `vt-dashboard-backend` |
+| [Auth-Backend](./Auth-Backend) | Authentication & identity API | `vt-auth-backend` |
+| [Dashboard-Backend](./Dashboard-Backend) | Members, invites, projects, activity API | `vt-dashboard-backend` |
 | [Dashboard Web](./Dashboard%20Web) | Next.js dashboard app | `vt-dashboard-web` |
 | [Landing-Web](./Landing-Web) | Marketing site | `vt-landing-web` |
 | [deploy](./deploy) | Docker Compose + Caddy gateway | `vt-gateway` |
