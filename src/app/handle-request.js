@@ -8,8 +8,10 @@ import { getSecurityHeaders } from "../http/security-headers.js";
 import { sendJson } from "../http/response.js";
 import { routeMemberBans } from "../modules/members/routes/member-bans.routes.js";
 import { routeMemberRemoveFromTree } from "../modules/members/routes/member-remove-from-tree.routes.js";
+import { routeMemberInvites } from "../modules/members/routes/member-invites.routes.js";
 import { routeMemberRelationships } from "../modules/member-relationships/routes.js";
 import { routeMemberTransferRequests } from "../modules/hierarchy/routes.js";
+import { routeMemberOnboarding } from "../modules/member-onboarding/routes.js";
 import { routeSchemaCrud } from "../modules/schema/routes.js";
 import { routeCompatibility } from "../modules/compat/routes.js";
 import { routePresenceEvents } from "../modules/presence/index.js";
@@ -25,15 +27,7 @@ import { routeBootstrap } from "../modules/bootstrap/routes.js";
 /** HTTP routes served by Auth-Backend (not this service). */
 function isAuthBackendRoute(pathname) {
   const path = pathname.replace(/^\/api\/v1\//, "/api/");
-  if (path.startsWith("/api/auth/")) return true;
-  if (path.startsWith("/api/public/invites/")) return true;
-  if (path === "/api/invites/open-link") return true;
-  if (path === "/api/members/preprovision") return true;
-  if (path === "/api/members/validate-add") return true;
-  if (path.startsWith("/api/member-onboarding")) return true;
-  if (/^\/api\/invites\/[^/]+\/(resend|link|renew)$/.test(path)) return true;
-  if (/^\/api\/invites\/pa_[^/]+$/.test(path)) return true;
-  return false;
+  return path.startsWith("/api/auth/");
 }
 
 export async function handleRequest(req, res) {
@@ -138,6 +132,8 @@ export async function handleRequest(req, res) {
 
     if (await routeMemberBans(req, res, url, origin)) return;
     if (await routeMemberRemoveFromTree(req, res, url, origin)) return;
+    if (await routeMemberInvites(req, res, url, origin)) return;
+    if (await routeMemberOnboarding(req, res, url, origin)) return;
     if (await routeMemberTransferRequests(req, res, url, origin)) return;
     if (await routeMemberRelationships(req, res, url, origin)) return;
     if (await routeActivity(req, res, url, origin)) return;
