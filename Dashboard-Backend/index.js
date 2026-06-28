@@ -88,35 +88,35 @@ export function startServer(port = getEnv().server.port) {
 
     const routes = [
       "/health",
+      "/api/readiness",
+      // Auth-identity routes owned by Dashboard (NOT Auth-Backend)
+      "/api/auth/sign-in-client-extras",
+      "/api/auth/session-bootstrap",
+      "/api/auth/complete-first-login",
+      "/api/auth/profile",
+      "/api/auth/access-request",
+      // ⚠️ Pending extraction to vt-notify-api:
+      "/api/auth/send-verification-email",
+      "/api/auth/notify-*",
+      "/api/auth/phone-verification/*",
+      // App / entity routes
+      "/api/bootstrap",
+      "/api/public/invites/*",
       "/api/members",
-      "/api/roles",
       "/api/member-roles",
       "/api/member-onboarding",
       "/api/member-relationships",
-      "/api/invites",
-      "/api/invite-projects",
-      "/api/job-titles",
-      "/api/departments",
-      "/api/job-types",
-      "/api/tax-types",
-      "/api/employment",
-      "/api/clients",
-      "/api/client-budgets",
-      "/api/client-invoicing",
-      "/api/client-projects",
       "/api/projects",
-      "/api/project-members",
-      "/api/project-budgets",
-      "/api/project-member-limits",
       "/api/tasks",
-      "/api/task-comments",
-      "/api/task-attachments",
+      "/api/clients",
       "/api/teams",
-      "/api/team-members",
-      "/api/team-projects",
-      "/api/pay-rates",
-      "/api/time-settings",
-      "/api/limits",
+      "/api/activity",
+      "/api/presence",
+      "/api/dashboard",
+      // ⚠️ Pending extraction to vt-notify-api:
+      "/api/notifications/*",
+      // ⚠️ Restrict at gateway before first production deploy:
+      "/monitor",
     ];
 
     logStartup({

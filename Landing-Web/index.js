@@ -11,6 +11,22 @@ if (!existsSync(serverJs)) {
 }
 
 const port = (process.env.PORT ?? "3001").trim() || "3001";
+const nodeVersion = process.version;
+const version = require("./package.json").version || "0.1.0";
+
+const box = `
+╔══════════════════════════════════════════════════════╗
+║  Landing-Web App                                     ║
+╠══════════════════════════════════════════════════════╣
+║  Version : ${version.padEnd(42)}║
+║  Port    : ${port.padEnd(42)}║
+║  Node    : ${nodeVersion.padEnd(42)}║
+║  Env     : production                                ║
+╚══════════════════════════════════════════════════════╝
+Landing-Web listening on http://localhost:${port}
+`;
+
+console.log(box.trim());
 
 const result = spawnSync(process.execPath, [serverJs], {
   cwd: root,

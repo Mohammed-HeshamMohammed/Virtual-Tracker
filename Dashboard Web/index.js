@@ -11,6 +11,22 @@ if (!existsSync(serverJs)) {
 }
 
 const port = (process.env.PORT ?? "3000").trim() || "3000";
+const nodeVersion = process.version;
+const version = "0.1.0"; // fallback
+
+const box = `
+╔══════════════════════════════════════════════════════╗
+║  Dashboard Web App                                   ║
+╠══════════════════════════════════════════════════════╣
+║  Version : ${version.padEnd(42)}║
+║  Port    : ${port.padEnd(42)}║
+║  Node    : ${nodeVersion.padEnd(42)}║
+║  Env     : production                                ║
+╚══════════════════════════════════════════════════════╝
+Dashboard Web listening on http://localhost:${port}
+`;
+
+console.log(box.trim());
 
 const result = spawnSync(process.execPath, [serverJs], {
   cwd: root,

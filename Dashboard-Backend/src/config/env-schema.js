@@ -96,6 +96,9 @@ const envSourceSchema = z
     FIREBASE_DATABASE_URL: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
     PHONE_VERIFICATION_DEV_MODE: optionalTrimmedString,
+    // Internal service auth — used when vt-notify-api is live
+    NOTIFY_BACKEND_URL: optionalTrimmedString,
+    INTERNAL_SERVICE_SECRET: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();

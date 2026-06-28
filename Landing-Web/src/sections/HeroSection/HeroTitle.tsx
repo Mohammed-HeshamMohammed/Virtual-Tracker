@@ -1,30 +1,47 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import ErrorBoundary from "@/components/ErrorBoundary"
 import { HERO_CYCLING_WORDS } from "@/lib/product-content"
-import { useTypewriter } from "react-simple-typewriter"
 
 const longestHeroWord = HERO_CYCLING_WORDS.reduce(
   (longest, word) => (word.length > longest.length ? word : longest),
   "",
 )
 
-/** ms per character — lower is faster */
-const HERO_TYPE_SPEED_MS = 48
-const HERO_DELETE_SPEED_MS = 32
-/** pause on full word before deleting */
-const HERO_WORD_HOLD_MS = 2200
-
 function HeroTitleContent() {
-  const [word] = useTypewriter({
-    words: [...HERO_CYCLING_WORDS],
-    loop: true,
-    typeSpeed: HERO_TYPE_SPEED_MS,
-    deleteSpeed: HERO_DELETE_SPEED_MS,
-    delaySpeed: HERO_WORD_HOLD_MS,
-  })
+  const [index, setIndex] = useState(0)
+  const [phase, setPhase] = useState<"ENTERED" | "EXITING" | "ENTERING">("ENTERED")
 
-  const displayWord = word || "distributed"
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPhase("EXITING")
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % HERO_CYCLING_WORDS.length)
+        setPhase("ENTERING")
+        // Short tick to allow DOM to apply entering state before transition
+        setTimeout(() => {
+          setPhase("ENTERED")
+        }, 50)
+      }, 500) // Duration of exit animation
+    }, 4000) // Total time per word
+
+    return () => clearInterval(timer)
+  }, [])
+
+  const displayWord = HERO_CYCLING_WORDS[index]
+
+  let transitionClass = "transition-all duration-500 ease-in-out"
+  let transformClass = ""
+
+  if (phase === "ENTERED") {
+    transformClass = "opacity-100 translate-y-0"
+  } else if (phase === "EXITING") {
+    transformClass = "opacity-0 -translate-y-8"
+  } else if (phase === "ENTERING") {
+    transitionClass = ""
+    transformClass = "opacity-0 translate-y-8"
+  }
 
   return (
     <h1 className="text-4xl md:text-6xl lg:text-[4.5rem] font-extrabold text-white leading-[1.1] tracking-tight mb-6">
@@ -35,18 +52,11 @@ function HeroTitleContent() {
           {longestHeroWord}
         </span>
         <span className="col-start-1 row-start-1 flex w-full min-w-full items-center justify-center">
-          <span className="inline-flex items-center">
-            <span
-              className="text-transparent bg-clip-text"
-              style={{ backgroundImage: "linear-gradient(90deg, #c4b5fd, #93c5fd)" }}
-            >
-              {displayWord}
-            </span>
-            <span
-              aria-hidden
-              className="ml-px inline-block w-[3px] shrink-0 rounded-sm animate-pulse"
-              style={{ height: "0.8em", background: "#c4b5fd" }}
-            />
+          <span
+            className={`inline-block ${transitionClass} ${transformClass} text-transparent bg-clip-text`}
+            style={{ backgroundImage: "linear-gradient(90deg, #c4b5fd, #93c5fd)" }}
+          >
+            {displayWord}
           </span>
         </span>
       </span>
