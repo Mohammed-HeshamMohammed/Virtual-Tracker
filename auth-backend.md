@@ -131,8 +131,8 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 | **Remote** | `origin/main` @ `c249ec1` | `origin/Auth-Production` @ `90ac407` | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
-  main ──► Auth-Production     (0373304 + merge → pushed)
-  main ──► DashboardBackend-Prod (983549d → pushed)
+  main ──► Auth-Production        (90ac407 → pushed; slim Auth + dep cleanup)
+  main ──► DashboardBackend-Prod  (983549d → pushed)
 ```
 
 **Diff vs `main` (intentional):** each prod branch keeps its own `COOLIFY.md` in the service folder.
@@ -148,7 +148,7 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 - [ ] Redeploy **`vt-dashboard-web`** from `main` (or your dashboard web prod branch)
 - [ ] Confirm gateway routes six Auth paths to auth (`deploy/Caddyfile`)
 - [x] Remove dead deps (`nodemailer`, `ws`) from `Auth-Backend` on `main` — verified no `src/` imports
-- [x] Sync `package.json` + `package-lock.json` to `Auth-Production` (with next push)
+- [x] Sync `package.json` + `package-lock.json` to `Auth-Production` (`90ac407`)
 
 - [ ] Smoke test (below)
 
@@ -194,7 +194,7 @@ curl -s http://localhost:5713/api/readiness
 | Item | Notes |
 | --- | --- |
 | Multi-instance rate limiting | In-memory limiter today; add gateway or Redis at scale |
-| Delete dead `Dashboard-Backend/src/modules/auth/routes.js` | Old fat router if nothing imports it |
+| Delete dead `Dashboard-Backend/src/modules/auth/routes.js` | Old fat router — verify before delete: `grep -r "auth/routes" Dashboard-Backend/src/` (no imports as of `c249ec1`; `handle-request.js` uses `identity-routes.js` only) |
 
 ---
 
@@ -205,7 +205,8 @@ curl -s http://localhost:5713/api/readiness
 | **`1be9b36`** | `main` | **Full AuthN slim + Dashboard identity + boot resilience** |
 | `df2b2ce` | `main` | `.env.example` AuthN scope (pre-route slim) |
 | `f9837dc` | `main` | Removed scripts/duplicate tree; invites→Dashboard; routes still fat |
-| **`c50b836`** | `Auth-Production` | Slim Auth-Backend from `main` + remote merge, pushed |
+| **`90ac407`** | `Auth-Production` | Removed unused `nodemailer` + `ws` deps |
+| **`c249ec1`** | `main` | Doc handoff + dep cleanup |
 | **`983549d`** | `DashboardBackend-Prod` | Identity routes + session-bootstrap from `main`, pushed |
 | `cec99e2` | `Auth-Production` | (superseded) Production `.env` Firebase-only |
 
