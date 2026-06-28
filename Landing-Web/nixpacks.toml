@@ -7,4 +7,4 @@ cmds = ["npm ci"]
 cmds = ["node scripts/build.mjs"]
 
 [start]
-cmd = "node scripts/start.mjs"
+cmd = "node index.js"
