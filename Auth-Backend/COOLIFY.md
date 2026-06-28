@@ -7,6 +7,7 @@
 | **Container name** | `vt-auth-api` |
 | **Public domain** | `auth.myvirtualtracker.com` |
 | **Port** | `3000` |
+| **Start command** | `node index.js` (not `npm start` — avoids `npm warn config production`) |
 | **Health check** | `GET /health` |
 
 ## Platform URLs (defaults in `src/config/deployment-profiles.js`)
