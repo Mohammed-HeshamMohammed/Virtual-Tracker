@@ -39,31 +39,47 @@ export function logResponse(req, res, url) {
   }
 }
 
+function stripAnsi(value) {
+  return value.replace(/\x1b\[[0-9;]*m/g, "");
+}
+
+function padBoxLine(content, width) {
+  const pad = Math.max(0, width - stripAnsi(content).length);
+  return content + " ".repeat(pad);
+}
+
 export function logStartup({ version, port, nodeEnv, routes }) {
   const reset = "\x1b[0m";
   const cyan = "\x1b[36m";
   const green = "\x1b[32m";
   const yellow = "\x1b[33m";
-  console.log("");
-  console.log(`${cyan}╔══════════════════════════════════════════════════════╗${reset}`);
-  console.log(`${cyan}║${reset}  ${green}Virtual Tracker API${reset}                                 ${cyan}║${reset}`);
-  console.log(`${cyan}╠══════════════════════════════════════════════════════╣${reset}`);
-  console.log(`${cyan}║${reset}  Version : ${yellow}${version}${reset}                                     ${cyan}║${reset}`);
-  console.log(`${cyan}║${reset}  Port    : ${yellow}${port}${reset}                                      ${cyan}║${reset}`);
-  console.log(`${cyan}║${reset}  Node    : ${yellow}${process.version}${reset}                                  ${cyan}║${reset}`);
-  console.log(`${cyan}║${reset}  Env     : ${yellow}${nodeEnv}${reset}                               ${cyan}║${reset}`);
-  console.log(`${cyan}╠══════════════════════════════════════════════════════╣${reset}`);
-  console.log(`${cyan}║${reset}  Registered routes:                                  ${cyan}║${reset}`);
-  for (const route of routes.slice(0, 12)) {
-    const padded = route.padEnd(42, " ");
-    console.log(`${cyan}║${reset}    ${green}✓${reset} ${padded.substring(0, 42)}${cyan}      ║${reset}`);
-  }
-  if (routes.length > 12) {
-    console.log(`${cyan}║${reset}    ... and ${routes.length - 12} more                                   ${cyan}║${reset}`);
-  }
-  console.log(`${cyan}╚══════════════════════════════════════════════════════╝${reset}`);
-  console.log(`${green}Server ready at http://localhost:${port}${reset}`);
-  console.log("");
+  const boxWidth = 54;
+  const border = "═".repeat(boxWidth);
+  const row = (content) => `${cyan}║${reset}${padBoxLine(content, boxWidth)}${cyan}║${reset}`;
+
+  const lines = [
+    "",
+    `${cyan}╔${border}╗${reset}`,
+    row(`  ${green}Auth-Backend API${reset}`),
+    `${cyan}╠${border}╣${reset}`,
+    row(`  Version : ${yellow}${version}${reset}`),
+    row(`  Port    : ${yellow}${port}${reset}`),
+    row(`  Node    : ${yellow}${process.version}${reset}`),
+    row(`  Env     : ${yellow}${nodeEnv}${reset}`),
+    `${cyan}╠${border}╣${reset}`,
+    row("  Registered routes:"),
+    ...routes.slice(0, 12).map((route) => {
+      const label = route.padEnd(42, " ").substring(0, 42);
+      return row(`    ${green}✓${reset} ${label}`);
+    }),
+    ...(routes.length > 12 ? [row(`    ... and ${routes.length - 12} more`)] : []),
+    `${cyan}╚${border}╝${reset}`,
+    `${green}Server ready at http://localhost:${port}${reset}`,
+    "",
+  ];
+
+  // Single write so npm/other stderr cannot interleave between banner lines.
+  console.log(lines.join("\n"));
 }
 
 export function logError(err, context = "") {

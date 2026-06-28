@@ -51,9 +51,6 @@ export function startServer(port = getEnv().server.port) {
   registerServerErrorHandler(server, port);
 
   server.listen(port, async () => {
-    const db = getDb();
-    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
-
     let version = "0.0.0";
     try {
       const pkgPath = new URL("./package.json", import.meta.url);
@@ -81,6 +78,9 @@ export function startServer(port = getEnv().server.port) {
       nodeEnv: getEnv().nodeEnv,
       routes,
     });
+
+    const db = getDb();
+    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
 
     console.log(`Auth-Backend listening on http://localhost:${port}`);
   });

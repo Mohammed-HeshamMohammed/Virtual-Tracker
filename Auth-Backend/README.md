@@ -167,6 +167,7 @@ docker run --env-file .env -p 5712:5712 vt-auth-api
 - **Image:** `node:20-alpine`, production `npm ci --omit=dev`
 - **Healthcheck:** `GET /health` every 30s
 - **Coolify:** container `vt-auth-api`, domain `auth.myvirtualtracker.com`
+- **Start command:** `node index.js` (or use `nixpacks.toml` / `Dockerfile` — avoid `npm start` in Coolify; it triggers `npm warn config production`)
 
 Gateway path routing (Caddy/nginx) must forward **only** the six Auth paths to this container — see `deploy/Caddyfile` and `deploy/nginx/default.conf`.
 
