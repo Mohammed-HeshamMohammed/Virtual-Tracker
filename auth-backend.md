@@ -128,10 +128,10 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 | **Scope** | Full monorepo | `Auth-Backend/` only | `Dashboard-Backend/` only |
 | **Auth router** | 6 AuthN routes | ✅ same as `main` + `COOLIFY.md` | N/A (deny list for Auth paths) |
 | **Identity auth** | Dashboard modules | N/A | ✅ `identity-routes.js`, `session-bootstrap.js`, `GET /api/readiness` |
-| **Remote** | `origin/main` @ `c249ec1` | `origin/Auth-Production` @ `90ac407` | `origin/DashboardBackend-Prod` @ `983549d` |
+| **Remote** | `origin/main` @ `57d6a15` | `origin/Auth-Production` @ `bea49de` | `origin/DashboardBackend-Prod` @ `983549d` |
 
 ```text
-  main ──► Auth-Production        (90ac407 → pushed; slim Auth + dep cleanup)
+  main ──► Auth-Production        (bea49de → startup banner + node index.js start)
   main ──► DashboardBackend-Prod  (983549d → pushed)
 ```
 
@@ -148,7 +148,8 @@ POST dashapi…/api/auth/session-bootstrap ← Firestore identity
 - [ ] Redeploy **`vt-dashboard-web`** from `main` (or your dashboard web prod branch)
 - [ ] Confirm gateway routes six Auth paths to auth (`deploy/Caddyfile`)
 - [x] Remove dead deps (`nodemailer`, `ws`) from `Auth-Backend` on `main` — verified no `src/` imports
-- [x] Sync `package.json` + `package-lock.json` to `Auth-Production` (`90ac407`)
+- [x] Sync `package.json` + `package-lock.json` to `Auth-Production` (`bea49de`)
+- [x] Coolify start: `node index.js` via `nixpacks.toml` + `COOLIFY.md` (not `npm start`)
 
 - [ ] Smoke test (below)
 
@@ -205,8 +206,10 @@ curl -s http://localhost:5713/api/readiness
 | **`1be9b36`** | `main` | **Full AuthN slim + Dashboard identity + boot resilience** |
 | `df2b2ce` | `main` | `.env.example` AuthN scope (pre-route slim) |
 | `f9837dc` | `main` | Removed scripts/duplicate tree; invites→Dashboard; routes still fat |
+| **`57d6a15`** | `main` | Startup banner fix + `nixpacks.toml` / `node index.js` (no npm warn) |
+| **`bea49de`** | `Auth-Production` | Sync from `main` + `COOLIFY.md` start command |
+| **`18f59ab`** | `main` | `.env.example` + Coolify `start` script in `package.json` |
 | **`90ac407`** | `Auth-Production` | Removed unused `nodemailer` + `ws` deps |
-| **`c249ec1`** | `main` | Doc handoff + dep cleanup |
 | **`983549d`** | `DashboardBackend-Prod` | Identity routes + session-bootstrap from `main`, pushed |
 | `cec99e2` | `Auth-Production` | (superseded) Production `.env` Firebase-only |
 
