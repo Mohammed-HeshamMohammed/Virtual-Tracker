@@ -1,19 +1,19 @@
 Landing-Web/
 Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
 
+|-- .dockerignore
+|-- .env.example
+|-- Dockerfile
 |-- public/
-|   |-- apple-icon.png
 |   |-- icon.svg
 |   |-- llms-full.txt
 |   |-- llms.txt
 |   |-- manifest.webmanifest
 |   |-- robots.txt
-|   |-- sitemap.xml
-|   |-- stopwatch-black.png
-|   +-- stopwatch-green.png
+|   +-- sitemap.xml
 |-- src/
 |   |-- app/
-|   |   |-- [[...slug]]/
+|   |   |-- [...slug]/
 |   |   |   +-- page.tsx
 |   |   |-- about/
 |   |   |   +-- page.tsx
@@ -33,9 +33,12 @@ Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
 |   |   |   +-- page.tsx
 |   |   |-- resources/
 |   |   |   +-- page.tsx
+|   |   |-- sign-in/
+|   |   |   +-- page.tsx
 |   |   |-- solutions/
 |   |   |   +-- page.tsx
-|   |   |-- favicon.ico
+|   |   |-- error.tsx
+|   |   |-- global-error.tsx
 |   |   |-- layout.tsx
 |   |   |-- manifest.ts
 |   |   |-- not-found.tsx
@@ -45,7 +48,10 @@ Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
 |   |   |-- sitemap.ts
 |   |   +-- twitter-image.tsx
 |   |-- components/
-|   |   +-- PageShell.tsx
+|   |   |-- AppCtaLink.tsx
+|   |   |-- ErrorBoundary.tsx
+|   |   |-- PageShell.tsx
+|   |   +-- SafeSection.tsx
 |   |-- features/
 |   |   |-- blog/
 |   |   |   |-- components/
@@ -73,6 +79,10 @@ Excluded from tree: node_modules, .next, .git, dist, build, .turbo, coverage
 |   |-- layout/
 |   |   |-- Footer.tsx
 |   |   +-- NavigationBar.tsx
+|   |-- lib/
+|   |   |-- product-content.ts
+|   |   |-- safe.ts
+|   |   +-- site-urls.ts
 |   |-- sections/
 |   |   |-- CtaDemoSection/
 |   |   |   |-- CtaDemoSection.tsx
