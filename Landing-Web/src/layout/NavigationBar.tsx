@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { usePathname } from "next/navigation"
 import Link from "next/link"
 import AppCtaLink from "@/components/AppCtaLink"
 import { getSignInHref, getTrialHref } from "@/lib/site-urls"
@@ -138,6 +139,7 @@ function ResourcesDropdown() {
 type OpenMenu = "Platform" | "solutions" | "resources" | null
 
 export default function NavigationBar() {
+  const pathname = usePathname()
   const [scrolled, setScrolled] = useState(false)
   const [open, setOpen] = useState<OpenMenu>(null)
   const navRef = useRef<HTMLElement>(null)
@@ -157,7 +159,8 @@ export default function NavigationBar() {
   }, [])
 
   const toggle = (menu: OpenMenu) => setOpen((prev) => (prev === menu ? null : menu))
-  const isTransparent = !scrolled && !open
+  const isHome = pathname === "/"
+  const isTransparent = isHome && !scrolled && !open
   const btnBg = isTransparent ? "bg-white text-black hover:bg-white/90" : "bg-[#1e293b] text-white hover:bg-[#0f172a]"
 
   const navBtnClass = (menu: OpenMenu) =>
@@ -177,7 +180,11 @@ export default function NavigationBar() {
   return (
     <nav
       ref={navRef}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isTransparent ? "bg-transparent" : "bg-white/95 backdrop-blur-md"}`}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        isTransparent 
+          ? "bg-transparent border-b border-transparent" 
+          : "bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-sm"
+      }`}
       style={{ overflow: "visible" }}
     >
       <svg className="absolute w-0 h-0 pointer-events-none">

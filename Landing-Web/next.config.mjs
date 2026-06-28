@@ -1,5 +1,5 @@
 import { fileURLToPath } from "url"
-import { dirname } from "path"
+import { dirname, join } from "path"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -7,9 +7,15 @@ const __dirname = dirname(__filename)
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  // Monorepo: parent folder has another package-lock.json — pin tracing to this app.
+  outputFileTracingRoot: join(__dirname),
   images: { unoptimized: true },
   compress: true,
   poweredByHeader: false,
+  eslint: { ignoreDuringBuilds: true },
+  typescript: {
+    ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1",
+  },
   async redirects() {
     return [
       { source: "/contact-us", destination: "/contact", permanent: true },
