@@ -3,7 +3,8 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
@@ -13,9 +14,9 @@ COPY . .
 ARG NEXT_PUBLIC_DASHBOARD_URL
 ENV NEXT_PUBLIC_DASHBOARD_URL=${NEXT_PUBLIC_DASHBOARD_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
 
-RUN npm run build
+RUN --mount=type=cache,target=/app/.next/cache \
+    node scripts/build.mjs
 RUN SERVER_JS="$(find .next/standalone -name server.js ! -path '*/node_modules/*' | head -n 1)" \
   && STANDALONE_DIR="$(dirname "$SERVER_JS")" \
   && mkdir -p /standalone-out \
