@@ -8,7 +8,7 @@
     "dev:webpack": "next dev --webpack",
     "clean": "node scripts/clean-next.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "node index.js",
     "type-check": "tsc --noEmit",
     "doctor": "npx react-doctor@latest"
   },

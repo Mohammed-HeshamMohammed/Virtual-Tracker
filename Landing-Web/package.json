@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "node scripts/build.mjs",
-    "start": "node scripts/start.mjs",
+    "start": "node index.js",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
