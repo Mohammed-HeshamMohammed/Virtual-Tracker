@@ -3,11 +3,6 @@ import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { resolveMemberDisplayName, sanitizeMemberNamePart, assertValidMemberNamePart } from "../members/services/member-display-name.js";
 import { assertValidPhone } from "../../http/validate-body.js";
-import {
-  assertPhoneVerificationToken,
-  phonesMatch,
-} from "./phone-verification.service.js";
-import { notifyPhoneVerified } from "./security-login-alerts.js";
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -136,8 +131,6 @@ export async function patchProfileSettings(auth, db, uid, body) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   /** @type {Record<string, unknown>} */
   const patch = {};
-  let phoneNewlyVerified = false;
-  let verifiedPhoneNumber = "";
 
   if ("firstName" in body) {
     assertValidMemberNamePart(body.firstName, "First name");
@@ -150,36 +143,9 @@ export async function patchProfileSettings(auth, db, uid, body) {
     patch.lastName = trimmed || null;
   }
   if ("phone" in body) {
-    const phone = assertValidPhone(body.phone, { required: false, label: "Phone number" });
-    const snapBefore = await ref.get();
-    const cur = snapBefore.exists ? snapBefore.data() : {};
-    const oldPhone = typeof cur.phone === "string" ? cur.phone : "";
-    if (phone && !phonesMatch(phone, oldPhone)) {
-      const token = typeof body.phoneVerificationToken === "string" ? body.phoneVerificationToken.trim() : "";
-      if (token) {
-        const memberSnap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-        const linkedMemberId = memberSnap.empty ? "" : memberSnap.docs[0].id;
-        await assertPhoneVerificationToken(db, token, phone, {
-          uid,
-          ...(linkedMemberId ? { memberId: linkedMemberId } : {}),
-        });
-        patch.phone = phone || null;
-        patch.phoneVerified = true;
-        phoneNewlyVerified = true;
-        verifiedPhoneNumber = phone;
-      } else if (!oldPhone.trim()) {
-        patch.phone = phone || null;
-        patch.phoneVerified = false;
-      } else {
-        throw new Error("Verify your phone number before saving this change.");
-      }
-    } else if (phone) {
-      patch.phone = phone;
-      patch.phoneVerified = cur.phoneVerified === true;
-    } else {
-      patch.phone = null;
-      patch.phoneVerified = false;
-    }
+    const phone = await assertValidPhone(body.phone, { required: false, label: "Phone number" });
+    patch.phone = phone || null;
+    patch.phoneVerified = false;
   }
 
   let authEmailPatch = null;
@@ -229,11 +195,8 @@ export async function patchProfileSettings(auth, db, uid, body) {
   }
 
   if ("phone" in body) {
-    const phone = assertValidPhone(body.phone, { required: false, label: "Phone number" });
-    const snap = await ref.get();
-    const cur = snap.exists ? snap.data() : {};
-    const phoneVerified = cur.phoneVerified === true;
-    await syncMemberPhoneForUid(db, uid, phone, { phoneVerified });
+    const phone = await assertValidPhone(body.phone, { required: false, label: "Phone number" });
+    await syncMemberPhoneForUid(db, uid, phone, { phoneVerified: false });
   }
 
   if (authEmailPatch) {
@@ -242,11 +205,5 @@ export async function patchProfileSettings(auth, db, uid, body) {
   }
 
   const userRecord = await auth.getUser(uid);
-  const profile = await upsertProfileFromUserRecord(db, userRecord);
-
-  if (phoneNewlyVerified && verifiedPhoneNumber) {
-    void notifyPhoneVerified(db, auth, uid, verifiedPhoneNumber, profile);
-  }
-
-  return profile;
+  return upsertProfileFromUserRecord(db, userRecord);
 }

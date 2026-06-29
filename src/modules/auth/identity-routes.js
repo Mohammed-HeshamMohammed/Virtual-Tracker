@@ -4,7 +4,7 @@ import { requireManagementRole } from "../../http/auth-context.js";
 import { authenticateRequest } from "../../http/auth-middleware.js";
 import { readIdToken } from "../../http/auth-token.js";
 import { readJsonBody, MAX_AVATAR_JSON_BODY_BYTES } from "../../http/read-json-body.js";
-import { assertMaxLength, assertValidPhone, rejectUnknownFields } from "../../http/validate-body.js";
+import { assertMaxLength, rejectUnknownFields } from "../../http/validate-body.js";
 import { sendJson } from "../../http/response.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { patchProfileSettings } from "./profile-settings.js";
@@ -18,8 +18,6 @@ import { ensureMemberLinkedRecordsForUserRecord } from "../members/services/ensu
 import { alignMemberRoleTables } from "../members/services/relation-sync.js";
 import { enforceUnauthorizedPrivilegedRole } from "../members/services/privileged-role-governance.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
-import { validatePassword } from "../../config/password-policy/index.js";
-import { getPublicPasswordPolicyResponse } from "../../config/password-policy/index.js";
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { quotaErrorHttpResponse } from "../../http/quota-error.js";
@@ -29,17 +27,8 @@ import {
   sendEmailVerificationEmail,
   withEmailVerifiedContinueUrl,
 } from "./verification-email.js";
-import { getEmailDeliveryConfig } from "./email-config.js";
 import { assertDeviceNotBanned, assertMemberNotBanned } from "../members/services/member-ban-service.js";
 import { getRequestIp } from "../../http/request-ip.js";
-import {
-  sendPhoneVerificationCode,
-  confirmPhoneVerificationCode,
-  assertPhoneVerificationToken,
-  phonesMatch,
-  exchangeFirebasePhoneVerification,
-  isPhoneVerificationDevMode,
-} from "./phone-verification.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -91,10 +80,6 @@ export async function routeAuthIdentity(req, res, url, origin) {
     const vapidPublicKey = getEnv().firebase.webPush.vapidPublicKey || null;
     sendJson(res, origin, 200, {
       success: true,
-      phoneVerification: {
-        mode: isPhoneVerificationDevMode() ? "dev" : "firebase",
-        allowFirebaseInDev: isPhoneVerificationDevMode(),
-      },
       ...(vapidPublicKey ? { webPush: { vapidPublicKey } } : {}),
     });
     return true;
@@ -147,7 +132,6 @@ export async function routeAuthIdentity(req, res, url, origin) {
       const verificationLink = await auth.generateEmailVerificationLink(email, {
         url: withEmailVerifiedContinueUrl(continueUrl),
       });
-      const delivery = getEmailDeliveryConfig();
       const result = await sendEmailVerificationEmail({
         email,
         verificationLink,
@@ -157,14 +141,14 @@ export async function routeAuthIdentity(req, res, url, origin) {
         sendJson(res, origin, 200, { success: true, sent: true, channel: result.channel });
         return true;
       }
-      if (!delivery.configured) {
+      if (result.channel === "console") {
         sendJson(res, origin, 503, {
           success: false,
           code: "EMAIL_NOT_CONFIGURED",
           sent: false,
           channel: result.channel,
           error:
-            "Outbound email is not configured on the server. Use Firebase's built-in verification email or configure SMTP_* / RESEND_API_KEY in Dashboard-Backend/.env.",
+            "Outbound email is not configured on Notify-Backend. Configure SMTP_* in Notify-Backend/.env or ensure NOTIFY_BACKEND_URL points to a running vt-notify-api instance.",
         });
         return true;
       }
@@ -377,7 +361,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
       return true;
     }
     try {
-      rejectUnknownFields(body, ["firstName", "lastName", "email", "phone", "phoneVerificationToken"]);
+      rejectUnknownFields(body, ["firstName", "lastName", "email", "phone"]);
       assertMaxLength(body.firstName, 120, "firstName");
       assertMaxLength(body.lastName, 120, "lastName");
       assertMaxLength(body.email, 320, "email");
@@ -621,98 +605,6 @@ export async function routeAuthIdentity(req, res, url, origin) {
       let status = 500;
       if (lower.includes("only viewer") || lower.includes("deactivation request")) status = 403;
       sendJson(res, origin, status, { success: false, error: msg });
-    }
-    return true;
-  }
-
-  if (
-    (url.pathname === "/api/auth/phone-verification/send" ||
-      url.pathname === "/api/v1/auth/phone-verification/send") &&
-    req.method === "POST"
-  ) {
-    const db = getDb();
-    if (!db) {
-      sendJson(res, origin, 503, { success: false, error: "Database is not configured" });
-      return true;
-    }
-    let body;
-    try {
-      body = await readJsonBody(req);
-      rejectUnknownFields(body, ["phone"]);
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
-      return true;
-    }
-    try {
-      const authResult = await authenticateRequest(req, url, db).catch(() => null);
-      const result = await sendPhoneVerificationCode(db, body.phone, {
-        uid: authResult?.ok ? authResult.context.uid : "",
-        memberId: authResult?.ok ? authResult.context.memberId : "",
-      });
-      sendJson(res, origin, 200, { success: true, data: result });
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to send code" });
-    }
-    return true;
-  }
-
-  if (
-    (url.pathname === "/api/auth/phone-verification/confirm" ||
-      url.pathname === "/api/v1/auth/phone-verification/confirm") &&
-    req.method === "POST"
-  ) {
-    const db = getDb();
-    if (!db) {
-      sendJson(res, origin, 503, { success: false, error: "Database is not configured" });
-      return true;
-    }
-    let body;
-    try {
-      body = await readJsonBody(req);
-      rejectUnknownFields(body, ["challengeId", "code"]);
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
-      return true;
-    }
-    try {
-      const result = await confirmPhoneVerificationCode(db, body);
-      sendJson(res, origin, 200, { success: true, data: result });
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Verification failed" });
-    }
-    return true;
-  }
-
-  if (
-    (url.pathname === "/api/auth/phone-verification/exchange" ||
-      url.pathname === "/api/v1/auth/phone-verification/exchange") &&
-    req.method === "POST"
-  ) {
-    const db = getDb();
-    const authAdmin = getAuthAdmin();
-    if (!db || !authAdmin) {
-      sendJson(res, origin, 503, { success: false, error: "Firebase Admin is not configured." });
-      return true;
-    }
-    let body;
-    try {
-      body = await readJsonBody(req);
-      rejectUnknownFields(body, ["idToken", "phone"]);
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
-      return true;
-    }
-    try {
-      const authResult = await authenticateRequest(req, url, db).catch(() => null);
-      const result = await exchangeFirebasePhoneVerification(db, authAdmin, {
-        idToken: body.idToken,
-        phone: body.phone,
-        uid: authResult?.ok ? authResult.context.uid : "",
-        memberId: authResult?.ok ? authResult.context.memberId : "",
-      });
-      sendJson(res, origin, 200, { success: true, data: result });
-    } catch (e) {
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Verification failed" });
     }
     return true;
   }

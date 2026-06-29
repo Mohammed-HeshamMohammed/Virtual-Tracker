@@ -10,7 +10,7 @@ import { COLLECTIONS } from "../lib/firestore/collections.js";
 /** @type {Array<{ collection: string, entityKey?: string, policy: BootstrapPolicy, notes?: string }>} */
 export const ENTITY_BOOTSTRAP_MANIFEST = [
   // --- Auth & profiles ---
-  { collection: "User_profiles", policy: "auth_flow", notes: "Upserted on /api/auth/verify; profileImageData stored in-doc (no Storage)" },
+  { collection: "User_profiles", policy: "auth_flow", notes: "Upserted on session-bootstrap; avatars stored in GCS (photoURL)" },
   { collection: "members", policy: "auth_flow", notes: "ensureMemberRowForUserRecord on verify" },
   { collection: "pending_auth_members", policy: "auth_flow", notes: "Admin pre-provision only" },
   { collection: "pending_auth_projects", policy: "auth_flow", notes: "With pending_auth_members" },
@@ -54,14 +54,14 @@ export const ENTITY_BOOTSTRAP_MANIFEST = [
   { collection: "team_members", entityKey: "team-members", policy: "on_demand" },
   { collection: "team_projects", entityKey: "team-projects", policy: "on_demand" },
 
-  // --- Tasks ---
+  // --- Tasks (child entities live under tasks/{taskId}/ subcollections) ---
   { collection: "tasks", entityKey: "tasks", policy: "on_demand" },
-  { collection: "task_subtasks", entityKey: "task-subtasks", policy: "on_demand" },
-  { collection: "task_comments", entityKey: "task-comments", policy: "on_demand" },
-  { collection: "task_attachments", entityKey: "task-attachments", policy: "on_demand" },
+  { collection: "tasks/*/comments", entityKey: "task-comments", policy: "on_demand" },
+  { collection: "tasks/*/subtasks", entityKey: "task-subtasks", policy: "on_demand" },
+  { collection: "tasks/*/attachments", entityKey: "task-attachments", policy: "on_demand" },
   { collection: "task_assignments", entityKey: "task-assignments", policy: "on_demand" },
-  { collection: "task_hours", entityKey: "task-hours", policy: "on_demand" },
-  { collection: "task_time_tracking", entityKey: "task-time-tracking", policy: "runtime", notes: "Active timer state per user/task" },
+  { collection: "tasks/*/hours", entityKey: "task-hours", policy: "on_demand" },
+  { collection: "tasks/*/time_tracking", entityKey: "task-time-tracking", policy: "runtime", notes: "Active timer state per user/task" },
 
   // --- Activity (runtime only; no login bootstrap) ---
   { collection: "activity_sessions", entityKey: "activity-sessions", policy: "runtime" },

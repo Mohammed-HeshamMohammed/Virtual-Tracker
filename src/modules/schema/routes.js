@@ -37,6 +37,21 @@ import {
 import { createTeamInitialRoster, parseTeamRosterInput, syncTeamRoster, validateTeamRoster } from "../teams/team-roster.service.js";
 import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-budget-notify.js";
 import { syncProjectBudgetFromClients } from "../projects/services/project-budget-from-clients.js";
+import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
+import {
+  parseTaskChildPath,
+  resolveEntityCollectionRef,
+  resolveEntityDocRef,
+  resolveTaskParentIdFromQuery,
+} from "./collection-ref.js";
+import {
+  POSTGRES_ENTITY_KEYS,
+  listPostgresRows,
+  getPostgresRow,
+  createPostgresRow,
+  updatePostgresRow,
+  deletePostgresRow,
+} from "./services/postgres-crud.service.js";
 
 function parsePath(pathname) {
   const match = /^\/api(?:\/v1)?\/([a-z-]+)(?:\/([^/]+))?$/.exec(pathname);
@@ -454,13 +469,112 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
     return true;
   }
 
-  const parsed = parsePath(url.pathname);
+  const taskChildRoute = parseTaskChildPath(url.pathname);
+  let parsed = taskChildRoute
+    ? { key: taskChildRoute.entityKey, id: taskChildRoute.childId }
+    : parsePath(url.pathname);
   if (!parsed) return false;
   const entity = schemaByKey.get(parsed.key);
   if (!entity) return false;
+  let taskParentId = taskChildRoute?.taskId ?? null;
+  if (isTaskChildEntityKey(parsed.key) && !taskParentId) {
+    taskParentId = resolveTaskParentIdFromQuery(url);
+  }
   try {
+    if (POSTGRES_ENTITY_KEYS.has(parsed.key)) {
+      if (req.method === "GET" && !parsed.id) {
+        let rows = await listPostgresRows(parsed.key, url);
+        rows = await applyVisibilityFilter(req, db, parsed.key, rows);
+        sendJson(res, origin, 200, { success: true, data: rows });
+        return true;
+      }
+      if (req.method === "GET" && parsed.id) {
+        const row = await getPostgresRow(parsed.key, parsed.id);
+        if (!row) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        const visible = await assertRowVisible(req, db, parsed.key, row);
+        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        sendJson(res, origin, 200, { success: true, data: row });
+        return true;
+      }
+      if (req.method === "POST" && !parsed.id) {
+        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
+          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
+        }
+        const body = await readJsonBody(req);
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, undefined);
+          if (!timeEntryOk) return true;
+        }
+        const payload = buildCreatePayload(entity, body);
+        validateRequiredFields(parsed.key, payload);
+        await validateBusinessRules(parsed.key, payload, db, {
+          actorRoleName: getAuthContext(req)?.roleName ?? "",
+        });
+        await validateForeignKeys(db, payload, { entityKey: parsed.key });
+        const created = await createPostgresRow(parsed.key, payload);
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          const projectId = typeof payload.project_id === "string" ? payload.project_id : "";
+          if (projectId) await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
+        }
+        sendJson(res, origin, 201, { success: true, data: created });
+        return true;
+      }
+      if ((req.method === "PUT" || req.method === "PATCH") && parsed.id) {
+        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
+          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
+        }
+        const existing = await getPostgresRow(parsed.key, parsed.id);
+        if (!existing) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        const body = await readJsonBody(req);
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, existing);
+          if (!timeEntryOk) return true;
+        }
+        const visible = await assertRowVisible(req, db, parsed.key, existing);
+        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        const payload = buildUpdatePayload(entity, body);
+        if (Object.keys(payload).length === 0) {
+          return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
+        }
+        await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
+          actorRoleName: getAuthContext(req)?.roleName ?? "",
+        });
+        const updated = await updatePostgresRow(parsed.key, parsed.id, payload, existing);
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          const projectId = String(payload.project_id ?? existing.project_id ?? "").trim();
+          if (projectId) await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
+        }
+        sendJson(res, origin, 200, { success: true, data: updated });
+        return true;
+      }
+      if (req.method === "DELETE" && parsed.id) {
+        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
+          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
+        }
+        const existing = await getPostgresRow(parsed.key, parsed.id);
+        if (!existing) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, {}, existing);
+          if (!timeEntryOk) return true;
+        }
+        const visible = await assertRowVisible(req, db, parsed.key, existing);
+        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        await deletePostgresRow(parsed.key, parsed.id);
+        sendJson(res, origin, 200, { success: true, data: { id: parsed.id, deleted: true } });
+        return true;
+      }
+    }
+
+    if (isTaskChildEntityKey(parsed.key) && !taskParentId) {
+      sendJson(res, origin, 400, {
+        success: false,
+        error: "task_id query parameter or /api/tasks/:taskId/... nested route is required",
+      });
+      return true;
+    }
+
     if (req.method === "GET" && !parsed.id) {
-      let query = db.collection(entity.collection);
+      let query = resolveEntityCollectionRef(db, entity, taskParentId);
       let hasFilters = false;
       for (const field of Object.keys(entity.fields)) {
         const queryValue = url.searchParams.get(field) ?? url.searchParams.get(snakeToCamel(field));
@@ -577,7 +691,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       return true;
     }
     if (req.method === "GET" && parsed.id) {
-      const doc = await db.collection(entity.collection).doc(parsed.id).get();
+      const doc = await resolveEntityDocRef(db, entity, parsed.id, taskParentId).get();
       if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
       let row = normalizeDoc({ id: doc.id, ...doc.data() });
       const visible = await assertRowVisible(req, db, parsed.key, row);
@@ -647,7 +761,10 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         actorRoleName: getAuthContext(req)?.roleName ?? "",
       });
       await validateForeignKeys(db, payload, { entityKey: parsed.key });
-      await db.collection(entity.collection).doc(payload.id).set(payload);
+      if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
+        payload.task_id = taskParentId;
+      }
+      await resolveEntityDocRef(db, entity, payload.id, taskParentId).set(payload);
       if (parsed.key === "teams" && viewer?.memberId) {
         try {
           const roster = parseTeamRosterInput(body);
@@ -659,7 +776,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           }
           await createTeamInitialRoster(db, viewer, payload.id, roster);
         } catch (err) {
-          await db.collection(entity.collection).doc(payload.id).delete().catch(() => {});
+          await resolveEntityDocRef(db, entity, payload.id, taskParentId).delete().catch(() => {});
           const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 400;
           sendJson(res, origin, statusCode, {
             success: false,
@@ -738,7 +855,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
         actorRoleName: getAuthContext(req)?.roleName ?? "",
       });
-      const ref = db.collection(entity.collection).doc(parsed.id);
+      const ref = resolveEntityDocRef(db, entity, parsed.id, taskParentId);
       const exists = await ref.get();
       if (!exists.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
       const existingData = exists.data() || {};
@@ -892,28 +1009,14 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       }
       if (parsed.key === "tasks") {
         const taskId = parsed.id;
-        const taskDoc = await db.collection(entity.collection).doc(taskId).get();
+        const taskDoc = await db.collection("tasks").doc(taskId).get();
         if (!taskDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         const visible = await assertRowVisible(req, db, "tasks", { id: taskDoc.id, ...taskDoc.data() });
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         if (!requireManagementRole(getAuthContext(req))) {
           return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
         }
-        const batch = db.batch();
-        const childQueries = [
-          db.collection("task_assignments").where("task_id", "==", taskId).get(),
-          db.collection("task_subtasks").where("task_id", "==", taskId).get(),
-          db.collection("task_comments").where("task_id", "==", taskId).get(),
-          db.collection("task_attachments").where("task_id", "==", taskId).get(),
-          db.collection("task_hours").where("task_id", "==", taskId).get(),
-          db.collection("task_time_tracking").where("task_id", "==", taskId).get(),
-        ];
-        const childSnaps = await Promise.all(childQueries);
-        for (const snap of childSnaps) {
-          for (const doc of snap.docs) batch.delete(doc.ref);
-        }
-        batch.delete(db.collection(entity.collection).doc(taskId));
-        await batch.commit();
+        await deleteTaskWithChildren(db, taskId);
         sendJson(res, origin, 200, { success: true, data: { id: taskId, deleted: true } });
         return true;
       }
@@ -942,15 +1045,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         if (!projectWriteOk) return true;
       }
       if (parsed.key === TIME_ENTRY_WRITE_KEY || parsed.key === "timesheets") {
-        const doc = await db.collection(entity.collection).doc(parsed.id).get();
-        if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const existingData = doc.data() || {};
-        const visible = await assertRowVisible(req, db, parsed.key, { id: doc.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-          const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, {}, existingData);
-          if (!timeEntryOk) return true;
-        }
+        return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
       }
       let projectIdToResyncBudget = null;
       if (parsed.key === "client-projects") {
@@ -960,7 +1055,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           projectIdToResyncBudget = String(row.project_id ?? row.projectId ?? "").trim() || null;
         }
       }
-      await db.collection(entity.collection).doc(parsed.id).delete();
+      await resolveEntityDocRef(db, entity, parsed.id, taskParentId).delete();
       if (projectIdToResyncBudget) {
         await syncProjectBudgetFromClients(db, projectIdToResyncBudget).catch(() => null);
       }

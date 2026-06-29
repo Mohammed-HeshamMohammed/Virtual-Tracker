@@ -48,10 +48,10 @@ export function assertMaxLength(value, maxLen, fieldName) {
 
 /**
  * @param {unknown} value
- * @param {{ required?: boolean, label?: string }} [options]
- * @returns {string}
+ * @param {{ required?: boolean, label?: string, defaultCountry?: string }} [options]
+ * @returns {Promise<string>} E.164 formatted phone, or empty string when optional and blank
  */
-export function assertValidPhone(value, options = {}) {
+export async function assertValidPhone(value, options = {}) {
   const { required = false, label = "Phone number" } = options;
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) {
@@ -59,12 +59,6 @@ export function assertValidPhone(value, options = {}) {
     return "";
   }
   assertMaxLength(trimmed, 40, label);
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 7) {
-    throw new Error(`Enter a valid ${label.toLowerCase()}.`);
-  }
-  if (!/^[\d\s\-+().]+$/.test(trimmed)) {
-    throw new Error(`Enter a valid ${label.toLowerCase()}.`);
-  }
-  return trimmed;
+  const { validatePhoneViaNotify } = await import("../lib/notify/phone-validation-client.js");
+  return validatePhoneViaNotify(trimmed, options);
 }

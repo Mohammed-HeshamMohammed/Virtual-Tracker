@@ -1,5 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { sendTransactionalEmail, escapeHtml } from "../auth/transactional-email.js";
+import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { resolveAppPublicUrl } from "../auth/app-public-url.js";
 import { canBeTeamLead } from "../../http/team-member-assign-policy.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
@@ -116,24 +116,14 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
 
   const memberCount = teamMembersSnap.size;
   const appUrl = resolveAppPublicUrl();
-  const subject = `Weekly team report — ${teamName}`;
-  const text =
-    `Weekly report for ${teamName}\n\n` +
-    `Members on team: ${memberCount}\n\n` +
-    `Open your dashboard: ${appUrl}\n`;
-  const html =
-    `<p>Weekly report for <strong>${escapeHtml(teamName)}</strong></p>` +
-    `<p>Members on team: <strong>${memberCount}</strong></p>` +
-    `<p><a href="${escapeHtml(appUrl)}">Open your dashboard</a></p>`;
 
   let sent = 0;
   for (const to of emails) {
-    const result = await sendTransactionalEmail({
-      to,
-      subject,
-      text,
-      html,
-      logPrefix: `[team-weekly-report:${teamId}]`,
+    const result = await sendEmailViaNotify("team-weekly-report", {
+      email: to,
+      teamName,
+      memberCount,
+      appUrl,
     });
     if (result.sent) sent += 1;
   }

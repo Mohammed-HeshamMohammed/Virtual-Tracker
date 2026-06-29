@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { validateAssigneeWorkLimits } from "./task-workload-validation.js";
 import { COLLECTIONS } from "../../lib/firestore/collections.js";
+import { taskChildCollectionRef } from "../../lib/firestore/task-subcollections.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
@@ -266,11 +267,7 @@ export async function getTaskParticipation(db, taskId, viewerMemberId, viewerRol
   const required = assignments.filter((a) => a.required !== false);
   const participation = computeParticipationStats(required);
 
-  const trackingSnap = await db
-    .collection("task_time_tracking")
-    .where("task_id", "==", taskId)
-    .limit(50)
-    .get();
+  const trackingSnap = await taskChildCollectionRef(db, taskId, "task-time-tracking").limit(50).get();
   const trackingByUser = new Map();
   for (const doc of trackingSnap.docs) {
     const d = doc.data();
@@ -768,12 +765,13 @@ export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {
   }
 
   const assignmentsSnap = await db.collection("task_assignments").limit(500).get();
-  const trackingSnap = await db.collection("task_time_tracking").limit(500).get();
+  const trackingSnap = await db.collectionGroup("time_tracking").limit(500).get();
 
   const trackingByKey = new Map();
   for (const doc of trackingSnap.docs) {
     const d = doc.data();
-    trackingByKey.set(`${d.task_id}:${d.user_id}`, {
+    const taskId = d.task_id ?? doc.ref.parent?.parent?.id ?? "";
+    trackingByKey.set(`${taskId}:${d.user_id}`, {
       activeSeconds: typeof d.active_seconds === "number" ? d.active_seconds : 0,
       idleSeconds: typeof d.idle_seconds === "number" ? d.idle_seconds : 0,
       lastActivityAt: toIso(d.last_activity_at),
@@ -889,9 +887,7 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
       nextStatus: "done",
       actorName: reviewerName || "Management",
     });
-    const trackingDoc = await db
-      .collection("task_time_tracking")
-      .where("task_id", "==", assignment.taskId)
+    const trackingDoc = await taskChildCollectionRef(db, assignment.taskId, "task-time-tracking")
       .where("user_id", "==", assignment.userId)
       .limit(1)
       .get();
@@ -921,9 +917,7 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
       nextStatus: "in_progress",
       actorName: reviewerName || "Management",
     });
-    const trackingDoc = await db
-      .collection("task_time_tracking")
-      .where("task_id", "==", assignment.taskId)
+    const trackingDoc = await taskChildCollectionRef(db, assignment.taskId, "task-time-tracking")
       .where("user_id", "==", assignment.userId)
       .limit(1)
       .get();

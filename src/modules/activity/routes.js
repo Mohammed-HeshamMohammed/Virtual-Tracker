@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import sharp from "sharp";
+import { uploadToGCS, getSignedUrl } from "../../lib/gcs/upload.js";
 import {
   getActivityCaptureMode,
   isActivityScreenshotsEnabled,
@@ -422,6 +424,7 @@ export async function routeActivity(req, res, url, origin) {
       const batch = db.batch();
       const now = new Date();
       let count = 0;
+      const screenshotWrites = [];
 
       for (const ev of events.slice(0, 50)) {
         if (!ev || typeof ev !== "object") continue;
@@ -438,24 +441,38 @@ export async function routeActivity(req, res, url, origin) {
                 ? ev.image_data
                 : "";
           if (!imageData || imageData.length > 900_000) continue;
-          batch.set(db.collection("activity_screenshots").doc(id), {
-            id,
-            member_id: member.memberId,
-            session_id: sessionId,
-            task_id: sessionTaskId,
-            task_title: sessionTaskTitle,
-            image_data: imageData,
-            has_image: true,
-            app_name: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
-            page_title: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
-            activity_level:
-              typeof ev.activityLevel === "number"
-                ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
-                : 50,
-            captured_at: now,
-            source,
-          });
-          count++;
+          screenshotWrites.push(
+            (async () => {
+              const raw = imageData.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
+              const buffer = Buffer.from(raw, "base64");
+              const webp = await sharp(buffer)
+                .resize({ width: 1280, height: 720, fit: "inside", withoutEnlargement: true })
+                .webp({ quality: 75 })
+                .toBuffer();
+              const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
+              const capturedMs = capturedAt.getTime();
+              const objectPath = `activity-screenshots/${member.memberId}/${sessionId}/${capturedMs}.webp`;
+              await uploadToGCS(webp, objectPath, "image/webp", false);
+              batch.set(db.collection("activity_screenshots").doc(id), {
+                id,
+                member_id: member.memberId,
+                session_id: sessionId,
+                task_id: sessionTaskId,
+                task_title: sessionTaskTitle,
+                screenshot_url: objectPath,
+                has_image: true,
+                app_name: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
+                page_title: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+                activity_level:
+                  typeof ev.activityLevel === "number"
+                    ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
+                    : 50,
+                captured_at: capturedAt,
+                source,
+              });
+              count++;
+            })(),
+          );
           continue;
         }
         if (type === "app") {
@@ -492,6 +509,7 @@ export async function routeActivity(req, res, url, origin) {
         }
       }
 
+      if (screenshotWrites.length) await Promise.all(screenshotWrites);
       if (count > 0) await batch.commit();
 
       const hadScreenshot = events.some((ev) => ev && typeof ev === "object" && ev.type === "screenshot");
@@ -576,9 +594,16 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
         return true;
       }
+      let imageUrl = "";
+      const screenshotPath = typeof d.screenshot_url === "string" ? d.screenshot_url : "";
+      if (screenshotPath) {
+        imageUrl = await getSignedUrl(screenshotPath, 15);
+      } else if (typeof d.image_data === "string" && d.image_data) {
+        imageUrl = d.image_data.startsWith("data:") ? d.image_data : `data:image/jpeg;base64,${d.image_data}`;
+      }
       sendJson(res, origin, 200, {
         success: true,
-        data: { id: doc.id, imageData: typeof d.image_data === "string" ? d.image_data : "" },
+        data: { id: doc.id, imageData: imageUrl, screenshotUrl: imageUrl },
       });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Screenshot load failed" });

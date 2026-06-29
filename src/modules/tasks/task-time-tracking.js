@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
 import {
+  taskChildCollectionRef,
+  taskChildDocRef,
+} from "../../lib/firestore/task-subcollections.js";
+import {
   ensureAssignmentForUser,
   estimateAssignmentSeconds,
   estimateTaskDurationSeconds,
@@ -60,11 +64,7 @@ export async function aggregateTaskProgress(db, taskId) {
 
   const taskData = taskSnap.data() ?? {};
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
-  const trackingSnap = await db
-    .collection("task_time_tracking")
-    .where("task_id", "==", taskId)
-    .limit(100)
-    .get();
+  const trackingSnap = await taskChildCollectionRef(db, taskId, "task-time-tracking").limit(100).get();
 
   let totalActive = 0;
   let totalIdle = 0;
@@ -142,9 +142,7 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
 }
 
 async function findTrackingDoc(db, taskId, userId) {
-  const snap = await db
-    .collection("task_time_tracking")
-    .where("task_id", "==", taskId)
+  const snap = await taskChildCollectionRef(db, taskId, "task-time-tracking")
     .where("user_id", "==", userId)
     .limit(1)
     .get();
@@ -203,7 +201,7 @@ export async function syncTaskTimeTracking(db, {
       created_at: now,
       updated_at: now,
     };
-    await db.collection("task_time_tracking").doc(id).set(row);
+    await taskChildDocRef(db, taskId, "task-time-tracking", id).set(row);
     trackingDoc = { id, data: () => row };
   } else {
     const patch = {
@@ -216,8 +214,8 @@ export async function syncTaskTimeTracking(db, {
     if ((action === "start" || action === "resume") && !trackingDoc.data()?.started_at) {
       patch.started_at = now;
     }
-    await db.collection("task_time_tracking").doc(trackingDoc.id).update(patch);
-    trackingDoc = await db.collection("task_time_tracking").doc(trackingDoc.id).get();
+    await taskChildDocRef(db, taskId, "task-time-tracking", trackingDoc.id).update(patch);
+    trackingDoc = await taskChildDocRef(db, taskId, "task-time-tracking", trackingDoc.id).get();
   }
 
   if (action === "start" || action === "resume") {

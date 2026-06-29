@@ -95,10 +95,12 @@ const envSourceSchema = z
     PRESENCE_SIGNAL_MIN_INTERVAL_MS: optionalTrimmedString,
     FIREBASE_DATABASE_URL: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
-    PHONE_VERIFICATION_DEV_MODE: optionalTrimmedString,
     // Internal service auth — used when vt-notify-api is live
     NOTIFY_BACKEND_URL: optionalTrimmedString,
     INTERNAL_SERVICE_SECRET: optionalTrimmedString,
+    AUTH_BACKEND_URL: optionalTrimmedString,
+    GCS_BUCKET_NAME: optionalTrimmedString,
+    POSTGRES_URL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();
@@ -221,14 +223,12 @@ const envSourceSchema = z
     }
 
     if (isProduction) {
-      const emailConfigured = Boolean(
-        data.RESEND_API_KEY || (smtpHost && smtpUser && smtpPass),
-      );
-      if (!emailConfigured) {
+      const notifyUrl = (data.NOTIFY_BACKEND_URL || "").trim();
+      if (!notifyUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["RESEND_API_KEY"],
-          message: "Production requires email delivery (RESEND_API_KEY or full SMTP configuration)",
+          path: ["NOTIFY_BACKEND_URL"],
+          message: "Production requires NOTIFY_BACKEND_URL (vt-notify-api handles outbound email)",
         });
       }
     }
