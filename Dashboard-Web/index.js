@@ -28,15 +28,19 @@ Dashboard Web listening on http://localhost:${port}
 
 console.log(box.trim());
 
+const spawnEnv = {
+  ...process.env,
+  NODE_ENV: "production",
+  HOSTNAME: process.env.HOST || "0.0.0.0",
+};
+if (port) {
+  spawnEnv.PORT = port;
+}
+
 const result = spawnSync(process.execPath, [serverJs], {
   cwd: root,
   stdio: "inherit",
-  env: {
-    ...process.env,
-    NODE_ENV: "production",
-    PORT: port,
-    HOSTNAME: process.env.HOSTNAME ?? "0.0.0.0",
-  },
+  env: spawnEnv,
 });
 
 process.exit(result.status ?? 1);
