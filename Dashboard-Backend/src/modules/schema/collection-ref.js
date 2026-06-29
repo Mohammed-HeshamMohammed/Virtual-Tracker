@@ -2,7 +2,7 @@ import {
   isTaskChildEntityKey,
   taskChildCollectionRef,
   taskChildDocRef,
-} from "../../../lib/firestore/task-subcollections.js";
+} from "../../lib/firestore/task-subcollections.js";
 
 /**
  * Parse nested task child routes: /api/tasks/:taskId/:segment[/:childId]
