@@ -7,7 +7,7 @@
     "node": ">=20.6"
   },
   "scripts": {
-    "start": "node --use-system-ca --env-file-if-exists=.env index.js",
+    "start": "node --use-system-ca index.js",
     "dev": "node scripts/dev-watch.mjs",
     "deploy:firestore": "npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes",
     "deploy:storage": "npx -y firebase-tools@latest deploy --only storage",
