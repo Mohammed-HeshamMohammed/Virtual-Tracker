@@ -95,7 +95,7 @@ export async function fetchManagementTaskTracking(filters?: {
   if (filters?.status) params.set("status", filters.status)
   const qs = params.toString()
   try {
-    const res = await apiFetch(apiPath(`/api/task-time-tracking/management${qs ? `)?${qs}` : ""}`)
+    const res = await apiFetch(apiPath(`/api/task-time-tracking/management${qs ? `?${qs}` : ""}`))
     if (!res.ok) return []
     const json = await res.json()
     return json.data ?? []

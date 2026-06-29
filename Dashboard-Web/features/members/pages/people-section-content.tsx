@@ -99,21 +99,21 @@ function PeopleSectionContentInner({
           custom={direction}
           className="absolute inset-0 flex min-h-0 flex-col"
           initial={
-            reduceMotion
+            (reduceMotion
               ? false
               : (dir: number) =>
                   dir === 0
                     ? { opacity: 0 }
-                    : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX }
+                    : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX }) as any
           }
           animate={{ opacity: 1, x: 0 }}
           exit={
-            reduceMotion
+            (reduceMotion
               ? undefined
               : (dir: number) =>
                   dir === 0
                     ? { opacity: 0 }
-                    : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }
+                    : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }) as any
           }
           transition={transition}
         >
