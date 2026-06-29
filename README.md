@@ -6,7 +6,7 @@ Split layout for containerized VPS deployment.
 |--------|------|-----------|
 | [Auth-Backend](./Auth-Backend) | Firebase authentication API (token verify, config, password policy) | `vt-auth-backend` |
 | [Dashboard-Backend](./Dashboard-Backend) | Members, invites, projects, activity API | `vt-dashboard-backend` |
-| [Dashboard Web](./Dashboard%20Web) | Next.js dashboard app | `vt-dashboard-web` |
+| [Dashboard-Web](./Dashboard-Web) | Next.js dashboard app | `vt-dashboard-web` |
 | [Landing-Web](./Landing-Web) | Marketing site | `vt-landing-web` |
 | [deploy](./deploy) | Docker Compose + Caddy gateway | `vt-gateway` |
 
@@ -35,7 +35,7 @@ cd Auth-Backend && npm install && npm start       # :5712
 cd Dashboard-Backend && npm install && npm start # :5713
 
 # Terminal 3: dashboard
-cd "Dashboard Web" && npm install && npm run dev  # :3000
+cd Dashboard-Web && npm install && npm run dev  # :3000
 
 # Terminal 4: landing (optional)
 cd Landing-Web && npm install && npm run dev -- -p 3001
@@ -49,5 +49,5 @@ For local split dev, Dashboard Web uses ports `5712` / `5713` automatically. For
 node app/Backend/scripts/copy-auth-backend.mjs
 node app/Backend/scripts/copy-dashboard-backend.mjs
 node app/Frontend/scripts/copy-dashboard-web.mjs
-# Re-apply Dashboard Web/infrastructure/api/* if the copy overwrote split routing
+# Re-apply Dashboard-Web/infrastructure/api/* if the copy overwrote split routing
 ```

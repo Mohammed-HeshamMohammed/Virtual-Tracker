@@ -6,7 +6,7 @@ Deploy **all four services** with one command:
 |-----------|---------------|------------|
 | `auth-backend` | `../Auth-Backend` | via `api.*` (path routing) |
 | `dashboard-backend` | `../Dashboard-Backend` | via `api.*` (path routing) |
-| `dashboard-web` | `../Dashboard Web` | `app.yourdomain.com` |
+| `dashboard-web` | `../Dashboard-Web` | `app.yourdomain.com` |
 | `landing-web` | `../Landing-Web` | `yourdomain.com` |
 | `gateway` (Caddy) | `deploy/Caddyfile` | TLS on 80/443 |
 

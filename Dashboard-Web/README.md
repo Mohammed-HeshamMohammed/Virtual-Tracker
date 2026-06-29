@@ -72,7 +72,7 @@ These variables must be set at **Build Time** (baked into the client bundle pref
 The project uses a structured, modular design separating domain business features from infrastructure clients:
 
 ```text
-Dashboard Web/
+Dashboard-Web/
 ├── .dockerignore
 ├── .env.example
 ├── .gitignore
@@ -157,7 +157,7 @@ Make sure **Auth-Backend** and **Dashboard-Backend** are running on ports `:5712
 ### 2. Install and Start
 ```bash
 # Navigate to directory
-cd "Dashboard Web"
+cd Dashboard-Web
 
 # Install dependencies
 npm install

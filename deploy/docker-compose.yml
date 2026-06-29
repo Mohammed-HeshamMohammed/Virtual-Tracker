@@ -61,7 +61,7 @@ services:
 
   dashboard-web:
     build:
-      context: ../Dashboard Web
+      context: ../Dashboard-Web
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
