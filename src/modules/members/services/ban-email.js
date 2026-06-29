@@ -1,4 +1,4 @@
-import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
+import { sendEmailViaNotify } from "../../../lib/notify/email-client.js";
 
 /**
  * @param {{ to: string; memberName: string; reason: string }} input
