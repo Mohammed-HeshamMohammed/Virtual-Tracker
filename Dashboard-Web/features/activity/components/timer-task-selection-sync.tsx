@@ -41,7 +41,7 @@ export function TimerTaskSelectionSync({ selectedTaskForTimer }: TimerTaskSelect
 
     if (syncedTaskIdRef.current === nextId) return
 
-    const taskRef = toTaskRef(selectedTaskForTimer)
+    const taskRef = toTaskRef(selectedTaskForTimer!)
     syncedTaskIdRef.current = nextId
     setTimerTask(taskRef)
     setCurrentTask(taskRef)

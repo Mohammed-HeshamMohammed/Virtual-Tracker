@@ -386,21 +386,21 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
               className="col-start-1 row-start-1 min-h-0 overflow-y-auto px-5 py-3.5 [&::-webkit-scrollbar]:hidden"
               style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
               initial={
-                reduceMotion
+                (reduceMotion
                   ? false
                   : (dir: number) => ({
                       opacity: 0,
                       x: dir >= 0 ? TAB_SLIDE_PX : -TAB_SLIDE_PX,
-                    })
+                    })) as any
               }
               animate={{ opacity: 1, x: 0 }}
               exit={
-                reduceMotion
+                (reduceMotion
                   ? undefined
                   : (dir: number) => ({
                       opacity: 0,
                       x: dir >= 0 ? -TAB_SLIDE_PX : TAB_SLIDE_PX,
-                    })
+                    })) as any
               }
               transition={paneTransition}
             >

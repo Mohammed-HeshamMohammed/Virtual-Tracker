@@ -71,7 +71,7 @@ export async function fetchReviewQueue(filters?: {
   if (filters?.priority) params.set("priority", filters.priority)
   if (filters?.status) params.set("status", filters.status)
   const qs = params.toString()
-  const res = await apiFetch(apiPath(`/api/task-assignments/review-queue${qs ? `)?${qs}` : ""}`)
+  const res = await apiFetch(apiPath(`/api/task-assignments/review-queue${qs ? `?${qs}` : ""}`))
   const json = await res.json().catch(() => null)
   if (!res.ok) {
     throw new Error(json?.error ?? "Failed to load review queue.")
@@ -122,7 +122,7 @@ export async function fetchTaskParticipation(
   if (options?.manage) params.set("manage", "1")
   const qs = params.toString()
   const res = await apiFetch(
-    apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments${qs ? `)?${qs}` : ""}`,
+    apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments${qs ? `?${qs}` : ""}`),
   )
   const json = await res.json().catch(() => null)
   if (!res.ok) {

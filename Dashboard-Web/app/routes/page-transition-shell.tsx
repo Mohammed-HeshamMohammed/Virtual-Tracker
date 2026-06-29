@@ -49,21 +49,21 @@ export function PageTransitionShell({ activeItem, transitionKey, children }: Pag
             fullBleed ? "absolute inset-0 min-h-0" : "relative min-h-full",
           )}
           initial={
-            reduceMotion
+            (reduceMotion
               ? false
               : (dir: number) =>
                   dir === 0
                     ? { opacity: 0 }
-                    : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX }
+                    : { opacity: 0, x: dir > 0 ? SLIDE_PX : -SLIDE_PX }) as any
           }
           animate={{ opacity: 1, x: 0 }}
           exit={
-            reduceMotion
+            (reduceMotion
               ? undefined
               : (dir: number) =>
                   dir === 0
                     ? { opacity: 0 }
-                    : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }
+                    : { opacity: 0, x: dir > 0 ? -SLIDE_PX : SLIDE_PX }) as any
           }
           transition={transition}
         >
