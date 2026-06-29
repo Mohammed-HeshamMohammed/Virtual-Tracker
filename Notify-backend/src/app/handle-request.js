@@ -5,13 +5,13 @@
  *   1. CORS preflight
  *   2. Health / readiness (no auth)
  *   3. Internal-auth guard (all other routes)
- *   4. Domain routing → email | otp | push
+ *   4. Domain routing → email | phone | push
  */
 import { getEnv } from "../config/env.js";
 import { logRequest, logResponse } from "../core/logger.js";
 import { sendJson } from "../http/response.js";
 import { routeEmail } from "../modules/email/routes.js";
-import { routeOtp } from "../modules/otp/routes.js";
+import { routePhone } from "../modules/phone/routes.js";
 import { routePush } from "../modules/push/routes.js";
 
 const CORS_HEADERS = {
@@ -77,7 +77,7 @@ export async function handleRequest(req, res) {
   // 4. Domain routes (all require INTERNAL_SERVICE_SECRET)
   const handled =
     (await routeEmail(req, res, url, origin)) ||
-    (await routeOtp(req, res, url, origin)) ||
+    (await routePhone(req, res, url, origin)) ||
     (await routePush(req, res, url, origin));
 
   if (!handled) {

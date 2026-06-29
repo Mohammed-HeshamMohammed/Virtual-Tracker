@@ -10,6 +10,7 @@
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { getMessaging } from "../../config/firebase.js";
+import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -36,7 +37,6 @@ export async function routePush(req, res, url, origin) {
 
   const body = await readBody(req);
 
-  // Validate required fields
   if (!body.token && !body.topic && !body.condition) {
     sendJson(res, origin, 400, {
       success: false,
@@ -49,6 +49,24 @@ export async function routePush(req, res, url, origin) {
       success: false,
       error: "title and body are required",
     });
+    return true;
+  }
+
+  const recipient = String(body.token || body.topic || body.condition);
+  const template = typeof body.template === "string" ? body.template.trim() : "push";
+  const recipientMemberId = typeof body.recipientMemberId === "string" ? body.recipientMemberId : null;
+
+  const dupe = await isDuplicate({ recipient, template, channel: "push" });
+  if (dupe) {
+    await logDelivery({
+      channel: "push",
+      template,
+      recipient,
+      recipientMemberId,
+      status: "skipped",
+      metadata: { reason: "cooldown" },
+    });
+    sendJson(res, origin, 200, { success: true, sent: false, channel: "skipped" });
     return true;
   }
 
@@ -78,10 +96,30 @@ export async function routePush(req, res, url, origin) {
     };
 
     const messageId = await messaging.send(message);
+
+    await logDelivery({
+      channel: "push",
+      template,
+      recipient,
+      recipientMemberId,
+      status: "sent",
+      metadata: { messageId, title: body.title },
+    });
+
     sendJson(res, origin, 200, { success: true, messageId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Push delivery failed";
     console.warn("[push] FCM send failed:", msg);
+
+    await logDelivery({
+      channel: "push",
+      template,
+      recipient,
+      recipientMemberId,
+      status: "failed",
+      errorMessage: msg,
+    });
+
     sendJson(res, origin, 500, { success: false, error: msg });
   }
 
