@@ -10,7 +10,7 @@ if (!existsSync(serverJs)) {
   process.exit(1);
 }
 
-const port = (process.env.PORT ?? "3000").trim() || "3000";
+const port = (process.env.PORT || "").trim();
 const nodeVersion = process.version;
 const version = require("./package.json").version || "0.1.0";
 
@@ -19,24 +19,28 @@ const box = `
 ║  Landing-Web App                                     ║
 ╠══════════════════════════════════════════════════════╣
 ║  Version : ${version.padEnd(42)}║
-║  Port    : ${port.padEnd(42)}║
+║  Port    : ${(port || "default").padEnd(42)}║
 ║  Node    : ${nodeVersion.padEnd(42)}║
 ║  Env     : production                                ║
 ╚══════════════════════════════════════════════════════╝
-Landing-Web listening on http://localhost:${port}
+Landing-Web listening${port ? ` on http://localhost:${port}` : ""}
 `;
 
 console.log(box.trim());
 
+const spawnEnv = {
+  ...process.env,
+  NODE_ENV: "production",
+  HOSTNAME: process.env.HOSTNAME ?? "0.0.0.0",
+};
+if (port) {
+  spawnEnv.PORT = port;
+}
+
 const result = spawnSync(process.execPath, [serverJs], {
   cwd: root,
   stdio: "inherit",
-  env: {
-    ...process.env,
-    NODE_ENV: "production",
-    PORT: port,
-    HOSTNAME: process.env.HOSTNAME ?? "0.0.0.0",
-  },
+  env: spawnEnv,
 });
 
 process.exit(result.status ?? 1);
