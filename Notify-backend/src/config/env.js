@@ -3,6 +3,17 @@
  * Fail-fast at startup — do not log parsed values (secrets).
  */
 import { z } from "zod";
+import { loadEnvFile } from "node:process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+
+try {
+  loadEnvFile(path.join(BACKEND_ROOT, ".env"));
+} catch {
+  // Optional
+}
 
 const optionalTrimmedString = z
   .string()
