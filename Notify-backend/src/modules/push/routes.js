@@ -6,8 +6,6 @@
  *
  * Requires in .env:
  *   FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
- *   OR
- *   FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
  */
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
@@ -31,7 +29,7 @@ export async function routePush(req, res, url, origin) {
       success: false,
       error:
         "Push notifications not configured. " +
-        "Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_CLIENT_EMAIL+FIREBASE_PRIVATE_KEY in Notify-Backend/.env",
+        "Set FIREBASE_SERVICE_ACCOUNT in Notify-Backend/.env",
     });
     return true;
   }

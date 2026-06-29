@@ -4,9 +4,8 @@
  *
  * Credential resolution order:
  *   1. FIREBASE_SERVICE_ACCOUNT (single-line JSON string)
- *   2. FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
- *   3. GOOGLE_APPLICATION_CREDENTIALS (path to service account file)
- *   4. Application Default Credentials (GCP only)
+ *   2. GOOGLE_APPLICATION_CREDENTIALS (path to service account file)
+ *   3. Application Default Credentials (GCP only)
  */
 import { getEnv } from "./env.js";
 
@@ -47,32 +46,21 @@ export async function initFirebaseAdmin() {
   if (fb.serviceAccount) {
     try {
       const parsed = JSON.parse(fb.serviceAccount);
-      credential = admin.credential.cert(parsed);
+      credential = admin.cert(parsed);
     } catch (err) {
       throw new Error(`[firebase] FIREBASE_SERVICE_ACCOUNT is not valid JSON: ${err.message}`);
     }
   }
-
-  // Option 2 — FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY
-  if (!credential && fb.clientEmail && fb.privateKey) {
-    const privateKey = fb.privateKey.replace(/\\n/g, "\n");
-    credential = admin.credential.cert({
-      projectId: fb.projectId || undefined,
-      clientEmail: fb.clientEmail,
-      privateKey,
-    });
-  }
-
-  // Option 3 — GOOGLE_APPLICATION_CREDENTIALS path or ADC
+  // Option 2 — GOOGLE_APPLICATION_CREDENTIALS path or ADC
   if (!credential) {
-    credential = admin.credential.applicationDefault();
+    credential = admin.applicationDefault();
   }
 
   if (!credential) {
     console.warn(
       "[firebase] No Firebase Admin credentials found. " +
         "Push notifications will not be available.\n" +
-        "  Set FIREBASE_SERVICE_ACCOUNT or FIREBASE_CLIENT_EMAIL+FIREBASE_PRIVATE_KEY in Notify-Backend/.env",
+        "  Set FIREBASE_SERVICE_ACCOUNT in Notify-Backend/.env",
     );
     return false;
   }

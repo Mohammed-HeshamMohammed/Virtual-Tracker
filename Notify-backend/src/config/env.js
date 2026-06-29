@@ -30,9 +30,6 @@ const envSchema = z
     SMTP_FROM: optionalTrimmedString,
 
     // Firebase Admin — required for FCM push notifications
-    FIREBASE_PROJECT_ID: optionalTrimmedString,
-    FIREBASE_CLIENT_EMAIL: optionalTrimmedString,
-    FIREBASE_PRIVATE_KEY: optionalTrimmedString,
     FIREBASE_SERVICE_ACCOUNT: optionalTrimmedString,
     GOOGLE_APPLICATION_CREDENTIALS: optionalTrimmedString,
 
@@ -101,9 +98,6 @@ function buildConfig(source = process.env) {
       smtpFrom: source.SMTP_FROM || "",
     },
     firebase: {
-      projectId: source.FIREBASE_PROJECT_ID || "",
-      clientEmail: source.FIREBASE_CLIENT_EMAIL || "",
-      privateKey: source.FIREBASE_PRIVATE_KEY || "",
       serviceAccount: source.FIREBASE_SERVICE_ACCOUNT || "",
       applicationCredentials: source.GOOGLE_APPLICATION_CREDENTIALS || "",
     },
