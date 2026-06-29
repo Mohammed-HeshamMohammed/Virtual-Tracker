@@ -3,14 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:clean": "node scripts/clean-next.mjs && next dev",
-    "dev:webpack": "next dev --webpack",
-    "clean": "node scripts/clean-next.mjs",
     "build": "node scripts/build.mjs",
-    "start": "node index.js",
-    "type-check": "tsc --noEmit",
-    "doctor": "npx react-doctor@latest"
+    "start": "node index.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
