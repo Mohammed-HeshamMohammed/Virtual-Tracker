@@ -177,11 +177,6 @@ export function buildEnv(source = process.env) {
       activityWindowMs: readPositiveInt(source, "PRESENCE_ACTIVITY_WINDOW_MS", 60_000),
       signalMinIntervalMs: readPositiveInt(source, "PRESENCE_SIGNAL_MIN_INTERVAL_MS", 60_000),
     }),
-
-    /** When true, OTP is logged to the server console instead of Firebase SMS. */
-    phoneVerification: Object.freeze({
-      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", !isProduction),
-    }),
   });
 }
 
