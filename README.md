@@ -1,6 +1,8 @@
 # Dashboard-Backend (`vt-dashboard-api`)
 
-Business-domain and identity API for the Virtual Tracker platform. It handles Firestore profiles, organization members, projects/tasks/clients/teams data, real-time activity tracking, presence status, and organization hierarchy.
+Business-domain and identity API for the Virtual Tracker platform. It handles Firestore profiles, organization members, projects/tasks/clients/teams data, real-time activity tracking, presence status, organization hierarchy, timesheets, and notification logging.
+
+For a detailed blueprint of how requests are partitioned and routed across the stack, see the repo root [explainhere.md](../explainhere.md).
 
 ---
 
@@ -14,69 +16,105 @@ Business-domain and identity API for the Virtual Tracker platform. It handles Fi
 | **Dashboard Web** | `vt-dashboard-web` | `:3000` | `https://app.myvirtualtracker.com` |
 
 ### Platform Design Philosophy
-- **One Capability, One Backend**: Each `/api/...` route is implemented on exactly one backend service. Auth-Backend and Dashboard-Backend have zero route overlap.
-- **Auth Separation (AuthN vs. AuthZ)**:
-  - Auth-Backend verifies credentials and issues Firebase ID tokens.
-  - Dashboard-Backend maps validated Firebase UIDs to Firestore member records, checks organization roles, and authorizes specific business actions (AuthZ).
+- **One Capability, One Backend**: Each `/api/...` route is implemented on exactly one backend service. Auth-Backend and Dashboard-Backend have zero route overlap. Dashboard-Backend protects this separation on production using an auth routing guard that returns `404 AUTH_BACKEND_ROUTE` for Auth-owned routes.
+- **Authorization Separation (AuthN vs. AuthZ)**:
+  - **Auth-Backend** verifies user credentials and validates tokens (AuthN).
+  - **Dashboard-Backend** maps validated Firebase UIDs to Firestore member records, checks role-based hierarchical permissions, and authorizes specific business actions (AuthZ).
 
 ---
 
 ## API Routes & Controller Map
 
-Dashboard-Backend hosts the core application routes. All endpoints (except `/health` and `/api/readiness`) require client authentication via a valid Firebase ID Token passed in the `Authorization: Bearer <ID_TOKEN>` header.
+Dashboard-Backend hosts the core application routes. All endpoints (except `/health` and `/api/readiness`) require client authentication via a valid Firebase ID Token passed in the `Authorization: Bearer <ID_TOKEN>` header (or query param in SSE/WS streams).
 
-### 1. General and Verification Routes
+### 1. System & Readiness Routes
 | Path | Method | Description | Controller / Handler |
 | :--- | :--- | :--- | :--- |
 | `/health` | `GET` | Container liveness check. | [handle-request.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/app/handle-request.js) |
-| `/api/readiness` | `GET` | Validates database connectivity (boot gate). | [readiness.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/readiness.js) |
+| `/api/readiness` | `GET` | Validates Firestore and optional Postgres database connectivity (boot gate). | [readiness.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/readiness.js) |
 | `/monitor` | `GET` | HTML Ops dashboard reporting memory/rps/error counters. | [routeMonitor](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/monitor/routes.js) |
 
-### 2. User & Identity Management
+### 2. User & Session Bootstrap
 | Path | Method | Description | Controller / Handler |
 | :--- | :--- | :--- | :--- |
-| `/api/auth/sign-in-client-extras` | `GET` | Returns platform capabilities (e.g., web push config). | [identity-routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/identity-routes.js) |
-| `/api/auth/session-bootstrap` | `POST` | Upserts Firestore profile, maps member record, updates status. | [session-bootstrap.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/session-bootstrap.js) |
+| `/api/auth/sign-in-client-extras` | `GET` | Returns platform capabilities (e.g., OTP requirements). | [identity-routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/identity-routes.js) |
+| `/api/auth/session-bootstrap` | `POST` | Upserts Firestore profile, maps member record, updates status, and issues session verification. | [session-bootstrap.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/session-bootstrap.js) |
 | `/api/auth/complete-first-login` | `POST` | Exchanges temp password for permanent key & promotes member status. | [complete-first-login.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/complete-first-login.js) |
-| `/api/auth/profile` | `POST` | Updates Firestore user details and avatar metadata. | [profile-settings.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/profile-settings.js) |
+| `/api/auth/profile` | `POST` | Updates Firestore user details and avatar base64 data. | [profile-settings.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/profile-settings.js) |
 | `/api/auth/access-request` | `POST` | Submits form requesting membership access to an org. | [identity-routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/identity-routes.js) |
-| `/api/bootstrap` | `GET` | Resolves permissions and metadata immediately post-login. | [routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/bootstrap/routes.js) |
+| `/api/bootstrap` | `GET` | Resolves permissions, settings, and shell aggregations immediately post-login. | [routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/bootstrap/routes.js) |
+| `/api/bootstrap/warm` | `GET` | Pre-warms cache and returns basic member attributes. | [routes.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/bootstrap/routes.js) |
 
-### 3. Organization & Work Entities (CRUD)
-| Route Group | Methods | Purpose | Controller / Handler |
+### 3. Business Entities & Organization CRUD (Schema Catalog)
+Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. Standard CRUD endpoints (`GET/POST /api/{key}`, `GET/PATCH/DELETE /api/{key}/:id`) are mapped directly to Firestore collections (or PostgreSQL tables for time tracking).
+
+| Entity / Route Key | Firestore Collection | PostgreSQL Table (if enabled) | Description |
 | :--- | :--- | :--- | :--- |
-| `/api/members` | `GET`, `POST`, `PATCH`, `DELETE` | Org membership records, boarding, & status toggling. | [members/routes](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/members) |
-| `/api/member-roles` | `GET`, `POST`, `DELETE` | Role mapping and access privilege level assignments. | [member-roles/routes](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/members) |
-| `/api/member-onboarding`| `GET`, `POST` | Workspace invite applications and sign-up requests. | [member-onboarding](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/member-onboarding/routes.js) |
-| `/api/member-relationships`| `GET`, `POST` | Manager/report structures and org level hierarchies. | [member-relationships](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/member-relationships/routes.js) |
-| `/api/projects` | `GET`, `POST`, `PATCH`, `DELETE` | Target workspace projects and budgets. | [projects](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/projects/routes.js) |
-| `/api/tasks` | `GET`, `POST`, `PATCH`, `DELETE` | Target task identifiers, assignees, and stages. | [tasks](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/tasks/routes.js) |
-| `/api/clients` | `GET`, `POST`, `PATCH`, `DELETE` | Client company profiles and target assignments. | [clients](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/clients/routes.js) |
-| `/api/teams` | `GET`, `POST`, `PATCH`, `DELETE` | Team configurations and member groups. | [teams/routes](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/teams) |
+| `members` | `members` | - | Member profile and metadata |
+| `roles` | `roles` | - | Available workspace roles |
+| `member-onboarding` | `member_onboarding` | - | Onboarding tasks checkpoints |
+| `invites` | `invites` | - | Pending user registrations |
+| `invite-projects` | `invite_projects` | - | Projects mapped to invites |
+| `job-titles` | `job_titles` | - | Employment lookup seeds |
+| `departments` | `departments` | - | Department lookup seeds |
+| `job-types` | `job_types` | - | Job type lookup seeds |
+| `tax-types` | `tax_types` | - | Tax configuration lookup seeds |
+| `employment` | `employment` | - | Individual HR contract settings |
+| `pay-rates` | `pay_rates` | - | Base pay rates and currencies |
+| `time-settings` | `time_settings` | - | Track timers and idle rules |
+| `limits` | `limits` | - | Weekly/daily tracking limits |
+| `clients` | `clients` | - | Client profile details |
+| `client-budgets` | `client_budgets` | - | Client financial budget details |
+| `client-invoicing` | `client_invoicing` | - | Client invoice scheduling and templates |
+| `client-projects` | `client_projects` | - | Client-to-project mappings |
+| `projects` | `projects_VirtualTacker` | - | Core project records |
+| `project-members` | `project_members` | - | Project roles and access scopes |
+| `project-budgets` | `project_budgets` | - | Project budget constraints |
+| `project-member-limits` | `project_member_limits` | - | Member budgets within a project scope |
+| `teams` | `teams` | - | Operational team labels |
+| `team-members` | `team_members` | - | Team user lists and leaders |
+| `team-projects` | `team_projects` | - | Team project visibility allocations |
+| `tasks` | `tasks` | - | Task status, assignee, and estimates |
+| `task-subtasks` | `task_subtasks` | - | Subtask list checklists |
+| `task-comments` | `task_comments` | - | Comments and discussions |
+| `task-attachments` | `task_attachments` | - | GCS links for files |
+| `task-assignments` | `task_assignments` | - | Task assignees and statuses |
+| `task-hours` | `task_hours` | - | Billed tracking duration inputs |
+| `task-time-tracking` | `task_time_tracking` | - | Active runtime tracking timer states |
+| `member-relationships`| `member_relationships` | - | Hierarchical supervisor mappings |
+| `member-tree-cache` | `member_tree_cache` | - | Flattened ancestors/descendants cache |
+| `member-transfer-requests`| `member_transfer_requests` | - | Organizational node change logs |
+| `time-entries` | `time_entries` | `time_entries` | Work time slots |
+| `timesheets` | `timesheets` | `timesheets` | Periodic payroll sheets |
+| `notifications` | `notifications_VirtualTacker` | - | Workspace notification alerts |
+| `activity-sessions` | `activity_sessions` | - | Work session logging triggers |
+| `activity-screenshots`| `activity_screenshots` | - | Telemetry base64 image captures |
+| `activity-app-logs` | `activity_app_logs` | - | Captured desktop app telemetry |
+| `activity-url-logs` | `activity_url_logs` | - | Visited web page telemetry logs |
+| `activity-alert-log` | `activity_alert_log` | - | System notification dispatch records |
 
-### 4. Telemetry, Real-time & Messaging
+### 4. Special Telemetry & Real-Time Sync
 | Path | Method | Description | Controller / Handler |
 | :--- | :--- | :--- | :--- |
-| `/api/activity` | `GET`, `POST` | Captures key events and pushes logs. | [activity](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/activity/routes.js) |
-| `/api/presence` | `GET`, `POST` | Sets heartbeat state & starts SSE streams. | [presence](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/presence/index.js) |
-| `/api/dashboard` | `GET` | Compiles widgets, active counts, and timelines. | [dashboard](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/dashboard/routes.js) |
-| `/api/public/invites/*` | `GET`, `POST` | Handles public link evaluations and profile connections. | [invites](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/bootstrap/routes.js) |
-| `/api/auth/send-verification-email` | `POST` | *Pending extraction.* Sends email verification link. | [verification-email.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/auth/verification-email.js) |
-| `/api/notifications/*` | `GET`, `POST` | *Pending extraction.* FCM push registration and logs. | [notifications](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/notifications/routes.js) |
+| `/api/activity/session` | `GET` / `POST` | Check or update currently running tracking session. | [activity](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/activity/routes.js) |
+| `/api/activity/events` | `POST` | Pushes batch logs (screenshots, app segments, URLs) from tracking agent. | [activity](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/activity/routes.js) |
+| `/api/activity/feed` | `GET` | Returns consolidated activity feeds (screenshots, apps, URLs) for review. | [activity](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/activity/routes.js) |
+| `/api/presence/events` | `GET` | SSE (Server-Sent Events) live presence stream. | [presence](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/presence/index.js) |
+| `/api/presence/ws` | `Upgrade` | WebSocket server heartbeats, live activity status checks, and client counts. | [presence](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/modules/presence/index.js) |
 
 ---
 
 ## Security Architecture
 
-The server processes incoming traffic through a middleware chain in [handle-request.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/app/handle-request.js):
+The server routes incoming HTTP traffic through a strict middleware chain in [handle-request.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/app/handle-request.js):
 
-1.  **CORS Handler**: Checks incoming origins against allowed environments ([cors.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/cors.js)).
-2.  **HTTPS Enforcement**: In production, blocks unsecured HTTP connections ([tls-enforcement.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/tls-enforcement.js)).
-3.  **Query Parameter Guard**: Rejects URLs containing credentials in the query string ([password-request-guard.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/password-request-guard.js)).
-4.  **Auth Routing Guard**: Bounces any request mapping to Auth-Backend endpoints with `404 AUTH_BACKEND_ROUTE` to enforce routing separation.
-5.  **IP Rate Limiter**: Enforces sliding-window limits based on route categories ([rate-limit.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/rate-limit.js)).
-6.  **Token Validator**: Decodes the Firebase ID token, validates expiration, and sets the auth context ([auth-middleware.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/auth-middleware.js)).
-7.  **Resource Access Guards**: Checks role permissions ([role-hierarchy.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/role-hierarchy.js)) and resource ownership (e.g., [project-access.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/project-access.js) and [task-access.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/task-access.js)).
+1. **CORS Handler**: Checks incoming origins against configuration rules ([cors.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/cors.js)).
+2. **HTTPS Enforcement**: Blocks unencrypted HTTP traffic in production tier environments ([tls-enforcement.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/tls-enforcement.js)).
+3. **Query Parameter Guard**: Rejects URLs containing plain credentials or security tokens in the query string ([password-request-guard.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/password-request-guard.js)).
+4. **Auth Routing Guard**: Bounces any request mapping to Auth-Backend endpoints with `404 AUTH_BACKEND_ROUTE` to protect route segregation.
+5. **IP Rate Limiter**: Enforces sliding-window limits based on route categories ([rate-limit.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/rate-limit.js)).
+6. **Token Validator**: Decodes the Firebase ID token, validates expiration, and sets the auth context ([auth-middleware.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/auth-middleware.js)).
+7. **Resource Access Guards**: Checks role permissions ([role-hierarchy.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/role-hierarchy.js)) and resource ownership (e.g., [project-access.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/project-access.js) and [task-access.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/src/http/task-access.js)).
 
 ---
 
@@ -86,43 +124,68 @@ Central variables are loaded by [env.js](file:///x:/Work/Virtual-Tracker-Test/Vi
 
 ### Core Server Settings
 
-| Variable | Scope | Description |
+| Variable | Scope | Type | Description |
+| :--- | :--- | :--- | :--- |
+| `NODE_ENV` | Mode | `development` \| `production` \| `test` | Target environment. |
+| `PORT` | Network | `number` (1-65535, default `5713`) | Server port binding. |
+| `FRONTEND_ORIGIN` | CORS | `string` | Primary dashboard client host origin. |
+| `CORS_ORIGINS` | CORS | `string` | Comma-separated list of alternative origins. |
+| `APP_PUBLIC_URL` | Redirects | `string` (HTTPS required in prod) | Public redirect origin of the client dashboard. |
+| `ALLOW_INSECURE_HTTP` | Dev Override | `boolean` | Disable TLS checking. Do not enable in production. |
+| `SKIP_ENV_VALIDATION` | Test Override| `boolean` | Bypasses Zod env schema validation rules. |
+
+### Database & Cloud Integrations (Firestore & Storage)
+
+| Variable | Type | Description |
 | :--- | :--- | :--- |
-| `NODE_ENV` | Mode | `development`, `production`, or `test`. |
-| `PORT` | Network | Local port mapping. Defaults to `5713`. |
-| `FRONTEND_ORIGIN` | CORS | Allowed frontend browser client origin. |
-| `APP_PUBLIC_URL` | Redirects | URL of the frontend dashboard site (HTTPS required in prod). |
-| `CORS_ORIGINS` | CORS | Comma-separated list of additional allowed CORS origins. |
-| `ALLOW_INSECURE_HTTP` | Dev Override | Disable SSL check. Do not enable in production. |
-| `SKIP_ENV_VALIDATION` | Test Override| Skips Zod env verification during test suites. |
+| `FIREBASE_SERVICE_ACCOUNT` | `string` | Stringified JSON credentials of the Firebase Service Account. |
+| `FIREBASE_PROJECT_ID` | `string` | Target Firebase project ID. |
+| `FIREBASE_CLIENT_EMAIL` | `string` | Service account email certificate index. |
+| `FIREBASE_PRIVATE_KEY` | `string` | Service account private key string (resolves newlines `\n` on boot). |
+| `FIREBASE_PRIVATE_KEY_ID` | `string` | Mapped private key identifier. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | `string` | Path to a local credentials JSON file. |
+| `FIREBASE_DATABASE_URL` | `string` | Realtime Database target URL (presenceheartbeats). |
+| `GCS_BUCKET_NAME` / `FIREBASE_STORAGE_BUCKET` | `string` | Target Google Cloud Storage bucket name for file uploads. |
+| `POSTGRES_URL` | `string` | Optional PostgreSQL connection string. If set, redirects `time-entries` and `timesheets` to SQL instead of Firestore. |
 
-### Database & Admin SDK (Firestore Access)
+### Outbound Integrations (SMTP & Notifications)
 
-| Variable | Description |
-| :--- | :--- |
-| `FIREBASE_SERVICE_ACCOUNT` | **Recommended.** Full stringified Service Account JSON credentials object. |
-| `FIREBASE_PROJECT_ID` | Project ID string. |
-| `FIREBASE_CLIENT_EMAIL` | Credentials certificate email. |
-| `FIREBASE_PRIVATE_KEY` | Private certificate key (newline characters `\n` resolved dynamically). |
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to a local JSON credentials file containing service credentials. |
-| `FIREBASE_DATABASE_URL` | Realtime Database target URL (derived from project ID if omitted). |
-
-### Outbound Messaging (Temporary — Pending Migration)
-*These settings will be removed from Dashboard-Backend once the migration to Notify-Backend is complete.*
-
-| Variable | Target Service | Purpose / Scope |
+| Variable | Type | Description |
 | :--- | :--- | :--- |
-| `RESEND_API_KEY` | Resend API | Outbound email delivery. |
-| `RESEND_FROM` | Resend API | From display address for branding. |
-| `FIREBASE_WEB_PUSH_VAPID_PUBLIC_KEY` | FCM Push | VAPID identifier for webpush keys. |
-| `NOTIFY_BACKEND_URL` | Notify-Backend| Target internal messaging API (e.g., `http://localhost:5715`). Required for phone validation. |
-| `INTERNAL_SERVICE_SECRET` | Notify-Backend| Shared secret used to authorize calls to Notify-Backend. |
+| `NOTIFY_BACKEND_URL` | `string` | URL of the `vt-notify-api` instance. Required in production. |
+| `INTERNAL_SERVICE_SECRET` | `string` | Shared token to authorize outbound messaging via Notify-Backend. |
+| `FIREBASE_WEB_PUSH_VAPID_PUBLIC_KEY` | `string` | VAPID public key (must be URL-safe base64). |
+| `RESEND_API_KEY` | `string` | Outbound email delivery key (fallback email provider). |
+| `RESEND_FROM` | `string` | From display address for emails. |
+| `SMTP_HOST` | `string` | SMTP mail server host address. |
+| `SMTP_PORT` | `number` | SMTP mail server port (defaults to `587`). |
+| `SMTP_SECURE` | `boolean` | Set to `true` to force TLS secure sockets. |
+| `SMTP_USER` | `string` | SMTP username credential. |
+| `SMTP_PASS` | `string` | SMTP password credential (auto-strips spacing). |
+| `SMTP_FROM` | `string` | Sender line string (e.g. `Virtual Tracker <noreply@...>` ). |
+
+### Telemetry & Heartbeat Timers
+
+| Variable | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `PRESENCE_ONLINE_MS` | `number` | `30000` (30s) | Threshold defining if member is actively online. |
+| `PRESENCE_IDLE_MS` | `number` | `600000` (10m) | Idle duration threshold. |
+| `PRESENCE_ACTIVITY_WINDOW_MS`| `number` | `60000` (1m) | Time scale chunk for presence metrics. |
+| `PRESENCE_SIGNAL_MIN_INTERVAL_MS`| `number`| `5000` (5s) | Throttling limit between heartbeats. |
+| `INVITE_SHARE_LINK_TTL_HOURS`| `number` | `48` | Lifetime duration for open registration invites. |
+| `MONITOR_USERNAME` | `string` | `admin` | Username credentials for `/monitor` logs dashboard. |
+| `MONITOR_PASSWORD` | `string` | `admin` | Password credentials for `/monitor` logs dashboard. |
+| `ACTIVITY_CAPTURE_MODE` | `string` | `screenshots` | Telemetry mode rules (`screenshots` \| `logs`). |
+| `ACTIVITY_WEB_CAPTURE_ENABLED`| `boolean` | `true` | Allows web domain tracking. |
+| `ACTIVITY_TASK_SCREENSHOTS_ENABLED`| `boolean`| `true` | Allows screenshot logging for tasks. |
+| `ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED`| `boolean`| `true` | Enables active agent screenshots ingest. |
+| `ACTIVITY_SESSION_STALE_MS` | `number` | `900000` (15m)| Max idle gap before closing tracking session. |
 
 ---
 
 ## Local Development & Setup
 
-### 1. Database Configuration
+### 1. Database Setup
 For local development, copy the project's Firebase Service Account JSON credentials file to the root directory as:
 ```text
 Dashboard-Backend/firebase-admin.local.json
@@ -131,15 +194,32 @@ If this file is present, the Firebase Admin SDK will automatically load it, bypa
 
 ### 2. Environment Configuration
 Create a `.env` file in the root of `Dashboard-Backend/` using [.env.example](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/.env.example):
-```text
+```env
 PORT=5713
+FRONTEND_ORIGIN=http://localhost:3000
+APP_PUBLIC_URL=http://localhost:3000
+NOTIFY_BACKEND_URL=http://localhost:5715
+INTERNAL_SERVICE_SECRET=dev-local-secret
 ```
 
-### 3. Execution Commands
-```bash
-# Navigate to directory
-cd Dashboard-Backend
+### 3. PostgreSQL Option (Optional)
+If you wish to log `time-entries` and `timesheets` in a PostgreSQL database instead of Firestore:
+1. Provide a `POSTGRES_URL` in your `.env` file:
+   ```env
+   POSTGRES_URL=postgresql://user:password@localhost:5432/virtual_tracker
+   ```
+2. Initialize the tables once by running the script:
+   ```bash
+   # Run against your Postgres instance
+   psql -d virtual_tracker -f src/lib/postgres/schema.sql
+   ```
+3. (Optional) Run the migration script to copy existing Firestore time entries to Postgres:
+   ```bash
+   node --env-file-if-exists=.env scripts/migrate-to-postgres.mjs
+   ```
 
+### 4. Run the Dev Server
+```bash
 # Install dependencies
 npm install
 
@@ -147,8 +227,8 @@ npm install
 npm run dev
 ```
 
-### 4. Admin CLI Scripts
-The project provides several convenience scripts inside the [scripts](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/scripts) directory:
+### 5. CLI Utility Scripts
+Several convenience scripts are available under the [scripts](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend/scripts) directory:
 ```bash
 # Assign Owner role to a user in Firestore
 npm run assign-owner -- --email=admin@example.com
@@ -156,30 +236,11 @@ npm run assign-owner -- --email=admin@example.com
 # Manually verify a user's email address in Firebase Auth
 npm run verify-user-email -- --email=user@example.com
 
-# Deploy Firestore security rules and index constraints
-npm run deploy:firestore
-
-# Deploy Firebase Storage security rules
-npm run deploy:storage
+# Run schema migrations
+npm run migrate:profile-images
+npm run migrate:clean-presence
+npm run migrate:client-budget-start-date
 ```
-
----
-
-## Production Deployment
-
-### Docker Setup
-```bash
-# Build the image
-docker build -t vt-dashboard-api .
-
-# Run the container
-docker run --env-file .env -p 5713:5713 vt-dashboard-api
-```
--   **Image**: `node:20-alpine`.
--   **Healthcheck**: Pings the local `/health` route using native Node.js fetch:
-    ```bash
-    node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5713)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-    ```
 
 ---
 
@@ -192,7 +253,9 @@ Dashboard-Backend/
 ├── .firebaserc.example
 ├── .gitignore
 ├── Dockerfile
+├── DatabaseScheme.md       # Detailed database schema and mappings documentation
 ├── README.md               # This documentation file
+├── entity-diagram.md       # Entity relationship diagrams
 ├── firebase-admin.local.json.example
 ├── firebase-web.local.json.example
 ├── firebase.json           # Firebase CLI deploy configuration
@@ -210,6 +273,7 @@ Dashboard-Backend/
 │   ├── clean-member-presence.mjs
 │   ├── dev-watch.mjs       # Dev watcher configuration
 │   ├── lint-env-access.mjs
+│   ├── migrate-to-postgres.mjs
 │   └── verify-user-email.mjs
 │
 └── src/
@@ -220,7 +284,8 @@ Dashboard-Backend/
     │   └── handle-request.js # Entry request distributor & middleware chain
     │
     ├── bootstrap/
-    │   └── entity-bootstrap.js # Database checkers, index validation, maintenance scheduling
+    │   ├── entity-bootstrap.js # Database checkers, index validation, maintenance scheduling
+    │   └── entity-bootstrap-manifest.js # Canonical entities definitions and seeds
     │
     ├── config/
     │   ├── env.js          # Central env configuration schema loader
@@ -253,8 +318,15 @@ Dashboard-Backend/
     │   ├── tls-enforcement.js # Blocks unsecured connections in production
     │   └── validate-body.js # Enforces structured payloads and blocks extra fields
     │
+    ├── lib/
+    │   ├── firestore/
+    │   │   └── collections.js # Canonical Firestore collection names definitions
+    │   └── postgres/
+    │       ├── client.js   # PostgreSQL pg-pool client wrapper
+    │       └── schema.sql  # SQL schema tables setup statements
+    │
     └── modules/            # Domain controllers & route modules
-        ├── activity/       # Captures user log activities
+        ├── activity/       # Captures user log activities (screenshots, app-usage)
         ├── auth/           # Identity setup, session boot, complete first login
         ├── bootstrap/      # Resolves permissions immediately post-login
         ├── clients/        # Clients management models & controllers
