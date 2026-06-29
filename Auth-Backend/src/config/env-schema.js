@@ -95,7 +95,6 @@ const envSourceSchema = z
     PRESENCE_SIGNAL_MIN_INTERVAL_MS: optionalTrimmedString,
     FIREBASE_DATABASE_URL: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
-    PHONE_VERIFICATION_DEV_MODE: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();

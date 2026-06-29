@@ -1,210 +1,269 @@
 # Notify-Backend (`vt-notify-api`)
 
-Outbound messaging service for the Virtual Tracker platform.  
-**Internal only** — no browser ever calls this service directly.
+Outbound messaging service for the Virtual Tracker platform. It handles templated emails and push notifications.
 
-> **Design rule — blast radius isolation.**  
-> Messaging credentials (SMTP host credentials, Firebase Admin SDK service account, SMS provider tokens) live **only here**.  
-> A breach of Dashboard-Backend cannot send phishing email or SMS to users.
-
-Pair with **Dashboard-Backend** (`../Dashboard-Backend`, port `5713`) which is the only
-caller. Authorization is enforced via `INTERNAL_SERVICE_SECRET`.
+This service is strictly **internal-only**. No public web browser ever communicates with it directly. It is designed to be called exclusively by **Dashboard-Backend** (`vt-dashboard-api`) or internal services carrying the shared `INTERNAL_SERVICE_SECRET`.
 
 ---
 
-## Platform Services
+## Role in the Stack
 
-| Service | Container | Production URL | Dev port | Owns |
-| --- | --- | --- | --- | --- |
-| **Auth-Backend** | `vt-auth-api` | https://auth.myvirtualtracker.com | `:5712` | 6 AuthN routes |
-| **Dashboard-Backend** | `vt-dashboard-api` | https://dashapi.myvirtualtracker.com | `:5713` | Identity + app routes |
-| **Notify-Backend** | `vt-notify-api` | https://notify.myvirtualtracker.com | `:5715` | Email, OTP, push — internal only |
-| **Dashboard Web** | `vt-dashboard-web` | https://app.myvirtualtracker.com | `:3000` | UI only |
+| Service | Container | Dev Port | Production Endpoint |
+| :--- | :--- | :--- | :--- |
+| **Notify-Backend** (this) | `vt-notify-api` | `:5715` | `https://notify.myvirtualtracker.com` |
+| **Dashboard-Backend** | `vt-dashboard-api` | `:5713` | `https://dashapi.myvirtualtracker.com` |
+| **Auth-Backend** | `vt-auth-api` | `:5712` | `https://auth.myvirtualtracker.com` |
 
----
-
-## Blast Radius Design
+### Blast Radius Isolation Design
+To prevent outbound communication abuse in the event of an application exploit, the platform isolates all communication credentials inside this service:
 
 ```
 Browser
-  └─► vt-dashboard-api    (Firebase Admin, Firestore — no messaging creds)
-            │
-            │  Authorization: Bearer INTERNAL_SERVICE_SECRET
-            │  template IDs only, never raw email content
-            ▼
-      vt-notify-api        (SMTP, SMS provider, Firebase Admin FCM — nothing else)
-            │
-            ├─► SMTP            (email)
-            ├─► SMS provider    (OTP)
-            └─► Firebase FCM    (push)
+   └─► vt-dashboard-api    (Firebase Admin, Firestore — NO SMTP keys)
+             │
+             │  Authorization: Bearer INTERNAL_SERVICE_SECRET
+             │  Restricted: Template IDs only, never raw email/HTML payloads
+             ▼
+       vt-notify-api        (SMTP credentials, FCM Push tokens)
+             │
+             ├─► SMTP               (Outbound Email Dispatch)
+             └─► Firebase FCM Host  (WebPush Notifications)
 ```
 
-**What this prevents:** if Dashboard-Backend is compromised, the attacker gets
-Firestore data but cannot send phishing email, SMS, or push messages to users
-as `noreply@myvirtualtracker.com`.
+**Security Benefit:** If the public-facing Dashboard-Backend is compromised, the attacker may obtain database access but *cannot* send arbitrary emails or phish users as `noreply@myvirtualtracker.com`.
 
 ---
 
-## Route Ownership
+## API Routes
 
-| Path | Method | Single purpose |
-| --- | --- | --- |
-| `/health` | GET | Process health (unauthenticated) |
-| `/api/notify/readiness` | GET | Service health (unauthenticated) |
-| `/api/notify/email` | POST | Send templated email via SMTP |
-| `/api/notify/otp/send` | POST | Send OTP via SMS provider |
-| `/api/notify/otp/verify` | POST | Verify OTP code → verification token |
-| `/api/notify/otp/exchange` | POST | Exchange Firebase phone auth → verification token |
-| `/api/notify/push` | POST | Send push notification via Firebase FCM |
+All endpoints serve JSON and reside under `/api/notify/*`.
 
-All routes except `/health` and `/api/notify/readiness` require:
+| Path | Method | Purpose | Authentication |
+| :--- | :--- | :--- | :--- |
+| `/health` | `GET` | Container liveness check. | None |
+| `/api/notify/readiness` | `GET` | Service readiness check. | None |
+| `/api/notify/email` | `POST` | Dispatches templated transactional email. | Shared Secret |
+| `/api/notify/phone/validate` | `POST` | Validates phone numbers (country + format via libphonenumber-js). | Shared Secret |
+| `/api/notify/push` | `POST` | Dispatches push notifications via Firebase Cloud Messaging. | Shared Secret |
 
+### Authentication Guard
+All POST endpoints require the shared internal secret passed in the HTTP header:
+```http
+Authorization: Bearer <INTERNAL_SERVICE_SECRET>
 ```
-Authorization: Bearer INTERNAL_SERVICE_SECRET
-```
-
-**No public browser access.** Only `vt-dashboard-api` should ever call this service.
+*Note: In local development, if `INTERNAL_SERVICE_SECRET` is left undefined in `.env`, the server logs a warning and bypasses validation to simplify testing.*
 
 ---
 
-## Email Security — Template IDs Only
+## Endpoint Specifications
 
-Dashboard-Backend sends `{ template, email, ... }` — never raw email content:
+### 1. `POST /api/notify/email`
+Dispatches a branded HTML email. To ensure isolation, arbitrary HTML code or custom subject fields are rejected. Callers must pass an allowed `template` key.
 
-```js
-// Dashboard-Backend → Notify-Backend (correct)
-await notifyFetch('/api/notify/email', {
-  template: 'verification',
-  email: user.email,
-  verificationLink: link,
-})
-
-// Never allowed — arbitrary content would defeat blast-radius isolation
-await notifyFetch('/api/notify/email', {
-  subject: 'Your account',
-  html: '<a href="...">Click here</a>',
-})
-```
-
-Allowed templates: `verification`, `password-updated`, `new-sign-in-alert`, `phone-verified`.
+*   **Allowed Template Keys**: `verification`, `password-updated`, `new-sign-in-alert`
+*   **Body Schema (Verification Link template):**
+    ```json
+    {
+      "template": "verification",
+      "email": "user@example.com",
+      "verificationLink": "https://firebase.auth.link/...",
+      "appPublicUrl": "https://app.myvirtualtracker.com"
+    }
+    ```
+    *Note: When `appPublicUrl` is supplied, Firebase action links are automatically rewritten into application routes (`/auth/action?apiKey=...`).*
+*   **Body Schema (Password Updated template):**
+    ```json
+    {
+      "template": "password-updated",
+      "email": "user@example.com",
+      "recipientName": "John Doe",
+      "reason": "changed"
+    }
+    ```
+*   **Body Schema (New Sign-In Alert template):**
+    ```json
+    {
+      "template": "new-sign-in-alert",
+      "email": "user@example.com",
+      "recipientName": "John Doe",
+      "ip": "192.168.1.100",
+      "deviceSummary": "Chrome on macOS",
+      "signedInAt": "2026-06-29T02:00:00.000Z"
+    }
+    ```
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "sent": true,
+      "channel": "smtp"
+    }
+    ```
+    *Channels can be: `smtp`, `console` (dev SMTP fallback), or `smtp_failed`.*
 
 ---
 
-## Directory Structure
+### 2. `POST /api/notify/phone/validate`
+Validates a phone number using **libphonenumber-js** (Google libphonenumber). Checks country calling code, national number length, and number validity — e.g. Egypt (`+20`) requires a valid 10-digit mobile number after the country code.
 
+*   **Body Schema:**
+    ```json
+    {
+      "phone": "+201012345678",
+      "defaultCountry": "EG",
+      "required": true,
+      "label": "Phone number"
+    }
+    ```
+    *`defaultCountry` is optional ISO-3166 alpha-2 (e.g. `EG`, `US`) used when the input omits a `+` prefix.*
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "data": {
+        "valid": true,
+        "e164": "+201012345678",
+        "nationalNumber": "1012345678",
+        "countryCallingCode": "20",
+        "country": "EG",
+        "nationalFormat": "010 12345678",
+        "internationalFormat": "+20 10 12345678"
+      }
+    }
+    ```
+
+---
+
+### 3. `POST /api/notify/push`
+Sends a push notification via Firebase Cloud Messaging (FCM HTTP v1 API) utilizing the Firebase Admin SDK.
+*   **Body Schema:**
+    ```json
+    {
+      "token": "fcm-registration-token-or-device-token",
+      "title": "Alert Title",
+      "body": "Alert message body details.",
+      "imageUrl": "https://example.com/image.png",
+      "icon": "https://example.com/icon.png",
+      "link": "https://app.myvirtualtracker.com/dashboard",
+      "data": {
+        "customKey": "customValue"
+      }
+    }
+    ```
+    *Note: One of `token`, `topic`, or `condition` is required. The `data` record is automatically flattened into string key-values required by FCM.*
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "messageId": "projects/vt-project/messages/0:1234..."
+    }
+    ```
+
+---
+
+## Environment Variables Configuration
+
+Parsed values are validated on startup in [src/config/env.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Notify-backend/src/config/env.js).
+
+| Variable | Scope | Description |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Core | Running environment (`development` / `production`). |
+| `PORT` | Core | Server port binding. Defaults to `5715` (dev) / `3000` (production). |
+| `INTERNAL_SERVICE_SECRET` | Security | Auth token validation. Required in production. |
+| `FRONTEND_ORIGIN` | CORS | Allowed cross-origin caller URL. |
+| `CORS_ORIGINS` | CORS | Comma-separated list of alternative CORS origins. |
+| `SMTP_HOST` | Email | Target outbound SMTP host address. |
+| `SMTP_PORT` | Email | Outbound SMTP connection port (defaults to `587`). |
+| `SMTP_SECURE` | Email | Set to `true` to force TLS (automatically active for port `465`). |
+| `SMTP_USER` | Email | Authentication username for SMTP. |
+| `SMTP_PASS` | Email | Password key. Spaces are stripped automatically for Google App Keys. |
+| `SMTP_FROM` | Email | Sender representation line. Defaults to `Virtual Tracker <user>`. |
+| `FIREBASE_SERVICE_ACCOUNT` | Push | Single-line JSON credentials string. Required for FCM Push. |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Push | Path to a local GCP service account JSON key file. |
+
+*In production (`NODE_ENV=production`), `INTERNAL_SERVICE_SECRET`, `SMTP_HOST`, `SMTP_USER`, and `SMTP_PASS` are strictly required, failing fast on boot if missing.*
+
+---
+
+## Operational Details
+
+### 1. SMTP Delivery and Console Fallback
+At startup, [logEmailDeliveryStatusAsync](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Notify-backend/src/modules/email/email-config.js) runs an active `.verify()` socket handshake check on the SMTP transporter.
+*   **If configured correctly:** Real transactional emails will be sent out using NodeMailer.
+*   **If SMTP settings are missing in dev:** The email pipeline logs the full text-based contents directly to the server terminal, letting developers test registration links without setting up SMTP servers.
+
+### 2. Firebase SDK Setup (FCM Only)
+*   The connection checks the `FIREBASE_SERVICE_ACCOUNT` variable first.
+*   If not set, it attempts to load credentials via `GOOGLE_APPLICATION_CREDENTIALS` or GCP environment settings.
+*   If no credentials exist, FCM initialization is bypassed, and the `/push` endpoint will return a `503 Service Unavailable` error when hit.
+
+---
+
+## Local Setup
+
+### 1. Configure the Environment
+Create a `.env` file in `Notify-Backend/` using [.env.example](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Notify-backend/.env.example):
 ```text
-src/
-├── app/
-│   └── handle-request.js     # Pipeline: CORS → health → internal-auth → routing
-├── config/
-│   ├── env.js                # Zod env schema + getEnv()
-│   └── firebase.js           # Firebase Admin SDK init (FCM only, no Firestore)
-├── core/
-│   └── logger.js             # Startup banner, request/response logging
-├── http/
-│   ├── internal-auth.js      # Bearer INTERNAL_SERVICE_SECRET guard
-│   └── response.js           # sendJson() helper
-└── modules/
-    ├── email/
-    │   ├── email-config.js       # SMTP status check
-    │   ├── email-template.js     # Branded HTML template
-    │   ├── email-builders.js     # Per-template builders + send functions
-    │   ├── transactional-email.js # SMTP sender with dev console fallback
-    │   └── routes.js             # POST /api/notify/email
-    ├── otp/
-    │   ├── otp-service.js        # OTP send/verify/exchange (in-memory; replace with Redis)
-    │   └── routes.js             # /api/notify/otp/*
-    └── push/
-        └── routes.js             # POST /api/notify/push (FCM helper)
+PORT=5715
 ```
 
----
-
-## Request Pipeline
-
-```
-1. CORS preflight         OPTIONS handled immediately
-2. Health check           GET /health (no auth)
-3. Readiness              GET /api/notify/readiness (no auth)
-4. Internal-auth guard    Authorization: Bearer INTERNAL_SERVICE_SECRET
-5. Domain routing         email | otp | push
-```
-
----
-
-## Environment Variables
-
-```env
-NODE_ENV=production
-PORT=3000              # dev default: 5715
-
-# Internal auth — required in production
-INTERNAL_SERVICE_SECRET=
-
-# Email (SMTP credentials)
-SMTP_HOST=
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=
-SMTP_PASS=
-SMTP_FROM=
-
-# OTP
-PHONE_VERIFICATION_DEV_MODE=false
-
-# Firebase Admin (FCM push credentials)
-FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
-```
-
-**Does not need:** Firestore access, session tokens, or any user identity credentials.
-
----
-
-## Setup
-
+### 2. Run Commands
 ```bash
+# Navigate to directory
 cd Notify-Backend
+
+# Install packages
 npm install
-npm run dev    # watch mode, port 5715
-npm start      # production
+
+# Run in watch mode (Node 20 watch feature)
+npm run dev
 ```
 
-### Smoke tests
-
+### 3. Test Integration
 ```bash
-# Health (no auth)
+# Health check
 curl -s http://localhost:5715/health
 
-# Readiness (no auth)
-curl -s http://localhost:5715/api/notify/readiness
-
-# Email (requires secret — skip auth in dev by leaving INTERNAL_SERVICE_SECRET unset)
+# Trigger verification email (prints to console in dev mode)
 curl -s -X POST http://localhost:5715/api/notify/email \
   -H "Content-Type: application/json" \
   -d '{"template":"verification","email":"test@example.com","verificationLink":"https://example.com/verify"}'
-
-# OTP send (dev mode)
-curl -s -X POST http://localhost:5715/api/notify/otp/send \
-  -H "Content-Type: application/json" \
-  -d '{"phone":"+1234567890"}'
 ```
 
 ---
 
-## Adding a New Email Template
+## Project Structure
 
-1. Add builder function in `src/modules/email/email-builders.js`
-2. Add send function in the same file
-3. Register the template name in the `ALLOWED_TEMPLATES` set in `src/modules/email/routes.js`
-4. Add the dispatch case in `dispatchEmailTemplate()`
-
-Never add raw-content paths — only template IDs.
-
----
-
-## Related Docs
-
-- [`../Dashboard-Backend/README.md`](../Dashboard-Backend/README.md) — caller service; see "What Needs to Move Out"
-- [`../Auth-Backend/README.md`](../Auth-Backend/README.md) — the six AuthN routes
-- [`../explainhere.md`](../explainhere.md) — full platform architecture
-- [`../deploy/README.md`](../deploy/README.md) — Coolify / gateway deployment
+```text
+Notify-Backend/
+├── .env.example
+├── README.md               # This documentation file
+├── package-lock.json
+├── package.json
+├── server.js               # createServer() factory wrapper
+├── index.js                # App entry point (verifies SMTP on boot, binds ports)
+│
+└── src/
+    ├── app/
+    │   └── handle-request.js   # Request pipeline (CORS -> health -> auth -> modules)
+    ├── config/
+    │   ├── env.js              # Zod env schema parser & configuration registry
+    │   └── firebase.js         # Firebase Admin initializer (FCM Messaging only)
+    ├── core/
+    │   └── logger.js           # Console output templates & status formatting
+    ├── http/
+    │   ├── internal-auth.js    # INTERNAL_SERVICE_SECRET verification check
+    │   └── response.js         # sendJson HTTP helper
+    └── modules/
+        ├── email/
+        │   ├── email-config.js         # SMTP readiness checker and status validation
+        │   ├── email-template.js       # Branded HTML skeleton & path rewriter
+        │   ├── email-builders.js       # HTML/Text templates builder dispatcher
+        │   ├── transactional-email.js   # Nodemailer transporter & dev fallback
+        │   └── routes.js               # POST /api/notify/email handler
+        ├── phone/
+        │   ├── phone-validation.service.js  # libphonenumber-js validation
+        │   └── routes.js                    # POST /api/notify/phone/validate
+        └── push/
+            └── routes.js               # POST /api/notify/push FCM gateway
+```

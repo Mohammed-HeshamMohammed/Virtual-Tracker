@@ -47,7 +47,7 @@ export async function completeFirstLoginPasswordChange(db, auth, uid, body) {
     throw Object.assign(new Error(inputError), { status: 400 });
   }
 
-  const validation = validateRegistrationPassword(newPassword, {
+  const validation = await validateRegistrationPassword(newPassword, {
     confirmPassword,
     requireConfirm: true,
   });

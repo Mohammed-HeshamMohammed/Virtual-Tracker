@@ -14,13 +14,7 @@ import {
 } from "./shift-allowance-feature.js";
 import { validateMemberNamePart } from "./member-display-name.js";
 import { assertValidPhone } from "../../../http/validate-body.js";
-import {
-  assertPhoneVerificationToken,
-  phonesMatch,
-} from "../../auth/phone-verification.service.js";
 import { syncUserProfilePhoneForUid } from "../../auth/profile-settings.js";
-import { getAuthAdmin } from "../../../config/firebase.js";
-import { notifyPhoneVerified } from "../../auth/security-login-alerts.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
 
 const LOOKUP_COLLECTIONS = {
@@ -464,7 +458,7 @@ export async function getMemberProfileForm(db, memberId) {
  * @param {string} memberId
  * @param {Record<string, unknown>} body
  * @param {string} [updatedBy]
- * @param {{ phoneVerificationToken?: string, actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null }} [options]
+ * @param {{ actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null }} [options]
  */
 export async function updateMemberProfile(db, memberId, body, updatedBy = "", options = {}) {
   const memberRef = db.collection("members").doc(memberId);
@@ -494,8 +488,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   const now = new Date();
 
   const memberUpdates = { updated_by: actor, updated_at: now };
-  let phoneNewlyVerified = false;
-  let verifiedPhoneNumber = "";
 
   if (hasInfo) {
     const first = typeof info.editFirst === "string" ? info.editFirst.trim() : "";
@@ -512,50 +504,13 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
     if (typeof info.editPersonalEmail === "string") memberUpdates.personal_email = info.editPersonalEmail.trim();
     if ("editPhone" in info) {
       const editingSelf = updatedBy === memberId;
-      const newPhone = assertValidPhone(info.editPhone, { required: false, label: "Phone number" });
-      const oldPhone =
-        (typeof memberData.phone_number === "string" ? memberData.phone_number : "") ||
-        (typeof memberData.mobile === "string" ? memberData.mobile : "") ||
-        (typeof memberData.phone === "string" ? memberData.phone : "");
+      const newPhone = await assertValidPhone(info.editPhone, { required: false, label: "Phone number" });
       memberUpdates.phone_number = newPhone;
-      if (!newPhone) {
-        memberUpdates.phone_verified = false;
-      } else if (!phonesMatch(newPhone, oldPhone)) {
-        const token =
-          typeof info.phoneVerificationToken === "string"
-            ? info.phoneVerificationToken
-            : typeof options.phoneVerificationToken === "string"
-              ? options.phoneVerificationToken
-              : "";
-        if (!editingSelf) {
-          if (token.trim()) {
-            throw new Error("Only the member can verify their own phone number.");
-          }
-          memberUpdates.phone_verified = false;
-        } else {
-          await assertPhoneVerificationToken(db, token, newPhone, {
-            uid: typeof options.actorUid === "string" ? options.actorUid : "",
-            memberId,
-          });
-          memberUpdates.phone_verified = true;
-          phoneNewlyVerified = true;
-          verifiedPhoneNumber = newPhone;
-        }
-      }
+      memberUpdates.phone_verified = false;
       if (editingSelf) {
         const firebaseUid = typeof memberData.firebase_uid === "string" ? memberData.firebase_uid.trim() : "";
         if (firebaseUid) {
-          const syncedPhone =
-            typeof memberUpdates.phone_number === "string"
-              ? memberUpdates.phone_number
-              : (typeof memberData.phone_number === "string" ? memberData.phone_number : "") ||
-                (typeof memberData.mobile === "string" ? memberData.mobile : "") ||
-                (typeof memberData.phone === "string" ? memberData.phone : "");
-          const syncedVerified =
-            typeof memberUpdates.phone_verified === "boolean"
-              ? memberUpdates.phone_verified
-              : memberData.phone_verified === true;
-          await syncUserProfilePhoneForUid(db, firebaseUid, syncedPhone, { phoneVerified: syncedVerified });
+          await syncUserProfilePhoneForUid(db, firebaseUid, newPhone, { phoneVerified: false });
         }
       }
     }
@@ -596,18 +551,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
 
   if (hasInfo || hasRoles || hasEmployment || hasPayBill || hasWorkLimits || hasSettings) {
     await memberRef.update(memberUpdates);
-  }
-
-  if (phoneNewlyVerified && verifiedPhoneNumber) {
-    const firebaseUid = typeof memberData.firebase_uid === "string" ? memberData.firebase_uid.trim() : "";
-    const auth = getAuthAdmin();
-    if (firebaseUid && auth) {
-      void notifyPhoneVerified(db, auth, firebaseUid, verifiedPhoneNumber, {
-        firstName: memberUpdates.first_name ?? memberData.first_name,
-        lastName: memberUpdates.last_name ?? memberData.last_name,
-        primaryEmail: memberUpdates.work_email ?? memberData.work_email,
-      });
-    }
   }
 
   if (hasRoles && roleName && !options.skipRoleSync) {

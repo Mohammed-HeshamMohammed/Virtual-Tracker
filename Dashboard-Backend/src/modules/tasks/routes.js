@@ -21,7 +21,10 @@ import {
   syncTaskAssignments,
 } from "./task-assignments.js";
 import {
-  enrichTaskIds,
+  taskChildCollectionRef,
+  taskChildDocRef,
+} from "../../lib/firestore/task-subcollections.js";
+import {
   getEnrichedTaskById,
   listTasksForAssignee,
 } from "./task-assignee-api.js";
@@ -474,7 +477,7 @@ export async function routeTasks(req, res, url, db, origin) {
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
     if (!access) return true;
     try {
-      const hoursSnap = await db.collection("task_hours").where("task_id", "==", taskId).get();
+      const hoursSnap = await taskChildCollectionRef(db, taskId, "task-hours").get();
       const data = hoursSnap.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
@@ -505,9 +508,7 @@ export async function routeTasks(req, res, url, db, origin) {
       return true;
     }
     try {
-      const hoursSnap = await db
-        .collection("task_hours")
-        .where("task_id", "==", taskId)
+      const hoursSnap = await taskChildCollectionRef(db, taskId, "task-hours")
         .where("user_id", "==", userId)
         .get();
       const data = hoursSnap.docs.map((doc) => ({
@@ -541,7 +542,7 @@ export async function routeTasks(req, res, url, db, origin) {
 
       const viewer = access.viewer;
       const userId = viewer.memberId;
-      const newHoursRef = db.collection("task_hours").doc();
+      const newHoursRef = taskChildCollectionRef(db, taskId, "task-hours").doc();
       const now = new Date().toISOString();
 
       await newHoursRef.set({
@@ -582,7 +583,7 @@ export async function routeTasks(req, res, url, db, origin) {
       const hoursSpent = body.hours_spent ?? body.hoursSpent;
       const status = body.status;
 
-      const hoursRef = db.collection("task_hours").doc(hoursId);
+      const hoursRef = taskChildDocRef(db, taskId, "task-hours", hoursId);
       const hoursDoc = await hoursRef.get();
 
       if (!hoursDoc.exists) {

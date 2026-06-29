@@ -17,7 +17,6 @@ import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
 import { removeProjectOfficeMemberRoles } from "./src/modules/projects/migrate-remove-office-member-roles.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
-import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email-config.js";
 
 let activeServer = null;
 
@@ -95,10 +94,8 @@ export function startServer(port = getEnv().server.port) {
       "/api/auth/complete-first-login",
       "/api/auth/profile",
       "/api/auth/access-request",
-      // ⚠️ Pending extraction to vt-notify-api:
       "/api/auth/send-verification-email",
       "/api/auth/notify-*",
-      "/api/auth/phone-verification/*",
       // App / entity routes
       "/api/bootstrap",
       "/api/public/invites/*",
@@ -113,7 +110,6 @@ export function startServer(port = getEnv().server.port) {
       "/api/activity",
       "/api/presence",
       "/api/dashboard",
-      // ⚠️ Pending extraction to vt-notify-api:
       "/api/notifications/*",
       // ⚠️ Restrict at gateway before first production deploy:
       "/monitor",
@@ -125,8 +121,6 @@ export function startServer(port = getEnv().server.port) {
       nodeEnv: getEnv().nodeEnv,
       routes,
     });
-
-    await logEmailDeliveryStatusAsync();
 
     console.log(`Dashboard-Backend listening on http://localhost:${port}`);
   });

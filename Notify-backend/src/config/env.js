@@ -33,8 +33,8 @@ const envSchema = z
     FIREBASE_SERVICE_ACCOUNT: optionalTrimmedString,
     GOOGLE_APPLICATION_CREDENTIALS: optionalTrimmedString,
 
-    // OTP / phone — dev mode logs code to console instead of sending SMS
-    PHONE_VERIFICATION_DEV_MODE: optionalTrimmedString,
+    // PostgreSQL — optional, used for delivery logging only
+    POSTGRES_URL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnv = (data.NODE_ENV || "development").trim();
@@ -101,8 +101,8 @@ function buildConfig(source = process.env) {
       serviceAccount: source.FIREBASE_SERVICE_ACCOUNT || "",
       applicationCredentials: source.GOOGLE_APPLICATION_CREDENTIALS || "",
     },
-    phoneVerification: {
-      devMode: source.PHONE_VERIFICATION_DEV_MODE === "true",
+    postgres: {
+      url: source.POSTGRES_URL || "",
     },
   };
 }

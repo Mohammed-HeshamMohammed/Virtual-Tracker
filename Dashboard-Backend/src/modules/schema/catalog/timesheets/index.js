@@ -4,7 +4,8 @@
 export const timesheetSchemas = [
   {
     key: "time-entries",
-    collection: "time_entries",
+    storage: "postgres",
+    table: "time_entries",
     description: "Logged work time rows for timesheet view",
     fields: {
       id: "uuid",
@@ -26,7 +27,8 @@ export const timesheetSchemas = [
   },
   {
     key: "timesheets",
-    collection: "timesheets",
+    storage: "postgres",
+    table: "timesheets",
     description: "Pay-period timesheet submissions",
     fields: {
       id: "uuid",

@@ -124,29 +124,6 @@ export async function syncMemberLastLoginIp(db, memberId, requestIp) {
 }
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {string} uid
- * @param {string} phone
- * @param {Record<string, unknown> | null | undefined} [profile]
- */
-export async function notifyPhoneVerified(db, auth, uid, phone, profile) {
-  try {
-    const userRecord = await auth.getUser(uid);
-    const recipient = resolveSecurityEmailRecipient(profile, userRecord);
-    if (!recipient.to) return;
-    const { sendPhoneVerifiedEmail } = await import("./security-notification-emails.js");
-    await sendPhoneVerifiedEmail({
-      to: recipient.to,
-      recipientName: recipient.recipientName,
-      phone,
-    });
-  } catch (err) {
-    logSafeWarn("[security-notification] phone verified email failed:", err);
-  }
-}
-
-/**
  * @param {import("firebase-admin/auth").Auth} auth
  * @param {string} uid
  * @param {"changed" | "reset"} reason

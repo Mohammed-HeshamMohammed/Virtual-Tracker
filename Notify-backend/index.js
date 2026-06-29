@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { initFirebaseAdmin } from "./src/config/firebase.js";
 import { logStartup, logError } from "./src/core/logger.js";
 import { logEmailDeliveryStatusAsync } from "./src/modules/email/email-config.js";
+import { verifyDbConnectivity } from "./src/lib/db.js";
 
 let activeServer = null;
 
@@ -65,9 +66,7 @@ export function startServer(port = getEnv().server.port) {
       "/health",
       "/api/notify/readiness",
       "/api/notify/email",
-      "/api/notify/otp/send",
-      "/api/notify/otp/verify",
-      "/api/notify/otp/exchange",
+      "/api/notify/phone/validate",
       "/api/notify/push",
     ];
 
@@ -79,6 +78,16 @@ export function startServer(port = getEnv().server.port) {
     if (fcmReady) {
       const timestamp = new Date().toISOString();
       console.log(`[${timestamp}] \x1b[32m✓\x1b[0m Firebase Admin initialized — FCM push ready`);
+    }
+
+    const dbReady = await verifyDbConnectivity();
+    const ts = new Date().toISOString();
+    if (dbReady) {
+      console.log(`[${ts}] \x1b[32m✓\x1b[0m Delivery log DB connected — notification_deliveries active`);
+    } else if (getEnv().postgres.url) {
+      console.warn(`[${ts}] \x1b[33m⚠\x1b[0m Delivery log DB unreachable — sends will proceed without logging`);
+    } else {
+      console.log(`[${ts}] \x1b[2m–\x1b[0m POSTGRES_URL not set — delivery logging disabled`);
     }
 
     console.log(`Notify-Backend listening on http://localhost:${port}`);

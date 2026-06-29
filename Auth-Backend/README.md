@@ -1,297 +1,405 @@
 # Auth-Backend
 
-Firebase **authentication** API for Virtual Tracker — credential checks, web SDK config, and password policy only.
+Firebase-based authentication API for Virtual Tracker. It handles credential checks, Firebase Web SDK configuration delivery, and password policy validation.
 
-**AuthN only:** no SMTP, no Firestore routes, no transactional email, no member/profile/session bootstrap. Those live on **Dashboard-Backend** (`:5713` / `vt-dashboard-api`).
+This service is strictly focused on **Authentication (AuthN) only**: it does not handle SMTP routing, transactional emails, profile setup, or session bootstrap. Those operations live on **Dashboard-Backend** (`:5713` / `vt-dashboard-api`).
 
-Full platform routing (Auth vs Dashboard split, boot flows, gateway) → repo root [`explainhere.md`](../explainhere.md).
+For detailed documentation on how requests are split and routed between frontends and APIs, see the repo root [explainhere.md](../explainhere.md).
 
 ---
 
-## Role in the stack
+## Role in the Stack
 
-| Service | Container | Dev | Production |
-| --- | --- | --- | --- |
+| Service | Container | Dev Port | Production Endpoint |
+| :--- | :--- | :--- | :--- |
 | **Auth-Backend** (this) | `vt-auth-api` | `:5712` | `https://auth.myvirtualtracker.com` |
-| Dashboard-Backend | `vt-dashboard-api` | `:5713` | `https://dashapi.myvirtualtracker.com` |
-| Dashboard Web | `vt-dashboard-web` | `:3000` | `https://app.myvirtualtracker.com` |
+| **Dashboard-Backend** | `vt-dashboard-api` | `:5713` | `https://dashapi.myvirtualtracker.com` |
+| **Dashboard Web** | `vt-dashboard-web` | `:3000` | `https://app.myvirtualtracker.com` |
 
-**Design rule:** each `/api/...` route is implemented on **exactly one** backend. Dashboard returns `404` + `AUTH_BACKEND_ROUTE` if an Auth-owned path hits `dashapi.*`.
-
-The browser orchestrates multi-step flows (e.g. `verify` on Auth, then `session-bootstrap` on Dashboard). Auth-Backend never duplicates Dashboard identity logic.
-
----
-
-## Routes
-
-Six AuthN endpoints plus liveness. Allowlist: `src/modules/auth/authn-paths.js`.
-
-| Path | Method | Purpose | Cache |
-| --- | --- | --- | --- |
-| `/api/auth/firebase-config` | GET | Firebase **web** SDK config (`FIREBASE_*` or `firebase-web.local.json`) | `public, max-age=3600` |
-| `/api/auth/readiness` | GET | Firebase Admin configured and reachable (boot gate) | none |
-| `/api/auth/password-policy` | GET | Public password rules JSON + `version` field | `public, max-age=0, stale-while-revalidate=3600` |
-| `/api/auth/validate-password` | POST | Password strength check (no Firestore) | none |
-| `/api/auth/verify` | POST | Validate Firebase ID token → `{ uid, email, emailVerified }` | none |
-| `/api/auth/resolve-sign-in-methods` | POST | Email → Firebase provider list | none |
-| `/health` | GET | Container liveness (`{ ok: true, service: "auth-backend" }`) | none |
-
-### Response shapes (summary)
-
-- **`firebase-config`** — `{ success: true, config: { apiKey, authDomain, projectId, appId, … } }`
-- **`readiness`** — `{ success: true, firebase: "ok" }` or `503` + `SERVICE_UNAVAILABLE`
-- **`password-policy`** — `{ success: true, version, lastUpdated, passwordPolicy: { minLength, … } }`
-- **`validate-password`** — `{ success, valid, error?, requirements? }`
-- **`verify`** — Bearer ID token in body/header → `{ success: true, user: { uid, email, emailVerified } }`
-- **`resolve-sign-in-methods`** — `{ email }` → `{ success: true, methods, identities }`
-
-Handlers: `src/modules/auth/routes.js`. Unknown `/api/auth/*` paths → `404`.
-
-**Dispatch order (`handle-request.js`):** `GET /health` is matched **before** the `/api/auth/*` authn allowlist. `/health` is not in `authn-paths.js`; if it were checked against that set it would 404.
-
-### Not on this service
-
-| Capability | Owner |
-| --- | --- |
-| `session-bootstrap`, profile, member link | Dashboard-Backend |
-| Verification / security emails (Resend/SMTP) | Dashboard-Backend |
-| Phone OTP, invites, `/api/bootstrap` | Dashboard-Backend |
-| Dashboard boot readiness (`GET /api/readiness`) | Dashboard-Backend |
+### Platform Routing Design
+- **Single Owner Constraint**: Each `/api/...` route is owned by exactly one backend service. If an Auth-owned route incorrectly hits the Dashboard backend, it returns `404` with a `VT-Routing-Error: AUTH_BACKEND_ROUTE` header.
+- **Client Orchestration**: The frontend orchestrates multi-step flows sequentially (e.g., calling `/verify` on Auth-Backend first, then passing details to `/session-bootstrap` on Dashboard-Backend).
 
 ---
 
-## Client integration
+## API Routes
 
-Dashboard Web calls this service via `apiPath()` / `apiFetch()` when the path is in `Dashboard Web/infrastructure/api/api-backend-routes.ts` (same six paths as `authn-paths.js`).
+All endpoints serve JSON and are routed via `/api/auth/*` (supports `/api/v1/auth/*` aliases).
 
-### Boot (parallel with Dashboard)
+| Path | Method | Purpose | Cache Policy |
+| :--- | :--- | :--- | :--- |
+| `/api/auth/firebase-config` | `GET` | Fetches the Firebase Web SDK credentials. | `public, max-age=3600` |
+| `/api/auth/readiness` | `GET` | Verifies that Firebase Admin is connected and initialized. | None (`no-store`) |
+| `/api/auth/password-policy` | `GET` | Fetches password policy rules and rules version. | `public, max-age=0, stale-while-revalidate=3600` |
+| `/api/auth/validate-password` | `POST` | Validates password complexity without database checks. | None (`no-store`) |
+| `/api/auth/verify` | `POST` | Validates a Firebase ID Token and returns user identifiers. | None (`no-store`) |
+| `/api/auth/resolve-sign-in-methods` | `POST` | Resolves the authentication providers linked to an email. | None (`no-store`) |
+| `/health` | `GET` | Container liveness check. | None (`no-store`) |
 
-```ts
-await Promise.all([
-  checkBackendReadiness(),        // GET /api/auth/readiness  ← this service
-  checkDashboardReadiness(),      // GET /api/readiness       ← Dashboard-Backend
-  prefetchFirebaseWebConfig(),    // GET /api/auth/firebase-config
-  fetchPasswordPolicy(),          // GET /api/auth/password-policy
-  prefetchSignInClientExtras(),   // Dashboard only
-])
-```
+### Request and Response Specifications
 
-If auth readiness fails → offline UI (`ServerConnectionOfflineScreen`), not a hung spinner.
+#### 1. `GET /api/auth/firebase-config`
+Returns the Web SDK credentials needed by the browser to initialize Firebase Client.
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "config": {
+        "apiKey": "AIzaSy...",
+        "authDomain": "project-id.firebaseapp.com",
+        "projectId": "project-id",
+        "storageBucket": "project-id.firebasestorage.app",
+        "messagingSenderId": "1234567890",
+        "appId": "1:1234:web:abcd",
+        "measurementId": "G-XXXXXX"
+      }
+    }
+    ```
+*   **Error (503 Service Unavailable):** Returned if Firebase Web config is not populated in env or local files.
 
-**Policy cache:** server returns a `version` field; client revalidates every load (`cache: no-cache` + `stale-while-revalidate` header). `sessionStorage` holds last good copy for offline fallback.
+#### 2. `GET /api/auth/readiness`
+Validates that the Firebase Admin SDK has successfully initialized and is ready to query Firebase services.
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "firebase": "ok"
+    }
+    ```
+*   **Error (503 Service Unavailable):** Firebase Admin initialization failed.
+    ```json
+    {
+      "success": false,
+      "code": "SERVICE_UNAVAILABLE",
+      "error": "Firebase Admin is not configured."
+    }
+    ```
 
-### Session (Auth step only)
+#### 3. `GET /api/auth/password-policy`
+Provides metadata about password requirements. Client applications check the `version` field and compare it against their local storage to invalidate cached policy rules.
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "version": "1.0.0",
+      "lastUpdated": "2026-06-11T00:00:00.000Z",
+      "passwordPolicy": {
+        "minLength": 10,
+        "maxLength": 128,
+        "requireUppercase": true,
+        "requireLowercase": true,
+        "requireNumber": true,
+        "requireSpecial": true,
+        "blockedPasswordsEnabled": true,
+        "sequenceDetectionEnabled": true,
+        "repeatedPatternDetectionEnabled": true,
+        "examplePasswordBlacklistEnabled": true,
+        "passwordExpirationDays": null,
+        "requireMfa": false
+      }
+    }
+    ```
 
-```
-POST /api/auth/verify              ← this service (token only)
-POST /api/auth/session-bootstrap   ← Dashboard-Backend (identity)
-```
+#### 4. `POST /api/auth/validate-password`
+Validates password complexity. Safe to call frequently as it operates locally without database hits.
+*   **Body Schema:**
+    ```json
+    {
+      "password": "UserPasswordHere",
+      "confirmPassword": "UserPasswordHere"
+    }
+    ```
+*   **Response (200 OK - Valid):**
+    ```json
+    {
+      "success": true,
+      "valid": true,
+      "requirements": {
+        "notBlocked": true,
+        "notSimplePattern": true
+      }
+    }
+    ```
+*   **Response (400 Bad Request - Invalid):**
+    ```json
+    {
+      "success": false,
+      "valid": false,
+      "error": "Password is too short (minimum 10 characters).",
+      "requirements": {
+        "notBlocked": true,
+        "notSimplePattern": true
+      }
+    }
+    ```
 
-Code: `Dashboard Web/features/auth/services/verify-session.ts`.
+#### 5. `POST /api/auth/verify`
+Authenticates a user session by validating their Firebase Client JWT ID token.
+*   **Headers:**
+    - `Authorization: Bearer <ID_TOKEN>` (preferred)
+*   **Alternative Body Schema:**
+    ```json
+    {
+      "token": "ID_TOKEN_HERE"
+    }
+    ```
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "user": {
+        "uid": "firebase-user-uid",
+        "email": "user@example.com",
+        "emailVerified": true
+      }
+    }
+    ```
+*   **Error (401 Unauthorized):**
+    ```json
+    {
+      "success": false,
+      "error": "Firebase ID token has expired."
+    }
+    ```
+
+#### 6. `POST /api/auth/resolve-sign-in-methods`
+Identifies all authentication methods associated with a given email address. Allows the frontend to determine if the user must sign in using Google, password, or another provider before prompting for credentials.
+*   **Body Schema:**
+    ```json
+    {
+      "email": "user@example.com"
+    }
+    ```
+*   **Response (200 OK):**
+    ```json
+    {
+      "success": true,
+      "methods": ["password"],
+      "identities": [
+        {
+          "provider": "password",
+          "identifier": "user@example.com"
+        }
+      ]
+    }
+    ```
+
+#### 7. `GET /health`
+Liveness endpoint for load balancers and container managers. It is parsed early and bypasses CORS security checks and the authn allowlist.
+*   **Response (200 OK):**
+    ```json
+    {
+      "ok": true,
+      "service": "auth-backend"
+    }
+    ```
 
 ---
 
-## Rate limiting
+## Environment Variables Configuration
 
-Applied in `src/app/handle-request.js` before route handlers (`src/http/rate-limit.js`).
+Central configuration parameters are defined in [src/config/env.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/src/config/env.js) and validated on boot using Zod schema assertions in [src/config/env-schema.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/src/config/env-schema.js).
 
-| Bucket | Limit | Window |
-| --- | --- | --- |
-| `/api/auth/*` (except below) | 25 req | per IP, per minute |
-| `/api/auth/validate-password` | 40 req | per IP, per minute |
+### Core Server Variables
 
-- Loopback (`127.0.0.1`, `::1`) is **exempt** in local dev.
-- Over limit → `429` + `Retry-After` JSON body.
-- In-memory per process — fine for single instance; use gateway limits or Redis at scale.
+| Environment Variable | Description | Default / Requirements |
+| :--- | :--- | :--- |
+| `NODE_ENV` | Mode under which the server runs. | `development`, `production`, or `test`. |
+| `PORT` | Local port the HTTP server binds to. | `5712` (dev) / `3000` (production). |
+| `FRONTEND_ORIGIN` | Primary web client URL (used for CORS mapping). | `http://localhost:3000` (HTTPS required in prod). |
+| `APP_PUBLIC_URL` | Public entry URL of the main dashboard site. | HTTPS required in production. |
+| `CORS_ORIGINS` | Comma-separated list of additional allowed CORS origins. | Default includes Dashboard Web + Landing Web URLs. |
+| `ALLOW_INSECURE_HTTP` | Allows HTTP connections (bypasses TLS enforcement). | `false`. Set to `true` only for dev environments without TLS. |
+| `SKIP_ENV_VALIDATION` | Skips Zod environment schema checking. | `false`. Set to `1` or `true` in test suites only. |
+
+### Firebase Web Client Variables
+*Required by the client wrapper endpoint `/api/auth/firebase-config`. When any single variable in this group is specified, all **required** keys in this group must be provided.*
+
+| Environment Variable | Zod Rule | Description |
+| :--- | :--- | :--- |
+| `FIREBASE_API_KEY` | Required | Web app API credential key. |
+| `FIREBASE_AUTH_DOMAIN` | Required | Authentication domain target. |
+| `FIREBASE_PROJECT_ID` | Required | The ID of the target Firebase Project. |
+| `FIREBASE_APP_ID` | Required | Unique Web App registration identifier. |
+| `FIREBASE_STORAGE_BUCKET` | Optional | Default Cloud Storage bucket path. |
+| `FIREBASE_MESSAGING_SENDER_ID`| Optional | Sender identifier for Cloud Messaging. |
+| `FIREBASE_MEASUREMENT_ID` | Optional | Google Analytics measurement tracker code. |
+
+### Firebase Admin (Server SDK) Variables
+*Required to run tokens checks on `/verify` and resolve providers on `/resolve-sign-in-methods`.*
+
+| Environment Variable | Description |
+| :--- | :--- |
+| `FIREBASE_SERVICE_ACCOUNT` | **Recommended.** Full stringified Service Account JSON credentials object. |
+| `FIREBASE_CLIENT_EMAIL` | Account email portion of the service certificate (requires `FIREBASE_PRIVATE_KEY`). |
+| `FIREBASE_PRIVATE_KEY` | The private key string (escaped newlines `\n` are parsed correctly). |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to a local JSON credentials file containing service credentials. |
+| `FIREBASE_DATABASE_URL` | Realtime Database instance URL (only needed if default derived URL differs). |
 
 ---
 
-## Setup
+## Firebase Credentials Resolution
 
-### 1. Environment
+To guarantee security and flexibility across dev machines and Docker clusters, Auth-Backend looks for Admin SDK keys in the following prioritized order:
 
-Copy the `#Local DEV` or `#Production` block from [`.env.example`](.env.example) into `.env` (never commit `.env`).
+1.  **Inline JSON string (`FIREBASE_SERVICE_ACCOUNT`)**:
+    *Best for production Docker containers (avoids creating file system assets).*
+    ```text
+    FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"vt-prod","private_key":"...","client_email":"..."}
+    ```
+2.  **Separate Env Fields (`FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY`)**:
+    *Parsed and cleaned at runtime.*
+3.  **Application Default Credentials (`GOOGLE_APPLICATION_CREDENTIALS`)**:
+    *Loads config from the local JSON file matching the environment path.*
+4.  **Local Gitignored JSON File (`firebase-admin.local.json`)**:
+    *Recommended for local development. Copy the template from `firebase-admin.local.json.example` into `firebase-admin.local.json` at the root of `Auth-Backend/`.*
 
-**Required variables:**
+Similarly, Web SDK settings are loaded from environment variables (`FIREBASE_API_KEY`, etc.) or fall back to the local gitignored [firebase-web.local.json](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/firebase-web.local.json) (which can be copied from the provided example template).
 
-| Variable | Purpose |
-| --- | --- |
-| `PORT` | `5712` (dev) / `3000` (production container) |
-| `FRONTEND_ORIGIN` | Primary allowed CORS origin |
-| `APP_PUBLIC_URL` | App URL (redirects / links) |
-| `CORS_ORIGINS` | Optional comma-separated extra origins |
-| `FIREBASE_*` | Web client config (or use local JSON file) |
-| `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` | Admin SDK (or service account JSON) |
+---
 
-No SMTP, Resend, phone flags, or VAPID — those belong in Dashboard-Backend.
+## Security Configurations
 
-### 2. Firebase credentials
+The service includes multiple protection middleware components configured directly in [src/app/handle-request.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/src/app/handle-request.js):
 
-**Option A — local JSON (recommended for dev):**
+-   **TLS Enforcement**: Requests hitting the server over non-secure channels in production are rejected with `403 Forbidden` unless overridden via `ALLOW_INSECURE_HTTP`.
+-   **Security Headers**: Adds defensive response headers by default (`Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy`).
+-   **Default Cache Prevention**: The server adds `Cache-Control: no-store, no-cache, must-revalidate` headers on all endpoints unless overridden. Specific cache assets override this policy:
+    -   `/api/auth/firebase-config`: Allowed caching for 1 hour (`max-age=3600`).
+    -   `/api/auth/password-policy`: Allowed stale-while-revalidate up to 1 hour.
+-   **Query Parameter Guard**: Rejects URLs containing sensitive fields (like `?password=...` or `?token=...`) with `400 Bad Request` to prevent exposure in upstream load-balancer log files.
+-   **Sensitive Log Redaction**: Request and response log outputs pass through regex sanitization filters. JWT-like values and private credentials are replaced with `[REDACTED_JWT]` or `[REDACTED]`.
 
+---
+
+## Local Development Setup
+
+### 1. File Configuration
+Copy the development block from [.env.example](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/.env.example) to `.env` or create local JSON files in the `Auth-Backend` root directory:
 ```text
-Auth-Backend/firebase-admin.local.json   ← copy from firebase-admin.local.json.example
-Auth-Backend/firebase-web.local.json     ← copy from firebase-web.local.json.example
+Auth-Backend/firebase-admin.local.json
+Auth-Backend/firebase-web.local.json
 ```
 
-**Option B — `.env` fields:** set `FIREBASE_API_KEY`, `FIREBASE_AUTH_DOMAIN`, `FIREBASE_PROJECT_ID`, `FIREBASE_APP_ID`, and Admin credentials.
-
-### 3. Run
-
+### 2. Execution Commands
 ```bash
+# Navigate to the folder
 cd Auth-Backend
+
+# Install dependencies (only firebase-admin and Zod)
 npm install
+
+# Start the local server
 npm start
 ```
+The console will boot and render a startup route mapping banner. By default, it listens on `http://localhost:5712`.
 
-Listens on `http://localhost:5712` by default. Pair with **Dashboard-Backend** on `:5713` and **Dashboard Web** on `:3000`.
-
-### 4. Smoke test
-
+### 3. Smoke Test Checks
+Run the following curl commands in a separate terminal:
 ```bash
+# Check liveness
 curl -s http://localhost:5712/health
+
+# Check readiness status
 curl -s http://localhost:5712/api/auth/readiness
+
+# Fetch config payloads
 curl -s http://localhost:5712/api/auth/firebase-config
 curl -s http://localhost:5712/api/auth/password-policy
 ```
 
 ---
 
-## Docker
+## Production Deployment
 
+### Docker Container Build
 ```bash
+# Build the production container
 docker build -t vt-auth-api .
+
+# Run the container mapping port 5712
 docker run --env-file .env -p 5712:5712 vt-auth-api
 ```
+-   **Base Image**: `node:20-alpine` (production-grade).
+-   **Install Flag**: Runs `npm ci --omit=dev` to skip dev dependencies.
+-   **Liveness Probe**: Runs a container health check script every 30s using native Node.js fetch:
+    ```bash
+    node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5712)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+    ```
 
-- **Image:** `node:20-alpine`, production `npm ci --omit=dev`
-- **Healthcheck:** `GET /health` every 30s
-- **Coolify:** container `vt-auth-api`, domain `auth.myvirtualtracker.com`
-- **Start command:** `node index.js` (or use `nixpacks.toml` / `Dockerfile` — avoid `npm start` in Coolify; it triggers `npm warn config production`)
-
-Gateway path routing (Caddy/nginx) must forward **only** the six Auth paths to this container — see `deploy/Caddyfile` and `deploy/nginx/default.conf`.
-
----
-
-## Firebase Hosting (email action page)
-
-Static Firebase Auth action handler for email verification / password reset links:
-
-| Path | File |
-| --- | --- |
-| `/__/auth/action` | `hosting-public/__/auth/action.html` |
-
-Deploy separately via Firebase CLI (`firebase.json` in this folder). Not served by the Node HTTP server.
-
-Also in repo (Firebase project config, not runtime API):
-
-- `firestore.rules`, `firestore.indexes.json`, `storage.rules` — deploy with Firebase; **no Firestore API routes** in this service.
+### Nixpacks and Coolify Integration
+*   The repository contains a custom [nixpacks.toml](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/nixpacks.toml) file.
+*   The start command is set to `node index.js` (avoiding `npm start` to eliminate `npm warn config production` warnings under Coolify).
+*   **Routing Note**: Downstream reverse proxies (e.g. Caddy or Nginx) must forward traffic from the external domains to the `vt-auth-api` container *only* for the authorized auth endpoints and `/health`. All other traffic goes to `vt-dashboard-api`.
 
 ---
 
-## Project layout
+## In-Memory Performance Metrics
+
+The application implements a lightweight performance metrics reporter in [src/core/metrics.js](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Auth-Backend/src/core/metrics.js) with zero external dependencies.
+*   **Request Logs**: Implements a sliding-window ring buffer tracking the last 600 requests.
+*   **Security Logs**: Buffers the last 100 authentication and restriction incidents.
+*   **Calculators**: Gathers latency figures and computes percentiles (p50, p95, p99) and active Requests Per Second (RPS) metrics.
+*   **Console Logging**: Console outputs color-code requests based on HTTP statuses (Green: `2xx`, Cyan: `3xx`, Yellow: `4xx`, Red: `5xx`) and include execution times in milliseconds.
+
+---
+
+## Project Structure
 
 ```text
 Auth-Backend/
-├── index.js                 # Entry — startServer(), route banner
-├── server.js                # createServer() wrapper
+├── .dockerignore
+├── .env.example
+├── .firebaserc.example
+├── .npmrc
 ├── Dockerfile
-├── .env.example             # Local DEV + Production templates
-├── firebase.json            # Hosting + rules deploy config
-├── hosting-public/          # Firebase Auth action HTML
+├── README.md               # This documentation file
+├── firebase-admin.local.json.example
+├── firebase-web.local.json.example
+├── firebase.json           # Firebase CLI deploy manifest
+├── firestore.indexes.json  # Firebase security / Index configuration
+├── firestore.rules         # Firestore rule security definitions
+├── nixpacks.toml           # Nixpacks build template configuration
+├── package-lock.json
+├── package.json
+├── server.js               # createServer() factory wrapper
+├── index.js                # App entry point (binds ports, prints banner)
+│
+├── hosting-public/         # Firebase Hosting public directory
+│   └── __/auth/action.html # Static handler page for auth emails
 │
 └── src/
     ├── app/
-    │   └── handle-request.js    # CORS, TLS, rate limit, route dispatch
+    │   └── handle-request.js   # Request distributor and global filter middlewares
     ├── config/
-    │   ├── env.js               # Zod-validated env
-    │   ├── firebase.js          # Admin SDK + web config readers
-    │   ├── deployment-profiles.js
-    │   └── password-policy/     # Rules, validation, public JSON
+    │   ├── env.js              # Centralized Zod env mapping loader
+    │   ├── env-schema.js       # Zod schemas for env strings and JSON credentials
+    │   ├── env-public.js       # Helper to sanitize and omit secrets for logs
+    │   ├── firebase.js         # Firebase connection manager & credential checkers
+    │   ├── deployment-profiles.js # Port mapping registries and default CORS origins
+    │   └── password-policy/    # Rules parameters, checks, and validators
     ├── core/
-    │   ├── create-server.js     # Node HTTP server + error shell
-    │   ├── logger.js
-    │   └── metrics.js
-    ├── http/                    # Shared HTTP utilities
-    │   ├── cors.js
-    │   ├── rate-limit.js
-    │   ├── response.js          # sendJson + extra headers (Cache-Control)
-    │   ├── security-headers.js
-    │   ├── tls-enforcement.js
-    │   ├── auth-token.js
-    │   ├── password-request-guard.js
-    │   └── …
+    │   ├── create-server.js    # Node.js http instance creator & crash error catcher
+    │   ├── logger.js           # Colored status outputs and banner console printer
+    │   └── metrics.js          # Ring buffer-based performance & latency trackers
+    ├── http/
+    │   ├── api-error.js        # Standardized backend API error classes
+    │   ├── auth-token.js       # Extract token helper from Headers or body
+    │   ├── cors.js             # CORS rules and allowed origin matchers
+    │   ├── password-request-guard.js # URL credential checkers and validator wraps
+    │   ├── quota-error.js      # Translates Firebase rate quotas to API payloads
+    │   ├── rate-limit.js       # Sliding-window local request rate limiter
+    │   ├── read-json-body.js   # Safe request body reader with size limit check
+    │   ├── request-ip.js       # Extracts client IP addresses through proxies
+    │   ├── response.js         # Helper to write standard JSON response headers
+    │   ├── sanitize-error.js   # Prevents internal backend stack leaks to clients
+    │   ├── sanitize-log.js     # Redacts paths and fields inside terminal logs
+    │   ├── security-headers.js # Inject secure protection headers into responses
+    │   ├── sensitive-fields.js # Define fields containing credentials or JWTs
+    │   ├── tls-enforcement.js  # Restricts raw http requests in production tier
+    │   └── validate-body.js    # Verify required body keys and reject unknown ones
     └── modules/
         └── auth/
-            ├── authn-paths.js   # Route allowlist (keep in sync with frontend + gateway)
-            └── routes.js        # Six AuthN handlers
+            ├── authn-paths.js  # Allowlist matching for authentication routes
+            └── routes.js       # Execution logic for all 6 auth endpoints
 ```
-
----
-
-## Security
-
-| Layer | Implementation |
-| --- | --- |
-| CORS | `src/http/cors.js` — origins from env / `deployment-profiles.js` defaults |
-| HTTPS | `tls-enforcement.js` — rejects insecure requests in production |
-| Headers | `security-headers.js` — `Cache-Control: no-store` default on JSON via `sendJson` |
-| Cache overrides | `routes.js` passes explicit `Cache-Control` in `sendJson` `extraHeaders`; merged **after** security headers in `response.js`, so cacheable routes win intentionally |
-| Rate limit | Per-IP sliding window on all `/api/auth/*` routes |
-| Password in URL | `password-request-guard.js` — rejects sensitive query params |
-| Body validation | `validate-body.js`, size limits via `read-json-body.js` |
-| Errors | `sanitize-error.js` — safe client messages |
-
-Firebase handles Firebase-side abuse (Auth quotas). This service adds backend rate limits on public Auth routes (`verify`, `resolve-sign-in-methods`, etc.).
-
-**Cache-Control merge (do not rely on defaults for cacheable routes):**
-
-```js
-// response.js — extraHeaders overrides no-store
-{ ...getSecurityHeaders(req), ...extraHeaders }
-
-// routes.js — named constants, passed on every cacheable handler
-sendJson(res, origin, 200, payload, req, { "Cache-Control": CACHE_FIREBASE_CONFIG })
-sendJson(res, origin, 200, payload, req, { "Cache-Control": CACHE_PASSWORD_POLICY })
-```
-
-All other Auth routes omit `extraHeaders` and keep `no-store`.
-
----
-
-## Adding or changing a route
-
-1. Implement handler in `src/modules/auth/routes.js`
-2. Add path to `src/modules/auth/authn-paths.js`
-3. Sync to:
-   - `Dashboard Web/infrastructure/api/api-backend-routes.ts`
-   - `Dashboard-Backend/src/modules/auth/authn-paths.js` (deny list)
-   - `deploy/Caddyfile` / `deploy/nginx/default.conf`
-   - `Dashboard Web/next.config.mjs` (dev rewrites)
-4. Update [`explainhere.md`](../explainhere.md) and this README
-
-**Do not** add identity, email, or Firestore routes here — use Dashboard-Backend.
-
----
-
-## Checklist (Auth-Backend scope)
-
-| Area | Status |
-| --- | --- |
-| Six AuthN routes only | ✅ |
-| No overlap with Dashboard-Backend | ✅ |
-| Boot readiness (`/api/auth/readiness`) | ✅ |
-| Cache: explicit overrides in `routes.js` (merge order in `response.js`) | ✅ |
-| `/health` before authn allowlist in `handle-request.js` | ✅ |
-| Policy `version` for client invalidation | ✅ |
-| Rate limiting on `/api/auth/*` | ✅ |
-| `.env` Firebase + CORS only (no SMTP) | ✅ |
-| Gateway + frontend path sync documented | ✅ |
-
----
-
-## Related docs
-
-- [`../explainhere.md`](../explainhere.md) — full auth routing architecture, boot/session flows, env split
-- [`../Dashboard-Backend/README.md`](../Dashboard-Backend/README.md) — identity and app APIs
-- [`../deploy/README.md`](../deploy/README.md) — Coolify / gateway deployment

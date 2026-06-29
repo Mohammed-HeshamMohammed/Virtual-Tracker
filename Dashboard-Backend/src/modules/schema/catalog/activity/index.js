@@ -21,7 +21,7 @@ export const activitySchemas = [
       id: "uuid",
       member_id: "uuid",
       session_id: "uuid",
-      image_data: "text",
+      screenshot_url: "string",
       app_name: "string",
       page_title: "string",
       activity_level: "int",

@@ -21,12 +21,14 @@
     "migrate:clean-presence": "node --use-system-ca --env-file-if-exists=.env scripts/clean-member-presence.mjs",
     "migrate:phone-verification": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-phone-verification.mjs",
     "migrate:client-budget-start-date": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-client-budget-start-date.mjs",
+    "migrate:to-postgres": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-to-postgres.mjs",
     "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
     "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.8.0",
-    "nodemailer": "^9.0.1",
+    "pg": "^8.16.3",
+    "sharp": "^0.34.3",
     "ws": "^8.21.0",
     "zod": "^3.25.76"
   },

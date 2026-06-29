@@ -178,9 +178,21 @@ export function buildEnv(source = process.env) {
       signalMinIntervalMs: readPositiveInt(source, "PRESENCE_SIGNAL_MIN_INTERVAL_MS", 60_000),
     }),
 
-    /** When true, OTP is logged to the server console instead of Firebase SMS. */
-    phoneVerification: Object.freeze({
-      devMode: readBool(source, "PHONE_VERIFICATION_DEV_MODE", !isProduction),
+    storage: Object.freeze({
+      gcsBucketName: readString(source, "GCS_BUCKET_NAME"),
+    }),
+
+    postgres: Object.freeze({
+      url: readString(source, "POSTGRES_URL"),
+    }),
+
+    notify: Object.freeze({
+      backendUrl: readString(source, "NOTIFY_BACKEND_URL", "http://localhost:5715"),
+      internalServiceSecret: readString(source, "INTERNAL_SERVICE_SECRET"),
+    }),
+
+    auth: Object.freeze({
+      backendUrl: readString(source, "AUTH_BACKEND_URL", "http://localhost:5712"),
     }),
   });
 }

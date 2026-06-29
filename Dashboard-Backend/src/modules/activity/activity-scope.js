@@ -231,6 +231,7 @@ export const SCREENSHOT_FEED_SELECT = [
   "app_name",
   "page_title",
   "has_image",
+  "screenshot_url",
 ];
 
 export function memberOptionsFromMeta(allowedMemberIds, memberMeta, viewerMemberId) {

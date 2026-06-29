@@ -10,7 +10,7 @@ import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
 import { upsertProfileFromUserRecord } from "../../auth/profile-sync.js";
 import { sendPreprovisionWelcomeEmail } from "../../auth/preprovision-email.js";
-import { getEmailDeliveryConfig } from "../../auth/email-config.js";
+import { isNotifyEmailRoutingConfigured } from "../../../lib/notify/email-client.js";
 import { assertEmailCanUseMemberInviteOrPreprovision, validateEmailsForAddMembersFlow } from "../services/eligibility.js";
 import { recordMemberRelationship } from "../../member-relationships/service.js";
 import { isExcludedFromHierarchy } from "../../hierarchy/hierarchy-placement.js";
@@ -321,7 +321,7 @@ export async function routeMemberInvites(req, res, url, origin) {
       emailSent: result.emailSent,
       channel: result.channel,
       emailError: result.emailError,
-      emailDeliveryConfigured: getEmailDeliveryConfig().configured,
+      emailDeliveryConfigured: isNotifyEmailRoutingConfigured(),
       inviteUrl: result.inviteUrl,
       data: normalizeDoc(result.row),
     });
@@ -407,7 +407,7 @@ export async function routeMemberInvites(req, res, url, origin) {
     const lastName = typeof body.lastName === "string" ? body.lastName.trim() : "";
     let phone = "";
     try {
-      phone = assertValidPhone(body.phone, { required: true, label: "Phone number" });
+      phone = await assertValidPhone(body.phone, { required: true, label: "Phone number" });
     } catch (phoneErr) {
       sendJson(res, origin, 400, {
         success: false,
@@ -450,7 +450,7 @@ export async function routeMemberInvites(req, res, url, origin) {
       });
       return true;
     }
-    const passwordValidation = validateRegistrationPassword(password, {
+    const passwordValidation = await validateRegistrationPassword(password, {
       confirmPassword,
       requireConfirm: true,
     });
@@ -683,7 +683,7 @@ export async function routeMemberInvites(req, res, url, origin) {
     let phone = "";
     if ("phone" in body && body.phone != null && String(body.phone).trim()) {
       try {
-        phone = assertValidPhone(body.phone, { required: false, label: "Phone number" });
+        phone = await assertValidPhone(body.phone, { required: false, label: "Phone number" });
       } catch (phoneErr) {
         sendJson(res, origin, 400, {
           success: false,

@@ -1,9 +1,11 @@
 import { FieldValue } from "firebase-admin/firestore";
+import sharp from "sharp";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { hasRemovableUploadedProfileImage } from "./profile-image-resolve.js";
+import { getPublicUrl, uploadToGCS } from "../../lib/gcs/upload.js";
 
-/** Maximum decoded image bytes stored in Firestore (500 KB). */
+/** Maximum decoded image bytes accepted before WebP conversion (500 KB). */
 export const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 
 /** @type {Map<string, string>} */
@@ -26,7 +28,7 @@ export function stripBase64DataUrl(raw) {
 }
 
 /**
- * Stores avatar bytes in `User_profiles/{uid}` as base64 (no Firebase Storage).
+ * Stores avatar in GCS and writes the public URL to `User_profiles/{uid}.photoURL`.
  *
  * @param {import('firebase-admin/auth').Auth} auth
  * @param {import('firebase-admin/firestore').Firestore} db
@@ -47,28 +49,41 @@ export async function setProfileAvatarFromUpload(auth, db, uid, buffer, contentT
     throw new Error("Image too large (max 500 KB). Try a smaller or more compressed photo.");
   }
 
-  const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
-  const base64 = buffer.toString("base64");
+  const webp = await sharp(buffer)
+    .resize({ width: 256, height: 256, fit: "cover" })
+    .webp({ quality: 85 })
+    .toBuffer();
 
+  const objectPath = `profile-avatars/${uid}/${Date.now()}_avatar.webp`;
+  await uploadToGCS(webp, objectPath, "image/webp", true);
+  const photoURL = getPublicUrl(objectPath);
+
+  const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   await profileRef.set(
     {
       uid,
-      profileImageData: base64,
-      profileImageMimeType: normalizedType,
-      profileImageUpdatedAt: FieldValue.serverTimestamp(),
+      photoURL,
+      profileImageData: FieldValue.delete(),
+      profileImageMimeType: FieldValue.delete(),
+      profileImageUpdatedAt: FieldValue.delete(),
       avatarStoragePath: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
 
-  void auth;
+  try {
+    await auth.updateUser(uid, { photoURL });
+  } catch {
+    /* Auth photo sync is best-effort */
+  }
+
   const userRecord = await auth.getUser(uid);
   return upsertProfileFromUserRecord(db, userRecord);
 }
 
 /**
- * Clears embedded profile image (and legacy Storage metadata). Does not remove OAuth provider photos.
+ * Clears uploaded profile image (GCS URL or legacy embedded). Does not remove OAuth provider photos.
  *
  * @param {import('firebase-admin/auth').Auth} auth
  * @param {import('firebase-admin/firestore').Firestore} db
@@ -85,24 +100,30 @@ export async function clearProfileAvatar(auth, db, uid) {
 
   const hadLegacyStorage =
     typeof prevData.avatarStoragePath === "string" && prevData.avatarStoragePath.length > 0;
+  const hadGcsAvatar =
+    typeof prevData.photoURL === "string" && prevData.photoURL.includes("profile-avatars/");
 
   await profileRef.set(
     {
       uid,
-      profileImageData: "",
-      profileImageMimeType: "",
-      profileImageUpdatedAt: null,
+      photoURL: hadGcsAvatar ? null : prevData.photoURL ?? null,
+      profileImageData: FieldValue.delete(),
+      profileImageMimeType: FieldValue.delete(),
+      profileImageUpdatedAt: FieldValue.delete(),
       avatarStoragePath: FieldValue.delete(),
       updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true },
   );
 
-  if (hadLegacyStorage) {
+  if (hadLegacyStorage || hadGcsAvatar) {
     try {
       const userRecord = await auth.getUser(uid);
       const authPhoto = typeof userRecord.photoURL === "string" ? userRecord.photoURL : "";
-      if (authPhoto.includes("firebasestorage.googleapis.com")) {
+      if (
+        authPhoto.includes("firebasestorage.googleapis.com") ||
+        authPhoto.includes("profile-avatars/")
+      ) {
         await auth.updateUser(uid, { photoURL: null });
       }
     } catch {

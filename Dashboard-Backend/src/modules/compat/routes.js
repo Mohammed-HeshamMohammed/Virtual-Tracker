@@ -30,7 +30,7 @@ import { resolveProfileAvatarUrl } from "../auth/profile-image-resolve.js";
 import { resolveMemberDisplayName } from "../members/services/member-display-name.js";
 import { sendMemberInviteEmail } from "../auth/invite-email.js";
 import { resolveAppPublicUrl } from "../auth/app-public-url.js";
-import { getEmailDeliveryConfig } from "../auth/email-config.js";
+import { isNotifyEmailRoutingConfigured } from "../../lib/notify/email-client.js";
 import {
   isInviteExpired,
   shareLinkInviteFields,
@@ -1058,10 +1058,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         (singleSection === "payBill" || singleSection === "workLimits" || singleSection === "settings")
       ) {
         const form = await updateMemberProfile(db, id, body, updatedBy, {
-          phoneVerificationToken:
-            body.info && typeof body.info === "object" && typeof body.info.phoneVerificationToken === "string"
-              ? body.info.phoneVerificationToken
-              : "",
           actorIsManager: canManage,
           actorUid: viewer?.uid ?? "",
           reloadSections,
@@ -1085,10 +1081,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         );
       }
       const form = await updateMemberProfile(db, id, body, updatedBy, {
-        phoneVerificationToken:
-          body.info && typeof body.info === "object" && typeof body.info.phoneVerificationToken === "string"
-            ? body.info.phoneVerificationToken
-            : "",
         actorIsManager: canManage,
         actorUid: viewer?.uid ?? "",
         skipRoleSync: hasRoleChange,
@@ -1420,7 +1412,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       emailsSent,
       emailsFailed,
       emailChannel: emailChannel ?? "skipped",
-      emailDeliveryConfigured: getEmailDeliveryConfig().configured,
+      emailDeliveryConfigured: isNotifyEmailRoutingConfigured(),
     });
     return true;
   }
