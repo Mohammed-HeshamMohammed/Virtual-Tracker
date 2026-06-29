@@ -10,7 +10,7 @@ if (!existsSync(serverJs)) {
   process.exit(1);
 }
 
-const port = (process.env.PORT ?? "3001").trim() || "3001";
+const port = (process.env.PORT ?? "3000").trim() || "3000";
 const nodeVersion = process.version;
 const version = require("./package.json").version || "0.1.0";
 
