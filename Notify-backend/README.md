@@ -153,9 +153,6 @@ SMTP_FROM=
 PHONE_VERIFICATION_DEV_MODE=false
 
 # Firebase Admin (FCM push credentials)
-FIREBASE_PROJECT_ID=
-FIREBASE_CLIENT_EMAIL=
-FIREBASE_PRIVATE_KEY=
 FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
 ```
 
