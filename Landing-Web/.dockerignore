@@ -3,7 +3,7 @@ node_modules
 .git
 .env
 .env.*
-.env.example
+!.env.example
 npm-debug.log*
 .DS_Store
 coverage
