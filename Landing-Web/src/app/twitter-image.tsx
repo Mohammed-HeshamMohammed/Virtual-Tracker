@@ -1,9 +1,20 @@
 import { ImageResponse } from "next/og"
+import fs from "node:fs"
+import path from "node:path"
 
 export const size = { width: 1200, height: 630 }
 export const contentType = "image/png"
 
 export default function Image() {
+  let logoDataUrl = ""
+  try {
+    const filePath = path.join(process.cwd(), "public/stopwatch-black.png")
+    const fileBuffer = fs.readFileSync(filePath)
+    logoDataUrl = `data:image/png;base64,${fileBuffer.toString("base64")}`
+  } catch (err) {
+    console.error("Failed to load twitter logo:", err)
+  }
+
   return new ImageResponse(
     (
       <div
@@ -14,20 +25,32 @@ export default function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #111827 0%, #7c3aed 100%)",
+          background: "linear-gradient(135deg, #111827 0%, #1e1b4b 100%)",
           color: "white",
-          fontSize: 64,
-          fontWeight: 700,
           padding: 60,
         }}
       >
-        <div style={{ fontSize: 36, opacity: 0.9 }}>Virtual Tracker</div>
-        <div style={{ marginTop: 16 }}>Track work. Improve visibility. Scale confidently.</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20 }}>
+          {logoDataUrl && (
+            <img
+              src={logoDataUrl}
+              width="120"
+              height="120"
+              style={{ borderRadius: 24 }}
+            />
+          )}
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 54, fontWeight: 800, letterSpacing: "-0.02em" }}>Virtual Tracker</div>
+            <div style={{ fontSize: 24, color: "#38bdf8", fontWeight: 500, marginTop: 4 }}>Workforce Productivity Platform</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 32, fontWeight: 600, color: "#94a3b8", textAlign: "center", marginTop: 10 }}>
+          Track work. Improve visibility. Scale confidently.
+        </div>
       </div>
     ),
     {
-      width: 1200,
-      height: 630,
+      ...size,
     }
   )
 }

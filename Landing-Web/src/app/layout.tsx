@@ -36,9 +36,9 @@ export const metadata: Metadata = {
     type: "website",
     images: [
       {
-        url: "/icon.svg",
-        width: 1200,
-        height: 630,
+        url: "/stopwatch-green.png",
+        width: 512,
+        height: 512,
         alt: "Virtual Tracker",
       },
     ],
@@ -47,7 +47,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Virtual Tracker",
     description: "Track hours, optimize workflows, and manage distributed teams transparently with Virtual Tracker.",
-    images: ["/icon.svg"],
+    images: ["/stopwatch-green.png"],
   },
   robots: {
     index: true,
@@ -62,8 +62,8 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: "/icon.svg",
-    apple: "/apple-icon.png",
+    icon: "/stopwatch-green.png",
+    apple: "/stopwatch-green.png",
   },
 }
 
