@@ -1,8 +1,7 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { apiFetch, getApiAuthToken } from "@/infrastructure/api/http"
 import { bearerAuthHeaders } from "@/features/auth/services/bearer-headers"
 
-const API_BASE = getApiBaseUrl()
 
 type ApiEnvelope<T> = {
   success?: boolean
@@ -21,7 +20,7 @@ async function optionalSessionAuthInit(body: string): Promise<RequestInit> {
 
 export async function sendPhoneVerificationCode(phone: string): Promise<{ challengeId: string; expiresInSeconds: number }> {
   const res = await apiFetch(
-    `${API_BASE}/api/auth/phone-verification/send`,
+    apiPath("/api/auth/phone-verification/send"),
     await optionalSessionAuthInit(JSON.stringify({ phone: phone.trim() })),
     { requireAuth: false, json: true },
   )
@@ -37,7 +36,7 @@ export async function confirmPhoneVerificationCode(
   code: string,
 ): Promise<{ verificationToken: string; phone: string; expiresInSeconds: number }> {
   const res = await apiFetch(
-    `${API_BASE}/api/auth/phone-verification/confirm`,
+    apiPath("/api/auth/phone-verification/confirm"),
     await optionalSessionAuthInit(JSON.stringify({ challengeId, code: code.trim() })),
     { requireAuth: false, json: true },
   )
@@ -77,7 +76,7 @@ export async function exchangeFirebasePhoneVerification(
   phone: string,
 ): Promise<{ verificationToken: string; phone: string; expiresInSeconds: number }> {
   const res = await apiFetch(
-    `${API_BASE}/api/auth/phone-verification/exchange`,
+    apiPath("/api/auth/phone-verification/exchange"),
     await optionalSessionAuthInit(JSON.stringify({ idToken: idToken.trim(), phone: phone.trim() })),
     { requireAuth: false, json: true },
   )

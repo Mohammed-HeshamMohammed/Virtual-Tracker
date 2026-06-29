@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import type { User } from "firebase/auth"
 import { parseAuthProfileSnapshot, type AuthProfileSnapshot } from "@/features/auth/services/verify-session"
 
@@ -19,7 +19,7 @@ export async function patchProfileSettingsWithBackend(
   payload: PatchProfileSettingsPayload,
 ): Promise<AuthProfileSnapshot | undefined> {
   void user
-  const res = await apiFetch(`${getApiBaseUrl()}/api/auth/profile`, {
+  const res = await apiFetch(apiPath("/api/auth/profile"), {
     method: "POST",
     body: JSON.stringify(payload),
   })

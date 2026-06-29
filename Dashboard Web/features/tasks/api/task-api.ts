@@ -1,8 +1,7 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, apiFetch, fetchJsonWithRetry, type RequestOptions } from "@/infrastructure/api/http"
 import { syncTaskAssignments } from "@/features/tasks/api/task-assignments-api"
 
-const API_BASE = getApiBaseUrl()
 type Envelope<T> = { success?: boolean; error?: string; data?: T; task?: T; tasks?: T }
 
 export type TaskStatus = "todo" | "in_progress" | "in_review" | "blocked" | "done"
@@ -246,7 +245,7 @@ async function enrichTasksWithAssigneeFields(tasks: Task[]): Promise<Task[]> {
   const needsEnrich = tasks.some((task) => !task.assigneeIds?.length)
   if (!needsEnrich) return tasks
 
-  const res = await apiFetch(`${API_BASE}/api/tasks/enrich`, {
+  const res = await apiFetch(apiPath("/api/tasks/enrich"), {
     method: "POST",
     body: JSON.stringify({ taskIds: tasks.map((task) => task.id) }),
   })
@@ -284,7 +283,7 @@ export async function getTasks(
   if (options.fields?.length) params.append("fields", options.fields.join(","))
 
   const query = params.toString() ? `?${params.toString()}` : ""
-  const { res, json } = await fetchJsonWithRetry<Envelope<Task[]>>(`${API_BASE}/api/tasks${query}`, {}, { ...options, retries: 1 })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Task[]>>(apiPath(`/api/tasks${query}`), {}, { ...options, retries: 1 })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch tasks", json)
   if (!json) throw new Error("Failed to parse tasks response")
@@ -299,7 +298,7 @@ export async function getTasks(
 }
 
 export async function getTask(id: string, options?: RequestOptions): Promise<Task> {
-  const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(`${API_BASE}/api/tasks/${id}`, {}, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(apiPath(`/api/tasks/${id}`), {}, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch task", json)
   if (!json) throw new Error("Failed to parse task response")
@@ -339,7 +338,7 @@ export async function createTask(input: CreateTaskInput, options?: RequestOption
 
   const assigneeIds = input.assigneeIds?.length ? input.assigneeIds : undefined
 
-  const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(`${API_BASE}/api/tasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(apiPath("/api/tasks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to create task", json)
   if (!json) throw new Error("Failed to parse create response")
@@ -378,7 +377,7 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
   if (input.reviewedAt !== undefined) payload.reviewed_at = input.reviewedAt
 
   if (Object.keys(payload).length > 0) {
-    const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(`${API_BASE}/api/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
+    const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(apiPath(`/api/tasks/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
     if (!res.ok) throw extractApiError(res.status, "Failed to update task", json)
     if (!json) throw new Error("Failed to parse update response")
@@ -393,7 +392,7 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
 }
 
 export async function deleteTask(id: string, options?: RequestOptions): Promise<void> {
-  const { res, json } = await fetchJsonWithRetry<Envelope<unknown>>(`${API_BASE}/api/tasks/${id}`, { method: "DELETE" }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<unknown>>(apiPath(`/api/tasks/${id}`), { method: "DELETE" }, { ...options })
 
   if (res.status === 404) return
   if (!res.ok) throw extractApiError(res.status, "Failed to delete task", json)
@@ -413,7 +412,7 @@ async function reorderTasks(updates: ReorderTaskUpdate[], options?: RequestOptio
     })),
   }
 
-  const { res, json } = await fetchJsonWithRetry<Envelope<Task[]>>(`${API_BASE}/api/tasks/batch/reorder`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Task[]>>(apiPath("/api/tasks/batch/reorder"), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to reorder tasks", json)
   if (!json) throw new Error("Failed to parse reorder response")
@@ -431,7 +430,7 @@ async function createSubtask(taskId: string, title: string, options?: RequestOpt
     completed: false,
   }
 
-  const { res, json } = await fetchJsonWithRetry<Envelope<TaskSubtask>>(`${API_BASE}/api/task-subtasks`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<TaskSubtask>>(apiPath("/api/task-subtasks"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to create subtask", json)
   if (!json) throw new Error("Failed to parse create response")
@@ -449,7 +448,7 @@ async function updateSubtask(id: string, input: Partial<TaskSubtask>, options?: 
   if (input.completed !== undefined) payload.completed = input.completed
   if (input.orderIndex !== undefined) payload.order_index = input.orderIndex
 
-  const { res, json } = await fetchJsonWithRetry<Envelope<TaskSubtask>>(`${API_BASE}/api/task-subtasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<TaskSubtask>>(apiPath(`/api/task-subtasks/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to update subtask", json)
   if (!json) throw new Error("Failed to parse update response")
@@ -462,7 +461,7 @@ async function updateSubtask(id: string, input: Partial<TaskSubtask>, options?: 
 }
 
 async function deleteSubtask(id: string, options?: RequestOptions): Promise<void> {
-  const { res, json } = await fetchJsonWithRetry<Envelope<unknown>>(`${API_BASE}/api/task-subtasks/${id}`, { method: "DELETE" }, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<unknown>>(apiPath(`/api/task-subtasks/${id}`), { method: "DELETE" }, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to delete subtask", json)
   if (json && !json.success && json.error) throw new Error(json.error)
@@ -471,7 +470,7 @@ async function deleteSubtask(id: string, options?: RequestOptions): Promise<void
 // Task Comments
 async function getTaskComments(taskId?: string): Promise<TaskComment[]> {
   const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""
-  const res = await apiFetch(`${API_BASE}/api/task-comments${query}`)
+  const res = await apiFetch(apiPath(`/api/task-comments${query}`))
   if (!res.ok) throw new Error(`Failed to fetch comments: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch comments")
@@ -479,7 +478,7 @@ async function getTaskComments(taskId?: string): Promise<TaskComment[]> {
 }
 
 async function createTaskComment(taskId: string, body: string, createdBy?: string): Promise<TaskComment> {
-  const res = await apiFetch(`${API_BASE}/api/task-comments`, {
+  const res = await apiFetch(apiPath("/api/task-comments"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ task_id: taskId, body, created_by: createdBy }),
@@ -491,7 +490,7 @@ async function createTaskComment(taskId: string, body: string, createdBy?: strin
 }
 
 async function updateTaskComment(id: string, body: string, updatedBy?: string): Promise<TaskComment> {
-  const res = await apiFetch(`${API_BASE}/api/task-comments/${id}`, {
+  const res = await apiFetch(apiPath(`/api/task-comments/${id}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ body, updated_by: updatedBy }),
@@ -503,14 +502,14 @@ async function updateTaskComment(id: string, body: string, updatedBy?: string): 
 }
 
 async function deleteTaskComment(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/task-comments/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/task-comments/${id}`), { method: "DELETE" })
   if (!res.ok) throw new Error(`Failed to delete comment: ${res.status}`)
 }
 
 // Task Attachments
 async function getTaskAttachments(taskId?: string): Promise<TaskAttachment[]> {
   const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""
-  const res = await apiFetch(`${API_BASE}/api/task-attachments${query}`)
+  const res = await apiFetch(apiPath(`/api/task-attachments${query}`))
   if (!res.ok) throw new Error(`Failed to fetch attachments: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch attachments")
@@ -518,7 +517,7 @@ async function getTaskAttachments(taskId?: string): Promise<TaskAttachment[]> {
 }
 
 async function createTaskAttachment(taskId: string, fileUrl: string, fileName: string, uploadedBy?: string): Promise<TaskAttachment> {
-  const res = await apiFetch(`${API_BASE}/api/task-attachments`, {
+  const res = await apiFetch(apiPath("/api/task-attachments"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ taskId, fileUrl, fileName, uploadedBy }),
@@ -530,13 +529,13 @@ async function createTaskAttachment(taskId: string, fileUrl: string, fileName: s
 }
 
 async function deleteTaskAttachment(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/task-attachments/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/task-attachments/${id}`), { method: "DELETE" })
   if (!res.ok) throw new Error(`Failed to delete attachment: ${res.status}`)
 }
 
 // Task Hours Functions
 export async function getTaskHours(taskId: string, options?: RequestOptions): Promise<TaskHours[]> {
-  const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(`${API_BASE}/api/tasks/${taskId}/hours`, {}, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(apiPath(`/api/tasks/${taskId}/hours`), {}, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch task hours", json)
   if (!json) throw new Error("Failed to parse task hours response")
@@ -547,7 +546,7 @@ export async function getTaskHours(taskId: string, options?: RequestOptions): Pr
 }
 
 async function getTaskHoursForUser(taskId: string, userId: string, options?: RequestOptions): Promise<TaskHours | null> {
-  const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(`${API_BASE}/api/tasks/${taskId}/hours/${userId}`, {}, { ...options })
+  const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(apiPath(`/api/tasks/${taskId}/hours/${userId}`), {}, { ...options })
 
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch task hours for user", json)
   if (!json) throw new Error("Failed to parse task hours response")
@@ -565,7 +564,7 @@ export async function createTaskHours(input: CreateTaskHoursInput, options?: Req
   }
 
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>>>(
-    `${API_BASE}/api/tasks/${input.taskId}/hours`,
+    apiPath(`/api/tasks/${input.taskId}/hours`),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
     { ...options },
   )
@@ -591,7 +590,7 @@ export async function updateTaskHours(
   if (input.status !== undefined) payload.status = input.status
 
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>>>(
-    `${API_BASE}/api/tasks/${taskId}/hours/${hoursId}`,
+    apiPath(`/api/tasks/${taskId}/hours/${hoursId}`),
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
     { ...options },
   )
@@ -618,7 +617,7 @@ export async function submitTaskReview(
   }
 
   const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(
-    `${API_BASE}/api/tasks/${taskId}/review`,
+    apiPath(`/api/tasks/${taskId}/review`),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
     { ...options },
   )

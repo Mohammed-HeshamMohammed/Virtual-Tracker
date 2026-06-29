@@ -1,7 +1,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface TaskTimeTrackingRecord {
   id: string
@@ -53,7 +52,7 @@ export type TaskTimerSyncAction = "start" | "idle" | "resume" | "stop" | "sync"
 
 export async function fetchTaskTimeTracking(taskId: string): Promise<TaskTimeTrackingState | null> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/time-tracking`)
+    const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/time-tracking`))
     if (!res.ok) return null
     const json = await res.json()
     return json.data ?? null
@@ -68,7 +67,7 @@ export async function syncTaskTimeTrackingApi(
   counters: { activeSeconds: number; idleSeconds: number; sessionId?: string | null },
 ): Promise<(TaskTimeTrackingState & { statusChanged?: boolean }) | null> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/time-tracking`, {
+    const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/time-tracking`), {
       method: "POST",
       body: JSON.stringify({
         action,
@@ -96,7 +95,7 @@ export async function fetchManagementTaskTracking(filters?: {
   if (filters?.status) params.set("status", filters.status)
   const qs = params.toString()
   try {
-    const res = await apiFetch(`${API_BASE}/api/task-time-tracking/management${qs ? `?${qs}` : ""}`)
+    const res = await apiFetch(apiPath(`/api/task-time-tracking/management${qs ? `)?${qs}` : ""}`)
     if (!res.ok) return []
     const json = await res.json()
     return json.data ?? []
@@ -111,7 +110,7 @@ export async function reviewTaskTimeTracking(
   notes?: string,
 ): Promise<{ taskStatus: string } | null> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/time-tracking/review`, {
+    const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/time-tracking/review`), {
       method: "POST",
       body: JSON.stringify({ decision, notes: notes ?? "" }),
     })

@@ -2,9 +2,8 @@ import { apiFetch, getApiAuthToken } from "@/infrastructure/api/http"
 import { coalesceRequest } from "@/infrastructure/api/request-coalesce"
 import { bearerAuthHeaders } from "@/features/auth/services/bearer-headers"
 import { assertSecureFetchUrl } from "@/infrastructure/api/secure-transport"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface TreeNode {
   member_id: string
@@ -30,7 +29,7 @@ export interface ConnectedMembers {
  * Get all ancestors of a member (who added them, up the tree)
  */
 async function getMemberAncestors(memberId: string): Promise<TreeNode[]> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/ancestors`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/ancestors`))
   if (!res.ok) throw new Error(`Failed to fetch ancestors: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch ancestors")
@@ -42,7 +41,7 @@ async function getMemberAncestors(memberId: string): Promise<TreeNode[]> {
  */
 async function getMemberDescendants(memberId: string, maxDepth?: number): Promise<TreeNode[]> {
   const params = maxDepth ? `?maxDepth=${maxDepth}` : ""
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/descendants${params}`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/descendants${params}`))
   if (!res.ok) throw new Error(`Failed to fetch descendants: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch descendants")
@@ -53,7 +52,7 @@ async function getMemberDescendants(memberId: string, maxDepth?: number): Promis
  * Get the full tree path from root to this member
  */
 async function getMemberTreePath(memberId: string): Promise<string[]> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/tree-path`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/tree-path`))
   if (!res.ok) throw new Error(`Failed to fetch tree path: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch tree path")
@@ -64,7 +63,7 @@ async function getMemberTreePath(memberId: string): Promise<string[]> {
  * Get the root (top-most ancestor) of a member's tree
  */
 async function getMemberRoot(memberId: string): Promise<string | null> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/root`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/root`))
   if (!res.ok) throw new Error(`Failed to fetch root: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch root")
@@ -104,7 +103,7 @@ export interface TeamStaffableMembersResponse {
  * `manageable_members` = edit/remove scope (Managers / Super Managers).
  */
 async function fetchScopedHierarchyMembers(forceToken = false): Promise<ScopedHierarchyMembers> {
-  const url = `${API_BASE}/api/member-relationships/scoped-members`
+  const url = apiPath("/api/member-relationships/scoped-members")
   assertSecureFetchUrl(url)
   const token = await getApiAuthToken(forceToken)
   if (!token) {
@@ -135,7 +134,7 @@ export async function getScopedHierarchyMembers(): Promise<ScopedHierarchyMember
 }
 
 async function fetchTeamStaffableMembers(forceToken = false): Promise<TeamStaffableMembersResponse> {
-  const url = `${API_BASE}/api/member-relationships/team-staffable-members`
+  const url = apiPath("/api/member-relationships/team-staffable-members")
   assertSecureFetchUrl(url)
   const token = await getApiAuthToken(forceToken)
   if (!token) {
@@ -175,7 +174,7 @@ export interface TeamSubtreeMembers {
  * Prefer getScopedHierarchyMembers for People page manage scope.
  */
 export async function getTeamSubtreeMembers(memberId: string): Promise<TeamSubtreeMembers> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/team-subtree`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/team-subtree`))
   if (!res.ok) throw new Error(`Failed to fetch team subtree: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch team subtree")
@@ -186,7 +185,7 @@ export async function getTeamSubtreeMembers(memberId: string): Promise<TeamSubtr
  * Get all members connected in the same tree
  */
 export async function getConnectedMembers(memberId: string): Promise<ConnectedMembers> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/connected`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/connected`))
   if (!res.ok) throw new Error(`Failed to fetch connected members: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch connected members")
@@ -197,7 +196,7 @@ export async function getConnectedMembers(memberId: string): Promise<ConnectedMe
  * Get the full nested tree structure starting from a member
  */
 async function getMemberTree(memberId: string): Promise<MemberTree> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/tree`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/tree`))
   if (!res.ok) throw new Error(`Failed to fetch tree: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch tree")
@@ -208,7 +207,7 @@ async function getMemberTree(memberId: string): Promise<MemberTree> {
  * Get the direct parent of a member
  */
 async function getMemberParent(memberId: string): Promise<TreeNode | null> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/parent`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/parent`))
   if (!res.ok) throw new Error(`Failed to fetch parent: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch parent")
@@ -219,7 +218,7 @@ async function getMemberParent(memberId: string): Promise<TreeNode | null> {
  * Get direct children of a member
  */
 async function getMemberChildren(memberId: string): Promise<TreeNode[]> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/children`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/children`))
   if (!res.ok) throw new Error(`Failed to fetch children: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch children")
@@ -231,7 +230,7 @@ async function getMemberChildren(memberId: string): Promise<TreeNode[]> {
  */
 async function checkIsAncestor(ancestorId: string, descendantId: string): Promise<boolean> {
   const params = new URLSearchParams({ ancestor: ancestorId, descendant: descendantId })
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/check-ancestor?${params}`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/check-ancestor?${params}`))
   if (!res.ok) throw new Error(`Failed to check ancestor: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to check ancestor")
@@ -242,7 +241,7 @@ async function checkIsAncestor(ancestorId: string, descendantId: string): Promis
  * Get members who share projects with the given member (for client visibility)
  */
 async function getMembersBySharedProjects(memberId: string): Promise<string[]> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/shared-projects`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/shared-projects`))
   if (!res.ok) throw new Error(`Failed to fetch shared projects: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch shared projects")
@@ -260,7 +259,7 @@ export interface VisibleMembersForClient {
  * Get all visible members for a client (tree + project-based visibility)
  */
 export async function getVisibleMembersForClient(memberId: string): Promise<VisibleMembersForClient> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/${encodeURIComponent(memberId)}/visible`)
+  const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/visible`))
   if (!res.ok) throw new Error(`Failed to fetch visible members: ${res.status}`)
   const json = await res.json()
   if (!json.success) throw new Error(json.error || "Failed to fetch visible members")
@@ -276,7 +275,7 @@ async function createMemberRelationship(
   relationshipType: "invite" | "preprovision" | "admin_create" | "self_signup",
   createdBy?: string
 ): Promise<{ id: string; parent_member_id: string; child_member_id: string; relationship_type: string }> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships`, {
+  const res = await apiFetch(apiPath("/api/member-relationships"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

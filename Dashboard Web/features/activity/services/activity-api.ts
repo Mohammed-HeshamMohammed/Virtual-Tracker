@@ -1,9 +1,8 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { coalesceRequest } from "@/infrastructure/api/request-coalesce"
 import { ACTIVITY_FEED_DASHBOARD_CACHE_MS } from "@/infrastructure/config/firestore-throttle"
 
-const API_BASE = getApiBaseUrl()
 
 export type ActivitySessionAction = "start" | "idle" | "resume" | "stop" | "sync"
 
@@ -47,7 +46,7 @@ export interface ActivityFeedQuery {
 export async function fetchActivitySession(): Promise<ActivitySession | null> {
   return coalesceRequest("activity-session-get", async () => {
     try {
-      const res = await apiFetch(`${API_BASE}/api/activity/session`)
+      const res = await apiFetch(apiPath("/api/activity/session"))
       if (!res.ok) return null
       const json = await res.json()
       return json.data ?? null
@@ -62,7 +61,7 @@ export async function postActivitySession(
   counters?: { activeSeconds?: number; idleSeconds?: number; taskId?: string | null },
 ): Promise<ActivitySession | null> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/session`, {
+    const res = await apiFetch(apiPath("/api/activity/session"), {
       method: "POST",
       body: JSON.stringify({
         action,
@@ -82,7 +81,7 @@ export async function postActivitySession(
 export async function postActivityEvents(sessionId: string, events: ActivityEvent[]): Promise<boolean> {
   if (events.length === 0) return false
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/events`, {
+    const res = await apiFetch(apiPath("/api/activity/events"), {
       method: "POST",
       body: JSON.stringify({ sessionId, events, source: "web" }),
     })
@@ -94,7 +93,7 @@ export async function postActivityEvents(sessionId: string, events: ActivityEven
 
 export async function registerWebCapture(): Promise<boolean> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/agent/register`, {
+    const res = await apiFetch(apiPath("/api/activity/agent/register"), {
       method: "POST",
       body: JSON.stringify({ source: "web" }),
     })
@@ -118,7 +117,7 @@ export interface AgentStatus {
 export async function fetchAgentStatus(): Promise<AgentStatus | null> {
   return coalesceRequest("activity-agent-status", async () => {
     try {
-      const res = await apiFetch(`${API_BASE}/api/activity/agent/status`)
+      const res = await apiFetch(apiPath("/api/activity/agent/status"))
       if (!res.ok) return null
       const json = await res.json()
       return json.data ?? null
@@ -132,7 +131,7 @@ export async function fetchActivityScope(projectScopeOnly: boolean): Promise<Act
   const params = new URLSearchParams()
   if (projectScopeOnly) params.set("projectScopeOnly", "true")
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/scope?${params}`)
+    const res = await apiFetch(apiPath(`/api/activity/scope?${params}`))
     if (!res.ok) return null
     const json = await res.json()
     return json.data ?? null
@@ -156,7 +155,7 @@ export interface ActivityFeedResult<T> {
 export async function fetchActivityScreenshotImage(screenshotId: string): Promise<string | null> {
   if (!screenshotId) return null
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/screenshot/${encodeURIComponent(screenshotId)}`)
+    const res = await apiFetch(apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}`))
     if (!res.ok) return null
     const json = await res.json()
     const imageData = json.data?.imageData
@@ -205,7 +204,7 @@ export async function fetchActivityFeed<T>(query: ActivityFeedQuery): Promise<Ac
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS)
     try {
-      const res = await apiFetch(`${API_BASE}/api/activity/feed?${params}`, {
+      const res = await apiFetch(apiPath(`/api/activity/feed?${params}`), {
         signal: controller.signal,
       })
       if (!res.ok) return null

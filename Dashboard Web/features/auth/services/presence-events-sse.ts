@@ -1,4 +1,4 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
 export type PresenceDelta = {
   memberId: string
@@ -13,10 +13,6 @@ let source: EventSource | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let intentionalClose = false
 const listeners = new Set<(delta: PresenceDelta) => void>()
-
-function httpBaseUrl(): string {
-  return getApiBaseUrl()
-}
 
 function dispatchDelta(delta: PresenceDelta) {
   for (const listener of listeners) listener(delta)
@@ -60,7 +56,7 @@ export async function openPresenceEventStream(): Promise<boolean> {
   intentionalClose = false
   clearReconnect()
 
-  const url = `${httpBaseUrl()}/api/presence/events?token=${encodeURIComponent(token)}`
+  const url = `${apiPath("/api/presence/events")}?token=${encodeURIComponent(token)}`
   const es = new EventSource(url)
   source = es
 

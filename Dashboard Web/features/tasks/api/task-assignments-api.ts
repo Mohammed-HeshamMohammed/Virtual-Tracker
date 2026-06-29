@@ -1,7 +1,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface ReviewQueueRow {
   assignmentId: string
@@ -72,7 +71,7 @@ export async function fetchReviewQueue(filters?: {
   if (filters?.priority) params.set("priority", filters.priority)
   if (filters?.status) params.set("status", filters.status)
   const qs = params.toString()
-  const res = await apiFetch(`${API_BASE}/api/task-assignments/review-queue${qs ? `?${qs}` : ""}`)
+  const res = await apiFetch(apiPath(`/api/task-assignments/review-queue${qs ? `)?${qs}` : ""}`)
   const json = await res.json().catch(() => null)
   if (!res.ok) {
     throw new Error(json?.error ?? "Failed to load review queue.")
@@ -85,7 +84,7 @@ export async function reviewAssignment(
   decision: "approve" | "reject",
   notes?: string,
 ): Promise<{ assignmentStatus: string; taskStatus: string } | null> {
-  const res = await apiFetch(`${API_BASE}/api/task-assignments/${encodeURIComponent(assignmentId)}/review`, {
+  const res = await apiFetch(apiPath(`/api/task-assignments/${encodeURIComponent(assignmentId)}/review`), {
     method: "POST",
     body: JSON.stringify({ decision, notes: notes ?? "" }),
   })
@@ -101,7 +100,7 @@ export async function syncTaskAssignments(
   assigneeIds: string[],
   options?: { removeUnlisted?: boolean },
 ): Promise<unknown[]> {
-  const res = await apiFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/assignments`, {
+  const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments`), {
     method: "POST",
     body: JSON.stringify({
       assigneeIds,
@@ -123,7 +122,7 @@ export async function fetchTaskParticipation(
   if (options?.manage) params.set("manage", "1")
   const qs = params.toString()
   const res = await apiFetch(
-    `${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/assignments${qs ? `?${qs}` : ""}`,
+    apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments${qs ? `)?${qs}` : ""}`,
   )
   const json = await res.json().catch(() => null)
   if (!res.ok) {
@@ -148,7 +147,7 @@ export async function startTaskAssignment(
   allAssigneesStarted?: boolean
 } | null> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/tasks/${encodeURIComponent(taskId)}/assignments/start`, {
+    const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments/start`), {
       method: "POST",
       body: JSON.stringify({}),
     })

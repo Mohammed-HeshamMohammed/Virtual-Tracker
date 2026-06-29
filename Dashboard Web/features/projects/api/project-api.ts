@@ -1,8 +1,7 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, apiFetch, fetchJsonWithRetry, type RequestOptions } from "@/infrastructure/api/http"
 import { isValidUuid } from "@/shared/utils/uuid"
 
-const API_BASE = getApiBaseUrl()
 type Envelope<T> = { success?: boolean; error?: string; data?: T }
 
 function toProject(input: Record<string, unknown>): Project {
@@ -124,7 +123,7 @@ export async function getProjects(options: RequestOptions & { fields?: string[] 
 
   const query = params.toString() ? `?${params.toString()}` : ""
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(
-    `${API_BASE}/api/projects${query}`,
+    apiPath(`/api/projects${query}`),
     {},
     { ...options, retries: 1 },
   )
@@ -135,7 +134,7 @@ export async function getProjects(options: RequestOptions & { fields?: string[] 
 
 async function getProject(id: string): Promise<Project> {
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>>>(
-    `${API_BASE}/api/projects/${id}`,
+    apiPath(`/api/projects/${id}`),
     {},
     { retries: 1 },
   )
@@ -145,7 +144,7 @@ async function getProject(id: string): Promise<Project> {
 }
 
 export async function createProject(data: CreateProjectInput): Promise<Project> {
-  const res = await apiFetch(`${API_BASE}/api/projects`, {
+  const res = await apiFetch(apiPath("/api/projects"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(toProjectPayload(data)),
@@ -157,7 +156,7 @@ export async function createProject(data: CreateProjectInput): Promise<Project> 
 }
 
 export async function updateProject(id: string, data: UpdateProjectInput): Promise<Project> {
-  const res = await apiFetch(`${API_BASE}/api/projects/${id}`, {
+  const res = await apiFetch(apiPath(`/api/projects/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(toProjectPayload(data)),
@@ -169,7 +168,7 @@ export async function updateProject(id: string, data: UpdateProjectInput): Promi
 }
 
 export async function deleteProject(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/projects/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/projects/${id}`), { method: "DELETE" })
   if (res.status === 404) return
   if (!res.ok) {
     const json = await res.json().catch(() => null)
@@ -208,7 +207,7 @@ export async function getProjectMembers(
   const query = params.toString() ? `?${params.toString()}` : ""
 
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(
-    `${API_BASE}/api/project-members${query}`,
+    apiPath(`/api/project-members${query}`),
     {},
     { ...options, retries: 1 },
   )
@@ -238,7 +237,7 @@ export async function addProjectMember(
     project_role: projectRole,
   }
   if (assignedBy && isValidUuid(assignedBy)) body.assigned_by = assignedBy
-  const res = await apiFetch(`${API_BASE}/api/project-members`, {
+  const res = await apiFetch(apiPath("/api/project-members"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -258,7 +257,7 @@ export async function addProjectMember(
 }
 
 export async function removeProjectMember(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/project-members/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/project-members/${id}`), { method: "DELETE" })
   if (!res.ok) {
     const json = await res.json().catch(() => null)
     throw extractApiError(res.status, "Failed to remove project member", json)

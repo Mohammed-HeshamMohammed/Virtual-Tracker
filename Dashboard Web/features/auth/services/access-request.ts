@@ -1,11 +1,11 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
 export type AccessRequestBody = { name: string; email: string; phone: string }
 
 export async function submitAccessRequest(body: AccessRequestBody): Promise<{ id: string }> {
   const res = await apiFetch(
-    `${getApiBaseUrl()}/api/auth/access-request`,
+    apiPath("/api/auth/access-request"),
     {
       method: "POST",
       body: JSON.stringify({ name: body.name, email: body.email, phone: body.phone }),

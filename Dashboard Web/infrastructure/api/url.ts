@@ -48,18 +48,12 @@ export function resolveApiBaseUrlForPath(apiPath: string): string {
 }
 
 /**
- * Default API base — Dashboard-Backend in split dev, gateway URL in production.
- * Prefer `apiPath()` when building full URLs so auth routes hit the correct service.
+ * Dashboard-Backend base URL only — does not route Auth-Backend paths.
+ * Prefer `apiPath("/api/...")` so auth vs dashboard hosts are chosen automatically.
+ * @deprecated Use `apiPath()` for request URLs; use `getDashboardApiBaseUrl()` if you need the base alone.
  */
 export function getApiBaseUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_API_URL?.trim().replace(/\/$/, "");
-  if (typeof window !== "undefined" && process.env.NODE_ENV === "development" && !configured) {
-    return getDirectApiBaseUrl();
-  }
-  if (configured) return getSecureApiBaseUrl(configured);
-  return process.env.NODE_ENV === "production"
-    ? getSecureApiBaseUrl("https://localhost:5713")
-    : getDashboardApiBaseUrl();
+  return getDashboardApiBaseUrl();
 }
 
 /**

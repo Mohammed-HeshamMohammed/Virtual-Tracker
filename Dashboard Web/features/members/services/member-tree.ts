@@ -1,8 +1,7 @@
 import { apiFetch, extractApiError, readJsonSafe, type ApiEnvelope } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 
-const API_BASE = getApiBaseUrl()
 
 export interface MemberTreeNode {
   id: string
@@ -37,7 +36,7 @@ export async function getVisualMemberTree(scope: MemberTreeScope = "organization
   if (!token) throw new Error("Not authenticated")
 
   const params = new URLSearchParams({ scope })
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/visual-tree?${params}`, {
+  const res = await apiFetch(apiPath(`/api/member-relationships/visual-tree?${params}`), {
     headers: { Authorization: `Bearer ${token}` },
   })
   const json = await readJsonSafe<ApiEnvelope<MemberTreeGraph>>(res)

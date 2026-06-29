@@ -1,7 +1,6 @@
 import { apiFetch, extractApiError, readJsonSafe, type ApiEnvelope } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface MemberOnboardingRow {
   id: string
@@ -16,7 +15,7 @@ export interface MemberOnboardingRow {
 }
 
 export async function getMemberOnboarding(): Promise<MemberOnboardingRow[]> {
-  const res = await apiFetch(`${API_BASE}/api/member-onboarding`)
+  const res = await apiFetch(apiPath("/api/member-onboarding"))
   const json = await readJsonSafe<ApiEnvelope<MemberOnboardingRow[]>>(res)
   if (!res.ok || json?.success !== true) {
     throw extractApiError(res.status, "Failed to fetch member onboarding", json)
@@ -25,7 +24,7 @@ export async function getMemberOnboarding(): Promise<MemberOnboardingRow[]> {
 }
 
 export async function sendMemberOnboardingReminder(id: string, updatedBy?: string): Promise<MemberOnboardingRow> {
-  const res = await apiFetch(`${API_BASE}/api/member-onboarding/${encodeURIComponent(id)}/reminder`, {
+  const res = await apiFetch(apiPath(`/api/member-onboarding/${encodeURIComponent(id)}/reminder`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ updatedBy }),

@@ -1,14 +1,13 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export async function completeAgentLink(
   linkToken: string,
   refreshToken = "",
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await apiFetch(`${API_BASE}/api/activity/agent/link/complete`, {
+    const res = await apiFetch(apiPath("/api/activity/agent/link/complete"), {
       method: "POST",
       body: JSON.stringify({
         linkToken,

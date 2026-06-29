@@ -1,7 +1,6 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, fetchJsonWithRetry } from "@/infrastructure/api/http"
 
-const API_BASE = getApiBaseUrl()
 type Envelope<T> = { success?: boolean; error?: string; data?: T }
 
 export type ProjectFormTab = {
@@ -48,7 +47,7 @@ export type ProjectFormConfig = {
 
 export async function getProjectFormConfig(): Promise<ProjectFormConfig> {
   const { res, json } = await fetchJsonWithRetry<Envelope<ProjectFormConfig>>(
-    `${API_BASE}/api/projects/form-config`,
+    apiPath("/api/projects/form-config"),
     {},
     { retries: 1 },
   )
