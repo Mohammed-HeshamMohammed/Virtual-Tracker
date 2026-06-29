@@ -1,7 +1,7 @@
 # Coolify / Nixpacks — base directory: Landing-Web (prefer Dockerfile for standalone image)
 
 [phases.setup]
-nixPkgs = ["curl"]
+nixPkgs = ["nodejs", "curl"]
 
 [phases.install]
 cmds = ["npm ci"]
