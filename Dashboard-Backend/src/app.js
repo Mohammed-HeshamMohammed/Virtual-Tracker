@@ -45,7 +45,7 @@ export async function handleRequest(req, res) {
     }
   }
 
-  if (req.method === "GET" && url.pathname === "/health") {
+  if (req.method === "GET" && (url.pathname === "/health" || url.pathname === "/")) {
     applyCors(res, origin);
     res.writeHead(200, {
       "Content-Type": "application/json; charset=utf-8",
