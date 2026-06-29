@@ -1,43 +1,10 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { resolveAppPublicUrl } from "./app-public-url.js";
-import { escapeHtml, sendTransactionalEmail } from "./transactional-email.js";
-import { buildAuthBrandedEmailHtml } from "./auth-email-template.js";
+import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const PENDING_AUTH = "pending_auth_members";
-
-/**
- * @param {{ email: string; displayName: string; signInUrl: string }} input
- */
-export function buildRegistrationWelcomeEmail(input) {
-  const name = input.displayName?.trim() || "there";
-  const subject = "Welcome to Virtual Tracker";
-  const text = [
-    `Hello ${name},`,
-    "",
-    "Your email is verified and your Virtual Tracker account is ready.",
-    "",
-    "Sign in anytime to access your dashboard, update your profile, and verify your phone number when you're ready.",
-    "",
-    `Sign in: ${input.signInUrl}`,
-    "",
-    "If you did not create this account, contact your administrator.",
-  ].join("\n");
-
-  const html = buildAuthBrandedEmailHtml({
-    title: "Welcome to Virtual Tracker",
-    bodyHtml: `
-      <p style="margin:0 0 12px;">Hello ${escapeHtml(name)},</p>
-      <p style="margin:0 0 12px;">Your email is verified and your <strong>Virtual Tracker</strong> account is ready.</p>
-      <p style="margin:0 0 12px;">Sign in to access your dashboard, update your profile, and verify your phone number when you're ready.</p>
-    `.trim(),
-    actionLabel: "Sign in to Virtual Tracker",
-    actionHref: input.signInUrl,
-  });
-
-  return { subject, text, html };
-}
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -110,15 +77,10 @@ export async function maybeSendRegistrationWelcomeEmail(db, auth, input = {}) {
     email.split("@")[0] ||
     "there";
 
-  const signInUrl = resolveAppPublicUrl();
-  const { subject, text, html } = buildRegistrationWelcomeEmail({ email, displayName, signInUrl });
-
-  const delivery = await sendTransactionalEmail({
-    to: email,
-    subject,
-    text,
-    html,
-    logPrefix: "[registration-welcome-email]",
+  const delivery = await sendEmailViaNotify("registration-welcome", {
+    email,
+    displayName,
+    signInUrl: resolveAppPublicUrl(),
   });
 
   if (delivery.sent) {

@@ -1,7 +1,6 @@
 import { apiFetch, extractApiError, readJsonSafe, type ApiEnvelope } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface Team {
   id: string
@@ -109,7 +108,7 @@ export async function getTeams(options: { fields?: string[] } = {}): Promise<Tea
   const fields = options.fields ?? ["id", "name", "schedule_weekly_report", "created_at", "created_by", "updated_by"]
   if (fields.length) params.set("fields", fields.join(","))
   const query = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch(`${API_BASE}/api/teams${query}`)
+  const res = await apiFetch(apiPath(`/api/teams${query}`))
   const json = await readJsonSafe<ApiEnvelope<Team[]>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to fetch teams", json)
@@ -118,7 +117,7 @@ export async function getTeams(options: { fields?: string[] } = {}): Promise<Tea
 }
 
 export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
-  const res = await apiFetch(`${API_BASE}/api/teams`, { method: "POST", body: JSON.stringify(payload) }, { json: true })
+  const res = await apiFetch(apiPath("/api/teams"), { method: "POST", body: JSON.stringify(payload) }, { json: true })
   const json = await readJsonSafe<ApiEnvelope<Team>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to create team", json)
@@ -127,7 +126,7 @@ export async function createTeam(payload: CreateTeamPayload): Promise<Team> {
 }
 
 export async function updateTeam(id: string, payload: Partial<CreateTeamPayload>): Promise<Team> {
-  const res = await apiFetch(`${API_BASE}/api/teams/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, { json: true })
+  const res = await apiFetch(apiPath(`/api/teams/${id}`), { method: "PATCH", body: JSON.stringify(payload) }, { json: true })
   const json = await readJsonSafe<ApiEnvelope<Team>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to update team", json)
@@ -136,7 +135,7 @@ export async function updateTeam(id: string, payload: Partial<CreateTeamPayload>
 }
 
 export async function deleteTeam(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/teams/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/teams/${id}`), { method: "DELETE" })
   const json = await readJsonSafe<ApiEnvelope<unknown>>(res)
   if (!res.ok) {
     throw extractApiError(res.status, "Failed to delete team", json)
@@ -162,7 +161,7 @@ export async function getTeamMembers(
   ]
   if (fields.length) params.set("fields", fields.join(","))
   const query = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch(`${API_BASE}/api/team-members${query}`)
+  const res = await apiFetch(apiPath(`/api/team-members${query}`))
   const json = await readJsonSafe<ApiEnvelope<TeamMember[]>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to fetch team members", json)
@@ -171,7 +170,7 @@ export async function getTeamMembers(
 }
 
 export async function addTeamMember(payload: CreateTeamMemberPayload): Promise<TeamMember> {
-  const res = await apiFetch(`${API_BASE}/api/team-members`, { method: "POST", body: JSON.stringify(payload) }, { json: true })
+  const res = await apiFetch(apiPath("/api/team-members"), { method: "POST", body: JSON.stringify(payload) }, { json: true })
   const json = await readJsonSafe<ApiEnvelope<TeamMember>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to add team member", json)
@@ -183,7 +182,7 @@ export async function updateTeamMember(
   id: string,
   payload: Partial<Pick<TeamMember, "is_lead">>,
 ): Promise<TeamMember> {
-  const res = await apiFetch(`${API_BASE}/api/team-members/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, { json: true })
+  const res = await apiFetch(apiPath(`/api/team-members/${id}`), { method: "PATCH", body: JSON.stringify(payload) }, { json: true })
   const json = await readJsonSafe<ApiEnvelope<TeamMember>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to update team member", json)
@@ -192,7 +191,7 @@ export async function updateTeamMember(
 }
 
 export async function removeTeamMember(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/team-members/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/team-members/${id}`), { method: "DELETE" })
   const json = await readJsonSafe<ApiEnvelope<unknown>>(res)
   if (!res.ok) {
     throw extractApiError(res.status, "Failed to remove team member", json)
@@ -209,7 +208,7 @@ export async function getTeamProjects(
   const fields = options.fields ?? ["id", "team_id", "project_id", "project_name"]
   if (fields.length) params.set("fields", fields.join(","))
   const query = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch(`${API_BASE}/api/team-projects${query}`)
+  const res = await apiFetch(apiPath(`/api/team-projects${query}`))
   const json = await readJsonSafe<ApiEnvelope<TeamProject[]>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to fetch team projects", json)
@@ -218,7 +217,7 @@ export async function getTeamProjects(
 }
 
 export async function addTeamProject(payload: CreateTeamProjectPayload): Promise<TeamProject> {
-  const res = await apiFetch(`${API_BASE}/api/team-projects`, { method: "POST", body: JSON.stringify(payload) }, { json: true })
+  const res = await apiFetch(apiPath("/api/team-projects"), { method: "POST", body: JSON.stringify(payload) }, { json: true })
   const json = await readJsonSafe<ApiEnvelope<TeamProject>>(res)
   if (!res.ok || !json?.data) {
     throw extractApiError(res.status, "Failed to add team project", json)
@@ -227,7 +226,7 @@ export async function addTeamProject(payload: CreateTeamProjectPayload): Promise
 }
 
 export async function removeTeamProject(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/team-projects/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/team-projects/${id}`), { method: "DELETE" })
   const json = await readJsonSafe<ApiEnvelope<unknown>>(res)
   if (!res.ok) {
     throw extractApiError(res.status, "Failed to remove team project", json)

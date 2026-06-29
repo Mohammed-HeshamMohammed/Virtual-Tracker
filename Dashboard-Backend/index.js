@@ -17,7 +17,6 @@ import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
 import { removeProjectOfficeMemberRoles } from "./src/modules/projects/migrate-remove-office-member-roles.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
-import { logEmailDeliveryStatusAsync } from "./src/modules/auth/email-config.js";
 
 let activeServer = null;
 
@@ -88,35 +87,32 @@ export function startServer(port = getEnv().server.port) {
 
     const routes = [
       "/health",
+      "/api/readiness",
+      // Auth-identity routes owned by Dashboard (NOT Auth-Backend)
+      "/api/auth/sign-in-client-extras",
+      "/api/auth/session-bootstrap",
+      "/api/auth/complete-first-login",
+      "/api/auth/profile",
+      "/api/auth/access-request",
+      "/api/auth/send-verification-email",
+      "/api/auth/notify-*",
+      // App / entity routes
+      "/api/bootstrap",
+      "/api/public/invites/*",
       "/api/members",
-      "/api/roles",
       "/api/member-roles",
       "/api/member-onboarding",
       "/api/member-relationships",
-      "/api/invites",
-      "/api/invite-projects",
-      "/api/job-titles",
-      "/api/departments",
-      "/api/job-types",
-      "/api/tax-types",
-      "/api/employment",
-      "/api/clients",
-      "/api/client-budgets",
-      "/api/client-invoicing",
-      "/api/client-projects",
       "/api/projects",
-      "/api/project-members",
-      "/api/project-budgets",
-      "/api/project-member-limits",
       "/api/tasks",
-      "/api/task-comments",
-      "/api/task-attachments",
+      "/api/clients",
       "/api/teams",
-      "/api/team-members",
-      "/api/team-projects",
-      "/api/pay-rates",
-      "/api/time-settings",
-      "/api/limits",
+      "/api/activity",
+      "/api/presence",
+      "/api/dashboard",
+      "/api/notifications/*",
+      // ⚠️ Restrict at gateway before first production deploy:
+      "/monitor",
     ];
 
     logStartup({
@@ -125,8 +121,6 @@ export function startServer(port = getEnv().server.port) {
       nodeEnv: getEnv().nodeEnv,
       routes,
     });
-
-    await logEmailDeliveryStatusAsync();
 
     console.log(`Dashboard-Backend listening on http://localhost:${port}`);
   });

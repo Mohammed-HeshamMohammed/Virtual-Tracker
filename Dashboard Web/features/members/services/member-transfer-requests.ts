@@ -1,7 +1,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
-const API_BASE = getApiBaseUrl()
 
 export interface TransferRequestPreview {
   requester_name: string
@@ -23,7 +22,7 @@ export interface CreateTransferRequestResult {
  * Create a member transfer (recruitment) request.
  */
 export async function createMemberTransferRequest(targetEmail: string): Promise<CreateTransferRequestResult> {
-  const res = await apiFetch(`${API_BASE}/api/member-transfer-requests`, {
+  const res = await apiFetch(apiPath("/api/member-transfer-requests"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ target_email: targetEmail }),
@@ -39,7 +38,7 @@ export async function createMemberTransferRequest(targetEmail: string): Promise<
  * Preview a transfer invitation (public).
  */
 export async function getTransferRequestPreview(token: string): Promise<TransferRequestPreview> {
-  const res = await apiFetch(`${API_BASE}/api/public/member-transfer-requests/${encodeURIComponent(token)}`)
+  const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}`))
   const json = await res.json()
   if (!res.ok || !json.success) {
     throw new Error(json.error || "Invalid or expired transfer invitation.")
@@ -51,7 +50,7 @@ export async function getTransferRequestPreview(token: string): Promise<Transfer
  * Accept a transfer invitation (requires auth).
  */
 export async function acceptMemberTransferRequest(token: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/public/member-transfer-requests/${encodeURIComponent(token)}/accept`, {
+  const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}/accept`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -66,7 +65,7 @@ export async function acceptMemberTransferRequest(token: string): Promise<void> 
  * Decline a transfer invitation (requires auth).
  */
 export async function declineMemberTransferRequest(token: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/public/member-transfer-requests/${encodeURIComponent(token)}/decline`, {
+  const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}/decline`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),
@@ -81,7 +80,7 @@ export async function declineMemberTransferRequest(token: string): Promise<void>
  * Run hierarchy audit (admin only).
  */
 export async function getHierarchyAuditReport(): Promise<Record<string, unknown>> {
-  const res = await apiFetch(`${API_BASE}/api/member-relationships/audit`)
+  const res = await apiFetch(apiPath("/api/member-relationships/audit"))
   const json = await res.json()
   if (!res.ok || !json.success) {
     throw new Error(json.error || "Audit failed.")

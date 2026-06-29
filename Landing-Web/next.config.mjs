@@ -12,7 +12,6 @@ const nextConfig = {
   images: { unoptimized: true },
   compress: true,
   poweredByHeader: false,
-  eslint: { ignoreDuringBuilds: true },
   typescript: {
     ignoreBuildErrors: process.env.SKIP_TYPECHECK === "1",
   },

@@ -1,7 +1,7 @@
 /* eslint-disable react-doctor/async-await-in-loop */
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { extractRoleFromRecord } from "@/features/auth"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import type { Member, Invite, MemberRole, MemberStatus, InviteListKind } from "@/features/members/models/member"
 import { extractApiError, apiFetch, fetchJsonWithRetry, readJsonSafe, type RequestOptions } from "@/infrastructure/api/http"
 import { throwIfQuotaExceeded, isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
@@ -10,7 +10,6 @@ import type { MemberManageTab } from "@/features/members/models/member"
 import { writeMemberProfileCache, peekMemberProfileCache } from "@/features/members/services/member-profile-cache"
 import { isEmailLikeNamePart } from "@/shared/validation/person-name"
 
-const API_BASE = getApiBaseUrl()
 
 /** Ensures invite URLs are absolute for clipboard/share (backend may return path-only). */
 export function resolveInviteUrl(url: string): string {
@@ -215,7 +214,7 @@ function normalizeInvite(input: Partial<Invite> & Record<string, unknown>): Invi
 export async function fetchCurrentMember(): Promise<Member | null> {
   if (!getFirebaseAuth().currentUser) return null
   try {
-    const res = await apiFetch(`${API_BASE}/api/members/current`, { cache: "no-store" })
+    const res = await apiFetch(apiPath("/api/members/current"), { cache: "no-store" })
     const json = await readJsonSafe<ApiEnvelope<Member>>(res)
     if (!res.ok) {
       throwIfQuotaExceeded(res.status, json?.error, json?.code)
@@ -298,7 +297,7 @@ export async function getMembersPage(
   let json: MembersApiEnvelope | null
   try {
     ;({ res, json } = await fetchJsonWithRetry<MembersApiEnvelope>(
-      `${API_BASE}/api/members${query}`,
+      apiPath(`/api/members${query}`),
       {},
       { ...options, retries: 1 },
     ))
@@ -333,7 +332,7 @@ export async function getMembersPage(
 }
 
 async function getMember(id: string): Promise<Member> {
-  const res = await apiFetch(`${API_BASE}/api/members/${id}`)
+  const res = await apiFetch(apiPath(`/api/members/${id}`))
   if (!res.ok) throw new Error(`Failed to fetch member: ${res.status}`)
   const json = (await res.json()) as ApiEnvelope<Member>
   if (!json.success) throw new Error(json.error || "Failed to fetch member")
@@ -384,7 +383,7 @@ async function createMember(data: CreateMemberInput, createdBy?: string): Promis
     createdBy,
   }
   
-  const res = await apiFetch(`${API_BASE}/api/members`, {
+  const res = await apiFetch(apiPath("/api/members"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -407,7 +406,7 @@ export interface UpdateMemberInput {
 }
 
 export async function updateMember(id: string, data: UpdateMemberInput, updatedBy?: string): Promise<Member> {
-  const res = await apiFetch(`${API_BASE}/api/members/${id}`, {
+  const res = await apiFetch(apiPath(`/api/members/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...data, updatedBy }),
@@ -420,7 +419,7 @@ export async function updateMember(id: string, data: UpdateMemberInput, updatedB
 
 export async function deleteMember(id: string): Promise<void> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ deleted?: boolean }>>(
-    `${API_BASE}/api/members/${id}`,
+    apiPath(`/api/members/${id}`),
     { method: "DELETE" },
     { retries: 1 },
   )
@@ -434,7 +433,7 @@ export type BatchMemberUpdatePayload = {
 
 export async function batchRemoveMembersFromTree(ids: string[]): Promise<{ removed: number }> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ removed: number }>>(
-    `${API_BASE}/api/members/batch-remove-from-tree`,
+    apiPath("/api/members/batch-remove-from-tree"),
     {
       method: "POST",
       body: JSON.stringify({ ids }),
@@ -448,7 +447,7 @@ export async function batchRemoveMembersFromTree(ids: string[]): Promise<{ remov
 
 export async function removeMemberFromTree(memberId: string): Promise<void> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<unknown>>(
-    `${API_BASE}/api/members/remove-from-tree`,
+    apiPath("/api/members/remove-from-tree"),
     {
       method: "POST",
       body: JSON.stringify({ memberId }),
@@ -461,7 +460,7 @@ export async function removeMemberFromTree(memberId: string): Promise<void> {
 
 export async function batchDeleteMembers(ids: string[]): Promise<{ deleted: number }> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ deleted: number }>>(
-    `${API_BASE}/api/members/batch-delete`,
+    apiPath("/api/members/batch-delete"),
     {
       method: "POST",
       body: JSON.stringify({ ids }),
@@ -478,7 +477,7 @@ export async function batchUpdateMembers(
   patch: BatchMemberUpdatePayload,
 ): Promise<{ updated: number }> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ updated: number }>>(
-    `${API_BASE}/api/members/batch-update`,
+    apiPath("/api/members/batch-update"),
     {
       method: "POST",
       body: JSON.stringify({ ids, ...patch }),
@@ -578,7 +577,7 @@ export async function getMemberProfile(
   const params = new URLSearchParams()
   if (sections?.length) params.set("sections", sections.join(","))
   const query = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch(`${API_BASE}/api/members/${id}/profile${query}`)
+  const res = await apiFetch(apiPath(`/api/members/${id}/profile${query}`))
   const json = (await res.json()) as ApiEnvelope<{
     form: Partial<MemberProfileForm>
     member: Member
@@ -624,7 +623,7 @@ export async function updateMemberProfile(
     return updateMemberRole(id, payload.roles.role, updatedBy)
   }
 
-  const res = await apiFetch(`${API_BASE}/api/members/${id}/profile`, {
+  const res = await apiFetch(apiPath(`/api/members/${id}/profile`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...payload, updatedBy }),
@@ -649,7 +648,7 @@ export async function updateMemberRole(
   role: string,
   updatedBy?: string,
 ): Promise<{ form: Partial<MemberProfileForm>; member: Member }> {
-  const res = await apiFetch(`${API_BASE}/api/members/${id}/role`, {
+  const res = await apiFetch(apiPath(`/api/members/${id}/role`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ role, updatedBy }),
@@ -689,7 +688,7 @@ export async function generateMemberEmployeeId(
   const params = new URLSearchParams()
   if (options?.firstName?.trim()) params.set("firstName", options.firstName.trim())
   const query = params.toString() ? `?${params.toString()}` : ""
-  const res = await apiFetch(`${API_BASE}/api/members/${memberId}/generate-employee-id${query}`)
+  const res = await apiFetch(apiPath(`/api/members/${memberId}/generate-employee-id${query}`))
   const json = (await res.json()) as ApiEnvelope<GeneratedEmployeeIdResult>
   if (!res.ok || !json.success) {
     throw new Error(json.error || `Failed to generate employee ID: ${res.status}`)
@@ -704,7 +703,7 @@ export async function getInvites(options: RequestOptions & { fields?: string[] }
   const params = new URLSearchParams()
   if (options.fields?.length) params.set("fields", options.fields.join(","))
   const query = params.toString() ? `?${params.toString()}` : ""
-  const { res, json } = await fetchJsonWithRetry<ApiEnvelope<Invite[]>>(`${API_BASE}/api/invites${query}`, {}, { ...options, retries: 1 })
+  const { res, json } = await fetchJsonWithRetry<ApiEnvelope<Invite[]>>(apiPath(`/api/invites${query}`), {}, { ...options, retries: 1 })
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch invites", json)
   if (!json) throw new Error("Failed to parse invites response")
   if (!json.success) throw new Error(json.error || "Failed to fetch invites")
@@ -729,7 +728,7 @@ async function createInvite(data: CreateInviteInput, createdBy?: string): Promis
     createdBy,
   }
   
-  const res = await apiFetch(`${API_BASE}/api/invites`, {
+  const res = await apiFetch(apiPath("/api/invites"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -750,7 +749,7 @@ export async function updateInvite(id: string, data: Partial<CreateInviteInput>,
   if (data.payRate !== undefined) payload.pay_rate = data.payRate
   if (data.weeklyLimit !== undefined) payload.weekly_limit = data.weeklyLimit
 
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}`, {
+  const res = await apiFetch(apiPath(`/api/invites/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -783,7 +782,7 @@ export async function createInvitesBulk(
   role: MemberRole,
   options: CreateInvitesBulkOptions = {},
 ): Promise<CreateInvitesBulkResult> {
-  const res = await apiFetch(`${API_BASE}/api/invites/bulk`, {
+  const res = await apiFetch(apiPath("/api/invites/bulk"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -833,7 +832,7 @@ export async function createOpenInviteLink(input: OpenInviteLinkInput): Promise<
   expiresAt: string | null
   maxUses: number
 }> {
-  const res = await apiFetch(`${API_BASE}/api/invites/open-link`, {
+  const res = await apiFetch(apiPath("/api/invites/open-link"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -877,7 +876,7 @@ export async function validateEmailsForAddMembers(
   emails: string[],
   options: { forOpenInviteLink?: boolean } = {},
 ): Promise<{ allOk: boolean; results: ValidateAddEmailResult[] }> {
-  const res = await apiFetch(`${API_BASE}/api/members/validate-add`, {
+  const res = await apiFetch(apiPath("/api/members/validate-add"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ emails, forOpenInviteLink: options.forOpenInviteLink === true }),
@@ -905,7 +904,7 @@ export type ResolvePublicInviteResult = {
 }
 
 export async function resolvePublicInvite(token: string): Promise<ResolvePublicInviteResult> {
-  const res = await apiFetch(`${API_BASE}/api/public/invites/${encodeURIComponent(token)}`, {}, { requireAuth: false })
+  const res = await apiFetch(apiPath(`/api/public/invites/${encodeURIComponent(token)}`), {}, { requireAuth: false })
   const json = (await res.json()) as { success?: boolean; error?: string; invite?: ResolvePublicInviteResult }
   if (!res.ok) throw new Error(json.error || `Invite lookup failed: ${res.status}`)
   if (!json.success || !json.invite) throw new Error(json.error || "Invalid invite")
@@ -925,7 +924,7 @@ export async function registerViaInviteToken(
   },
 ): Promise<void> {
   const res = await apiFetch(
-    `${API_BASE}/api/public/invites/${encodeURIComponent(token)}/register`,
+    apiPath(`/api/public/invites/${encodeURIComponent(token)}/register`),
     { method: "POST", body: JSON.stringify(body) },
     { requireAuth: false, json: true },
   )
@@ -952,7 +951,7 @@ export type PreprovisionMemberResult = {
 }
 
 export async function preprovisionMember(input: PreprovisionMemberInput): Promise<PreprovisionMemberResult> {
-  const res = await apiFetch(`${API_BASE}/api/members/preprovision`, {
+  const res = await apiFetch(apiPath("/api/members/preprovision"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -978,7 +977,7 @@ export async function preprovisionMember(input: PreprovisionMemberInput): Promis
 }
 
 async function acceptInvite(id: string, acceptedBy?: string): Promise<Invite> {
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}/accept`, {
+  const res = await apiFetch(apiPath(`/api/invites/${id}/accept`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ acceptedBy }),
@@ -990,7 +989,7 @@ async function acceptInvite(id: string, acceptedBy?: string): Promise<Invite> {
 }
 
 export async function deleteInvite(id: string): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}`, { method: "DELETE" })
+  const res = await apiFetch(apiPath(`/api/invites/${id}`), { method: "DELETE" })
   if (!res.ok) throw new Error(`Failed to delete invite: ${res.status}`)
 }
 
@@ -1003,7 +1002,7 @@ export type ResendInviteResult = {
 }
 
 export async function resendInviteEmail(id: string, appOrigin?: string): Promise<ResendInviteResult> {
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}/resend`, {
+  const res = await apiFetch(apiPath(`/api/invites/${id}/resend`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ appOrigin: appOrigin ?? (typeof window !== "undefined" ? window.location.origin : undefined) }),
@@ -1027,7 +1026,7 @@ export async function resendInviteEmail(id: string, appOrigin?: string): Promise
 }
 
 export async function getInviteLink(id: string, appOrigin?: string): Promise<string> {
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}/link`, {
+  const res = await apiFetch(apiPath(`/api/invites/${id}/link`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ appOrigin: appOrigin ?? (typeof window !== "undefined" ? window.location.origin : undefined) }),
@@ -1039,7 +1038,7 @@ export async function getInviteLink(id: string, appOrigin?: string): Promise<str
 }
 
 export async function renewInvite(id: string): Promise<Invite> {
-  const res = await apiFetch(`${API_BASE}/api/invites/${id}/renew`, {
+  const res = await apiFetch(apiPath(`/api/invites/${id}/renew`), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({}),

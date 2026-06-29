@@ -27,16 +27,6 @@ export default function HeroSection() {
         <HeroSubtitle />
         <EmailForm />
         
-        <div className="flex items-center justify-center gap-6 text-xs mb-12" style={{ color: "rgba(255,255,255,0.7)" }}>
-          {["Web dashboard", "Desktop agent (Win/Mac)", "Firebase-backed org data"].map((t) => (
-            <span key={t} className="flex items-center gap-1.5">
-              <svg viewBox="0 0 12 12" className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M2 6l3 3 5-5" />
-              </svg>
-              {t}
-            </span>
-          ))}
-        </div>
 
         <HeroTabs activeTab={activeTab} onTabChange={(i) => setActiveTab(i)} />
         <HeroSlides activeTab={activeTab} />

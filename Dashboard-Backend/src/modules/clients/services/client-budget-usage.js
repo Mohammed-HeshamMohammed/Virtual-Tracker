@@ -4,6 +4,8 @@ import {
   normalizeBudget,
   splitProjectSpendAmongClients,
 } from "./budget-logic.js";
+import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { sumBillableHoursForProjectInPeriod as sumBillableHoursPg } from "../../schema/services/postgres-crud.service.js";
 
 function parseEntryDate(value) {
 
@@ -62,6 +64,10 @@ function entryDurationSeconds(row) {
  */
 
 export async function sumBillableHoursForProjectInPeriod(db, projectId, period) {
+
+  if (isPostgresConfigured()) {
+    return sumBillableHoursPg(projectId, period.start, period.end);
+  }
 
   const snap = await db
 

@@ -1,21 +1,12 @@
 /**
  * Safe, non-secret configuration snapshot for logs, health checks, and debugging.
- * Never log {@link getEnv} directly — secrets live in email, firebase.admin, and monitor.
+ * Never log {@link getEnv} directly — secrets live in firebase.admin, monitor, and INTERNAL_SERVICE_SECRET.
  */
 
 /**
  * @param {import("./env.js").AppEnv} config
  */
 export function toPublicEnv(config) {
-  const emailConfigured = Boolean(
-    config.email.resendApiKey || (config.email.smtpHost && config.email.smtpUser && config.email.smtpPass),
-  );
-  const emailChannel = config.email.resendApiKey
-    ? "resend"
-    : config.email.smtpHost && config.email.smtpUser && config.email.smtpPass
-      ? "smtp"
-      : "none";
-
   return Object.freeze({
     nodeEnv: config.nodeEnv,
     isProduction: config.isProduction,
@@ -43,10 +34,12 @@ export function toPublicEnv(config) {
       ),
       hasWebPushVapidKey: Boolean(config.firebase.webPush.vapidPublicKey),
     }),
-    email: Object.freeze({
-      configured: emailConfigured,
-      channel: emailChannel,
-      from: emailConfigured ? (config.email.resendFrom || config.email.smtpFrom || null) : null,
+    notify: Object.freeze({
+      backendUrl: config.notify.backendUrl || null,
+      internalSecretConfigured: Boolean(config.notify.internalServiceSecret),
+    }),
+    auth: Object.freeze({
+      backendUrl: config.auth.backendUrl || null,
     }),
     invites: Object.freeze({ shareLinkTtlHours: config.invites.shareLinkTtlHours }),
     monitor: Object.freeze({

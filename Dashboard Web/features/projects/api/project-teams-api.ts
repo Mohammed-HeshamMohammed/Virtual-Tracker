@@ -1,8 +1,7 @@
 /* eslint-disable react-doctor/js-combine-iterations */
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, apiFetch, fetchJsonWithRetry } from "@/infrastructure/api/http"
 
-const API_BASE = getApiBaseUrl()
 type Envelope<T> = { success?: boolean; error?: string; data?: T }
 
 export type ProjectTeamOption = {
@@ -13,7 +12,7 @@ export type ProjectTeamOption = {
 /** All teams linked to a project (resolved by team id, not limited to global teams list). */
 export async function getProjectTeams(projectId: string): Promise<ProjectTeamOption[]> {
   const { res, json } = await fetchJsonWithRetry<Envelope<ProjectTeamOption[]>>(
-    `${API_BASE}/api/projects/${encodeURIComponent(projectId)}/teams`,
+    apiPath(`/api/projects/${encodeURIComponent(projectId)}/teams`),
     {},
     { retries: 1 },
   )
@@ -44,7 +43,7 @@ async function ensureTeamLinkedToProject(
   if (linked.some((team) => team.id === teamId)) return
 
   const res = await apiFetch(
-    `${API_BASE}/api/team-projects`,
+    apiPath("/api/team-projects"),
     {
       method: "POST",
       body: JSON.stringify({

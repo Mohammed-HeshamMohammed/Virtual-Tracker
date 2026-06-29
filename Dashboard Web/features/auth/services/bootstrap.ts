@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractRoleFromRecord } from "@/features/auth/permissions/member-role-access"
 import {
   AuthGateError,
@@ -100,7 +100,7 @@ export async function fetchBootstrapSession(): Promise<{
   payload: BootstrapPayload
   member: Member
 }> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/bootstrap`)
+  const res = await apiFetch(apiPath("/api/bootstrap"))
   const json = (await res.json().catch(() => ({}))) as {
     success?: boolean
     error?: string

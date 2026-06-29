@@ -16,7 +16,6 @@ import {
 } from "@/infrastructure/api/backend-connection-events"
 import { apiPath } from "@/infrastructure/api/path"
 import { resolveApiBaseUrlForPath } from "@/infrastructure/api/url"
-import { apiPath } from "@/infrastructure/api/path"
 import { assertSecureFetchUrl } from "@/infrastructure/api/secure-transport"
 
 export type RequestOptions = {

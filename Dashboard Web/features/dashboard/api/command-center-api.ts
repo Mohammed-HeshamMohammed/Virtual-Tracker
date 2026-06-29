@@ -1,11 +1,10 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { apiFetch, extractApiError, readJsonSafe } from "@/infrastructure/api/http"
 import { retryWithBackoff } from "@/infrastructure/api/retry"
 import { DASHBOARD_FETCH_RETRY } from "@/infrastructure/api/auth-retry"
 import type { CommandCenterApiPayload } from "@/features/dashboard/components/command-center/constants"
 import { logSafeWarn } from "@/infrastructure/logging/logger"
 
-const API_BASE = getApiBaseUrl()
 
 type Envelope = { success?: boolean; error?: string; data?: CommandCenterApiPayload }
 
@@ -26,7 +25,7 @@ export async function fetchCommandCenterData(options?: {
 
   const data = await retryWithBackoff(
     async () => {
-      const res = await apiFetch(`${API_BASE}/api/dashboard/command-center`, {
+      const res = await apiFetch(apiPath("/api/dashboard/command-center"), {
         headers: { Accept: "application/json" },
         signal: options?.signal,
       })

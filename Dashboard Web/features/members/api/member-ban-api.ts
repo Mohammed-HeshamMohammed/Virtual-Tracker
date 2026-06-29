@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
 export type MemberBanRecord = {
   id: string
@@ -33,7 +33,7 @@ type ApiRevokeResponse = {
 }
 
 export async function fetchMemberBans(): Promise<MemberBanRecord[]> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/member-bans`)
+  const res = await apiFetch(apiPath("/api/member-bans"))
   const json = (await res.json().catch(() => ({}))) as ApiListResponse
   if (!res.ok || !json.success) {
     throw new Error(json.error || `Failed to load bans (HTTP ${res.status})`)
@@ -42,7 +42,7 @@ export async function fetchMemberBans(): Promise<MemberBanRecord[]> {
 }
 
 export async function banMember(input: { memberId: string; reason: string }): Promise<MemberBanRecord> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/member-bans`, {
+  const res = await apiFetch(apiPath("/api/member-bans"), {
     method: "POST",
     body: JSON.stringify(input),
   })
@@ -54,7 +54,7 @@ export async function banMember(input: { memberId: string; reason: string }): Pr
 }
 
 export async function revokeMemberBan(banId: string): Promise<void> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/member-bans/${encodeURIComponent(banId)}/revoke`, {
+  const res = await apiFetch(apiPath(`/api/member-bans/${encodeURIComponent(banId)}/revoke`), {
     method: "POST",
     body: JSON.stringify({}),
   })

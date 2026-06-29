@@ -1,15 +1,15 @@
-import { validatePassword } from "../config/password-policy/index.js";
+import { validatePasswordViaAuthBackend } from "../lib/auth/auth-backend-client.js";
 import { normalizePasswordInput } from "./password-request-guard.js";
 
 /**
- * Registration password gate — backend is authoritative (Engineering Constitution §3–4).
+ * Registration password gate — Auth-Backend is authoritative.
  * Never log the password argument.
  *
  * @param {unknown} password
  * @param {{ confirmPassword?: unknown, requireConfirm?: boolean }} [options]
- * @returns {{ valid: boolean, error: string | null }}
+ * @returns {Promise<{ valid: boolean, error: string | null }>}
  */
-export function validateRegistrationPassword(password, options = {}) {
+export async function validateRegistrationPassword(password, options = {}) {
   const passwordError = normalizePasswordInput(password);
   if (passwordError) {
     return { valid: false, error: passwordError };
@@ -22,13 +22,9 @@ export function validateRegistrationPassword(password, options = {}) {
       return { valid: false, error: confirmError };
     }
   }
-  const result = validatePassword(password, {
+
+  return validatePasswordViaAuthBackend(password, {
     confirmPassword,
     requireConfirm: options.requireConfirm === true,
   });
-
-  return {
-    valid: result.valid,
-    error: result.error,
-  };
 }

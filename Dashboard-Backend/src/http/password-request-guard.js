@@ -1,5 +1,7 @@
-import { PASSWORD_POLICY } from "../config/password-policy/index.js";
 import { isSensitiveFieldName } from "./sensitive-fields.js";
+
+/** Matches Auth-Backend PASSWORD_POLICY.maxLength — used only for transport guardrails. */
+const MAX_PASSWORD_LENGTH = 128;
 
 /**
  * Reject authentication payloads that include credentials in the query string.
@@ -28,8 +30,8 @@ export function normalizePasswordInput(password) {
   if (typeof password !== "string" || password.length === 0) {
     return "Password is required.";
   }
-  if (password.length > PASSWORD_POLICY.maxLength) {
-    return `Password must be at most ${PASSWORD_POLICY.maxLength} characters.`;
+  if (password.length > MAX_PASSWORD_LENGTH) {
+    return `Password must be at most ${MAX_PASSWORD_LENGTH} characters.`;
   }
   return null;
 }

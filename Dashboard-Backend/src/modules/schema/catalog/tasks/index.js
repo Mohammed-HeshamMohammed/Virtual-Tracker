@@ -29,7 +29,9 @@ export const taskSchemas = [
   },
   {
     key: "task-subtasks",
-    collection: "task_subtasks",
+    collection: "tasks",
+    subcollection: "subtasks",
+    parentIdField: "task_id",
     fields: {
       id: "uuid",
       task_id: "uuid",
@@ -43,7 +45,9 @@ export const taskSchemas = [
   },
   {
     key: "task-comments",
-    collection: "task_comments",
+    collection: "tasks",
+    subcollection: "comments",
+    parentIdField: "task_id",
     fields: {
       id: "uuid",
       task_id: "uuid",
@@ -55,7 +59,9 @@ export const taskSchemas = [
   },
   {
     key: "task-attachments",
-    collection: "task_attachments",
+    collection: "tasks",
+    subcollection: "attachments",
+    parentIdField: "task_id",
     fields: {
       id: "uuid",
       task_id: "uuid",
@@ -87,7 +93,9 @@ export const taskSchemas = [
   },
   {
     key: "task-hours",
-    collection: "task_hours",
+    collection: "tasks",
+    subcollection: "hours",
+    parentIdField: "task_id",
     fields: {
       id: "uuid",
       task_id: "uuid",
@@ -103,7 +111,9 @@ export const taskSchemas = [
   },
   {
     key: "task-time-tracking",
-    collection: "task_time_tracking",
+    collection: "tasks",
+    subcollection: "time_tracking",
+    parentIdField: "task_id",
     fields: {
       id: "uuid",
       task_id: "uuid",

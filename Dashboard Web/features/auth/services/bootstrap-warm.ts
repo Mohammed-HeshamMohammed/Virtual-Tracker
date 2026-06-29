@@ -1,5 +1,5 @@
 import { apiFetch } from "@/infrastructure/api/http"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 
 export type BootstrapWarmPayload = {
   members: Record<string, unknown>[]
@@ -21,7 +21,7 @@ export type BootstrapWarmPayload = {
 }
 
 export async function fetchBootstrapWarmBundle(): Promise<BootstrapWarmPayload> {
-  const res = await apiFetch(`${getApiBaseUrl()}/api/bootstrap/warm`)
+  const res = await apiFetch(apiPath("/api/bootstrap/warm"))
   const json = (await res.json().catch(() => ({}))) as {
     success?: boolean
     error?: string

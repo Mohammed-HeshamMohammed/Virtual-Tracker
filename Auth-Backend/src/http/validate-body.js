@@ -45,26 +45,3 @@ export function assertMaxLength(value, maxLen, fieldName) {
     throw new Error(`${fieldName} must be at most ${maxLen} characters`);
   }
 }
-
-/**
- * @param {unknown} value
- * @param {{ required?: boolean, label?: string }} [options]
- * @returns {string}
- */
-export function assertValidPhone(value, options = {}) {
-  const { required = false, label = "Phone number" } = options;
-  const trimmed = typeof value === "string" ? value.trim() : "";
-  if (!trimmed) {
-    if (required) throw new Error(`${label} is required.`);
-    return "";
-  }
-  assertMaxLength(trimmed, 40, label);
-  const digits = trimmed.replace(/\D/g, "");
-  if (digits.length < 7) {
-    throw new Error(`Enter a valid ${label.toLowerCase()}.`);
-  }
-  if (!/^[\d\s\-+().]+$/.test(trimmed)) {
-    throw new Error(`Enter a valid ${label.toLowerCase()}.`);
-  }
-  return trimmed;
-}

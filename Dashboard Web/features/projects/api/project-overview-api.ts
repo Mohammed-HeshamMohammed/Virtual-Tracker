@@ -1,7 +1,6 @@
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, fetchJsonWithRetry, type RequestOptions } from "@/infrastructure/api/http"
 
-const API_BASE = getApiBaseUrl()
 
 type Envelope<T> = { success?: boolean; error?: string; data?: T }
 
@@ -75,7 +74,7 @@ export async function getProjectOverviewCore(
   options: RequestOptions = {},
 ): Promise<ProjectOverviewCore> {
   const { res, json } = await fetchJsonWithRetry<Envelope<ProjectOverviewCore>>(
-    `${API_BASE}/api/projects/overview`,
+    apiPath("/api/projects/overview"),
     { headers: { "Accept-Encoding": "gzip, deflate, br" } },
     { ...options, retries: 1 },
   )
@@ -92,7 +91,7 @@ export async function getProjectOverviewPanels(
 
   const query = params.toString() ? `?${params.toString()}` : ""
   const { res, json } = await fetchJsonWithRetry<Envelope<ProjectOverviewPanels>>(
-    `${API_BASE}/api/projects/overview/panels${query}`,
+    apiPath(`/api/projects/overview/panels${query}`),
     { headers: { "Accept-Encoding": "gzip, deflate, br" } },
     { ...options, retries: 1 },
   )

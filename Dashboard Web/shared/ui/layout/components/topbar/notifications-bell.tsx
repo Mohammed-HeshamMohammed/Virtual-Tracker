@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { Bell } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
-import { getApiBaseUrl } from "@/infrastructure/api/url"
+import { apiPath } from "@/infrastructure/api/path"
 import { fetchJsonWithRetry, getApiAuthToken } from "@/infrastructure/api/http"
 import { clearCoalescedRequest, coalesceRequest } from "@/infrastructure/api/request-coalesce"
 
@@ -51,7 +51,7 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
     try {
       const { res, json } = await coalesceRequest(NOTIFICATIONS_LIST_KEY, () =>
         fetchJsonWithRetry<{ success: boolean; data: Notification[] }>(
-          `${getApiBaseUrl()}/api/notifications`,
+          apiPath("/api/notifications"),
           {},
           { retries: 2 },
         ),
@@ -100,7 +100,7 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
 
     try {
       const { res, json } = await fetchJsonWithRetry<{ success?: boolean }>(
-        `${getApiBaseUrl()}/api/notifications/${id}/read`,
+        apiPath(`/api/notifications/${id}/read`),
         { method: "POST" },
       )
       if (!res.ok || json?.success === false) {
@@ -129,7 +129,7 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
 
     try {
       const { res, json } = await fetchJsonWithRetry<{ success?: boolean }>(
-        `${getApiBaseUrl()}/api/notifications/read-all`,
+        apiPath("/api/notifications/read-all"),
         { method: "POST" },
       )
       if (!res.ok || json?.success === false) {
@@ -140,7 +140,7 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
       const generation = fetchGenerationRef.current
       const { res: listRes, json: listJson } = await coalesceRequest(NOTIFICATIONS_LIST_KEY, () =>
         fetchJsonWithRetry<{ success: boolean; data: Notification[] }>(
-          `${getApiBaseUrl()}/api/notifications`,
+          apiPath("/api/notifications"),
           {},
           { retries: 2 },
         ),

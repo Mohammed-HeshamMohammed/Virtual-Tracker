@@ -50,7 +50,11 @@ export function buildProfilePayload(userRecord) {
 export async function upsertProfileFromUserRecord(db, userRecord) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(userRecord.uid);
   const snap = await ref.get();
+  const existing = snap.exists ? snap.data() : null;
   const payload = buildProfilePayload(userRecord);
+  if (existing?.photoURL && String(existing.photoURL).includes("profile-avatars/")) {
+    payload.photoURL = existing.photoURL;
+  }
   if (!snap.exists) {
     payload.createdAt = FieldValue.serverTimestamp();
   }
@@ -58,8 +62,6 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
 
   const merged = await ref.get();
   const row = merged.exists ? merged.data() : null;
-  const avatarStoragePath =
-    row && typeof row.avatarStoragePath === "string" ? row.avatarStoragePath : null;
   const resolvedPhoto = resolveProfileAvatarUrl(row) || userRecord.photoURL || null;
 
   return {
@@ -74,7 +76,6 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
     identities: payload.identities,
     authCreationTime: payload.authCreationTime,
     authLastSignInTime: payload.authLastSignInTime,
-    avatarStoragePath,
     ...profileAppFieldsFromDoc(row),
     ...profileImageFieldsFromDoc(row),
   };

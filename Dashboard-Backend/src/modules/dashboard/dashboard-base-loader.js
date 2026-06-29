@@ -5,6 +5,8 @@
 
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { COLLECTIONS } from "../../lib/firestore/collections.js";
+import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
 const SNAPSHOT_DOC_ID = "dashboard_aggregates";
@@ -60,8 +62,7 @@ async function fetchFreshBase(db) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
-  const [projectsSnap, budgetsSnap, projectMembersSnap, tasksSnap, timeEntriesSnap, sessionsSnap] =
-    await Promise.all([
+  const [projectsSnap, budgetsSnap, projectMembersSnap, tasksSnap, sessionsSnap] = await Promise.all([
       db.collection(COLLECTIONS.projects).select("status", "name", "updated_at", "created_at").limit(300).get(),
       db
         .collection("project_budgets")
@@ -87,23 +88,30 @@ async function fetchFreshBase(db) {
         .limit(800)
         .get(),
       db
-        .collection("time_entries")
-        .select("member_id", "memberId", "project_id", "projectId", "date", "duration", "billable")
-        .limit(2000)
-        .get(),
-      db
         .collection("activity_sessions")
         .select("member_id", "task_id", "started_at", "active_seconds", "idle_seconds", "updated_at", "ended_at")
         .limit(500)
         .get(),
     ]);
 
-  const timeEntries = [];
-  for (const doc of timeEntriesSnap.docs) {
-    const row = doc.data() || {};
-    const dateKey = typeof row.date === "string" ? row.date : "";
-    if (dateKey && dateKey < weekStartKey) continue;
-    timeEntries.push(serializeDoc(doc));
+  /** @type {SerializedDoc[]} */
+  let timeEntries = [];
+  if (isPostgresConfigured()) {
+    try {
+      const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
+      timeEntries = pgRows.map((row) => ({
+        id: String(row.id ?? ""),
+        data: {
+          member_id: row.member_id,
+          project_id: row.project_id,
+          date: row.date,
+          duration: row.duration,
+          billable: row.billable,
+        },
+      }));
+    } catch (err) {
+      logSafeWarn("[dashboard-base-loader] postgres time_entries fetch failed:", err);
+    }
   }
 
   return {
