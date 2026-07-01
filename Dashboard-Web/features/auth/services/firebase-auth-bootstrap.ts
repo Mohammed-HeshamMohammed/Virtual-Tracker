@@ -16,6 +16,21 @@ export function consumeAuthRedirectResultOnce(auth: Auth): Promise<UserCredentia
   return redirectResultPromise
 }
 
+/** True when the URL still carries Firebase OAuth callback parameters. */
+export function hasFirebaseAuthCallbackInUrl(): boolean {
+  if (typeof window === "undefined") return false
+  const { search, hash } = window.location
+  return (
+    /[?&](apiKey|authUser|mode|state|code)=/.test(search) ||
+    /[?&](apiKey|authUser|mode|state|code)=/.test(hash) ||
+    hash.includes("id_token=") ||
+    hash.includes("access_token=")
+  )
+}
+
+export const GOOGLE_REDIRECT_FAILED_MESSAGE =
+  "Google sign-in could not be completed. Try again, allow popups for this site, or use email and password instead."
+
 /** Strip Firebase OAuth query/hash leftovers after redirect completes. */
 export function cleanFirebaseAuthUrl(): void {
   if (typeof window === "undefined") return
