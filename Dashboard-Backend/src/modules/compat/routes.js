@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { getAuthAdmin } from "../../config/firebase.js";
 import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../../lib/postgres/lookup-availability.js";
 import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
@@ -1558,7 +1559,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: options, options });
         return true;
       }
-      if (isPostgresConfigured()) {
+      if (await isPostgresLookupReady()) {
         const options = await listOrgFieldOptionsPg(type);
         sendJson(res, origin, 200, { success: true, data: options, options });
         return true;
@@ -1613,7 +1614,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
       const label = typeof body.label === "string" ? body.label : "";
       const position = Number.isInteger(body.position) ? body.position : 0;
-      if (isPostgresConfigured() && ORG_FIELD_OPTION_TYPES.has(type)) {
+      if ((await isPostgresLookupReady()) && ORG_FIELD_OPTION_TYPES.has(type)) {
         const created = await createOrgFieldOptionPg({
           type,
           label,

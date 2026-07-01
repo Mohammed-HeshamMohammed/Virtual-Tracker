@@ -46,6 +46,7 @@ import {
 } from "./collection-ref.js";
 import {
   POSTGRES_ENTITY_KEYS,
+  shouldRouteEntityToPostgres,
   listPostgresRows,
   getPostgresRow,
   createPostgresRow,
@@ -482,7 +483,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
     taskParentId = resolveTaskParentIdFromQuery(url);
   }
   try {
-    if (isPostgresConfigured() && POSTGRES_ENTITY_KEYS.has(parsed.key)) {
+    if (await shouldRouteEntityToPostgres(parsed.key)) {
       if (req.method === "GET" && !parsed.id) {
         let rows = await listPostgresRows(parsed.key, url);
         rows = await applyVisibilityFilter(req, db, parsed.key, rows);

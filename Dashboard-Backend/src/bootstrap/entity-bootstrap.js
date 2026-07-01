@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { logSafeWarn } from "../http/sanitize-error.js";
-import { isPostgresConfigured } from "../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../lib/postgres/lookup-availability.js";
 import {
   seedLookupTablePostgresIfEmpty,
   seedOrgFieldOptionsPostgresIfEmpty,
@@ -88,7 +88,7 @@ export async function ensureOrganizationEntities(db, actor = "system", options =
   await ensureDefaultRoles(db);
   created.push("roles");
 
-  if (isPostgresConfigured()) {
+  if (await isPostgresLookupReady()) {
     for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
       const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
       created.push(...seeded);

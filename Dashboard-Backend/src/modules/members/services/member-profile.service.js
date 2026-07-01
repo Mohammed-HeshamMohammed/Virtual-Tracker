@@ -7,7 +7,7 @@ import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { isManagementRole } from "../../../http/auth-context.js";
 import { isEmployeeL2OrHigherRole } from "../../../http/team-member-assign-policy.js";
-import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { lookupNameByIdPg, resolveLookupIdByNamePg } from "../../../lib/postgres/lookup-postgres.service.js";
 import {
   assertShiftAllowanceAllowed,
@@ -34,7 +34,7 @@ const LOOKUP_COLLECTIONS = {
 async function resolveLookupIdByName(db, collection, name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
   if (!trimmed) return "";
-  if (isPostgresConfigured()) return resolveLookupIdByNamePg(collection, trimmed);
+  if (await isPostgresLookupReady()) return resolveLookupIdByNamePg(collection, trimmed);
   const exact = await db.collection(collection).where("name", "==", trimmed).limit(1).get();
   if (!exact.empty) return exact.docs[0].id;
   const id = crypto.randomUUID();
@@ -56,7 +56,7 @@ async function resolveLookupIdByName(db, collection, name) {
  */
 async function lookupNameById(db, collection, id) {
   if (!id || typeof id !== "string") return "";
-  if (isPostgresConfigured()) return lookupNameByIdPg(collection, id);
+  if (await isPostgresLookupReady()) return lookupNameByIdPg(collection, id);
   const doc = await db.collection(collection).doc(id).get();
   if (!doc.exists) return "";
   const name = doc.data()?.name;
