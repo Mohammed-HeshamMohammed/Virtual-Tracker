@@ -51,12 +51,16 @@ async function migrateRoles(db) {
   const snap = await db.collection("roles").get();
   for (const doc of snap.docs) {
     const d = doc.data();
+    const id = d.id ?? doc.id;
     await runQuery(
       `INSERT INTO roles (id, name, description, created_at, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (id) DO NOTHING`,
+       ON CONFLICT (id) DO UPDATE SET
+         name = EXCLUDED.name,
+         description = EXCLUDED.description,
+         updated_by = EXCLUDED.updated_by`,
       [
-        d.id ?? doc.id,
+        id,
         d.name,
         d.description ?? null,
         d.created_at?.toDate?.() ?? new Date(),
@@ -80,7 +84,11 @@ async function migrateLookupCollection(db, firestoreCollection, category) {
     await runQuery(
       `INSERT INTO lookup_tables (id, category, name, list_ranking, created_at, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (id) DO NOTHING`,
+       ON CONFLICT (id) DO UPDATE SET
+         category = EXCLUDED.category,
+         name = EXCLUDED.name,
+         list_ranking = EXCLUDED.list_ranking,
+         updated_by = EXCLUDED.updated_by`,
       [
         d.id ?? doc.id,
         category,
@@ -110,7 +118,12 @@ async function migrateOrgFieldOptions(db) {
     await runQuery(
       `INSERT INTO org_field_options (id, type, label, position, created_at, updated_at, modified_by)
        VALUES ($1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (id) DO NOTHING`,
+       ON CONFLICT (id) DO UPDATE SET
+         type = EXCLUDED.type,
+         label = EXCLUDED.label,
+         position = EXCLUDED.position,
+         updated_at = EXCLUDED.updated_at,
+         modified_by = EXCLUDED.modified_by`,
       [
         d.id ?? doc.id,
         d.type,
@@ -136,6 +149,13 @@ if (!db) {
 if (!isPostgresConfigured()) {
   console.error("POSTGRES_URL is not configured");
   process.exit(1);
+}
+
+if (!dryRun) {
+  console.log("Clearing Postgres lookup tables (Firestore is source of truth)...");
+  await runQuery(`DELETE FROM org_field_options`, []);
+  await runQuery(`DELETE FROM lookup_tables`, []);
+  await runQuery(`DELETE FROM roles`, []);
 }
 
 await migrateRoles(db);
