@@ -6,7 +6,11 @@ function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
+  if (!trimmed) return null;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
 }
 
 export const LOOKUP_POSTGRES_ENTITY_KEYS = new Set([
