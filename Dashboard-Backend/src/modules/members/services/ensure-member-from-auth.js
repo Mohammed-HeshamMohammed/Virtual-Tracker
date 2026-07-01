@@ -10,6 +10,42 @@ const PENDING_AUTH = "pending_auth_members";
 const MEMBER_AUTH_INDEX = "member_auth_index";
 
 /**
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} uid
+ * @param {import("firebase-admin/firestore").DocumentReference} indexRef
+ * @param {unknown} error
+ */
+async function resolveMemberIdAfterCreateRace(db, uid, indexRef, error) {
+  const code =
+    error && typeof error === "object" && error !== null && "code" in error
+      ? String(/** @type {{ code?: unknown }} */ (error).code)
+      : "";
+  const message = error instanceof Error ? error.message : "";
+  const isRace =
+    message === "VT_MEMBER_INDEX_EXISTS" ||
+    code === "aborted" ||
+    code === "10" ||
+    code === "already-exists" ||
+    code === "6";
+  if (!isRace) return null;
+
+  const again = await indexRef.get();
+  const existingId = again.data()?.member_id;
+  if (typeof existingId === "string" && existingId) {
+    return { created: false, memberId: existingId, linked: false };
+  }
+
+  const byUid = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
+  if (!byUid.empty) {
+    const memberId = byUid.docs[0].id;
+    await ensureMemberAuthIndex(db, uid, memberId);
+    return { created: false, memberId, linked: false };
+  }
+
+  return null;
+}
+
+/**
  * Ensures a `members` row exists for this Firebase user (e.g. Google / Apple / email sign-in)
  * so they appear in People › Members. Idempotent: safe on every verify.
  *
@@ -134,13 +170,8 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
       tx.set(db.collection("members").doc(memberId), memberPayload);
     });
   } catch (e) {
-    if (e instanceof Error && e.message === "VT_MEMBER_INDEX_EXISTS") {
-      const again = await indexRef.get();
-      const existingId = again.data()?.member_id;
-      if (typeof existingId === "string") {
-        return { created: false, memberId: existingId, linked: false };
-      }
-    }
+    const resolved = await resolveMemberIdAfterCreateRace(db, uid, indexRef, e);
+    if (resolved) return resolved;
     throw e;
   }
 

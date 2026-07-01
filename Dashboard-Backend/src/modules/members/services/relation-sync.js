@@ -142,10 +142,15 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
  */
 async function loadRoleNameById(db) {
   if (await isPostgresLookupReady()) {
-    const data = await getLookupData();
-    return new Map(
-      data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
-    );
+    try {
+      const data = await getLookupData();
+      return new Map(
+        data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
+      );
+    } catch (err) {
+      logSafeWarn("[relation-sync] Postgres loadRoleNameById failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
+    }
   }
   const snap = await db.collection("roles").limit(100).get();
   return new Map(

@@ -136,10 +136,27 @@ export type VerifyIdTokenResult =
   | { success: true; profile?: AuthProfileSnapshot; memberId?: string; authorized?: boolean }
   | { success: false; error: string; code?: AuthSessionErrorCode }
 
+const verifyInFlightByUid = new Map<string, Promise<VerifyIdTokenResult>>()
+
 /**
  * Verifies the ID token (Auth-Backend) then bootstraps the session (Dashboard-Backend).
+ * Coalesces overlapping calls for the same Firebase uid (e.g. duplicate auth state events).
  */
 export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
+  const uid = user.uid?.trim()
+  if (uid) {
+    const existing = verifyInFlightByUid.get(uid)
+    if (existing) return existing
+  }
+
+  const promise = verifyIdTokenWithBackendOnce(user).finally(() => {
+    if (uid) verifyInFlightByUid.delete(uid)
+  })
+  if (uid) verifyInFlightByUid.set(uid, promise)
+  return promise
+}
+
+async function verifyIdTokenWithBackendOnce(user: User): Promise<VerifyIdTokenResult> {
   let verifyRes: Response
   try {
     verifyRes = await apiFetch("/api/auth/verify", {
