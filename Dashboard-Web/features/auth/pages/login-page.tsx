@@ -44,6 +44,7 @@ const AuthPage: React.FC = () => {
     initError,
     retryConnection,
     clearAuthError,
+    resetAuthGateMessages,
     signInWithGoogle,
     signInWithApple,
     signInWithEmailPassword,
@@ -179,7 +180,7 @@ const AuthPage: React.FC = () => {
     setLoginFormError(null)
     setRegisterSuccessNotice(null)
     setActionBusy(true)
-    clearAuthError()
+    resetAuthGateMessages()
     try {
       if (isRegisterMode) {
         await registerWithEmailPassword(identifier.trim(), passcode, {
