@@ -15,6 +15,7 @@ import { pathToFileURL } from "node:url";
 import { getDb } from "./src/config/firebase.js";
 import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
+import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
 import { removeProjectOfficeMemberRoles } from "./src/modules/projects/migrate-remove-office-member-roles.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
 
@@ -67,6 +68,10 @@ export function startServer(port = getEnv().server.port) {
     const db = getDb();
     logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
     if (db) {
+      const schemaResult = await ensurePostgresLookupSchema();
+      if (schemaResult.ok === false) {
+        logError(new Error(schemaResult.error ?? "Postgres lookup schema ensure failed"), "postgres-lookup-schema");
+      }
       scheduleOrganizationMaintenance(db, "server-startup");
       scheduleTeamWeeklyReports(db);
       removeProjectOfficeMemberRoles().catch((err) => {
