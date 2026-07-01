@@ -135,6 +135,7 @@ export interface AuthContextType {
   retryConnection: () => void
   authError: string | null
   clearAuthError: () => void
+  resetAuthGateMessages: () => void
   cancelPendingOAuthSignIn: () => void
   signInWithGoogle: (rememberMe?: boolean) => Promise<void>
   signInWithApple: (rememberMe?: boolean) => Promise<void>
@@ -273,11 +274,17 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [verificationGateMessage, setVerificationGateMessage] = useComponentState<string | null>(null)
   const [verificationGateError, setVerificationGateError] = useComponentState<string | null>(null)
   const clearAuthError = useCallback(() => setAuthError(null), [])
+  const resetAuthGateMessages = useCallback(() => {
+    setAuthError(null)
+    setInitError(null)
+    setSessionConnectionError(null)
+  }, [])
   const retrySessionSyncRef = useRef<(() => Promise<void>) | null>(null)
   const reconnectAbortRef = useRef<AbortController | null>(null)
   const signOutForAccountRestrictionRef = useRef<(message: string) => Promise<void>>(async () => {})
   const pendingSignInCredentialsRef = useRef<{ email: string; password: string } | null>(null)
   const skipNextAuthStateSyncRef = useRef(false)
+  const registrationSyncSuppressedRef = useRef(false)
   const sessionSyncUserRef = useRef<User | null>(null)
   const sessionReadyRef = useRef(false)
   const sessionAuthorizedRef = useRef(false)
@@ -654,7 +661,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (isPhoneVerificationSessionActive() || isEphemeralPhoneVerificationUser(next)) {
           return
         }
-        if (skipNextAuthStateSyncRef.current) {
+        if (skipNextAuthStateSyncRef.current || registrationSyncSuppressedRef.current) {
           skipNextAuthStateSyncRef.current = false
           return
         }
@@ -1041,9 +1048,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
       const phoneValidation = validatePhoneField(phone, { required: true, label: "Phone number" })
       if (phoneValidation) throw new Error(phoneValidation)
       const displayName = [firstName, lastName].filter(Boolean).join(" ")
+      registrationSyncSuppressedRef.current = true
+      skipNextAuthStateSyncRef.current = true
       try {
         const cred = await createUserWithEmailAndPassword(auth, trimmed, password)
-        skipNextAuthStateSyncRef.current = true
         if (cred.user) {
           if (displayName.length > 0) {
             await updateProfile(cred.user, { displayName })
@@ -1067,6 +1075,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }
         }
         throw e
+      } finally {
+        registrationSyncSuppressedRef.current = false
       }
     })
 
@@ -1175,6 +1185,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     appInitError,
     retryInit,
     clearAuthError,
+    resetAuthGateMessages,
     cancelPendingOAuthSignIn,
     signInWithGoogle,
     signInWithApple,
