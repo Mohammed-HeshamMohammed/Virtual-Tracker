@@ -2,6 +2,13 @@ import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getLookupData, invalidateLookupCache } from "./lookup-cache.js";
 
+function uuidOrNull(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export const LOOKUP_POSTGRES_ENTITY_KEYS = new Set([
   "roles",
   "job-titles",
@@ -121,8 +128,8 @@ export async function createLookupPostgresRow(entityKey, payload) {
         payload.id,
         payload.name,
         payload.description ?? null,
-        payload.created_by ?? null,
-        payload.updated_by ?? null,
+        uuidOrNull(payload.created_by),
+        uuidOrNull(payload.updated_by),
       ],
     );
     invalidateLookupCache();
@@ -139,8 +146,8 @@ export async function createLookupPostgresRow(entityKey, payload) {
       category,
       payload.name,
       payload.list_ranking ?? null,
-      payload.created_by ?? null,
-      payload.updated_by ?? null,
+      uuidOrNull(payload.created_by),
+      uuidOrNull(payload.updated_by),
     ],
   );
   invalidateLookupCache();
