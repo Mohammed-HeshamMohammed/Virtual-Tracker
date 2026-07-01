@@ -4,7 +4,7 @@ import { assertCanBeTeamMemberRole } from "../../../http/team-member-assign-poli
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { isManagementRole } from "../../tasks/task-assignments.js";
 import { rejectUnknownEntityFields } from "../../../http/validate-body.js";
-import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { lookupRowExistsInPostgres } from "../../../lib/postgres/lookup-postgres.service.js";
 import { foreignKeyCollectionByField, generateUUID, now, schemaRulesByKey } from "../catalog/index.js";
 
@@ -101,7 +101,7 @@ export async function validateForeignKeys(db, payload, options = {}) {
   for (const [field, value] of Object.entries(payload)) {
     const collection = foreignKeyCollectionByField[field];
     if (!collection || !value) continue;
-    if (isPostgresConfigured() && LOOKUP_FK_COLLECTIONS.has(collection)) {
+    if ((await isPostgresLookupReady()) && LOOKUP_FK_COLLECTIONS.has(collection)) {
       const exists = await lookupRowExistsInPostgres(collection, String(value));
       if (!exists) throw new Error(`${field} references missing ${collection}`);
       continue;

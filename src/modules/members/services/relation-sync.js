@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { COLLECTIONS } from "../../../lib/firestore/collections.js";
-import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import {
   ensureDefaultRolesPg,
   resolveRoleIdByNamePg,
@@ -25,7 +25,7 @@ const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manage
  */
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
-  if (isPostgresConfigured()) return resolveRoleNameByIdPg(roleId);
+  if (await isPostgresLookupReady()) return resolveRoleNameByIdPg(roleId);
   const doc = await db.collection("roles").doc(roleId).get();
   if (!doc.exists) return "";
   const name = doc.data()?.name;
@@ -34,7 +34,7 @@ export async function resolveRoleNameById(db, roleId) {
 
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
-  if (isPostgresConfigured()) return resolveRoleIdByNamePg(name);
+  if (await isPostgresLookupReady()) return resolveRoleIdByNamePg(name);
   const exact = await db.collection("roles").where("name", "==", name).limit(1).get();
   if (!exact.empty) return exact.docs[0].id;
 
@@ -60,7 +60,7 @@ export async function resolveRoleIdByName(db, roleName) {
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function ensureDefaultRoles(db) {
-  if (isPostgresConfigured()) {
+  if (await isPostgresLookupReady()) {
     await ensureDefaultRolesPg(DEFAULT_ROLES);
     return;
   }
@@ -118,7 +118,7 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 async function loadRoleNameById(db) {
-  if (isPostgresConfigured()) {
+  if (await isPostgresLookupReady()) {
     const data = await getLookupData();
     return new Map(
       data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),

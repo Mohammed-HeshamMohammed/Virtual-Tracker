@@ -1,4 +1,5 @@
-import { query } from "../../../lib/postgres/client.js";
+import { isPostgresConfigured, query } from "../../../lib/postgres/client.js";
+import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import {
   LOOKUP_POSTGRES_ENTITY_KEYS,
   createLookupPostgresRow,
@@ -14,6 +15,13 @@ export const POSTGRES_ENTITY_KEYS = new Set([
   "timesheets",
   ...LOOKUP_POSTGRES_ENTITY_KEYS,
 ]);
+
+/** Route entity CRUD to Postgres when configured and lookup schema is ready. */
+export async function shouldRouteEntityToPostgres(entityKey) {
+  if (!POSTGRES_ENTITY_KEYS.has(entityKey)) return false;
+  if (isLookupPostgresEntityKey(entityKey)) return isPostgresLookupReady();
+  return isPostgresConfigured();
+}
 
 const TIME_ENTRY_COLUMNS = [
   "id",
