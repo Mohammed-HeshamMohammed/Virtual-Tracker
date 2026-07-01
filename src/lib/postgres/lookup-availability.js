@@ -1,3 +1,4 @@
+import { logSafeWarn } from "../../http/sanitize-error.js";
 import { isPostgresConfigured, query } from "./client.js";
 
 /** @type {boolean | undefined} */
@@ -5,7 +6,7 @@ let lookupReady;
 
 /**
  * True when POSTGRES_URL is set and lookup tables (roles) are reachable.
- * Falls back to Firestore when tables are missing or not migrated yet.
+ * Falls back to Firestore when tables are missing, still seeding, or unreachable.
  */
 export async function isPostgresLookupReady() {
   if (!isPostgresConfigured()) return false;
@@ -16,12 +17,9 @@ export async function isPostgresLookupReady() {
     lookupReady = true;
     return true;
   } catch (err) {
-    const code = err && typeof err === "object" && "code" in err ? String(err.code) : "";
-    if (code === "42P01") {
-      lookupReady = false;
-      return false;
-    }
-    throw err;
+    logSafeWarn("[postgres] lookup probe failed; using Firestore fallback:", err);
+    lookupReady = false;
+    return false;
   }
 }
 

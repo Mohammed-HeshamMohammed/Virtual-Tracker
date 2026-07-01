@@ -58,27 +58,27 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-export function startServer(port = getEnv().server.port) {
+export async function startServer(port = getEnv().server.port) {
   const server = createServer();
   initPresenceGateway(server);
   activeServer = server;
   registerServerErrorHandler(server, port);
 
-  server.listen(port, async () => {
-    const db = getDb();
-    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
-    if (db) {
-      const schemaResult = await ensurePostgresLookupSchema();
-      if (schemaResult.ok === false) {
-        logError(new Error(schemaResult.error ?? "Postgres lookup schema ensure failed"), "postgres-lookup-schema");
-      }
-      scheduleOrganizationMaintenance(db, "server-startup");
-      scheduleTeamWeeklyReports(db);
-      removeProjectOfficeMemberRoles().catch((err) => {
-        logError(err, "project-office-member-roles-migration");
-      });
+  const db = getDb();
+  logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
+  if (db) {
+    const schemaResult = await ensurePostgresLookupSchema();
+    if (schemaResult.ok === false) {
+      logError(new Error(schemaResult.error ?? "Postgres lookup schema ensure failed"), "postgres-lookup-schema");
     }
+    scheduleOrganizationMaintenance(db, "server-startup");
+    scheduleTeamWeeklyReports(db);
+    removeProjectOfficeMemberRoles().catch((err) => {
+      logError(err, "project-office-member-roles-migration");
+    });
+  }
 
+  server.listen(port, () => {
     let version = "0.0.0";
     try {
       const pkgPath = new URL("./package.json", import.meta.url);
@@ -138,5 +138,5 @@ function isDirectExecution() {
 }
 
 if (isDirectExecution()) {
-  startServer();
+  void startServer();
 }
