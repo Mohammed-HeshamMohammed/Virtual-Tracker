@@ -1,18 +1,47 @@
 # Virtual Tracker — Entity Relationship Diagram
 
-Firestore-backed backend (`Dashboard-Backend/src`). Canonical field names are **snake_case**; APIs accept **camelCase** aliases where noted in services.
+Hybrid **Firestore + PostgreSQL** backend (`Dashboard-Backend/src`). Member-facing business data stays in Firestore; static reference data and time tracking rows move to Postgres when `POSTGRES_URL` is configured. Canonical field names are **snake_case**; APIs accept **camelCase** aliases where noted in services.
 
 **Source of truth (code):**
 
 | Artifact | Path |
 |----------|------|
-| Bootstrap registry (all collections + policies) | `Dashboard-Backend/src/bootstrap/entity-bootstrap-manifest.js` |
+| Bootstrap registry (Firestore collections + policies) | `Dashboard-Backend/src/bootstrap/entity-bootstrap-manifest.js` |
 | Schema CRUD entities | `Dashboard-Backend/src/modules/schema/catalog/` → `schemaEntities` |
-| Canonical collection names | `Dashboard-Backend/src/lib/firestore/collections.js` |
+| Canonical Firestore collection names | `Dashboard-Backend/src/lib/firestore/collections.js` |
 | Org startup seeds | `Dashboard-Backend/src/bootstrap/entity-bootstrap.js` |
-| Manual UI test fixtures | `Dashboard-Backend/tooling/seeds/` (not loaded by the server) |
+| Postgres client + time/lookup DDL | `Dashboard-Backend/src/lib/postgres/` (`client.js`, `ensure-lookup-schema.js`, `schema.sql`) |
+| Lookup cache (5‑min TTL) | `Dashboard-Backend/src/lib/postgres/lookup-cache.js` |
+| Lookup CRUD + role resolution (Postgres) | `Dashboard-Backend/src/lib/postgres/lookup-postgres.service.js` |
+| Postgres routing for schema entities | `Dashboard-Backend/src/modules/schema/services/postgres-crud.service.js` |
+| One-time Firestore → Postgres lookup import | `Dashboard-Backend/scripts/migrate-lookups-to-postgres.mjs` |
 
 Dedicated route modules live under `src/modules/*`; shared HTTP helpers under `src/http/`. Paths below are relative to `Dashboard-Backend/`.
+
+---
+
+## PostgreSQL storage (when `POSTGRES_URL` is set)
+
+Ensured on server start via `ensurePostgresLookupSchema()` in `index.js`. Probed at runtime by `isPostgresLookupReady()` (`src/lib/postgres/lookup-availability.js`). On failure, lookup reads/writes **fall back to Firestore** without crashing the API.
+
+| Postgres table | Replaces / mirrors (Firestore) | Entity keys / APIs |
+|----------------|-------------------------------|-------------------|
+| `roles` | `roles` | `roles`; role resolution in `relation-sync.js` |
+| `lookup_tables` (`category`) | `job_titles`, `departments`, `job_types`, `tax_types` | `job-titles`, `departments`, `job-types`, `tax-types` |
+| `org_field_options` | static rows in `members_field_data` | `GET/POST /api/organization-field-options` (dropdown types only) |
+| `time_entries` | (was schema-only Firestore) | `time-entries` |
+| `timesheets` | (was schema-only Firestore) | `timesheets` |
+
+**In-memory cache:** `getLookupData()` loads all roles + lookups + org options in one round trip; `invalidateLookupCache()` runs after admin writes.
+
+**`members_field_data` split (unchanged):**
+
+| `type` | Storage |
+|--------|---------|
+| `jobTitle`, `department`, `jobType`, `employmentType`, `employedThrough`, `workplaceModel`, `taxType`, `terminationReason` | Postgres `org_field_options` when lookup schema ready |
+| `memberFormSnapshot` | Firestore only (`memberDocId` required) |
+
+**Rollback:** Migration and bootstrap leave legacy Firestore lookup collections in place until cutover is verified. They may still appear in the Firebase console even when Postgres is primary.
 
 ---
 
@@ -20,14 +49,17 @@ Dedicated route modules live under `src/modules/*`; shared HTTP helpers under `s
 
 | Module | Path prefix | Implementation |
 |--------|-------------|----------------|
-| Auth | `/api/auth/*` | `src/modules/auth/routes.js` — verify, `User_profiles`, profile settings, avatar, deactivation |
+| Auth (identity) | `/api/auth/*` (subset) | `src/modules/auth/identity-routes.js` — `session-bootstrap`, profile, avatar, deactivation, verification emails |
+| Auth (credential) | `/api/auth/*` (subset) | **Auth-Backend** — `verify`, `validate-password`, `password-policy`, `firebase-config`, `resolve-sign-in-methods` (`authn-paths.js`) |
 | Members (compat) | `/api/members/*` | `src/modules/compat/routes.js` — list/CRUD, profile GET/PATCH, batch delete, SSE, `GET /members/current` |
 | Member invites | `/api/members/*`, `/api/public/invites/*` | `src/modules/members/routes/member-invites.routes.js` |
+| Member bans | `/api/member-bans/*` | `src/modules/members/routes/member-bans.routes.js` |
+| Remove from tree | `/api/members/remove-from-tree`, batch variant | `src/modules/members/routes/member-remove-from-tree.routes.js` |
 | Member profile | `/api/members/:id/profile` | `src/modules/members/services/member-profile.service.js` |
 | Member onboarding | `/api/member-onboarding/*` | `src/modules/member-onboarding/routes.js` |
 | Member relationships | `/api/member-relationships/*` | `src/modules/member-relationships/routes.js`, `service.js` — tree, scoped-members, visibility |
 | Hierarchy / transfer | `/api/member-transfer-requests/*`, `/api/public/member-transfer-requests/*` | `src/modules/hierarchy/routes.js`, `transfer-request.service.js` |
-| Schema CRUD | `/api/{entity-key}`, `/api/schema/entities` | `src/modules/schema/routes.js` (catalog keys → Firestore collections) |
+| Schema CRUD | `/api/{entity-key}`, `/api/schema/entities` | `src/modules/schema/routes.js` — Firestore or Postgres per `postgres-crud.service.js` |
 | Clients | `/api/clients/*` | `src/modules/clients/routes.js`, `services/*` |
 | Projects | `/api/projects/*` | `src/modules/projects/routes.js` |
 | Tasks | `/api/tasks/*`, task child keys | `src/modules/tasks/routes.js` + schema CRUD |
@@ -35,29 +67,30 @@ Dedicated route modules live under `src/modules/*`; shared HTTP helpers under `s
 | Dashboard | `/api/dashboard/*` | `src/modules/dashboard/routes.js` |
 | Notifications | `/api/notifications/*` | `src/modules/notifications/routes.js` |
 | Presence | `/api/presence/events`, `/api/presence/ws` | `src/modules/presence/` — RTDB `presence/{memberId}` + in-memory fallback |
+| Monitor | `/monitor/*` | `src/modules/monitor/routes.js` |
 | Compat bridges | `/api/invites`, `/api/member-invites`, `/api/organization-field-options` | `src/modules/compat/routes.js` |
-| Org bootstrap | (server start) | `src/bootstrap/entity-bootstrap.js` ← `index.js` |
+| Org bootstrap | (server start, deferred) | `src/bootstrap/entity-bootstrap.js` ← `scheduleOrganizationMaintenance` in `index.js` |
 
-**Router order** (`src/app/handle-request.js`): auth → member invites → **transfer requests** → relationships → onboarding → activity → projects → **dashboard** → bootstrap → clients → tasks → notifications → **presence events** → compat → schema CRUD.
+**Router order** (`src/app/handle-request.js`): auth identity (non-Auth-Backend paths) → **member bans** → **remove-from-tree** → member invites → onboarding → **transfer requests** → relationships → activity → projects → **dashboard** → bootstrap → clients → tasks → notifications → **presence** → compat → schema CRUD.
 
 ---
 
 ## Entity diagram
 
-> All Firestore collections are **top-level** (`db.collection(name)`). Cross-domain links use **FK tables** — fetch only the domain you need per screen. Live presence is **not** a Firestore collection (see § Presence).
+> **Firestore** collections are **top-level** (`db.collection(name)`). **Postgres** holds static lookups and time rows when configured (see [PostgreSQL storage](#postgresql-storage-when-postgres_url-is-set)). Cross-domain links use **FK tables** — fetch only the domain you need per screen. Live presence is **not** a Firestore collection (see § Presence).
 
 ### Diagram index
 
 | # | Domain | Collections | When to load together |
 |---|--------|-------------|------------------------|
-| 1 | [Identity & roles](#diagram-1--identity-auth--roles) | 6 + RTDB | Auth verify, `GET /members/current`, presence SSE/WS |
+| 1 | [Identity & roles](#diagram-1--identity-auth--roles) | 5 Firestore + Postgres `roles` + RTDB | Auth `session-bootstrap`, `GET /members/current`, presence SSE/WS |
 | 2 | [Invites](#diagram-2--invites--pre-provision) | 5 + stubs | Invite admin, registration |
-| 3 | [Member HR](#diagram-3--member-hr--profile-extensions) | 9 + stub | Member profile modal only |
+| 3 | [Member HR](#diagram-3--member-hr--profile-extensions) | 5 Firestore + Postgres lookups + `memberFormSnapshot` stub | Member profile modal only |
 | 4 | [Teams & tree](#diagram-4--teams--member-tree) | 5 + stub | Tree / visibility / transfer routes |
 | 5 | [Clients](#diagram-5--clients) | 4 + stubs | Client enriched list / edit |
 | 6 | [Projects & tasks](#diagram-6--projects-tasks--team-links) | 12 + stubs | Per-project workspace, assignments, timers |
 | 7 | [Activity](#diagram-7--activity-tracking-runtime) | 5 + stub | Tracking session & feed |
-| 8 | [Timesheets](#diagram-8--timesheets) | 2 | Timesheet UI, payroll period submit |
+| 8 | [Timesheets](#diagram-8--timesheets) | Postgres `time_entries` + `timesheets` (or Firestore fallback) | Timesheet UI, payroll period submit |
 | 9 | [Notifications](#diagram-9--notifications) | 1 | In-app notification bell |
 
 ### Domain map (read order / bandwidth)
@@ -69,7 +102,6 @@ flowchart LR
   subgraph d1 [Identity]
     members
     User_profiles
-    member_roles
   end
   subgraph d2 [Invites]
     invites
@@ -94,7 +126,7 @@ flowchart LR
   subgraph d7 [Activity]
     activity_sessions
   end
-  subgraph d8 [Timesheets]
+  subgraph d8 [Timesheets Postgres]
     time_entries
     timesheets
   end
@@ -115,7 +147,7 @@ flowchart LR
 
 | Screen / flow | Prefer these collections | Avoid loading at the same time |
 |---------------|--------------------------|--------------------------------|
-| Login bootstrap | `member_auth_index`, `members`, `member_roles`, `roles`, `User_profiles`, RTDB `presence/{id}` | `activity_*`, full `tasks`, all `members` (500) |
+| Login bootstrap | `member_auth_index`, `members`, `roles` (Postgres or Firestore), `User_profiles`, RTDB `presence/{id}` | `activity_*`, full `tasks`, all `members` (500) |
 | Members list | `members` (capped), presence via SSE/WS + `last_seen_at`, enrich roles/teams in batch | `activity_screenshots`, per-member `employment` |
 | Member manage modal | `members` + profile service tables (§3) | Org-wide `projects_VirtualTacker`, `tasks` |
 | Projects / tasks UI | `projects_VirtualTacker`, `project_members`, `tasks` **filtered by project_id** | All members, activity feed |
@@ -128,7 +160,7 @@ flowchart LR
 
 ### Diagram 1 — Identity, auth & roles
 
-Login, profile, role assignment, live presence. Fetch together on auth verify — not with project/task lists.
+Login, profile, role assignment, live presence. Fetch together on `session-bootstrap` — not with project/task lists.
 
 ```mermaid
 erDiagram
@@ -182,17 +214,7 @@ erDiagram
     timestamp created_at
     uuid created_by FK
     uuid updated_by FK
-  }
-
-  MEMBER_ROLES {
-    uuid id PK
-    uuid member_id FK
-    uuid role_id FK
-    string role_name
-    string member_name
-    string member_work_email
-    timestamp assigned_at
-    uuid assigned_by FK
+    timestamp updated_at
   }
 
   ACCESS_REQUESTS {
@@ -207,9 +229,13 @@ erDiagram
   MEMBERS ||--o| USER_PROFILES : "firebase_uid = uid"
   MEMBER_AUTH_INDEX ||--|| MEMBERS : "one uid to one member"
   MEMBERS }o--o| ROLES : "role_id"
-  MEMBERS ||--o{ MEMBER_ROLES : has
-  ROLES ||--o{ MEMBER_ROLES : assigned_via
 ```
+
+> **`ROLES`:** Stored in **Postgres** `roles` when `isPostgresLookupReady()`; legacy Firestore `roles` collection may still exist for rollback. Resolved via `getLookupData()` / `resolveRoleIdByName` / `resolveRoleNameById` in `relation-sync.js`.
+>
+> **Primary role assignment:** `members.role_id` only. `syncMemberPrimaryRole` writes `role_id` and strips legacy `role_name`, `role`, and nested role fields from the member document. `alignMemberRoleTables` runs on `session-bootstrap` and profile saves.
+>
+> **`member_roles` (legacy):** No longer written. Orphan rows may remain from older releases; `GET /api/members` may still query the collection but `pickCanonicalPrimaryRoleName` uses `members.role_id` only.
 
 > **Live presence** is stored in Firebase Realtime Database at `presence/{memberId}` (`status`, `lastSeenAt`, `lastActivityAt`, `connectionCount`). The in-process presence service mirrors RTDB when `FIREBASE_DATABASE_URL` is set; otherwise dev uses an in-memory store. Only `members.last_seen_at` and `profile_linked_records_at` persist in Firestore.
 
@@ -459,8 +485,12 @@ erDiagram
   MEMBERS ||--o{ PAY_RATES : has
   MEMBERS ||--o| TIME_SETTINGS : has
   MEMBERS ||--o{ LIMITS : has
-  MEMBERS ||--o{ MEMBERS_FIELD_DATA : options_and_snapshots
+  MEMBERS ||--o{ MEMBERS_FIELD_DATA : "memberFormSnapshot only"
 ```
+
+> **Employment lookups** (`JOB_TITLES`, `DEPARTMENTS`, `JOB_TYPES`, `TAX_TYPES`): primary store is Postgres `lookup_tables` (by `category`) when lookup schema is ready; legacy Firestore collections mirror the same shape. `employment.*_id` FKs reference UUIDs from whichever store is active.
+>
+> **`MEMBERS_FIELD_DATA`:** Only **`memberFormSnapshot`** rows remain in Firestore. Org dropdown options (`jobTitle`, `department`, …) live in Postgres `org_field_options` when configured; see [PostgreSQL storage](#postgresql-storage-when-postgres_url-is-set).
 
 ### Diagram 4 — Teams & member tree
 
@@ -990,6 +1020,8 @@ erDiagram
   MEMBERS ||--o| TIMESHEETS : approved_by
 ```
 
+> **Storage:** When `POSTGRES_URL` is set, `TIME_ENTRIES` and `TIMESHEETS` are Postgres tables (schema CRUD via `postgres-crud.service.js`). Without Postgres, schema CRUD falls back to Firestore collections of the same names.
+
 ### Diagram 9 — Notifications
 
 In-app notification feed per recipient.
@@ -1020,62 +1052,62 @@ erDiagram
 
 > **Firestore collection names** match the diagram entities (snake_case plural). Exceptions: `USER_PROFILES` → `User_profiles`; `PROJECTS` → `projects_VirtualTacker`; `NOTIFICATIONS` → `notifications_VirtualTacker`; `MEMBER_AUTH_INDEX` uses document id = `firebase_uid`.
 
-> **List/API enrichment:** `GET /api/members` merges live presence (`tracking_status`, `lastSeenAt`) from the runtime/RTDB store and may surface mirrored `pay_rate`, `weekly_limit`, `role` from `pay_rates`, `limits`, and `member_roles` — those are not always the canonical storage location for assignments.
+> **List/API enrichment:** `GET /api/members` merges live presence (`tracking_status`, `lastSeenAt`) from the runtime/RTDB store and may surface `pay_rate`, `weekly_limit`, and `role` / `role_name` derived on read from `pay_rates`, `limits`, and `members.role_id` + `roles` — not persisted denormalized fields on `members`.
 
-> **Denormalization (console / fast reads):** `members` carries `role_name` and `role` (display) next to `role_id`. Each `member_roles` row carries `role_name`, `member_name`, and `member_work_email` beside the foreign keys so the assignment is readable without joining `roles` or `members`. `syncMemberPrimaryRole` keeps these fields aligned when the primary role changes.
+> **Role fields on `members`:** `syncMemberPrimaryRole` deletes legacy `role_name`, `role`, and nested role blobs from member documents. List responses re-attach `role` / `role_name` during enrichment.
 > **Never nest** `employment`, `limits`, `pay_rates`, `time_settings`, etc. under `members/{id}/…`. See `Dashboard-Backend/src/lib/firestore/collections.js` (`INVALID_MEMBER_SUBCOLLECTIONS`).
 
 ---
 
 ## Schema catalog entities (CRUD)
 
-Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP paths use the **entity key** (kebab-case); Firestore uses the **collection** column below.
+Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP paths use the **entity key** (kebab-case). **Primary storage** is Postgres when `shouldRouteEntityToPostgres(entityKey)` is true (`postgres-crud.service.js`); otherwise Firestore uses the **collection** column.
 
-| Entity key (API path segment) | Firestore collection |
-|------------------------------|----------------------|
-| `members` | `members` |
-| `roles` | `roles` |
-| `member-roles` | `member_roles` |
-| `member-onboarding` | `member_onboarding` |
-| `invites` | `invites` |
-| `invite-projects` | `invite_projects` |
-| `job-titles` | `job_titles` |
-| `departments` | `departments` |
-| `job-types` | `job_types` |
-| `tax-types` | `tax_types` |
-| `employment` | `employment` |
-| `pay-rates` | `pay_rates` |
-| `time-settings` | `time_settings` |
-| `limits` | `limits` |
-| `clients` | `clients` |
-| `client-budgets` | `client_budgets` |
-| `client-invoicing` | `client_invoicing` |
-| `client-projects` | `client_projects` |
-| `projects` | `projects_VirtualTacker` |
-| `project-members` | `project_members` |
-| `project-budgets` | `project_budgets` |
-| `project-member-limits` | `project_member_limits` |
-| `tasks` | `tasks` |
-| `task-subtasks` | `task_subtasks` |
-| `task-comments` | `task_comments` |
-| `task-attachments` | `task_attachments` |
-| `task-assignments` | `task_assignments` |
-| `task-hours` | `task_hours` |
-| `task-time-tracking` | `task_time_tracking` |
-| `teams` | `teams` |
-| `team-members` | `team_members` |
-| `team-projects` | `team_projects` |
-| `member-relationships` | `member_relationships` |
-| `member-tree-cache` | `member_tree_cache` |
-| `member-transfer-requests` | `member_transfer_requests` |
-| `time-entries` | `time_entries` |
-| `timesheets` | `timesheets` |
-| `notifications` | `notifications_VirtualTacker` |
-| `activity-sessions` | `activity_sessions` |
-| `activity-screenshots` | `activity_screenshots` |
-| `activity-app-logs` | `activity_app_logs` |
-| `activity-url-logs` | `activity_url_logs` |
-| `activity-alert-log` | `activity_alert_log` |
+| Entity key (API path segment) | Firestore collection | Primary storage (when `POSTGRES_URL` set) |
+|------------------------------|----------------------|-------------------------------------------|
+| `members` | `members` | Firestore |
+| `roles` | `roles` | **Postgres** `roles` |
+| `member-roles` | `member_roles` | Firestore (legacy; prefer `members.role_id`) |
+| `member-onboarding` | `member_onboarding` | Firestore |
+| `invites` | `invites` | Firestore |
+| `invite-projects` | `invite_projects` | Firestore |
+| `job-titles` | `job_titles` | **Postgres** `lookup_tables` (`category = job_title`) |
+| `departments` | `departments` | **Postgres** `lookup_tables` (`category = department`) |
+| `job-types` | `job_types` | **Postgres** `lookup_tables` (`category = job_type`) |
+| `tax-types` | `tax_types` | **Postgres** `lookup_tables` (`category = tax_type`) |
+| `employment` | `employment` | Firestore |
+| `pay-rates` | `pay_rates` | Firestore |
+| `time-settings` | `time_settings` | Firestore |
+| `limits` | `limits` | Firestore |
+| `clients` | `clients` | Firestore |
+| `client-budgets` | `client_budgets` | Firestore |
+| `client-invoicing` | `client_invoicing` | Firestore |
+| `client-projects` | `client_projects` | Firestore |
+| `projects` | `projects_VirtualTacker` | Firestore |
+| `project-members` | `project_members` | Firestore |
+| `project-budgets` | `project_budgets` | Firestore |
+| `project-member-limits` | `project_member_limits` | Firestore |
+| `tasks` | `tasks` | Firestore |
+| `task-subtasks` | `task_subtasks` | Firestore |
+| `task-comments` | `task_comments` | Firestore |
+| `task-attachments` | `task_attachments` | Firestore |
+| `task-assignments` | `task_assignments` | Firestore |
+| `task-hours` | `task_hours` | Firestore |
+| `task-time-tracking` | `task_time_tracking` | Firestore |
+| `teams` | `teams` | Firestore |
+| `team-members` | `team_members` | Firestore |
+| `team-projects` | `team_projects` | Firestore |
+| `member-relationships` | `member_relationships` | Firestore |
+| `member-tree-cache` | `member_tree_cache` | Firestore |
+| `member-transfer-requests` | `member_transfer_requests` | Firestore |
+| `time-entries` | `time_entries` | **Postgres** `time_entries` |
+| `timesheets` | `timesheets` | **Postgres** `timesheets` |
+| `notifications` | `notifications_VirtualTacker` | Firestore |
+| `activity-sessions` | `activity_sessions` | Firestore |
+| `activity-screenshots` | `activity_screenshots` | Firestore |
+| `activity-app-logs` | `activity_app_logs` | Firestore |
+| `activity-url-logs` | `activity_url_logs` | Firestore |
+| `activity-alert-log` | `activity_alert_log` | Firestore |
 
 `GET /api/schema/entities` returns the catalog metadata. Generic CRUD: `GET/POST /api/{key}`, `GET/PATCH/DELETE /api/{key}/:id`.
 
@@ -1090,12 +1122,12 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 
 | Collection | Handled by |
 |------------|------------|
-| `User_profiles` | `auth/routes.js`, `profile-sync.js` |
+| `User_profiles` | `identity-routes.js`, `profile-sync.js`, `session-bootstrap.js` |
 | `member_auth_index` | `members/services/member-dedupe.js`, `ensure-member-from-auth.js` |
 | `pending_auth_members`, `pending_auth_projects` | `members/routes/member-invites.routes.js` |
-| `access_requests` | `auth/routes.js` |
+| `access_requests` | `identity-routes.js` |
 | `deactivation_requests` | `auth/account-deactivation.js` |
-| `members_field_data` | Org field options + `memberFormSnapshot` (`compat/routes.js`, profile save) |
+| `members_field_data` | Org `memberFormSnapshot` in Firestore; static dropdown types in Postgres `org_field_options` when ready (`compat/routes.js`) |
 | `system_meta` | Bootstrap markers (`entity_bootstrap`, legacy id migration) |
 | `member_tree` | Legacy only (`member-relationships/migrate.js`) |
 | RTDB `presence/{memberId}` | `modules/presence/` — not Firestore |
@@ -1113,7 +1145,7 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 
 | Concern | Source-of-truth table | Enriched on list as |
 |---------|----------------------|---------------------|
-| Primary role | `member_roles` + `roles.name` | `role` / `role_name` |
+| Primary role | `members.role_id` + `roles` (Postgres or Firestore) | `role` / `role_name` |
 | Teams | `team_members` + `teams.name` | `teams[]` |
 | Projects | `project_members` | project count / ids |
 | Invite projects | `invite_projects` | invite `project_count` (FK preferred over CSV) |
@@ -1121,7 +1153,7 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 | Client ↔ project | `client_projects` | client `projects[]` on enriched client |
 | Project roles | `project_members.project_role` | `manager` / `user` / `viewer` / `member` |
 
-**Default roles** (`roles.name`, seeded by `ensureDefaultRoles` in `relation-sync.js`): Owner, Super Admin, Admin, Super Manager, Manager, Employee L2, Employee L1, Employee L0, Client, Viewer.
+**Default roles** (`roles.name`, seeded by `ensureDefaultRoles` in `relation-sync.js` → Postgres or Firestore): Owner, Super Admin, Admin, Super Manager, Manager, Employee L2, Employee L1, Employee L0, Client, Viewer.
 
 **Project roles** (`project_members.project_role`): `manager`, `user`, `viewer`, `member`.
 
@@ -1137,29 +1169,28 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 | Open invite link | `invites` (`invite_kind=open_link`) | `members` on register |
 | First sign-in (no row) | — | `ensureMemberFromAuth` creates `members` |
 | Auth profile | `User_profiles` | linked by `members.firebase_uid` |
-| Auth verify bootstrap | — | `ensureMemberLinkedRecordsForUserRecord` (full diagram policy) |
-| Server startup bootstrap | — | `ensureOrganizationEntities` |
+| Session bootstrap | — | `POST /api/auth/session-bootstrap` → `ensureMemberLinkedRecordsForUserRecord` (full diagram policy) |
+| Server startup bootstrap | — | `scheduleOrganizationMaintenance` → `ensureOrganizationEntities` (deferred off critical path) |
 
 **Bootstrap registry** — mirrors `ENTITY_BOOTSTRAP_MANIFEST` in `src/bootstrap/entity-bootstrap-manifest.js`:
 
 | Firestore collection | Policy | Notes |
 |----------------------|--------|--------|
-| `User_profiles` | `auth_flow` | Upsert on `/api/auth/verify` |
-| `members` | `auth_flow` | `ensureMemberRowForUserRecord` on verify |
+| `User_profiles` | `auth_flow` | Upsert on `session-bootstrap` |
+| `members` | `auth_flow` | `ensureMemberRowForUserRecord` on bootstrap |
 | `pending_auth_members` | `auth_flow` | Admin pre-provision |
 | `pending_auth_projects` | `auth_flow` | With pending auth member |
 | `access_requests` | `on_demand` | Public access-request form |
-| `roles` | `org_seed` | Default Owner → Viewer (10 roles) |
-| `member_roles` | `member_ensure` | |
+| `roles` | `org_seed` | Default Owner → Viewer (10 roles); **Postgres** when lookup schema ready |
 | `member_auth_index` | `auth_flow` | `firebase_uid` → `members.id` |
 | `member_onboarding` | `member_ensure` | |
 | `invites` | `on_demand` | |
 | `invite_projects` | `on_demand` | |
-| `members_field_data` | `org_seed` | Org dropdowns + per-member snapshots |
-| `job_titles` | `org_seed` | |
-| `departments` | `org_seed` | |
-| `job_types` | `org_seed` | |
-| `tax_types` | `org_seed` | |
+| `members_field_data` | `org_seed` | `memberFormSnapshot` in Firestore; org dropdown seeds → Postgres `org_field_options` when ready |
+| `job_titles` | `org_seed` | **Postgres** `lookup_tables` when ready; Firestore fallback |
+| `departments` | `org_seed` | same |
+| `job_types` | `org_seed` | same |
+| `tax_types` | `org_seed` | same |
 | `employment` | `member_ensure` | |
 | `pay_rates` | `member_ensure` | |
 | `time_settings` | `member_ensure` | |
@@ -1195,8 +1226,8 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 
 | Firestore collection | Entity key | Notes |
 |----------------------|------------|--------|
-| `time_entries` | `time-entries` | Logged work rows |
-| `timesheets` | `timesheets` | Pay-period submissions |
+| `time_entries` | `time-entries` | **Postgres** when configured |
+| `timesheets` | `timesheets` | **Postgres** when configured |
 | `notifications_VirtualTacker` | `notifications` | In-app notifications |
 | `member_transfer_requests` | `member-transfer-requests` | Hierarchy transfer workflow |
 | `activity_alert_log` | `activity-alert-log` | Activity alert dedupe log |
@@ -1208,20 +1239,22 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 |--------|-------------------|
 | `org_seed` | Server startup (`ensureOrganizationEntities` in `index.js`) if collection empty |
 | `org_marker` | Bootstrap metadata only |
-| `member_ensure` | Auth verify (`ensureMemberLinkedRecordsForUserRecord`) per member |
+| `member_ensure` | `session-bootstrap` / `ensureMemberLinkedRecordsForUserRecord` per member |
 | `auth_flow` | Verify / invite / pre-provision flows |
 | `on_demand` | UI or API only (e.g. clients, projects, tasks, invites) |
 | `runtime` | Activity tracking while app runs |
 
-**Server startup** (`index.js` → `src/bootstrap/entity-bootstrap.js`): seeds `roles`, lookups, `members_field_data` options, `member_relationships` (if empty), writes `system_meta/entity_bootstrap`.
+**Server startup** (`index.js`): `ensurePostgresLookupSchema()` then `scheduleOrganizationMaintenance` → seeds roles/lookups/org options (Postgres first, Firestore fallback), `member_relationships` (if empty), writes `system_meta/entity_bootstrap`.
 
-**Auth verify** (`src/modules/members/services/ensure-member-linked-records.js`): org bootstrap + `members` row + `member_auth_index` + dedupe + `members.profile_linked_records_at` + `ensureMemberScopedEntities` (`employment`, `pay_rates`, `time_settings`, `limits`, `member_onboarding`, `member_tree_cache`).
+**Session bootstrap** (`POST /api/auth/session-bootstrap` in `session-bootstrap.js`): org bootstrap marker + `members` row + `member_auth_index` + dedupe + `members.profile_linked_records_at` (only after linked records succeed) + `ensureMemberScopedEntities` (`employment`, `pay_rates`, `time_settings`, `limits`, `member_onboarding`, `member_tree_cache`) + `alignMemberRoleTables`.
+
+**Credential verify** (`POST /api/auth/verify`) is handled by **Auth-Backend**, not this service.
 
 **Presence:** WebSocket `/api/presence/ws` and SSE `/api/presence/events` read/write the in-process presence service, which syncs to RTDB `presence/{memberId}` when configured. On disconnect, `members.last_seen_at` is persisted. Management override `PATCH` presence updates runtime only (no Firestore write). Legacy nested `members.presence` object is read for migration only (`presence-status.js`).
 
-**One Firebase user → one member:** canonical map is `member_auth_index/{firebase_uid}` → `members.id` (verify runs `dedupeMembersForFirebaseUid`). `members.firebase_uid` is still written for queries and legacy compat.
+**One Firebase user → one member:** canonical map is `member_auth_index/{firebase_uid}` → `members.id` (bootstrap runs `dedupeMembersForFirebaseUid`). `members.firebase_uid` is still written for queries and legacy compat.
 
-**Manual test data:** `tooling/seeds/seed-variant-data.mjs` (`npm run seed:variants`) seeds People/Profile/Projects fixtures with `_seedTag` — not run by the API server.
+**Lookup migration (one-time):** `node --use-system-ca scripts/migrate-lookups-to-postgres.mjs` copies Firestore reference data into Postgres; does not delete Firestore sources.
 
 ---
 
@@ -1237,7 +1270,7 @@ Service: `src/modules/members/services/member-profile.service.js`
 
 **Delete cascade** (`deleteMemberProfileData` + `cascadeDeleteMemberRelations`):
 
-`employment`, `pay_rates`, `time_settings`, `limits`, `member_roles`, `team_members`, `project_members`, `member_onboarding`, `members_field_data` (snapshots), then `members` document.
+`employment`, `pay_rates`, `time_settings`, `limits`, `team_members`, `project_members`, `member_onboarding`, `members_field_data` (`memberFormSnapshot` only), then `members` document.
 
 ---
 
@@ -1248,9 +1281,9 @@ Service: `src/modules/members/services/member-profile.service.js`
 | Info | First / last name | `members.first_name`, `last_name` | List `name` derived |
 | Info | Work / personal email | `members.work_email`, `personal_email` | |
 | Info | Employee ID, IP | `members.employee_id`, `ip_address` | IP from client on save |
-| Employment | Job title, department, job type, tax type | `employment.*_id` + `*_label` | Creates lookup row if label is new |
+| Employment | Job title, department, job type, tax type | `employment.*_id` + `*_label` | Resolves/creates lookup row in Postgres or Firestore |
 | Employment | Address, type, dates, comments | `employment.*` | Direct columns |
-| Roles | Role | `members.role_id` + `member_roles` | `syncMemberPrimaryRole` |
+| Roles | Role | `members.role_id` | `syncMemberPrimaryRole` / `alignMemberRoleTables` |
 | Pay & bill | Pay rate, pay period, approval | `pay_rates.*` + `members.pay_rate` | Hourly mirrored on member |
 | Work limits | Weekly / daily limit | `limits` + `members.weekly_limit` | `limit_type` = weekly \| daily |
 | Work limits | Work days, disable specific days | `time_settings.work_days`, `disable_tracking_specific_days` | Weekday indices 0–6 |
@@ -1367,8 +1400,8 @@ Service: `src/modules/clients/services/client-service.js`, `budget-logic.js`, `i
 
 | Method | Route | Purpose |
 |--------|-------|---------|
-| GET/POST/PATCH/DELETE | `/api/time-entries` | Logged time rows (schema CRUD) |
-| GET/POST/PATCH/DELETE | `/api/timesheets` | Pay-period submissions (schema CRUD) |
+| GET/POST/PATCH/DELETE | `/api/time-entries` | Logged time rows (schema CRUD → Postgres when configured) |
+| GET/POST/PATCH/DELETE | `/api/timesheets` | Pay-period submissions (schema CRUD → Postgres when configured) |
 
 Visibility rules in `schema/visibility.js` scope time entries and timesheets by member hierarchy.
 
@@ -1417,12 +1450,12 @@ Collection: `member_transfer_requests`. On completion, `member_relationships` pa
 
 ## Organization field options
 
-`GET/POST /api/organization-field-options` → `members_field_data` where `type` is one of:
+`GET/POST /api/organization-field-options` — static dropdown types are served from **Postgres** `org_field_options` when `isPostgresLookupReady()`; otherwise Firestore `members_field_data`.
 
-| type | Purpose |
-|------|---------|
-| `jobTitle`, `department`, `jobType`, `employmentType`, `employedThrough`, `workplaceModel`, `taxType`, `terminationReason` | Employment dropdown options |
-| `memberFormSnapshot` | Per-member manage-modal JSON backup (`memberDocId` required) |
+| type | Purpose | Storage |
+|------|---------|---------|
+| `jobTitle`, `department`, `jobType`, `employmentType`, `employedThrough`, `workplaceModel`, `taxType`, `terminationReason` | Employment dropdown options | Postgres `org_field_options` (primary) |
+| `memberFormSnapshot` | Per-member manage-modal JSON backup (`memberDocId` required) | Firestore `members_field_data` only |
 
 ---
 
@@ -1447,6 +1480,10 @@ Key routes under `/api/member-relationships/*`: visual-tree, ancestors, descenda
 | `GET /api/members/events` | SSE member list stream |
 | `POST /api/members/batch-delete` | Batch delete with relation cascade |
 | `GET /api/members/current` | Resolve member from Firebase token |
+| `GET/POST /api/member-bans` | List / create member or device bans |
+| `POST /api/member-bans/:id/revoke` | Revoke a ban |
+| `POST /api/members/remove-from-tree` | Remove one member from hierarchy tree |
+| `POST /api/members/batch-remove-from-tree` | Batch remove from tree |
 
 Invite implementation: `src/modules/members/routes/member-invites.routes.js` (register, redeem, pre-provision, open-link).
 
@@ -1454,7 +1491,7 @@ Invite implementation: `src/modules/members/routes/member-invites.routes.js` (re
 
 ## Indexes & conventions
 
-- Primary keys: UUID v4 (`generateUUID()` in catalog), except `pending_auth_members` and `User_profiles` use Firebase UID as document id.
-- Timestamps: `created_at`, `updated_at`, `assigned_at`, etc. — stored as Firestore `Timestamp`.
+- Primary keys: UUID v4 (`generateUUID()` in catalog), except `pending_auth_members` and `User_profiles` use Firebase UID as document id. Postgres tables use UUID PKs (`gen_random_uuid()` default on insert).
+- Timestamps: Firestore `Timestamp` in collections; `TIMESTAMPTZ` in Postgres tables.
 - API inputs: services accept snake_case and camelCase (e.g. `client_id` / `clientId`).
 - Archived: `projects.status = archived`, `clients.status = archived`; list endpoints filter active by default where applicable.
