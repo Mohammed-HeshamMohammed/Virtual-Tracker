@@ -31,7 +31,12 @@ import {
   markAuthProjectBound,
   runPostAuthRedirectHygiene,
 } from "@/features/auth/services/browser-state-hygiene"
-import { cleanFirebaseAuthUrl, consumeAuthRedirectResultOnce } from "@/features/auth/services/firebase-auth-bootstrap"
+import {
+  cleanFirebaseAuthUrl,
+  consumeAuthRedirectResultOnce,
+  GOOGLE_REDIRECT_FAILED_MESSAGE,
+  hasFirebaseAuthCallbackInUrl,
+} from "@/features/auth/services/firebase-auth-bootstrap"
 import { signInWithGoogleAccount } from "@/features/auth/services/google-sign-in"
 import {
   broadcastAuthSessionReady,
@@ -55,7 +60,11 @@ import {
 } from "@/features/auth/services/phone-verification-firebase"
 import { isPhoneVerificationSessionActive } from "@/features/auth/services/phone-verification-session"
 import { sendFirebasePasswordResetEmail } from "@/features/auth/services/password-reset"
-import { sendVerificationEmailToUser, formatVerificationEmailError } from "@/features/auth/services/email-verification"
+import {
+  sendVerificationEmailToUser,
+  formatVerificationEmailError,
+  EMAIL_NOT_VERIFIED_SIGN_IN_WARNING,
+} from "@/features/auth/services/email-verification"
 import { patchProfileSettingsWithBackend } from "@/features/auth/api/profile-settings-api"
 import { validateNamePart } from "@/shared/validation/person-name"
 import { validatePhoneField } from "@/shared/validation"
@@ -427,10 +436,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
   )
 
   const deliverVerificationEmailForUser = useCallback(
-    async (firebaseUser: User, gate: { email: string; password: string }) => {
+    async (
+      firebaseUser: User,
+      gate: { email: string; password: string },
+      options?: { initialMessage?: string },
+    ) => {
       setVerificationGate(gate)
       setVerificationGateError(null)
-      setVerificationGateMessage(null)
+      setVerificationGateMessage(options?.initialMessage ?? null)
       try {
         await sendVerificationEmailToUser(firebaseUser)
         setVerificationGateMessage("Verification email sent. Check your inbox and spam folder.")
@@ -616,7 +629,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (cancelled) return
 
       const auth = getFirebaseAuth()
-      await applyAuthPersistenceRememberMe(auth, true)
 
       /** Register before redirect completion so the session is observed as soon as Google returns. */
       unsubscribe = onAuthStateChanged(auth, async (next) => {
@@ -700,11 +712,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
           if (isAuthGateError(e) && e.code === "EMAIL_NOT_VERIFIED") {
             const creds = pendingSignInCredentialsRef.current
             pendingSignInCredentialsRef.current = null
-            if (creds) {
-              await deliverVerificationEmailForUser(next, creds)
+            const gate = creds ?? { email: next.email?.trim() ?? "", password: "" }
+            const warningMessage = e.message?.trim() || EMAIL_NOT_VERIFIED_SIGN_IN_WARNING
+            if (gate.email) {
+              if (creds) {
+                await deliverVerificationEmailForUser(next, gate, { initialMessage: warningMessage })
+              } else {
+                setVerificationGate(gate)
+                setVerificationGateError(null)
+                setVerificationGateMessage(warningMessage)
+              }
               setAuthError(null)
             } else {
-              setAuthError(e.message)
+              setAuthError(warningMessage)
             }
             skipNextAuthStateSyncRef.current = true
             await firebaseSignOut(auth)
@@ -719,6 +739,26 @@ export function AuthProvider({ children }: AuthProviderProps) {
           }
           if (isAuthGateError(e) && isAccountRestrictionCode(e.code)) {
             await signOutForAccountRestrictionRef.current(e.message)
+            setLoading(false)
+            setSessionReady(true)
+            return
+          }
+          if (isAuthGateError(e) && e.code === "NO_MEMBER_PROFILE") {
+            const usedOAuth = next.providerData.some(
+              (provider) => provider.providerId === "google.com" || provider.providerId === "apple.com",
+            )
+            const msg = usedOAuth
+              ? "No Virtual Tracker account is linked to this sign-in. Ask your administrator for access, or use Request Now on the sign-in page."
+              : e.message
+            setSessionAuthorized(false)
+            skipNextAuthStateSyncRef.current = true
+            await firebaseSignOut(auth).catch(() => {})
+            setUser(null)
+            setAuthError(msg)
+            setSessionConnectionError(null)
+            setProfile(null)
+            setCurrentMember(null)
+            setDashboardSummary(null)
             setLoading(false)
             setSessionReady(true)
             return
@@ -761,25 +801,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       if (cancelled) return
 
-      const launcherOAuthIntent = consumeLauncherOAuthIntent()
-      if (launcherOAuthIntent === "google" && !auth.currentUser) {
-        try {
-          setSessionStatusMessage(GOOGLE_OAUTH_REDIRECT_MESSAGE)
-          const provider = new GoogleAuthProvider()
-          provider.setCustomParameters({ prompt: "select_account" })
-          await signInWithRedirect(auth, provider)
-        } catch (e) {
-          if (!cancelled && !isBenignAuthCancellation(e)) {
-            const msg = formatAuthError(e)
-            if (msg) setAuthError(msg)
-          }
-        }
-      }
-
       try {
         const redirectCred = await consumeAuthRedirectResultOnce(auth)
         if (redirectCred?.user) {
           cleanFirebaseAuthUrl()
+        } else if (!cancelled && hasFirebaseAuthCallbackInUrl()) {
+          cleanFirebaseAuthUrl()
+          setAuthError(GOOGLE_REDIRECT_FAILED_MESSAGE)
         }
       } catch (e) {
         if (!cancelled) {
@@ -789,6 +817,27 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const m = await messageForAccountExistsWithDifferentCredential(auth, e)
             setAuthError(m)
           } else {
+            const msg = formatAuthError(e)
+            if (msg) setAuthError(msg)
+          }
+        }
+      }
+
+      if (cancelled) return
+
+      const rememberFlag =
+        typeof window !== "undefined" ? window.localStorage.getItem(VT_REMEMBER_ME_FOR_SIGNIN) : null
+      await applyAuthPersistenceRememberMe(auth, rememberFlag !== "0")
+
+      const launcherOAuthIntent = consumeLauncherOAuthIntent()
+      if (launcherOAuthIntent === "google" && !auth.currentUser) {
+        try {
+          setSessionStatusMessage(GOOGLE_OAUTH_REDIRECT_MESSAGE)
+          const provider = new GoogleAuthProvider()
+          provider.setCustomParameters({ prompt: "select_account" })
+          await signInWithRedirect(auth, provider)
+        } catch (e) {
+          if (!cancelled && !isBenignAuthCancellation(e)) {
             const msg = formatAuthError(e)
             if (msg) setAuthError(msg)
           }
@@ -886,7 +935,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }
 
   /**
-   * Google: popup on localhost, redirect fallback. Apple: full-page redirect.
+   * Google: popup first in normal browsers (redirect fallback when blocked). Apple: popup.
    * `consumeAuthRedirectResultOnce` + `onAuthStateChanged` complete redirect-based sessions.
    */
   const runOAuthSignIn = async (rememberMe: boolean, fn: () => Promise<void>) => {
@@ -898,6 +947,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setAuthError(null)
     const auth = getFirebaseAuth()
     try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(VT_REMEMBER_ME_FOR_SIGNIN, rememberMe ? "1" : "0")
+      }
       await applyAuthPersistenceRememberMe(auth, rememberMe)
       await fn()
     } catch (e) {
@@ -952,6 +1004,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         pendingSignInCredentialsRef.current = { email: trimmed, password: pass }
         await signInWithEmailAndPassword(auth, trimmed, password)
       } catch (e) {
+        pendingSignInCredentialsRef.current = null
         const code = errorCodeOf(e)
         if (isAmbiguousEmailPasswordFailureCode(code)) {
           const methodsAfter = await fetchSignInMethodsForEmailSafe(auth, trimmed)

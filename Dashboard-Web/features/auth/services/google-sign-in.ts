@@ -20,15 +20,9 @@ function isPopupBlocked(err: unknown): boolean {
   return code === "auth/popup-blocked"
 }
 
-function isLocalDevHost(): boolean {
-  if (typeof window === "undefined") return false
-  const host = window.location.hostname.toLowerCase()
-  return host === "localhost" || host === "127.0.0.1" || host === "[::1]"
-}
-
 /**
  * Launcher / embedded shell: redirect in the host window (popups often open the system browser).
- * Local dev in a normal tab: popup first, redirect fallback when blocked.
+ * Normal browser tab: popup first (avoids fragile full-page redirect handshakes), redirect fallback when blocked.
  */
 export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
   const provider = googleProvider()
@@ -43,18 +37,14 @@ export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
     return
   }
 
-  if (isLocalDevHost()) {
-    try {
-      await signInWithPopup(auth, provider)
+  try {
+    await signInWithPopup(auth, provider)
+    return
+  } catch (err) {
+    if (isPopupBlocked(err)) {
+      await signInWithRedirect(auth, provider)
       return
-    } catch (err) {
-      if (isPopupBlocked(err)) {
-        await signInWithRedirect(auth, provider)
-        return
-      }
-      throw err
     }
+    throw err
   }
-
-  await signInWithRedirect(auth, provider)
 }

@@ -53,3 +53,6 @@ export function formatVerificationEmailError(err: unknown): string {
 
 export const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
   "Please verify your email address before using the application. Check your inbox for a verification link."
+
+export const EMAIL_NOT_VERIFIED_SIGN_IN_WARNING =
+  "Your email address is not verified yet. Check your inbox for the verification link, then sign in again."

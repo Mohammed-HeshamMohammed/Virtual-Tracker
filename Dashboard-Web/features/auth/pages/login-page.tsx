@@ -25,6 +25,7 @@ import { EmailVerificationSidePanel } from "@/features/auth/components/email-ver
 import { PasswordStrengthPanel } from "@/features/auth/components/password-strength-panel"
 import { useRegisterEmailAvailability } from "@/features/auth/services/use-register-email-availability"
 import { ServerConnectionOfflineScreen } from "@/features/auth/components/server-connection-offline-screen"
+import { EMAIL_VERIFICATION_REQUIRED_MESSAGE } from "@/features/auth/services/email-verification"
 
 type CardView = "login" | "request"
 
@@ -121,6 +122,8 @@ const AuthPage: React.FC = () => {
     cardView === "login" && loginPane === "main" && isRegisterMode && showPasswordPanel
   const showRightVerificationPanel =
     cardView === "login" && loginPane === "main" && !isRegisterMode && Boolean(verificationGate)
+  const showVerificationWarning =
+    showRightVerificationPanel && !registerSuccessNotice
   const showRightPasswordPanel =
     cardView === "login" && loginPane === "main" && isRegisterMode && showPasswordPanel && !showRightVerificationPanel
 
@@ -317,6 +320,23 @@ const AuthPage: React.FC = () => {
                 <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
                   {registerSuccessNotice}
                 </p>
+              </AuthAlertBanner>
+              <AuthAlertBanner show={showVerificationWarning} className="mb-3 overflow-hidden">
+                <div
+                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200"
+                  role="alert"
+                >
+                  <p className="font-semibold">Email verification required</p>
+                  <p className="mt-1">
+                    {verificationGateMessage ?? EMAIL_VERIFICATION_REQUIRED_MESSAGE}
+                  </p>
+                  {verificationGate?.email ? (
+                    <p className="mt-1 font-medium">{verificationGate.email}</p>
+                  ) : null}
+                  {verificationGateError ? (
+                    <p className="mt-1 text-red-700 dark:text-red-400">{verificationGateError}</p>
+                  ) : null}
+                </div>
               </AuthAlertBanner>
               <AuthAlertBanner show={Boolean(displayedFormError)} className="mb-3 overflow-hidden">
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
