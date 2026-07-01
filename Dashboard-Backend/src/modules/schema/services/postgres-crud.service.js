@@ -1,6 +1,19 @@
 import { query } from "../../../lib/postgres/client.js";
+import {
+  LOOKUP_POSTGRES_ENTITY_KEYS,
+  createLookupPostgresRow,
+  deleteLookupPostgresRow,
+  getLookupPostgresRow,
+  isLookupPostgresEntityKey,
+  listLookupPostgresRows,
+  updateLookupPostgresRow,
+} from "../../../lib/postgres/lookup-postgres.service.js";
 
-export const POSTGRES_ENTITY_KEYS = new Set(["time-entries", "timesheets"]);
+export const POSTGRES_ENTITY_KEYS = new Set([
+  "time-entries",
+  "timesheets",
+  ...LOOKUP_POSTGRES_ENTITY_KEYS,
+]);
 
 const TIME_ENTRY_COLUMNS = [
   "id",
@@ -63,6 +76,9 @@ function normalizePgRow(row) {
  * @returns {Promise<Record<string, unknown>[]>}
  */
 export async function listPostgresRows(entityKey, url) {
+  if (isLookupPostgresEntityKey(entityKey)) {
+    return listLookupPostgresRows(entityKey, url);
+  }
   if (entityKey === "time-entries") {
     const conditions = [];
     const params = [];
@@ -103,6 +119,9 @@ export async function listPostgresRows(entityKey, url) {
  * @param {string} id
  */
 export async function getPostgresRow(entityKey, id) {
+  if (isLookupPostgresEntityKey(entityKey)) {
+    return getLookupPostgresRow(entityKey, id);
+  }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   const columns = entityKey === "time-entries" ? TIME_ENTRY_COLUMNS : TIMESHEET_COLUMNS;
   const rows = await query(`SELECT ${columns.join(", ")} FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
@@ -114,6 +133,9 @@ export async function getPostgresRow(entityKey, id) {
  * @param {Record<string, unknown>} payload
  */
 export async function createPostgresRow(entityKey, payload) {
+  if (isLookupPostgresEntityKey(entityKey)) {
+    return createLookupPostgresRow(entityKey, payload);
+  }
   if (entityKey === "time-entries") {
     const rows = await query(
       `INSERT INTO time_entries
@@ -175,6 +197,9 @@ export async function createPostgresRow(entityKey, payload) {
  * @param {Record<string, unknown>} existing
  */
 export async function updatePostgresRow(entityKey, id, payload, existing) {
+  if (isLookupPostgresEntityKey(entityKey)) {
+    return updateLookupPostgresRow(entityKey, id, payload, existing);
+  }
   if (entityKey === "time-entries") {
     const merged = { ...existing, ...payload, id };
     const rows = await query(
@@ -236,6 +261,9 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
  * @param {string} id
  */
 export async function deletePostgresRow(entityKey, id) {
+  if (isLookupPostgresEntityKey(entityKey)) {
+    return deleteLookupPostgresRow(entityKey, id);
+  }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }

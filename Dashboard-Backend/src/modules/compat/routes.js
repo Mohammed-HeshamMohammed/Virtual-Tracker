@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import { getAuthAdmin } from "../../config/firebase.js";
+import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
@@ -1543,6 +1545,24 @@ export async function routeCompatibility(req, res, url, db, origin) {
           return true;
         }
       }
+      if (type === "memberFormSnapshot") {
+        let queryRef = db.collection("members_field_data").where("type", "==", type);
+        if (memberDocId) queryRef = queryRef.where("memberDocId", "==", memberDocId);
+        let snapshot;
+        try {
+          snapshot = await queryRef.orderBy("position", "asc").limit(200).get();
+        } catch {
+          snapshot = await queryRef.limit(200).get();
+        }
+        const options = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        sendJson(res, origin, 200, { success: true, data: options, options });
+        return true;
+      }
+      if (isPostgresConfigured()) {
+        const options = await listOrgFieldOptionsPg(type);
+        sendJson(res, origin, 200, { success: true, data: options, options });
+        return true;
+      }
       let query = db.collection("members_field_data").where("type", "==", type);
       if (memberDocId) query = query.where("memberDocId", "==", memberDocId);
       let snapshot;
@@ -1591,7 +1611,19 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to manage organization options." });
         return true;
       }
-      const payload = { type, label: typeof body.label === "string" ? body.label : "", position: Number.isInteger(body.position) ? body.position : 0, created_at: new Date() };
+      const label = typeof body.label === "string" ? body.label : "";
+      const position = Number.isInteger(body.position) ? body.position : 0;
+      if (isPostgresConfigured() && ORG_FIELD_OPTION_TYPES.has(type)) {
+        const created = await createOrgFieldOptionPg({
+          type,
+          label,
+          position,
+          modified_by: getAuthContext(req)?.memberId ?? null,
+        });
+        sendJson(res, origin, 201, { success: true, data: created });
+        return true;
+      }
+      const payload = { type, label, position, created_at: new Date() };
       const ref = db.collection("members_field_data").doc();
       await ref.set(payload);
       sendJson(res, origin, 201, { success: true, data: { id: ref.id, ...payload } });

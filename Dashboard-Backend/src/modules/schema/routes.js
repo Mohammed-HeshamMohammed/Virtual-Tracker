@@ -52,6 +52,7 @@ import {
   updatePostgresRow,
   deletePostgresRow,
 } from "./services/postgres-crud.service.js";
+import { isPostgresConfigured } from "../../lib/postgres/client.js";
 
 function parsePath(pathname) {
   const match = /^\/api(?:\/v1)?\/([a-z-]+)(?:\/([^/]+))?$/.exec(pathname);
@@ -481,7 +482,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
     taskParentId = resolveTaskParentIdFromQuery(url);
   }
   try {
-    if (POSTGRES_ENTITY_KEYS.has(parsed.key)) {
+    if (isPostgresConfigured() && POSTGRES_ENTITY_KEYS.has(parsed.key)) {
       if (req.method === "GET" && !parsed.id) {
         let rows = await listPostgresRows(parsed.key, url);
         rows = await applyVisibilityFilter(req, db, parsed.key, rows);

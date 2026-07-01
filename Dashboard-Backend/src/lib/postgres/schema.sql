@@ -69,3 +69,66 @@ DROP TRIGGER IF EXISTS trg_timesheets_updated_at ON timesheets;
 CREATE TRIGGER trg_timesheets_updated_at
   BEFORE UPDATE ON timesheets
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Static lookup reference data (migrated from Firestore roles / job_titles / …)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS roles (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        VARCHAR(60) NOT NULL UNIQUE,
+  description TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by  UUID,
+  updated_by  UUID,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name);
+
+CREATE TABLE IF NOT EXISTS lookup_tables (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  category     VARCHAR(20) NOT NULL CHECK (category IN (
+                  'job_title', 'department', 'job_type', 'tax_type'
+               )),
+  name         VARCHAR(120) NOT NULL,
+  list_ranking VARCHAR(20),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by   UUID,
+  updated_by   UUID,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_lookup_category_name UNIQUE (category, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lookup_category ON lookup_tables (category, list_ranking);
+
+CREATE TABLE IF NOT EXISTS org_field_options (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  type         VARCHAR(30) NOT NULL CHECK (type IN (
+                  'jobTitle', 'department', 'jobType', 'employmentType',
+                  'employedThrough', 'workplaceModel', 'taxType', 'terminationReason'
+               )),
+  label        VARCHAR(120) NOT NULL,
+  position     INT         NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  modified_by  VARCHAR(120),
+  CONSTRAINT uq_org_field_type_label UNIQUE (type, label)
+);
+
+CREATE INDEX IF NOT EXISTS idx_org_field_type ON org_field_options (type, position);
+
+DROP TRIGGER IF EXISTS trg_roles_updated_at ON roles;
+CREATE TRIGGER trg_roles_updated_at
+  BEFORE UPDATE ON roles
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_lookup_tables_updated_at ON lookup_tables;
+CREATE TRIGGER trg_lookup_tables_updated_at
+  BEFORE UPDATE ON lookup_tables
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_org_field_options_updated_at ON org_field_options;
+CREATE TRIGGER trg_org_field_options_updated_at
+  BEFORE UPDATE ON org_field_options
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();

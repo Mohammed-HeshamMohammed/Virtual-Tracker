@@ -4,7 +4,11 @@ import { assertCanBeTeamMemberRole } from "../../../http/team-member-assign-poli
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { isManagementRole } from "../../tasks/task-assignments.js";
 import { rejectUnknownEntityFields } from "../../../http/validate-body.js";
+import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { lookupRowExistsInPostgres } from "../../../lib/postgres/lookup-postgres.service.js";
 import { foreignKeyCollectionByField, generateUUID, now, schemaRulesByKey } from "../catalog/index.js";
+
+const LOOKUP_FK_COLLECTIONS = new Set(["roles", "job_titles", "departments", "job_types", "tax_types"]);
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -97,6 +101,11 @@ export async function validateForeignKeys(db, payload, options = {}) {
   for (const [field, value] of Object.entries(payload)) {
     const collection = foreignKeyCollectionByField[field];
     if (!collection || !value) continue;
+    if (isPostgresConfigured() && LOOKUP_FK_COLLECTIONS.has(collection)) {
+      const exists = await lookupRowExistsInPostgres(collection, String(value));
+      if (!exists) throw new Error(`${field} references missing ${collection}`);
+      continue;
+    }
     const doc = await db.collection(collection).doc(value).get();
     if (!doc.exists) throw new Error(`${field} references missing ${collection}`);
   }

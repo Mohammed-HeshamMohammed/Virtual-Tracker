@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
 import { logSafeWarn } from "../http/sanitize-error.js";
+import { isPostgresConfigured } from "../lib/postgres/client.js";
+import {
+  seedLookupTablePostgresIfEmpty,
+  seedOrgFieldOptionsPostgresIfEmpty,
+} from "../lib/postgres/lookup-postgres.service.js";
 import { initializeMemberRelationships } from "../modules/member-relationships/migrate.js";
 import { ensureUserProfileImageFields } from "../modules/auth/migrate-profile-image-fields.js";
 import { removeClientBudgetStartDates } from "../modules/clients/migrate-remove-budget-start-date.js";
@@ -83,14 +88,26 @@ export async function ensureOrganizationEntities(db, actor = "system", options =
   await ensureDefaultRoles(db);
   created.push("roles");
 
-  for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
-    const seeded = await seedLookupTableIfEmpty(db, collection, names, actor);
-    created.push(...seeded);
-  }
+  if (isPostgresConfigured()) {
+    for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
+      const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
+      created.push(...seeded);
+    }
 
-  for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
-    const seeded = await seedOrgFieldOptionsIfEmpty(db, type, labels);
-    created.push(...seeded);
+    for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
+      const seeded = await seedOrgFieldOptionsPostgresIfEmpty(type, labels);
+      created.push(...seeded);
+    }
+  } else {
+    for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
+      const seeded = await seedLookupTableIfEmpty(db, collection, names, actor);
+      created.push(...seeded);
+    }
+
+    for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
+      const seeded = await seedOrgFieldOptionsIfEmpty(db, type, labels);
+      created.push(...seeded);
+    }
   }
 
   await db.doc(ENTITY_BOOTSTRAP_META_DOC).set(
