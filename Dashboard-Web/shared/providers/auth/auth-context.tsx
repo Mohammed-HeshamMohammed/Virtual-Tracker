@@ -220,10 +220,10 @@ async function syncBackend(
         signal,
         isRetriable: (error) =>
           error instanceof RetriableBackendError ||
+          isServiceUnavailableError(error) ||
           (isRetriableBackendError(error) &&
             !(error instanceof AuthSessionInvalidatedError) &&
             !isFirestoreQuotaExceededError(error) &&
-            !isServiceUnavailableError(error) &&
             !isInfrastructureError(error)),
         onRetry: (attempt, delayMs, error) => {
           logSafeWarn(`[AuthProvider] Backend verify retry #${attempt} in ${delayMs}ms`, error)
