@@ -30,6 +30,14 @@ const ORG_FIELD_TYPES = new Set([
 
 const dryRun = process.argv.includes("--dry-run");
 
+/** Firestore often stores "" for unset UUID FKs; Postgres uuid columns need null. */
+function uuidOrNull(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * @param {string} sql
  * @param {unknown[]} params
@@ -52,8 +60,8 @@ async function migrateRoles(db) {
         d.name,
         d.description ?? null,
         d.created_at?.toDate?.() ?? new Date(),
-        d.created_by ?? null,
-        d.updated_by ?? null,
+        uuidOrNull(d.created_by),
+        uuidOrNull(d.updated_by),
       ],
     );
   }
@@ -79,8 +87,8 @@ async function migrateLookupCollection(db, firestoreCollection, category) {
         d.name,
         d.list_ranking ?? null,
         d.created_at?.toDate?.() ?? new Date(),
-        d.created_by ?? null,
-        d.updated_by ?? null,
+        uuidOrNull(d.created_by),
+        uuidOrNull(d.updated_by),
       ],
     );
   }
