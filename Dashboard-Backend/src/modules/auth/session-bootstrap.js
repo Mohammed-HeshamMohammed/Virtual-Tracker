@@ -83,11 +83,12 @@ export async function handleSessionBootstrap(req, res, origin, url) {
     let memberBootstrapSkipped = undefined;
     let memberData = null;
 
-    try {
+    const bootstrapMemberSession = async () => {
       profile = await upsertProfileFromUserRecord(db, userRecord);
       const memberBootstrap = await ensureMemberLinkedRecordsForUserRecord(db, userRecord);
       memberId = memberBootstrap.memberId;
       memberBootstrapSkipped = memberBootstrap.skipped;
+      memberData = null;
       const profileMustChange =
         profile &&
         typeof profile === "object" &&
@@ -107,12 +108,10 @@ export async function handleSessionBootstrap(req, res, origin, url) {
             requestIp: getRequestIp(req),
           });
           if (!gov.ok) {
-            sendJson(res, origin, gov.status, {
-              success: false,
-              error: gov.error,
-              code: gov.code,
-            });
-            return true;
+            const gateErr = new Error(gov.error || "Access restricted");
+            gateErr.status = gov.status;
+            gateErr.code = gov.code;
+            throw gateErr;
           }
         }
 
@@ -128,7 +127,32 @@ export async function handleSessionBootstrap(req, res, origin, url) {
           logSafeWarn("[session-bootstrap] failed to notify team of first login:", notifyErr);
         }
       }
+    };
+
+    try {
+      try {
+        await bootstrapMemberSession();
+      } catch (firstErr) {
+        if (firstErr && typeof firstErr === "object" && "status" in firstErr) {
+          throw firstErr;
+        }
+        logSafeWarn("[session-bootstrap] bootstrap attempt 1 failed, retrying:", firstErr);
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        profile = null;
+        memberId = undefined;
+        memberBootstrapSkipped = undefined;
+        memberData = null;
+        await bootstrapMemberSession();
+      }
     } catch (dbErr) {
+      if (dbErr && typeof dbErr === "object" && "status" in dbErr && "code" in dbErr) {
+        sendJson(res, origin, Number(dbErr.status) || 403, {
+          success: false,
+          error: dbErr instanceof Error ? dbErr.message : "Access restricted",
+          code: String(dbErr.code),
+        });
+        return true;
+      }
       logSafeWarn("[session-bootstrap] Firestore operations failed:", dbErr);
       const quota = quotaErrorHttpResponse(dbErr);
       if (quota) {

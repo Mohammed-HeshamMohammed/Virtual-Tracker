@@ -81,11 +81,6 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   }
 
   const needsBootstrapMarker = !(await hasBootstrapMarker(db, memberId));
-  if (needsBootstrapMarker) {
-    await db.collection("members").doc(memberId).update({
-      profile_linked_records_at: new Date(),
-    });
-  }
 
   const { org, member } = await ensureEntityDiagramForAuthUser(db, userRecord, {
     memberId,
@@ -103,6 +98,12 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
 
   await alignMemberRoleTables(db, memberId, userRecord.uid || "auth-bootstrap");
   await reconcileMemberNamesSafe(db, uid, memberId);
+
+  if (needsBootstrapMarker) {
+    await db.collection("members").doc(memberId).update({
+      profile_linked_records_at: new Date(),
+    });
+  }
 
   return { memberId, created, deduped: removed };
 }
