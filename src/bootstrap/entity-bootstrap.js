@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { logSafeWarn } from "../http/sanitize-error.js";
-import { isPostgresLookupReady } from "../lib/postgres/lookup-availability.js";
+import { isPostgresLookupReady, resetPostgresLookupReadyCache } from "../lib/postgres/lookup-availability.js";
 import {
   seedLookupTablePostgresIfEmpty,
   seedOrgFieldOptionsPostgresIfEmpty,
@@ -88,17 +88,26 @@ export async function ensureOrganizationEntities(db, actor = "system", options =
   await ensureDefaultRoles(db);
   created.push("roles");
 
+  let usedPostgresLookups = false;
   if (await isPostgresLookupReady()) {
-    for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
-      const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
-      created.push(...seeded);
-    }
+    try {
+      for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
+        const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
+        created.push(...seeded);
+      }
 
-    for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
-      const seeded = await seedOrgFieldOptionsPostgresIfEmpty(type, labels);
-      created.push(...seeded);
+      for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
+        const seeded = await seedOrgFieldOptionsPostgresIfEmpty(type, labels);
+        created.push(...seeded);
+      }
+      usedPostgresLookups = true;
+    } catch (err) {
+      logSafeWarn("[entity-bootstrap] Postgres lookup seed failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
     }
-  } else {
+  }
+
+  if (!usedPostgresLookups) {
     for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
       const seeded = await seedLookupTableIfEmpty(db, collection, names, actor);
       created.push(...seeded);
