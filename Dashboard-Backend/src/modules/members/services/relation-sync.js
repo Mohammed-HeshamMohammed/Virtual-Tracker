@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { COLLECTIONS } from "../../../lib/firestore/collections.js";
-import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
+import {
+  isPostgresLookupReady,
+  resetPostgresLookupReadyCache,
+} from "../../../lib/postgres/lookup-availability.js";
+import { logSafeWarn } from "../../../http/sanitize-error.js";
 import {
   ensureDefaultRolesPg,
   resolveRoleIdByNamePg,
@@ -25,7 +29,14 @@ const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manage
  */
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
-  if (await isPostgresLookupReady()) return resolveRoleNameByIdPg(roleId);
+  if (await isPostgresLookupReady()) {
+    try {
+      return await resolveRoleNameByIdPg(roleId);
+    } catch (err) {
+      logSafeWarn("[relation-sync] Postgres resolveRoleNameById failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
+    }
+  }
   const doc = await db.collection("roles").doc(roleId).get();
   if (!doc.exists) return "";
   const name = doc.data()?.name;
@@ -34,7 +45,14 @@ export async function resolveRoleNameById(db, roleId) {
 
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
-  if (await isPostgresLookupReady()) return resolveRoleIdByNamePg(name);
+  if (await isPostgresLookupReady()) {
+    try {
+      return await resolveRoleIdByNamePg(name);
+    } catch (err) {
+      logSafeWarn("[relation-sync] Postgres resolveRoleIdByName failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
+    }
+  }
   const exact = await db.collection("roles").where("name", "==", name).limit(1).get();
   if (!exact.empty) return exact.docs[0].id;
 
@@ -61,8 +79,13 @@ export async function resolveRoleIdByName(db, roleName) {
  */
 export async function ensureDefaultRoles(db) {
   if (await isPostgresLookupReady()) {
-    await ensureDefaultRolesPg(DEFAULT_ROLES);
-    return;
+    try {
+      await ensureDefaultRolesPg(DEFAULT_ROLES);
+      return;
+    } catch (err) {
+      logSafeWarn("[relation-sync] Postgres ensureDefaultRoles failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
+    }
   }
   const snap = await db.collection("roles").limit(100).get();
   const existing = new Set(
