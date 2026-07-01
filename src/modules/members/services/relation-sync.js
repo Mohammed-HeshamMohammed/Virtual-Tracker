@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { COLLECTIONS } from "../../../lib/firestore/collections.js";
+import { isPostgresConfigured } from "../../../lib/postgres/client.js";
+import {
+  ensureDefaultRolesPg,
+  resolveRoleIdByNamePg,
+  resolveRoleNameByIdPg,
+} from "../../../lib/postgres/lookup-postgres.service.js";
+import { getLookupData } from "../../../lib/postgres/lookup-cache.js";
 import { deactivationGovernanceForRole } from "../../../http/role-hierarchy.js";
 import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
@@ -18,6 +25,7 @@ const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manage
  */
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
+  if (isPostgresConfigured()) return resolveRoleNameByIdPg(roleId);
   const doc = await db.collection("roles").doc(roleId).get();
   if (!doc.exists) return "";
   const name = doc.data()?.name;
@@ -26,6 +34,7 @@ export async function resolveRoleNameById(db, roleId) {
 
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
+  if (isPostgresConfigured()) return resolveRoleIdByNamePg(name);
   const exact = await db.collection("roles").where("name", "==", name).limit(1).get();
   if (!exact.empty) return exact.docs[0].id;
 
@@ -51,6 +60,10 @@ export async function resolveRoleIdByName(db, roleName) {
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function ensureDefaultRoles(db) {
+  if (isPostgresConfigured()) {
+    await ensureDefaultRolesPg(DEFAULT_ROLES);
+    return;
+  }
   const snap = await db.collection("roles").limit(100).get();
   const existing = new Set(
     snap.docs
@@ -105,6 +118,12 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 async function loadRoleNameById(db) {
+  if (isPostgresConfigured()) {
+    const data = await getLookupData();
+    return new Map(
+      data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
+    );
+  }
   const snap = await db.collection("roles").limit(100).get();
   return new Map(
     snap.docs.map((doc) => {

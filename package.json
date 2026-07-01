@@ -22,6 +22,7 @@
     "migrate:phone-verification": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-phone-verification.mjs",
     "migrate:client-budget-start-date": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-client-budget-start-date.mjs",
     "migrate:to-postgres": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-to-postgres.mjs",
+    "migrate:lookups-to-postgres": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-lookups-to-postgres.mjs",
     "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
     "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
   },
