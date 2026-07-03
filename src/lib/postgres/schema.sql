@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
   billable     BOOLEAN     NOT NULL DEFAULT false,
   status       VARCHAR(20) NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_by   UUID,
-  updated_by   UUID,
+  created_by   VARCHAR(255),
+  updated_by   VARCHAR(255),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS timesheets (
   billable_hours  NUMERIC(8,2),
   submitted_at    TIMESTAMPTZ,
   approved_at     TIMESTAMPTZ,
-  approved_by     UUID,
+  approved_by     VARCHAR(255),
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_timesheet_member_period UNIQUE (member_id, period_start, period_end)
@@ -75,13 +75,13 @@ CREATE TRIGGER trg_timesheets_updated_at
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS roles (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        VARCHAR(60) NOT NULL UNIQUE,
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name        VARCHAR(60)  NOT NULL UNIQUE,
   description TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_by  UUID,
-  updated_by  UUID,
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  created_by  VARCHAR(255),
+  updated_by  VARCHAR(255),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name);
@@ -94,8 +94,8 @@ CREATE TABLE IF NOT EXISTS lookup_tables (
   name         VARCHAR(120) NOT NULL,
   list_ranking VARCHAR(20),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_by   UUID,
-  updated_by   UUID,
+  created_by   VARCHAR(255),
+  updated_by   VARCHAR(255),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_lookup_category_name UNIQUE (category, name)
 );

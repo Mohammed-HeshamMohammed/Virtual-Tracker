@@ -2,15 +2,16 @@ import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getLookupData, invalidateLookupCache } from "./lookup-cache.js";
 
-function uuidOrNull(value) {
+/**
+ * Actor-id columns (created_by/updated_by) store either an internal member UUID or a
+ * Firebase Auth uid (28-char alphanumeric) — both are valid VARCHAR(255) values.
+ */
+function actorIdOrNull(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
-    return null;
-  }
-  return trimmed;
+  return trimmed.slice(0, 255);
 }
 
 export const LOOKUP_POSTGRES_ENTITY_KEYS = new Set([
@@ -127,35 +128,46 @@ export async function createLookupPostgresRow(entityKey, payload) {
     const rows = await query(
       `INSERT INTO roles (id, name, description, created_by, updated_by)
        VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (name) DO NOTHING
        RETURNING ${ROLE_COLUMNS.join(", ")}`,
       [
         payload.id,
         payload.name,
         payload.description ?? null,
-        uuidOrNull(payload.created_by),
-        uuidOrNull(payload.updated_by),
+        actorIdOrNull(payload.created_by),
+        actorIdOrNull(payload.updated_by),
       ],
     );
     invalidateLookupCache();
-    return normalizeLookupRow(rows[0]);
+    if (rows[0]) return normalizeLookupRow(rows[0]);
+    // Another concurrent request already seeded this role name — return it instead of erroring.
+    const existing = await query(`SELECT ${ROLE_COLUMNS.join(", ")} FROM roles WHERE name = $1 LIMIT 1`, [payload.name]);
+    return existing[0] ? normalizeLookupRow(existing[0]) : null;
   }
 
   const category = LOOKUP_ENTITY_CATEGORY[entityKey];
   const rows = await query(
     `INSERT INTO lookup_tables (id, category, name, list_ranking, created_by, updated_by)
      VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (category, name) DO NOTHING
      RETURNING ${LOOKUP_COLUMNS.join(", ")}`,
     [
       payload.id,
       category,
       payload.name,
       payload.list_ranking ?? null,
-      uuidOrNull(payload.created_by),
-      uuidOrNull(payload.updated_by),
+      actorIdOrNull(payload.created_by),
+      actorIdOrNull(payload.updated_by),
     ],
   );
   invalidateLookupCache();
-  return normalizeLookupRow(rows[0]);
+  if (rows[0]) return normalizeLookupRow(rows[0]);
+  // Another concurrent request already seeded this category/name — return it instead of erroring.
+  const existing = await query(
+    `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE category = $1 AND name = $2 LIMIT 1`,
+    [category, payload.name],
+  );
+  return existing[0] ? normalizeLookupRow(existing[0]) : null;
 }
 
 /**

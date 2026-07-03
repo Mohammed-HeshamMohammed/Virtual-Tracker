@@ -52,8 +52,8 @@ CREATE TABLE time_entries (
   billable     BOOLEAN     NOT NULL DEFAULT false,
   status       VARCHAR(20) NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending', 'approved', 'rejected')),
-  created_by   UUID,
-  updated_by   UUID,
+  created_by   VARCHAR(255), -- member uuid or Firebase Auth uid
+  updated_by   VARCHAR(255),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -87,7 +87,7 @@ CREATE TABLE timesheets (
   billable_hours  NUMERIC(8,2),
   submitted_at    TIMESTAMPTZ,
   approved_at     TIMESTAMPTZ,
-  approved_by     UUID,
+  approved_by     VARCHAR(255), -- member uuid or Firebase Auth uid
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
 
