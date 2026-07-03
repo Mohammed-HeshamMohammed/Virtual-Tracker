@@ -31,7 +31,7 @@ const ORG_FIELD_TYPES = new Set([
 
 const dryRun = process.argv.includes("--dry-run");
 
-/** Firestore stores "" or Firebase Auth uids in uuid FK columns; Postgres needs null or a real uuid. */
+/** Firestore doc ids and row ids need to be a real Postgres uuid for the primary key. */
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return null;
@@ -41,6 +41,14 @@ function uuidOrNull(value) {
     return null;
   }
   return trimmed;
+}
+
+/** created_by/updated_by are VARCHAR(255) — store the member uuid or Firebase Auth uid as-is. */
+function actorIdOrNull(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 255) : null;
 }
 
 /** Firestore auto-ids are not UUIDs; derive a stable Postgres uuid from the doc id. */
@@ -83,8 +91,8 @@ async function migrateRoles(db) {
         d.name,
         d.description ?? null,
         d.created_at?.toDate?.() ?? new Date(),
-        uuidOrNull(d.created_by),
-        uuidOrNull(d.updated_by),
+        actorIdOrNull(d.created_by),
+        actorIdOrNull(d.updated_by),
       ],
     );
   }
@@ -115,8 +123,8 @@ async function migrateLookupCollection(db, firestoreCollection, category) {
         d.name,
         d.list_ranking ?? null,
         d.created_at?.toDate?.() ?? new Date(),
-        uuidOrNull(d.created_by),
-        uuidOrNull(d.updated_by),
+        actorIdOrNull(d.created_by),
+        actorIdOrNull(d.updated_by),
       ],
     );
   }
