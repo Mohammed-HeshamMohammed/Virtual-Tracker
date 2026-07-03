@@ -126,6 +126,8 @@ export async function handleRequest(req, res) {
         JSON.stringify({
           success: false,
           error: "Too many requests. Please try again later.",
+          code: "RATE_LIMITED",
+          retryAfterSec: rateLimited.retryAfterSec,
         }),
       );
       return;
@@ -160,6 +162,8 @@ export async function handleRequest(req, res) {
         JSON.stringify({
           success: false,
           error: "Too many requests. Please try again later.",
+          code: "RATE_LIMITED",
+          retryAfterSec: rateLimited.retryAfterSec,
         }),
       );
       return;
