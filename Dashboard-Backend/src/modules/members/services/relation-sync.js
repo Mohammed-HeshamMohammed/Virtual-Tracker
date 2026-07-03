@@ -431,15 +431,26 @@ export async function cascadeDeleteMemberRelations(db, memberId) {
  */
 export async function enrichMembersWithRoleNames(db, members) {
   if (!members.length) return members;
-  const [rolesSnap] = await Promise.all([
-    db.collection("roles").limit(100).get(),
-  ]);
-  const roleNameById = new Map(
-    rolesSnap.docs.map((doc) => {
+  const roleNameById = new Map();
+  if (await isPostgresLookupReady()) {
+    try {
+      const { roles } = await getLookupData();
+      for (const row of roles) {
+        const name = typeof row.name === "string" ? row.name.trim() : "";
+        if (row.id != null) roleNameById.set(String(row.id), name);
+      }
+    } catch (err) {
+      logSafeWarn("[relation-sync] Postgres enrichMembersWithRoleNames failed; using Firestore:", err);
+      resetPostgresLookupReadyCache();
+    }
+  }
+  if (roleNameById.size === 0) {
+    const rolesSnap = await db.collection("roles").limit(100).get();
+    for (const doc of rolesSnap.docs) {
       const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-    }),
-  );
+      roleNameById.set(doc.id, typeof row.name === "string" ? row.name.trim() : "");
+    }
+  }
   return members.map((member) => {
     const { name, roleId } = pickCanonicalPrimaryRoleName(member, [], roleNameById);
     return {

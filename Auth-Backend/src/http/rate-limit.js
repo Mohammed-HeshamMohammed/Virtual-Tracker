@@ -7,7 +7,10 @@ const buckets = new Map();
 
 const WINDOW_MS = 60_000;
 const DEFAULT_LIMIT = 120;
-const AUTH_LIMIT = 25;
+// One IP/NAT can host several legitimate concurrent sessions (2 browsers, a phone,
+// a housemate) — each sign-in plus periodic session-role sync easily adds up to a
+// handful of requests per session, so 25/min was tight enough to false-positive.
+const AUTH_LIMIT = 60;
 const VALIDATE_PASSWORD_LIMIT = 40;
 const PUBLIC_INVITE_LIMIT = 15;
 const PRESENCE_LIMIT = 30;

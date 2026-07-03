@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState as useComponentState, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Check, Download, Network, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
+import { AlertCircle, Check, Download, Network, RefreshCw, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
 import { useTheme } from "@/shared/providers/app"
@@ -27,6 +27,7 @@ import { AddMembersModal, OnboardingModal, formatAddMembersPending, formatAddMem
 import { RecruitMemberModal } from "@/features/members/components/modals/recruit-member-modal"
 import { NotifyToastHost } from "@/shared/ui/layout"
 import type { NotifyAlertTone } from "@/shared/ui/alert-notify"
+import { DashboardStatusContent } from "@/shared/ui/errors/dashboard-status-content"
 import { MembersTab, InvitesTab } from "@/features/members/components/tables"
 import { BatchActionsDropdown } from "@/features/members/components/menus"
 import { BatchEditModal, type BatchEditAction } from "@/features/members/components/modals/batch-edit-modal"
@@ -142,6 +143,7 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     setMembers,
     isLoading: membersLoading,
     loadingCols,
+    error: membersError,
     requestedFields: membersListFields,
     refetch: refetchMembersList,
   } = useMembersListData({
@@ -757,6 +759,19 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 fillHeight
               />
             )
+          ) : activeTab === "members" && membersError && members.length === 0 ? (
+            <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center p-6">
+              <DashboardStatusContent
+                isDark={isDark}
+                icon={AlertCircle}
+                iconTone="warning"
+                title="Couldn't load members"
+                description={membersError}
+                primaryLabel="Retry"
+                primaryIcon={RefreshCw}
+                onPrimary={() => void refetchMembersList({ forceRefetch: true, showLoading: true })}
+              />
+            </div>
           ) : activeTab === "members" ? (
             <div className="flex h-full min-h-0 flex-1 flex-col">
               <MembersTab
