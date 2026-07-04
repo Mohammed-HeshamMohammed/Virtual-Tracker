@@ -1,7 +1,4 @@
-/**
- * Production build — local and Docker/Coolify.
- * Clears NODE_ENV / NPM_CONFIG_PRODUCTION so Next.js owns the build environment.
- */
+// Production build — clears NODE_ENV so Next owns the build env.
 import { spawnSync } from "node:child_process"
 import { cpSync, existsSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -26,10 +23,7 @@ if (result.status !== 0) {
   process.exit(result.status ?? 1)
 }
 
-// Next.js standalone output does not include static assets or the public
-// folder. When started via `node index.js` (Nixpacks/Coolify path, no
-// Dockerfile), server.js serves from .next/standalone, so these must live
-// there or every /_next/static chunk 404s -> ChunkLoadError in the browser.
+// Standalone output omits static/public — copy them in for Nixpacks/Coolify (node index.js).
 const standaloneDir = path.join(root, ".next", "standalone")
 if (existsSync(standaloneDir)) {
   const staticSrc = path.join(root, ".next", "static")

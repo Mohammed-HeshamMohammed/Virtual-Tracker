@@ -1,11 +1,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
 
-/**
- * Mints a shared, httpOnly session cookie (scoped to the parent domain) so the
- * landing page can show an avatar instead of "Sign in" for a user who's
- * already signed into the dashboard. Best-effort — the dashboard's own
- * Bearer-token auth is unaffected either way.
- */
+/** Shared httpOnly session cookie for landing↔dashboard avatar hint (best-effort). */
 export async function syncSharedSessionCookie(): Promise<void> {
   try {
     await apiFetch("/api/auth/session-cookie", { method: "POST", credentials: "include" })

@@ -28,10 +28,7 @@ export function formatPasswordResetError(err: unknown): string {
   return "Something went wrong. Please try again later."
 }
 
-/**
- * Sends Firebase Authentication's built-in password reset email.
- * Does not reveal whether the email is registered (enumeration-safe).
- */
+/** Firebase password reset email — enumeration-safe (same response either way). */
 export async function sendFirebasePasswordResetEmail(email: string): Promise<void> {
   if (typeof window === "undefined") {
     throw new Error("Password reset is only available in the browser.")

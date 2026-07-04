@@ -1,7 +1,4 @@
-/**
- * Safe, non-secret configuration snapshot for logs, health checks, and debugging.
- * Never log {@link getEnv} directly — secrets live in firebase.admin, monitor, and INTERNAL_SERVICE_SECRET.
- */
+/** Non-secret env snapshot for logs/health. Don't log getEnv() — it has secrets. */
 
 /**
  * @param {import("./env.js").AppEnv} config

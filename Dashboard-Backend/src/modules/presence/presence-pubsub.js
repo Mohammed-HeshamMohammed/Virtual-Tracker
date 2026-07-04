@@ -44,9 +44,7 @@ export async function publishPresenceChange(message) {
 }
 
 /**
- * Subscribe to presence changes (Redis when configured, else Firebase RTD,
- * always the local bus for same-process listeners).
- *
+ * Subscribe to presence changes (Redis, RTD, or local bus).
  * @param {(message: PresenceChangeMessage) => void} handler
  * @returns {() => void}
  */

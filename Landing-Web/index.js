@@ -28,9 +28,7 @@ Landing-Web listening${port ? ` on http://localhost:${port}` : ""}
 
 console.log(box.trim());
 
-// Docker auto-sets HOSTNAME to the container ID, which Next's standalone server
-// would bind to literally — making the app unreachable on localhost/127.0.0.1
-// (breaks healthchecks). Bind to all interfaces unless HOST is explicitly set.
+// Docker sets HOSTNAME to the container ID — bind 0.0.0.0 unless HOST is set.
 const spawnEnv = {
   ...process.env,
   NODE_ENV: "production",

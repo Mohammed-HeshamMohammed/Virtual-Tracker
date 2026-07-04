@@ -1,8 +1,4 @@
-/**
- * Connection lifecycle bridge between WebSocket gateway and PresenceService.
- *
- * @param {ReturnType<import("./presence-service.js").createPresenceService>} presenceService
- */
+/** WS connection lifecycle → PresenceService register/unregister. */
 export function createPresenceManager(presenceService) {
   return {
     /**

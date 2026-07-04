@@ -8,7 +8,7 @@ import { alignMemberRoleTables, syncMemberPrimaryRole } from "./relation-sync.js
 const ASSIGNMENT_COLLECTIONS = ["team_members", "project_members"];
 
 /**
- * Delete all rows in a collection where member_id matches.
+ * Delete rows where member_id matches (batched).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} collection
  * @param {string} memberId
@@ -29,7 +29,7 @@ async function deleteRowsByMemberId(db, collection, memberId) {
 }
 
 /**
- * Clear task assignee for tasks assigned to this member.
+ * Clear assigned_to on this member's tasks.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} actorMemberId
@@ -57,9 +57,7 @@ async function unassignMemberFromTasks(db, memberId, actorMemberId) {
 }
 
 /**
- * Remove a member from the org tree: demote to Viewer, clear hierarchy, and disconnect assignments.
- * Does not delete the member account or disable authentication.
- *
+ * Remove from org tree: demote to Viewer, clear hierarchy + assignments. Account stays.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string; actorMemberId: string; actorRoleName: string }} input
  */

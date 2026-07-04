@@ -1,6 +1,4 @@
-/**
- * Detect Firestore / gRPC quota exhaustion from thrown errors.
- */
+// Firestore/gRPC quota exhaustion heuristics.
 
 export function isFirestoreQuotaError(err) {
   const msg = err instanceof Error ? err.message : String(err ?? "")

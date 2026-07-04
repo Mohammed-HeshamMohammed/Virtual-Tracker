@@ -1,8 +1,4 @@
-/**
- * Command Center aggregates — scoped to the authenticated viewer's role.
- * Owner: all projects in the database.
- * Super Admin / Admin / Super Manager / Manager: only projects they belong to.
- */
+// Command Center aggregates, scoped by viewer role.
 
 import {
   buildMemberMetaMap,

@@ -15,10 +15,7 @@ export type ResolveSignInMethodsResponse =
     }
   | { success: false; error: string; code?: string }
 
-/**
- * Uses the Backend (Firebase Admin) to read the same provider + identifier rows as in Firebase Auth,
- * then merges with the client SDK list (e.g. `emailLink`) where needed.
- */
+/** Sign-in methods from backend Admin + client SDK merge. */
 export async function resolveSignInMethodsFromApi(email: string): Promise<ResolveSignInMethodsResponse | null> {
   const trimmed = email.trim().toLowerCase()
   if (!trimmed) return null

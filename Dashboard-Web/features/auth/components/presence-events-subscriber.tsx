@@ -7,9 +7,7 @@ import {
   openPresenceEventStream,
 } from "@/features/auth/services/presence-events-sse"
 
-/**
- * Live presence fan-out for member lists (SSE backed by Firebase RTD when configured).
- */
+/** SSE presence updates for member lists. */
 export function PresenceEventsSubscriber() {
   const { isLoggedIn, sessionReady, profile } = useAuth()
 

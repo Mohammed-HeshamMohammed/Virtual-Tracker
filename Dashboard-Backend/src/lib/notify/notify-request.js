@@ -1,6 +1,4 @@
-/**
- * Shared HTTP client for internal Notify-Backend calls.
- */
+// HTTP client for Notify-Backend.
 import { getEnv } from "../../config/env.js";
 
 /**

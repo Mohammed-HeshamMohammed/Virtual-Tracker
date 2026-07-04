@@ -7,12 +7,7 @@ const MANAGER_RANK = rolePrivilegeRank("Manager");
 export const BATCH_MEMBER_ACTIONS_DENIED_MESSAGE =
   "Batch member actions require Manager or higher privileges.";
 
-/**
- * Batch member actions use the same management roles as row actions (Manager+).
- * Per-target scope and role policy are enforced separately via canManageMember.
- *
- * @param {string} roleName
- */
+/** Batch actions require Manager+ (per-target checks still apply). */
 export function canUseBatchMemberActions(roleName) {
   return rolePrivilegeRank(roleName) >= MANAGER_RANK;
 }

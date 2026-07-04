@@ -39,9 +39,7 @@ function teamStaffableFromScoped(result: ScopedHierarchyMembers): string[] {
   return result.team_staffable_members
 }
 
-/**
- * Backend-authoritative People scope: who you can see vs who you can manage.
- */
+/** People scope from backend — visible vs manageable member ids. */
 export function useMemberScope({
   canSeeAllMembers,
   currentMemberId,

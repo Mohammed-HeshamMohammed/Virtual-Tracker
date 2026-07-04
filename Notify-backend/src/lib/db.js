@@ -1,8 +1,4 @@
-/**
- * PostgreSQL client for Notify-Backend.
- * Used exclusively for delivery logging — not required for core send functionality.
- * If POSTGRES_URL is not configured, all calls are silent no-ops.
- */
+// Optional Postgres client for delivery logging only. No POSTGRES_URL → no-op.
 import pg from "pg";
 import { getEnv } from "../config/env.js";
 
@@ -25,14 +21,7 @@ function getPool() {
   return _pool;
 }
 
-/**
- * Run a query. Returns rows on success, null if DB is not configured or unavailable.
- * Never throws — delivery must not fail because the log is unreachable.
- *
- * @param {string} sql
- * @param {unknown[]} [params]
- * @returns {Promise<Record<string, unknown>[] | null>}
- */
+/** SQL query — never throws. @param {string} sql @param {unknown[]} [params] @returns {Promise<Record<string, unknown>[] | null>} */
 export async function dbQuery(sql, params = []) {
   const pool = getPool();
   if (!pool) return null;
@@ -50,10 +39,7 @@ export async function dbQuery(sql, params = []) {
   }
 }
 
-/**
- * Verify DB connectivity at startup. Returns true if reachable.
- * @returns {Promise<boolean>}
- */
+/** Startup DB ping. */
 export async function verifyDbConnectivity() {
   const pool = getPool();
   if (!pool) return false;

@@ -79,10 +79,7 @@ function purgeSoftBrowserCaches(): void {
   touchPurgeTimestamp()
 }
 
-/**
- * Hard purge: sign out Firebase, reset client SDK, clear app storage (theme kept).
- * Silent — no UI messaging.
- */
+/** Full sign-out purge — Firebase reset + clear app storage (keeps theme). */
 async function purgeHardBrowserState(): Promise<void> {
   clearAllListCaches()
   clearVtSessionStorage()
@@ -102,15 +99,7 @@ export function markAuthProjectBound(projectId: string): void {
   localStorage.setItem(VT_FIREBASE_PROJECT_ID, projectId)
 }
 
-/**
- * Cache / tab hygiene AFTER Firebase finishes handling redirect / email-link completion.
- *
- * Important: Never call {@link purgeHardBrowserState} here on cold start — clearing
- * localStorage/sessionStorage keys that contain `"firebase"` can wipe the pending OAuth
- * redirect handshake *before* `getRedirectResult` runs, causing Google sign-in to appear
- * to "do nothing". Project switches are handled by `initFirebase` + token verify failures;
- * aligning `VT_FIREBASE_PROJECT_ID` is enough for UX on backend project changes.
- */
+/** Post redirect/email-link hygiene — do NOT purge firebase keys on cold start. */
 export function runPostAuthRedirectHygiene(config: FirebaseOptions): void {
   if (typeof window === "undefined") return
 

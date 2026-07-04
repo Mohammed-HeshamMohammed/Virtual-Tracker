@@ -24,9 +24,7 @@ async function shouldSkipRegistrationWelcome(db, uid) {
 }
 
 /**
- * Sends a one-time welcome email after the user's email address is verified.
- * Idempotent via `registrationWelcomeEmailSentAt` on User_profiles.
- *
+ * One-time welcome email after email verification. Deduped by registrationWelcomeEmailSentAt.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/auth").Auth} auth
  * @param {{ uid?: string; email?: string }} input

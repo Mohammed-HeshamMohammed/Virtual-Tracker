@@ -1,7 +1,4 @@
-/**
- * Sliding-window rate limiter (per client IP + route bucket).
- * In-memory per process — suitable for single-instance dev and small deployments.
- */
+/** In-memory rate limiter (per IP + route). Fine for dev / single instance. */
 
 const buckets = new Map();
 
@@ -42,10 +39,7 @@ function clientKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
-/**
- * Local dev server — do not throttle loopback traffic.
- * @param {import("node:http").IncomingMessage} req
- */
+/** Skip rate limits for loopback. */
 function isLocalClient(req) {
   const addr = clientKey(req);
   return (

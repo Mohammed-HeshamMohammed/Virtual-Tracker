@@ -4,10 +4,7 @@ import { isPostgresConfigured, query } from "./client.js";
 /** @type {boolean | undefined} */
 let lookupReady;
 
-/**
- * True when POSTGRES_URL is set and lookup tables (roles) are reachable.
- * Falls back to Firestore when tables are missing, still seeding, or unreachable.
- */
+/** Cached check: POSTGRES_URL + roles table reachable. Falls back to Firestore otherwise. */
 export async function isPostgresLookupReady() {
   if (!isPostgresConfigured()) return false;
   if (lookupReady === true) return true;

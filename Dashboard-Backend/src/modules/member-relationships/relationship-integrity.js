@@ -1,7 +1,4 @@
-/**
- * Single source of truth for member relationship tree integrity rules.
- * Backend authority for hierarchy validation and repair planning (Engineering Constitution §4, §5).
- */
+// Hierarchy edge validation rules and repair planning.
 
 export const INVALID_EDGE_REASON = {
   SELF_LOOP: "self_loop",
@@ -188,9 +185,7 @@ export function validateNewRelationshipWithRoles(
 }
 
 /**
- * Plan removal of Owner-under-Owner edges so the nested Owner becomes a separate root.
- * Descendant edges under the nested Owner are kept — the whole branch moves with them.
- *
+ * Drop Owner-under-Owner edges; nested Owner's subtree moves with them.
  * @param {Array<{ id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} rawEdges
  * @param {Map<string, string> | Record<string, string>} roleKeyByMemberId normalized role keys by member id
  */
@@ -214,12 +209,7 @@ export function planOwnerRootSeparationRepairs(rawEdges, roleKeyByMemberId) {
   return remove;
 }
 
-/**
- * Plan which stored relationship documents should be removed to restore a valid forest.
- * Keeps the oldest authoritative edge when conflicts exist.
- *
- * @param {Array<{ id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} rawEdges
- */
+/** Plan edge removals to restore a valid forest (oldest edge wins on conflict). */
 export function planRelationshipRepairs(rawEdges) {
   /** @type {Array<{ id: string, reason: string, edge: { id: string, parent_member_id: string, child_member_id: string, created_at?: unknown } }>} */
   const remove = [];

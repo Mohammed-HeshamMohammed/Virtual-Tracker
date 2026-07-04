@@ -1,12 +1,4 @@
-/**
- * Firebase Admin SDK initializer for Notify-Backend.
- * Only used for FCM push notifications — no Firestore access.
- *
- * Credential resolution order:
- *   1. FIREBASE_SERVICE_ACCOUNT (single-line JSON string)
- *   2. GOOGLE_APPLICATION_CREDENTIALS (path to service account file)
- *   3. Application Default Credentials (GCP only)
- */
+// Firebase Admin for FCM only (no Firestore). Credentials: FIREBASE_SERVICE_ACCOUNT → GOOGLE_APPLICATION_CREDENTIALS → ADC.
 import { getEnv } from "./env.js";
 
 /** @type {import("firebase-admin").app.App | null} */
@@ -19,11 +11,7 @@ export function getFirebaseApp() {
   return _app;
 }
 
-/**
- * Initializes Firebase Admin SDK for FCM. Call once at startup.
- * Returns null (with a warning) when no credentials are configured.
- * @returns {Promise<boolean>} true if initialized successfully
- */
+/** Init Firebase Admin for FCM. Returns null + warning if credentials missing. */
 export async function initFirebaseAdmin() {
   if (_app) return true;
 
@@ -42,7 +30,7 @@ export async function initFirebaseAdmin() {
   const { firebase: fb } = getEnv();
   let credential = null;
 
-  // Option 1 — FIREBASE_SERVICE_ACCOUNT JSON string
+  // FIREBASE_SERVICE_ACCOUNT JSON, else GOOGLE_APPLICATION_CREDENTIALS / ADC
   if (fb.serviceAccount) {
     try {
       const parsed = JSON.parse(fb.serviceAccount);
@@ -51,7 +39,6 @@ export async function initFirebaseAdmin() {
       throw new Error(`[firebase] FIREBASE_SERVICE_ACCOUNT is not valid JSON: ${err.message}`);
     }
   }
-  // Option 2 — GOOGLE_APPLICATION_CREDENTIALS path or ADC
   if (!credential) {
     credential = admin.applicationDefault();
   }

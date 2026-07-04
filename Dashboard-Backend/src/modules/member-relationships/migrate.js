@@ -3,11 +3,7 @@ import { logSafeError } from "../../http/sanitize-error.js";
 import { clearAllMemberTreeCachePg } from "../../lib/postgres/member-data-postgres.service.js";
 import { recordMemberRelationship, updateTreeCache } from "./service.js";
 
-/**
- * Check if member_relationships collection needs to be initialized
- * and auto-create relationships for existing members.
- * Stateless: just checks if relationships exist and creates if not.
- */
+/** Seed member_relationships from existing members if the collection is empty. */
 export async function initializeMemberRelationships() {
   const db = getDb();
   if (!db) {

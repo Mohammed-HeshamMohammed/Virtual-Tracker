@@ -1,9 +1,6 @@
 const LOCALHOST_ALIASES = new Set(["127.0.0.1", "[::1]", "0.0.0.0"])
 
-/**
- * URL Firebase redirects to after email-link sign-in or password reset.
- * Must match a domain under Firebase Console → Authentication → Settings → Authorized domains.
- */
+/** Firebase redirect URL after email-link / password reset (must be authorized domain). */
 export function getFirebaseAuthContinueUrl(): string {
   const configured =
     process.env.NEXT_PUBLIC_AUTH_CONTINUE_URL?.trim() ||

@@ -53,17 +53,7 @@ export function isLightProfilePatch(body) {
   return sections[0] === "roles" || sections[0] === "payBill" || sections[0] === "workLimits" || sections[0] === "settings";
 }
 
-/**
- * Sync primary role + hierarchy side effects in one path (no duplicate reads in callers).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{
- *   memberId: string;
- *   roleName: string;
- *   actorMemberId?: string;
- *   actorRoleName?: string;
- * }} input
- */
+/** Role change: sync primary role + hierarchy side effects. */
 export async function applyMemberRoleChange(db, input) {
   const memberId = input.memberId;
   const trimmed = typeof input.roleName === "string" ? input.roleName.trim() : "";

@@ -146,13 +146,7 @@ async function markBudgetNotificationSent(db, clientId, periodKey, notifyAtPct, 
   );
 }
 
-/**
- * Evaluate client budget usage and emit in-app notifications when the notify threshold is crossed.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} clientId
- * @param {{ asOf?: Date }} [options]
- */
+/** Notify when client budget crosses threshold. */
 export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) {
   const clientDoc = await db.collection("clients").doc(clientId).get();
   if (!clientDoc.exists) return { skipped: "client_not_found" };
@@ -201,12 +195,7 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
   return { sent: recipients.length, evaluation };
 }
 
-/**
- * When billable time changes on a project, check all linked client budgets.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- */
+/** Check linked client budgets after billable time changes on a project. */
 export async function maybeNotifyClientBudgetsForProject(db, projectId) {
   if (!projectId) return [];
 

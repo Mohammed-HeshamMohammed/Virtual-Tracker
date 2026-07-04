@@ -1,7 +1,4 @@
-/**
- * Phone routes — POST /api/notify/phone/validate
- * Internal-only; validates numbers with libphonenumber-js.
- */
+// POST /api/notify/phone/validate — libphonenumber-js, internal only.
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { validatePhoneNumber } from "./phone-validation.service.js";

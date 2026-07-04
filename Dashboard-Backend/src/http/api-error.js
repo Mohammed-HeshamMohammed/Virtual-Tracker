@@ -18,12 +18,7 @@ export function inferErrorCode(status, message = "") {
   return "REQUEST_FAILED";
 }
 
-/**
- * Attach `errorDetail` to legacy `{ success: false, error: string }` payloads.
- *
- * @param {number} status
- * @param {unknown} payload
- */
+/** Add errorDetail to legacy `{ success: false, error }` responses. */
 export function enrichErrorPayload(status, payload) {
   if (!payload || typeof payload !== "object" || /** @type {{ success?: boolean }} */ (payload).success !== false) {
     return payload;
@@ -40,16 +35,7 @@ export function enrichErrorPayload(status, payload) {
   };
 }
 
-/**
- * Standard API error envelope (backward compatible: `error` string remains).
- *
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {number} status
- * @param {string} code
- * @param {string} message
- * @param {import("node:http").IncomingMessage} [req]
- */
+/** Standard error envelope — keeps top-level `error` string for old clients. */
 export function sendApiError(res, origin, status, code, message, req) {
   sendJson(
     res,

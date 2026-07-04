@@ -6,9 +6,7 @@ import {
 } from "./profile-image-resolve.js";
 
 /**
- * Builds the Firestore `User_profiles/{uid}` payload from Firebase Auth {@link import('firebase-admin/auth').UserRecord}.
- * One document per Auth UID; `identities` mirror Auth “provider identifier” rows (email / phone / federated uid per provider).
- *
+ * User_profiles payload from Auth user record.
  * @param {import('firebase-admin/auth').UserRecord} userRecord
  * @returns {object}
  */
@@ -40,13 +38,7 @@ export function buildProfilePayload(userRecord) {
   };
 }
 
-/**
- * Upserts `User_profiles/{uid}` (merge). Sets `createdAt` on first write only.
- *
- * @param {import('firebase-admin/firestore').Firestore} db
- * @param {import('firebase-admin/auth').UserRecord} userRecord
- * @returns {Promise<object>} Plain profile object (without FieldValue) suitable for JSON responses
- */
+/** Merge User_profiles/{uid}; set createdAt on first write. */
 export async function upsertProfileFromUserRecord(db, userRecord) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(userRecord.uid);
   const snap = await ref.get();
@@ -81,12 +73,7 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
   };
 }
 
-/**
- * Reads optional app-specific profile fields on `User_profiles/{uid}` (not sourced from Auth).
- *
- * @param {FirebaseFirestore.DocumentData | null | undefined} row
- * @returns {Record<string, unknown>}
- */
+/** App-specific User_profiles fields (not from Auth). */
 export function profileAppFieldsFromDoc(row) {
   if (!row || typeof row !== "object") return {};
   /** @type {Record<string, unknown>} */

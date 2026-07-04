@@ -20,10 +20,7 @@ function isPopupBlocked(err: unknown): boolean {
   return code === "auth/popup-blocked"
 }
 
-/**
- * Launcher / embedded shell: redirect in the host window (popups often open the system browser).
- * Normal browser tab: popup first (avoids fragile full-page redirect handshakes), redirect fallback when blocked.
- */
+/** Google sign-in — redirect in launcher; popup in browser tab. */
 export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
   const provider = googleProvider()
 

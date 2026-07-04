@@ -1,6 +1,4 @@
-/**
- * Auth — sign-in UI, agent linking, registration gate, session helpers.
- */
+// Auth UI — sign-in, agent link, registration gate, session helpers.
 
 export { default as AuthPage1 } from "@/features/auth/pages/login-page"
 export { AgentLinkFlow } from "@/features/auth/components/agent-link-flow"

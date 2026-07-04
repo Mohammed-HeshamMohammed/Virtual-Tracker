@@ -16,13 +16,7 @@ export function isOwnerRole(roleName) {
   return normalizeRoleKey(roleName) === "owner";
 }
 
-/**
- * Blocks any modification of an existing Owner role or assignment of Owner via API.
- *
- * @param {string} currentRoleName
- * @param {string} nextRoleName
- * @returns {string | null}
- */
+/** Block Owner role changes/assignments via API. */
 export function validateOwnerRoleChange(currentRoleName, nextRoleName) {
   const next = typeof nextRoleName === "string" ? nextRoleName.trim() : "";
   if (!next) return null;

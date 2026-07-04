@@ -85,13 +85,7 @@ export async function syncUserProfilePhoneForUid(db, uid, phone, options = {}) {
   );
 }
 
-/**
- * When profile names differ from the linked members row, prefer profile (user-edited) names.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} memberId
- */
+/** Prefer profile first/last over members row when they differ. */
 export async function reconcileMemberNamesFromProfile(db, uid, memberId) {
   const profileSnap = await db.collection(USER_PROFILES_COLLECTION).doc(uid).get();
   if (!profileSnap.exists) return;
@@ -119,14 +113,7 @@ export async function reconcileMemberNamesFromProfile(db, uid, memberId) {
   );
 }
 
-/**
- * Merges editable profile settings into Firestore and optionally updates Auth `displayName` from first + last.
- *
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {Record<string, unknown>} body
- */
+/** Merge profile settings + optional Auth displayName update. */
 export async function patchProfileSettings(auth, db, uid, body) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   /** @type {Record<string, unknown>} */

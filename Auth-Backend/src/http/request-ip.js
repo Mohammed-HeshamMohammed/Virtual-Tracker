@@ -1,9 +1,4 @@
-/**
- * Resolve the client IP from proxy headers or the socket.
- *
- * @param {import("node:http").IncomingMessage} req
- * @returns {string}
- */
+/** Client IP from X-Forwarded-For (first hop) or socket. */
 export function getRequestIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {

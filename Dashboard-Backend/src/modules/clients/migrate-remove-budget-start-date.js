@@ -4,11 +4,7 @@ import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-da
 
 const MARKER_DOC = "client_budget_start_date_removed";
 
-/**
- * Removes deprecated `start_date` / `startDate` from existing client budget documents.
- *
- * @returns {Promise<{ success: boolean; alreadyCompleted?: boolean; updated?: number; reason?: string }>}
- */
+/** One-off: strip deprecated start_date from client_budgets docs. */
 export async function removeClientBudgetStartDates() {
   const db = getDb();
   if (!db) {

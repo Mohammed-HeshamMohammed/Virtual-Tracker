@@ -64,9 +64,7 @@ async function getIdToken(): Promise<string | null> {
   return user.getIdToken()
 }
 
-/**
- * Connect authenticated presence WebSocket. Presence begins only after this connection succeeds.
- */
+/** Auth presence WS — online only after connect succeeds. */
 export async function connectPresenceWebSocket(): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {

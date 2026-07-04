@@ -1,19 +1,4 @@
-/**
- * /monitor route handler — secure admin monitoring dashboard.
- *
- * Endpoints:
- *   GET  /monitor          → redirect to /monitor/login or /monitor/dashboard
- *   GET  /monitor/login    → login page
- *   POST /monitor/login    → authenticate & create session
- *   GET  /monitor/logout   → destroy session & redirect to login
- *   GET  /monitor/dashboard → monitoring dashboard (requires session)
- *   GET  /monitor/api/metrics → JSON metrics (requires session)
- *   GET  /monitor/api/ping    → touch session / keep-alive (requires session)
- *
- * Credentials are set via env vars:
- *   MONITOR_USERNAME  (default: "admin")
- *   MONITOR_PASSWORD  (required — server refuses to expose dashboard if not set in prod)
- */
+// /monitor admin dashboard — login, session, metrics. MONITOR_USERNAME / MONITOR_PASSWORD in env.
 
 import crypto from "node:crypto";
 import { getEnv } from "../../config/env.js";

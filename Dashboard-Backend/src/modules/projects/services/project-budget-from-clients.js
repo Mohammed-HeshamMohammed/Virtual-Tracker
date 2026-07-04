@@ -33,12 +33,7 @@ async function countProjectMembers(db, projectId) {
   return Math.max(1, snap.size);
 }
 
-/**
- * Sum linked client budget caps for a single project.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- */
+/** Sum linked client budget caps for one project. */
 export async function aggregateProjectBudgetFromClients(db, projectId) {
   const linksSnap = await db.collection("client_projects").where("project_id", "==", projectId).limit(50).get();
   const clientIds = linksSnap.docs
@@ -67,12 +62,7 @@ export async function aggregateProjectBudgetFromClients(db, projectId) {
   };
 }
 
-/**
- * Upsert project budget cost (and baseline fields) from linked clients.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- */
+/** Upsert project_budgets cost from linked client budgets. */
 export async function syncProjectBudgetFromClients(db, projectId) {
   if (!projectId) return { skipped: "missing_project" };
 

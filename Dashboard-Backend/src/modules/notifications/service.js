@@ -10,12 +10,7 @@ import { COLLECTIONS } from "../../lib/firestore/collections.js";
  * @property {string} [link] - URL or path to navigate to when clicked
  */
 
-/**
- * Creates a notification in the database
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {NotificationPayload} payload
- * @returns {Promise<string>} The ID of the created notification
- */
+/** Insert in-app notification row. */
 export async function createNotification(db, payload) {
   if (!payload.recipient_id || !payload.title || !payload.message) {
     throw new Error("Missing required notification fields");
@@ -37,13 +32,7 @@ export async function createNotification(db, payload) {
   return id;
 }
 
-/**
- * Marks a notification as read
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} notificationId
- * @param {string} memberId - Validates ownership
- * @returns {Promise<boolean>}
- */
+/** Mark one notification read (checks recipient_id). */
 export async function markNotificationAsRead(db, notificationId, memberId) {
   const ref = db.collection(COLLECTIONS.notifications).doc(notificationId);
   const snap = await ref.get();
@@ -55,11 +44,7 @@ export async function markNotificationAsRead(db, notificationId, memberId) {
   return true;
 }
 
-/**
- * Marks all notifications as read for a user (processes every unread notification).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
+/** Mark all unread notifications read (batched). */
 export async function markAllNotificationsAsRead(db, memberId) {
   const BATCH_SIZE = 500;
 

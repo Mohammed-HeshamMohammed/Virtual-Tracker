@@ -1,6 +1,4 @@
-/**
- * Lean aggregates for Project Management Overview (minimal fields, server-side joins).
- */
+// Project overview aggregates — minimal fields, server-side joins.
 
 import { COLLECTIONS } from "../../../lib/firestore/collections.js";
 

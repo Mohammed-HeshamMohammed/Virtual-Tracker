@@ -17,10 +17,7 @@ import {
 import { canApproveDeactivationRequests } from "@/features/auth/permissions/role-hierarchy"
 import { canCreateTeams, hasManageEmployeeTeamsPrivilege } from "@/features/auth/permissions/team-member-assign-policy"
 
-/**
- * Centralized client-side permissions derived from auth context.
- * UI hints only — the backend enforces all security decisions.
- */
+/** UI permission hints from auth context (backend enforces). */
 export function usePermissions() {
   const { memberRole, currentMember } = useAuth()
   const role = memberRole ?? ""

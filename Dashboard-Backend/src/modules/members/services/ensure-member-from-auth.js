@@ -46,11 +46,7 @@ async function resolveMemberIdAfterCreateRace(db, uid, indexRef, error) {
 }
 
 /**
- * Ensures a `members` row exists for this Firebase user (e.g. Google / Apple / email sign-in)
- * so they appear in People › Members. Idempotent: safe on every verify.
- *
- * Skips when `pending_auth_members/{uid}` exists — pre-provisioned users get their row from {@link promotePendingMemberCore}.
- *
+ * Create a members row on first sign-in if missing. Skips pending_auth_members (pre-provision flow).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/auth").UserRecord} userRecord
  * @returns {Promise<{ created: boolean, memberId: string | null, linked: boolean, skipped?: string }>}

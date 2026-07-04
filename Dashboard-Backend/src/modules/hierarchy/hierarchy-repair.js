@@ -40,11 +40,7 @@ export async function resolveOrganizationRootMemberId(db) {
   return fallbackId;
 }
 
-/**
- * Find members with invalid hierarchy placement (orphan employees, etc.).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- */
+/** Members with invalid hierarchy placement (orphan employees, etc.). */
 export async function findOrphanHierarchyViolations(db) {
   const [membersSnap, relsSnap] = await Promise.all([
     db.collection("members").limit(2000).get(),
@@ -88,15 +84,7 @@ export async function findOrphanHierarchyViolations(db) {
   return violations;
 }
 
-/**
- * Repair orphan hierarchy members.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} [options]
- * @param {OrphanRepairStrategy} [options.strategy]
- * @param {boolean} [options.dryRun]
- * @param {string} [options.actorMemberId]
- */
+/** Fix orphan members — assign to org root or downgrade to Viewer. */
 export async function repairOrphanHierarchyMembers(db, options = {}) {
   const strategy = options.strategy === "downgrade_to_viewer" ? "downgrade_to_viewer" : "assign_to_owner";
   const dryRun = options.dryRun !== false;
@@ -203,12 +191,7 @@ let lastOrphanRepairAt = 0;
 let lastOwnerSeparationRepairAt = 0;
 const ORPHAN_REPAIR_COOLDOWN_MS = 5 * 60 * 1000;
 
-/**
- * Auto-repair orphan members when an admin loads the org tree (cooldown).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} actorMemberId
- */
+/** Auto-fix orphans on tree load (5m cooldown). */
 export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
   const now = Date.now();
   if (now - lastOrphanRepairAt < ORPHAN_REPAIR_COOLDOWN_MS) {
@@ -228,11 +211,7 @@ export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
   });
 }
 
-/**
- * Remove stale hierarchy edges involving Clients (external entities).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- */
+/** Drop hierarchy edges for Client/external roles. */
 export async function cleanupExternalEntityHierarchyEdges(db) {
   const { removeMemberHierarchyRelationships } = await import("../member-relationships/service.js");
   const membersSnap = await db.collection("members").limit(2000).get();
@@ -253,13 +232,7 @@ export async function cleanupExternalEntityHierarchyEdges(db) {
   return { removed_edges: removedEdges, members_cleaned: membersCleaned };
 }
 
-/**
- * Separate nested Owners from one another. Only the Owner→Owner edge is removed;
- * the nested Owner's subtree stays attached to them as a new top-level branch.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ dryRun?: boolean }} [options]
- */
+/** Split nested Owners — remove Owner→Owner edge only; subtree stays under nested Owner. */
 export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
   const dryRun = options.dryRun === true;
   const relsSnap = await db.collection("member_relationships").limit(4000).get();
@@ -311,11 +284,7 @@ export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
   };
 }
 
-/**
- * Auto-separate Owner-under-Owner edges when an admin loads the org tree (cooldown).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- */
+/** Auto-split Owner-under-Owner on tree load (5m cooldown). */
 export async function maybeSeparateOwnersOnTreeLoad(db) {
   const now = Date.now();
   if (now - lastOwnerSeparationRepairAt < ORPHAN_REPAIR_COOLDOWN_MS) {

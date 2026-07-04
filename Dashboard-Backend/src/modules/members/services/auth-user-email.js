@@ -1,8 +1,4 @@
-/**
- * Resolve a usable work email from Firebase Auth {@link import('firebase-admin/auth').UserRecord}.
- * @param {import('firebase-admin/auth').UserRecord} userRecord
- * @returns {string}
- */
+/** Work email from Auth user record (provider emails as fallback). */
 export function resolveEmailFromUserRecord(userRecord) {
   const direct = typeof userRecord.email === "string" ? userRecord.email.trim() : "";
   if (direct) return direct;

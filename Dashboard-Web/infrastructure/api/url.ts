@@ -60,19 +60,12 @@ export function resolveApiBaseUrlForPath(apiPath: string): string {
   return getDashboardApiBaseUrl();
 }
 
-/**
- * Dashboard-Backend base URL only — does not route Auth-Backend paths.
- * Prefer `apiPath("/api/...")` so auth vs dashboard hosts are chosen automatically.
- * @deprecated Use `apiPath()` for request URLs; use `getDashboardApiBaseUrl()` if you need the base alone.
- */
+/** Dashboard base URL only — prefer apiPath() for routing. @deprecated */
 export function getApiBaseUrl(): string {
   return getDashboardApiBaseUrl();
 }
 
-/**
- * Direct API URL in the browser (bypasses Next.js dev rewrites).
- * Split dev: dashboard port; unified: configured gateway.
- */
+/** Browser API URL (skips Next dev rewrites). */
 export function getDirectApiBaseUrl(): string {
   if (isUnifiedApiGatewayMode()) {
     return readGatewayUrl() ?? getDashboardApiBaseUrl();

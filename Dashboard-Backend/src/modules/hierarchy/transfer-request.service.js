@@ -78,8 +78,7 @@ async function getRequesterDisplayName(db, requesterMemberId) {
 }
 
 /**
- * Notify admin roles about hierarchy violations (batch helper).
- *
+ * Notify Owner/Admin/Super Admin about hierarchy issues.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} title
  * @param {string} message
@@ -116,8 +115,7 @@ export async function notifyAdminRoles(db, title, message, link = "") {
 }
 
 /**
- * Create a member transfer request.
- *
+ * Create transfer request + send invite email.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Object} params
  * @param {string} params.requesterMemberId
@@ -241,8 +239,7 @@ export async function createMemberTransferRequest(db, {
 }
 
 /**
- * Accept a transfer request by token. Validates email match server-side.
- *
+ * Accept transfer by token (email must match server-side).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Object} params
  * @param {string} params.token
@@ -337,8 +334,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
 }
 
 /**
- * Decline a transfer request.
- *
+ * Decline transfer by token.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Object} params
  * @param {string} params.token
@@ -373,8 +369,7 @@ export async function declineMemberTransferRequest(db, { token, declinerMemberId
 }
 
 /**
- * Get transfer request details for display (public preview by token).
- *
+ * Public transfer preview by token (no auth).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} token
  */

@@ -36,10 +36,7 @@ export function clientBudgetContributionForProject(
   return budget.cost
 }
 
-/**
- * Stack selected client budgets into project Budget & Limits fields.
- * Returns null when no selected client has a usable budget.
- */
+/** Sum selected client budgets into project Budget & Limits fields. */
 export function aggregateClientBudgetsForProject(
   clients: { id: string; budget?: ClientBudgetSnapshot }[],
   selectedClientIds: string[],

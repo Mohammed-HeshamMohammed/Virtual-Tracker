@@ -1,7 +1,4 @@
-/**
- * Backend configuration entry point.
- * Environment values: {@link ./env.js}
- */
+// Config barrel — env values live in env.js.
 
 export { getEnv, buildEnv, initConfig, getPublicEnv, __resetEnvForTests, env } from "./env.js";
 export {

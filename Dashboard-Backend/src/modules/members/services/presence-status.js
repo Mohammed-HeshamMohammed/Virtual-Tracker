@@ -1,7 +1,4 @@
-/**
- * Presence API shaping — runtime store is source of truth for live status.
- * Database may only retain `last_seen_at` (updated on WebSocket disconnect).
- */
+// Shape presence for API responses. Live status comes from the runtime store; DB keeps last_seen_at only.
 
 /**
  * @param {unknown} value
@@ -17,11 +14,7 @@ export function timestampMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-/**
- * Legacy read helper — only `last_seen_at` and bootstrap marker remain on member rows.
- *
- * @param {Record<string, unknown>} memberData
- */
+/** Legacy fields still read from member rows */
 export function extractPresenceFields(memberData) {
   const nested =
     memberData.presence && typeof memberData.presence === "object" && !Array.isArray(memberData.presence)

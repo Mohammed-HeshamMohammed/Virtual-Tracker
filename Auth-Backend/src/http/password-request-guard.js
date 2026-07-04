@@ -1,12 +1,7 @@
 import { PASSWORD_POLICY } from "../config/password-policy/index.js";
 import { isSensitiveFieldName } from "./sensitive-fields.js";
 
-/**
- * Reject authentication payloads that include credentials in the query string.
- *
- * @param {URL} url
- * @returns {string | null}
- */
+/** Block passwords and other secrets in query strings (SSE token param exempt). */
 export function rejectSensitiveQueryParams(url) {
   const isSsePath = url.pathname === "/api/presence/events" || url.pathname === "/api/v1/presence/events";
   for (const key of url.searchParams.keys()) {

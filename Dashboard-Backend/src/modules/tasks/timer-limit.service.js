@@ -29,9 +29,7 @@ async function sumMemberActiveSeconds(db, memberId, { fromMs, toMs, taskId }) {
 }
 
 /**
- * Computes remaining allowed active seconds for a member on a task, considering
- * task daily hours + overtime, member daily/weekly limits, and time already worked.
- *
+ * Remaining active seconds for a member on a task (daily caps, limits, time already logged).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {Record<string, unknown>} task

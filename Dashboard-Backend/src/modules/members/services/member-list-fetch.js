@@ -1,6 +1,5 @@
 /**
- * Fetch member documents by id (Firestore getAll batches of 10).
- *
+ * Firestore getAll in batches of 10.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string[]} memberIds
  * @returns {Promise<import("firebase-admin/firestore").QueryDocumentSnapshot[]>}

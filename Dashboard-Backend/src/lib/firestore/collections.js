@@ -1,8 +1,4 @@
-/**
- * Canonical top-level Firestore collection names still stored in Firestore.
- * Member profile extensions (employment, limits, time_settings, bans, tree cache, system_meta)
- * live in PostgreSQL — see src/lib/postgres/member-data-store.js.
- */
+// Firestore collections still in use. Profile extensions (employment, limits, …) are in Postgres — member-data-store.js.
 export const COLLECTIONS = Object.freeze({
   members: "members",
   memberAuthIndex: "member_auth_index",
@@ -20,7 +16,7 @@ export const COLLECTIONS = Object.freeze({
   notifications: "notifications_VirtualTacker",
 });
 
-/** Legacy mobile-app Firestore collections — do not read or write from Virtual Tracker backend code. */
+/** Old mobile-app collections — don't touch from this backend. */
 export const MOBILE_APP_COLLECTIONS = Object.freeze([
   "users",
   "referrals",
@@ -30,7 +26,7 @@ export const MOBILE_APP_COLLECTIONS = Object.freeze([
   "projects",
 ]);
 
-/** Subcollections that must NOT exist under members/{memberId} (includes retired Firestore top-level names). */
+/** Invalid under members/{memberId} — includes tables we moved to Postgres. */
 export const INVALID_MEMBER_SUBCOLLECTIONS = Object.freeze([
   "employment",
   "pay_rates",

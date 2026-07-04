@@ -39,15 +39,7 @@ export function formatMemberDisplayName(memberData, profile, userRecord) {
   return "A new member";
 }
 
-/**
- * Resolve adder + upline recipients for a newly joined team member.
- * Uses hierarchy ancestors when available; falls back to created_by_uid lookup.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {Record<string, unknown>} memberData
- * @returns {Promise<string[]>}
- */
+/** First-login notify recipients — ancestors, else created_by_uid lookup. */
 export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData) {
   const recipientIds = new Set();
 
@@ -89,9 +81,7 @@ export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData
 }
 
 /**
- * Notify the adder and upline when a team-added member completes their first sign-in.
- * Idempotent via members.first_login_notified_at.
- *
+ * Notify adder + upline on first sign-in. Deduped by members.first_login_notified_at.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{
  *   memberId: string

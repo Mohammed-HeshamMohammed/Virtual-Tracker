@@ -2,9 +2,7 @@ import { resolveAppPublicUrl } from "./app-public-url.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 
 /**
- * Sends pre-provision welcome email via Notify-Backend.
- * Temporary password is never persisted — only passed through this call.
- *
+ * Pre-provision welcome email via Notify. Temp password is not stored — only passed through.
  * @param {{ email: string; displayName: string; temporaryPassword: string }} input
  * @returns {Promise<{ sent: boolean; channel: string }>}
  */

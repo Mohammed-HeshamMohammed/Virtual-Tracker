@@ -1,7 +1,4 @@
-/**
- * Pure invoicing rules for the client "Invoicing" tab.
- * Drives auto-send, reminders, line-item mode, and tax/net terms.
- */
+// Client invoicing tab rules — auto-send, reminders, line items, tax/net terms.
 
 import { LINE_ITEM_OPTIONS } from "./form-config.js";
 
@@ -114,11 +111,7 @@ function frequencyToDays(frequency) {
   return 30;
 }
 
-/**
- * Next auto-invoice run from frequency + delay (after period end stub = now for v1).
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {Date} [from]
- */
+/** Next auto-invoice time from frequency + delay (v1: period end = now). */
 export function computeNextAutoInvoiceAt(invoicing, from = new Date()) {
   if (!invoicing.autoInvoicing) return null;
   const periodDays = frequencyToDays(invoicing.autoFrequency);
@@ -190,10 +183,7 @@ export function shouldRunPaymentReminder(invoicing, state = {}) {
   return { due: true, reason: "past_due_reminder", nextAt: remindAt };
 }
 
-/**
- * Line item aggregation spec for timesheet → invoice (future).
- * @param {string} lineItemsKey
- */
+/** Timesheet → invoice line item spec (future). */
 export function resolveLineItemSpec(lineItemsKey) {
   const valid = LINE_ITEM_KEYS.has(lineItemsKey);
   const group = lineItemsKey.startsWith("detailed_todo")
@@ -209,11 +199,7 @@ export function resolveLineItemSpec(lineItemsKey) {
   };
 }
 
-/**
- * Stub amount calculator until timesheets feed in.
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {{ billableHours?: number; hourlyRate?: number }} usage
- */
+/** Invoice amount stub until timesheets feed in. */
 export function computeInvoiceAmount(invoicing, usage = {}) {
   if (invoicing.autoAmountBasis === "fixed") {
     const subtotal = invoicing.autoFixedAmount;

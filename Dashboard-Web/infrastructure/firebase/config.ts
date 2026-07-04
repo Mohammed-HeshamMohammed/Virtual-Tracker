@@ -29,9 +29,7 @@ export async function resetFirebaseClient(): Promise<void> {
   clearFirebaseWebConfigCache()
 }
 
-/**
- * Initializes Firebase from public config provided by the Backend.
- */
+/** Init Firebase from backend public config. */
 export async function initFirebase(): Promise<FirebaseApp> {
   if (app) return app
   if (initPromise) return initPromise

@@ -184,15 +184,7 @@ async function assertCanLinkTeamProject(db, viewer, projectId, teamId = "") {
   throw err;
 }
 
-/**
- * Create initial team_members and team_projects rows during team creation.
- * Caller must already have authorized team create (`canCreateTeams`).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string} teamId
- * @param {{ memberIds: string[], leadIds: Set<string>, projectIds: string[] }} roster
- */
+/** Initial team_members + team_projects on team create. */
 export async function createTeamInitialRoster(db, viewer, teamId, roster) {
   if (!viewer?.memberId || !teamId) return;
 
@@ -241,14 +233,7 @@ export async function createTeamInitialRoster(db, viewer, teamId, roster) {
   await batch.commit();
 }
 
-/**
- * Replace team roster during team edit (Owner or team lead).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string} teamId
- * @param {{ memberIds: string[], leadIds: Set<string>, projectIds: string[] }} roster
- */
+/** Replace team roster on edit (Owner or team lead). */
 export async function syncTeamRoster(db, viewer, teamId, roster) {
   if (!viewer?.memberId || !teamId) return;
 

@@ -1,11 +1,4 @@
-/**
- * Safe, non-secret configuration snapshot for logs, health checks, and debugging.
- * Never log {@link getEnv} directly — secrets live in email, firebase.admin, and monitor.
- */
-
-/**
- * @param {import("./env.js").AppEnv} config
- */
+/** Redacted env for logs/health. @param {import("./env.js").AppEnv} config */
 export function toPublicEnv(config) {
   const emailConfigured = Boolean(
     config.email.resendApiKey || (config.email.smtpHost && config.email.smtpUser && config.email.smtpPass),

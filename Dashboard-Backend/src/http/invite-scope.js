@@ -1,9 +1,7 @@
 import { getVisibleMemberIds } from "../modules/member-relationships/service.js";
 
 /**
- * Scoped viewers (Manager+) may only mutate invites they created.
- * Admin / Owner / Super Admin (sees_all) may manage any invite.
- *
+ * Scoped viewers (Manager+) can only touch invites they created; Admin+ sees all.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string, roleName: string, uid?: string } | null | undefined} viewer
  * @param {{ created_by_uid?: string }} inviteRow

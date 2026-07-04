@@ -13,7 +13,7 @@ import {
 import { validateWorkLimitsMutualExclusion } from "@/shared/validation/work-limits"
 
 export type MemberFormValidationContext = {
-  /** Canonical role from the member record (not the in-form draft). */
+  /** Saved role from member record (not in-form draft). */
   memberRole?: string
   /** True when the signed-in user is editing their own member record. */
   isSelfEdit?: boolean

@@ -1,6 +1,4 @@
-/**
- * In-flight request coalescing — avoids duplicate parallel GETs (e.g. React Strict Mode).
- */
+// Dedupe parallel in-flight GETs (React Strict Mode).
 
 const inFlight = new Map<string, Promise<unknown>>();
 

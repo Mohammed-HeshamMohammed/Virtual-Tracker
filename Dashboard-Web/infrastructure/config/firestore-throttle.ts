@@ -1,6 +1,4 @@
-/**
- * Client-side intervals to reduce Firestore load during local dev.
- */
+// Longer refetch intervals in dev to cut Firestore load.
 
 const isDev = process.env.NODE_ENV === "development"
 

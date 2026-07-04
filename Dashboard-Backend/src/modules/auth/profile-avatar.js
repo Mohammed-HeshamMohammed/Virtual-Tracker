@@ -27,15 +27,7 @@ export function stripBase64DataUrl(raw) {
   return m ? m[1] : s;
 }
 
-/**
- * Stores avatar in GCS and writes the public URL to `User_profiles/{uid}.photoURL`.
- *
- * @param {import('firebase-admin/auth').Auth} auth
- * @param {import('firebase-admin/firestore').Firestore} db
- * @param {string} uid
- * @param {Buffer} buffer
- * @param {string} contentType
- */
+/** Upload WebP avatar to GCS + set User_profiles.photoURL. */
 export async function setProfileAvatarFromUpload(auth, db, uid, buffer, contentType) {
   const normalizedType = String(contentType).toLowerCase();
   const ext = ALLOWED_TYPES.get(normalizedType);
@@ -82,13 +74,7 @@ export async function setProfileAvatarFromUpload(auth, db, uid, buffer, contentT
   return upsertProfileFromUserRecord(db, userRecord);
 }
 
-/**
- * Clears uploaded profile image (GCS URL or legacy embedded). Does not remove OAuth provider photos.
- *
- * @param {import('firebase-admin/auth').Auth} auth
- * @param {import('firebase-admin/firestore').Firestore} db
- * @param {string} uid
- */
+/** Remove uploaded avatar (GCS or embedded); OAuth provider photos stay. */
 export async function clearProfileAvatar(auth, db, uid) {
   const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   const prevSnap = await profileRef.get();

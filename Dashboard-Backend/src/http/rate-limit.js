@@ -1,7 +1,4 @@
-/**
- * Sliding-window rate limiter (per client IP + route bucket).
- * In-memory per process — suitable for single-instance dev and small deployments.
- */
+/** In-memory rate limiter (per IP + route). Fine for dev / single instance. */
 
 const buckets = new Map();
 

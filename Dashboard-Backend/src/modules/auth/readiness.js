@@ -5,9 +5,7 @@ const READINESS_COLLECTION = "_meta";
 const READINESS_DOC_ID = "readiness";
 
 /**
- * Lightweight Firestore probe for login/bootstrap pre-checks.
- * A missing document still proves the database is reachable.
- *
+ * Quick Firestore ping for login/bootstrap. Missing doc still means DB is up.
  * @param {import("firebase-admin/firestore").Firestore | null | undefined} db
  * @returns {Promise<{ ok: true } | { ok: false, status: number, code: string, error: string }>}
  */

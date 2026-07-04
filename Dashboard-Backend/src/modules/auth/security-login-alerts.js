@@ -40,9 +40,7 @@ export function summarizeUserAgent(userAgent) {
 }
 
 /**
- * Sends a security email when Firebase reports a new sign-in from a different IP or device.
- * Idempotent per Firebase `lastSignInTime`.
- *
+ * Security email on new sign-in from different IP/device. Deduped per Firebase lastSignInTime.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{
  *   uid: string;
@@ -109,13 +107,7 @@ export async function maybeNotifyNewSignIn(db, input) {
   }
 }
 
-/**
- * Persist the member's last observed sign-in IP (read-only in the Info tab).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} requestIp
- */
+/** Save last sign-in IP on members row (Info tab). */
 export async function syncMemberLastLoginIp(db, memberId, requestIp) {
   const memberKey = typeof memberId === "string" ? memberId.trim() : "";
   const ip = normalizeIp(requestIp);

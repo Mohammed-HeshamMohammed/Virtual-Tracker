@@ -1,7 +1,4 @@
-/**
- * Ensures the notification_deliveries table exists when POSTGRES_URL is configured.
- * Safe to run on every startup (idempotent CREATE IF NOT EXISTS).
- */
+// CREATE IF NOT EXISTS for notification_deliveries when POSTGRES_URL is set.
 import pg from "pg";
 import { getEnv } from "../../config/env.js";
 

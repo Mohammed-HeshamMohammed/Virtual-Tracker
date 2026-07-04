@@ -1,7 +1,4 @@
-/**
- * General Dashboard aggregates — scoped per viewer (me vs team).
- * Single payload avoids N+1 widget requests on the client.
- */
+// General dashboard aggregates (me vs team scope). One payload to avoid N+1 widget fetches.
 
 import {
   buildMemberMetaMap,

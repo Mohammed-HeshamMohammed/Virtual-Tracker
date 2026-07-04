@@ -8,10 +8,7 @@ const WS_PATH = "/api/presence/ws";
 const connectionsByMember = new Map();
 
 /**
- * Push a message to every open WebSocket connection for a member — used to
- * force an immediate client-side sign-out (e.g. after a remote "Sign out")
- * without waiting for the next authenticated API call to hit a 401.
- *
+ * Push WS message to all connections for a member (e.g. remote sign-out).
  * @param {string} memberId
  * @param {Record<string, unknown>} message
  */
@@ -28,19 +25,7 @@ export function sendToMember(memberId, message) {
   }
 }
 
-/**
- * Authenticated WebSocket gateway for ephemeral presence.
- *
- * @param {import("node:http").Server} httpServer
- * @param {{
- *   presenceService: ReturnType<import("./presence-service.js").createPresenceService>;
- *   presenceManager: ReturnType<import("./presence-manager.js").createPresenceManager>;
- *   verifyIdToken: (token: string) => Promise<{ uid: string }>;
- *   resolveMemberId: (uid: string) => Promise<string>;
- *   heartbeatStaleMs?: number;
- *   onPresenceChange?: (memberId: string) => void;
- * }} deps
- */
+/** Auth WS gateway for ephemeral presence. */
 export function attachPresenceGateway(httpServer, deps) {
   const wss = new WebSocketServer({ noServer: true });
   const heartbeatStaleMs = deps.heartbeatStaleMs ?? 120_000;

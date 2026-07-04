@@ -8,12 +8,7 @@ export type SessionStatus = {
 
 const SIGNED_OUT: SessionStatus = { signedIn: false, displayName: null, avatarUrl: null }
 
-/**
- * Checks the shared session cookie (via Landing-Backend, which proxies
- * Dashboard-Backend) to see if the visitor is already signed into the
- * dashboard. Never throws — a failed or unconfigured check just means
- * "show the Sign in button".
- */
+/** Session status via Landing-Backend proxy — never throws. */
 export async function fetchSessionStatus(): Promise<SessionStatus> {
   if (!LANDING_API_URL) return SIGNED_OUT
   try {
@@ -34,11 +29,7 @@ export async function fetchSessionStatus(): Promise<SessionStatus> {
   }
 }
 
-/**
- * Clears the shared session cookie from the landing page (via
- * Landing-Backend), which revokes the session everywhere — including an
- * already-open dashboard tab (see Dashboard-Backend's session-logout route).
- */
+/** Clear shared session cookie via Landing-Backend (signs out dashboard too). */
 export async function logoutSharedSession(): Promise<void> {
   if (!LANDING_API_URL) return
   try {

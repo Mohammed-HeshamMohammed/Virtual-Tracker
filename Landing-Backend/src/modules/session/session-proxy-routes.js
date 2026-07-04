@@ -21,18 +21,7 @@ function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = 
   res.end(JSON.stringify(payload));
 }
 
-/**
- * Server-to-server proxy to Dashboard-Backend's session-cookie endpoints, so
- * Landing-Web only ever talks to Landing-Backend. Forwards the shared session
- * cookie both ways; never touches it directly (Dashboard-Backend owns
- * minting/verifying it via Firebase Admin).
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>} true if handled
- */
+/** Session cookie proxy to Dashboard-Backend (Landing-Web never calls it directly). */
 export async function routeSessionProxy(req, res, url, origin) {
   const dashboardUrl = getEnv().dashboard.backendUrl.replace(/\/+$/, "");
 

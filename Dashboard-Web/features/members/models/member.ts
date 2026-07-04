@@ -42,7 +42,7 @@ export interface Member {
   avatarColor: string
   status: MemberStatus
   role: MemberRole
-  /** Canonical role from Backend `member_roles` / `roles` enrichment. */
+  /** Role from backend member_roles / roles enrichment. */
   role_name?: string
   /** Optional product privileges stored on the member document. */
   privileges?: {

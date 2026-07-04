@@ -1,7 +1,5 @@
 /**
- * In-memory presence store (L1). Redis (REDIS_URL) or Firebase RTD (FIREBASE_DATABASE_URL)
- * is the shared live layer across instances, whichever is configured — Redis takes priority.
- *
+ * In-memory L1 cache. Shared layer: Redis (preferred) or Firebase RTD.
  * @returns {{
  *   get: (userId: string) => import("./presence-events.js").PresenceRecord | null;
  *   set: (userId: string, record: import("./presence-events.js").PresenceRecord) => void;

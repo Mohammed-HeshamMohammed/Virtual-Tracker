@@ -1,7 +1,4 @@
-/**
- * Pure budget rules for the client "Budget" tab.
- * Used when saving a client and when other modules evaluate spend vs cap.
- */
+// Client budget tab rules (save + spend-vs-cap checks).
 
 /** @typedef {"hourly"|"fixed"|"retainer"|"none"} BudgetType */
 /** @typedef {"per_person"|"per_project"|"total"} BudgetBasedOn */

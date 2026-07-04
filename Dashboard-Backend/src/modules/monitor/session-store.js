@@ -1,8 +1,4 @@
-/**
- * Secure session store for the /monitor dashboard.
- * Sessions are in-memory only — they vanish when the server restarts or the browser closes.
- * Idle timeout: 15 minutes. Absolute TTL: 8 hours.
- */
+// In-memory /monitor sessions. 15m idle, 8h max. Gone on restart.
 
 import crypto from "node:crypto";
 

@@ -1,11 +1,6 @@
 import { normalizeRoleKey } from "../modules/members/services/relation-sync.js";
 
-/**
- * Target role keys an actor may not edit or remove (by explicit product policy).
- * Owner is always protected separately via role-owner-policy.
- *
- * @type {Record<string, Set<string>>}
- */
+/** Role keys each actor may not edit/remove (Owner handled separately). @type {Record<string, Set<string>>} */
 const BLOCKED_TARGET_KEYS_BY_ACTOR = {
   owner: new Set(["owner"]),
   superadmin: new Set(["owner", "superadmin"]),
@@ -16,9 +11,7 @@ const BLOCKED_TARGET_KEYS_BY_ACTOR = {
 };
 
 /**
- * Whether the actor may mutate a member who currently holds `targetRoleName`.
- * Scope checks (subtree, visibility) are enforced separately.
- *
+ * Can actor mutate a member with targetRoleName? (scope checked elsewhere)
  * @param {string} actorRoleName
  * @param {string} targetRoleName
  * @returns {boolean}

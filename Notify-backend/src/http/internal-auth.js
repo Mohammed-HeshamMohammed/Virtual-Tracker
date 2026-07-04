@@ -1,12 +1,4 @@
-/**
- * Internal auth guard.
- *
- * All requests to Notify-Backend must carry the shared secret in the
- * Authorization header: `Bearer <INTERNAL_SERVICE_SECRET>`.
- *
- * In development with no secret configured, the guard is skipped so
- * local smoke tests work without any credentials.
- */
+// Bearer INTERNAL_SERVICE_SECRET on all routes. Dev skips check when secret unset.
 import { getEnv } from "../config/env.js";
 import { sendJson } from "./response.js";
 
@@ -14,7 +6,7 @@ import { sendJson } from "./response.js";
  * @param {import("node:http").IncomingMessage} req
  * @param {import("node:http").ServerResponse} res
  * @param {string|undefined} origin
- * @returns {boolean} true if the request is authorized (caller may continue)
+ * @returns {boolean} true if authorized
  */
 export function requireInternalAuth(req, res, origin) {
   const { secret } = resolveSecret();

@@ -1,9 +1,7 @@
 const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
 /**
- * Reject requests that include properties outside an explicit allowlist.
- * Prevents mass-assignment / privilege-escalation via unexpected JSON keys.
- *
+ * Reject JSON keys outside the allowlist (blocks mass-assignment).
  * @param {unknown} body
  * @param {string[]} allowedKeys
  */

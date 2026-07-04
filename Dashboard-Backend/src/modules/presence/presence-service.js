@@ -1,8 +1,7 @@
 import { PresenceEvents } from "./presence-events.js";
 
 /**
- * Ephemeral presence state — online, idle, offline only.
- *
+ * Runtime presence: online / idle / offline only.
  * @param {ReturnType<import("./presence-store.js").createMemoryPresenceStore>} store
  * @param {{
  *   idleAfterMs: number;

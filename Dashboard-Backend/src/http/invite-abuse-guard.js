@@ -1,7 +1,4 @@
-/**
- * Per-email and per-IP lockout for public invite registration abuse.
- * Complements route-level rate limiting with targeted backoff after repeated failures.
- */
+// Per-email + per-IP lockout for public invite registration abuse.
 
 const WINDOW_MS = 15 * 60_000;
 const LOCKOUT_MS = 30 * 60_000;

@@ -75,8 +75,7 @@ async function isOrganizationMaintenanceComplete(db) {
 }
 
 /**
- * Run heavy org migrations off the login critical path (single-flight per process).
- *
+ * Heavy org migrations off the login path (one run per process).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} [actor]
  */
@@ -160,14 +159,7 @@ async function runOrganizationMaintenance(db, actor) {
   return { created: [...new Set(created)] };
 }
 
-/**
- * Full diagram bootstrap for an authenticated user: org layer + member profile layer.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").UserRecord} userRecord
- * @param {{ memberId: string, memberData?: Record<string, unknown> }} memberCtx
- * @returns {Promise<{ org: { created: string[] }, member: { created: string[] } }>}
- */
+/** Org + member entity bootstrap after login. */
 export async function ensureEntityDiagramForAuthUser(db, userRecord, memberCtx) {
   const actor = userRecord.uid || "auth-auto-init";
   const org = await ensureOrganizationEntities(db, actor, { deferMaintenance: true });

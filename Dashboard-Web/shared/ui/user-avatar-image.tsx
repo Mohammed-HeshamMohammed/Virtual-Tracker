@@ -8,11 +8,7 @@ type UserAvatarImageProps = {
   className?: string
 }
 
-/**
- * OAuth avatars (e.g. Google) often block hotlinking when a Referer is sent.
- * `referrerPolicy="no-referrer"` matches Firebase / Google guidance for profile photos.
- * Uses a native `img` so Firebase Storage and other remote URLs work without Next.js image config.
- */
+/** Remote avatar img — no-referrer for OAuth hotlink blocks; native img (not next/image). */
 export function UserAvatarImage({ src, alt, className }: UserAvatarImageProps) {
   return (
     <img

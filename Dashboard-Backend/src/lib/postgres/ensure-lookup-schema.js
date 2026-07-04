@@ -244,10 +244,7 @@ const MEMBER_DATA_DDL = [
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
 ];
 
-/**
- * Ensures core Postgres tables (roles, lookups, time entries, timesheets) exist
- * when POSTGRES_URL is configured. Safe to run on every startup (idempotent).
- */
+// CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
 export async function ensurePostgresLookupSchema() {
   if (!isPostgresConfigured()) {
     return { ok: true, skipped: true };

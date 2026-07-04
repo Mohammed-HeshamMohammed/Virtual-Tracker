@@ -10,8 +10,7 @@ export function readBearerToken(req) {
 }
 
 /**
- * Prefer Authorization header; fall back to query/body for legacy clients.
- *
+ * Bearer from Authorization header; else query/body token (legacy clients).
  * @param {import("node:http").IncomingMessage} req
  * @param {URL} [url]
  * @param {{ idToken?: unknown }} [body]

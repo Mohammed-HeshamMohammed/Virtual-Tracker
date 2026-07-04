@@ -1221,9 +1221,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   )
 }
 
-/**
- * If the user already uses Google/Apple/password only, completing an email link is blocked (same “first method” rule).
- */
+/** Block email-link completion when account uses another sign-in method. */
 function assertCanUseEmailLinkCompletion(methods: string[] | null, email: string): void {
   if (methods === null || methods.length === 0) return
   if (methods.includes("emailLink")) return

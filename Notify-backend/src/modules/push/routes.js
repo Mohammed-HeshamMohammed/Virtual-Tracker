@@ -1,12 +1,4 @@
-/**
- * Push notification route — POST /api/notify/push
- *
- * Sends push notifications via Firebase Cloud Messaging (FCM HTTP v1 API)
- * using the Firebase Admin SDK and a service account.
- *
- * Requires in .env:
- *   FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
- */
+// POST /api/notify/push — FCM via Firebase Admin (needs FIREBASE_SERVICE_ACCOUNT or GOOGLE_APPLICATION_CREDENTIALS).
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { getMessaging } from "../../config/firebase.js";
@@ -126,11 +118,7 @@ export async function routePush(req, res, url, origin) {
   return true;
 }
 
-/**
- * FCM data payload requires all values to be strings.
- * @param {Record<string, unknown>} data
- * @returns {Record<string, string>}
- */
+/** FCM data values must be strings. @param {Record<string, unknown>} data @returns {Record<string, string>} */
 function flattenData(data) {
   return Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, String(v)]),

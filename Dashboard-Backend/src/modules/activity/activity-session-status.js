@@ -23,8 +23,7 @@ export function effectiveTrackingStatusFromSession(session) {
 }
 
 /**
- * Latest open session per member_id (ended_at == null).
- *
+ * Latest open session per member (ended_at == null).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @returns {Promise<Map<string, Record<string, unknown>>>}
  */
@@ -65,8 +64,7 @@ export async function findOpenSessionForMember(db, memberId) {
 }
 
 /**
- * Attach session-derived `tracking_status` and `last_presence_at` (from session.updated_at) for API responses.
- *
+ * Add tracking_status + last_presence_at from open activity session.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Array<Record<string, unknown> & { id: string }>} members
  */

@@ -5,14 +5,7 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { subscribePresenceChanges } from "./presence-pubsub.js";
 
-/**
- * SSE stream of presence deltas for visible members (replaces polling).
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string} origin
- */
+/** SSE presence deltas for visible members. */
 export async function routePresenceEvents(req, res, url, origin) {
   if (url.pathname !== "/api/presence/events" && url.pathname !== "/api/v1/presence/events") {
     return false;

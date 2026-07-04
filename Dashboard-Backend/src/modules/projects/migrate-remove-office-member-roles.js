@@ -10,11 +10,7 @@ function isOfficeMemberProjectRole(value) {
   return role === "member" || role === "members";
 }
 
-/**
- * Deletes deprecated `project_members` rows that used the office-member project role.
- *
- * @returns {Promise<{ success: boolean; alreadyCompleted?: boolean; deleted?: number; reason?: string }>}
- */
+/** One-off: delete project_members rows with office "member" role. */
 export async function removeProjectOfficeMemberRoles() {
   const db = getDb();
   if (!db) {

@@ -1,7 +1,4 @@
-/**
- * Ensure auth-related API calls use HTTPS in production.
- * Passwords and tokens must never be sent over insecure channels.
- */
+// Auth API calls must use HTTPS in production.
 
 const LOCAL_API_HOST = /^(localhost|127\.0\.0\.1)$/i
 

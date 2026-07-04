@@ -1,7 +1,5 @@
 /**
- * Reject requests that include properties outside an explicit allowlist.
- * Prevents mass-assignment via unexpected JSON keys.
- *
+ * Reject JSON keys outside the allowlist.
  * @param {unknown} body
  * @param {string[]} allowedKeys
  */

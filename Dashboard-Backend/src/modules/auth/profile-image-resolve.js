@@ -1,7 +1,5 @@
 /**
- * Resolves a displayable avatar URL from `User_profiles` fields.
- * Priority: GCS photoURL → legacy embedded base64 → legacy OAuth/Storage photoURL → null.
- *
+ * Avatar URL from User_profiles: GCS photoURL → embedded base64 → legacy photoURL.
  * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} doc
  * @returns {string | null}
  */

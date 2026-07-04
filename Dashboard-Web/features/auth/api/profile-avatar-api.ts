@@ -93,9 +93,7 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-/**
- * Uploads a profile image to `User_profiles/{uid}` via Backend (base64 in Firestore).
- */
+/** Upload avatar via backend (User_profiles). */
 export async function uploadProfileAvatarWithBackend(
   user: User,
   file: File,
@@ -110,9 +108,7 @@ export async function uploadProfileAvatarWithBackend(
   return postProfileAvatar({ imageBase64, contentType })
 }
 
-/**
- * Removes an uploaded profile image stored in Firestore (OAuth provider photos are preserved).
- */
+/** Remove uploaded avatar; OAuth provider photos stay. */
 export async function clearUploadedProfileAvatarWithBackend(user: User): Promise<AuthProfileSnapshot | undefined> {
   void user
   return postProfileAvatar({ clear: true })

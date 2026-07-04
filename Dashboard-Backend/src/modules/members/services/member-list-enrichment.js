@@ -1,4 +1,4 @@
-/** Batched member-list enrichment — avoids full-collection scans on pay_rates, limits, relations. */
+/** Batch-load pay rates, limits, and relations for member list rows. */
 
 export { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
 

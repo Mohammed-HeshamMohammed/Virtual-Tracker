@@ -1,8 +1,4 @@
-/**
- * CORS: this API authenticates every request with a Firebase Bearer token
- * (never cookies), so there is no credentialed cross-origin request to
- * protect against — allow any origin to read responses.
- */
+// Bearer-auth API — wildcard CORS is fine (no cookies).
 export function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",

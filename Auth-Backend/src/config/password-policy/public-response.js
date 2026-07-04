@@ -4,10 +4,7 @@ import {
   PASSWORD_POLICY_VERSION,
 } from "./definition.js";
 
-/**
- * Public-safe password policy payload for UI guidance.
- * Does not expose blacklists, scoring algorithms, or internal security data.
- */
+// Password policy for UI — no blacklists or scoring internals.
 export function getPublicPasswordPolicyResponse() {
   return {
     version: PASSWORD_POLICY_VERSION,

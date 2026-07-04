@@ -34,7 +34,7 @@ export async function getProjectTeams(projectId: string): Promise<ProjectTeamOpt
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** Ensures team_projects contains project ↔ team before assigning tasks. */
+/** Link team to project in team_projects before task assign. */
 async function ensureTeamLinkedToProject(
   teamId: string,
   projectId: string,

@@ -35,9 +35,7 @@ export function useActivityRuntime(): ActivityRuntimeContextValue {
   return ctx
 }
 
-/**
- * Activity/agent/presence APIs load only after the user starts or resumes a timer.
- */
+/** Activity APIs load only after timer start/resume. */
 export function ActivityRuntimeProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState(false)
   const [pending, setPending] = useState<ActivityRuntimePending | null>(null)

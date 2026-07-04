@@ -1,7 +1,4 @@
-/**
- * Authoritative password policy configuration.
- * All backend password validation derives from this file.
- */
+/** Password policy config — all backend validation uses this. */
 
 export const PASSWORD_POLICY_VERSION = "1.0.0";
 

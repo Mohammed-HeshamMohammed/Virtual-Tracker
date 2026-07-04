@@ -1,7 +1,4 @@
-/**
- * Baseline security headers for API responses.
- * HSTS is enabled in production when traffic is expected over HTTPS.
- */
+/** Baseline security headers (HSTS in production over HTTPS). */
 
 import { getEnv } from "../config/env.js";
 

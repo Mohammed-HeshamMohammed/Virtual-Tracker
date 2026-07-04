@@ -50,14 +50,7 @@ export async function canAccessTask(db, viewerMemberId, viewerRole, taskId) {
   return { allowed: false, status: 404, task: null };
 }
 
-/**
- * Task creators, team leads, and management may sync multi-assignee rows.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRole
- * @param {Record<string, unknown>} task
- */
+/** Task creators, team leads, and management may sync multi-assignee rows. */
 export async function canSyncTaskAssignments(db, viewerMemberId, viewerRole, task) {
   if (isManagementRole(viewerRole)) return true;
 

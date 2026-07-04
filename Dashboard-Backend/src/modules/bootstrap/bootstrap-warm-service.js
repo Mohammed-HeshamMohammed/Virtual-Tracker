@@ -1,7 +1,4 @@
-/**
- * Authenticated workspace warm bundle — one round-trip for list caches.
- * Uses the same visibility rules as member-relationships and project-access.
- */
+// Warm bundle for list caches after login (same visibility rules as member-relationships / project-access).
 
 import { isManagementRole } from "../../http/auth-context.js";
 import { getViewerProjectIds, toAllowedProjectSet } from "../../http/project-access.js";

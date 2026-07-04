@@ -15,12 +15,7 @@ import {
  * @property {string} recommended_action
  */
 
-/**
- * Audit all members for hierarchy violations. Does not modify data.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ limit?: number }} [options]
- */
+/** Read-only hierarchy violation scan (no writes). */
 export async function auditHierarchyViolations(db, options = {}) {
   const limit = typeof options.limit === "number" ? options.limit : 2000;
 

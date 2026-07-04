@@ -6,19 +6,11 @@ import { sendJson } from "../../http/response.js";
 import { validatePassword, getPublicPasswordPolicyResponse } from "../../config/password-policy/index.js";
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
 
-/** Intentional Cache-Control overrides — win over security-headers `no-store` via sendJson extraHeaders. */
+/** Cache-Control overrides for public auth config endpoints. */
 const CACHE_FIREBASE_CONFIG = "public, max-age=3600";
 const CACHE_PASSWORD_POLICY = "public, max-age=0, stale-while-revalidate=3600";
 
-/**
- * Authentication-only HTTP routes (`/api/auth/*` subset).
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
+/** `/api/auth/*` routes handled here. @returns {Promise<boolean>} */
 export async function routeAuth(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
