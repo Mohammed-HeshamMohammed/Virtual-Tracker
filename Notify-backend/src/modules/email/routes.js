@@ -55,7 +55,23 @@ export async function routeEmail(req, res, url, origin) {
     const recipient = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const recipientMemberId = typeof body.recipientMemberId === "string" ? body.recipientMemberId : null;
 
-    const dupe = await isDuplicate({ recipient, template, channel: "email" });
+    // Landing-Backend has no persistence of its own for contact-form inquiries — this
+    // delivery log is their only durable record, so keep the submitted fields here.
+    const isContactInquiry = template === "contact-inquiry";
+    const contactMetadata = isContactInquiry
+      ? {
+          name: typeof body.name === "string" ? body.name : undefined,
+          fromEmail: typeof body.fromEmail === "string" ? body.fromEmail : undefined,
+          topic: typeof body.topic === "string" ? body.topic : undefined,
+          teamSize: typeof body.teamSize === "string" ? body.teamSize : undefined,
+          message: typeof body.message === "string" ? body.message : undefined,
+        }
+      : null;
+
+    // Every contact-inquiry shares the same recipient (the support inbox), so the
+    // per-recipient cooldown would silently drop every submitter after the first
+    // within the window — never dedupe this template.
+    const dupe = isContactInquiry ? false : await isDuplicate({ recipient, template, channel: "email" });
     if (dupe) {
       await logDelivery({
         channel: "email",
@@ -78,7 +94,7 @@ export async function routeEmail(req, res, url, origin) {
         recipientMemberId,
         status: result.sent ? "sent" : "failed",
         errorMessage: result.error ?? null,
-        metadata: { channel: result.channel },
+        metadata: { channel: result.channel, ...(contactMetadata ?? {}) },
       });
       sendJson(res, origin, 200, { success: true, ...result });
     } catch (err) {
@@ -90,6 +106,7 @@ export async function routeEmail(req, res, url, origin) {
         recipientMemberId,
         status: "failed",
         errorMessage: msg,
+        metadata: contactMetadata,
       });
       sendJson(res, origin, 500, { success: false, error: msg });
     }
