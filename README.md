@@ -292,7 +292,6 @@ Dashboard-Backend/
     │   ├── env-schema.js   # Zod environment schemas and validators
     │   ├── env-public.js   # Logs-safe environment configurations mapping
     │   ├── firebase.js     # Firebase connection initiator & database instance exporter
-    │   ├── deployment-profiles.js # Platform port mapping registries
     │   └── password-policy/# Password requirements models (matching Auth-Backend)
     │
     ├── core/
