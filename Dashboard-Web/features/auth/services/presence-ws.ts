@@ -1,4 +1,5 @@
 import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
+import { VT_AUTH_SESSION_RESTRICTED } from "@/features/auth/services/auth-session-errors"
 
 const HEARTBEAT_MS = 30_000
 const RECONNECT_MS = 5_000
@@ -16,7 +17,7 @@ type PresenceHelloMessage = {
   memberId?: string
 }
 
-type PresenceServerMessage = PresenceHelloMessage | { type: "pong" }
+type PresenceServerMessage = PresenceHelloMessage | { type: "pong" } | { type: "force-sign-out" }
 
 type PresenceClientMessage = { type: "ping" } | { type: "activity" }
 
@@ -97,6 +98,12 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
         const data = JSON.parse(String(event.data)) as PresenceServerMessage
         if (data.type === "hello") {
           dispatchPresencePing()
+        } else if (data.type === "force-sign-out") {
+          window.dispatchEvent(
+            new CustomEvent(VT_AUTH_SESSION_RESTRICTED, {
+              detail: { message: "You were signed out from another page." },
+            }),
+          )
         }
       } catch {
         /* ignore malformed frames */
