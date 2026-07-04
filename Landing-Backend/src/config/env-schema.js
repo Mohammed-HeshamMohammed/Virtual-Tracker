@@ -27,7 +27,6 @@ const envSourceSchema = z
     DASHBOARD_BACKEND_URL: optionalTrimmedString,
     NOTIFY_BACKEND_URL: optionalTrimmedString,
     INTERNAL_SERVICE_SECRET: optionalTrimmedString,
-    SUPPORT_EMAIL: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
@@ -74,13 +73,6 @@ const envSourceSchema = z
           code: z.ZodIssueCode.custom,
           path: ["INTERNAL_SERVICE_SECRET"],
           message: "Production requires INTERNAL_SERVICE_SECRET (shared with vt-notify-api)",
-        });
-      }
-      if (!(data.SUPPORT_EMAIL || "").trim()) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["SUPPORT_EMAIL"],
-          message: "Production requires SUPPORT_EMAIL (recipient for contact-form inquiries)",
         });
       }
     }

@@ -4,6 +4,7 @@
  */
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
+import { getEnv } from "../../config/env.js";
 import {
   sendEmailVerificationEmail,
   sendPasswordUpdatedEmail,
@@ -52,16 +53,19 @@ export async function routeEmail(req, res, url, origin) {
       return true;
     }
 
-    const recipient = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const recipientMemberId = typeof body.recipientMemberId === "string" ? body.recipientMemberId : null;
 
-    // Landing-Backend has no persistence of its own for contact-form inquiries — this
-    // delivery log is their only durable record, so keep the submitted fields here.
+    // Every contact-inquiry goes to the same static inbox — that destination is
+    // this service's own config, not something the caller should have to know or
+    // pass in. body.email means the submitter here, same as every other template.
     const isContactInquiry = template === "contact-inquiry";
+    const recipient = isContactInquiry
+      ? getEnv().email.supportEmail
+      : typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const contactMetadata = isContactInquiry
       ? {
           name: typeof body.name === "string" ? body.name : undefined,
-          fromEmail: typeof body.fromEmail === "string" ? body.fromEmail : undefined,
+          fromEmail: typeof body.email === "string" ? body.email : undefined,
           topic: typeof body.topic === "string" ? body.topic : undefined,
           teamSize: typeof body.teamSize === "string" ? body.teamSize : undefined,
           message: typeof body.message === "string" ? body.message : undefined,
@@ -187,9 +191,9 @@ async function dispatchEmailTemplate(template, body) {
 
     case "contact-inquiry":
       return sendContactInquiryEmail({
-        to: body.email,
+        to: getEnv().email.supportEmail,
         name: body.name,
-        fromEmail: body.fromEmail,
+        fromEmail: body.email,
         topic: body.topic,
         teamSize: body.teamSize,
         message: body.message,

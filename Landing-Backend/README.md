@@ -29,11 +29,13 @@ same registrable domain as `FRONTEND_ORIGIN`/`APP_PUBLIC_URL` — see
 ## Environment
 
 See `.env.example`. Landing-Backend holds no database of its own —
-`NOTIFY_BACKEND_URL`, `INTERNAL_SERVICE_SECRET`, and `SUPPORT_EMAIL` are all
-required for `/api/contact` to work at all (it responds `503` without them).
-Notify-Backend is the system of record: every inquiry lands in its
-`notification_deliveries` table (metadata column) whether or not the email
-itself sends successfully.
+`NOTIFY_BACKEND_URL` and `INTERNAL_SERVICE_SECRET` are both required for
+`/api/contact` to work at all (it responds `503` without them). Notify-Backend
+is the system of record: every inquiry lands in its `notification_deliveries`
+table (metadata column) whether or not the email itself sends successfully,
+and it owns the destination inbox itself (`SUPPORT_EMAIL`, configured on
+Notify-Backend, not here) — every inquiry goes to the same address regardless
+of who calls the template.
 
 ## Local dev
 
