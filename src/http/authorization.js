@@ -77,14 +77,7 @@ export function assertManagementRole(req, res, origin) {
   return true;
 }
 
-/**
- * Owner / Super Admin only (destructive org operations).
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @returns {boolean}
- */
+/** Owner / Super Admin only — destructive org ops. */
 export function assertOrgAdminRole(req, res, origin) {
   const viewer = getAuthContext(req);
   if (!viewer) {

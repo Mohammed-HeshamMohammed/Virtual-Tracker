@@ -1,6 +1,5 @@
 /**
- * Zod schemas for environment and Firebase credential validation.
- * Fail-fast at startup — do not log parsed values (secrets).
+ * Zod schemas for env + Firebase credential validation. Don't log parsed values (secrets).
  */
 
 import { z } from "zod";

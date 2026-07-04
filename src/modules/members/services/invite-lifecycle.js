@@ -58,11 +58,7 @@ export function isInviteConsumed(row) {
   return false;
 }
 
-/**
- * Invites that should not appear in the management Invites tab (joined members, share links).
- *
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown>} row
- */
+/** Hide from Invites tab: consumed invites + open share links. */
 export function shouldHideInviteFromActiveList(row) {
   const status = typeof row.status === "string" ? row.status : "";
   if (status === "completed" || status === "accepted") return true;
@@ -93,11 +89,7 @@ export function assertInviteAvailableForRegistration(row) {
   return { ok: true };
 }
 
-/**
- * Constraints applied to shareable open invite links.
- *
- * @param {number} [ttlHours]
- */
+/** Default fields for single-use share links (TTL from env). */
 export function shareLinkInviteFields(ttlHours = resolveShareLinkTtlHours()) {
   return {
     max_uses: 1,

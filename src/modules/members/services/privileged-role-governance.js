@@ -24,8 +24,7 @@ export function hasOwnerRoleGrant(memberData) {
 }
 
 /**
- * Persist whether an Owner explicitly granted Admin / Super Admin.
- *
+ * Track whether Owner signed off on Admin / Super Admin.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName
@@ -62,7 +61,6 @@ export async function syncPrivilegedRoleOwnerGrant(db, memberId, roleName, actor
 
 /**
  * Admin / Super Admin without Owner grant → demote to Viewer and ban.
- *
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName

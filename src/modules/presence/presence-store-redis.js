@@ -16,12 +16,7 @@ function logWriteFailureOnce(err) {
   logSafeWarn("[presence/redis] write failed — check REDIS_URL is reachable:", err);
 }
 
-/**
- * Redis-backed presence persistence — shared live layer across instances
- * when REDIS_URL is set. Records carry a TTL as a crash safety net (in place
- * of RTDB's onDisconnect): if a process dies without cleaning up, the key
- * expires on its own instead of leaving a permanent "online" ghost.
- */
+/** Redis presence store. Keys TTL after 10m so crashed processes don't leave ghost "online". */
 export function createRedisPresenceStore() {
   /**
    * @param {import("./presence-events.js").PresenceRecord} record

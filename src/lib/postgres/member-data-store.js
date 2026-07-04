@@ -1,7 +1,5 @@
-/**
- * PostgreSQL-only access for member-domain entities migrated off Firestore.
- * Requires POSTGRES_URL and member-domain tables (see ensure-lookup-schema.js).
- */
+// Member profile tables in Postgres (limits, employment, bans, tree cache, system_meta).
+// Needs POSTGRES_URL + schema from ensure-lookup-schema.js.
 
 import crypto from "node:crypto";
 import { isPostgresMemberDataReady } from "./member-data-availability.js";

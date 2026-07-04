@@ -22,9 +22,7 @@ function isUuid(value) {
 }
 
 /**
- * Re-key legacy members (e.g. auth_&lt;firebaseUid&gt;) to UUID document ids and update FKs.
- * Idempotent: skips members that already use UUID ids.
- *
+ * Re-key legacy auth_* member ids to UUIDs. Skips rows that already use UUIDs.
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function normalizeLegacyMemberDocumentIds(db) {

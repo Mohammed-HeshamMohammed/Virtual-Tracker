@@ -3,10 +3,7 @@ import { isPostgresConfigured, query } from "./client.js";
 /** @type {boolean | undefined} */
 let memberDataReady;
 
-/**
- * True when POSTGRES_URL is set and member-domain tables are reachable.
- * Member profile extensions (limits, employment, bans, …) have no Firestore fallback.
- */
+/** Cached check: POSTGRES_URL set and limits table reachable. */
 export async function isPostgresMemberDataReady() {
   if (!isPostgresConfigured()) return false;
   if (memberDataReady === true) return true;

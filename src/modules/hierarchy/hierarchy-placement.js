@@ -8,7 +8,7 @@ export const HIERARCHY_STATUS = Object.freeze({
   unassigned: "unassigned",
   assigned: "assigned",
   hierarchy_assignment_required: "hierarchy_assignment_required",
-  /** Client and other external entities — outside org hierarchy entirely */
+  /** Clients and other externals — not in the org tree */
   external: "external",
 });
 
@@ -18,13 +18,13 @@ const ORG_ROOT_ROLE_KEYS = new Set(["owner"]);
 /** Admin roles that belong under Owner in the org tree (not separate roots). */
 const ORG_ADMIN_ROLE_KEYS = new Set(["superadmin", "admin"]);
 
-/** Independent users — not organizational subtree members. */
+/** Viewers / standalone users — no org subtree */
 const ALWAYS_INDEPENDENT_ROLE_KEYS = new Set([
   "viewer",
   "user",
 ]);
 
-/** Category 4 — external entities; never in member trees. */
+/** External roles (e.g. Client) — excluded from member trees */
 const EXTERNAL_ENTITY_ROLE_KEYS = new Set(["client"]);
 
 /** Roles that may be hierarchy roots only with membership entitlement. */
@@ -38,16 +38,13 @@ const REQUIRES_PARENT_ROLE_KEYS = new Set([
   "employee",
 ]);
 
-/**
- * Category 4 — external entities (Clients). Not hierarchy members or roots.
- * @param {string} roleName
- */
+/** External entity roles (Client, etc.) */
 export function isExternalEntityRole(roleName) {
   return EXTERNAL_ENTITY_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
 
 /**
- * Whether this role is excluded from all hierarchy validation, repair, and trees.
+ * External roles skip hierarchy validation entirely.
  * @param {string} roleName
  */
 export function isExcludedFromHierarchy(roleName) {
@@ -61,18 +58,12 @@ export function isAlwaysIndependentRole(roleName) {
   return ALWAYS_INDEPENDENT_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
 
-/**
- * Super Admin / Admin — organizational admins that must appear under Owner in the tree.
- * @param {string} roleName
- */
+/** Admin / Super Admin sit under Owner, not as separate roots */
 export function isOrganizationAdminRole(roleName) {
   return ORG_ADMIN_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
 
-/**
- * Owner — sole canonical org tree root.
- * @param {string} roleName
- */
+/** Owner is the org tree root */
 export function isOrganizationRootRole(roleName) {
   return ORG_ROOT_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
@@ -95,14 +86,7 @@ export function roleRequiresParent(roleName) {
   return false;
 }
 
-/**
- * Classify hierarchy placement for a member.
- *
- * @param {string} roleName
- * @param {string | null | undefined} parentMemberId
- * @param {Record<string, unknown> | null | undefined} memberData
- * @returns {"independent" | "hierarchy_member" | "hierarchy_root" | "invalid" | "external"}
- */
+/** Classify member hierarchy placement from role + parent. */
 export function classifyHierarchyPlacement(roleName, parentMemberId, memberData = null) {
   if (isExcludedFromHierarchy(roleName)) {
     return "external";
@@ -136,14 +120,7 @@ export function classifyHierarchyPlacement(roleName, parentMemberId, memberData 
   return hasParent ? "hierarchy_member" : "independent";
 }
 
-/**
- * Resolve the hierarchy_status field value for a member.
- *
- * @param {string} roleName
- * @param {string | null | undefined} parentMemberId
- * @param {Record<string, unknown> | null | undefined} memberData
- * @returns {HierarchyStatus}
- */
+/** hierarchy_status string from role + parent + member data. */
 export function resolveHierarchyStatus(roleName, parentMemberId, memberData = null) {
   const placement = classifyHierarchyPlacement(roleName, parentMemberId, memberData);
 
@@ -167,8 +144,7 @@ export function resolveHierarchyStatus(roleName, parentMemberId, memberData = nu
 }
 
 /**
- * Whether a role change requires establishing a parent relationship.
- *
+ * Role change needs a parent when placement would be invalid.
  * @param {string} nextRoleName
  * @param {string | null | undefined} parentMemberId
  * @param {Record<string, unknown> | null | undefined} memberData
@@ -179,28 +155,19 @@ export function roleChangeRequiresParentAssignment(nextRoleName, parentMemberId,
   return placement === "invalid";
 }
 
-/**
- * Roles that may initiate member transfer (recruitment) requests.
- *
- * @param {string} roleName
- */
+/** Manager / Super Manager can start transfer requests. */
 export function canCreateTransferRequests(roleName) {
   const key = normalizeRoleKey(roleName);
   return key === "manager" || key === "supermanager" || key === "supermanger";
 }
 
-/**
- * Whether the member is in a state that restricts organizational access.
- *
- * @param {Record<string, unknown> | null | undefined} memberData
- */
+/** hierarchy_status === hierarchy_assignment_required blocks org access. */
 export function hasHierarchyAssignmentRestriction(memberData) {
   return memberData?.hierarchy_status === HIERARCHY_STATUS.hierarchy_assignment_required;
 }
 
 /**
- * Validate whether a target member can be recruited via transfer request.
- *
+ * Validate transfer-recruitment target role + parent.
  * @param {string} targetRoleName
  * @param {string | null | undefined} targetParentId
  * @param {Record<string, unknown> | null | undefined} targetMemberData

@@ -1,6 +1,4 @@
-/**
- * Shared dedupe helpers for top-level member-scoped collections.
- */
+// Dedupe helpers for member-scoped Firestore collections.
 
 function timestampMs(value) {
   if (!value) return 0;

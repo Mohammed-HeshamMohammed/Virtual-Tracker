@@ -1,11 +1,6 @@
 import { getEnv } from "../config/env.js";
 
-/**
- * Registrable root domain derived from the configured frontend URL
- * (e.g. "app.myvirtualtracker.com" -> "myvirtualtracker.com"). Used only to
- * scope the credentialed session-cookie endpoints below — every other route
- * stays wildcard CORS since it never sends cookies.
- */
+// Root domain for credentialed session-cookie routes only; other routes use wildcard CORS.
 function getCredentialedRootDomain() {
   try {
     const frontend = getEnv().urls.frontendOrigin || getEnv().urls.appPublicUrl;
@@ -31,16 +26,8 @@ export function isCredentialedOriginAllowed(origin) {
   }
 }
 
+/** Wildcard CORS for Bearer-auth API. Session-cookie routes need `{ credentials: true }`. */
 /**
- * CORS: this API authenticates every request with a Firebase Bearer token
- * (never cookies), so there is no credentialed cross-origin request to
- * protect against — allow any origin to read responses.
- *
- * The one exception is the session-cookie endpoints (used to share
- * sign-in state between the landing page and the dashboard subdomain),
- * which need `Access-Control-Allow-Credentials` and an explicit origin.
- * Pass `{ credentials: true }` only for those routes.
- *
  * @param {string | undefined} [origin]
  * @param {{ credentials?: boolean }} [opts]
  */

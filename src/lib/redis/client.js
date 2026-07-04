@@ -29,12 +29,7 @@ export function getRedisClient() {
   return client;
 }
 
-/**
- * Dedicated connection for SUBSCRIBE — ioredis puts a client into subscriber
- * mode for the lifetime of the connection, so it cannot share one with
- * regular commands.
- * @returns {import("ioredis").Redis | null}
- */
+/** Separate Redis connection for SUBSCRIBE (can't mix with regular commands). */
 export function getRedisSubscriberClient() {
   const url = getEnv().redis.url;
   if (!url) return null;

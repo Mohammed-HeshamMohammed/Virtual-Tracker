@@ -2,9 +2,7 @@ import { validatePasswordViaAuthBackend } from "../lib/auth/auth-backend-client.
 import { normalizePasswordInput } from "./password-request-guard.js";
 
 /**
- * Registration password gate — Auth-Backend is authoritative.
- * Never log the password argument.
- *
+ * Delegate password rules to Auth-Backend. Never log the password.
  * @param {unknown} password
  * @param {{ confirmPassword?: unknown, requireConfirm?: boolean }} [options]
  * @returns {Promise<{ valid: boolean, error: string | null }>}

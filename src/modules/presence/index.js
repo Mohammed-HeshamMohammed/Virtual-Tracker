@@ -17,8 +17,7 @@ import { publishPresenceChange, presenceRecordToChange } from "./presence-pubsub
 let runtime = null;
 
 /**
- * Persist only lastSeenAt on disconnect — no other presence fields in Firestore.
- *
+ * On disconnect, persist last_seen_at only — nothing else from presence goes to Firestore.
  * @param {string} memberId
  * @param {number} lastSeenAt
  */
@@ -81,11 +80,7 @@ function ensureRuntime() {
   return createRuntime();
 }
 
-/**
- * Attach WebSocket presence gateway to the HTTP server. Call once at startup.
- *
- * @param {import("node:http").Server} httpServer
- */
+/** Wire WebSocket presence gateway to the HTTP server (once at startup). */
 export function initPresenceGateway(httpServer) {
   const { presenceService, presenceManager } = ensureRuntime();
   const auth = getAuthAdmin();

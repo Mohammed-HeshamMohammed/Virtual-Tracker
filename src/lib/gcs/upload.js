@@ -1,10 +1,7 @@
 import { getStorageBucketAsync, formatStorageSetupError } from "../../config/firebase.js";
 import { getEnv } from "../../config/env.js";
 
-/**
- * Resolves the GCS bucket name — prefers GCS_BUCKET_NAME, falls back to Firebase storage bucket.
- * @returns {string}
- */
+/** GCS_BUCKET_NAME, else Firebase storage bucket, else {projectId}.appspot.com */
 export function resolveGcsBucketName() {
   const explicit = getEnv().storage.gcsBucketName;
   if (explicit) return explicit;
@@ -56,11 +53,7 @@ export async function getSignedUrl(objectPath, expiresInMinutes = 15) {
   return url;
 }
 
-/**
- * Get the public URL for public objects (avatars).
- * @param {string} objectPath
- * @returns {string}
- */
+/** Public avatar URL for a GCS object path. */
 export function getPublicUrl(objectPath) {
   const bucketName = resolveGcsBucketName();
   if (!bucketName) return objectPath;

@@ -1,11 +1,8 @@
 import { COLLECTIONS } from "../lib/firestore/collections.js";
 
-/**
- * Full entity registry (see docs/entity-diagram.md) + schema-catalog entity keys.
- * `policy` controls auto-bootstrap — most business data is created only through UI/API flows.
- *
- * @typedef {"org_seed" | "org_marker" | "member_ensure" | "auth_flow" | "runtime" | "on_demand"} BootstrapPolicy
- */
+// Entity registry — see docs/entity-diagram.md. policy = when auto-bootstrap runs.
+
+/** @typedef {"org_seed" | "org_marker" | "member_ensure" | "auth_flow" | "runtime" | "on_demand"} BootstrapPolicy */
 
 /** @type {Array<{ collection: string, entityKey?: string, policy: BootstrapPolicy, notes?: string }>} */
 export const ENTITY_BOOTSTRAP_MANIFEST = [

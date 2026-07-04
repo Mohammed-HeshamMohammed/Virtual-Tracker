@@ -3,12 +3,7 @@ import { isSensitiveFieldName } from "./sensitive-fields.js";
 /** Matches Auth-Backend PASSWORD_POLICY.maxLength — used only for transport guardrails. */
 const MAX_PASSWORD_LENGTH = 128;
 
-/**
- * Reject authentication payloads that include credentials in the query string.
- *
- * @param {URL} url
- * @returns {string | null}
- */
+/** Block passwords and other secrets in query strings (SSE token param exempt). */
 export function rejectSensitiveQueryParams(url) {
   const isSsePath = url.pathname === "/api/presence/events" || url.pathname === "/api/v1/presence/events";
   for (const key of url.searchParams.keys()) {

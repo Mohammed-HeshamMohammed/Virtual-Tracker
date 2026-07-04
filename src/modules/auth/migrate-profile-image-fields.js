@@ -6,8 +6,7 @@ import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 const MARKER_DOC = "user_profile_image_fields";
 
 /**
- * Idempotently adds empty profile image fields to existing `User_profiles` documents.
- *
+ * Backfill empty profile image fields on User_profiles. Safe to re-run.
  * @returns {Promise<{ success: boolean; alreadyCompleted?: boolean; updated?: number; reason?: string }>}
  */
 export async function ensureUserProfileImageFields() {

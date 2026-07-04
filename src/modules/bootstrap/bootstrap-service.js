@@ -82,8 +82,7 @@ function buildMemberSummary(memberData, memberId, roleName) {
 }
 
 /**
- * Lightweight count aggregations for shell hints — no collection scans.
- *
+ * Shell nav counts — aggregate queries only, no scans.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string, roleName: string }} viewer
  */
@@ -125,8 +124,7 @@ async function getDashboardSummaryCounts(db, viewer) {
 }
 
 /**
- * Lightweight authenticated startup payload for dashboard shell rendering.
- *
+ * Dashboard shell bootstrap payload (nav, counts, member summary).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ uid: string, memberId: string, roleName: string, email?: string }} viewer
  */

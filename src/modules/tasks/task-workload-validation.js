@@ -25,11 +25,7 @@ export async function getMemberLimitHours(db, memberId, limitType) {
   return getMemberLimitHoursFromStore(db, memberId, limitType);
 }
 
-/**
- * Task daily hours = duration per day + allowed overtime per day.
- *
- * @param {Record<string, unknown>} task
- */
+/** hours/day + overtime/day */
 export function computeTaskDailyHours(task) {
   const hoursPerDay = Number(task.duration_hours_per_day ?? task.durationHoursPerDay ?? 0);
   const overtimePerDay = Number(task.overtime_hours_per_day ?? task.overtimeHoursPerDay ?? 0);
@@ -37,12 +33,7 @@ export function computeTaskDailyHours(task) {
   return Number.isFinite(total) && total > 0 ? total : 0;
 }
 
-/**
- * Most restrictive daily cap when member has a daily limit configured.
- *
- * @param {number} taskDailyHours
- * @param {number} memberDailyLimit 0 = unlimited
- */
+/** min(task cap, member daily limit); 0 member limit = unlimited */
 export function computeEffectiveDailyCap(taskDailyHours, memberDailyLimit) {
   if (memberDailyLimit <= 0) return taskDailyHours;
   if (taskDailyHours <= 0) return memberDailyLimit;
@@ -68,9 +59,7 @@ async function sumActiveAssignmentHours(db, memberId, excludeTaskId) {
 }
 
 /**
- * Validates assignees against task daily hours and member daily/weekly limits.
- * Skips manual limits when member uses scheduled shifts for allowance.
- *
+ * Block assignees over daily/weekly caps. Skipped when member uses shift-based limits.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Record<string, unknown>} task
  * @param {string[]} assigneeIds

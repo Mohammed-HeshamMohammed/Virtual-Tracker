@@ -194,8 +194,7 @@ export const MEMBER_PROFILE_SECTIONS = Object.freeze([
 ]);
 
 /**
- * Load only the requested manage-modal sections (smaller/faster than full profile).
- *
+ * Manage-modal sections only (skips unrequested blocks).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string[] | null | undefined} sectionsInput

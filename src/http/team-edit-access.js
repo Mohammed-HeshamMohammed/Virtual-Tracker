@@ -5,30 +5,18 @@ import { isEmployeeRole } from "./role-hierarchy.js";
 import { canAccessMember } from "./authorization.js";
 import { canBeTeamMember } from "./team-member-assign-policy.js";
 
-/**
- * Owner-tier roles that may create, edit, and delete any team (not only teams they lead).
- *
- * @param {string} roleName
- */
+/** Owner-tier roles can manage any team. */
 export function canManageAllTeams(roleName) {
   const key = normalizeRoleKey(roleName);
   return key === "owner" || key === "superadmin" || key === "admin" || key === "supermanager" || key === "supermanger";
 }
 
-/**
- * Manager role — subtree-scoped team create; may fully manage teams they lead (including mixed rosters).
- *
- * @param {string} roleName
- */
+/** Manager: subtree-scoped team create; full control on teams they lead. */
 export function isManagerRole(roleName) {
   return normalizeRoleKey(roleName) === "manager";
 }
 
-/**
- * All member ids with an employee-tier role (org-wide).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- */
+/** All employee-tier member ids (org-wide). */
 export async function getOrgWideEmployeeMemberIds(db) {
   const [membersSnap, rolesSnap] = await Promise.all([
     db.collection("members").limit(2000).get(),
@@ -48,8 +36,7 @@ export async function getOrgWideEmployeeMemberIds(db) {
 }
 
 /**
- * Manager team create/edit staffing: management subtree or any org employee.
- *
+ * Manager staffing pool: subtree + org employees.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} viewerMemberId
  * @param {string} viewerRoleName
@@ -75,8 +62,7 @@ export async function isManagerTeamStaffableMember(
 }
 
 /**
- * Member ids a viewer may pick when staffing a team (null = unrestricted).
- *
+ * Team picker member ids for viewer (null = unrestricted).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName
@@ -94,8 +80,7 @@ export async function getTeamStaffableMemberIds(db, memberId, roleName) {
 }
 
 /**
- * Picker rows for team staffing (Manager subtree + org employees).
- *
+ * Team staffing picker rows (Manager subtree + org employees).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName
@@ -174,9 +159,7 @@ export async function getTeamIdsLedByMember(db, memberId) {
 }
 
 /**
- * Org Owner-tier roles, or team lead (`is_lead`) for the given team, may edit team data.
- * Managers only receive lead-based edit access (not org-wide).
- *
+ * Owner-tier or team lead can edit team data. Managers only via lead flag.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName
@@ -226,15 +209,7 @@ export async function isProjectOnTeam(db, teamId, projectId) {
   return !snap.empty;
 }
 
-/**
- * Team roster writes: visible/manageable members, or existing roster rows when editing.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRoleName
- * @param {string} teamId
- * @param {string} targetMemberId
- */
+/** Team roster assign: visible member or existing roster row when editing. */
 export async function canAssignMemberToTeamRoster(
   db,
   viewerMemberId,

@@ -107,10 +107,7 @@ export async function buildMemberMetaMap(db, allowedIds) {
   return meta;
 }
 
-/**
- * Resolve which member IDs the viewer may query and validate memberId filter.
- * @returns {{ allowedMemberIds: string[] | null, targetMemberIds: string[] | null, roleName: string, canFilterByProject: boolean }}
- */
+/** Allowed member IDs for activity feed + optional memberId filter check. */
 export async function resolveActivityFeedScope(db, viewerMemberId, options = {}) {
   const memberIdFilter = String(options.memberId || "").trim();
   const projectScopeOnly = options.projectScopeOnly === true || options.projectScopeOnly === "true";

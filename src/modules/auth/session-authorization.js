@@ -1,7 +1,4 @@
-/**
- * Server-side session authorization — single source of truth for sign-in eligibility.
- * @see Client-Trial-V0.1/docs/Engineering Constitution.md (Never Trust the Client)
- */
+// Sign-in eligibility checks (server-side). @see Engineering Constitution — Never Trust the Client
 
 import { assertMemberNotBanned } from "../members/services/member-ban-service.js";
 
@@ -13,11 +10,7 @@ export function isPasswordProviderUser(userRecord) {
   return providers.some((p) => p && p.providerId === "password");
 }
 
-/**
- * Admin-created accounts skip inbox verification; they prove access via temp password + first-login change.
- *
- * @param {Record<string, unknown> | null | undefined} memberData
- */
+/** Admin-preprovision accounts skip email verification (temp password flow). */
 export function isAdminPreprovisionedMember(memberData) {
   return (
     memberData &&
@@ -27,13 +20,7 @@ export function isAdminPreprovisionedMember(memberData) {
   );
 }
 
-/**
- * Invite registration already proved email ownership for address-locked invites.
- * Legacy `self-invite` rows without `registration_invite_kind` predate open-link invites
- * and never received a verification email — treat them as verified at registration.
- *
- * @param {Record<string, unknown> | null | undefined} memberData
- */
+/** Email-locked invite sign-ups count as verified (legacy self-invite rows too). */
 export function isEmailConfirmedInviteMember(memberData) {
   if (!memberData || typeof memberData !== "object") return false;
   if (typeof memberData.created_by !== "string" || memberData.created_by !== "self-invite") {

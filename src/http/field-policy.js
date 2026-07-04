@@ -14,12 +14,7 @@ const COMPENSATION_FIELDS = [
   "currency",
 ];
 
-/**
- * Compensation and limits: self always; managers+ for others in their visibility scope.
- *
- * @param {import("./auth-context.js").AuthContext} viewer
- * @param {string} [targetMemberId]
- */
+/** Pay/limits: self always; managers+ for others in scope. */
 export function canViewCompensation(viewer, targetMemberId) {
   if (!viewer?.memberId) return false;
   if (targetMemberId && viewer.memberId === targetMemberId) return true;
@@ -73,12 +68,7 @@ export function redactProfileFormCompensation(form, viewer, targetMemberId) {
   };
 }
 
-/**
- * Invite pay_rate is management-only (pending compensation terms).
- *
- * @param {Record<string, unknown>[]} rows
- * @param {import("./auth-context.js").AuthContext | null} viewer
- */
+/** Hide invite pay_rate from non-management viewers. */
 export function applyInviteFieldPolicy(rows, viewer) {
   if (!viewer) return [];
   if (isManagementRole(viewer.roleName)) return rows;

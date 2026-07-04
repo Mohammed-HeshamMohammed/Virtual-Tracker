@@ -49,7 +49,7 @@ async function loadRelationshipsFromDb(db) {
 }
 
 /**
- * Detect and remove invalid hierarchy edges. Writes only when repairs are required.
+ * Drop bad hierarchy edges; only writes when something needs fixing.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ dryRun?: boolean, maxDeletes?: number }} [options]
  */
@@ -139,8 +139,7 @@ async function getAllRelationships(db) {
 }
 
 /**
- * Loads the minimal relationship subgraph needed to validate a new parent→child edge.
- *
+ * Subgraph fetch for validating a new parent→child edge.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} parentMemberId
  * @param {string} childMemberId
@@ -207,7 +206,7 @@ async function loadEdgesForRelationshipValidation(db, parentMemberId, childMembe
 }
 
 /**
- * Record a new member relationship (who added whom)
+ * Record who added whom.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Object} params
  * @param {string} params.parentMemberId - The member who did the adding
@@ -319,7 +318,7 @@ export async function recordMemberRelationship(db, {
 }
 
 /**
- * Remove only the parent edge for a member (keeps edges where they manage others).
+ * Remove this member's parent edge only (keep edges where they're the parent).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<number>} edges removed
@@ -353,14 +352,7 @@ export async function removeMemberParentEdge(db, memberId) {
   return asChildSnap.size;
 }
 
-/**
- * Remove all hierarchy edges for a member (as parent or child).
- * Used when a member becomes an external entity (Client) or leaves the org tree.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<number>} edges removed
- */
+/** Strip all hierarchy edges for a member (Client conversion, org exit). */
 export async function removeMemberHierarchyRelationships(db, memberId) {
   const [asChildSnap, asParentSnap] = await Promise.all([
     db.collection("member_relationships").where("child_member_id", "==", memberId).limit(50).get(),
@@ -390,7 +382,7 @@ export async function removeMemberHierarchyRelationships(db, memberId) {
 }
 
 /**
- * Batch-resolve profile avatar URLs for member tree nodes (one getAll per unique uid).
+ * Avatar URLs for tree nodes (batched getAll per uid).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/firestore").QuerySnapshot} membersSnap
  * @returns {Promise<Map<string, string>>}
@@ -432,13 +424,7 @@ export async function resolveAvatarUrlsForMembers(db, membersSnap) {
   return avatarByMemberId;
 }
 
-/**
- * Get the direct parent member ID for a child, or null when none exists.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string | null>}
- */
+/** Direct parent id, or null. */
 export async function getMemberParentId(db, memberId) {
   const rels = await getAllRelationships(db);
   for (const rel of rels) {
@@ -450,7 +436,7 @@ export async function getMemberParentId(db, memberId) {
 }
 
 /**
- * Get all ancestors of a member (up the tree)
+ * All ancestors (walk up).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<TreeNode[]>}
@@ -493,7 +479,7 @@ export async function getMemberAncestors(db, memberId) {
 }
 
 /**
- * Get all descendants of a member (down the tree)
+ * All descendants (walk down).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {number} maxDepth - Maximum depth to traverse (default: 10)
@@ -541,7 +527,7 @@ export async function getMemberDescendants(db, memberId, maxDepth = 10) {
 }
 
 /**
- * Get the full tree path from root to this member
+ * Path from tree root to member.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<string[]>} - Array of member IDs from root to this member
@@ -554,7 +540,7 @@ export async function getMemberTreePath(db, memberId) {
 }
 
 /**
- * Check if member A is an ancestor of member B
+ * True if A is an ancestor of B.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} potentialAncestorId
  * @param {string} memberId
@@ -566,7 +552,7 @@ export async function isAncestorOf(db, potentialAncestorId, memberId) {
 }
 
 /**
- * Get the root (top-most ancestor) of a member's tree
+ * Top-most ancestor (tree root).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<string|null>} - Root member ID or null
@@ -577,7 +563,7 @@ export async function getMemberRoot(db, memberId) {
 }
 
 /**
- * Get all members in the same tree (connected component)
+ * Everyone in the same connected tree component.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<{root_id: string, members: string[]}>}
@@ -594,7 +580,7 @@ export async function getConnectedMembers(db, memberId) {
 }
 
 /**
- * Get members who share projects with the given member (for client visibility)
+ * Project co-members (for client visibility).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<string[]>} - Array of member IDs who share at least one project
@@ -630,7 +616,7 @@ export async function getMembersBySharedProjects(db, memberId) {
 }
 
 /**
- * Get all visible members for a client — project relationships only (not hierarchy).
+ * Client-visible members via project links only (not hierarchy).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @returns {Promise<{root_id: string | null, tree_members: string[], project_members: string[], all_visible: string[]}>}
@@ -647,13 +633,7 @@ export async function getVisibleMembersForClient(db, memberId) {
   };
 }
 
-/**
- * Resolve the Owner member id for the org the viewer belongs to.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string | null>}
- */
+/** Org Owner member id for this viewer. */
 async function resolveSharedOrgOwnerMemberId(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   for (const ancestor of ancestors) {
@@ -684,14 +664,7 @@ function isOrgLeadershipRole(roleName) {
   );
 }
 
-/**
- * Org leadership in the same Owner org (read-only). Covers sibling Managers / Super Managers and
- * Admin / Super Admin branches that are not on the viewer's direct ancestor chain.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @returns {Promise<string[]>}
- */
+/** Read-only org leadership ids (sibling managers + admin branches). */
 async function getOrgLeadershipReadOnlyMemberIds(db, viewerMemberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, viewerMemberId);
   if (!ownerMemberId) return [];
@@ -732,12 +705,7 @@ async function memberBelongsToOrg(db, memberId, ownerMemberId) {
   return Boolean(ownerUid && createdByUid === ownerUid);
 }
 
-/**
- * Owner / Admin / Super Admin member ids + firebase uids for an org.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} ownerMemberId
- */
+/** Owner/Admin/Super Admin member + firebase uids for an org. */
 async function collectOrgAdminCreators(db, ownerMemberId) {
   const adminMemberIds = new Set([ownerMemberId]);
   const adminFirebaseUids = new Set();
@@ -761,14 +729,7 @@ async function collectOrgAdminCreators(db, ownerMemberId) {
   return { adminMemberIds, adminFirebaseUids };
 }
 
-/**
- * Members added by Owner / Admin / Super Admin in the same org.
- * Managers and Super Managers may manage these even when not in their direct subtree.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @returns {Promise<string[]>}
- */
+/** Members added by Owner/Admin — Managers can manage outside their subtree. */
 async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, viewerMemberId);
   if (!ownerMemberId) return [];
@@ -815,15 +776,7 @@ async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
   return visible;
 }
 
-/**
- * Member IDs in the viewer's management subtree (self + everyone they added, directly or indirectly).
- * Matches the "team" scope on the visual member tree.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {number} [maxDepth]
- * @returns {Promise<string[]>}
- */
+/** Management subtree: self + everyone they added (tree "team" scope). */
 export async function getTeamSubtreeMemberIds(db, memberId, maxDepth = 100) {
   const ids = new Set([memberId]);
   const descendants = await getMemberDescendants(db, memberId, maxDepth);
@@ -856,25 +809,13 @@ export async function getTeamSubtreeMemberIds(db, memberId, maxDepth = 100) {
   return [...ids];
 }
 
-/**
- * Ancestors in the viewer's branch (read-only on People). Includes Owner / Admin / Super Admin / Super Manager.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string[]>}
- */
+/** Read-only upline in viewer's branch (Owner/Admin/Super Admin/Super Manager). */
 async function getSubtreeUplineReadOnlyMemberIds(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   return ancestors.map((ancestor) => ancestor.member_id);
 }
 
-/**
- * Manager / Super Manager visibility: direct subtree plus org members added by Owner / Admin / Super Admin.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string[]>}
- */
+/** Manager/Super Manager: subtree + org members added by Owner/Admin. */
 export async function getManagerVisibleMemberIds(db, memberId) {
   const [subtree, uplineAdded] = await Promise.all([
     getTeamSubtreeMemberIds(db, memberId),
@@ -883,13 +824,7 @@ export async function getManagerVisibleMemberIds(db, memberId) {
   return [...new Set([...subtree, ...uplineAdded])];
 }
 
-/**
- * People page list visibility for Manager / Super Manager (manageable + read-only upline in subtree).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string[]>}
- */
+/** People page ids for Manager/Super Manager (manageable + read-only upline). */
 export async function getManagerPeoplePageVisibleMemberIds(db, memberId) {
   const [manageable, uplineReadOnly, orgLeadership] = await Promise.all([
     getManagerVisibleMemberIds(db, memberId),
@@ -899,14 +834,7 @@ export async function getManagerPeoplePageVisibleMemberIds(db, memberId) {
   return [...new Set([...manageable, ...uplineReadOnly, ...orgLeadership])];
 }
 
-/**
- * Drop member IDs whose current role the actor may not mutate.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} actorRoleName
- * @param {string[]} memberIds
- * @returns {Promise<string[]>}
- */
+/** Drop member ids the actor can't mutate by role rank. */
 async function filterManageableMemberIdsByRole(db, actorRoleName, memberIds) {
   const manageable = [];
   for (const id of memberIds) {
@@ -916,14 +844,7 @@ async function filterManageableMemberIdsByRole(db, actorRoleName, memberIds) {
   return manageable;
 }
 
-/**
- * Member IDs the viewer may mutate (edit role, remove, batch actions). Narrower than visible.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @returns {Promise<string[] | null>}
- */
+/** Mutable member ids (edit/remove/batch) — narrower than visible. */
 export async function getManageableMemberIds(db, memberId, roleName) {
   if (!roleName) return [memberId];
   const role = roleName.trim().toLowerCase().replace(/\s+/g, "");
@@ -948,13 +869,7 @@ export async function getManageableMemberIds(db, memberId, roleName) {
   return [memberId];
 }
 
-/**
- * Member IDs in the Owner org tree (hierarchy edges only — read-only employee visibility).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} ownerMemberId
- * @returns {Promise<string[]>}
- */
+/** Owner org tree member ids (read-only for employees). */
 async function getOwnerOrgMemberIds(db, ownerMemberId) {
   const ids = new Set([ownerMemberId]);
   const descendants = await getMemberDescendants(db, ownerMemberId, 100);
@@ -962,14 +877,7 @@ async function getOwnerOrgMemberIds(db, ownerMemberId) {
   return [...ids];
 }
 
-/**
- * Employees see the full org tree they belong to (read-only on the frontend).
- * When the viewer shares an Owner root, that is the Owner's entire subtree.
- * Otherwise falls back to the direct manager's team branch, then self subtree.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
+/** Employee read-only tree: shared Owner root → full subtree; else manager branch or self. */
 export async function getEmployeeHierarchyMemberIds(db, memberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, memberId);
   if (ownerMemberId && (await memberBelongsToOrg(db, memberId, ownerMemberId))) {
@@ -986,7 +894,7 @@ export async function getEmployeeHierarchyMemberIds(db, memberId) {
 }
 
 /**
- * Get visible member IDs based on role hierarchy rules
+ * Visible member ids for the signed-in viewer.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} roleName
@@ -1018,7 +926,7 @@ export async function getVisibleMemberIds(db, memberId, roleName) {
 }
 
 /**
- * Build a tree structure for display
+ * Nested tree for UI display.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} rootMemberId
  * @returns {Promise<Object>} - Tree structure
@@ -1073,7 +981,7 @@ async function invalidateTreeCache(db, memberId) {
 }
 
 /**
- * Update tree cache for a member (call this after tree modifications)
+ * Refresh member_tree_cache after edge changes.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  */

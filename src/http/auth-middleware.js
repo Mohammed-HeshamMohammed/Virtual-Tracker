@@ -8,10 +8,7 @@ import { readIdToken } from "./auth-token.js";
 import { setAuthContext } from "./auth-context.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
 
-/**
- * Routes that intentionally accept unauthenticated callers.
- * All other `/api/*` routes require a valid Firebase ID token + members row.
- */
+/** Unauthenticated API routes (no Bearer token required). */
 const PUBLIC_API_ROUTES = [
   { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
   { method: "GET", pattern: /^\/api\/auth\/sign-in-client-extras$/ },
@@ -37,9 +34,7 @@ export function isPublicApiRoute(method, pathname) {
   return PUBLIC_API_ROUTES.some((route) => route.method === method && route.pattern.test(normalized));
 }
 
-/**
- * Routes allowed while `must_change_password` is true (first-login onboarding only).
- */
+/** Allowed while must_change_password is true (first-login flow). */
 const MUST_CHANGE_PASSWORD_ALLOWED = [
   { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
   { method: "POST", pattern: /^\/api\/auth\/complete-first-login$/ },
@@ -61,8 +56,7 @@ function isMustChangePasswordAllowedRoute(method, pathname) {
 }
 
 /**
- * Verify Firebase ID token and resolve the linked members row.
- *
+ * Verify Firebase ID token → members row.
  * @param {import("node:http").IncomingMessage} req
  * @param {URL} url
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -166,11 +160,7 @@ export async function authenticateRequest(req, url, db) {
   }
 }
 
-/**
- * Gate protected API traffic. Public routes skip verification.
- *
- * @returns {Promise<{ allowed: true } | { allowed: false, status: number, error: string }>}
- */
+/** Auth gate for protected routes; public paths skip token check. */
 export async function enforceApiAuthentication(req, url, db) {
   const requestIp = getRequestIp(req);
   const deviceGate = await assertDeviceNotBanned(db, requestIp);

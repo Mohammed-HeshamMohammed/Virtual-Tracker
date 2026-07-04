@@ -49,19 +49,7 @@ function entryDurationSeconds(row) {
 
 
 
-/**
-
- * Sum billable hours logged on a project within the budget period window.
-
- *
-
- * @param {import("firebase-admin/firestore").Firestore} db
-
- * @param {string} projectId
-
- * @param {{ start: Date; end: Date | null }} period
-
- */
+/** Billable hours on a project within budget period. */
 
 export async function sumBillableHoursForProjectInPeriod(db, projectId, period) {
   return sumBillableHoursPg(projectId, period.start, period.end);
@@ -159,19 +147,7 @@ function normalizeProjectBudgetRow(row) {
 
 
 
-/**
-
- * Dollar spend on a project for the budget period (from project budget row).
-
- *
-
- * @param {import("firebase-admin/firestore").Firestore} db
-
- * @param {string} projectId
-
- * @param {{ start: Date; end: Date | null }} period
-
- */
+/** Project spend in budget period (from project budget row). */
 
 export async function resolveProjectSpendInPeriod(db, projectId, period) {
 

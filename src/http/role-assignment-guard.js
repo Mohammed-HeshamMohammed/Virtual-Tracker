@@ -17,8 +17,7 @@ import {
 } from "./role-manage-policy.js";
 
 /**
- * Resolve a role display name from optional name or Firestore role id.
- *
+ * Role name from body.roleName or body.roleId lookup.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ roleName?: string, roleId?: string }} input
  */
@@ -34,9 +33,7 @@ async function resolveTargetRoleName(db, input) {
 }
 
 /**
- * Ensure the authenticated actor may assign the requested role.
- * Roles are never trusted from the client without privilege checks.
- *
+ * Can actor assign this role? (privilege checks, never trust client).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} actorRoleName
  * @param {{ roleName?: string, roleId?: string }} target
@@ -66,8 +63,7 @@ export async function validateRoleAssignment(db, actorRoleName, target) {
 }
 
 /**
- * Validates role change for a specific member (Owner protection + privilege ceiling).
- *
+ * Role change guard: Owner protection + actor privilege ceiling.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} nextRoleName
@@ -112,8 +108,7 @@ export async function validateMemberRoleChange(db, memberId, nextRoleName, actor
 }
 
 /**
- * Apply hierarchy side effects after a successful role change.
- *
+ * Post role-change hierarchy side effects.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} nextRoleName

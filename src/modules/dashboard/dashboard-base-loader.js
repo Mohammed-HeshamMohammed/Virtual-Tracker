@@ -1,7 +1,4 @@
-/**
- * Org-wide dashboard base aggregates — cached in Firestore for large orgs (100+ projects).
- * Viewer-specific scoping still happens in command-center / general-dashboard services.
- */
+// Shared dashboard aggregates. Snapshotted in system_meta when org has 100+ projects.
 
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { COLLECTIONS } from "../../lib/firestore/collections.js";

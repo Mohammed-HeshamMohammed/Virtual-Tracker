@@ -1,9 +1,4 @@
-/**
- * Membership entitlements — future-compatible hooks for paid hierarchy ownership.
- *
- * When membership purchases are implemented, set `hierarchy_entitlements.independent_hierarchy`
- * on the member document (or link via a subscriptions collection).
- */
+// Paid hierarchy ownership hooks — set hierarchy_entitlements.independent_hierarchy on member.
 
 /**
  * @param {Record<string, unknown> | null | undefined} memberData
@@ -23,12 +18,7 @@ export function hasIndependentHierarchyEntitlement(memberData) {
   return false;
 }
 
-/**
- * Build entitlement payload for granting independent hierarchy ownership.
- * Used by future membership upgrade flows.
- *
- * @returns {{ hierarchy_entitlements: { independent_hierarchy: boolean, granted_at: Date } }}
- */
+/** Payload for granting independent hierarchy root (future billing flow). */
 export function buildIndependentHierarchyEntitlement() {
   return {
     hierarchy_entitlements: {

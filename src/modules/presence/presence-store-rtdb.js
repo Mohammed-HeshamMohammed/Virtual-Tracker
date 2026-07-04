@@ -36,9 +36,7 @@ function logWriteFailureOnce(err) {
   );
 }
 
-/**
- * Firebase Realtime Database-backed presence persistence.
- */
+/** Firebase RTDB presence store. */
 export function createRtdbPresenceStore() {
   /**
    * @param {import("./presence-events.js").PresenceRecord} record

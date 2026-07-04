@@ -131,8 +131,7 @@ function timestampMs(value) {
 }
 
 /**
- * Resolve the authenticated member from request context (set by auth middleware).
- *
+ * Authenticated member from req context (auth middleware).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("node:http").IncomingMessage} req
  */

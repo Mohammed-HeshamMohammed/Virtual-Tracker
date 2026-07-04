@@ -440,10 +440,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
   return getTaskAssignments(db, taskId);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} userIds
- */
+/** Task IDs assigned to any of these members. */
 export async function getTaskIdsAssignedToMembers(db, userIds) {
   const taskIds = new Set();
   const unique = [...new Set(userIds.filter(Boolean))];
@@ -458,10 +455,7 @@ export async function getTaskIdsAssignedToMembers(db, userIds) {
   return taskIds;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<Record<string, unknown>>} rows
- */
+/** Attach assignee_ids + primary assigned_to on task rows. */
 export async function enrichTasksWithAssignees(db, rows) {
   if (!rows.length) return rows;
 

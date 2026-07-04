@@ -30,15 +30,7 @@ function matchesTaskFilters(row, url) {
   return true;
 }
 
-/**
- * List tasks for a member using both primary assignee and task_assignments rows.
- * Keeps schema/routes.js unchanged while supporting multi-assignee timers and sidebars.
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {URL} url
- * @param {string} assigneeId
- */
+/** List tasks by primary assignee + task_assignments rows. */
 export async function listTasksForAssignee(req, db, url, assigneeId) {
   const rows = [];
   const seen = new Set();

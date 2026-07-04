@@ -9,14 +9,7 @@ function normalizeRole(roleName) {
     .replace(/\s+/g, "");
 }
 
-/**
- * Project IDs the viewer may access. `null` = all projects (owner).
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRole
- * @returns {Promise<string[] | null>}
- */
+/** Project ids viewer can access; null = all (Owner). */
 export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
   if (!viewerMemberId) return [];
   const roleKey = normalizeRole(viewerRole);
@@ -56,9 +49,7 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
 }
 
 /**
- * Whether the viewer may write project-scoped rows (members, budgets, team links).
- * Includes projects the viewer created but has not yet been added to as a member.
- *
+ * Can write project rows (includes projects viewer created but isn't a member of yet).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string; roleName: string }} viewer
  * @param {string} projectId

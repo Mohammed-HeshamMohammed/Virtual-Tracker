@@ -1,3 +1,4 @@
+// Generic schema CRUD routes (/api/v1/:entity) with access gates per entity type.
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";

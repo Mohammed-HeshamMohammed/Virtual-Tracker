@@ -52,14 +52,12 @@ export async function dedupeAllMemberScopedEntities(db, memberId) {
   for (const collection of MEMBER_SINGLETON_COLLECTIONS) {
     total += await dedupeByMemberId(db, collection, memberId);
   }
-  // limits is now a single doc keyed by member_id — no dedupe needed.
+  // limits: one row per member_id in Postgres, nothing to dedupe.
   return total;
 }
 
 /**
- * Ensures every member-scoped profile entity exists with defaults.
- * Does not create team/project assignments, clients, invites, or activity logs.
- *
+ * Create default profile rows for a member (not teams, projects, or invites).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string, memberData?: Record<string, unknown>, actor?: string, skipOnboardingForOwner?: boolean }} params
  * @returns {Promise<{ created: string[] }>}

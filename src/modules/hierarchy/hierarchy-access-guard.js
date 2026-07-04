@@ -23,8 +23,7 @@ const ALLOWED_PATH_PREFIXES = [
 ];
 
 /**
- * Check if a member with hierarchy restrictions may access this API path.
- *
+ * Block API paths when hierarchy_status requires assignment.
  * @param {Record<string, unknown> | null | undefined} memberData
  * @param {string} pathname
  * @param {string} method

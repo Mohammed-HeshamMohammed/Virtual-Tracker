@@ -29,15 +29,7 @@ function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = 
   res.end(JSON.stringify(payload));
 }
 
-/**
- * "Sign out" from the landing page means sign out everywhere: revoke the
- * user's Firebase refresh tokens (any dashboard tab's next authenticated API
- * call gets a 401 SESSION_REVOKED — see auth-middleware.js) and push an
- * immediate WebSocket message to any currently-open dashboard tab so it
- * doesn't have to wait for that next call.
- *
- * @param {import("node:http").IncomingMessage} req
- */
+/** Sign-out everywhere: revoke refresh tokens + WS push to open tabs. */
 async function forceSignOutEverywhere(req) {
   const auth = getAuthAdmin();
   const cookie = readSessionCookie(req);
@@ -55,18 +47,7 @@ async function forceSignOutEverywhere(req) {
   }
 }
 
-/**
- * Session-cookie endpoints — used only to share sign-in state between the
- * landing page and the dashboard subdomain (an avatar/dropdown instead of a
- * "Sign in" button). Never used for actual API authorization, which stays
- * Bearer-token-only.
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>} true if handled
- */
+// Session cookie routes — landing↔dashboard sign-in hint only; API auth stays Bearer.
 export async function routeSessionCookie(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 

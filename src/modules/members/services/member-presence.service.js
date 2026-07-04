@@ -7,8 +7,7 @@ import {
 const AUTH_INDEX = "member_auth_index";
 
 /**
- * Fast member lookup for authenticated Firebase uid (no dedupe scan).
- *
+ * member_auth_index lookup — no full members scan.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} firebaseUid
  */
@@ -22,8 +21,7 @@ export async function resolveMemberIdForUid(db, firebaseUid) {
 }
 
 /**
- * Reads persisted disconnect marker only (`last_seen_at`). Live status comes from runtime store.
- *
+ * last_seen_at from DB; live status is in the runtime store.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  */
@@ -61,13 +59,7 @@ export async function enrichMembersWithPresenceBatch(_db, members) {
   }));
 }
 
-/**
- * Management override — updates ephemeral runtime only (no database writes).
- *
- * @param {import("firebase-admin/firestore").Firestore} _db
- * @param {string} memberId
- * @param {{ tracking_status?: string }} patch
- */
+/** Management override — runtime presence only (no DB write). */
 export async function patchMemberPresence(_db, memberId, patch) {
   const { getPresenceService } = await import("../../presence/index.js");
   const presenceService = getPresenceService();

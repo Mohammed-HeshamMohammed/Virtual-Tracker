@@ -19,11 +19,7 @@ import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Employee L2", "Employee L1", "Employee L0", "Client", "Viewer"];
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} roleName
- * @returns {Promise<string>}
- */
-/**
+ * Role name by id (Postgres lookup).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} roleId
  */
@@ -33,6 +29,12 @@ export async function resolveRoleNameById(db, roleId) {
   return await resolveRoleNameByIdPg(roleId);
 }
 
+/**
+ * Role id by name (Postgres lookup).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} roleName
+ * @returns {Promise<string>}
+ */
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
   await isPostgresLookupReady();
@@ -159,9 +161,7 @@ export function pickHighestPrivilegeRoleName(candidates) {
 }
 
 /**
- * Resolve the canonical primary role for a member from `members` + `member_roles` (+ `roles`).
- * When sources disagree, keeps the highest-privilege name (so seed `member_roles` beats stale `User` on `members`).
- *
+ * Primary role from members + member_roles. On conflict, higher privilege wins.
  * @param {Record<string, unknown>} memberData
  * @param {Array<Record<string, unknown>>} memberRoleRows
  * @param {Map<string, string>} roleNameById
@@ -173,9 +173,7 @@ export function pickCanonicalPrimaryRoleName(memberData, memberRoleRows = [], ro
 }
 
 /**
- * Force `members` and `roles` to agree on one primary role.
- * Safe to call after login, profile save, or schema edits.
- *
+ * Keep members.role_id and roles table in sync.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {string} [assignedBy]
@@ -453,7 +451,7 @@ function memberProfileFromDoc(data) {
 }
 
 /**
- * Attach display fields for task assignment and team UIs.
+ * Display fields for task/team assignment UIs.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Array<Record<string, unknown>>} rows
  */
@@ -510,7 +508,7 @@ export async function enrichTeamMembersWithProfiles(db, rows) {
 }
 
 /**
- * Attach project display names for team-project relation rows.
+ * Project names on team-project relation rows.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Array<Record<string, unknown>>} rows
  */

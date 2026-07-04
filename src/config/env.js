@@ -1,11 +1,5 @@
 /**
- * Central environment configuration — single source of truth for Backend/.env values.
- *
- * Bootstrap: `loadEnvFile` runs once when this module is first imported.
- * Access: `import { getEnv, getPublicEnv, initConfig } from "./config/env.js"`
- *
- * Do not read `process.env` elsewhere in application code (enforced by `npm run lint:config`).
- *
+ * Backend env config. Use getEnv() — lint:config blocks direct process.env reads.
  * @see Backend/.env.example
  */
 
@@ -57,11 +51,7 @@ function readBool(source, key, defaultWhenUnset) {
   return defaultWhenUnset;
 }
 
-/**
- * Parse process environment into a typed, frozen configuration object.
- * @param {NodeJS.ProcessEnv} [source]
- * @returns {AppEnv}
- */
+/** Parse + validate env into frozen AppEnv. */
 export function buildEnv(source = process.env) {
   const skipValidation =
     readString(source, "SKIP_ENV_VALIDATION", "") === "1" ||
@@ -182,17 +172,13 @@ export function buildEnv(source = process.env) {
 /** @type {AppEnv | null} */
 let cached = null;
 
-/**
- * Load, parse, validate, and cache configuration. Safe to call multiple times.
- * @returns {AppEnv}
- */
+/** Eager init — same as getEnv(). */
 export function initConfig() {
   return getEnv();
 }
 
 /**
- * Resolved configuration snapshot (parsed once per process unless reset for tests).
- * Validates on first access unless SKIP_ENV_VALIDATION=1.
+ * Cached env snapshot. Validates on first call unless SKIP_ENV_VALIDATION=1.
  * @returns {AppEnv}
  */
 export function getEnv() {
@@ -202,10 +188,7 @@ export function getEnv() {
   return cached;
 }
 
-/**
- * Redacted configuration safe for logs and health endpoints (no API keys or passwords).
- * @returns {ReturnType<typeof toPublicEnv>}
- */
+/** Redacted env for logs / health (no secrets). */
 export function getPublicEnv() {
   return toPublicEnv(getEnv());
 }

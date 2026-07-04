@@ -63,7 +63,7 @@ export function buildUpdatePayload(entity, body, options = {}) {
   return payload;
 }
 
-/** Stamp auth metadata on team writes (Engineering Constitution §4 — backend authority). */
+/** Stamp created_by/updated_by on team writes. */
 export function applyTeamWriteMetadata(entityKey, payload, memberId, isCreate = true) {
   if (!memberId || !payload || typeof payload !== "object") return payload;
   if (entityKey === "teams") {

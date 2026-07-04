@@ -71,8 +71,7 @@ async function reassignMemberReferences(db, fromId, toId) {
 }
 
 /**
- * One Firebase user → one `members` row. Merges duplicates and sets `member_auth_index`.
- *
+ * One Firebase uid → one members row. Merges dupes + updates member_auth_index.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} firebaseUid
  * @returns {Promise<{ canonicalId: string | null, removed: string[] }>}

@@ -36,10 +36,7 @@ async function getProjectLeadershipRecipientIds(db, subjectMemberId) {
   return recipients;
 }
 
-/**
- * Notify managers + project leadership for activity alerts.
- * @param {"employee"|"manager"} subjectLevel
- */
+/** Managers + project leadership for activity alerts. */
 export async function resolveActivityAlertRecipients(db, subjectMemberId, subjectLevel = "employee") {
   const recipients = new Set();
 

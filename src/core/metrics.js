@@ -1,7 +1,4 @@
-/**
- * Metrics collector — in-memory ring buffers for the monitoring dashboard.
- * Zero external dependencies; sampled on every request.
- */
+// In-memory metrics ring buffers for /monitor.
 
 const RING_SIZE = 600; // 10 minutes at 1s resolution
 

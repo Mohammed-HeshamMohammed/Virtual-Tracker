@@ -24,15 +24,7 @@ async function getCachedVisibleMemberIds(db, memberId, roleName) {
   return data;
 }
 
-/**
- * Filter rows based on the authenticated viewer's Members Tree visibility.
- * Fail closed: no auth context → empty result.
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collectionKey
- * @param {any[]} rows
- */
+/** Filter schema rows by viewer visibility (no auth → empty). */
 export async function applyVisibilityFilter(req, db, collectionKey, rows) {
   if (!rows || rows.length === 0) return rows;
 
