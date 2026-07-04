@@ -1,8 +1,0 @@
-# Coolify / Nixpacks — Auth-Backend (base directory: Auth-Backend)
-# Start with node (not npm start) to avoid NPM_CONFIG_PRODUCTION deprecation warnings.
-
-[phases.install]
-cmds = ["npm ci --omit=dev"]
-
-[start]
-cmd = "node index.js"

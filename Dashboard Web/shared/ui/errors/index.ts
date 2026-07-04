@@ -1,8 +1,0 @@
-export { HttpErrorPage } from "@/shared/ui/errors/http-error-page"
-export { DashboardStatusShell, DashboardStatusBrand } from "@/shared/ui/errors/dashboard-status-shell"
-export { DashboardStatusPanel } from "@/shared/ui/errors/dashboard-status-panel"
-export { DashboardStatusContent } from "@/shared/ui/errors/dashboard-status-content"
-export { DashboardReconnectCard } from "@/shared/ui/errors/dashboard-reconnect-card"
-export { DashboardReconnectOverlay } from "@/shared/ui/errors/dashboard-reconnect-overlay"
-export { ConnectionErrorScreen } from "@/shared/ui/errors/connection-error-screen"
-export { getDashboardStatusStyles } from "@/shared/ui/errors/dashboard-status-theme"
