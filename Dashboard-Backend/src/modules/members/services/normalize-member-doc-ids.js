@@ -1,16 +1,16 @@
 import crypto from "node:crypto";
+import { rekeyMemberDataMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../../../lib/postgres/member-data-store.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const META_DOC = "system_meta/member_document_ids";
+const META_KEY = "member_document_ids";
 
-/** Collections/fields that store a reference to members.id */
+/** Collections/fields that store a reference to members.id (Firestore only). */
 const MEMBER_REFERENCES = [
   { collection: "clients", fields: ["member_id"] },
   { collection: "project_members", fields: ["member_id"] },
   { collection: "team_members", fields: ["member_id"] },
-  { collection: "employment", fields: ["member_id"] },
   { collection: "pay_rates", fields: ["member_id"] },
-  { collection: "time_settings", fields: ["member_id"] },
   { collection: "member_onboarding", fields: ["member_id"] },
   { collection: "member_relationships", fields: ["parent_member_id", "child_member_id"] },
   { collection: "client_projects", fields: ["assigned_by"] },
@@ -28,9 +28,8 @@ function isUuid(value) {
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function normalizeLegacyMemberDocumentIds(db) {
-  const metaRef = db.doc(META_DOC);
-  const meta = await metaRef.get();
-  if (meta.exists && meta.data()?.complete === true) {
+  const meta = await getSystemMetaDoc(db, META_KEY);
+  if (meta?.complete === true) {
     const snap = await db.collection("members").limit(500).get();
     const legacyLeft = snap.docs.some((d) => !isUuid(d.id));
     if (!legacyLeft) return { migrated: 0, skipped: true };
@@ -46,7 +45,7 @@ export async function normalizeLegacyMemberDocumentIds(db) {
   }
 
   if (idMap.size === 0) {
-    await metaRef.set({ complete: true, checked_at: new Date() }, { merge: true });
+    await setSystemMetaDoc(db, META_KEY, { complete: true, checked_at: new Date().toISOString() });
     return { migrated: 0, skipped: true };
   }
 
@@ -98,17 +97,15 @@ export async function normalizeLegacyMemberDocumentIds(db) {
     }
 
     await flush();
+    await rekeyMemberDataMemberIdPg(oldId, newId);
     migrated += 1;
   }
 
-  await metaRef.set(
-    {
-      complete: true,
-      migrated_count: migrated,
-      completed_at: new Date(),
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, META_KEY, {
+    complete: true,
+    migrated_count: migrated,
+    completed_at: new Date().toISOString(),
+  });
 
   return { migrated, idMap: Object.fromEntries(idMap) };
 }

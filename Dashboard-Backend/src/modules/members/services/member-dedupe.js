@@ -1,12 +1,11 @@
+import { deleteMemberTreeCache } from "../../../lib/postgres/member-data-store.js";
 import { deleteMemberProfileData } from "./member-profile.service.js";
 
 const MEMBER_AUTH_INDEX = "member_auth_index";
 
 /** @type {Array<{ collection: string, fields: string[] }>} */
 const MEMBER_REFERENCES = [
-  { collection: "employment", fields: ["member_id"] },
   { collection: "pay_rates", fields: ["member_id"] },
-  { collection: "time_settings", fields: ["member_id"] },
   { collection: "member_onboarding", fields: ["member_id"] },
   { collection: "team_members", fields: ["member_id"] },
   { collection: "project_members", fields: ["member_id"] },
@@ -68,7 +67,7 @@ async function reassignMemberReferences(db, fromId, toId) {
       await batch.commit();
     }
   }
-  await db.collection("member_tree_cache").doc(fromId).delete().catch(() => {});
+  await deleteMemberTreeCache(db, fromId);
 }
 
 /**

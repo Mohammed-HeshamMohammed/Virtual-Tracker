@@ -1,5 +1,6 @@
 import { getDb } from "../../config/firebase.js";
 import { logSafeError } from "../../http/sanitize-error.js";
+import { clearAllMemberTreeCachePg } from "../../lib/postgres/member-data-postgres.service.js";
 import { recordMemberRelationship, updateTreeCache } from "./service.js";
 
 /**
@@ -137,13 +138,8 @@ export async function forceReinitializeRelationships() {
   }
   await batch.commit();
 
-  // Clear tree cache
-  const cacheBatch = db.batch();
-  const cache = await db.collection("member_tree_cache").limit(500).get();
-  for (const doc of cache.docs) {
-    cacheBatch.delete(doc.ref);
-  }
-  await cacheBatch.commit();
+  // Clear tree cache (PostgreSQL)
+  await clearAllMemberTreeCachePg();
 
   // Re-run migration
   return initializeMemberRelationships();

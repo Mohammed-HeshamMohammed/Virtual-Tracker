@@ -1,5 +1,6 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "../../config/firebase.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 
 const MARKER_DOC = "user_profile_image_fields";
@@ -15,9 +16,8 @@ export async function ensureUserProfileImageFields() {
     return { success: false, reason: "db_not_available" };
   }
 
-  const markerRef = db.collection("system_meta").doc(MARKER_DOC);
-  const markerSnap = await markerRef.get();
-  if (markerSnap.exists && markerSnap.data()?.completed === true) {
+  const marker = await getSystemMetaDoc(db, MARKER_DOC);
+  if (marker?.completed === true) {
     return { success: true, alreadyCompleted: true, updated: 0 };
   }
 
@@ -50,15 +50,12 @@ export async function ensureUserProfileImageFields() {
     await batch.commit();
   }
 
-  await markerRef.set(
-    {
-      completed: true,
-      updatedCount: updated,
-      scannedCount: profilesSnap.size,
-      completedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, MARKER_DOC, {
+    completed: true,
+    updatedCount: updated,
+    scannedCount: profilesSnap.size,
+    completedAt: new Date().toISOString(),
+  });
 
   console.info(
     `[user-profile-image-migration] Scanned ${profilesSnap.size} profiles; added missing image fields on ${updated}.`,

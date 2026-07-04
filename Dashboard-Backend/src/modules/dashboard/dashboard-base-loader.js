@@ -6,6 +6,7 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { COLLECTIONS } from "../../lib/firestore/collections.js";
 import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
@@ -168,7 +169,7 @@ function serializeBaseForFirestore(base) {
  */
 async function persistBaseSnapshot(db, base) {
   if (base.projectCount < LARGE_ORG_PROJECT_THRESHOLD) return;
-  await db.collection("system_meta").doc(SNAPSHOT_DOC_ID).set(serializeBaseForFirestore(base), { merge: true });
+  await setSystemMetaDoc(db, SNAPSHOT_DOC_ID, serializeBaseForFirestore(base));
 }
 
 /**
@@ -180,10 +181,9 @@ export async function loadDashboardBase(db) {
     return memoryCache.base;
   }
 
-  const snapRef = db.collection("system_meta").doc(SNAPSHOT_DOC_ID);
-  const snap = await snapRef.get();
-  if (snap.exists) {
-    const cached = deserializeBase(snap.data() || {});
+  const cachedPayload = await getSystemMetaDoc(db, SNAPSHOT_DOC_ID);
+  if (cachedPayload) {
+    const cached = deserializeBase(cachedPayload);
     if (cached && cached.fetchedAt && Date.now() - cached.fetchedAt < SNAPSHOT_TTL_MS) {
       memoryCache = { base: cached, expiresAt: Date.now() + MEMORY_TTL_MS };
       return cached;

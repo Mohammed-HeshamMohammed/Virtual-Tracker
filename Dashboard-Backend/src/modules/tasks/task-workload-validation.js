@@ -1,19 +1,11 @@
 import { estimateAssignmentSeconds } from "./task-assignments.js";
 import { SHIFT_ALLOWANCE_LIMITS_ENABLED } from "../members/services/shift-allowance-feature.js";
+import {
+  getMemberLimitHours as getMemberLimitHoursFromStore,
+  memberUsesShiftsForLimits as memberUsesShiftsForLimitsFromStore,
+} from "../../lib/postgres/member-data-store.js";
 
 const TERMINAL_STATUSES = new Set(["done", "cancelled"]);
-
-/**
- * @param {unknown} raw
- */
-function parseLimitHours(raw) {
-  if (raw == null || raw === "") return 0;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw > 0 ? raw : 0;
-  const str = String(raw).trim();
-  if (!str || /^no\s/i.test(str)) return 0;
-  const n = Number(str.replace(/[^\d.]/g, ""));
-  return Number.isFinite(n) && n > 0 ? n : 0;
-}
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -21,11 +13,7 @@ function parseLimitHours(raw) {
  */
 export async function memberUsesShiftsForLimits(db, memberId) {
   if (!SHIFT_ALLOWANCE_LIMITS_ENABLED) return false;
-  const snap = await db.collection("time_settings").where("member_id", "==", memberId).limit(5).get();
-  for (const doc of snap.docs) {
-    if (doc.data()?.use_shifts_for_limits === true) return true;
-  }
-  return false;
+  return memberUsesShiftsForLimitsFromStore(db, memberId);
 }
 
 /**
@@ -34,9 +22,7 @@ export async function memberUsesShiftsForLimits(db, memberId) {
  * @param {string} limitType
  */
 export async function getMemberLimitHours(db, memberId, limitType) {
-  const doc = await db.collection("limits").doc(memberId).get();
-  if (!doc.exists) return 0;
-  return parseLimitHours(doc.data()?.[limitType]);
+  return getMemberLimitHoursFromStore(db, memberId, limitType);
 }
 
 /**

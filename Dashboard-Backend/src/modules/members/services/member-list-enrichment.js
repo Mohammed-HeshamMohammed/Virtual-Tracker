@@ -1,5 +1,7 @@
 /** Batched member-list enrichment — avoids full-collection scans on pay_rates, limits, relations. */
 
+export { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
+
 const MEMBER_ID_IN_CHUNK = 30;
 
 /**
@@ -66,17 +68,6 @@ async function fetchDocsByMemberIdChunks(db, collection, memberIds, applyFilter)
  */
 export async function fetchPayRatesForMembers(db, memberIds) {
   return fetchDocsByMemberIdChunks(db, "pay_rates", memberIds);
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- */
-export async function fetchWeeklyLimitsForMembers(db, memberIds) {
-  const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
-  if (!unique.length) return [];
-  const refs = unique.map((id) => db.collection("limits").doc(id));
-  return db.getAll(...refs);
 }
 
 /**

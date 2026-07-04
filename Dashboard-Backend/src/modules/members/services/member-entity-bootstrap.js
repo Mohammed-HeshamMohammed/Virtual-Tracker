@@ -1,14 +1,16 @@
-import crypto from "node:crypto";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { updateTreeCache } from "../../member-relationships/service.js";
 import { dedupeByMemberId } from "./member-dedupe-helpers.js";
 import { resolveRoleNameById, syncMemberPrimaryRole } from "./relation-sync.js";
+import {
+  ensureLimitsDoc,
+  ensureSingleByMemberId,
+  getMemberTreeCache,
+} from "../../../lib/postgres/member-data-store.js";
 
-/** Singleton row per member (dedupe key = empty string). */
+/** Singleton Firestore rows per member still deduped in Firestore. */
 export const MEMBER_SINGLETON_COLLECTIONS = [
-  "employment",
   "pay_rates",
-  "time_settings",
   "member_onboarding",
 ];
 
@@ -52,41 +54,6 @@ export async function dedupeAllMemberScopedEntities(db, memberId) {
   }
   // limits is now a single doc keyed by member_id — no dedupe needed.
   return total;
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string} memberId
- * @param {() => Record<string, unknown>} buildPayload
- */
-async function ensureSingleByMemberId(db, collection, memberId, buildPayload) {
-  const existing = await db.collection(collection).where("member_id", "==", memberId).limit(1).get();
-  if (!existing.empty) return { created: false, id: existing.docs[0].id };
-  const id = crypto.randomUUID();
-  await db.collection(collection).doc(id).set({ id, member_id: memberId, ...buildPayload() });
-  return { created: true, id };
-}
-
-/**
- * Ensures a consolidated limits document exists for this member.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} actor
- */
-async function ensureLimitsDoc(db, memberId, actor) {
-  const docRef = db.collection("limits").doc(memberId);
-  const existing = await docRef.get();
-  if (existing.exists) return { created: false, id: memberId };
-  const now = new Date();
-  await docRef.set({
-    id: memberId,
-    weekly: 0,
-    daily: 0,
-    updated_by: actor,
-    updated_at: now,
-  });
-  return { created: true, id: memberId };
 }
 
 /**
@@ -180,8 +147,8 @@ export async function ensureMemberScopedEntities(db, { memberId, memberData = {}
   const limits = await ensureLimitsDoc(db, memberId, actor);
   if (limits.created) created.push("limits");
 
-  const cache = await db.collection("member_tree_cache").doc(memberId).get();
-  if (!cache.exists) {
+  const cache = await getMemberTreeCache(db, memberId);
+  if (!cache) {
     try {
       await updateTreeCache(db, memberId);
       created.push("member_tree_cache");

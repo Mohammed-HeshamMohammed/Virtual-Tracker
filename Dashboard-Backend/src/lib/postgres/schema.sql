@@ -132,3 +132,137 @@ DROP TRIGGER IF EXISTS trg_org_field_options_updated_at ON org_field_options;
 CREATE TRIGGER trg_org_field_options_updated_at
   BEFORE UPDATE ON org_field_options
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Member profile extensions (migrated from Firestore; members stay in Firestore)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS limits (
+  member_id   UUID          PRIMARY KEY,
+  weekly      NUMERIC(8, 2) NOT NULL DEFAULT 0,
+  daily       NUMERIC(8, 2) NOT NULL DEFAULT 0,
+  updated_by  VARCHAR(255),
+  updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS time_settings (
+  id                              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id                       UUID         NOT NULL UNIQUE,
+  able_to_track_time              BOOLEAN      NOT NULL DEFAULT true,
+  keep_idle_time                  VARCHAR(30)  NOT NULL DEFAULT 'never',
+  idle_timeout                    VARCHAR(30)  NOT NULL DEFAULT '5 min',
+  modify_time                     VARCHAR(30)  NOT NULL DEFAULT 'off',
+  require_approval                BOOLEAN      NOT NULL DEFAULT false,
+  work_days                       JSONB        NOT NULL DEFAULT '[0, 1, 2, 3, 4]'::jsonb,
+  disable_tracking_specific_days  BOOLEAN      NOT NULL DEFAULT false,
+  use_shifts_for_limits           BOOLEAN      NOT NULL DEFAULT false,
+  updated_by                      VARCHAR(255),
+  updated_at                      TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_time_settings_member ON time_settings (member_id);
+
+CREATE TABLE IF NOT EXISTS employment (
+  id                   UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id            UUID          NOT NULL UNIQUE,
+  job_title_id         UUID,
+  department_id        UUID,
+  job_type_id          UUID,
+  tax_type_id          UUID,
+  work_address         TEXT          NOT NULL DEFAULT '',
+  mailing_address      BOOLEAN       NOT NULL DEFAULT false,
+  employment_type      VARCHAR(120)  NOT NULL DEFAULT '',
+  employed_through     VARCHAR(120)  NOT NULL DEFAULT '',
+  workplace_model      VARCHAR(120)  NOT NULL DEFAULT '',
+  pct_in_office        NUMERIC(5, 2) NOT NULL DEFAULT 0,
+  pct_remote           NUMERIC(5, 2) NOT NULL DEFAULT 0,
+  tax_info             TEXT          NOT NULL DEFAULT '',
+  account_code         VARCHAR(120)  NOT NULL DEFAULT '',
+  currency             VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  start_date           DATE,
+  end_date             DATE,
+  termination_reason   VARCHAR(120)  NOT NULL DEFAULT '',
+  employment_comments  TEXT          NOT NULL DEFAULT '',
+  created_by           VARCHAR(255),
+  updated_by           VARCHAR(255),
+  created_at           TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at           TIMESTAMPTZ   NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_employment_member ON employment (member_id);
+
+CREATE TABLE IF NOT EXISTS member_bans (
+  id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id             UUID         NOT NULL,
+  member_name           VARCHAR(255) NOT NULL DEFAULT '',
+  email                 VARCHAR(255) NOT NULL DEFAULT '',
+  firebase_uid          VARCHAR(128) NOT NULL DEFAULT '',
+  reason                TEXT         NOT NULL,
+  ip_address            VARCHAR(45)  NOT NULL DEFAULT '',
+  active                BOOLEAN      NOT NULL DEFAULT true,
+  banned_at             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  banned_by_member_id   VARCHAR(255),
+  banned_by_name        VARCHAR(255),
+  email_sent            BOOLEAN      NOT NULL DEFAULT false,
+  revoked_at            TIMESTAMPTZ,
+  revoked_by_member_id  VARCHAR(255),
+  revoked_by_name       VARCHAR(255)
+);
+
+CREATE INDEX IF NOT EXISTS idx_member_bans_active_email ON member_bans (email) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_member_bans_active_member ON member_bans (member_id) WHERE active = true;
+CREATE INDEX IF NOT EXISTS idx_member_bans_active_uid ON member_bans (firebase_uid) WHERE active = true;
+
+CREATE TABLE IF NOT EXISTS device_bans (
+  ip_address            VARCHAR(45) PRIMARY KEY,
+  ban_count             INT         NOT NULL DEFAULT 0,
+  banned_member_ids     JSONB       NOT NULL DEFAULT '[]'::jsonb,
+  permanently_banned    BOOLEAN     NOT NULL DEFAULT false,
+  permanently_banned_at TIMESTAMPTZ,
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS system_meta (
+  doc_key    VARCHAR(120) PRIMARY KEY,
+  payload    JSONB        NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS member_tree_cache (
+  member_id    UUID        PRIMARY KEY,
+  ancestors    JSONB       NOT NULL DEFAULT '[]'::jsonb,
+  descendants  JSONB       NOT NULL DEFAULT '[]'::jsonb,
+  root_id      UUID,
+  depth        INT         NOT NULL DEFAULT 0,
+  updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DROP TRIGGER IF EXISTS trg_limits_updated_at ON limits;
+CREATE TRIGGER trg_limits_updated_at
+  BEFORE UPDATE ON limits
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_time_settings_updated_at ON time_settings;
+CREATE TRIGGER trg_time_settings_updated_at
+  BEFORE UPDATE ON time_settings
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_employment_updated_at ON employment;
+CREATE TRIGGER trg_employment_updated_at
+  BEFORE UPDATE ON employment
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_system_meta_updated_at ON system_meta;
+CREATE TRIGGER trg_system_meta_updated_at
+  BEFORE UPDATE ON system_meta
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_member_tree_cache_updated_at ON member_tree_cache;
+CREATE TRIGGER trg_member_tree_cache_updated_at
+  BEFORE UPDATE ON member_tree_cache
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+DROP TRIGGER IF EXISTS trg_device_bans_updated_at ON device_bans;
+CREATE TRIGGER trg_device_bans_updated_at
+  BEFORE UPDATE ON device_bans
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();

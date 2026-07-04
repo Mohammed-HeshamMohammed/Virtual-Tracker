@@ -1,5 +1,6 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { getDb } from "../../config/firebase.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 
 const MARKER_DOC = "client_budget_start_date_removed";
 
@@ -14,9 +15,8 @@ export async function removeClientBudgetStartDates() {
     return { success: false, reason: "db_not_available" };
   }
 
-  const markerRef = db.collection("system_meta").doc(MARKER_DOC);
-  const markerSnap = await markerRef.get();
-  if (markerSnap.exists && markerSnap.data()?.completed === true) {
+  const marker = await getSystemMetaDoc(db, MARKER_DOC);
+  if (marker?.completed === true) {
     return { success: true, alreadyCompleted: true, updated: 0 };
   }
 
@@ -47,15 +47,12 @@ export async function removeClientBudgetStartDates() {
     await batch.commit();
   }
 
-  await markerRef.set(
-    {
-      completed: true,
-      updatedCount: updated,
-      scannedCount: budgetsSnap.size,
-      completedAt: FieldValue.serverTimestamp(),
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, MARKER_DOC, {
+    completed: true,
+    updatedCount: updated,
+    scannedCount: budgetsSnap.size,
+    completedAt: new Date().toISOString(),
+  });
 
   console.info(
     `[client-budget-start-date-migration] Scanned ${budgetsSnap.size} budgets; removed start date on ${updated}.`,
