@@ -206,9 +206,8 @@ Central configuration parameters are defined in [src/config/env.js](file:///x:/W
 | :--- | :--- | :--- |
 | `NODE_ENV` | Mode under which the server runs. | `development`, `production`, or `test`. |
 | `PORT` | Local port the HTTP server binds to. | `5712` (dev) / `3000` (production). |
-| `FRONTEND_ORIGIN` | Primary web client URL (used for CORS mapping). | `http://localhost:3000` (HTTPS required in prod). |
+| `FRONTEND_ORIGIN` | Primary web client URL (used in links, not CORS — CORS allows all origins since this API is Bearer-token authenticated). | `http://localhost:3000` (HTTPS required in prod). |
 | `APP_PUBLIC_URL` | Public entry URL of the main dashboard site. | HTTPS required in production. |
-| `CORS_ORIGINS` | Comma-separated list of additional allowed CORS origins. | Default includes Dashboard Web + Landing Web URLs. |
 | `ALLOW_INSECURE_HTTP` | Allows HTTP connections (bypasses TLS enforcement). | `false`. Set to `true` only for dev environments without TLS. |
 | `SKIP_ENV_VALIDATION` | Skips Zod environment schema checking. | `false`. Set to `1` or `true` in test suites only. |
 

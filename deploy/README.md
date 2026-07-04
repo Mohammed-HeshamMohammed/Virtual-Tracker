@@ -58,7 +58,6 @@ nano .env   # fill every value
 | `LANDING_DOMAIN` | `yourdomain.com` |
 | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` |
 | `APP_PUBLIC_URL` | `https://app.yourdomain.com` |
-| `CORS_ORIGINS` | `https://app.yourdomain.com,https://yourdomain.com` |
 | `FIREBASE_*` | Web + Admin credentials |
 | `RESEND_*` or `SMTP_*` | Transactional email |
 
@@ -141,7 +140,7 @@ docker compose up -d --build   # after code changes
 - Only ports **80** and **443** are published to the host.
 - Backends (`5712`, `5713`) and frontends (`3000`, `3001`) stay on the internal Docker network.
 - Set `MONITOR_PASSWORD` if you use `/monitor` on the dashboard backend.
-- Never use `CORS_ORIGINS=*` in production.
+- Auth-Backend and Dashboard-Backend APIs are Bearer-token authenticated (no cookies), so CORS allows all origins by design — access control is enforced by verifying the token server-side, not by the browser's Origin header.
 
 ## API path routing
 
@@ -156,7 +155,6 @@ docker compose up -d --build   # after code changes
 
 | Issue | Fix |
 |-------|-----|
-| CORS errors in browser | Add exact frontend origin to `CORS_ORIGINS` |
 | Firebase config fails | Check `FIREBASE_*` in `.env`, restart backends |
 | Caddy TLS fails | DNS must point to VPS; ports 80/443 open |
 | Dashboard blank after login | Verify `NEXT_PUBLIC_API_URL` (or `NEXT_PUBLIC_AUTH_API_URL`/`NEXT_PUBLIC_DASHBOARD_API_URL`) was set at **build** time — check the browser's failed request URL; if it's `127.0.0.1:5712`/`:5713` the var was missing during `docker compose build` and the image must be rebuilt, not just restarted |

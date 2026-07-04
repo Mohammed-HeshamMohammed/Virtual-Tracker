@@ -128,8 +128,7 @@ Central variables are loaded by [env.js](file:///x:/Work/Virtual-Tracker-Test/Vi
 | :--- | :--- | :--- | :--- |
 | `NODE_ENV` | Mode | `development` \| `production` \| `test` | Target environment. |
 | `PORT` | Network | `number` (1-65535, default `5713`) | Server port binding. |
-| `FRONTEND_ORIGIN` | CORS | `string` | Primary dashboard client host origin. |
-| `CORS_ORIGINS` | CORS | `string` | Comma-separated list of alternative origins. |
+| `FRONTEND_ORIGIN` | Links | `string` | Primary dashboard client host origin (used in invite links/emails, not CORS — CORS allows all origins since this API is Bearer-token authenticated). |
 | `APP_PUBLIC_URL` | Redirects | `string` (HTTPS required in prod) | Public redirect origin of the client dashboard. |
 | `ALLOW_INSECURE_HTTP` | Dev Override | `boolean` | Disable TLS checking. Do not enable in production. |
 | `SKIP_ENV_VALIDATION` | Test Override| `boolean` | Bypasses Zod env schema validation rules. |
