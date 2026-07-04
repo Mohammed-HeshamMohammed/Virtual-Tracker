@@ -46,6 +46,10 @@ const envSchema = z
 
     // PostgreSQL — optional, used for delivery logging only
     POSTGRES_URL: optionalTrimmedString,
+
+    // Destination for the "contact-inquiry" template (landing page contact form).
+    // Owned here, not by the caller — every inquiry goes to the same inbox.
+    SUPPORT_EMAIL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnv = (data.NODE_ENV || "development").trim();
@@ -107,6 +111,7 @@ function buildConfig(source = process.env) {
       smtpUser: source.SMTP_USER || "",
       smtpPass: source.SMTP_PASS || "",
       smtpFrom: source.SMTP_FROM || "",
+      supportEmail: source.SUPPORT_EMAIL || "",
     },
     firebase: {
       serviceAccount: source.FIREBASE_SERVICE_ACCOUNT || "",
