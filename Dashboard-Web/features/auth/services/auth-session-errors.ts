@@ -30,7 +30,12 @@ export function parseAuthSessionErrorCode(data: unknown): AuthSessionErrorCode |
 export const VT_AUTH_SESSION_RESTRICTED = "vt-auth-session-restricted"
 
 export function isAccountRestrictionCode(code: AuthSessionErrorCode | undefined): boolean {
-  return code === "ACCOUNT_BANNED" || code === "ACCOUNT_DISABLED" || code === "DEVICE_BANNED"
+  return (
+    code === "ACCOUNT_BANNED" ||
+    code === "ACCOUNT_DISABLED" ||
+    code === "DEVICE_BANNED" ||
+    code === "SESSION_REVOKED"
+  )
 }
 
 export function parseAuthSessionErrorMessage(data: unknown, fallback: string): string {
