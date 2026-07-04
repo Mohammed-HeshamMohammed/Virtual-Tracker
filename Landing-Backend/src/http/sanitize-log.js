@@ -1,7 +1,11 @@
-import { isSensitiveFieldName, redactSensitiveValue } from "../security/sensitive-fields.js";
+import { isSensitiveFieldName, redactSensitiveValue } from "./sensitive-fields.js";
 
 const JWT_LIKE = /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
+/**
+ * @param {string} rawUrl
+ * @returns {string}
+ */
 export function sanitizeUrlForLog(rawUrl) {
   if (!rawUrl || typeof rawUrl !== "string") return rawUrl;
   const q = rawUrl.indexOf("?");
@@ -34,6 +38,10 @@ export function sanitizeUrlForLog(rawUrl) {
   }
 }
 
+/**
+ * @param {string} pathOrUrl
+ * @returns {string}
+ */
 export function sanitizePathForLog(pathOrUrl) {
   if (!pathOrUrl) return pathOrUrl;
   const withoutHash = pathOrUrl.split("#")[0];

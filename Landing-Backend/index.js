@@ -1,25 +1,22 @@
-// Bootstrap: load and validate configuration before other modules run.
-import { getEnv, initConfig } from "./src/config/env/index.js";
+// Landing-Backend entry: contact form + session-status proxy for the landing page.
+import { getEnv, initConfig } from "./src/config/env.js";
 
 initConfig();
 
-import { createServer } from "./src/server.js";
+import { createServer } from "./server.js";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { getDb } from "./src/core/database/firebase.js";
-import { logStartup, logDbStatus, logError } from "./src/core/utils/logger.js";
+import { getDb } from "./src/config/firebase.js";
+import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 
 let activeServer = null;
-
-function resolvePort(rawPort) {
-  const parsed = Number.parseInt(rawPort ?? "", 10);
-  return Number.isFinite(parsed) ? parsed : getEnv().server.port;
-}
 
 function registerServerErrorHandler(server, port) {
   server.on("error", (err) => {
     if (err?.code === "EADDRINUSE") {
-      console.error(`Port ${port} is already in use. Set PORT in Coolify environment variables.`);
+      console.error(
+        `Port ${port} is already in use. Stop the other process or set PORT in Landing-Backend/.env.`,
+      );
       process.exit(1);
     }
     logError(err, "server");
@@ -35,7 +32,6 @@ process.on("SIGTERM", () => {
   }
   process.exit(0);
 });
-
 process.on("SIGINT", () => {
   console.log("\n[shutdown] SIGINT received, closing server...");
   if (activeServer) {
@@ -45,15 +41,12 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-export function startServer(port = getEnv().server.port, host = getEnv().server.host) {
+export function startServer(port = getEnv().server.port) {
   const server = createServer();
   activeServer = server;
   registerServerErrorHandler(server, port);
 
-  server.listen(port, host, async () => {
-    const db = getDb();
-    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
-
+  server.listen(port, () => {
     let version = "0.0.0";
     try {
       const pkgPath = new URL("./package.json", import.meta.url);
@@ -65,14 +58,19 @@ export function startServer(port = getEnv().server.port, host = getEnv().server.
       // Keep default version fallback.
     }
 
+    const routes = ["/health", "/api/contact", "/api/session-status", "/api/session-logout"];
+
     logStartup({
       version,
       port,
       nodeEnv: getEnv().nodeEnv,
-      routes: ["/health"],
+      routes,
     });
 
-    console.log(`Landing API listening on ${host}:${port} (${getEnv().nodeEnv})`);
+    const db = getDb();
+    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
+
+    console.log(`Landing-Backend listening on http://localhost:${port}`);
   });
   return server;
 }

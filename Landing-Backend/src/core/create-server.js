@@ -1,7 +1,7 @@
 import { createServer as createNodeServer } from "node:http";
-import { handleRequest } from "../../app.js";
-import { sanitizePathForLog } from "../middleware/http/sanitize-log.js";
-import { quotaErrorHttpResponse } from "../middleware/http/quota-error.js";
+import { handleRequest } from "../app/handle-request.js";
+import { sanitizePathForLog } from "../http/sanitize-log.js";
+import { quotaErrorHttpResponse } from "../http/quota-error.js";
 import { logRequest, logResponse, logError } from "./logger.js";
 
 export function createServer() {

@@ -1,10 +1,17 @@
 import { gzipSync } from "node:zlib";
 import { enrichErrorPayload } from "./api-error.js";
-import { corsHeaders } from "../security/cors.js";
-import { getSecurityHeaders } from "../security/security-headers.js";
+import { corsHeaders } from "./cors.js";
+import { getSecurityHeaders } from "./security-headers.js";
 
 const MIN_GZIP_BYTES = 512;
 
+/**
+ * @param {import("node:http").ServerResponse} res
+ * @param {string|undefined} origin
+ * @param {number} status
+ * @param {unknown} payload
+ * @param {import("node:http").IncomingMessage} [req]
+ */
 export function sendJson(res, origin, status, payload, req) {
   const body = JSON.stringify(enrichErrorPayload(status, payload));
   const headers = {

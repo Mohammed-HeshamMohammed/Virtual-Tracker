@@ -1,5 +1,5 @@
 {
-  "name": "virtual-tracker-landing-api",
+  "name": "virtual-tracker-landing-backend",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -7,15 +7,11 @@
     "node": ">=20.6"
   },
   "scripts": {
-    "start": "node --use-system-ca index.js"
+    "start": "node index.js",
+    "dev": "node --watch index.js"
   },
   "dependencies": {
-    "@zxcvbn-ts/core": "^4.1.2",
-    "@zxcvbn-ts/language-common": "^4.1.2",
-    "@zxcvbn-ts/language-en": "^4.1.1",
     "firebase-admin": "^13.8.0",
-    "nodemailer": "^9.0.1",
-    "ws": "^8.21.0",
     "zod": "^3.25.76"
   },
   "overrides": {

@@ -1,24 +1,30 @@
 import { sendJson } from "./response.js";
 
+/**
+ * @param {number} status
+ * @param {string} [message]
+ */
 export function inferErrorCode(status, message = "") {
   const lower = message.toLowerCase();
-  if (status === 401) return "UNAUTHORIZED";
-  if (status === 403) return "PERMISSION_DENIED";
+  if (status === 400) return "BAD_REQUEST";
   if (status === 404) return "NOT_FOUND";
-  if (status === 409) return "CONFLICT";
-  if (status === 410) return "GONE";
   if (status === 429 || lower.includes("rate limit") || lower.includes("too many")) return "RATE_LIMITED";
   if (status >= 500) return "INTERNAL_ERROR";
-  if (status === 400) return "BAD_REQUEST";
   if (status === 503) return "SERVICE_UNAVAILABLE";
   return "REQUEST_FAILED";
 }
 
+/**
+ * Attach `errorDetail` to legacy `{ success: false, error: string }` payloads.
+ *
+ * @param {number} status
+ * @param {unknown} payload
+ */
 export function enrichErrorPayload(status, payload) {
-  if (!payload || typeof payload !== "object" || payload.success !== false) {
+  if (!payload || typeof payload !== "object" || /** @type {{ success?: boolean }} */ (payload).success !== false) {
     return payload;
   }
-  const body = payload;
+  const body = /** @type {{ error?: string, errorDetail?: { code?: string, message?: string } }} */ (payload);
   if (typeof body.error !== "string" || !body.error.trim()) return payload;
   if (body.errorDetail && typeof body.errorDetail === "object" && body.errorDetail.code) return payload;
   return {
@@ -30,6 +36,14 @@ export function enrichErrorPayload(status, payload) {
   };
 }
 
+/**
+ * @param {import("node:http").ServerResponse} res
+ * @param {string|undefined} origin
+ * @param {number} status
+ * @param {string} code
+ * @param {string} message
+ * @param {import("node:http").IncomingMessage} [req]
+ */
 export function sendApiError(res, origin, status, code, message, req) {
   sendJson(
     res,

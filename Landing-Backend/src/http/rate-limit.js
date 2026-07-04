@@ -1,38 +1,39 @@
+/**
+ * Sliding-window rate limiter (per client IP + route bucket).
+ * In-memory per process — suitable for single-instance dev and small deployments.
+ */
+
 const buckets = new Map();
 
 const WINDOW_MS = 60_000;
-const DEFAULT_LIMIT = 120;
-const AUTH_LIMIT = 25;
-const VALIDATE_PASSWORD_LIMIT = 40;
-const PUBLIC_INVITE_LIMIT = 15;
-const PRESENCE_LIMIT = 30;
-const ACTIVITY_LIMIT = 60;
-const SEARCH_LIMIT = 40;
+const DEFAULT_LIMIT = 60;
+// Contact form is the only write path here — keep it tight against spam.
+const CONTACT_LIMIT = 5;
+// Session-status is checked on effectively every landing page load.
+const SESSION_LIMIT = 120;
 
+/**
+ * @param {URL} url
+ */
 function limitBucket(url) {
-  const path = url.pathname.replace(/^\/api\/v1/, "/api");
-  if (path === "/api/auth/presence") return "presence";
-  if (path === "/api/auth/validate-password") return "validate-password";
-  if (path.startsWith("/api/auth/")) return "auth";
-  if (path.startsWith("/api/public/invites/")) return "public-invite";
-  if (path.startsWith("/api/activity/")) return "activity";
-  if (path.includes("/search") || url.searchParams.has("q") || url.searchParams.has("query")) {
-    return "search";
-  }
+  if (url.pathname === "/api/contact") return "contact";
+  if (url.pathname === "/api/session-status" || url.pathname === "/api/session-logout") return "session";
   return "api";
 }
 
+/**
+ * @param {URL} url
+ */
 function limitForBucket(url) {
   const bucket = limitBucket(url);
-  if (bucket === "validate-password") return VALIDATE_PASSWORD_LIMIT;
-  if (bucket === "auth") return AUTH_LIMIT;
-  if (bucket === "public-invite") return PUBLIC_INVITE_LIMIT;
-  if (bucket === "presence") return PRESENCE_LIMIT;
-  if (bucket === "activity") return ACTIVITY_LIMIT;
-  if (bucket === "search") return SEARCH_LIMIT;
+  if (bucket === "contact") return CONTACT_LIMIT;
+  if (bucket === "session") return SESSION_LIMIT;
   return DEFAULT_LIMIT;
 }
 
+/**
+ * @param {import("node:http").IncomingMessage} req
+ */
 function clientKey(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {
@@ -41,6 +42,10 @@ function clientKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
+/**
+ * Local dev server — do not throttle loopback traffic.
+ * @param {import("node:http").IncomingMessage} req
+ */
 function isLocalClient(req) {
   const addr = clientKey(req);
   return (
@@ -51,6 +56,10 @@ function isLocalClient(req) {
   );
 }
 
+/**
+ * @param {string} key
+ * @param {number} limit
+ */
 function checkMemoryLimit(key, limit) {
   const now = Date.now();
   const entry = buckets.get(key) ?? { count: 0, resetAt: now + WINDOW_MS };
@@ -71,6 +80,11 @@ function checkMemoryLimit(key, limit) {
   return null;
 }
 
+/**
+ * @param {import("node:http").IncomingMessage} req
+ * @param {URL} url
+ * @returns {Promise<{ status: 429, retryAfterSec: number } | null>}
+ */
 export async function checkRateLimit(req, url) {
   if (isLocalClient(req)) {
     return null;
