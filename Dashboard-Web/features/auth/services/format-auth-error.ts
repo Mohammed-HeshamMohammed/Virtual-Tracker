@@ -26,7 +26,7 @@ export function formatAuthError(err: unknown): string {
     return "This site's domain is not allowed. In Firebase Console: Authentication → Settings → Authorized domains, add this app's host (e.g. localhost and your production domain)."
   }
   if (code === "auth/invalid-continue-uri") {
-    return "This sign-in link URL is not allowed by Firebase. Open the app at http://localhost:3000 (not 127.0.0.1 or a LAN IP), or set NEXT_PUBLIC_AUTH_CONTINUE_URL to an authorized URL and add that domain under Authentication → Settings → Authorized domains."
+    return "This sign-in link URL is not allowed by Firebase. Open the app at its canonical domain (not 127.0.0.1 or a LAN IP), or set NEXT_PUBLIC_AUTH_CONTINUE_URL to an authorized URL and add that domain under Authentication → Settings → Authorized domains."
   }
   if (code === "auth/popup-blocked") {
     return "Your browser blocked the Google sign-in popup. Allow popups for this site, or try again after disabling strict popup blockers."

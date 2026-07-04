@@ -34,9 +34,8 @@ export function resolveAuthContinueUrl(body, env) {
     }
   }
 
-  const configured = (env.urls.appPublicUrl || env.urls.frontendOrigin || "").trim();
-  if (configured) return configured.replace(/\/$/, "");
-  return "http://localhost:3000";
+  const configured = (env.urls.appPublicUrl || env.urls.frontendOrigin).trim();
+  return configured.replace(/\/$/, "");
 }
 
 /**

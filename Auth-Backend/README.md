@@ -376,7 +376,6 @@ Auth-Backend/
     │   ├── env-schema.js       # Zod schemas for env strings and JSON credentials
     │   ├── env-public.js       # Helper to sanitize and omit secrets for logs
     │   ├── firebase.js         # Firebase connection manager & credential checkers
-    │   ├── deployment-profiles.js # Port mapping registries and default CORS origins
     │   └── password-policy/    # Rules parameters, checks, and validators
     ├── core/
     │   ├── create-server.js    # Node.js http instance creator & crash error catcher
