@@ -15,7 +15,6 @@ export function toPublicEnv(config) {
       allowInsecureHttp: config.security.allowInsecureHttp,
       disableTlsVerificationInDev: config.security.disableTlsVerificationInDev,
     }),
-    cors: Object.freeze({ originCount: config.cors.origins.length }),
     urls: Object.freeze({
       frontendOrigin: config.urls.frontendOrigin,
       appPublicUrl: config.urls.appPublicUrl || null,
