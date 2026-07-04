@@ -93,10 +93,6 @@ export function buildEnv(source = process.env) {
       backendUrl: readString(source, "NOTIFY_BACKEND_URL"),
       internalServiceSecret: readString(source, "INTERNAL_SERVICE_SECRET"),
     }),
-
-    email: Object.freeze({
-      supportEmail: readString(source, "SUPPORT_EMAIL", "support@myvirtualtracker.com"),
-    }),
   });
 }
 

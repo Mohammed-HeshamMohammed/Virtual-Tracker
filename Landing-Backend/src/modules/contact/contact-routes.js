@@ -53,20 +53,19 @@ export async function routeContact(req, res, url, origin) {
   }
 
   const { backendUrl: notifyBackendUrl } = getEnv().notify;
-  const supportEmail = getEnv().email.supportEmail;
-  if (!notifyBackendUrl || !supportEmail) {
+  if (!notifyBackendUrl) {
     sendJson(res, origin, 503, { success: false, error: "The contact form is not available right now." }, req);
     return true;
   }
 
   // Notify-Backend is the only persistence layer for inquiries (its delivery log
-  // records the submitted fields) — this call is required, not best-effort.
+  // records the submitted fields) and owns the destination inbox itself — this
+  // call is required, not best-effort.
   try {
     const { response, payload } = await notifyRequest("/api/notify/email", {
       template: "contact-inquiry",
-      email: supportEmail,
+      email,
       name,
-      fromEmail: email,
       topic,
       teamSize,
       message,
