@@ -1,4 +1,4 @@
-/** Accurate product copy aligned with app/Frontend, app/Backend, and Python agent. */
+/** Product copy for landing pages. */
 
 export const PRODUCT_TAGLINE =
   "Work tracking and utilization monitoring for distributed teams."

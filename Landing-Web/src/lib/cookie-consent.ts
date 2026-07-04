@@ -3,11 +3,7 @@ const CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 
 export type CookieConsentValue = "accepted" | "declined"
 
-/**
- * Parent domain for the consent cookie so accepting on one subdomain
- * (e.g. the landing page) is respected on the others (e.g. the dashboard).
- * Returns undefined on localhost/IP hosts, where the cookie stays host-only.
- */
+/** Consent cookie domain — shared across subdomains; host-only on localhost. */
 function getCookieDomain(): string | undefined {
   if (typeof window === "undefined") return undefined
   const host = window.location.hostname
