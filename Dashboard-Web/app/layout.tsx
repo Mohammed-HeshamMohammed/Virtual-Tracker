@@ -3,6 +3,7 @@ import { Inter } from "next/font/google"
 import "@/app/globals.css"
 import { ThemeProvider, AuthProvider } from "@/shared/providers/app"
 import { LauncherShell } from "@/app/launcher-shell"
+import { CookieConsentBanner } from "@/shared/ui/shared/cookie-consent-banner"
 
 const inter = Inter({
   subsets: ["latin"],
@@ -40,6 +41,7 @@ export default function RootLayout({
             <LauncherShell>{children}</LauncherShell>
           </AuthProvider>
         </ThemeProvider>
+        <CookieConsentBanner />
       </body>
     </html>
   )
