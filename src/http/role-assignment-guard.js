@@ -1,4 +1,4 @@
-import { normalizeRoleKey } from "../modules/members/services/relation-sync.js";
+import { normalizeRoleKey, resolveRoleNameById } from "../modules/members/services/relation-sync.js";
 import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { canAssignRole, canCreateMembers } from "./role-hierarchy.js";
 import {
@@ -27,10 +27,8 @@ async function resolveTargetRoleName(db, input) {
     return input.roleName.trim();
   }
   if (typeof input.roleId === "string" && input.roleId.trim() && db) {
-    const snap = await db.collection("roles").doc(input.roleId.trim()).get();
-    if (snap.exists && typeof snap.data()?.name === "string") {
-      return snap.data().name.trim();
-    }
+    const name = await resolveRoleNameById(db, input.roleId.trim());
+    if (name) return name;
   }
   return "";
 }

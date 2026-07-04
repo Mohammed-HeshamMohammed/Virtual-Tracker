@@ -470,12 +470,10 @@ export async function enrichTeamMembersWithProfiles(db, rows) {
   const profileByMemberId = new Map();
   const roleByMemberId = new Map();
 
-  const rolesSnap = await db.collection("roles").limit(100).get();
+  await isPostgresLookupReady();
+  const { roles } = await getLookupData();
   const roleNameById = new Map(
-    rolesSnap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name : ""];
-    }),
+    roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
   );
 
   for (let i = 0; i < memberIds.length; i += 30) {
