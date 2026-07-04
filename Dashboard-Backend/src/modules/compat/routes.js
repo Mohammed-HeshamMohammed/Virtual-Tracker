@@ -57,7 +57,6 @@ import {
   enrichMembersWithPayAndLimitsFromDocs,
   enrichMembersWithPayAndLimits,
   fetchMemberRelationSnaps,
-  fetchMemberRolesForMembers,
   fetchPayRatesForMembers,
   fetchWeeklyLimitsForMembers,
 } from "../members/services/member-list-enrichment.js";
@@ -707,16 +706,14 @@ export async function routeCompatibility(req, res, url, db, origin) {
     });
     const memberIds = members.map((member) => member.id);
 
-    const [memberRoleDocs, rolesSnap, relationSnaps, payDocs, limitDocs] = await Promise.all([
-      needsRoles ? fetchMemberRolesForMembers(db, memberIds) : Promise.resolve(null),
-      needsRoles ? db.collection("roles").limit(100).get() : Promise.resolve(null),
+    const [relationSnaps, payDocs, limitDocs] = await Promise.all([
       needsTeams || needsProjects ? fetchMemberRelationSnaps(db, memberIds) : Promise.resolve(null),
       needsPayOrLimits ? fetchPayRatesForMembers(db, memberIds) : Promise.resolve(null),
       needsPayOrLimits ? fetchWeeklyLimitsForMembers(db, memberIds) : Promise.resolve(null),
     ]);
 
     if (needsRoles) {
-      members = enrichMembersWithRoleNamesFromSnaps(members, { docs: memberRoleDocs ?? [] }, rolesSnap);
+      members = await enrichMembersWithRoleNames(db, members);
     }
     if ((needsTeams || needsProjects) && relationSnaps) {
       members = enrichMembersWithRelationsFromSnaps(

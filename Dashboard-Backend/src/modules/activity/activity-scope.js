@@ -1,5 +1,5 @@
 import { getVisibleMemberIds } from "../member-relationships/service.js";
-import { pickHighestPrivilegeRoleName } from "../members/services/relation-sync.js";
+import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/services/relation-sync.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
@@ -12,19 +12,11 @@ function normalizeRole(roleName) {
 }
 
 export async function resolveMemberRoleName(db, memberId) {
-  const [memberSnap, rolesSnap] = await Promise.all([
-    db.collection("members").doc(memberId).get(),
-    db.collection("roles").limit(100).get(),
-  ]);
+  const memberSnap = await db.collection("members").doc(memberId).get();
   if (!memberSnap.exists) return "Viewer";
-  const roleNameById = new Map(
-    rolesSnap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-    }),
-  );
   const memberRoleId = typeof memberSnap.data()?.role_id === "string" ? memberSnap.data().role_id : "";
-  const roleName = memberRoleId ? roleNameById.get(memberRoleId) : "";
+  if (!memberRoleId) return "Viewer";
+  const roleName = await resolveRoleNameById(db, memberRoleId);
   return pickHighestPrivilegeRoleName([roleName || "Viewer"]);
 }
 
