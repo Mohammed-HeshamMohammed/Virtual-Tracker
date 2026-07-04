@@ -396,6 +396,49 @@ export async function sendMemberBanEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[ban-email]" });
 }
 
+// ── Landing page contact inquiry ──────────────────────────────────────────────
+
+/** @param {{ to: string; name: string; fromEmail: string; topic?: string; teamSize?: string; message: string }} input */
+export async function sendContactInquiryEmail(input) {
+  const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const fromEmail = typeof input.fromEmail === "string" ? input.fromEmail.trim().toLowerCase() : "";
+  const message = typeof input.message === "string" ? input.message.trim() : "";
+  if (!to || !name || !fromEmail || !message) return { sent: false, channel: "skipped" };
+
+  const topic = typeof input.topic === "string" && input.topic.trim() ? input.topic.trim() : "General";
+  const teamSize = typeof input.teamSize === "string" && input.teamSize.trim() ? input.teamSize.trim() : "";
+  const subject = `New contact inquiry (${topic}) — ${name}`;
+  const text = [
+    `New landing page inquiry from ${name} <${fromEmail}>`,
+    "",
+    `Topic: ${topic}`,
+    teamSize ? `Team size: ${teamSize}` : "",
+    "",
+    "Message:",
+    message,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const html = buildAuthBrandedEmailHtml({
+    title: "New contact inquiry",
+    bodyHtml: `
+      <p style="margin:0 0 12px;">New landing page inquiry from <strong>${escapeHtml(name)}</strong> (<a href="mailto:${escapeHtml(fromEmail)}" style="color:#6b38d4;text-decoration:none;">${escapeHtml(fromEmail)}</a>)</p>
+      <table role="presentation" style="margin:12px 0 16px;width:100%;border-collapse:collapse;">
+        <tr><td style="padding:4px 0;color:#64748b;width:96px;">Topic</td><td style="padding:4px 0;color:#171c1f;">${escapeHtml(topic)}</td></tr>
+        ${teamSize ? `<tr><td style="padding:4px 0;color:#64748b;">Team size</td><td style="padding:4px 0;color:#171c1f;">${escapeHtml(teamSize)}</td></tr>` : ""}
+      </table>
+      <p style="margin:0 0 8px;color:#64748b;">Message:</p>
+      <p style="margin:0;white-space:pre-wrap;">${escapeHtml(message)}</p>
+    `.trim(),
+    actionLabel: "Reply to inquiry",
+    actionHref: `mailto:${fromEmail}`,
+  });
+
+  return sendTransactionalEmail({ to, subject, text, html, logPrefix: "[contact-inquiry-email]" });
+}
+
 // ── Team weekly report ────────────────────────────────────────────────────────
 
 /** @param {{ email: string; teamName: string; memberCount: number; appUrl: string }} input */
