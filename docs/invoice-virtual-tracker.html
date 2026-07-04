@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice — Virtual Tracker</title>
+  <style>
+    @page { size: letter; margin: 0.55in; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.35;
+      color: #1a1a1a;
+      background: #f4f4f5;
+      padding: 24px;
+    }
+    .page {
+      max-width: 8.5in;
+      margin: 0 auto;
+      background: #fff;
+      padding: 0.5in 0.55in 0.45in;
+      box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .page { box-shadow: none; max-width: none; padding: 0; }
+      .no-print { display: none !important; }
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #2563eb;
+      padding-bottom: 10px;
+      margin-bottom: 12px;
+    }
+    .brand h1 { font-size: 17pt; font-weight: 700; color: #1e3a8a; letter-spacing: -0.02em; }
+    .brand p { font-size: 8.5pt; color: #64748b; margin-top: 2px; }
+    .invoice-meta { text-align: right; font-size: 8.5pt; }
+    .invoice-meta .title { font-size: 20pt; font-weight: 300; color: #94a3b8; letter-spacing: 0.08em; }
+    .invoice-meta strong { color: #0f172a; }
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 12px;
+      font-size: 8.5pt;
+    }
+    .parties h2 {
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .summary-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      padding: 8px 12px;
+      margin-bottom: 10px;
+      font-size: 8.5pt;
+    }
+    .summary-bar .total { font-size: 11pt; font-weight: 700; color: #1e40af; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.5pt;
+      margin-bottom: 10px;
+    }
+    thead th {
+      text-align: left;
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      border-bottom: 1.5px solid #e2e8f0;
+      padding: 5px 6px 4px 0;
+    }
+    thead th:last-child, tbody td.amount, tfoot td.amount { text-align: right; padding-right: 0; }
+    tbody td {
+      padding: 5px 6px 5px 0;
+      vertical-align: top;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    tbody td.desc { color: #475569; font-size: 7.5pt; max-width: 280px; }
+    .badge {
+      display: inline-block;
+      font-size: 6.5pt;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+    .badge-done { background: #dcfce7; color: #166534; }
+    .badge-partial { background: #fef9c3; color: #854d0e; }
+    .badge-tbd { background: #f1f5f9; color: #475569; }
+    tfoot td {
+      padding: 6px 0;
+      font-weight: 600;
+      border-top: 1.5px solid #cbd5e1;
+    }
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 14px;
+      font-size: 7.5pt;
+      color: #475569;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 8px;
+    }
+    .footer-grid h3 {
+      font-size: 7pt;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .footer-grid ul { padding-left: 14px; }
+    .footer-grid li { margin-bottom: 2px; }
+    .thanks {
+      margin-top: 8px;
+      font-size: 8pt;
+      color: #64748b;
+      font-style: italic;
+      text-align: center;
+    }
+    .print-btn {
+      display: block;
+      margin: 0 auto 16px;
+      padding: 10px 24px;
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 10pt;
+      cursor: pointer;
+    }
+    .print-btn:hover { background: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <button class="print-btn no-print" type="button" onclick="window.print()">Print / Save as PDF</button>
+
+  <article class="page">
+    <header class="header">
+      <div class="brand">
+        <h1>Mohamed Hesham</h1>
+        <p>mohamedhms3102@gmail.com</p>
+      </div>
+      <div class="invoice-meta">
+        <div class="title">INVOICE</div>
+        <p><strong>No.</strong> VT-2026-001</p>
+        <p><strong>Date</strong> June 27, 2026</p>
+        <p><strong>Due</strong> Upon receipt</p>
+      </div>
+    </header>
+
+    <section class="parties">
+      <div>
+        <h2>Bill To</h2>
+        <p><strong>Youssef — The Virtual Callers</strong></p>
+      </div>
+      <div>
+        <h2>Project</h2>
+        <p><strong>Virtual Tracker</strong></p>
+        <p>Workforce tracking &amp; project management platform</p>
+        <p>Fixed-budget friendly estimate — all stages</p>
+      </div>
+    </section>
+
+    <div class="summary-bar">
+      <span><strong>Delivered to date:</strong> $1,450 &nbsp;|&nbsp; <strong>Remaining (TBD):</strong> $1,050</span>
+      <span class="total">Total: $2,500 USD</span>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:4%">#</th>
+          <th style="width:22%">Stage</th>
+          <th style="width:10%">Status</th>
+          <th style="width:44%">Scope (summary)</th>
+          <th style="width:10%" class="amount">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td><strong>Dashboard Frontend</strong></td>
+          <td><span class="badge badge-done">Done</span></td>
+          <td class="desc">Auth, members, projects/tasks, clients, activity timer, timesheets UI, teams — core app (agreed scope)</td>
+          <td class="amount">$500</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td><strong>Database</strong></td>
+          <td><span class="badge badge-partial">~70%</span></td>
+          <td class="desc">Firestore model (40+ collections), rules/indexes, Postgres hybrid (lookups + time data), migration scripts &amp; docs</td>
+          <td class="amount">$180</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td><strong>Backend</strong></td>
+          <td><span class="badge badge-partial">~80%</span></td>
+          <td class="desc">Dashboard API, Auth service, Notify service — members, hierarchy, activity, presence, 43 entity CRUD routes</td>
+          <td class="amount">$487</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td><strong>Landing Web</strong></td>
+          <td><span class="badge badge-done">~90%</span></td>
+          <td class="desc">Marketing site — home, features, pricing, blog, contact, demo, SEO, deploy-ready</td>
+          <td class="amount">$80</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td><strong>DevOps</strong></td>
+          <td><span class="badge badge-partial">~75%</span></td>
+          <td class="desc">Docker, Compose + Caddy, Coolify production deploy, env templates, Firebase hosting config</td>
+          <td class="amount">$140</td>
+        </tr>
+        <tr>
+          <td>6</td>
+          <td><strong>Optimization</strong></td>
+          <td><span class="badge badge-partial">~40%</span></td>
+          <td class="desc">Postgres lookup cache, auth/session reliability, batched list queries, partial performance pass</td>
+          <td class="amount">$63</td>
+        </tr>
+        <tr>
+          <td>7</td>
+          <td><strong>Python Agent</strong></td>
+          <td><span class="badge badge-tbd">TBD</span></td>
+          <td class="desc">Desktop tracking agent — capture, idle detect, ingest, installer (API hooks exist)</td>
+          <td class="amount">$320</td>
+        </tr>
+        <tr>
+          <td>8</td>
+          <td><strong>Integrations</strong></td>
+          <td><span class="badge badge-tbd">TBD</span></td>
+          <td class="desc">Payroll, webhooks, SSO, billing — scope per agreed list</td>
+          <td class="amount">$240</td>
+        </tr>
+        <tr>
+          <td>9</td>
+          <td><strong>Desktop App</strong></td>
+          <td><span class="badge badge-tbd">TBD</span></td>
+          <td class="desc">Native shell — tray, installer, signed distribution</td>
+          <td class="amount">$286</td>
+        </tr>
+        <tr>
+          <td>10</td>
+          <td><strong>Mobile View</strong></td>
+          <td><span class="badge badge-tbd">TBD</span></td>
+          <td class="desc">Mobile-first dashboard — timer, timesheets, people on phone</td>
+          <td class="amount">$204</td>
+        </tr>
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="4">Subtotal — delivered (items 1–6)</td>
+          <td class="amount">$1,450</td>
+        </tr>
+        <tr>
+          <td colspan="4">Subtotal — remaining TBD (items 7–10)</td>
+          <td class="amount">$1,050</td>
+        </tr>
+        <tr>
+          <td colspan="4" style="font-size:10pt;color:#1e40af;">Amount due (project total)</td>
+          <td class="amount" style="font-size:10pt;color:#1e40af;">$2,500</td>
+        </tr>
+      </tfoot>
+    </table>
+
+    <div class="footer-grid">
+      <div>
+        <h3>Payment terms</h3>
+        <ul>
+          <li><strong>Phase 1 ($1,450):</strong> Due on acceptance of delivered work (items 1–6)</li>
+          <li><strong>Phase 2 ($524):</strong> Python agent + mobile view — 50% start, 50% on UAT</li>
+          <li><strong>Phase 3 ($526):</strong> Integrations + desktop app — per milestone agreement</li>
+        </ul>
+        <p style="margin-top:6px;"><strong>Contact:</strong> mohamedhms3102@gmail.com</p>
+      </div>
+      <div>
+        <h3>Not included</h3>
+        <ul>
+          <li>Hosting &amp; third-party fees (Firebase, VPS, domains, email)</li>
+          <li>Settings / Reports / Financials modules (gated UI — change order if needed)</li>
+          <li>Ongoing maintenance unless agreed separately</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="thanks">Thank you for the opportunity to build Virtual Tracker together — happy to adjust phases to fit your timeline and budget.</p>
+  </article>
+</body>
+</html>
