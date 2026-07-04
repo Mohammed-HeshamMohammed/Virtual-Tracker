@@ -1,4 +1,4 @@
-const DASHBOARD_API_URL = process.env.NEXT_PUBLIC_DASHBOARD_API_URL?.trim() ?? ""
+const LANDING_API_URL = process.env.NEXT_PUBLIC_LANDING_API_URL?.trim() ?? ""
 
 export type SessionStatus = {
   signedIn: boolean
@@ -9,14 +9,15 @@ export type SessionStatus = {
 const SIGNED_OUT: SessionStatus = { signedIn: false, displayName: null, avatarUrl: null }
 
 /**
- * Checks the shared session cookie against Dashboard-Backend to see if the
- * visitor is already signed into the dashboard. Never throws — a failed or
- * unconfigured check just means "show the Sign in button".
+ * Checks the shared session cookie (via Landing-Backend, which proxies
+ * Dashboard-Backend) to see if the visitor is already signed into the
+ * dashboard. Never throws — a failed or unconfigured check just means
+ * "show the Sign in button".
  */
 export async function fetchSessionStatus(): Promise<SessionStatus> {
-  if (!DASHBOARD_API_URL) return SIGNED_OUT
+  if (!LANDING_API_URL) return SIGNED_OUT
   try {
-    const res = await fetch(`${DASHBOARD_API_URL}/api/auth/session-status`, {
+    const res = await fetch(`${LANDING_API_URL}/api/session-status`, {
       credentials: "include",
       cache: "no-store",
     })
@@ -34,14 +35,14 @@ export async function fetchSessionStatus(): Promise<SessionStatus> {
 }
 
 /**
- * Clears the shared session cookie from the landing page. Only affects the
- * landing page's "signed in" awareness — it does not force-sign-out an
- * active dashboard tab, which manages its own Firebase session separately.
+ * Clears the shared session cookie from the landing page (via
+ * Landing-Backend), which revokes the session everywhere — including an
+ * already-open dashboard tab (see Dashboard-Backend's session-logout route).
  */
 export async function logoutSharedSession(): Promise<void> {
-  if (!DASHBOARD_API_URL) return
+  if (!LANDING_API_URL) return
   try {
-    await fetch(`${DASHBOARD_API_URL}/api/auth/session-logout`, {
+    await fetch(`${LANDING_API_URL}/api/session-logout`, {
       method: "POST",
       credentials: "include",
     })
@@ -49,4 +50,3 @@ export async function logoutSharedSession(): Promise<void> {
     /* non-critical */
   }
 }
-

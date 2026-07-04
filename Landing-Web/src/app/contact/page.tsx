@@ -3,16 +3,33 @@
 import { useState } from "react"
 import PageShell from "../../components/PageShell"
 import PageIntro from "@/components/PageIntro"
+import { submitContactInquiry } from "@/lib/contact-api"
 
 export default function ContactPage() {
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [selectedTopic, setSelectedTopic] = useState("trial")
   const [formData, setFormData] = useState({ name: "", email: "", size: "1-10", message: "" })
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (formData.name && formData.email) {
+    if (!formData.name || !formData.email || submitting) return
+    setSubmitting(true)
+    setSubmitError(null)
+    try {
+      await submitContactInquiry({
+        name: formData.name,
+        email: formData.email,
+        topic: selectedTopic,
+        teamSize: formData.size,
+        message: formData.message,
+      })
       setSubmitted(true)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not submit your message. Please try again.")
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -131,11 +148,18 @@ export default function ContactPage() {
                   />
                 </div>
 
+                {submitError && (
+                  <p className="text-xs font-semibold text-red-600" role="alert">
+                    {submitError}
+                  </p>
+                )}
+
                 <button
                   type="submit"
-                  className="w-full rounded-full bg-violet-600 px-6 py-3.5 text-xs font-bold text-white hover:bg-violet-700 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
+                  disabled={submitting}
+                  className="w-full rounded-full bg-violet-600 px-6 py-3.5 text-xs font-bold text-white hover:bg-violet-700 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Send Inquiry
+                  {submitting ? "Sending..." : "Send Inquiry"}
                 </button>
               </form>
             )}
