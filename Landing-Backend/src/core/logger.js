@@ -75,12 +75,3 @@ export function logError(err, context = "") {
     console.error(err.stack.split("\n").slice(0, 3).join("\n"));
   }
 }
-
-export function logDbStatus(initialized, error) {
-  const timestamp = new Date().toISOString();
-  if (initialized) {
-    console.log(`[${timestamp}] \x1b[32m✓\x1b[0m Firebase/Firestore connected`);
-  } else {
-    console.log(`[${timestamp}] \x1b[33m⚠\x1b[0m Firestore not configured (${error || "no credentials"})`);
-  }
-}

@@ -97,16 +97,6 @@ export function buildEnv(source = process.env) {
     email: Object.freeze({
       supportEmail: readString(source, "SUPPORT_EMAIL", "support@myvirtualtracker.com"),
     }),
-
-    firebase: Object.freeze({
-      admin: Object.freeze({
-        projectId: readString(source, "FIREBASE_PROJECT_ID"),
-        clientEmail: readString(source, "FIREBASE_CLIENT_EMAIL"),
-        privateKey: readString(source, "FIREBASE_PRIVATE_KEY"),
-        serviceAccountJson: readString(source, "FIREBASE_SERVICE_ACCOUNT"),
-        googleApplicationCredentials: readString(source, "GOOGLE_APPLICATION_CREDENTIALS"),
-      }),
-    }),
   });
 }
 

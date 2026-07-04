@@ -7,5 +7,4 @@ node_modules
 *.log
 npm-debug.log*
 coverage
-firebase-admin.local.json
 README.md

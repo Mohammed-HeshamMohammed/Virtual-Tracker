@@ -75,8 +75,6 @@ services:
       DASHBOARD_BACKEND_URL: http://dashboard-backend:5713
     expose:
       - "5714"
-    # volumes:
-    #   - ./secrets/firebase-admin.local.json:/app/firebase-admin.local.json:ro
     networks:
       - vt-internal
     healthcheck:

@@ -1,9 +1,8 @@
-import { getDb } from "../../config/firebase.js";
 import { getEnv } from "../../config/env.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields, assertMaxLength } from "../../http/validate-body.js";
 import { sendJson } from "../../http/response.js";
-import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
+import { logSafeError } from "../../http/sanitize-error.js";
 import { notifyRequest } from "../../lib/notify-request.js";
 
 const CONTACT_TOPICS = new Set(["trial", "cloud", "security", "general"]);
@@ -53,44 +52,33 @@ export async function routeContact(req, res, url, origin) {
     return true;
   }
 
-  const db = getDb();
-  if (!db) {
+  const { backendUrl: notifyBackendUrl } = getEnv().notify;
+  const supportEmail = getEnv().email.supportEmail;
+  if (!notifyBackendUrl || !supportEmail) {
     sendJson(res, origin, 503, { success: false, error: "The contact form is not available right now." }, req);
     return true;
   }
 
+  // Notify-Backend is the only persistence layer for inquiries (its delivery log
+  // records the submitted fields) — this call is required, not best-effort.
   try {
-    await db.collection("landing_contact_inquiries").add({
+    const { response, payload } = await notifyRequest("/api/notify/email", {
+      template: "contact-inquiry",
+      email: supportEmail,
       name,
-      email,
+      fromEmail: email,
       topic,
       teamSize,
       message,
-      createdAt: new Date(),
-      source: "landing-web",
     });
+    if (!response.ok || !(payload && payload.success)) {
+      const upstreamError = payload && typeof payload.error === "string" ? payload.error : `status ${response.status}`;
+      throw new Error(`Notify-Backend rejected the inquiry: ${upstreamError}`);
+    }
   } catch (err) {
-    logSafeError("[contact] Firestore write failed", err);
+    logSafeError("[contact] notify dispatch failed", err);
     sendJson(res, origin, 500, { success: false, error: "Could not submit your message. Please try again." }, req);
     return true;
-  }
-
-  const supportEmail = getEnv().email.supportEmail;
-  if (supportEmail && getEnv().notify.backendUrl) {
-    try {
-      await notifyRequest("/api/notify/email", {
-        template: "contact-inquiry",
-        email: supportEmail,
-        name,
-        fromEmail: email,
-        topic,
-        teamSize,
-        message,
-      });
-    } catch (err) {
-      // Best-effort — the inquiry is already persisted above even if the notify ping fails.
-      logSafeWarn("[contact] notify dispatch failed", err);
-    }
   }
 
   sendJson(res, origin, 201, { success: true }, req);
