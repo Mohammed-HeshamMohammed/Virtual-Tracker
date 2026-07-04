@@ -58,7 +58,6 @@ const envSourceSchema = z
     NODE_TLS_REJECT_UNAUTHORIZED: optionalTrimmedString,
     FRONTEND_ORIGIN: optionalTrimmedString,
     APP_PUBLIC_URL: optionalTrimmedString,
-    CORS_ORIGINS: optionalTrimmedString,
     FIREBASE_API_KEY: optionalTrimmedString,
     FIREBASE_AUTH_DOMAIN: optionalTrimmedString,
     FIREBASE_PROJECT_ID: optionalTrimmedString,
@@ -123,15 +122,6 @@ const envSourceSchema = z
           code: z.ZodIssueCode.custom,
           path: ["APP_PUBLIC_URL"],
           message: "Production requires APP_PUBLIC_URL or FRONTEND_ORIGIN to be an https URL",
-        });
-      }
-
-      const corsOrigins = (data.CORS_ORIGINS || "").trim();
-      if (!corsOrigins) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CORS_ORIGINS"],
-          message: "Production requires CORS_ORIGINS — without it the server falls back to localhost-only origins and rejects real browser requests",
         });
       }
     }

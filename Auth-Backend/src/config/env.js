@@ -57,24 +57,6 @@ function readBool(source, key, defaultWhenUnset) {
   return defaultWhenUnset;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
-function readCsv(source, key, fallback) {
-  const raw = readString(source, key, "");
-  if (!raw) return fallback;
-  const items = raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return items.length ? items : fallback;
-}
-
-const DEFAULT_CORS_ORIGINS = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost:3001",
-  "http://127.0.0.1:3001",
-];
-
 /**
  * Parse process environment into a typed, frozen configuration object.
  * @param {NodeJS.ProcessEnv} [source]
@@ -107,10 +89,6 @@ export function buildEnv(source = process.env) {
       allowInsecureHttp: readBool(source, "ALLOW_INSECURE_HTTP", false),
       /** Dev-only TLS workaround for Firebase on Windows (applied in index.js bootstrap). */
       disableTlsVerificationInDev: !isProduction,
-    }),
-
-    cors: Object.freeze({
-      origins: Object.freeze(readCsv(source, "CORS_ORIGINS", DEFAULT_CORS_ORIGINS)),
     }),
 
     urls: Object.freeze({
