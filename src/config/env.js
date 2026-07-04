@@ -164,6 +164,10 @@ export function buildEnv(source = process.env) {
       url: readString(source, "POSTGRES_URL"),
     }),
 
+    redis: Object.freeze({
+      url: readString(source, "REDIS_URL"),
+    }),
+
     notify: Object.freeze({
       backendUrl: readString(source, "NOTIFY_BACKEND_URL", "http://localhost:5715"),
       internalServiceSecret: readString(source, "INTERNAL_SERVICE_SECRET"),

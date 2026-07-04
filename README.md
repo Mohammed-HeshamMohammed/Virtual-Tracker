@@ -143,7 +143,8 @@ Central variables are loaded by [env.js](file:///x:/Work/Virtual-Tracker-Test/Vi
 | `FIREBASE_PRIVATE_KEY` | `string` | Service account private key string (resolves newlines `\n` on boot). |
 | `FIREBASE_PRIVATE_KEY_ID` | `string` | Mapped private key identifier. |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `string` | Path to a local credentials JSON file. |
-| `FIREBASE_DATABASE_URL` | `string` | Realtime Database target URL (presenceheartbeats). |
+| `FIREBASE_DATABASE_URL` | `string` | Realtime Database target URL — presence fallback, only used when `REDIS_URL` is unset. |
+| `REDIS_URL` | `string` | Redis connection string — shared live presence store across instances. Preferred over Realtime Database when set. |
 | `GCS_BUCKET_NAME` / `FIREBASE_STORAGE_BUCKET` | `string` | Target Google Cloud Storage bucket name for file uploads. |
 | `POSTGRES_URL` | `string` | Optional PostgreSQL connection string. If set, redirects `time-entries` and `timesheets` to SQL instead of Firestore. |
 

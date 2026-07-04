@@ -2,6 +2,7 @@ import { getDb } from "../../config/firebase.js";
 import { getAuthAdmin } from "../../config/firebase.js";
 import { getEnv } from "../../config/env.js";
 import { resolveFirebaseDatabaseUrl, warnIfDatabaseUrlMismatch } from "../../config/firebase.js";
+import { isRedisConfigured } from "../../lib/redis/client.js";
 import { PRESENCE_ONLINE_MS } from "../../config/presence.js";
 import { resolveMemberIdForUid } from "../members/services/member-presence.service.js";
 import { attachPresenceGateway } from "./presence-gateway.js";
@@ -9,9 +10,10 @@ import { createPresenceManager } from "./presence-manager.js";
 import { createPresenceService } from "./presence-service.js";
 import { createMemoryPresenceStore } from "./presence-store.js";
 import { createRtdbPresenceStore } from "./presence-store-rtdb.js";
+import { createRedisPresenceStore } from "./presence-store-redis.js";
 import { publishPresenceChange, presenceRecordToChange } from "./presence-pubsub.js";
 
-/** @type {{ presenceService: ReturnType<typeof createPresenceService>; presenceManager: ReturnType<typeof createPresenceManager>; store: ReturnType<typeof createMemoryPresenceStore>; rtdbStore: ReturnType<typeof createRtdbPresenceStore> | null } | null} */
+/** @type {{ presenceService: ReturnType<typeof createPresenceService>; presenceManager: ReturnType<typeof createPresenceManager>; store: ReturnType<typeof createMemoryPresenceStore>; rtdbStore: ReturnType<typeof createRtdbPresenceStore> | ReturnType<typeof createRedisPresenceStore> | null } | null} */
 let runtime = null;
 
 /**
@@ -33,22 +35,29 @@ async function persistLastSeenAtOnDisconnect(memberId, lastSeenAt) {
 }
 
 function createRuntime() {
-  warnIfDatabaseUrlMismatch();
   const store = createMemoryPresenceStore();
-  const { url: dbUrl, source: dbUrlSource } = resolveFirebaseDatabaseUrl();
-  const rtdbStore = dbUrl ? createRtdbPresenceStore() : null;
 
-  if (rtdbStore) {
-    console.info("[presence] Using Firebase Realtime Database store (%s)", dbUrl);
-    if (dbUrlSource === "derived") {
+  let rtdbStore = null;
+  if (isRedisConfigured()) {
+    rtdbStore = createRedisPresenceStore();
+    console.info("[presence] Using Redis store (REDIS_URL configured)");
+  } else {
+    warnIfDatabaseUrlMismatch();
+    const { url: dbUrl, source: dbUrlSource } = resolveFirebaseDatabaseUrl();
+    rtdbStore = dbUrl ? createRtdbPresenceStore() : null;
+
+    if (rtdbStore) {
+      console.info("[presence] Using Firebase Realtime Database store (%s)", dbUrl);
+      if (dbUrlSource === "derived") {
+        console.info(
+          "[presence] FIREBASE_DATABASE_URL was not set; derived from FIREBASE_PROJECT_ID. Add it to Backend/.env to pin the URL.",
+        );
+      }
+    } else {
       console.info(
-        "[presence] FIREBASE_DATABASE_URL was not set; derived from FIREBASE_PROJECT_ID. Add it to Backend/.env to pin the URL.",
+        "[presence] Using in-memory store (set REDIS_URL or FIREBASE_DATABASE_URL for live sync across instances). Fine for single-instance dev.",
       );
     }
-  } else {
-    console.info(
-      "[presence] Using in-memory store (set FIREBASE_DATABASE_URL for live RTDB sync). Fine for single-instance dev.",
-    );
   }
 
   const presenceService = createPresenceService(store, {
