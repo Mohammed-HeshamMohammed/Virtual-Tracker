@@ -11,7 +11,7 @@ import { getEnv } from "../../config/env.js";
  */
 export async function validatePasswordViaAuthBackend(password, options = {}) {
   const env = getEnv();
-  const baseUrl = (env.auth.backendUrl || "http://localhost:5712").replace(/\/+$/, "");
+  const baseUrl = env.auth.backendUrl.replace(/\/+$/, "");
 
   const body = { password };
   if (typeof options.confirmPassword === "string") {

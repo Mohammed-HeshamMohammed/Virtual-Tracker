@@ -100,7 +100,7 @@ export function buildEnv(source = process.env) {
     isDevelopment: !isProduction,
 
     server: Object.freeze({
-      port: readPositiveInt(source, "PORT", 5712),
+      port: readPositiveInt(source, "PORT", 5713),
     }),
 
     security: Object.freeze({
