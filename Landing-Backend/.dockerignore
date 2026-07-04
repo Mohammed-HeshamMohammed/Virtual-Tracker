@@ -1,0 +1,11 @@
+node_modules
+.env
+.env.*
+.env.example
+.git
+.gitignore
+*.log
+npm-debug.log*
+coverage
+firebase-admin.local.json
+README.md

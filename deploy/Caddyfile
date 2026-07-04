@@ -1,9 +1,10 @@
 # Virtual-Tracker — full stack (API + app + marketing)
 #
 # Domains (set in deploy/.env):
-#   API_DOMAIN     → api.yourdomain.com   (path routing to backends)
-#   APP_DOMAIN     → app.yourdomain.com   (Dashboard Web)
-#   LANDING_DOMAIN → yourdomain.com       (Landing-Web, or www.yourdomain.com)
+#   API_DOMAIN         → api.yourdomain.com          (path routing to Auth/Dashboard backends)
+#   APP_DOMAIN         → app.yourdomain.com           (Dashboard Web)
+#   LANDING_DOMAIN     → yourdomain.com               (Landing-Web, or www.yourdomain.com)
+#   LANDING_API_DOMAIN → landingapi.yourdomain.com    (Landing-Backend — contact form + session-status proxy)
 
 # ── API gateway (Auth + Dashboard backends) ─────────────────────────────────
 {$API_DOMAIN} {
@@ -43,4 +44,10 @@
 {$LANDING_DOMAIN} {
 	encode gzip
 	reverse_proxy landing-web:3001
+}
+
+# ── Landing-Backend (contact form + session-status proxy) ──────────────────
+{$LANDING_API_DOMAIN} {
+	encode gzip
+	reverse_proxy landing-backend:5714
 }

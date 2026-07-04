@@ -14,6 +14,7 @@ import {
   sendMemberTransferEmail,
   sendMemberBanEmail,
   sendTeamWeeklyReportEmail,
+  sendContactInquiryEmail,
 } from "./email-builders.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
@@ -27,6 +28,7 @@ const ALLOWED_TEMPLATES = new Set([
   "transfer-invite",
   "member-ban",
   "team-weekly-report",
+  "contact-inquiry",
 ]);
 
 /**
@@ -164,6 +166,16 @@ async function dispatchEmailTemplate(template, body) {
         teamName: body.teamName,
         memberCount: body.memberCount,
         appUrl: body.appUrl,
+      });
+
+    case "contact-inquiry":
+      return sendContactInquiryEmail({
+        to: body.email,
+        name: body.name,
+        fromEmail: body.fromEmail,
+        topic: body.topic,
+        teamSize: body.teamSize,
+        message: body.message,
       });
 
     default:

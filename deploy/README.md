@@ -1,11 +1,12 @@
 # VPS deployment — full Virtual-Tracker stack
 
-Deploy **all four services** with one command:
+Deploy **all five services** with one command:
 
 | Container | Source folder | Public URL |
 |-----------|---------------|------------|
 | `auth-backend` | `../Auth-Backend` | via `api.*` (path routing) |
 | `dashboard-backend` | `../Dashboard-Backend` | via `api.*` (path routing) |
+| `landing-backend` | `../Landing-Backend` | `landingapi.yourdomain.com` |
 | `dashboard-web` | `../Dashboard-Web` | `app.yourdomain.com` |
 | `landing-web` | `../Landing-Web` | `yourdomain.com` |
 | `gateway` (Caddy) | `deploy/Caddyfile` | TLS on 80/443 |
@@ -19,17 +20,21 @@ Deploy **all four services** with one command:
               ┌─────────────────┐
               │  Caddy gateway  │  :443
               └────────┬────────┘
-       ┌───────────────┼───────────────┐
-       │               │               │
-       ▼               ▼               ▼
- api.domain      app.domain     landing.domain
-       │               │               │
-       ├─► auth-backend:5712       dashboard-web:3000
-       └─► dashboard-backend:5713  landing-web:3001
-                    │
-                    ▼
-              Firebase / Firestore
+       ┌───────────────┼───────────────┬───────────────┐
+       │               │               │               │
+       ▼               ▼               ▼               ▼
+ api.domain      app.domain     landing.domain   landingapi.domain
+       │               │               │               │
+       ├─► auth-backend:5712       dashboard-web:3000   landing-backend:5714
+       └─► dashboard-backend:5713  landing-web:3001            │
+                    │                                          │
+                    ▼                                          │
+              Firebase / Firestore ◄────────────────────────────
 ```
+
+`landing-backend` also calls `dashboard-backend` directly over the internal
+Docker network (session-status/session-logout proxy) — see
+`Landing-Backend/README.md`.
 
 ## Prerequisites
 
@@ -38,6 +43,7 @@ Deploy **all four services** with one command:
   - `api.yourdomain.com` → VPS IP
   - `app.yourdomain.com` → VPS IP
   - `yourdomain.com` (and optional `www`) → VPS IP
+  - `landingapi.yourdomain.com` → VPS IP
 - Firebase project (Auth, Firestore, Storage, RTDB for presence)
 - Resend or SMTP for auth emails
 
@@ -56,7 +62,9 @@ nano .env   # fill every value
 | `API_DOMAIN` | `api.yourdomain.com` |
 | `APP_DOMAIN` | `app.yourdomain.com` |
 | `LANDING_DOMAIN` | `yourdomain.com` |
+| `LANDING_API_DOMAIN` | `landingapi.yourdomain.com` |
 | `NEXT_PUBLIC_API_URL` | `https://api.yourdomain.com` |
+| `NEXT_PUBLIC_LANDING_API_URL` | `https://landingapi.yourdomain.com` |
 | `APP_PUBLIC_URL` | `https://app.yourdomain.com` |
 | `FIREBASE_*` | Web + Admin credentials |
 | `RESEND_*` or `SMTP_*` | Transactional email |
@@ -98,6 +106,7 @@ docker compose logs -f gateway
 ```bash
 curl -s https://api.yourdomain.com/health
 curl -s https://api.yourdomain.com/api/auth/readiness
+curl -s https://landingapi.yourdomain.com/health
 curl -sI https://app.yourdomain.com | head -1
 curl -sI https://yourdomain.com | head -1
 ```
@@ -113,7 +122,7 @@ Open in browser:
 |---------|-----------|------------------|
 | Dashboard Web (unified gateway mode) | `NEXT_PUBLIC_API_URL` | `NEXT_PUBLIC_API_URL` |
 | Dashboard Web (per-subdomain mode, used instead of the above) | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` |
-| Landing-Web | `NEXT_PUBLIC_DASHBOARD_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` | `APP_PUBLIC_URL`, `NEXT_PUBLIC_API_URL` |
+| Landing-Web | `NEXT_PUBLIC_DASHBOARD_URL`, `NEXT_PUBLIC_LANDING_API_URL` | `APP_PUBLIC_URL`, `NEXT_PUBLIC_LANDING_API_URL` |
 
 Only use one mode. `NEXT_PUBLIC_API_URL` takes priority if set — leave it blank/unset
 to use separate Auth/Dashboard subdomains instead.
@@ -129,6 +138,7 @@ docker compose up -d --build dashboard-web landing-web
 ```bash
 docker compose logs -f auth-backend
 docker compose logs -f dashboard-backend
+docker compose logs -f landing-backend
 docker compose logs -f dashboard-web
 docker compose logs -f landing-web
 docker compose restart dashboard-web
@@ -138,7 +148,7 @@ docker compose up -d --build   # after code changes
 ## Security
 
 - Only ports **80** and **443** are published to the host.
-- Backends (`5712`, `5713`) and frontends (`3000`, `3001`) stay on the internal Docker network.
+- Backends (`5712`, `5713`, `5714`) and frontends (`3000`, `3001`) stay on the internal Docker network.
 - Set `MONITOR_PASSWORD` if you use `/monitor` on the dashboard backend.
 - Auth-Backend and Dashboard-Backend APIs are Bearer-token authenticated (no cookies), so CORS allows all origins by design — access control is enforced by verifying the token server-side, not by the browser's Origin header.
 
