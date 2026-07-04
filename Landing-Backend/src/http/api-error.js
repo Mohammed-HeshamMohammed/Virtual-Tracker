@@ -14,12 +14,7 @@ export function inferErrorCode(status, message = "") {
   return "REQUEST_FAILED";
 }
 
-/**
- * Attach `errorDetail` to legacy `{ success: false, error: string }` payloads.
- *
- * @param {number} status
- * @param {unknown} payload
- */
+/** Add errorDetail to legacy `{ success: false, error }` responses. */
 export function enrichErrorPayload(status, payload) {
   if (!payload || typeof payload !== "object" || /** @type {{ success?: boolean }} */ (payload).success !== false) {
     return payload;

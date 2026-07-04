@@ -58,9 +58,7 @@ export async function routeContact(req, res, url, origin) {
     return true;
   }
 
-  // Notify-Backend is the only persistence layer for inquiries (its delivery log
-  // records the submitted fields) and owns the destination inbox itself — this
-  // call is required, not best-effort.
+  // Contact form goes through Notify-Backend (required).
   try {
     const { response, payload } = await notifyRequest("/api/notify/email", {
       template: "contact-inquiry",

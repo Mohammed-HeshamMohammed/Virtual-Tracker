@@ -1,11 +1,6 @@
 import { getEnv } from "../config/env.js";
 
-/**
- * Registrable root domain derived from the configured frontend URL
- * (e.g. "myvirtualtracker.com" or "www.myvirtualtracker.com" -> "myvirtualtracker.com").
- * Used only to scope the credentialed session-proxy endpoints below — every
- * other route (contact form, health) stays wildcard CORS.
- */
+// Root domain for credentialed session-proxy routes; contact/health stay wildcard CORS.
 function getCredentialedRootDomain() {
   try {
     const frontend = getEnv().urls.frontendOrigin || getEnv().urls.appPublicUrl;
@@ -31,15 +26,7 @@ export function isCredentialedOriginAllowed(origin) {
   }
 }
 
-/**
- * CORS: the contact form and health check need no credentials, so they get
- * wildcard access. The session-status/session-logout proxy forwards the
- * shared session cookie and needs `Access-Control-Allow-Credentials` with an
- * explicit origin — pass `{ credentials: true }` only for those routes.
- *
- * @param {string | undefined} [origin]
- * @param {{ credentials?: boolean }} [opts]
- */
+/** Wildcard CORS for contact/health; session proxy needs credentials + explicit origin. */
 export function corsHeaders(origin, opts = {}) {
   if (opts.credentials && isCredentialedOriginAllowed(origin)) {
     return {

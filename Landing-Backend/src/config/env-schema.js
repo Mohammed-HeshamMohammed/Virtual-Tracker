@@ -1,6 +1,5 @@
 /**
- * Zod schemas for environment validation.
- * Fail-fast at startup — do not log parsed values (secrets).
+ * Zod schemas for env validation. Don't log parsed values (secrets).
  */
 
 import { z } from "zod";
@@ -59,8 +58,7 @@ const envSourceSchema = z
         });
       }
 
-      // Notify-Backend is the only persistence + delivery path for contact-form
-      // inquiries — without these, /api/contact can never succeed in production.
+      // Production requires Notify-Backend for contact form delivery.
       if (!(data.NOTIFY_BACKEND_URL || "").trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
