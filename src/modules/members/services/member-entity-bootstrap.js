@@ -15,7 +15,6 @@ export const MEMBER_SINGLETON_COLLECTIONS = [
 /** Collections with `member_id` cleaned on member delete (see deleteMemberProfileData). */
 export const MEMBER_SCOPED_DELETE_COLLECTIONS = [
   ...MEMBER_SINGLETON_COLLECTIONS,
-  "limits",
   "team_members",
   "project_members",
 ];
@@ -51,9 +50,7 @@ export async function dedupeAllMemberScopedEntities(db, memberId) {
   for (const collection of MEMBER_SINGLETON_COLLECTIONS) {
     total += await dedupeByMemberId(db, collection, memberId);
   }
-  total += await dedupeByMemberId(db, "limits", memberId, (data) =>
-    typeof data.limit_type === "string" ? data.limit_type : "",
-  );
+  // limits is now a single doc keyed by member_id — no dedupe needed.
   return total;
 }
 
@@ -72,31 +69,24 @@ async function ensureSingleByMemberId(db, collection, memberId, buildPayload) {
 }
 
 /**
+ * Ensures a consolidated limits document exists for this member.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
- * @param {string} limitType
- * @param {number} value
  * @param {string} actor
  */
-async function ensureLimitByType(db, memberId, limitType, value, actor) {
-  const snap = await db
-    .collection("limits")
-    .where("member_id", "==", memberId)
-    .where("limit_type", "==", limitType)
-    .limit(1)
-    .get();
-  if (!snap.empty) return { created: false, id: snap.docs[0].id };
-  const id = crypto.randomUUID();
+async function ensureLimitsDoc(db, memberId, actor) {
+  const docRef = db.collection("limits").doc(memberId);
+  const existing = await docRef.get();
+  if (existing.exists) return { created: false, id: memberId };
   const now = new Date();
-  await db.collection("limits").doc(id).set({
-    id,
-    member_id: memberId,
-    limit_type: limitType,
-    value,
+  await docRef.set({
+    id: memberId,
+    weekly: 0,
+    daily: 0,
     updated_by: actor,
     updated_at: now,
   });
-  return { created: true, id };
+  return { created: true, id: memberId };
 }
 
 /**
@@ -187,10 +177,8 @@ export async function ensureMemberScopedEntities(db, { memberId, memberData = {}
   }));
   if (timeSettings.created) created.push("time_settings");
 
-  for (const limitType of ["weekly", "daily"]) {
-    const limit = await ensureLimitByType(db, memberId, limitType, 0, actor);
-    if (limit.created) created.push(`limits:${limitType}`);
-  }
+  const limits = await ensureLimitsDoc(db, memberId, actor);
+  if (limits.created) created.push("limits");
 
   const cache = await db.collection("member_tree_cache").doc(memberId).get();
   if (!cache.exists) {

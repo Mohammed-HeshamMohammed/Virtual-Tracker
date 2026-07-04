@@ -107,7 +107,7 @@ async function getSingleByMemberId(db, collection, memberId) {
  */
 export async function upsertMemberWeeklyLimit(db, memberId, weeklyLimit, updatedBy = "") {
   const value = parseLimitValue(weeklyLimit);
-  await upsertLimitByType(db, memberId, "weekly", value, updatedBy || "system");
+  await upsertLimitField(db, memberId, "weekly", value, updatedBy || "system");
 }
 
 export async function upsertMemberPayRate(db, memberId, rate, updatedBy = "") {
@@ -155,49 +155,47 @@ export async function ensureMemberProfileRecords(db, memberId, updatedBy = "") {
 }
 
 /**
+ * Read the consolidated limits document for a member.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
- * @param {string} limitType
  */
-async function getLimitByType(db, memberId, limitType) {
-  const snap = await db
-    .collection("limits")
-    .where("member_id", "==", memberId)
-    .where("limit_type", "==", limitType)
-    .get();
-  const doc = pickLatestMemberRow(snap.docs);
-  if (!doc) return null;
+async function getMemberLimitsDoc(db, memberId) {
+  const doc = await db.collection("limits").doc(memberId).get();
+  if (!doc.exists) return null;
   return { id: doc.id, ...(doc.data() || {}) };
 }
 
 /**
+ * Read a single limit type value from the consolidated limits doc.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
- * @param {string} limitType
+ * @param {string} limitType  e.g. "weekly" or "daily"
+ */
+async function getLimitByType(db, memberId, limitType) {
+  const limitsData = await getMemberLimitsDoc(db, memberId);
+  if (!limitsData) return null;
+  return { id: limitsData.id, value: limitsData[limitType] ?? 0 };
+}
+
+/**
+ * Upsert a single limit field in the consolidated limits doc.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} memberId
+ * @param {string} limitType  e.g. "weekly" or "daily"
  * @param {number} value
  * @param {string} updatedBy
  */
-async function upsertLimitByType(db, memberId, limitType, value, updatedBy) {
-  const snap = await db
-    .collection("limits")
-    .where("member_id", "==", memberId)
-    .where("limit_type", "==", limitType)
-    .get();
-  const payload = {
-    limit_type: limitType,
-    value,
-    updated_by: updatedBy || "system",
-    updated_at: new Date(),
-  };
-  if (!snap.empty) {
-    const batch = db.batch();
-    for (const doc of snap.docs) batch.update(doc.ref, payload);
-    await batch.commit();
-    return snap.docs[0].id;
-  }
-  const id = crypto.randomUUID();
-  await db.collection("limits").doc(id).set({ id, member_id: memberId, ...payload });
-  return id;
+async function upsertLimitField(db, memberId, limitType, value, updatedBy) {
+  await db.collection("limits").doc(memberId).set(
+    {
+      id: memberId,
+      [limitType]: value,
+      updated_by: updatedBy || "system",
+      updated_at: new Date(),
+    },
+    { merge: true },
+  );
+  return memberId;
 }
 
 function parseLimitValue(raw) {
@@ -362,11 +360,10 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
   }
   if (want("workLimits")) {
     pending.push(
-      getLimitByType(db, memberId, "weekly").then((row) => {
-        weeklyLimitRow = row || {};
-      }),
-      getLimitByType(db, memberId, "daily").then((row) => {
-        dailyLimitRow = row || {};
+      getMemberLimitsDoc(db, memberId).then((limitsData) => {
+        const data = limitsData || {};
+        weeklyLimitRow = { value: data.weekly ?? 0 };
+        dailyLimitRow = { value: data.daily ?? 0 };
       }),
     );
   }
@@ -670,8 +667,8 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
 
     const weeklyValue = parseLimitValue(workLimits.weeklyLimit);
     const dailyValue = parseLimitValue(workLimits.dailyLimit);
-    await upsertLimitByType(db, memberId, "weekly", weeklyValue, actor);
-    await upsertLimitByType(db, memberId, "daily", dailyValue, actor);
+    await upsertLimitField(db, memberId, "weekly", weeklyValue, actor);
+    await upsertLimitField(db, memberId, "daily", dailyValue, actor);
   }
 
   const reloadSections =
@@ -692,22 +689,24 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
  * @param {string} memberId
  */
 export async function deleteMemberProfileData(db, memberId) {
-  const collections = [
+  // Collections with member_id FK field (queried by where)
+  const fkCollections = [
     "employment",
     "pay_rates",
     "time_settings",
-    "limits",
     "team_members",
     "project_members",
     "member_onboarding",
   ];
-  for (const collection of collections) {
+  for (const collection of fkCollections) {
     const snap = await db.collection(collection).where("member_id", "==", memberId).get();
     if (snap.empty) continue;
     const batch = db.batch();
     for (const doc of snap.docs) batch.delete(doc.ref);
     await batch.commit();
   }
+  // Limits doc is keyed directly by member_id
+  await db.collection("limits").doc(memberId).delete().catch(() => {});
   const snapshotSnap = await db
     .collection("members_field_data")
     .where("type", "==", "memberFormSnapshot")

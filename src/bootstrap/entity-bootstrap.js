@@ -18,105 +18,21 @@ import {
   ORG_LOOKUP_SEEDS,
 } from "./entity-bootstrap-manifest.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string[]} names
- * @param {string} actor
- */
-async function seedLookupTableIfEmpty(db, collection, names, actor) {
-  const snap = await db.collection(collection).limit(1).get();
-  if (!snap.empty) return [];
-
-  const created = [];
-  const now = new Date();
-  for (let i = 0; i < names.length; i++) {
-    const id = crypto.randomUUID();
-    await db.collection(collection).doc(id).set({
-      id,
-      name: names[i],
-      list_ranking: String(i),
-      created_at: now,
-      created_by: actor,
-      updated_by: actor,
-    });
-    created.push(collection);
-  }
-  return created;
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} type
- * @param {string[]} labels
- */
-async function seedOrgFieldOptionsIfEmpty(db, type, labels) {
-  const snap = await db.collection("members_field_data").where("type", "==", type).limit(1).get();
-  if (!snap.empty) return [];
-
-  const created = [];
-  const now = new Date();
-  for (let i = 0; i < labels.length; i++) {
-    const ref = db.collection("members_field_data").doc();
-    await ref.set({
-      type,
-      recordType: type,
-      label: labels[i],
-      position: i,
-      created_at: now,
-    });
-    created.push(`members_field_data:${type}`);
-  }
-  return created;
-}
-
-/**
- * Organization-wide bootstrap: roles, employment lookups, org field options,
- * relationship tree init, legacy ID migration marker, system_meta.
- *
- * Heavy maintenance (relationship scans, profile image migration) can be deferred
- * off the auth verify critical path — see scheduleOrganizationMaintenance.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} [actor]
- * @param {{ deferMaintenance?: boolean }} [options]
- * @returns {Promise<{ created: string[], skipped?: string, deferred?: boolean }>}
- */
 export async function ensureOrganizationEntities(db, actor = "system", options = {}) {
   const created = [];
 
   await ensureDefaultRoles(db);
   created.push("roles");
 
-  let usedPostgresLookups = false;
-  if (await isPostgresLookupReady()) {
-    try {
-      for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
-        const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
-        created.push(...seeded);
-      }
-
-      for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
-        const seeded = await seedOrgFieldOptionsPostgresIfEmpty(type, labels);
-        created.push(...seeded);
-      }
-      usedPostgresLookups = true;
-    } catch (err) {
-      logSafeWarn("[entity-bootstrap] Postgres lookup seed failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
+  await isPostgresLookupReady();
+  for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
+    const seeded = await seedLookupTablePostgresIfEmpty(collection, names, actor);
+    created.push(...seeded);
   }
 
-  if (!usedPostgresLookups) {
-    for (const [collection, names] of Object.entries(ORG_LOOKUP_SEEDS)) {
-      const seeded = await seedLookupTableIfEmpty(db, collection, names, actor);
-      created.push(...seeded);
-    }
-
-    for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
-      const seeded = await seedOrgFieldOptionsIfEmpty(db, type, labels);
-      created.push(...seeded);
-    }
+  for (const [type, labels] of Object.entries(ORG_FIELD_OPTION_SEEDS)) {
+    const seeded = await seedOrgFieldOptionsPostgresIfEmpty(type, labels);
+    created.push(...seeded);
   }
 
   await db.doc(ENTITY_BOOTSTRAP_META_DOC).set(

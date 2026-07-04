@@ -318,13 +318,13 @@ erDiagram
 
 #### 3.4 `limits`
 * **Firestore Collection**: `limits`
-* **Description**: Daily and weekly hour tracking boundaries for members.
+* **Description**: Consolidated daily and weekly hour tracking boundaries for a member. Each document is keyed by `member_id` (doc ID = member ID).
 * **Fields**:
-  * `id`: `uuid` (Primary Key)
-  * `member_id`: `uuid` (Foreign Key referencing `members`)
-  * `limit_type`: `string` (e.g., `weekly`, `daily`)
-  * `value`: `decimal`
+  * `id`: `uuid` (Primary Key, matches `members.id`)
+  * `weekly`: `decimal` (Weekly hour limit; `0` = unlimited)
+  * `daily`: `decimal` (Daily hour limit; `0` = unlimited)
   * `updated_by`: `uuid`
+  * `updated_at`: `timestamp`
 
 #### 3.5 `members_field_data`
 * **Firestore Collection**: `members_field_data`

@@ -116,10 +116,10 @@ export const employmentSchemas = [
     collection: "limits",
     fields: {
       id: "uuid",
-      member_id: "uuid",
-      limit_type: "string",
-      value: "decimal",
+      weekly: "decimal",
+      daily: "decimal",
       updated_by: "uuid",
+      updated_at: "timestamp",
     },
   },
 ];

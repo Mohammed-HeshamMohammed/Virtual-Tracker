@@ -20,7 +20,11 @@ export function getPostgresPool() {
  * @returns {boolean}
  */
 export function isPostgresConfigured() {
-  return Boolean(getEnv().postgres.url);
+  const url = getEnv().postgres.url;
+  if (!url) {
+    throw new Error("PostgreSQL is not configured. Please define the POSTGRES_URL environment variable.");
+  }
+  return true;
 }
 
 /**
