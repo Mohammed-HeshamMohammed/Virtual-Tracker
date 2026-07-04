@@ -73,9 +73,10 @@ export async function fetchPayRatesForMembers(db, memberIds) {
  * @param {string[]} memberIds
  */
 export async function fetchWeeklyLimitsForMembers(db, memberIds) {
-  return fetchDocsByMemberIdChunks(db, "limits", memberIds, (query) =>
-    query.where("limit_type", "==", "weekly"),
-  );
+  const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
+  if (!unique.length) return [];
+  const refs = unique.map((id) => db.collection("limits").doc(id));
+  return db.getAll(...refs);
 }
 
 /**
@@ -141,8 +142,9 @@ export function enrichMembersWithPayAndLimitsFromDocs(members, payDocs, limitDoc
   }
   const weeklyByMember = new Map();
   for (const doc of limitDocs) {
-    const memberId = typeof doc.data()?.member_id === "string" ? doc.data().member_id : "";
-    if (memberIdSet.has(memberId)) weeklyByMember.set(memberId, doc.data()?.value);
+    if (!doc.exists) continue;
+    const memberId = doc.id;
+    if (memberIdSet.has(memberId)) weeklyByMember.set(memberId, doc.data()?.weekly);
   }
   return members.map((member) => {
     const pay = payByMember.get(member.id);

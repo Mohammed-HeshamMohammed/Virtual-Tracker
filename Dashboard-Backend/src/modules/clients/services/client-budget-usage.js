@@ -64,43 +64,7 @@ function entryDurationSeconds(row) {
  */
 
 export async function sumBillableHoursForProjectInPeriod(db, projectId, period) {
-
-  if (isPostgresConfigured()) {
-    return sumBillableHoursPg(projectId, period.start, period.end);
-  }
-
-  const snap = await db
-
-    .collection("time_entries")
-
-    .where("project_id", "==", projectId)
-
-    .limit(2000)
-
-    .get();
-
-
-
-  let totalSeconds = 0;
-
-  for (const doc of snap.docs) {
-
-    const row = doc.data() || {};
-
-    if (row.billable === false) continue;
-
-    const entryDate = parseEntryDate(row.date ?? row.start_time ?? row.startTime ?? row.created_at);
-
-    if (!entryInPeriod(entryDate, period)) continue;
-
-    totalSeconds += entryDurationSeconds(row);
-
-  }
-
-
-
-  return totalSeconds / 3600;
-
+  return sumBillableHoursPg(projectId, period.start, period.end);
 }
 
 

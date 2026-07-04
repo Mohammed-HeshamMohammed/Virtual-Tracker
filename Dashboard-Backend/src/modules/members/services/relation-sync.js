@@ -29,75 +29,22 @@ const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manage
  */
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
-  if (await isPostgresLookupReady()) {
-    try {
-      return await resolveRoleNameByIdPg(roleId);
-    } catch (err) {
-      logSafeWarn("[relation-sync] Postgres resolveRoleNameById failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
-  }
-  const doc = await db.collection("roles").doc(roleId).get();
-  if (!doc.exists) return "";
-  const name = doc.data()?.name;
-  return typeof name === "string" ? name.trim() : "";
+  await isPostgresLookupReady();
+  return await resolveRoleNameByIdPg(roleId);
 }
 
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
-  if (await isPostgresLookupReady()) {
-    try {
-      return await resolveRoleIdByNamePg(name);
-    } catch (err) {
-      logSafeWarn("[relation-sync] Postgres resolveRoleIdByName failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
-  }
-  const exact = await db.collection("roles").where("name", "==", name).limit(1).get();
-  if (!exact.empty) return exact.docs[0].id;
-
-  const snap = await db.collection("roles").limit(100).get();
-  for (const doc of snap.docs) {
-    const rowName = doc.data()?.name;
-    if (typeof rowName === "string" && rowName.toLowerCase() === name.toLowerCase()) return doc.id;
-  }
-
-  const id = crypto.randomUUID();
-  await db.collection("roles").doc(id).set({
-    id,
-    name,
-    description: "",
-    created_at: new Date(),
-    created_by: "",
-    updated_by: "",
-  });
-  return id;
+  await isPostgresLookupReady();
+  return await resolveRoleIdByNamePg(name);
 }
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function ensureDefaultRoles(db) {
-  if (await isPostgresLookupReady()) {
-    try {
-      await ensureDefaultRolesPg(DEFAULT_ROLES);
-      return;
-    } catch (err) {
-      logSafeWarn("[relation-sync] Postgres ensureDefaultRoles failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
-  }
-  const snap = await db.collection("roles").limit(100).get();
-  const existing = new Set(
-    snap.docs
-      .map((doc) => doc.data()?.name)
-      .filter((name) => typeof name === "string")
-      .map((name) => name.toLowerCase()),
-  );
-  for (const name of DEFAULT_ROLES) {
-    if (existing.has(name.toLowerCase())) continue;
-    await resolveRoleIdByName(db, name);
-  }
+  await isPostgresLookupReady();
+  await ensureDefaultRolesPg(DEFAULT_ROLES);
 }
 
 /**
@@ -141,23 +88,10 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 async function loadRoleNameById(db) {
-  if (await isPostgresLookupReady()) {
-    try {
-      const data = await getLookupData();
-      return new Map(
-        data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
-      );
-    } catch (err) {
-      logSafeWarn("[relation-sync] Postgres loadRoleNameById failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
-  }
-  const snap = await db.collection("roles").limit(100).get();
+  await isPostgresLookupReady();
+  const data = await getLookupData();
   return new Map(
-    snap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-    }),
+    data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
   );
 }
 
@@ -432,24 +366,11 @@ export async function cascadeDeleteMemberRelations(db, memberId) {
 export async function enrichMembersWithRoleNames(db, members) {
   if (!members.length) return members;
   const roleNameById = new Map();
-  if (await isPostgresLookupReady()) {
-    try {
-      const { roles } = await getLookupData();
-      for (const row of roles) {
-        const name = typeof row.name === "string" ? row.name.trim() : "";
-        if (row.id != null) roleNameById.set(String(row.id), name);
-      }
-    } catch (err) {
-      logSafeWarn("[relation-sync] Postgres enrichMembersWithRoleNames failed; using Firestore:", err);
-      resetPostgresLookupReadyCache();
-    }
-  }
-  if (roleNameById.size === 0) {
-    const rolesSnap = await db.collection("roles").limit(100).get();
-    for (const doc of rolesSnap.docs) {
-      const row = doc.data() || {};
-      roleNameById.set(doc.id, typeof row.name === "string" ? row.name.trim() : "");
-    }
+  await isPostgresLookupReady();
+  const { roles } = await getLookupData();
+  for (const row of roles) {
+    const name = typeof row.name === "string" ? row.name.trim() : "";
+    if (row.id != null) roleNameById.set(String(row.id), name);
   }
   return members.map((member) => {
     const { name, roleId } = pickCanonicalPrimaryRoleName(member, [], roleNameById);

@@ -34,18 +34,9 @@ export async function memberUsesShiftsForLimits(db, memberId) {
  * @param {string} limitType
  */
 export async function getMemberLimitHours(db, memberId, limitType) {
-  const snap = await db
-    .collection("limits")
-    .where("member_id", "==", memberId)
-    .where("limit_type", "==", limitType)
-    .get();
-  if (snap.empty) return 0;
-  let best = 0;
-  for (const doc of snap.docs) {
-    const value = parseLimitHours(doc.data()?.value);
-    if (value > best) best = value;
-  }
-  return best;
+  const doc = await db.collection("limits").doc(memberId).get();
+  if (!doc.exists) return 0;
+  return parseLimitHours(doc.data()?.[limitType]);
 }
 
 /**

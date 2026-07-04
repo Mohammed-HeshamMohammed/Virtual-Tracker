@@ -7,7 +7,6 @@ const MEMBER_REFERENCES = [
   { collection: "employment", fields: ["member_id"] },
   { collection: "pay_rates", fields: ["member_id"] },
   { collection: "time_settings", fields: ["member_id"] },
-  { collection: "limits", fields: ["member_id"] },
   { collection: "member_onboarding", fields: ["member_id"] },
   { collection: "team_members", fields: ["member_id"] },
   { collection: "project_members", fields: ["member_id"] },

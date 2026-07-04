@@ -94,25 +94,17 @@ async function fetchFreshBase(db) {
         .get(),
     ]);
 
-  /** @type {SerializedDoc[]} */
-  let timeEntries = [];
-  if (isPostgresConfigured()) {
-    try {
-      const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
-      timeEntries = pgRows.map((row) => ({
-        id: String(row.id ?? ""),
-        data: {
-          member_id: row.member_id,
-          project_id: row.project_id,
-          date: row.date,
-          duration: row.duration,
-          billable: row.billable,
-        },
-      }));
-    } catch (err) {
-      logSafeWarn("[dashboard-base-loader] postgres time_entries fetch failed:", err);
-    }
-  }
+  const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
+  const timeEntries = pgRows.map((row) => ({
+    id: String(row.id ?? ""),
+    data: {
+      member_id: row.member_id,
+      project_id: row.project_id,
+      date: row.date,
+      duration: row.duration,
+      billable: row.billable,
+    },
+  }));
 
   return {
     projects: projectsSnap.docs.map(serializeDoc),

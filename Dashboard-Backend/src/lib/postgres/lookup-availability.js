@@ -11,16 +11,9 @@ let lookupReady;
 export async function isPostgresLookupReady() {
   if (!isPostgresConfigured()) return false;
   if (lookupReady === true) return true;
-  if (lookupReady === false) return false;
-  try {
-    await query("SELECT 1 FROM roles LIMIT 1");
-    lookupReady = true;
-    return true;
-  } catch (err) {
-    logSafeWarn("[postgres] lookup probe failed; using Firestore fallback:", err);
-    lookupReady = false;
-    return false;
-  }
+  await query("SELECT 1 FROM roles LIMIT 1");
+  lookupReady = true;
+  return true;
 }
 
 /** @internal */
