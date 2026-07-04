@@ -96,6 +96,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_DASHBOARD_URL: ${APP_PUBLIC_URL}
+        NEXT_PUBLIC_DASHBOARD_API_URL: ${NEXT_PUBLIC_API_URL:-}
     container_name: vt-landing-web
     restart: unless-stopped
     environment:

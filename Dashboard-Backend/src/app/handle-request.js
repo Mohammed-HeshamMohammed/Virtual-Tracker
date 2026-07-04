@@ -26,12 +26,15 @@ import { routeBootstrap } from "../modules/bootstrap/routes.js";
 import { routeAuthIdentity } from "../modules/auth/identity-routes.js";
 import { isAuthnApiPath } from "../modules/auth/authn-paths.js";
 import { probeFirestoreReadiness } from "../modules/auth/readiness.js";
+import { isSessionCookiePath } from "../modules/auth/session-cookie.js";
 
 export async function handleRequest(req, res) {
   const origin = req.headers.origin;
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { ...corsHeaders(origin), ...getSecurityHeaders(req) });
+    const pathname = (req.url ?? "/").split("?")[0];
+    const credentials = isSessionCookiePath(pathname);
+    res.writeHead(204, { ...corsHeaders(origin, { credentials }), ...getSecurityHeaders(req) });
     res.end();
     return;
   }

@@ -49,6 +49,7 @@ import {
 import { verifyIdTokenWithBackend, type AuthProfileSnapshot } from "@/features/auth/services/verify-session"
 import { RetriableBackendError, retryWithBackoff, isRetriableBackendError } from "@/infrastructure/api/retry"
 import { fetchBootstrapSession, type BootstrapPayload } from "@/features/auth/services/bootstrap"
+import { syncSharedSessionCookie, clearSharedSessionCookie } from "@/features/auth/services/session-cookie-sync"
 import { AUTH_SYNC_RETRY, FIREBASE_INIT_RETRY } from "@/infrastructure/api/auth-retry"
 import { fetchCurrentMemberWithFallback } from "@/features/members/api/member-api"
 import { getMemberRoleLabel } from "@/features/auth"
@@ -304,6 +305,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setCurrentMember(null)
     setDashboardSummary(null)
     skipNextAuthStateSyncRef.current = true
+    void clearSharedSessionCookie()
     const auth = getFirebaseAuth()
     await firebaseSignOut(auth).catch(() => {})
     setUser(null)
@@ -438,6 +440,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
 
       setSessionAuthorized(true)
+      void syncSharedSessionCookie()
     },
     [doInitialization],
   )
@@ -1112,6 +1115,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       setDashboardSummary(null)
       setSessionAuthorized(false)
       clearVerificationGate()
+      void clearSharedSessionCookie()
       const { clearAllListCaches } = await import("@/shared/tables/hooks/list-cache-registry")
       clearAllListCaches()
       const { postActivitySession } = await import("@/features/activity/services/activity-api")

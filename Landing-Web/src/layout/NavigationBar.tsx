@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
 import AppCtaLink from "@/components/AppCtaLink"
-import { getSignInHref, getTrialHref } from "@/lib/site-urls"
+import AuthNavAction from "@/components/AuthNavAction"
+import { getTrialHref } from "@/lib/site-urls"
 import { PLATFORM_NAV_TABS, SOLUTIONS } from "@/lib/product-content"
 import { clampIndex } from "@/lib/safe"
 
@@ -232,16 +233,7 @@ export default function NavigationBar() {
           >
             Open dashboard
           </AppCtaLink>
-          <AppCtaLink href={getSignInHref()} className="relative flex items-center group cursor-pointer" style={{ filter: "url(#gooey-filter)" }}>
-            <span className={`absolute right-0 px-3 rounded-full font-semibold text-sm transition-all duration-300 cursor-pointer h-10 flex items-center justify-center -translate-x-12 group-hover:-translate-x-[6.5rem] z-0 ${btnBg}`}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 17L17 7M17 7H7M17 7V17" />
-              </svg>
-            </span>
-            <span className={`px-8 py-2.5 rounded-full font-semibold text-sm transition-all duration-300 cursor-pointer h-10 flex items-center z-10 ${btnBg}`}>
-              Sign in
-            </span>
-          </AppCtaLink>
+          <AuthNavAction isTransparent={isTransparent} btnBg={btnBg} />
         </div>
 
         <button className="md:hidden p-2" type="button" aria-label="Menu">

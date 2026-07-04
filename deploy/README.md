@@ -113,7 +113,7 @@ Open in browser:
 |---------|-----------|------------------|
 | Dashboard Web (unified gateway mode) | `NEXT_PUBLIC_API_URL` | `NEXT_PUBLIC_API_URL` |
 | Dashboard Web (per-subdomain mode, used instead of the above) | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` |
-| Landing-Web | `NEXT_PUBLIC_DASHBOARD_URL` | `APP_PUBLIC_URL` |
+| Landing-Web | `NEXT_PUBLIC_DASHBOARD_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` | `APP_PUBLIC_URL`, `NEXT_PUBLIC_API_URL` |
 
 Only use one mode. `NEXT_PUBLIC_API_URL` takes priority if set — leave it blank/unset
 to use separate Auth/Dashboard subdomains instead.

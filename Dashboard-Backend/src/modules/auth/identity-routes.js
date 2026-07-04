@@ -14,6 +14,7 @@ import { validateSessionAuthorization, isPasswordProviderUser } from "./session-
 import { completeFirstLoginPasswordChange } from "./complete-first-login.js";
 import { promotePendingMemberCore } from "../members/routes/member-invites.routes.js";
 import { handleSessionBootstrap } from "./session-bootstrap.js";
+import { routeSessionCookie } from "./session-cookie-routes.js";
 import { ensureMemberLinkedRecordsForUserRecord } from "../members/services/ensure-member-linked-records.js";
 import { alignMemberRoleTables } from "../members/services/relation-sync.js";
 import { enforceUnauthorizedPrivilegedRole } from "../members/services/privileged-role-governance.js";
@@ -75,6 +76,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
   if (await handleSessionBootstrap(req, res, origin, url)) return true;
+  if (await routeSessionCookie(req, res, url, origin)) return true;
 
   if (authPath === "/api/auth/sign-in-client-extras" && req.method === "GET") {
     const vapidPublicKey = getEnv().firebase.webPush.vapidPublicKey || null;
