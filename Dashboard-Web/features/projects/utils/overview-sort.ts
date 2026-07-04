@@ -15,12 +15,7 @@ function healthRank(health: OverviewProjectHealth): number {
   return 1
 }
 
-/**
- * Multi-tier table sort:
- * 1) Best budget (defined budget + most remaining headroom, then larger total)
- * 2) Progress (% complete)
- * 3) Health (on track → at risk → stalled)
- */
+/** Overview table sort: budget headroom → progress → health. */
 export function sortProjectsForOverview<T extends OverviewSortableProject>(projects: T[]): T[] {
   return projects.toSorted((a, b) => {
     const aHasBudget = a.budget?.total != null && a.budget.total > 0

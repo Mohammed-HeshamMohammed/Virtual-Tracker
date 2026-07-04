@@ -7,10 +7,7 @@ function uniqStrings(values: string[]): string[] {
   return [...new Set(values.map((s) => s.trim()).filter(Boolean))]
 }
 
-/**
- * Merges client `fetchSignInMethodsForEmail` (includes `emailLink` when applicable) with Backend Admin
- * `getUserByEmail` → `providerData` (same Provider + Identifier rows as in Firebase Auth console).
- */
+/** Merge client fetchSignInMethodsForEmail + backend Admin providers. */
 export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string): Promise<string[] | null> {
   const trimmed = email.trim()
   if (!trimmed) return null
@@ -33,9 +30,7 @@ export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string):
 
 const has = (methods: string[], m: string) => methods.includes(m)
 
-/**
- * Clear, single-path instruction when this email cannot use email+password (no `password` in Firebase methods).
- */
+/** User message when email has no password provider on file. */
 export function instructionWhenNoPasswordOnFile(methods: string[]): string {
   const g = has(methods, "google.com")
   const a = has(methods, "apple.com")
@@ -65,9 +60,7 @@ export function instructionWhenNoPasswordOnFile(methods: string[]): string {
   return "For this app, that email is not set up for email-and-password sign-in. Use Google, Apple, or “Sign in with work email” according to how you first created the account."
 }
 
-/**
- * When an account exists but details are unknown (empty methods, etc.).
- */
+/** Guidance when account exists but methods list is empty/unknown. */
 export function describeExistingAccountGuidance(methods: string[]): string {
   if (methods.length === 0) {
     return "Firebase did not return which sign-in methods exist for this address (privacy protection). Try the Google button if you used Google, the Apple button if you used Apple, or “Sign in with work email” if you used email links; otherwise check the password you chose."

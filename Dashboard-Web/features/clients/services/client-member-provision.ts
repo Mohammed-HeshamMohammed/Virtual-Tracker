@@ -13,7 +13,7 @@ export type ProvisionClientMemberResult = {
   invites?: Invite[]
 }
 
-/** Creates a Client-role invite or pre-provisioned account from the modal draft. */
+/** Client invite or pre-provision from modal draft. */
 export async function provisionClientMemberFromDraft(
   draft: ClientMemberDraft,
   options?: { createdByUid?: string },

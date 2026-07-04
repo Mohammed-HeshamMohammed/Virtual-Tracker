@@ -1,16 +1,4 @@
-/**
- * In-memory cache for `GET /api/members/:id/profile` (modal edit form).
- *
- * Storage: `list-cache-registry` keys `people-members:profile:{memberId}` — same
- * registry as people list caches (Engineering Constitution §18: one owner, explicit invalidation).
- *
- * TTL: 60s stale-while-revalidate (matches `members-page` list cache).
- *
- * Invalidation:
- * - `updateMemberProfile` — write-through after save
- * - `invalidateMemberProfileCache` — member delete
- * - `clearAllListCaches` — logout / browser hygiene
- */
+// In-memory cache for GET /api/members/:id/profile (60s SWR, list-cache-registry).
 import {
   getFetchPromise,
   getLastFetchTime,

@@ -15,9 +15,7 @@ export type CompleteFirstLoginResult = {
   profile?: AuthProfileSnapshot
 }
 
-/**
- * Server-side first-login password change: verifies temp password, updates Auth, promotes pending member, clears flags.
- */
+/** First-login temp password change via backend. */
 export async function completeFirstLoginWithBackend(
   input: CompleteFirstLoginInput,
 ): Promise<CompleteFirstLoginResult> {

@@ -20,10 +20,7 @@ import { AuthMobileHelperStrip, AuthSidePanel } from "@/features/auth/components
 import { getAuthStyles } from "@/features/auth/components/style-utils"
 import { DASHBOARD_PATH } from "@/features/auth/services/navigation"
 
-/**
- * Mandatory password change for pre-provisioned accounts (`mustChangePassword === true`).
- * On success the session is invalidated and the user must sign in again with their new password.
- */
+/** Required password change for pre-provision accounts; re-sign-in after success. */
 export function CompleteRegistrationGate() {
   const { user } = useAuth()
   const { isDark } = useTheme()

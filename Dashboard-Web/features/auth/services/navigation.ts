@@ -8,10 +8,7 @@ export function buildAgentAuthUrl(linkToken: string): string {
 
 export type AgentLinkFinishResult = "existing-tab" | "no-tab"
 
-/**
- * Notify app tabs after linking. If the app is already open elsewhere,
- * focus it and try to close this tab; otherwise caller should navigate here.
- */
+/** After agent link — focus existing tab or stay here. */
 export async function finishAgentLinkSuccess(): Promise<AgentLinkFinishResult> {
   if (typeof window === "undefined") return "no-tab"
 

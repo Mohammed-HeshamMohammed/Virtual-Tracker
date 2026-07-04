@@ -1,4 +1,4 @@
-/** HTTP error page metadata — single source of truth for user-facing error screens. */
+// HTTP error page copy + actions by status code.
 
 export type HttpErrorActionKind = "home" | "retry" | "reload" | "back"
 
@@ -29,7 +29,7 @@ const DEFAULT_SERVER_ERROR: HttpErrorDefinition = {
   showDiagnostics: true,
 }
 
-/** Canonical definitions for standard HTTP status codes used in the app. */
+/** Status code → error screen definition. */
 export const HTTP_ERROR_CATALOG: Record<number, HttpErrorDefinition> = {
   400: {
     status: 400,

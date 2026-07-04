@@ -11,9 +11,7 @@ export type PatchProfileSettingsPayload = {
   phoneVerificationToken?: string
 }
 
-/**
- * Merges editable profile fields into Firestore `User_profiles/{uid}` and refreshes Auth display name when first/last are sent.
- */
+/** PATCH User_profiles + optional Auth displayName from first/last. */
 export async function patchProfileSettingsWithBackend(
   user: User,
   payload: PatchProfileSettingsPayload,

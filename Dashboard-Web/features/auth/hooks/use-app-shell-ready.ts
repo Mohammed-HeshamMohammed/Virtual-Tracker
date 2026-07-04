@@ -9,9 +9,7 @@ type UseAppShellReadyArgs = {
   memberRole: string
 }
 
-/**
- * Picks the role-correct landing route before the shell paints.
- */
+/** Role-correct landing route before shell paints. */
 export function useAppShellReady({ sessionReady, isLoggedIn, memberRole }: UseAppShellReadyArgs) {
   const [activeItem, setActiveItem] = useState("general")
   const [shellReady, setShellReady] = useState(false)

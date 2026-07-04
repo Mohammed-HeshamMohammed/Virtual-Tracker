@@ -268,9 +268,7 @@ async function warmCoreDataLegacy(options: WarmCoreDataOptions = {}): Promise<vo
   report(onProgress, 3, "Caches ready")
 }
 
-/**
- * Non-blocking background warm — one authorized API round-trip when available.
- */
+/** Background warm-up API round-trip after login. */
 export async function warmCoreDataForBootstrap(options: WarmCoreDataOptions = {}): Promise<void> {
   const { onProgress, currentMember } = options
   report(onProgress, 1, "Warming workspace caches...")

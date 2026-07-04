@@ -2,10 +2,7 @@ import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import type { BackendPasswordRequirements } from "@/features/auth/services/password-policy/use-password-backend-check"
 
-/**
- * Server-side password check before client-only Firebase operations.
- * Passwords are sent only in HTTPS POST bodies — never logged, cached, or stored locally.
- */
+/** Server password check — POST body only, never stored locally. */
 
 type ValidatePasswordResponse = {
   success?: boolean

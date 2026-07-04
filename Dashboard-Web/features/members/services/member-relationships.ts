@@ -25,9 +25,7 @@ export interface ConnectedMembers {
   members: string[]
 }
 
-/**
- * Get all ancestors of a member (who added them, up the tree)
- */
+/** Ancestors of a member (walk up). */
 async function getMemberAncestors(memberId: string): Promise<TreeNode[]> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/ancestors`))
   if (!res.ok) throw new Error(`Failed to fetch ancestors: ${res.status}`)
@@ -36,9 +34,7 @@ async function getMemberAncestors(memberId: string): Promise<TreeNode[]> {
   return json.data
 }
 
-/**
- * Get all descendants of a member (who they added, down the tree)
- */
+/** Descendants of a member (walk down). */
 async function getMemberDescendants(memberId: string, maxDepth?: number): Promise<TreeNode[]> {
   const params = maxDepth ? `?maxDepth=${maxDepth}` : ""
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/descendants${params}`))
@@ -48,9 +44,7 @@ async function getMemberDescendants(memberId: string, maxDepth?: number): Promis
   return json.data
 }
 
-/**
- * Get the full tree path from root to this member
- */
+/** Tree path from root to member. */
 async function getMemberTreePath(memberId: string): Promise<string[]> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/tree-path`))
   if (!res.ok) throw new Error(`Failed to fetch tree path: ${res.status}`)
@@ -59,9 +53,7 @@ async function getMemberTreePath(memberId: string): Promise<string[]> {
   return json.data
 }
 
-/**
- * Get the root (top-most ancestor) of a member's tree
- */
+/** Top-most ancestor (tree root). */
 async function getMemberRoot(memberId: string): Promise<string | null> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/root`))
   if (!res.ok) throw new Error(`Failed to fetch root: ${res.status}`)
@@ -97,11 +89,7 @@ export interface TeamStaffableMembersResponse {
   sees_all: boolean
 }
 
-/**
- * Role-aware People scope for the signed-in member.
- * `members` = visible (includes read-only upline in subtree).
- * `manageable_members` = edit/remove scope (Managers / Super Managers).
- */
+/** People scope for signed-in member (visible vs manageable). */
 async function fetchScopedHierarchyMembers(forceToken = false): Promise<ScopedHierarchyMembers> {
   const url = apiPath("/api/member-relationships/scoped-members")
   assertSecureFetchUrl(url)
@@ -169,10 +157,7 @@ export interface TeamSubtreeMembers {
   members: string[]
 }
 
-/**
- * Members in the viewer's hierarchy subtree (self + direct/indirect reports).
- * Prefer getScopedHierarchyMembers for People page manage scope.
- */
+/** Viewer subtree (self + reports). Prefer getScopedHierarchyMembers for People page. */
 export async function getTeamSubtreeMembers(memberId: string): Promise<TeamSubtreeMembers> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/team-subtree`))
   if (!res.ok) throw new Error(`Failed to fetch team subtree: ${res.status}`)
@@ -181,9 +166,7 @@ export async function getTeamSubtreeMembers(memberId: string): Promise<TeamSubtr
   return json.data
 }
 
-/**
- * Get all members connected in the same tree
- */
+/** All members in the same tree component. */
 export async function getConnectedMembers(memberId: string): Promise<ConnectedMembers> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/connected`))
   if (!res.ok) throw new Error(`Failed to fetch connected members: ${res.status}`)
@@ -192,9 +175,7 @@ export async function getConnectedMembers(memberId: string): Promise<ConnectedMe
   return json.data
 }
 
-/**
- * Get the full nested tree structure starting from a member
- */
+/** Nested tree from a member root. */
 async function getMemberTree(memberId: string): Promise<MemberTree> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/tree`))
   if (!res.ok) throw new Error(`Failed to fetch tree: ${res.status}`)
@@ -203,9 +184,7 @@ async function getMemberTree(memberId: string): Promise<MemberTree> {
   return json.data
 }
 
-/**
- * Get the direct parent of a member
- */
+/** Direct parent of a member. */
 async function getMemberParent(memberId: string): Promise<TreeNode | null> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/parent`))
   if (!res.ok) throw new Error(`Failed to fetch parent: ${res.status}`)
@@ -214,9 +193,7 @@ async function getMemberParent(memberId: string): Promise<TreeNode | null> {
   return json.data
 }
 
-/**
- * Get direct children of a member
- */
+/** Direct children of a member. */
 async function getMemberChildren(memberId: string): Promise<TreeNode[]> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/children`))
   if (!res.ok) throw new Error(`Failed to fetch children: ${res.status}`)
@@ -225,9 +202,7 @@ async function getMemberChildren(memberId: string): Promise<TreeNode[]> {
   return json.data
 }
 
-/**
- * Check if one member is an ancestor of another
- */
+/** True if ancestorId is above descendantId in the tree. */
 async function checkIsAncestor(ancestorId: string, descendantId: string): Promise<boolean> {
   const params = new URLSearchParams({ ancestor: ancestorId, descendant: descendantId })
   const res = await apiFetch(apiPath(`/api/member-relationships/check-ancestor?${params}`))
@@ -237,9 +212,7 @@ async function checkIsAncestor(ancestorId: string, descendantId: string): Promis
   return json.data?.is_ancestor || false
 }
 
-/**
- * Get members who share projects with the given member (for client visibility)
- */
+/** Members who share projects with this member (client visibility). */
 async function getMembersBySharedProjects(memberId: string): Promise<string[]> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/shared-projects`))
   if (!res.ok) throw new Error(`Failed to fetch shared projects: ${res.status}`)
@@ -255,9 +228,7 @@ export interface VisibleMembersForClient {
   all_visible: string[]
 }
 
-/**
- * Get all visible members for a client (tree + project-based visibility)
- */
+/** Visible members for a client (tree + project links). */
 export async function getVisibleMembersForClient(memberId: string): Promise<VisibleMembersForClient> {
   const res = await apiFetch(apiPath(`/api/member-relationships/${encodeURIComponent(memberId)}/visible`))
   if (!res.ok) throw new Error(`Failed to fetch visible members: ${res.status}`)
@@ -266,9 +237,7 @@ export async function getVisibleMembersForClient(memberId: string): Promise<Visi
   return json.data
 }
 
-/**
- * Manually create a member relationship (admin use)
- */
+/** Admin: create hierarchy edge. */
 async function createMemberRelationship(
   parentMemberId: string,
   childMemberId: string,

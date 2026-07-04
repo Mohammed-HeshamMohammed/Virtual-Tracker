@@ -34,9 +34,7 @@ function ActivityScreensSkeleton({ isDark }: { isDark: boolean }) {
   )
 }
 
-/**
- * Shown while a route chunk downloads — matches each page’s existing skeleton UI.
- */
+/** Loading UI while route chunk downloads. */
 export function ChunkRouteFallback({ pageId }: { pageId: string }) {
   const { isDark } = useTheme()
 

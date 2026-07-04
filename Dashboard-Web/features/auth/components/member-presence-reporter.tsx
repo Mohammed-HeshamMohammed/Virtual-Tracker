@@ -11,10 +11,7 @@ import {
 
 const ACTIVITY_DEBOUNCE_MS = 8_000
 
-/**
- * Maintains authenticated WebSocket presence after login.
- * Backend marks online/idle/offline — no HTTP presence signals.
- */
+/** Presence WS after login — backend tracks online/idle/offline. */
 export function MemberPresenceReporter() {
   const { isLoggedIn, user, profile, sessionReady } = useAuth()
   const activityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)

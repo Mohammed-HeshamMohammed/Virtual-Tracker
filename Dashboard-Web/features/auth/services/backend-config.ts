@@ -55,9 +55,7 @@ export function prefetchFirebaseWebConfig(): Promise<FirebaseOptions> {
   return fetchFirebaseWebConfigFromBackend()
 }
 
-/**
- * Fetches the public Firebase web config from Auth-Backend (not embedded in the client bundle).
- */
+/** Firebase web config from Auth-Backend (not in client bundle). */
 export async function fetchFirebaseWebConfigFromBackend(): Promise<FirebaseOptions> {
   if (cached) return cached
 

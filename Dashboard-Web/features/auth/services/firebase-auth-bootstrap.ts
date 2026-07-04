@@ -3,9 +3,7 @@ import { getRedirectResult, type Auth, type UserCredential } from "firebase/auth
 /** One `getRedirectResult` per full page load (React Strict Mode mounts twice in dev). */
 let redirectResultPromise: Promise<UserCredential | null> | null = null
 
-/**
- * Completes a pending `signInWithRedirect` handshake once per tab load.
- */
+/** Finish signInWithRedirect once per tab load. */
 export function consumeAuthRedirectResultOnce(auth: Auth): Promise<UserCredential | null> {
   if (!redirectResultPromise) {
     redirectResultPromise = getRedirectResult(auth).catch((err) => {

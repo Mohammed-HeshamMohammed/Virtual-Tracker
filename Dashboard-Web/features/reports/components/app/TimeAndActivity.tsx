@@ -41,10 +41,7 @@ export function buildDefaultTimeActivityReportData(): TimeActivityReportData {
   return { days: [], memberRows: {} }
 }
 
-/**
- * Default Time & Activity report shell. For live data use `useTimeAndActivityReport`
- * or render `<TimeActivityReportView days={...} memberRows={...} />` directly.
- */
+/** Empty Time & Activity shell — use useTimeAndActivityReport for live data. */
 export function TimeAndActivityReport() {
   const { days, memberRows } = useMemo(() => buildDefaultTimeActivityReportData(), [])
   return <TimeActivityReportView days={days} memberRows={memberRows} />

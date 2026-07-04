@@ -43,9 +43,7 @@ function clearReconnect() {
   }
 }
 
-/**
- * SSE subscription to `/api/presence/events` (Firebase RTD fan-out).
- */
+/** SSE /api/presence/events (RTD fan-out). */
 export async function openPresenceEventStream(): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (source && source.readyState !== EventSource.CLOSED) return true

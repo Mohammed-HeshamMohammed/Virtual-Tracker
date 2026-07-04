@@ -12,9 +12,7 @@ function prefetchChunk(id: AppChunkId) {
   void CHUNK_IMPORTS[id]()
 }
 
-/**
- * After login, prefetch likely route chunks during idle time (smaller first paint, faster tab switches).
- */
+/** Idle prefetch of route chunks after login. */
 export function prefetchAppRoutesForRole(role: string) {
   if (prefetchStarted || typeof window === "undefined") return
   prefetchStarted = true

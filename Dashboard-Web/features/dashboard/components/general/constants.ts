@@ -114,16 +114,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
   { id: "recent_projects", label: "Recent projects", size: "panel" },
 ]
 
-/**
- * Fixed dashboard layout — all widgets, stat pairs stacked, panels at panel height.
- *
- * Grid (12 cols): stat column = 2, panel = 6. Two stacked stats = one panel height.
- * Row 1: [worked][activity][billable day] | Tasks
- * Row 2: [members/projects] | Team presence | (Screenshots wraps)
- * Row 3: Screenshots | Apps
- * Row 4: Budgets | Weekly trends
- * Row 5: Recent projects
- */
+/** Default dashboard grid layout (12-col, stacked stats + panels). */
 export const DEFAULT_DASHBOARD_LAYOUT: LayoutBlock[] = [
   { kind: "stack", id: "stack-worked", widgetIds: ["worked_week", "worked_today"] },
   { kind: "stack", id: "stack-activity", widgetIds: ["activity_today", "spent_week"] },

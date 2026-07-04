@@ -1,7 +1,4 @@
-/**
- * Copies text to the clipboard. Returns false when the browser blocks access
- * (e.g. document not focused) instead of throwing.
- */
+/** Copy to clipboard; returns false if blocked (no throw). */
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim()
   if (!value || typeof document === "undefined") return false

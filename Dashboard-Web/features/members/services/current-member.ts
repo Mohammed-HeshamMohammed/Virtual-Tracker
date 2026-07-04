@@ -1,9 +1,7 @@
 import { isValidUuid } from "@/shared/utils/uuid"
 import { fetchCurrentMember } from "@/features/members/api/member-api"
 
-/**
- * Resolves the signed-in user's `members.id` (Firestore UUID), not Firebase Auth uid.
- */
+/** Signed-in user's members.id (Firestore UUID, not Firebase uid). */
 export async function resolveCurrentMemberId(): Promise<string | undefined> {
   try {
     const member = await fetchCurrentMember()

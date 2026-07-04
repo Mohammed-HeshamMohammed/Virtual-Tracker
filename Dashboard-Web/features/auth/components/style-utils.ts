@@ -1,8 +1,4 @@
-/**
- * Auth Design Tokens
- * Dark  → "The Atmospheric Architect"  (#0c1324 void, #4be277 neon mint)
- * Light → "The Luminous Curator"       (#f6fafe paper, #6b38d4 virtual purple)
- */
+/** Auth page styles — dark (#0c1324 / mint) and light (#f6fafe / purple) palettes. */
 export function getAuthStyles(isDark: boolean) {
   return {
     // ─── Shell & Page ─────────────────────────────────────────────────────────
@@ -38,7 +34,7 @@ export function getAuthStyles(isDark: boolean) {
     bodyStrong: isDark ? "text-[#dce1fb]" : "text-[#171c1f]",
 
     // ─── Input Fields ─────────────────────────────────────────────────────────
-    // Bottom-accent focus treatment per design system
+    // Bottom-accent focus on inputs
     input: isDark
       ? "bg-[#151b2d] text-[#dce1fb] placeholder:text-[#bccbb9]/40 border-0 border-b-2 border-[#3d4a3d]/30 rounded-lg focus:border-b-[#4be277]/60 focus:ring-0 focus:outline-none focus:shadow-[0_2px_12px_rgba(75,226,119,0.12)] transition-all duration-200"
       : "bg-[#f0f4f8] text-[#171c1f] placeholder:text-slate-400 border-0 border-b-2 border-[#cbc3d7]/40 rounded-lg focus:border-b-[#6b38d4]/50 focus:ring-0 focus:outline-none focus:shadow-[0_2px_12px_rgba(107,56,212,0.10)] transition-all duration-200",

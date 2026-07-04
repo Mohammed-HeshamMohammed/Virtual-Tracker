@@ -7,9 +7,7 @@ export type ProfileImageSource = {
   photoURL?: string | null
 }
 
-/**
- * Resolves avatar URL: embedded base64 → `photoURL` (Storage/OAuth) → optional fallback.
- */
+/** Avatar URL: embedded base64 → photoURL → fallback. */
 export function resolveProfileAvatarUrl(
   profile?: ProfileImageSource | AuthProfileSnapshot | null,
   user?: Pick<User, "photoURL"> | null,

@@ -4,9 +4,7 @@ export const TARGET_MAX_BYTES = 500 * 1024
 
 const ALLOWED_INPUT_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"])
 
-/**
- * Resize and re-encode profile images before upload (max 500 KB, JPEG/WebP/PNG).
- */
+/** Resize/re-encode profile image before upload (max 500 KB). */
 export async function prepareProfileImageForUpload(file: File): Promise<File> {
   const inputType = file.type.toLowerCase()
   if (!ALLOWED_INPUT_TYPES.has(inputType)) {

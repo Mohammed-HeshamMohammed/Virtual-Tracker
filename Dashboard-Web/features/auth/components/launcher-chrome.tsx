@@ -1,10 +1,6 @@
 "use client"
 
-/**
- * LauncherChrome — custom frameless titlebar for the Dashboard pywebview window.
- * Currently disabled: the Dashboard uses the native Windows titlebar (frameless=False).
- * Re-enable by removing the early return below and setting frameless=True in launcher.py.
- */
+// Custom pywebview titlebar — disabled; native Windows frame used instead.
 export function LauncherChrome() {
   return null
 }

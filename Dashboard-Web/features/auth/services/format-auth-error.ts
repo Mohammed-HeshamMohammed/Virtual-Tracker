@@ -7,9 +7,7 @@ export function isBenignAuthCancellation(err: unknown): boolean {
   return code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request"
 }
 
-/**
- * User-facing text for common Firebase Auth errors. Many map to Console configuration, not app bugs.
- */
+/** User-facing Firebase Auth error messages. */
 export function formatAuthError(err: unknown): string {
   if (isBenignAuthCancellation(err)) return ""
   const code =

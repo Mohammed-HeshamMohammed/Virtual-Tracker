@@ -11,7 +11,7 @@ import { writeMemberProfileCache, peekMemberProfileCache } from "@/features/memb
 import { isEmailLikeNamePart } from "@/shared/validation/person-name"
 
 
-/** Ensures invite URLs are absolute for clipboard/share (backend may return path-only). */
+/** Make invite URLs absolute for clipboard/share (backend may return path-only). */
 export function resolveInviteUrl(url: string): string {
   const trimmed = url.trim()
   if (!trimmed) return ""
@@ -208,9 +208,7 @@ function normalizeInvite(input: Partial<Invite> & Record<string, unknown>): Invi
 }
 
 // API Functions
-/**
- * Signed-in user's `members` row (`GET /api/members/current`). Provisions the row if missing.
- */
+/** GET /api/members/current — provisions row if missing. */
 export async function fetchCurrentMember(): Promise<Member | null> {
   if (!getFirebaseAuth().currentUser) return null
   try {
@@ -869,9 +867,7 @@ export type ValidateAddEmailResult = {
   message: string
 }
 
-/**
- * Returns whether each email can be invited or pre-provisioned (not already in Auth, not pending, not a member).
- */
+/** Check emails are eligible for invite/pre-provision. */
 export async function validateEmailsForAddMembers(
   emails: string[],
   options: { forOpenInviteLink?: boolean } = {},

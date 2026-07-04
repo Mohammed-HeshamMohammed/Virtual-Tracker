@@ -63,9 +63,7 @@ async function fetchPasswordPolicyFromNetwork(): Promise<PasswordPolicyResponse>
   }
 }
 
-/**
- * Always revalidates against the server (version field). Uses sessionStorage only as offline fallback.
- */
+/** Fetch password policy from server; sessionStorage offline fallback. */
 export async function fetchPasswordPolicy(): Promise<PasswordPolicyResponse> {
   if (memoryCache) return memoryCache
   if (inFlight) return inFlight

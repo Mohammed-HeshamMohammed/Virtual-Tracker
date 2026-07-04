@@ -25,11 +25,7 @@ const MEMBERS_META_KEY = "people-members:__members_meta__"
 const STALE_MS = 300_000
 const MEMBER_PROFILE_RACE_RETRY_DELAY_MS = 250
 
-/**
- * A freshly-signed-in viewer's own member row can still be committing when this
- * fires (session-bootstrap runs async) — the backend surfaces that window as a 404.
- * One short retry absorbs it instead of surfacing a scary error for a self-resolving race.
- */
+/** Retry once on 404 while own member row is still committing after sign-in. */
 function isMemberProfileNotFoundRace(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error ?? "")
   return /member profile not found/i.test(msg)

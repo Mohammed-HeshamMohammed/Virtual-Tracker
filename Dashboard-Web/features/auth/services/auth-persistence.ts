@@ -5,11 +5,7 @@ import {
   setPersistence,
 } from "firebase/auth"
 
-/**
- * Controls how long the Firebase session survives in this browser.
- * - `true`: survive browser restarts (local persistence).
- * - `false`: cleared when the tab/window session ends (session persistence).
- */
+/** Firebase persistence: local (remember me) vs session-only. */
 export async function applyAuthPersistenceRememberMe(auth: Auth, rememberMe: boolean): Promise<void> {
   await setPersistence(auth, rememberMe ? browserLocalPersistence : browserSessionPersistence)
 }
