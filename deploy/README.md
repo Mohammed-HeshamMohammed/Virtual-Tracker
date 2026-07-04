@@ -112,8 +112,12 @@ Open in browser:
 
 | Service | Build arg | Source in `.env` |
 |---------|-----------|------------------|
-| Dashboard Web | `NEXT_PUBLIC_API_URL` | `NEXT_PUBLIC_API_URL` |
+| Dashboard Web (unified gateway mode) | `NEXT_PUBLIC_API_URL` | `NEXT_PUBLIC_API_URL` |
+| Dashboard Web (per-subdomain mode, used instead of the above) | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` | `NEXT_PUBLIC_AUTH_API_URL`, `NEXT_PUBLIC_DASHBOARD_API_URL` |
 | Landing-Web | `NEXT_PUBLIC_DASHBOARD_URL` | `APP_PUBLIC_URL` |
+
+Only use one mode. `NEXT_PUBLIC_API_URL` takes priority if set — leave it blank/unset
+to use separate Auth/Dashboard subdomains instead.
 
 Changing API or app URLs requires rebuild:
 
@@ -155,7 +159,7 @@ docker compose up -d --build   # after code changes
 | CORS errors in browser | Add exact frontend origin to `CORS_ORIGINS` |
 | Firebase config fails | Check `FIREBASE_*` in `.env`, restart backends |
 | Caddy TLS fails | DNS must point to VPS; ports 80/443 open |
-| Dashboard blank after login | Verify `NEXT_PUBLIC_API_URL` was set at **build** time |
+| Dashboard blank after login | Verify `NEXT_PUBLIC_API_URL` (or `NEXT_PUBLIC_AUTH_API_URL`/`NEXT_PUBLIC_DASHBOARD_API_URL`) was set at **build** time — check the browser's failed request URL; if it's `127.0.0.1:5712`/`:5713` the var was missing during `docker compose build` and the image must be rebuilt, not just restarted |
 | Landing sign-in goes nowhere | Set `APP_PUBLIC_URL` before building `landing-web` |
 
 ## Alternative: Nginx on host

@@ -64,7 +64,9 @@ services:
       context: ../Dashboard-Web
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-}
+        NEXT_PUBLIC_AUTH_API_URL: ${NEXT_PUBLIC_AUTH_API_URL:-}
+        NEXT_PUBLIC_DASHBOARD_API_URL: ${NEXT_PUBLIC_DASHBOARD_API_URL:-}
     container_name: vt-dashboard-web
     restart: unless-stopped
     environment:
