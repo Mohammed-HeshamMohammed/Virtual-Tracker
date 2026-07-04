@@ -1,15 +1,10 @@
-/**
- * Sliding-window rate limiter (per client IP + route bucket).
- * In-memory per process — suitable for single-instance dev and small deployments.
- */
+/** In-memory rate limiter (per IP + route). Fine for dev / single instance. */
 
 const buckets = new Map();
 
 const WINDOW_MS = 60_000;
 const DEFAULT_LIMIT = 120;
-// One IP/NAT can host several legitimate concurrent sessions (2 browsers, a phone,
-// a housemate) — each sign-in plus periodic session-role sync easily adds up to a
-// handful of requests per session, so 25/min was tight enough to false-positive.
+// Auth limit raised — shared NAT can hit 25/min with multiple sessions.
 const AUTH_LIMIT = 60;
 const VALIDATE_PASSWORD_LIMIT = 40;
 const PUBLIC_INVITE_LIMIT = 15;
@@ -58,10 +53,7 @@ function clientKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
-/**
- * Local launcher / Next dev server — do not throttle loopback traffic.
- * @param {import("node:http").IncomingMessage} req
- */
+/** Skip rate limits for loopback. */
 function isLocalClient(req) {
   const addr = clientKey(req);
   return (

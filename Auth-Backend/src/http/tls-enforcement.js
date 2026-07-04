@@ -1,14 +1,6 @@
 import { getEnv } from "../config/env.js";
 
-/**
- * Enforce HTTPS for production API traffic behind reverse proxies.
- * Development localhost HTTP remains allowed.
- */
-
-/**
- * @param {import("node:http").IncomingMessage} req
- * @returns {{ status: number, error: string } | null}
- */
+/** HTTPS required in production (localhost HTTP OK). @param {import("node:http").IncomingMessage} req @returns {{ status: number, error: string } | null} */
 export function assertSecureTransport(req) {
   const { isProduction, security } = getEnv();
   if (!isProduction) return null;

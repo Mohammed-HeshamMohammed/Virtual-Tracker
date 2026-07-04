@@ -65,10 +65,7 @@ export function defaultFirebaseDatabaseUrl(projectId) {
   return `https://${id}-default-rtdb.firebaseio.com`;
 }
 
-/**
- * Resolve the RTDB URL used by Admin SDK and presence.
- * When FIREBASE_DATABASE_URL is unset, derives it from FIREBASE_PROJECT_ID.
- */
+/** RTDB URL for Admin SDK / presence. From env or derived from project id. */
 export function resolveFirebaseDatabaseUrl() {
   const projectId = readFirebaseWebConfigFromEnv().projectId;
   const explicit = getEnv().firebase.admin.databaseUrl.trim();
@@ -227,10 +224,7 @@ export function getAuthAdmin() {
   }
 }
 
-/**
- * Resolves the GCS bucket name for Firebase Storage.
- * Uses `FIREBASE_STORAGE_BUCKET` when set; otherwise the classic default `{projectId}.appspot.com`.
- */
+/** GCS bucket name — FIREBASE_STORAGE_BUCKET or `{projectId}.appspot.com`. */
 export function resolveStorageBucketName() {
   const web = readFirebaseWebConfigFromEnv();
   const fromEnv = (web.storageBucket || "").trim();
@@ -259,10 +253,7 @@ let resolvedStorageBucket = null;
 /** @type {Promise<import("@google-cloud/storage").Bucket | null> | null} */
 let resolveStorageBucketPromise = null;
 
-/**
- * Resolves the first Storage bucket that exists for this project (cached after first success).
- * @returns {Promise<import("@google-cloud/storage").Bucket | null>}
- */
+/** First existing Storage bucket for this project (cached). */
 export async function getStorageBucketAsync() {
   if (!getDb()) return null;
   if (resolvedStorageBucket) return resolvedStorageBucket;
@@ -306,9 +297,7 @@ export async function getStorageBucketAsync() {
   return resolveStorageBucketPromise;
 }
 
-/**
- * @param {string} [detail] Optional underlying error message from GCS.
- */
+/** @param {string} [detail] GCS error detail for setup message. */
 export function formatStorageSetupError(detail = "") {
   const web = readFirebaseWebConfigFromEnv();
   const projectId = web.projectId || "your-project-id";
@@ -328,7 +317,7 @@ export function formatStorageSetupError(detail = "") {
   );
 }
 
-/** Default Storage bucket for the initialized app (sync; may be null until {@link getStorageBucketAsync} runs). */
+/** Default bucket (sync; null until getStorageBucketAsync runs). */
 export function getStorageBucket() {
   if (resolvedStorageBucket) return resolvedStorageBucket;
   if (!getDb()) return null;

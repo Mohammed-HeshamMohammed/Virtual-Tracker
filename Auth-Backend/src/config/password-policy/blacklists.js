@@ -1,7 +1,4 @@
-/**
- * Internal password blacklists and pattern data.
- * Never expose these lists via public APIs.
- */
+// Password deny-lists — never expose via public APIs.
 
 /** @type {readonly string[]} */
 export const COMMON_PASSWORDS = [
