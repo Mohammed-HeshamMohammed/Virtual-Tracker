@@ -12,6 +12,7 @@ import { initFirebaseAdmin } from "./src/config/firebase.js";
 import { logStartup, logError } from "./src/core/logger.js";
 import { logEmailDeliveryStatusAsync } from "./src/modules/email/email-config.js";
 import { verifyDbConnectivity } from "./src/lib/db.js";
+import { ensureNotifySchema } from "./src/lib/postgres/ensure-schema.js";
 
 let activeServer = null;
 
@@ -78,6 +79,11 @@ export function startServer(port = getEnv().server.port) {
     if (fcmReady) {
       const timestamp = new Date().toISOString();
       console.log(`[${timestamp}] \x1b[32m✓\x1b[0m Firebase Admin initialized — FCM push ready`);
+    }
+
+    const schemaResult = await ensureNotifySchema();
+    if (schemaResult.ok === false) {
+      logError(new Error(schemaResult.error ?? "notification_deliveries schema ensure failed"), "postgres-schema");
     }
 
     const dbReady = await verifyDbConnectivity();
