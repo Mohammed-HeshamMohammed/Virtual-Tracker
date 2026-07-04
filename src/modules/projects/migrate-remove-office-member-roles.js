@@ -1,4 +1,5 @@
 import { getDb } from "../../config/firebase.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 
 const MARKER_DOC = "project_office_member_roles_removed";
 
@@ -20,9 +21,8 @@ export async function removeProjectOfficeMemberRoles() {
     return { success: false, reason: "db_not_available" };
   }
 
-  const markerRef = db.collection("system_meta").doc(MARKER_DOC);
-  const markerSnap = await markerRef.get();
-  if (markerSnap.exists && markerSnap.data()?.completed === true) {
+  const marker = await getSystemMetaDoc(db, MARKER_DOC);
+  if (marker?.completed === true) {
     return { success: true, alreadyCompleted: true, deleted: 0 };
   }
 
@@ -51,15 +51,12 @@ export async function removeProjectOfficeMemberRoles() {
     await batch.commit();
   }
 
-  await markerRef.set(
-    {
-      completed: true,
-      deletedCount: deleted,
-      scannedCount: linksSnap.size,
-      completedAt: new Date(),
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, MARKER_DOC, {
+    completed: true,
+    deletedCount: deleted,
+    scannedCount: linksSnap.size,
+    completedAt: new Date().toISOString(),
+  });
 
   console.info(
     `[project-office-member-roles-migration] Scanned ${linksSnap.size} project member links; deleted ${deleted}.`,

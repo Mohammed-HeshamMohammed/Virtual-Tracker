@@ -6,6 +6,11 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { isOrganizationAdminRole, isOrganizationRootRole } from "../hierarchy/hierarchy-placement.js";
 import { normalizeRoleKey } from "../members/services/relation-sync.js";
 import {
+  deleteMemberTreeCache,
+  getMemberTreeCache,
+  setMemberTreeCache,
+} from "../../lib/postgres/member-data-store.js";
+import {
   filterTeamScopeEdges,
   planRelationshipRepairs,
   RelationshipIntegrityError,
@@ -1060,13 +1065,11 @@ export async function buildMemberTree(db, rootMemberId) {
 // Cache management
 
 async function getCachedTreeData(db, memberId) {
-  const cache = await db.collection("member_tree_cache").doc(memberId).get();
-  if (!cache.exists) return null;
-  return cache.data();
+  return getMemberTreeCache(db, memberId);
 }
 
 async function invalidateTreeCache(db, memberId) {
-  await db.collection("member_tree_cache").doc(memberId).delete().catch(() => {});
+  await deleteMemberTreeCache(db, memberId);
 }
 
 /**
@@ -1083,7 +1086,7 @@ export async function updateTreeCache(db, memberId) {
   const rootId = ancestors.length > 0 ? ancestors[0].member_id : memberId;
   const depth = ancestors.length;
 
-  await db.collection("member_tree_cache").doc(memberId).set({
+  await setMemberTreeCache(db, memberId, {
     id: memberId,
     ancestors,
     descendants,

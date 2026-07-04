@@ -1,20 +1,16 @@
 /**
- * Canonical top-level Firestore collection names.
- * Never write these as subcollections under members/{id}/… — use only db.collection(NAME).
+ * Canonical top-level Firestore collection names still stored in Firestore.
+ * Member profile extensions (employment, limits, time_settings, bans, tree cache, system_meta)
+ * live in PostgreSQL — see src/lib/postgres/member-data-store.js.
  */
 export const COLLECTIONS = Object.freeze({
   members: "members",
   memberAuthIndex: "member_auth_index",
   memberOnboarding: "member_onboarding",
   memberRelationships: "member_relationships",
-  memberTreeCache: "member_tree_cache",
   memberTransferRequests: "member_transfer_requests",
-  employment: "employment",
   payRates: "pay_rates",
-  timeSettings: "time_settings",
-  limits: "limits",
   roles: "roles",
-  systemMeta: "system_meta",
   membersFieldData: "members_field_data",
   jobTitles: "job_titles",
   departments: "departments",
@@ -34,17 +30,19 @@ export const MOBILE_APP_COLLECTIONS = Object.freeze([
   "projects",
 ]);
 
-/** Subcollections that must NOT exist under members/{memberId}. */
+/** Subcollections that must NOT exist under members/{memberId} (includes retired Firestore top-level names). */
 export const INVALID_MEMBER_SUBCOLLECTIONS = Object.freeze([
-  COLLECTIONS.employment,
-  COLLECTIONS.payRates,
-  COLLECTIONS.timeSettings,
-  COLLECTIONS.limits,
-  COLLECTIONS.memberOnboarding,
-  COLLECTIONS.memberRelationships,
-  COLLECTIONS.memberTreeCache,
-  COLLECTIONS.members,
-  COLLECTIONS.systemMeta,
+  "employment",
+  "pay_rates",
+  "time_settings",
+  "limits",
+  "member_onboarding",
+  "member_relationships",
+  "member_tree_cache",
+  "members",
+  "system_meta",
+  "member_bans",
+  "device_bans",
 ]);
 
 /**

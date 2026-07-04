@@ -12,11 +12,13 @@ import { ensureMemberScopedEntities } from "../modules/members/services/member-e
 import { normalizeLegacyMemberDocumentIds } from "../modules/members/services/normalize-member-doc-ids.js";
 import { ensureDefaultRoles } from "../modules/members/services/relation-sync.js";
 import {
-  ENTITY_BOOTSTRAP_META_DOC,
   ENTITY_BOOTSTRAP_VERSION,
   ORG_FIELD_OPTION_SEEDS,
   ORG_LOOKUP_SEEDS,
 } from "./entity-bootstrap-manifest.js";
+import { getSystemMetaDoc, setSystemMetaDoc } from "../lib/postgres/member-data-store.js";
+
+const ENTITY_BOOTSTRAP_META_KEY = "entity_bootstrap";
 
 export async function ensureOrganizationEntities(db, actor = "system", options = {}) {
   const created = [];
@@ -35,15 +37,12 @@ export async function ensureOrganizationEntities(db, actor = "system", options =
     created.push(...seeded);
   }
 
-  await db.doc(ENTITY_BOOTSTRAP_META_DOC).set(
-    {
-      complete: true,
-      version: ENTITY_BOOTSTRAP_VERSION,
-      updated_at: new Date(),
-      updated_by: actor,
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, ENTITY_BOOTSTRAP_META_KEY, {
+    complete: true,
+    version: ENTITY_BOOTSTRAP_VERSION,
+    updated_at: new Date(),
+    updated_by: actor,
+  });
   created.push("system_meta:entity_bootstrap");
 
   if (await isOrganizationMaintenanceComplete(db)) {
@@ -71,8 +70,8 @@ let maintenanceInFlight = null;
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 async function isOrganizationMaintenanceComplete(db) {
-  const snap = await db.doc(ENTITY_BOOTSTRAP_META_DOC).get();
-  return snap.exists && snap.data()?.maintenanceComplete === true;
+  const meta = await getSystemMetaDoc(db, ENTITY_BOOTSTRAP_META_KEY);
+  return meta?.maintenanceComplete === true;
 }
 
 /**
@@ -150,15 +149,12 @@ async function runOrganizationMaintenance(db, actor) {
     logSafeWarn("[entity-bootstrap] member id normalization failed:", err);
   }
 
-  await db.doc(ENTITY_BOOTSTRAP_META_DOC).set(
-    {
-      maintenanceComplete: true,
-      maintenance_version: ENTITY_BOOTSTRAP_VERSION,
-      maintenance_at: new Date(),
-      maintenance_by: actor,
-    },
-    { merge: true },
-  );
+  await setSystemMetaDoc(db, ENTITY_BOOTSTRAP_META_KEY, {
+    maintenanceComplete: true,
+    maintenance_version: ENTITY_BOOTSTRAP_VERSION,
+    maintenance_at: new Date(),
+    maintenance_by: actor,
+  });
   created.push("system_meta:entity_maintenance");
 
   return { created: [...new Set(created)] };

@@ -1,5 +1,6 @@
 import { isPostgresConfigured, query } from "../../../lib/postgres/client.js";
 import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
+import { isPostgresMemberDataReady } from "../../../lib/postgres/member-data-availability.js";
 import {
   LOOKUP_POSTGRES_ENTITY_KEYS,
   createLookupPostgresRow,
@@ -9,16 +10,27 @@ import {
   listLookupPostgresRows,
   updateLookupPostgresRow,
 } from "../../../lib/postgres/lookup-postgres.service.js";
+import {
+  MEMBER_DATA_POSTGRES_ENTITY_KEYS,
+  createMemberDataSchemaRow,
+  deleteMemberDataSchemaRow,
+  getMemberDataSchemaRow,
+  isMemberDataPostgresEntityKey,
+  listMemberDataSchemaRows,
+  updateMemberDataSchemaRow,
+} from "../../../lib/postgres/member-data-postgres.service.js";
 
 export const POSTGRES_ENTITY_KEYS = new Set([
   "time-entries",
   "timesheets",
   ...LOOKUP_POSTGRES_ENTITY_KEYS,
+  ...MEMBER_DATA_POSTGRES_ENTITY_KEYS,
 ]);
 
-/** Route entity CRUD to Postgres when configured and lookup schema is ready. */
+/** Route entity CRUD to Postgres when configured and schema is ready. */
 export async function shouldRouteEntityToPostgres(entityKey) {
   if (!POSTGRES_ENTITY_KEYS.has(entityKey)) return false;
+  if (isMemberDataPostgresEntityKey(entityKey)) return isPostgresMemberDataReady();
   if (isLookupPostgresEntityKey(entityKey)) return isPostgresLookupReady();
   return isPostgresConfigured();
 }
@@ -84,6 +96,9 @@ function normalizePgRow(row) {
  * @returns {Promise<Record<string, unknown>[]>}
  */
 export async function listPostgresRows(entityKey, url) {
+  if (isMemberDataPostgresEntityKey(entityKey)) {
+    return listMemberDataSchemaRows(entityKey, url);
+  }
   if (isLookupPostgresEntityKey(entityKey)) {
     return listLookupPostgresRows(entityKey, url);
   }
@@ -127,6 +142,9 @@ export async function listPostgresRows(entityKey, url) {
  * @param {string} id
  */
 export async function getPostgresRow(entityKey, id) {
+  if (isMemberDataPostgresEntityKey(entityKey)) {
+    return getMemberDataSchemaRow(entityKey, id);
+  }
   if (isLookupPostgresEntityKey(entityKey)) {
     return getLookupPostgresRow(entityKey, id);
   }
@@ -141,6 +159,9 @@ export async function getPostgresRow(entityKey, id) {
  * @param {Record<string, unknown>} payload
  */
 export async function createPostgresRow(entityKey, payload) {
+  if (isMemberDataPostgresEntityKey(entityKey)) {
+    return createMemberDataSchemaRow(entityKey, payload);
+  }
   if (isLookupPostgresEntityKey(entityKey)) {
     return createLookupPostgresRow(entityKey, payload);
   }
@@ -205,6 +226,9 @@ export async function createPostgresRow(entityKey, payload) {
  * @param {Record<string, unknown>} existing
  */
 export async function updatePostgresRow(entityKey, id, payload, existing) {
+  if (isMemberDataPostgresEntityKey(entityKey)) {
+    return updateMemberDataSchemaRow(entityKey, id, payload, existing);
+  }
   if (isLookupPostgresEntityKey(entityKey)) {
     return updateLookupPostgresRow(entityKey, id, payload, existing);
   }
@@ -269,6 +293,9 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
  * @param {string} id
  */
 export async function deletePostgresRow(entityKey, id) {
+  if (isMemberDataPostgresEntityKey(entityKey)) {
+    return deleteMemberDataSchemaRow(entityKey, id);
+  }
   if (isLookupPostgresEntityKey(entityKey)) {
     return deleteLookupPostgresRow(entityKey, id);
   }

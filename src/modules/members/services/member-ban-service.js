@@ -1,10 +1,19 @@
 import { getAuthAdmin } from "../../../config/firebase.js";
 import { logSafeError, logSafeWarn } from "../../../http/sanitize-error.js";
+import {
+  createMemberBanRecord,
+  findActiveBanByEmail,
+  findActiveBanByFirebaseUid,
+  findActiveBanByMemberId,
+  getMemberBanRecord,
+  isDevicePermanentlyBanned,
+  listActiveMemberBans,
+  patchMemberBanRecord,
+  recordBanIpAndMaybeDeviceBan,
+} from "../../../lib/postgres/member-data-store.js";
 import { normalizeMemberEmail } from "./eligibility.js";
 import { sendMemberBanEmail } from "./ban-email.js";
 
-const MEMBER_BANS = "member_bans";
-const DEVICE_BANS = "device_bans";
 const DEVICE_BAN_THRESHOLD = 2;
 
 const BAN_ACCESS_MESSAGE =
@@ -12,53 +21,7 @@ const BAN_ACCESS_MESSAGE =
 const DEVICE_BAN_MESSAGE =
   "Access from this device has been permanently restricted due to repeated policy violations.";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} emailNorm
- */
-export async function findActiveBanByEmail(db, emailNorm) {
-  const e = normalizeMemberEmail(emailNorm);
-  if (!e) return null;
-  const snap = await db
-    .collection(MEMBER_BANS)
-    .where("email", "==", e)
-    .where("active", "==", true)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  const doc = snap.docs[0];
-  return { id: doc.id, ...(doc.data() || {}) };
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
-export async function findActiveBanByMemberId(db, memberId) {
-  if (!memberId) return null;
-  const snap = await db
-    .collection(MEMBER_BANS)
-    .where("member_id", "==", memberId)
-    .where("active", "==", true)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  const doc = snap.docs[0];
-  return { id: doc.id, ...(doc.data() || {}) };
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} ip
- */
-export async function isDevicePermanentlyBanned(db, ip) {
-  const normalized = typeof ip === "string" ? ip.trim() : "";
-  if (!normalized || normalized === "unknown") return false;
-  const snap = await db.collection(DEVICE_BANS).doc(normalized).get();
-  if (!snap.exists) return false;
-  const data = snap.data() || {};
-  return data.permanently_banned === true;
-}
+export { findActiveBanByEmail, findActiveBanByMemberId };
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -104,13 +67,8 @@ export async function assertMemberNotBanned(db, input) {
     }
   }
   if (input.firebaseUid) {
-    const snap = await db
-      .collection(MEMBER_BANS)
-      .where("firebase_uid", "==", input.firebaseUid)
-      .where("active", "==", true)
-      .limit(1)
-      .get();
-    if (!snap.empty) {
+    const byUid = await findActiveBanByFirebaseUid(db, input.firebaseUid);
+    if (byUid) {
       return {
         ok: false,
         status: 403,
@@ -122,67 +80,7 @@ export async function assertMemberNotBanned(db, input) {
   return { ok: true };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} ip
- * @param {string} memberId
- */
-async function recordBanIpAndMaybeDeviceBan(db, ip, memberId) {
-  const normalized = typeof ip === "string" ? ip.trim() : "";
-  if (!normalized || normalized === "unknown") return;
-
-  const ref = db.collection(DEVICE_BANS).doc(normalized);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(ref);
-    const prev = snap.exists ? snap.data() || {} : {};
-    const banCount = Number(prev.ban_count || 0) + 1;
-    const memberIds = Array.isArray(prev.banned_member_ids) ? [...prev.banned_member_ids] : [];
-    if (memberId && !memberIds.includes(memberId)) memberIds.push(memberId);
-    const permanentlyBanned = banCount >= DEVICE_BAN_THRESHOLD;
-    tx.set(
-      ref,
-      {
-        ip_address: normalized,
-        ban_count: banCount,
-        banned_member_ids: memberIds,
-        permanently_banned: permanentlyBanned || prev.permanently_banned === true,
-        ...(permanentlyBanned && !prev.permanently_banned_at
-          ? { permanently_banned_at: new Date() }
-          : {}),
-        updated_at: new Date(),
-      },
-      { merge: true },
-    );
-  });
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
-export async function listActiveMemberBans(db) {
-  const snap = await db.collection(MEMBER_BANS).where("active", "==", true).get();
-  const rows = snap.docs.map((doc) => {
-    const data = doc.data() || {};
-    return {
-      id: doc.id,
-      memberId: data.member_id || "",
-      memberName: data.member_name || "Member",
-      email: data.email || "",
-      reason: data.reason || "",
-      ipAddress: data.ip_address || "",
-      bannedAt: data.banned_at?.toDate?.()?.toISOString?.() || null,
-      bannedByMemberId: data.banned_by_member_id || "",
-      bannedByName: data.banned_by_name || "",
-      emailSent: Boolean(data.email_sent),
-    };
-  });
-  rows.sort((a, b) => {
-    const ta = a.bannedAt ? Date.parse(a.bannedAt) : 0;
-    const tb = b.bannedAt ? Date.parse(b.bannedAt) : 0;
-    return tb - ta;
-  });
-  return rows;
-}
+export { listActiveMemberBans };
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -237,8 +135,7 @@ export async function banMember(db, input) {
   }
 
   const now = new Date();
-  const banRef = db.collection(MEMBER_BANS).doc();
-  await banRef.set({
+  const banPayload = {
     member_id: memberId,
     member_name: memberName,
     email,
@@ -252,7 +149,8 @@ export async function banMember(db, input) {
     email_sent: false,
     revoked_at: null,
     revoked_by_member_id: null,
-  });
+  };
+  const { id: banId } = await createMemberBanRecord(db, banPayload);
 
   await db.collection("members").doc(memberId).set(
     {
@@ -275,14 +173,14 @@ export async function banMember(db, input) {
   if (email) {
     try {
       emailResult = await sendMemberBanEmail({ to: email, memberName, reason });
-      await banRef.set({ email_sent: emailResult.sent === true }, { merge: true });
+      await patchMemberBanRecord(db, banId, { email_sent: emailResult.sent === true });
     } catch (err) {
       logSafeWarn("[member-ban] Ban email failed:", err);
     }
   }
 
   return {
-    id: banRef.id,
+    id: banId,
     memberId,
     memberName,
     email,
@@ -301,25 +199,20 @@ export async function revokeMemberBan(db, input) {
   const banId = typeof input.banId === "string" ? input.banId.trim() : "";
   if (!banId) throw Object.assign(new Error("Ban id is required."), { status: 400 });
 
-  const banSnap = await db.collection(MEMBER_BANS).doc(banId).get();
-  if (!banSnap.exists) throw Object.assign(new Error("Ban record not found."), { status: 404 });
-
-  const banData = banSnap.data() || {};
+  const banData = await getMemberBanRecord(db, banId);
+  if (!banData) throw Object.assign(new Error("Ban record not found."), { status: 404 });
   if (!banData.active) throw Object.assign(new Error("This ban has already been revoked."), { status: 409 });
 
   const memberId = typeof banData.member_id === "string" ? banData.member_id : "";
   const firebaseUid = typeof banData.firebase_uid === "string" ? banData.firebase_uid : "";
   const now = new Date();
 
-  await banSnap.ref.set(
-    {
-      active: false,
-      revoked_at: now,
-      revoked_by_member_id: input.revokedByMemberId || "",
-      revoked_by_name: input.revokedByName || "",
-    },
-    { merge: true },
-  );
+  await patchMemberBanRecord(db, banId, {
+    active: false,
+    revoked_at: now,
+    revoked_by_member_id: input.revokedByMemberId || "",
+    revoked_by_name: input.revokedByName || "",
+  });
 
   if (memberId) {
     await db.collection("members").doc(memberId).set(
