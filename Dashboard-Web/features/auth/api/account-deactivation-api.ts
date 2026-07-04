@@ -5,7 +5,7 @@ import { formatPasswordChangeError } from "@/features/auth/services/change-passw
 
 function normalizeAccountApiError(message: string): string {
   if (message.includes("ECONNRESET") || message.includes("Failed to fetch") || message.includes("NetworkError")) {
-    return "Could not reach the server. Ensure Auth-Backend is running on port 5712."
+    return "Could not reach the server. Check your network connection or try again shortly."
   }
   return message
 }

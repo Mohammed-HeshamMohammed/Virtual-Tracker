@@ -1,8 +1,11 @@
 import { isAuthBackendApiPath } from "@/infrastructure/api/api-backend-routes"
 import { getSecureApiBaseUrl } from "@/infrastructure/api/secure-transport"
 
+// Local-dev-only fallbacks — never used in a production build (guarded below).
+// These exist so `next dev` works without a `.env.local` file.
 const AUTH_DEV_PORT = 5712;
 const DASHBOARD_DEV_PORT = 5713;
+const isProductionBuild = process.env.NODE_ENV === "production";
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/$/, "");
@@ -26,6 +29,11 @@ export function getAuthApiBaseUrl(): string {
   const authConfigured = process.env.NEXT_PUBLIC_AUTH_API_URL?.trim();
   if (authConfigured) return getSecureApiBaseUrl(trimTrailingSlash(authConfigured));
 
+  if (isProductionBuild) {
+    throw new Error(
+      "Auth-Backend URL is not configured. Set NEXT_PUBLIC_API_URL (unified gateway) or NEXT_PUBLIC_AUTH_API_URL as a build-time variable and rebuild.",
+    );
+  }
   return `http://127.0.0.1:${AUTH_DEV_PORT}`;
 }
 
@@ -37,6 +45,11 @@ export function getDashboardApiBaseUrl(): string {
   const dashboardConfigured = process.env.NEXT_PUBLIC_DASHBOARD_API_URL?.trim();
   if (dashboardConfigured) return getSecureApiBaseUrl(trimTrailingSlash(dashboardConfigured));
 
+  if (isProductionBuild) {
+    throw new Error(
+      "Dashboard-Backend URL is not configured. Set NEXT_PUBLIC_API_URL (unified gateway) or NEXT_PUBLIC_DASHBOARD_API_URL as a build-time variable and rebuild.",
+    );
+  }
   return `http://127.0.0.1:${DASHBOARD_DEV_PORT}`;
 }
 

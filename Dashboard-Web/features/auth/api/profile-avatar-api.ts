@@ -21,7 +21,7 @@ function isTransientUploadError(message: string): boolean {
 
 function normalizeAvatarApiError(message: string): string {
   if (isTransientUploadError(message)) {
-    return "Upload failed — could not reach Auth-Backend (port 5712). Ensure Auth-Backend and Dashboard-Backend are running."
+    return "Upload failed — could not reach the server. Check your network connection or try again shortly."
   }
   if (message.toLowerCase().includes("request body too large")) {
     return "Image is too large after encoding. Try a smaller photo."
