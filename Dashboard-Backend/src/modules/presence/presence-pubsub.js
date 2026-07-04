@@ -1,15 +1,20 @@
 import { EventEmitter } from "node:events";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { resolveFirebaseDatabaseUrl } from "../../config/firebase.js";
+import { isRedisConfigured, getRedisClient, getRedisSubscriberClient } from "../../lib/redis/client.js";
 import admin from "firebase-admin";
 
 /** @typedef {{ memberId: string; status: import("./presence-events.js").PresenceStatus; lastSeenAt: number; lastActivityAt: number; updatedAt?: number }} PresenceChangeMessage */
+
+const REDIS_CHANNEL = "presence:changes";
 
 const localBus = new EventEmitter();
 localBus.setMaxListeners(100);
 
 /** @type {boolean} */
 let rtdbSubscribed = false;
+/** @type {boolean} */
+let redisSubscribed = false;
 const localChanges = new Set();
 
 /**
@@ -28,10 +33,19 @@ export async function publishPresenceChange(message) {
   if (typeof timer.unref === "function") timer.unref();
 
   localBus.emit("change", message);
+
+  if (isRedisConfigured()) {
+    try {
+      await getRedisClient()?.publish(REDIS_CHANNEL, JSON.stringify(message));
+    } catch (err) {
+      logSafeWarn("[presence/pubsub] Redis publish failed:", err);
+    }
+  }
 }
 
 /**
- * Subscribe to presence changes (Firebase RTD when configured, always local bus).
+ * Subscribe to presence changes (Redis when configured, else Firebase RTD,
+ * always the local bus for same-process listeners).
  *
  * @param {(message: PresenceChangeMessage) => void} handler
  * @returns {() => void}
@@ -39,14 +53,46 @@ export async function publishPresenceChange(message) {
 export function subscribePresenceChanges(handler) {
   localBus.on("change", handler);
 
-  const { url: dbUrl } = resolveFirebaseDatabaseUrl();
-  if (dbUrl) {
-    ensureRtdbSubscriber();
+  if (isRedisConfigured()) {
+    ensureRedisSubscriber();
+  } else {
+    const { url: dbUrl } = resolveFirebaseDatabaseUrl();
+    if (dbUrl) {
+      ensureRtdbSubscriber();
+    }
   }
 
   return () => {
     localBus.off("change", handler);
   };
+}
+
+function ensureRedisSubscriber() {
+  if (redisSubscribed) return;
+  const subscriber = getRedisSubscriberClient();
+  if (!subscriber) return;
+  try {
+    subscriber.subscribe(REDIS_CHANNEL).catch((err) => {
+      logSafeWarn("[presence/pubsub] Redis subscribe failed:", err);
+    });
+    subscriber.on("message", (_channel, raw) => {
+      let message;
+      try {
+        message = JSON.parse(raw);
+      } catch {
+        return;
+      }
+      const key = `${message.memberId}:${message.status}:${message.updatedAt}`;
+      if (localChanges.has(key)) {
+        localChanges.delete(key);
+        return;
+      }
+      localBus.emit("change", message);
+    });
+    redisSubscribed = true;
+  } catch (err) {
+    logSafeWarn("[presence/pubsub] Redis subscribe failed:", err);
+  }
 }
 
 function ensureRtdbSubscriber() {
@@ -98,6 +144,7 @@ export async function resetPresencePubSubForTests() {
     rtdbSubscribed = false;
   }
 
+  redisSubscribed = false;
   localChanges.clear();
   localBus.removeAllListeners("change");
 }

@@ -100,6 +100,7 @@ const envSourceSchema = z
     AUTH_BACKEND_URL: optionalTrimmedString,
     GCS_BUCKET_NAME: optionalTrimmedString,
     POSTGRES_URL: optionalTrimmedString,
+    REDIS_URL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();
