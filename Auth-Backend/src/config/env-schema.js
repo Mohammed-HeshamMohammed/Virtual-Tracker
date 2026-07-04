@@ -125,6 +125,15 @@ const envSourceSchema = z
           message: "Production requires APP_PUBLIC_URL or FRONTEND_ORIGIN to be an https URL",
         });
       }
+
+      const corsOrigins = (data.CORS_ORIGINS || "").trim();
+      if (!corsOrigins) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CORS_ORIGINS"],
+          message: "Production requires CORS_ORIGINS — without it the server falls back to localhost-only origins and rejects real browser requests",
+        });
+      }
     }
 
     const firebaseWebFields = [
