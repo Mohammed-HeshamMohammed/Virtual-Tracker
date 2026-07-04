@@ -10,8 +10,15 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Unified gateway mode: set NEXT_PUBLIC_API_URL only (one domain, path-routed to both backends).
 ARG NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+# Per-service domain mode: leave NEXT_PUBLIC_API_URL unset and set these two instead
+# (e.g. auth.yourdomain.com / api.yourdomain.com each on their own subdomain).
+ARG NEXT_PUBLIC_AUTH_API_URL
+ENV NEXT_PUBLIC_AUTH_API_URL=${NEXT_PUBLIC_AUTH_API_URL}
+ARG NEXT_PUBLIC_DASHBOARD_API_URL
+ENV NEXT_PUBLIC_DASHBOARD_API_URL=${NEXT_PUBLIC_DASHBOARD_API_URL}
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
