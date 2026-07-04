@@ -203,7 +203,7 @@ async function syncBackend(
             throw new AuthGateError(result.error || "Backend verify failed", result.code)
           }
           const errText = result.error || "Backend verify failed"
-          if (isRetriableBackendError(new RetriableBackendError(errText))) {
+          if (isRetriableBackendError(errText)) {
             throw new RetriableBackendError(errText)
           }
           throw new Error(errText)
@@ -508,6 +508,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }
       if (isAuthGateError(e) && isAccountRestrictionCode(e.code)) {
         await signOutForAccountRestriction(e.message)
+        return
+      }
+      if (isAuthGateError(e) && e.code === "RATE_LIMITED") {
+        // Fail fast with a manual retry instead of auto-looping — retries would
+        // themselves count against the same rate-limit window and prolong it.
+        setSessionConnectionError(e.message || "Too many requests. Please wait a moment and try again.")
+        setAuthError(null)
         return
       }
       if (isReconnectAbortError(e)) {

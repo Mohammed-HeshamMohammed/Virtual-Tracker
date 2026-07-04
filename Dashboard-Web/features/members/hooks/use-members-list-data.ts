@@ -23,6 +23,21 @@ import {
 
 const MEMBERS_META_KEY = "people-members:__members_meta__"
 const STALE_MS = 300_000
+const MEMBER_PROFILE_RACE_RETRY_DELAY_MS = 250
+
+/**
+ * A freshly-signed-in viewer's own member row can still be committing when this
+ * fires (session-bootstrap runs async) — the backend surfaces that window as a 404.
+ * One short retry absorbs it instead of surfacing a scary error for a self-resolving race.
+ */
+function isMemberProfileNotFoundRace(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error ?? "")
+  return /member profile not found/i.test(msg)
+}
+
+function toErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message.trim() ? error.message : "Failed to load members."
+}
 
 type MembersListMeta = {
   fieldSignature: string
@@ -69,6 +84,7 @@ export function useMembersListData({
   })
   const [isLoading, setIsLoading] = useState(() => !hasCachedData(storageKey) && members.length === 0)
   const [loadingCols, setLoadingCols] = useState<Set<string>>(new Set())
+  const [error, setError] = useState<string | null>(null)
 
   const enabledColsRef = useRef(enabledCols)
   const loadedSignatureRef = useRef<string | null>(
@@ -92,7 +108,13 @@ export function useMembersListData({
   )
 
   const fetchMembers = useCallback(async (): Promise<Member[]> => {
-    return getMembers({ fields: requestedFields })
+    try {
+      return await getMembers({ fields: requestedFields })
+    } catch (err) {
+      if (!isMemberProfileNotFoundRace(err)) throw err
+      await new Promise((resolve) => setTimeout(resolve, MEMBER_PROFILE_RACE_RETRY_DELAY_MS))
+      return await getMembers({ fields: requestedFields })
+    }
   }, [requestedFields])
 
   const refetch = useCallback(
@@ -109,6 +131,7 @@ export function useMembersListData({
           setMembersState(cached)
           setIsLoading(false)
           setLoadingCols(new Set())
+          setError(null)
           return
         }
       }
@@ -139,9 +162,14 @@ export function useMembersListData({
         loadedFieldsRef.current = requestedFields
         setMembersState(rows)
         setLoadingCols(new Set())
-      } catch (error) {
+        setError(null)
+      } catch (err) {
         if (generation !== fetchGenRef.current) return
-        logSafeWarn("[useMembersListData] Failed to fetch members", error)
+        logSafeWarn("[useMembersListData] Failed to fetch members", err)
+        // Never cache the failure — keep serving last-known-good data, and let the
+        // page distinguish "fetch failed" from "there really are zero members".
+        setError(toErrorMessage(err))
+        setLoadingCols(new Set())
       } finally {
         if (generation === fetchGenRef.current) {
           setIsLoading(false)
@@ -169,6 +197,7 @@ export function useMembersListData({
     setMembers,
     isLoading,
     loadingCols,
+    error,
     requestedFields,
     fieldSignature,
     refetch,
