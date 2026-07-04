@@ -6,8 +6,7 @@ initConfig();
 import { createServer } from "./server.js";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { getDb } from "./src/config/firebase.js";
-import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
+import { logStartup, logError } from "./src/core/logger.js";
 
 let activeServer = null;
 
@@ -66,9 +65,6 @@ export function startServer(port = getEnv().server.port) {
       nodeEnv: getEnv().nodeEnv,
       routes,
     });
-
-    const db = getDb();
-    logDbStatus(!!db, db ? null : "Firebase Admin not initialized");
 
     console.log(`Landing-Backend listening on http://localhost:${port}`);
   });

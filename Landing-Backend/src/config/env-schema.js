@@ -17,21 +17,6 @@ const optionalTrimmedString = z
   .optional()
   .transform((value) => (typeof value === "string" ? value.trim() : ""));
 
-/** Firebase Admin service account JSON (private). */
-export const firebaseServiceAccountSchema = z.object({
-  type: z.literal("service_account"),
-  project_id: z.string().min(1),
-  private_key_id: z.string().optional(),
-  private_key: z.string().min(1),
-  client_email: z.string().email(),
-  client_id: z.string().optional(),
-  auth_uri: z.string().url().optional(),
-  token_uri: z.string().url().optional(),
-  auth_provider_x509_cert_url: z.string().url().optional(),
-  client_x509_cert_url: z.string().url().optional(),
-  universe_domain: z.string().optional(),
-});
-
 const envSourceSchema = z
   .object({
     NODE_ENV: z.string().optional(),
@@ -43,11 +28,6 @@ const envSourceSchema = z
     NOTIFY_BACKEND_URL: optionalTrimmedString,
     INTERNAL_SERVICE_SECRET: optionalTrimmedString,
     SUPPORT_EMAIL: optionalTrimmedString,
-    FIREBASE_PROJECT_ID: optionalTrimmedString,
-    FIREBASE_CLIENT_EMAIL: optionalTrimmedString,
-    FIREBASE_PRIVATE_KEY: optionalTrimmedString,
-    FIREBASE_SERVICE_ACCOUNT: optionalTrimmedString,
-    GOOGLE_APPLICATION_CREDENTIALS: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
@@ -79,41 +59,32 @@ const envSourceSchema = z
           message: "Production requires APP_PUBLIC_URL or FRONTEND_ORIGIN to be an https URL",
         });
       }
-    }
 
-    const clientEmail = data.FIREBASE_CLIENT_EMAIL;
-    const privateKey = data.FIREBASE_PRIVATE_KEY;
-    const adminPartial = Boolean(clientEmail || privateKey);
-    if (adminPartial && (!clientEmail || !privateKey || !data.FIREBASE_PROJECT_ID)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["FIREBASE_CLIENT_EMAIL"],
-        message: "FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY must all be set together",
-      });
-    }
-
-    const serviceAccountRaw = data.FIREBASE_SERVICE_ACCOUNT;
-    if (serviceAccountRaw) {
-      try {
-        parseFirebaseServiceAccountJson(serviceAccountRaw);
-      } catch (error) {
+      // Notify-Backend is the only persistence + delivery path for contact-form
+      // inquiries — without these, /api/contact can never succeed in production.
+      if (!(data.NOTIFY_BACKEND_URL || "").trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["FIREBASE_SERVICE_ACCOUNT"],
-          message: error instanceof Error ? error.message : "Invalid FIREBASE_SERVICE_ACCOUNT JSON",
+          path: ["NOTIFY_BACKEND_URL"],
+          message: "Production requires NOTIFY_BACKEND_URL (vt-notify-api persists and emails contact-form inquiries)",
+        });
+      }
+      if (!(data.INTERNAL_SERVICE_SECRET || "").trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["INTERNAL_SERVICE_SECRET"],
+          message: "Production requires INTERNAL_SERVICE_SECRET (shared with vt-notify-api)",
+        });
+      }
+      if (!(data.SUPPORT_EMAIL || "").trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["SUPPORT_EMAIL"],
+          message: "Production requires SUPPORT_EMAIL (recipient for contact-form inquiries)",
         });
       }
     }
   });
-
-/**
- * @param {unknown} raw
- * @returns {z.infer<typeof firebaseServiceAccountSchema>}
- */
-export function parseFirebaseServiceAccountJson(raw) {
-  const value = typeof raw === "string" ? JSON.parse(raw.trim()) : raw;
-  return firebaseServiceAccountSchema.parse(value);
-}
 
 /**
  * @param {Record<string, string | undefined>} source

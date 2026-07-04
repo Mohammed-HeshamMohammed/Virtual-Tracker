@@ -1,6 +1,6 @@
 /**
  * Safe, non-secret configuration snapshot for logs, health checks, and debugging.
- * Never log {@link getEnv} directly — secrets live in firebase.admin and notify.
+ * Never log {@link getEnv} directly — secrets live in notify.internalServiceSecret.
  */
 
 /**
@@ -20,13 +20,6 @@ export function toPublicEnv(config) {
     notify: Object.freeze({
       backendUrlConfigured: Boolean(config.notify.backendUrl),
       internalSecretConfigured: Boolean(config.notify.internalServiceSecret),
-    }),
-    firebase: Object.freeze({
-      hasAdminCredentials: Boolean(
-        config.firebase.admin.serviceAccountJson ||
-          config.firebase.admin.googleApplicationCredentials ||
-          (config.firebase.admin.clientEmail && config.firebase.admin.privateKey),
-      ),
     }),
   });
 }
