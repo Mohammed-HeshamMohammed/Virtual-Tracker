@@ -1,8 +1,4 @@
 /**
- * Shared HTTP response helper.
- */
-
-/**
  * @param {import("node:http").ServerResponse} res
  * @param {string|undefined} origin
  * @param {number} status

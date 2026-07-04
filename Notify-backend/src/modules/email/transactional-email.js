@@ -1,6 +1,4 @@
-/**
- * Transactional email sender — SMTP only.
- */
+// SMTP sender for transactional emails.
 import nodemailer from "nodemailer";
 import { getEnv } from "../../config/env.js";
 import { getEmailDeliveryConfig } from "./email-config.js";
@@ -32,10 +30,7 @@ function getSmtpTransporter() {
   return smtpTransporter;
 }
 
-/**
- * Verify SMTP credentials at startup (surfaces 535 login errors immediately).
- * @returns {Promise<{ ok: boolean; error?: string }>}
- */
+/** SMTP verify at startup — catches 535 login errors early. */
 export async function verifySmtpDelivery() {
   const transporter = getSmtpTransporter();
   if (!transporter) return { ok: false, error: "SMTP is not configured." };
@@ -48,11 +43,7 @@ export async function verifySmtpDelivery() {
   }
 }
 
-/**
- * Sends email via SMTP. Falls back to console log when SMTP is not configured.
- * @param {{ to: string; subject: string; text: string; html: string; logPrefix?: string }} input
- * @returns {Promise<{ sent: boolean; channel: string; error?: string }>}
- */
+/** Send via SMTP; console fallback when unconfigured. @param {{ to: string; subject: string; text: string; html: string; logPrefix?: string }} input @returns {Promise<{ sent: boolean; channel: string; error?: string }>} */
 export async function sendTransactionalEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!to) return { sent: false, channel: "skipped" };

@@ -1,12 +1,4 @@
-/**
- * Notify-Backend request pipeline.
- *
- * Pipeline order:
- *   1. CORS preflight
- *   2. Health / readiness (no auth)
- *   3. Internal-auth guard (all other routes)
- *   4. Domain routing → email | phone | push
- */
+// Request pipeline: CORS → health → internal auth → email | phone | push.
 import { getEnv } from "../config/env.js";
 import { logRequest, logResponse } from "../core/logger.js";
 import { sendJson } from "../http/response.js";

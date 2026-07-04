@@ -1,6 +1,4 @@
-/**
- * Email delivery configuration — SMTP only.
- */
+// SMTP settings from env.
 import { getEnv } from "../../config/env.js";
 
 /**

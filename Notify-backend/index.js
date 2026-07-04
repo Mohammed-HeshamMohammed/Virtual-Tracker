@@ -1,5 +1,4 @@
-// Notify-Backend — outbound messaging service (vt-notify-api)
-// Internal only. No public browser access — called exclusively by vt-dashboard-api.
+// Internal messaging service — vt-dashboard-api calls this, not browsers.
 
 import { initConfig, getEnv } from "./src/config/env.js";
 

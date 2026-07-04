@@ -1,7 +1,4 @@
-/**
- * Phone validation via libphonenumber-js (Google's libphonenumber port).
- * Validates country calling codes, national number length, and number type.
- */
+// libphonenumber-js wrapper.
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 /**

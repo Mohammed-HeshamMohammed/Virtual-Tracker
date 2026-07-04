@@ -1,7 +1,4 @@
-/**
- * Email routes — POST /api/notify/email
- * Accepts template-ID + data only. Never raw content from the caller.
- */
+// POST /api/notify/email — template id + payload only, no raw HTML from callers.
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { getEnv } from "../../config/env.js";
@@ -55,9 +52,7 @@ export async function routeEmail(req, res, url, origin) {
 
     const recipientMemberId = typeof body.recipientMemberId === "string" ? body.recipientMemberId : null;
 
-    // Every contact-inquiry goes to the same static inbox — that destination is
-    // this service's own config, not something the caller should have to know or
-    // pass in. body.email means the submitter here, same as every other template.
+    // contact-inquiry → SUPPORT_EMAIL, not body.email
     const isContactInquiry = template === "contact-inquiry";
     const recipient = isContactInquiry
       ? getEnv().email.supportEmail
@@ -72,9 +67,7 @@ export async function routeEmail(req, res, url, origin) {
         }
       : null;
 
-    // Every contact-inquiry shares the same recipient (the support inbox), so the
-    // per-recipient cooldown would silently drop every submitter after the first
-    // within the window — never dedupe this template.
+    // contact-inquiry: skip dedupe (shared recipient)
     const dupe = isContactInquiry ? false : await isDuplicate({ recipient, template, channel: "email" });
     if (dupe) {
       await logDelivery({

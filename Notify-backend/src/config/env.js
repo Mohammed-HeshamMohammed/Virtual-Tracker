@@ -1,7 +1,4 @@
-/**
- * Environment configuration for Notify-Backend.
- * Fail-fast at startup — do not log parsed values (secrets).
- */
+/** Notify-Backend env config (Zod). Don't log parsed values (secrets). */
 import { z } from "zod";
 import { loadEnvFile } from "node:process";
 import path from "node:path";
@@ -47,8 +44,7 @@ const envSchema = z
     // PostgreSQL — optional, used for delivery logging only
     POSTGRES_URL: optionalTrimmedString,
 
-    // Destination for the "contact-inquiry" template (landing page contact form).
-    // Owned here, not by the caller — every inquiry goes to the same inbox.
+    // contact-inquiry inbox lives here (SUPPORT_EMAIL), not in the caller payload
     SUPPORT_EMAIL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
