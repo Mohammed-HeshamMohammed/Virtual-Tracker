@@ -4,6 +4,30 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const WS_PATH = "/api/presence/ws";
 
+/** @type {Map<string, Set<import("ws").WebSocket>>} */
+const connectionsByMember = new Map();
+
+/**
+ * Push a message to every open WebSocket connection for a member — used to
+ * force an immediate client-side sign-out (e.g. after a remote "Sign out")
+ * without waiting for the next authenticated API call to hit a 401.
+ *
+ * @param {string} memberId
+ * @param {Record<string, unknown>} message
+ */
+export function sendToMember(memberId, message) {
+  const sockets = connectionsByMember.get(memberId);
+  if (!sockets || sockets.size === 0) return;
+  const payload = JSON.stringify(message);
+  for (const ws of sockets) {
+    try {
+      ws.send(payload);
+    } catch {
+      /* ignore — connection will be cleaned up on close */
+    }
+  }
+}
+
 /**
  * Authenticated WebSocket gateway for ephemeral presence.
  *
@@ -80,6 +104,8 @@ export function attachPresenceGateway(httpServer, deps) {
 
       console.info("[presence/ws] connected — memberId=%s connId=%s", memberId, connectionId.slice(0, 8));
       deps.presenceManager.onConnect(memberId, connectionId);
+      if (!connectionsByMember.has(memberId)) connectionsByMember.set(memberId, new Set());
+      connectionsByMember.get(memberId).add(ws);
       notifyChange();
 
       const snapshot = deps.presenceService.getPresence(memberId);
@@ -122,6 +148,11 @@ export function attachPresenceGateway(httpServer, deps) {
         if (heartbeatTimer) clearTimeout(heartbeatTimer);
         console.info("[presence/ws] disconnected — memberId=%s", memberId);
         deps.presenceManager.onDisconnect(memberId, connectionId);
+        const sockets = connectionsByMember.get(memberId);
+        if (sockets) {
+          sockets.delete(ws);
+          if (sockets.size === 0) connectionsByMember.delete(memberId);
+        }
         notifyChange();
       });
 

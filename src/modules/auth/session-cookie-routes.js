@@ -1,7 +1,9 @@
-import { getAuthAdmin } from "../../config/firebase.js";
+import { getAuthAdmin, getDb } from "../../config/firebase.js";
 import { readIdToken } from "../../http/auth-token.js";
 import { corsHeaders } from "../../http/cors.js";
 import { getSecurityHeaders } from "../../http/security-headers.js";
+import { sendToMember } from "../presence/index.js";
+import { resolveMemberIdForUid } from "../members/services/member-presence.service.js";
 import {
   buildSessionCookieHeader,
   buildClearSessionCookieHeader,
@@ -25,6 +27,32 @@ function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = 
     ...extraHeaders,
   });
   res.end(JSON.stringify(payload));
+}
+
+/**
+ * "Sign out" from the landing page means sign out everywhere: revoke the
+ * user's Firebase refresh tokens (any dashboard tab's next authenticated API
+ * call gets a 401 SESSION_REVOKED — see auth-middleware.js) and push an
+ * immediate WebSocket message to any currently-open dashboard tab so it
+ * doesn't have to wait for that next call.
+ *
+ * @param {import("node:http").IncomingMessage} req
+ */
+async function forceSignOutEverywhere(req) {
+  const auth = getAuthAdmin();
+  const cookie = readSessionCookie(req);
+  if (!auth || !cookie) return;
+  try {
+    const decoded = await auth.verifySessionCookie(cookie, true);
+    await auth.revokeRefreshTokens(decoded.uid);
+    const db = getDb();
+    if (db) {
+      const memberId = await resolveMemberIdForUid(db, decoded.uid);
+      if (memberId) sendToMember(memberId, { type: "force-sign-out" });
+    }
+  } catch {
+    /* invalid/expired cookie — nothing to revoke */
+  }
 }
 
 /**
@@ -88,6 +116,7 @@ export async function routeSessionCookie(req, res, url, origin) {
   }
 
   if (authPath === "/api/auth/session-logout" && req.method === "POST") {
+    await forceSignOutEverywhere(req);
     sendCredentialedJson(res, req, origin, 200, { success: true }, {
       "Set-Cookie": buildClearSessionCookieHeader(),
     });

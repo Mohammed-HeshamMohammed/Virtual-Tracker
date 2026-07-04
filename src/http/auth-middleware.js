@@ -85,6 +85,21 @@ export async function authenticateRequest(req, url, db) {
       return { ok: false, status: 403, error: "This account has been disabled.", code: "ACCOUNT_DISABLED" };
     }
 
+    // Reuses the getUser() call above — no extra Firebase Admin round trip.
+    // Catches tokens revoked by a remote "Sign out" (see session-cookie-routes.js).
+    if (userRecord.tokensValidAfterTime) {
+      const tokensValidAfter = new Date(userRecord.tokensValidAfterTime).getTime();
+      const issuedAt = decoded.iat * 1000;
+      if (Number.isFinite(tokensValidAfter) && issuedAt < tokensValidAfter) {
+        return {
+          ok: false,
+          status: 401,
+          error: "Your session was ended from another page. Please sign in again.",
+          code: "SESSION_REVOKED",
+        };
+      }
+    }
+
     const profileSnap = await db.collection("User_profiles").doc(decoded.uid).get();
     const profileData = profileSnap.exists ? profileSnap.data() || {} : {};
     const mustChangePassword =
