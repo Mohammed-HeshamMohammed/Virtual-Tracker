@@ -32,6 +32,31 @@ export async function createNotification(db, payload) {
   return id;
 }
 
+/** Lists the most recent notifications for a member, newest first. */
+export async function listNotificationsForMember(db, memberId, limit = 30) {
+  const snapshot = await db
+    .collection(COLLECTIONS.notifications)
+    .where("recipient_id", "==", memberId)
+    .orderBy("created_at", "desc")
+    .limit(limit)
+    .get();
+
+  return snapshot.docs.map((doc) => {
+    const data = doc.data();
+    const createdAt = data.created_at;
+    return {
+      id: doc.id,
+      recipient_id: data.recipient_id,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      link: data.link || "",
+      read: Boolean(data.read),
+      created_at: typeof createdAt?.toDate === "function" ? createdAt.toDate().getTime() : createdAt,
+    };
+  });
+}
+
 /** Mark one notification read (checks recipient_id). */
 export async function markNotificationAsRead(db, notificationId, memberId) {
   const ref = db.collection(COLLECTIONS.notifications).doc(notificationId);

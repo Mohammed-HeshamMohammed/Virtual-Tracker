@@ -2,7 +2,7 @@ import { getDb } from "../../config/firebase.js";
 import { COLLECTIONS } from "../../lib/firestore/collections.js";
 import { requireAuthContext } from "../../http/auth-context.js";
 import { sendJson } from "../../http/response.js";
-import { markAllNotificationsAsRead, markNotificationAsRead } from "./service.js";
+import { listNotificationsForMember, markAllNotificationsAsRead, markNotificationAsRead } from "./service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -24,6 +24,17 @@ export async function routeNotifications(req, res, url, origin) {
   if (!viewer) return true;
 
   const memberId = viewer.memberId;
+
+  // GET /api/notifications
+  if (url.pathname === "/api/notifications" && req.method === "GET") {
+    try {
+      const data = await listNotificationsForMember(db, memberId);
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      sendJson(res, origin, 500, { success: false, error: e.message });
+    }
+    return true;
+  }
 
   // POST /api/notifications/:id/read
   const readMatch = /^\/api\/notifications\/([^/]+)\/read$/.exec(url.pathname);
