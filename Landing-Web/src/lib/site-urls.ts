@@ -9,9 +9,9 @@ export function isDashboardConfigured(): boolean {
   return getDashboardUrl() !== null
 }
 
-/** Sign-in: dashboard when configured, otherwise the landing sign-in page. */
+/** Sign-in always happens on Landing-Web's own sign-in/sign-up page. */
 export function getSignInHref(): string {
-  return getDashboardUrl() ?? "/sign-in"
+  return "/sign-in"
 }
 
 /** Free trial / try now: dashboard when configured, otherwise the demo page. */
