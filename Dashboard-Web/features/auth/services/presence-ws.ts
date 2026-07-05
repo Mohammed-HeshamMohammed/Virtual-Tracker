@@ -64,15 +64,22 @@ async function getIdToken(): Promise<string | null> {
   return user.getIdToken()
 }
 
+export function isPresenceWebSocketConnected(): boolean {
+  return socket?.readyState === WebSocket.OPEN
+}
+
 /** Auth presence WS — online only after connect succeeds. */
 export async function connectPresenceWebSocket(): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    return true
+    return socket.readyState === WebSocket.OPEN
   }
 
   const token = await getIdToken()
-  if (!token) return false
+  if (!token) {
+    scheduleReconnect(() => void connectPresenceWebSocket())
+    return false
+  }
 
   intentionalClose = false
   const url = `${wsBaseUrl()}/api/presence/ws?token=${encodeURIComponent(token)}`
@@ -123,6 +130,7 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
         settled = true
         resolve(false)
       }
+      scheduleReconnect(() => void connectPresenceWebSocket())
     }
   })
 }

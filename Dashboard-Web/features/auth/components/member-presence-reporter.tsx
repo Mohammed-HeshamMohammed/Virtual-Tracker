@@ -6,14 +6,17 @@ import {
   bindPresenceActivityListeners,
   connectPresenceWebSocket,
   disconnectPresenceWebSocket,
+  isPresenceWebSocketConnected,
   sendPresenceActivity,
 } from "@/features/auth/services/presence-ws"
 
 const ACTIVITY_DEBOUNCE_MS = 8_000
+const CONNECT_RETRY_MS = 10_000
 
-/** Presence WS after login — backend tracks online/idle/offline. */
+/** App-wide presence WS after login — backend tracks online/idle/offline. */
 export function MemberPresenceReporter() {
   const { isLoggedIn, user, profile, sessionReady } = useAuth()
+  const shouldConnect = Boolean(isLoggedIn && user && sessionReady && !profile?.mustChangePassword)
   const activityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const onActivity = useCallback(() => {
@@ -24,15 +27,21 @@ export function MemberPresenceReporter() {
   }, [])
 
   useEffect(() => {
-    if (!isLoggedIn || !user || !sessionReady || profile?.mustChangePassword) return
+    if (!shouldConnect) return
 
     let cancelled = false
-    void (async () => {
+
+    const ensureConnected = async () => {
       const ok = await connectPresenceWebSocket()
-      if (!cancelled && ok) {
-        sendPresenceActivity()
-      }
-    })()
+      if (!cancelled && ok) sendPresenceActivity()
+    }
+
+    void ensureConnected()
+
+    const retryTimer = setInterval(() => {
+      if (cancelled || isPresenceWebSocketConnected()) return
+      void ensureConnected()
+    }, CONNECT_RETRY_MS)
 
     const unbind = bindPresenceActivityListeners(onActivity)
 
@@ -49,6 +58,7 @@ export function MemberPresenceReporter() {
 
     return () => {
       cancelled = true
+      clearInterval(retryTimer)
       unbind()
       if (activityTimerRef.current) clearTimeout(activityTimerRef.current)
       window.removeEventListener("mousemove", onActivity)
@@ -56,9 +66,13 @@ export function MemberPresenceReporter() {
       window.removeEventListener("scroll", onActivity)
       window.removeEventListener("touchstart", onActivity)
       document.removeEventListener("visibilitychange", onVis)
-      disconnectPresenceWebSocket()
     }
-  }, [isLoggedIn, user, sessionReady, profile?.mustChangePassword, onActivity])
+  }, [shouldConnect, onActivity])
+
+  useEffect(() => {
+    if (shouldConnect) return
+    disconnectPresenceWebSocket()
+  }, [shouldConnect])
 
   return null
 }

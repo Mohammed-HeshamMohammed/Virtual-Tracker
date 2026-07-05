@@ -441,6 +441,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setSessionAuthorized(true)
       void syncSharedSessionCookie()
+      void import("@/features/auth/services/presence-ws").then(({ connectPresenceWebSocket, sendPresenceActivity }) => {
+        void connectPresenceWebSocket().then((ok) => {
+          if (ok) sendPresenceActivity()
+        })
+      })
+      void import("@/features/auth/services/presence-events-sse").then(({ openPresenceEventStream }) => {
+        void openPresenceEventStream()
+      })
     },
     [doInitialization],
   )

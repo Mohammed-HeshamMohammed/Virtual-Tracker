@@ -1,6 +1,7 @@
 export { AuthSessionLoader } from "@/features/auth/components";
 export { MemberPresenceReporter } from "@/features/auth/components/member-presence-reporter";
 export { PresenceEventsSubscriber } from "@/features/auth/components/presence-events-subscriber";
+export { DashboardPresenceSync } from "@/features/auth/components/dashboard-presence-sync";
 export { 
   canAccessAllSidebarTabs, 
   coerceNavItemForRole, 

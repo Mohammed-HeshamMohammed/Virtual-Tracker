@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "@/app/globals.css"
 import { ThemeProvider, AuthProvider } from "@/shared/providers/app"
+import { DashboardPresenceSync } from "@/features/auth/components/dashboard-presence-sync"
 import { LauncherShell } from "@/app/launcher-shell"
 import { CookieConsentBanner } from "@/shared/ui/shared/cookie-consent-banner"
 
@@ -38,6 +39,7 @@ export default function RootLayout({
       <body className={`${inter.className} font-sans antialiased`}>
         <ThemeProvider>
           <AuthProvider>
+            <DashboardPresenceSync />
             <LauncherShell>{children}</LauncherShell>
           </AuthProvider>
         </ThemeProvider>

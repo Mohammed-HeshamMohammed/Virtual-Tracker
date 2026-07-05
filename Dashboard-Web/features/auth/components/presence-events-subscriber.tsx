@@ -4,29 +4,43 @@ import { useEffect } from "react"
 import { useAuth } from "@/shared/providers/app"
 import {
   closePresenceEventStream,
+  isPresenceEventStreamOpen,
   openPresenceEventStream,
 } from "@/features/auth/services/presence-events-sse"
 
-/** SSE presence updates for member lists. */
+const CONNECT_RETRY_MS = 10_000
+
+/** App-wide SSE presence updates for member lists and dashboards. */
 export function PresenceEventsSubscriber() {
   const { isLoggedIn, sessionReady, profile } = useAuth()
+  const shouldSubscribe = Boolean(isLoggedIn && sessionReady && !profile?.mustChangePassword)
 
   useEffect(() => {
-    if (!isLoggedIn || !sessionReady || profile?.mustChangePassword) return
+    if (!shouldSubscribe) return
 
     let cancelled = false
-    void (async () => {
-      const ok = await openPresenceEventStream()
-      if (!cancelled && !ok) {
-        // SSE unavailable — member lists still refetch on tab focus.
-      }
-    })()
+
+    const ensureOpen = async () => {
+      await openPresenceEventStream()
+    }
+
+    void ensureOpen()
+
+    const retryTimer = setInterval(() => {
+      if (cancelled || isPresenceEventStreamOpen()) return
+      void ensureOpen()
+    }, CONNECT_RETRY_MS)
 
     return () => {
       cancelled = true
-      closePresenceEventStream()
+      clearInterval(retryTimer)
     }
-  }, [isLoggedIn, sessionReady, profile?.mustChangePassword])
+  }, [shouldSubscribe])
+
+  useEffect(() => {
+    if (shouldSubscribe) return
+    closePresenceEventStream()
+  }, [shouldSubscribe])
 
   return null
 }
