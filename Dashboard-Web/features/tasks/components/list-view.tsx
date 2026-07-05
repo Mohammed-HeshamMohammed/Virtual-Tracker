@@ -447,9 +447,11 @@ function DroppableListGroup({
         </span>
         <span className="text-xs text-slate-400 font-medium ml-1">{items.length}</span>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={() => onAddTask?.(status)} className="p-1 hover:bg-black/5 rounded transition-colors text-slate-400 hover:text-slate-600" type="button">
-            <Plus className="w-4 h-4" />
-          </button>
+          {onAddTask ? (
+            <button onClick={() => onAddTask(status)} className="p-1 hover:bg-black/5 rounded transition-colors text-slate-400 hover:text-slate-600" type="button">
+              <Plus className="w-4 h-4" />
+            </button>
+          ) : null}
           <button onClick={() => setCollapsed((prev: any) => { const s = new Set(prev); if (s.has(status)) s.delete(status); else s.add(status); return s })} type="button">
             {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-400" /> : <ChevronUp className="w-4 h-4 text-slate-400" />}
           </button>

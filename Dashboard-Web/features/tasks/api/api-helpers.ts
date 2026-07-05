@@ -1,9 +1,5 @@
 /* eslint-disable react-doctor/js-combine-iterations */
-import {
-  getProjects,
-  getProjectMembers,
-  getTasks,
-} from "@/infrastructure/api"
+import { getProjects, getProjectMembers, getTasks } from "@/infrastructure/api"
 import { getMembers } from "@/features/members/api/member-api"
 import { readCache } from "@/shared/tables/hooks/list-cache-registry"
 import {
@@ -172,7 +168,7 @@ export async function fetchProjectsList(): Promise<any[]> {
 
   const [rows, links, allMembers] = await Promise.all([
     getProjects({ fields: ["id", "name", "status"] }),
-    getProjectMembers(undefined, { fields: ["id", "project_id", "member_id"] }),
+    getProjectMembers(undefined, { fields: ["id", "project_id", "member_id", "project_role"] }),
     getMembers({ fields: ["id", "first_name", "last_name", "name", "avatar", "avatar_url", "avatar_color"] }),
   ])
   const memberById = new Map(allMembers.map((m) => [m.id, m]))
