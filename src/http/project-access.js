@@ -48,6 +48,50 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
   return [...ids];
 }
 
+const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
+  "owner",
+  "superadmin",
+  "admin",
+  "supermanager",
+  "supermanger",
+]);
+
+function normalizeProjectRole(role) {
+  const value = String(role || "")
+    .trim()
+    .toLowerCase();
+  if (value === "managers") return "manager";
+  if (value === "users" || value === "user") return "user";
+  if (value === "viewers" || value === "viewer") return "viewer";
+  return value;
+}
+
+/**
+ * Org admins or project_members with project_role manager may create tasks.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string; roleName: string }} viewer
+ * @param {string} projectId
+ */
+export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
+  const pid = typeof projectId === "string" ? projectId.trim() : "";
+  if (!viewer?.memberId || !pid) return false;
+
+  const roleKey = normalizeRole(viewer.roleName);
+  if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
+
+  const snap = await db
+    .collection("project_members")
+    .where("project_id", "==", pid)
+    .where("member_id", "==", viewer.memberId)
+    .limit(10)
+    .get();
+
+  return snap.docs.some((doc) => {
+    const row = doc.data() || {};
+    return normalizeProjectRole(row.project_role ?? row.projectRole) === "manager";
+  });
+}
+
 /**
  * Can write project rows (includes projects viewer created but isn't a member of yet).
  * @param {import("firebase-admin/firestore").Firestore} db

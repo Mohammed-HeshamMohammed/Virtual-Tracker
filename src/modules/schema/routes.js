@@ -3,7 +3,7 @@ import { getAuthContext, requireManagementRole } from "../../http/auth-context.j
 import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { canAccessTask } from "../../http/task-access.js";
-import { getViewerProjectIds, toAllowedProjectSet, viewerCanWriteProject } from "../../http/project-access.js";
+import { getViewerProjectIds, toAllowedProjectSet, viewerCanWriteProject, viewerCanCreateProjectTasks } from "../../http/project-access.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { assertRowVisible, applyVisibilityFilter } from "./visibility.js";
@@ -756,6 +756,14 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
           if (allowed !== null && !allowed.includes(projectId)) {
             sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this project." });
+            return true;
+          }
+          const canCreate = await viewerCanCreateProjectTasks(db, viewer, projectId);
+          if (!canCreate) {
+            sendJson(res, origin, 403, {
+              success: false,
+              error: "Only project managers can create tasks for this project.",
+            });
             return true;
           }
         }
