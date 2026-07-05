@@ -557,7 +557,7 @@ export function ListView({
   showCompleted: boolean
   search: string
   isDark: boolean
-  onAddTask: (status: TaskStatus) => void
+  onAddTask?: (status: TaskStatus) => void
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
   onStartTask?: (task: Task) => void
