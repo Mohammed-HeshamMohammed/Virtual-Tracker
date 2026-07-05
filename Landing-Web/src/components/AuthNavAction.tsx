@@ -83,8 +83,11 @@ export default function AuthNavAction({ isTransparent, btnBg }: AuthNavActionPro
       await signOut()
     } else {
       await logoutSharedSession()
-      setCookieStatus({ signedIn: false, displayName: null, avatarUrl: null })
     }
+    // Clear regardless of which path ran — cookieStatus is fetched once at mount
+    // (before the local Firebase session resolves) and never re-checked, so it
+    // would otherwise still say "signed in" until the next full page load.
+    setCookieStatus({ signedIn: false, displayName: null, avatarUrl: null })
   }
 
   return (
@@ -138,7 +141,7 @@ export default function AuthNavAction({ isTransparent, btnBg }: AuthNavActionPro
               onClick={() => void handleSignOut()}
               className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
             >
-              Sign out
+              Log out
             </button>
           </div>
         )}

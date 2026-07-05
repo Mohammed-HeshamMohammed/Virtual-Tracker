@@ -57,7 +57,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
               }}
               className="mt-4 block w-full rounded-xl px-4 py-2.5 text-left text-sm font-semibold text-slate-500 hover:bg-white hover:text-red-600 transition-colors"
             >
-              Sign out
+              Log out
             </button>
           </aside>
           <div>{children}</div>
