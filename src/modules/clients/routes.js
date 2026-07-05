@@ -21,6 +21,7 @@ import {
   resolveClientInvoicingSettings,
   updateClientWithDetails,
 } from "./services/client-service.js";
+import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 
 function memberLabel(data) {
   const first = typeof data.first_name === "string" ? data.first_name : "";
@@ -83,22 +84,21 @@ export async function routeClients(req, res, url, db, origin) {
           .filter(Boolean),
       );
 
-      const rolesSnap = await db.collection("roles").limit(100).get();
-      const roleNameById = new Map(
-        rolesSnap.docs.map((doc) => {
-          const row = doc.data() || {};
-          return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-        }),
-      );
+      const rawMembers = membersSnap.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
+      const enrichedMembers = await enrichMembersWithRoleNames(db, rawMembers);
 
-      const clientMembers = membersSnap.docs
-        .map((doc) => {
-          const d = doc.data() || {};
-          const roleName = roleNameById.get(typeof d.role_id === "string" ? d.role_id : "") || "";
+      const clientMembers = enrichedMembers
+        .map((m) => {
+          const roleName =
+            typeof m.role === "string" && m.role.trim()
+              ? m.role.trim()
+              : typeof m.role_name === "string" && m.role_name.trim()
+                ? m.role_name.trim()
+                : "";
           if (!isClientRole(roleName)) return null;
-          if (linkedMemberIds.has(doc.id)) return null;
-          const { name, initials } = memberLabel(d);
-          return { id: doc.id, label: name, initials };
+          if (linkedMemberIds.has(m.id)) return null;
+          const { name, initials } = memberLabel(m);
+          return { id: m.id, label: name, initials };
         })
         .filter(Boolean)
         .sort((a, b) => a.label.localeCompare(b.label));
