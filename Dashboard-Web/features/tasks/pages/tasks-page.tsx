@@ -15,7 +15,8 @@ import {
 import { getMembers } from "@/features/members/api/member-api"
 import { getTeams } from "@/features/teams/api/team-api"
 import { useAuth } from "@/shared/providers/app"
-import { canCreateTasks, canViewParticipationMetrics, isManagementRole, normalizeMemberRole } from "@/features/auth"
+import { canCreateTasksInProject, canViewParticipationMetrics, isManagementRole, normalizeMemberRole } from "@/features/auth"
+import { getProjectMembers, type ProjectMember } from "@/features/projects/api/project-api"
 import { startTaskAssignment } from "@/features/tasks/api/task-assignments-api"
 import { useTheme } from "@/shared/providers/app"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
@@ -51,13 +52,18 @@ export function TasksPage() {
   const { isDark } = useTheme()
   const { memberId: currentMemberId, memberRole } = useAuth()
   const normalizedRole = normalizeMemberRole(memberRole ?? "")
-  const canAddTask = canCreateTasks(memberRole)
   const showParticipation = canViewParticipationMetrics(memberRole)
   const canMarkCompleted = isManagementRole(memberRole)
   const t = isDark ? dark : light
 
   const [view, setView] = useComponentState<ViewMode>("list")
   const [selectedProjectId, setSelectedProjectId] = useComponentState<string>("")
+  const [projectMemberLinks, setProjectMemberLinks] = useComponentState<ProjectMember[]>([])
+  const canAddTask = useMemo(
+    () => canCreateTasksInProject(memberRole, currentMemberId, selectedProjectId, projectMemberLinks),
+    [memberRole, currentMemberId, selectedProjectId, projectMemberLinks],
+  )
+
   const [selectedTaskId, setSelectedTaskId] = useComponentState<string | null>(null)
   const [showCompleted, setShowCompleted] = useComponentState(false)
   const { query: search, setQuery: setSearch } = usePageSearch()
@@ -181,6 +187,20 @@ export function TasksPage() {
       })
       .catch(() => {
         if (!cancelled) setAllMembers([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    getProjectMembers(undefined, { fields: ["project_id", "member_id", "project_role"] })
+      .then((rows) => {
+        if (!cancelled) setProjectMemberLinks(rows)
+      })
+      .catch(() => {
+        if (!cancelled) setProjectMemberLinks([])
       })
     return () => {
       cancelled = true
@@ -337,6 +357,7 @@ export function TasksPage() {
   }
 
   function openTaskModal(status: TaskStatus = "todo") {
+    if (!canAddTask) return
     setEditingTaskId(null)
     setNewTaskStatus(status)
     if (!selectedProjectId) {
@@ -465,7 +486,7 @@ export function TasksPage() {
                         showCompleted={showCompleted}
                         search={search}
                         isDark={isDark}
-                        onAddTask={openTaskModal}
+                        onAddTask={canAddTask ? openTaskModal : undefined}
                         onSubmitHours={openHoursSubmission}
                         onReview={openReviewDialog}
                         onStartTask={handleStartTask}
@@ -488,7 +509,7 @@ export function TasksPage() {
                         showCompleted={showCompleted}
                         search={search}
                         isDark={isDark}
-                        onAddTask={openTaskModal}
+                        onAddTask={canAddTask ? openTaskModal : undefined}
                         onSubmitHours={openHoursSubmission}
                         onReview={openReviewDialog}
                         canMarkCompleted={canMarkCompleted}

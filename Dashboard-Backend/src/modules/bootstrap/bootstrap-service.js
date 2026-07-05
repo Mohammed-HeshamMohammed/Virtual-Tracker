@@ -7,6 +7,7 @@ import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { enforcePrivilegedRoleGovernanceForMember } from "../members/services/privileged-role-governance.js";
 
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
+const ORG_TASK_CREATE_ROLES = new Set(["owner", "superadmin", "admin", "supermanager", "supermanger"]);
 
 /** Mirrors frontend ROLE_PRIVILEGE_RANK in member-role-access.ts */
 const ROLE_PRIVILEGE_RANK = {
@@ -175,7 +176,7 @@ export async function getBootstrapPayload(db, viewer) {
       hierarchyAssignmentRequired: hasHierarchyAssignmentRestriction(memberData),
       canAccessReviewCenter: management || normalizedRole === "client",
       canSeePmTasksSection: roleRank(roleName) >= ROLE_PRIVILEGE_RANK.employeel0,
-      canCreateTasks: roleRank(roleName) >= ROLE_PRIVILEGE_RANK.employeel0,
+      canCreateTasks: ORG_TASK_CREATE_ROLES.has(normalizedRole),
       isManagementRole: management,
     },
     workspace: {

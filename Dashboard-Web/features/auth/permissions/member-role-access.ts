@@ -147,21 +147,46 @@ export function canSeePmTasksSection(role: string): boolean {
   return rank >= ROLE_PRIVILEGE_RANK.employeel0
 }
 
-/** Roles that may create tasks in the tasks UI. */
+/** Org roles that may create tasks on any project without a project-manager assignment. */
+const ORG_TASK_CREATE_ROLES = new Set([
+  "owner",
+  "superadmin",
+  "admin",
+  "supermanager",
+  "supermanger",
+])
+
+export function canCreateTasksByOrgRole(role: string): boolean {
+  return ORG_TASK_CREATE_ROLES.has(normalizeMemberRole(role))
+}
+
+export function isProjectManagerRole(projectRole: string): boolean {
+  return normalizeMemberRole(projectRole) === "manager"
+}
+
+export function canCreateTasksInProject(
+  orgRole: string,
+  memberId: string | null | undefined,
+  projectId: string | null | undefined,
+  projectMembers: ReadonlyArray<{ projectId: string; memberId: string; projectRole: string }>,
+): boolean {
+  if (canCreateTasksByOrgRole(orgRole)) return true
+  if (!memberId) return false
+  const managesAnyProject = projectMembers.some(
+    (row) => row.memberId === memberId && isProjectManagerRole(row.projectRole),
+  )
+  if (!projectId) return managesAnyProject
+  return projectMembers.some(
+    (row) =>
+      row.projectId === projectId &&
+      row.memberId === memberId &&
+      isProjectManagerRole(row.projectRole),
+  )
+}
+
+/** Roles that may create tasks in the tasks UI (org admins only — project managers resolved per project). */
 export function canCreateTasks(role: string): boolean {
-  const r = normalizeMemberRole(role)
-  return new Set([
-    "employee",
-    "employeel0",
-    "employeel1",
-    "employeel2",
-    "manager",
-    "supermanager",
-    "supermanger",
-    "admin",
-    "superadmin",
-    "owner",
-  ]).has(r)
+  return canCreateTasksByOrgRole(role)
 }
 
 /** Roles that may open the View & Edit review center. */

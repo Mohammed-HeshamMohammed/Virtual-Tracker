@@ -186,9 +186,11 @@ function DroppableColumn({
       <div className={cn("flex items-center gap-2 px-3 py-2 rounded-lg group", cfg.bg)}>
         <span className={cfg.color}>{cfg.icon}</span>
         <span className={cn("text-xs font-semibold", cfg.color)}>{cfg.label}</span>
-        <button onClick={() => onAddTask?.(status)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/5 rounded transition-opacity" type="button">
-          <Plus className="w-3.5 h-3.5 text-slate-500" />
-        </button>
+        {onAddTask ? (
+          <button onClick={() => onAddTask(status)} className="opacity-0 group-hover:opacity-100 p-1 hover:bg-black/5 rounded transition-opacity" type="button">
+            <Plus className="w-3.5 h-3.5 text-slate-500" />
+          </button>
+        ) : null}
         <span className="ml-auto text-xs font-bold text-slate-400">{items.length}</span>
       </div>
       <div className="space-y-2 min-h-[150px]">

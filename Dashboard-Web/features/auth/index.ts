@@ -5,7 +5,10 @@ export { DashboardPresenceSync } from "@/features/auth/components/dashboard-pres
 export { 
   canAccessAllSidebarTabs, 
   coerceNavItemForRole, 
-  canCreateTasks, 
+  canCreateTasks,
+  canCreateTasksByOrgRole,
+  canCreateTasksInProject,
+  isProjectManagerRole,
   canViewParticipationMetrics, 
   normalizeMemberRole, 
   getMemberRoleLabel, 
