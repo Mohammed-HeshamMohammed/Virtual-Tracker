@@ -128,6 +128,11 @@ services:
       args:
         NEXT_PUBLIC_DASHBOARD_URL: ${APP_PUBLIC_URL}
         NEXT_PUBLIC_LANDING_API_URL: ${NEXT_PUBLIC_LANDING_API_URL:-}
+        # Landing-Web's own sign-in/sign-up + account area calls Auth-Backend and
+        # Dashboard-Backend directly (Bearer-token, wildcard CORS) — only the split
+        # per-backend URLs are supported here, not the unified NEXT_PUBLIC_API_URL gateway.
+        NEXT_PUBLIC_AUTH_API_URL: ${NEXT_PUBLIC_AUTH_API_URL:-}
+        NEXT_PUBLIC_DASHBOARD_API_URL: ${NEXT_PUBLIC_DASHBOARD_API_URL:-}
     container_name: vt-landing-web
     restart: unless-stopped
     environment:

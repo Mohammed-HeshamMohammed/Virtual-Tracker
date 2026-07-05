@@ -1,23 +1,53 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import PageShell from "../../components/PageShell"
 import PageIntro from "@/components/PageIntro"
 import AppCtaLink from "@/components/AppCtaLink"
 import { getSignInHref } from "@/lib/site-urls"
+import { useCurrentUser } from "@/lib/auth/use-current-user"
+import { fetchMyActivitySummary, type MyActivitySummary } from "@/lib/api/dashboard-general"
 
 export default function DemoPage() {
   const [activeScreen, setActiveScreen] = useState<"people" | "projects" | "activity" | "timesheets">("timesheets")
+  const { user } = useCurrentUser()
+  const [mySummary, setMySummary] = useState<MyActivitySummary | null>(null)
+
+  useEffect(() => {
+    if (!user) {
+      setMySummary(null)
+      return
+    }
+    let cancelled = false
+    void fetchMyActivitySummary().then((result) => {
+      if (!cancelled) setMySummary(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  const personalized = Boolean(user && mySummary && (mySummary.todos.length > 0 || mySummary.recentProjects.length > 0))
 
   const screens = {
     timesheets: {
       title: "Timesheets Workspace",
-      desc: "Track work hours against specific tasks. Leads review logs in the approvals queue.",
-      logs: [
-        { task: "Designing landing page subpages", time: "2 hrs 40 mins", status: "Approved", project: "Virtual Tracker Web" },
-        { task: "Implementing active window process logging", time: "3 hrs 15 mins", status: "Pending", project: "Python Desktop Extension" },
-        { task: "Refactoring Firestore security rule constraints", time: "1 hr 10 mins", status: "Approved", project: "Database Security" }
-      ]
+      desc: personalized
+        ? "Your own open tasks, pulled live from your account."
+        : "Track work hours against specific tasks. Leads review logs in the approvals queue.",
+      logs:
+        personalized && mySummary
+          ? mySummary.todos.slice(0, 3).map((task) => ({
+              task: task.title,
+              time: task.priority ? `Priority: ${task.priority}` : "",
+              status: task.status,
+              project: task.projectName,
+            }))
+          : [
+              { task: "Designing landing page subpages", time: "2 hrs 40 mins", status: "Approved", project: "Virtual Tracker Web" },
+              { task: "Implementing active window process logging", time: "3 hrs 15 mins", status: "Pending", project: "Python Desktop Extension" },
+              { task: "Refactoring Firestore security rule constraints", time: "1 hr 10 mins", status: "Approved", project: "Database Security" }
+            ]
     },
     people: {
       title: "People & Organization Hierarchy",
@@ -30,11 +60,21 @@ export default function DemoPage() {
     },
     projects: {
       title: "Projects & Clients Dashboard",
-      desc: "Organize clients, coordinate deliverables, and inspect live budget usage.",
-      items: [
-        { client: "Acme Corp", project: "SaaS Launch V2", budget: "$12,000", spent: "$4,500" },
-        { client: "Globex Dynamics", project: "Desktop Extension Setup", budget: "$6,500", spent: "$1,200" }
-      ]
+      desc: personalized
+        ? "Your own recent projects, pulled live from your account."
+        : "Organize clients, coordinate deliverables, and inspect live budget usage.",
+      items:
+        personalized && mySummary
+          ? mySummary.recentProjects.slice(0, 4).map((project) => ({
+              client: project.name,
+              project: `${project.progress}% complete`,
+              budget: `${project.memberCount} members`,
+              spent: "",
+            }))
+          : [
+              { client: "Acme Corp", project: "SaaS Launch V2", budget: "$12,000", spent: "$4,500" },
+              { client: "Globex Dynamics", project: "Desktop Extension Setup", budget: "$6,500", spent: "$1,200" }
+            ]
     },
     activity: {
       title: "Activity Ingestion Feed",
@@ -161,7 +201,7 @@ export default function DemoPage() {
                       <p className="text-[11px] text-slate-400 font-light mt-0.5">{screens[activeScreen].desc}</p>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                      Live simulation
+                      {personalized ? "Your live data" : "Live simulation"}
                     </span>
                   </div>
 
@@ -237,9 +277,14 @@ export default function DemoPage() {
                 </div>
 
                 <div className="border-t border-slate-100 pt-4 mt-6 flex justify-between items-center text-xs">
-                  <span className="text-slate-400 font-light">To populate data and pair agents, launch the full trial.</span>
-                  <AppCtaLink href={getSignInHref()} className="text-violet-600 font-bold hover:text-violet-800 transition-colors">
-                    Sign in to workspace &rarr;
+                  <span className="text-slate-400 font-light">
+                    {personalized ? "This is your real account data." : "To populate data and pair agents, launch the full trial."}
+                  </span>
+                  <AppCtaLink
+                    href={user ? "/account/reports" : getSignInHref()}
+                    className="text-violet-600 font-bold hover:text-violet-800 transition-colors"
+                  >
+                    {user ? "View My Activity →" : "Sign in to workspace →"}
                   </AppCtaLink>
                 </div>
               </div>
@@ -249,15 +294,17 @@ export default function DemoPage() {
           {/* Call to action */}
           <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-violet-50/50 via-slate-50/30 to-blue-50/50 -z-10" />
-            <h3 className="text-2xl font-extrabold text-slate-900 mb-2">Access the Workspace</h3>
+            <h3 className="text-2xl font-extrabold text-slate-900 mb-2">{user ? "See your own activity" : "Access the Workspace"}</h3>
             <p className="text-xs md:text-sm text-slate-500 font-light max-w-lg mx-auto mb-8">
-              No configuration required. Log in with a demo team sandbox user and test role permission boundaries live.
+              {user
+                ? "Head to My Activity for your full personal summary."
+                : "No configuration required. Create an account and test role permission boundaries live."}
             </p>
             <AppCtaLink
-              href={getSignInHref()}
+              href={user ? "/account/reports" : getSignInHref()}
               className="inline-flex items-center rounded-full bg-violet-600 px-8 py-3.5 text-xs font-bold text-white hover:bg-violet-700 shadow-md hover:shadow-lg transition-all duration-200 cursor-pointer"
             >
-              Sign In to Workspace &rarr;
+              {user ? "View My Activity →" : "Sign In to Workspace →"}
             </AppCtaLink>
           </div>
         </div>
