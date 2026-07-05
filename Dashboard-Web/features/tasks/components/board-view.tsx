@@ -258,7 +258,7 @@ export function BoardView({
   showCompleted: boolean
   search: string
   isDark: boolean
-  onAddTask: (status: TaskStatus) => void
+  onAddTask?: (status: TaskStatus) => void
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
   canMarkCompleted?: boolean
