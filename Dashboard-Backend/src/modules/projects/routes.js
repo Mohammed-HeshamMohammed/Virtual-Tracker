@@ -5,6 +5,7 @@ import { assertProjectAccessible, getViewerProjectIds, toAllowedProjectSet } fro
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
 import { listClientsEnriched } from "../clients/services/client-service.js";
+import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { getOverviewCore, getOverviewPanels } from "./services/overview-service.js";
 import { PROJECT_FORM_FIELDS, PROJECT_FORM_TABS } from "./form-config.js";
 import { memberDisplayLabel } from "../members/services/member-display-name.js";
@@ -350,24 +351,28 @@ export async function routeProjects(req, res, url, db, origin) {
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
-      const rolesSnap = await db.collection("roles").limit(100).get();
-      const roleNameById = new Map(
-        rolesSnap.docs.map((doc) => {
-          const row = doc.data() || {};
-          return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-        }),
-      );
-
-      const members = membersSnap.docs
+      const rawMembers = membersSnap.docs
         .map((doc) => {
           const d = doc.data() || {};
-          const { name, initials } = memberLabel(d);
           const status = typeof d.status === "string" ? d.status.toLowerCase() : "active";
           if (status === "archived" || status === "inactive") return null;
-          const role = roleNameById.get(typeof d.role_id === "string" ? d.role_id : "") || "User";
-          return { id: doc.id, label: name, initials, role };
+          return { id: doc.id, ...d };
         })
-        .filter(Boolean)
+        .filter(Boolean);
+
+      const enrichedMembers = await enrichMembersWithRoleNames(db, rawMembers);
+
+      const members = enrichedMembers
+        .map((m) => {
+          const { name, initials } = memberLabel(m);
+          const role =
+            typeof m.role === "string" && m.role.trim()
+              ? m.role.trim()
+              : typeof m.role_name === "string" && m.role_name.trim()
+                ? m.role_name.trim()
+                : "Viewer";
+          return { id: m.id, label: name, initials, role };
+        })
         .sort((a, b) => a.label.localeCompare(b.label));
 
       sendJson(res, origin, 200, {
