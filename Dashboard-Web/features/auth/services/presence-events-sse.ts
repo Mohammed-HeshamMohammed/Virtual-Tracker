@@ -43,13 +43,20 @@ function clearReconnect() {
   }
 }
 
+export function isPresenceEventStreamOpen(): boolean {
+  return source != null && source.readyState !== EventSource.CLOSED
+}
+
 /** SSE /api/presence/events (RTD fan-out). */
 export async function openPresenceEventStream(): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (source && source.readyState !== EventSource.CLOSED) return true
 
   const token = await getIdToken()
-  if (!token) return false
+  if (!token) {
+    scheduleReconnect()
+    return false
+  }
 
   intentionalClose = false
   clearReconnect()

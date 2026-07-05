@@ -21,7 +21,7 @@ import {
 } from "@/features/members/config/members-config"
 import type { Member, MemberPatchBody, MemberEntryAction, Invite } from "@/features/members/models/member"
 import type { PresenceDelta } from "@/features/auth/services/presence-events-sse"
-import { isOwnerRoleName, getMemberRoleLabel, MemberPresenceReporter, PresenceEventsSubscriber, isLimitedSelfManageRole } from "@/features/auth"
+import { isOwnerRoleName, getMemberRoleLabel, isLimitedSelfManageRole } from "@/features/auth"
 import { canActorManageTargetRole } from "@/features/auth/permissions/role-hierarchy"
 import { AddMembersModal, OnboardingModal, formatAddMembersPending, formatAddMembersSuccess } from "@/features/members/components/modals"
 import { RecruitMemberModal } from "@/features/members/components/modals/recruit-member-modal"
@@ -542,8 +542,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
 
   return (
     <>
-      <MemberPresenceReporter />
-      <PresenceEventsSubscriber />
       <motion.div className="flex h-full min-h-0 flex-col overflow-hidden">
       <motion.div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-2">
         {canManageMembers && (
