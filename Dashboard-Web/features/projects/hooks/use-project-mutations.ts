@@ -40,7 +40,7 @@ export function useProjectMutations({
     const nextArchived = project.status === "active"
     try {
       await archiveProjectApi(id, nextArchived, user?.uid)
-      await refetchProjects()
+      await refetchProjects({ forceRefetch: true })
       setSelected((prev) => {
         const s = new Set(prev)
         s.delete(id)
@@ -97,7 +97,7 @@ export function useProjectMutations({
         await createProjectWithDetails(payload, actor)
       }
     }
-    await refetchProjects()
+    await refetchProjects({ forceRefetch: true })
   }
 
   return {
