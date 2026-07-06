@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import AppCtaLink from "@/components/AppCtaLink"
 import AuthNavAction from "@/components/AuthNavAction"
+import MobileBottomNav from "@/components/MobileBottomNav"
 import { getTrialHref } from "@/lib/site-urls"
 import { PLATFORM_NAV_TABS, SOLUTIONS } from "@/lib/product-content"
 import { clampIndex } from "@/lib/safe"
@@ -206,7 +207,7 @@ export default function NavigationBar() {
           <span className={`font-bold text-lg tracking-tight ${isTransparent ? "text-white" : "text-[#0f172a]"}`}>Virtual Tracker</span>
         </Link>
 
-        <div className="hidden md:flex items-center gap-1">
+        <div className="hidden lg:flex items-center gap-1">
           <button onClick={() => toggle("Platform")} className={navBtnClass("Platform")}>
             Platform <ChevronDown className={chevronClass("Platform")} />
           </button>
@@ -225,7 +226,7 @@ export default function NavigationBar() {
           </Link>
         </div>
 
-        <div className="hidden md:flex items-center gap-16" style={{ overflow: "visible" }}>
+        <div className="hidden lg:flex items-center gap-16" style={{ overflow: "visible" }}>
           <AppCtaLink
             href={getTrialHref()}
             className="relative inline-flex items-center gap-2 rounded-full font-semibold text-sm px-5 py-2.5 cursor-pointer bg-[#7c3aed] hover:bg-[#6d28d9] text-white transition-colors"
@@ -235,17 +236,13 @@ export default function NavigationBar() {
           </AppCtaLink>
           <AuthNavAction isTransparent={isTransparent} btnBg={btnBg} />
         </div>
-
-        <button className="md:hidden p-2" type="button" aria-label="Menu">
-          <div className={`w-5 h-0.5 mb-1 ${isTransparent ? "bg-white" : "bg-slate-700"}`} />
-          <div className={`w-5 h-0.5 mb-1 ${isTransparent ? "bg-white" : "bg-slate-700"}`} />
-          <div className={`w-5 h-0.5 ${isTransparent ? "bg-white" : "bg-slate-700"}`} />
-        </button>
       </div>
 
       {open === "Platform" && <PlatformDropdown />}
       {open === "solutions" && <SolutionsDropdown />}
       {open === "resources" && <ResourcesDropdown />}
+
+      <MobileBottomNav />
     </nav>
   )
 }

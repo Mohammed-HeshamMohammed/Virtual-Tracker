@@ -54,6 +54,10 @@ export function useCurrentUser(): CurrentUserState {
         void syncSharedSessionCookie()
         setState({ user: next, profile: result.profile ?? null, memberId: result.memberId ?? null, loading: false, error: null })
       })
+    }).catch((err: unknown) => {
+      if (cancelled) return
+      const message = err instanceof Error ? err.message : "Could not reach the authentication service."
+      setState({ user: null, profile: null, memberId: null, loading: false, error: message })
     })
 
     return () => {
