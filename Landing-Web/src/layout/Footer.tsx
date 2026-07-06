@@ -10,7 +10,7 @@ export default function Footer() {
   return (
     <footer className="py-12 px-4 md:px-8" style={{ background: "#151d2e" }}>
       <div className="w-full">
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: "2rem" }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-8">
           {FOOTER_COLS.map((col) => (
             <div key={col.title} className="min-w-0">
               <div className="text-xs font-bold text-white mb-4">{col.title}</div>
