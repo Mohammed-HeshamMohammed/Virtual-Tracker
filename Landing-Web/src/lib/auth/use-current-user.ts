@@ -6,6 +6,7 @@ import { initFirebase, getFirebaseAuthClient } from "@/lib/firebase-client"
 import { verifyIdTokenWithBackend, type AuthProfileSnapshot } from "@/lib/auth/verify-session"
 import { syncSharedSessionCookie } from "@/lib/auth/session-cookie-sync"
 import { consumeSuppressedAuthStateSync } from "@/lib/auth/auth-state-sync"
+import { attemptCrossDomainSilentSignIn } from "@/lib/auth/cross-domain-sso"
 
 export type CurrentUserState = {
   /** Undefined while Firebase/auth-state is still resolving. */
@@ -25,6 +26,7 @@ export type CurrentUserState = {
 export function useCurrentUser(): CurrentUserState {
   const [state, setState] = useState<CurrentUserState>({ user: undefined, profile: null, memberId: null, loading: true, error: null })
   const syncedUidRef = useRef<string | null>(null)
+  const ssoAttemptedRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -32,8 +34,15 @@ export function useCurrentUser(): CurrentUserState {
 
     void initFirebase().then(() => {
       if (cancelled) return
-      unsubscribe = onAuthStateChanged(getFirebaseAuthClient(), async (next) => {
+      const auth = getFirebaseAuthClient()
+      unsubscribe = onAuthStateChanged(auth, async (next) => {
         if (!next) {
+          if (!ssoAttemptedRef.current) {
+            ssoAttemptedRef.current = true
+            // signInWithCustomToken (if it succeeds) re-triggers this callback
+            // with a real user — don't flip to signed-out state yet.
+            if (await attemptCrossDomainSilentSignIn(auth)) return
+          }
           syncedUidRef.current = null
           setState({ user: null, profile: null, memberId: null, loading: false, error: null })
           return
