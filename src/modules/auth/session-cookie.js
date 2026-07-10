@@ -7,9 +7,11 @@ const SESSION_COOKIE_PATHS = new Set([
   "/api/auth/session-cookie",
   "/api/auth/session-status",
   "/api/auth/session-logout",
+  "/api/auth/session-exchange",
   "/api/v1/auth/session-cookie",
   "/api/v1/auth/session-status",
   "/api/v1/auth/session-logout",
+  "/api/v1/auth/session-exchange",
 ]);
 
 /** @param {string} pathname */
