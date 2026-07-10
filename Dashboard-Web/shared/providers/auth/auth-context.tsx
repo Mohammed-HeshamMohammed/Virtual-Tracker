@@ -50,6 +50,7 @@ import { verifyIdTokenWithBackend, type AuthProfileSnapshot } from "@/features/a
 import { RetriableBackendError, retryWithBackoff, isRetriableBackendError } from "@/infrastructure/api/retry"
 import { fetchBootstrapSession, type BootstrapPayload } from "@/features/auth/services/bootstrap"
 import { syncSharedSessionCookie, clearSharedSessionCookie } from "@/features/auth/services/session-cookie-sync"
+import { attemptCrossDomainSilentSignIn } from "@/features/auth/services/cross-domain-sso"
 import { AUTH_SYNC_RETRY, FIREBASE_INIT_RETRY } from "@/infrastructure/api/auth-retry"
 import { fetchCurrentMemberWithFallback } from "@/features/members/api/member-api"
 import { getMemberRoleLabel } from "@/features/auth"
@@ -287,6 +288,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const skipNextAuthStateSyncRef = useRef(false)
   const registrationSyncSuppressedRef = useRef(false)
   const sessionSyncUserRef = useRef<User | null>(null)
+  const crossDomainSsoAttemptedRef = useRef(false)
   const sessionReadyRef = useRef(false)
   const sessionAuthorizedRef = useRef(false)
   const currentMemberRef = useRef<Member | null>(null)
@@ -658,6 +660,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
       /** Register before redirect completion so the session is observed as soon as Google returns. */
       unsubscribe = onAuthStateChanged(auth, async (next) => {
         if (!next) {
+          if (!crossDomainSsoAttemptedRef.current) {
+            crossDomainSsoAttemptedRef.current = true
+            // e.g. the visitor signed in on the landing page and clicked "Open
+            // dashboard" — signInWithCustomToken (if it succeeds) re-triggers
+            // this callback with a real user, so don't flip to signed-out yet.
+            if (await attemptCrossDomainSilentSignIn(auth)) return
+          }
           setUser(null)
           sessionSyncUserRef.current = null
           setProfile(null)
