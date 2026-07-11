@@ -1,6 +1,7 @@
 export type AgentTimerReadiness = {
   canStartTimer: boolean
   isLocalAgentRunning: boolean
+  isLocalAgentAuthenticated: boolean
   isAgentLinked: boolean
   agentIngestEnabled: boolean
 }
@@ -10,10 +11,10 @@ export function getAgentTimerBlockMessage(readiness: AgentTimerReadiness): strin
     return "Desktop agent ingest is disabled on the server. Ask an admin to enable ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED."
   }
   if (!readiness.isLocalAgentRunning) {
-    return "Start the Virtual Tracker Agent on this PC (Python-App-Extension\\run.bat), sign in, then try again."
+    return "Start the Virtual Tracker Agent on this PC, then try again."
   }
-  if (!readiness.isAgentLinked) {
-    return "Link the agent to your account — open the agent and complete sign-in in the browser."
+  if (!readiness.isLocalAgentAuthenticated) {
+    return "Link the desktop agent to your account — open the agent, click Sign In, then click Link this account in the browser."
   }
   return "Virtual Tracker Agent is not connected. Start the agent and sign in, then try again."
 }
