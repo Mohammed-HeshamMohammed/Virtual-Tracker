@@ -1,3 +1,4 @@
+import urllib.parse
 import webbrowser
 from typing import Callable
 
@@ -53,7 +54,8 @@ class AgentController:
         if pending_token:
             from vt_agent.utils import open_url_in_launcher_or_browser
 
-            sign_in_url = f"{self.settings.web_url}/?link={pending_token}"
+            encoded_token = urllib.parse.quote(pending_token, safe="")
+            sign_in_url = f"{self.settings.web_url}/?link={encoded_token}"
             open_url_in_launcher_or_browser(sign_in_url, link_token=pending_token)
             self._on_status_changed("Linking account...")
             return True

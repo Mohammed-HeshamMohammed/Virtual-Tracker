@@ -1,5 +1,6 @@
 import threading
 import time
+import urllib.parse
 from collections.abc import Callable
 
 from vt_agent.client.api import ApiClient
@@ -16,10 +17,17 @@ class AgentLinkFlow:
         self._pending: dict[str, str] | None = None
         self._poll_thread: threading.Thread | None = None
         self._stop = threading.Event()
+        self._poll_generation = 0
 
     @property
     def pending_link_token(self) -> str | None:
         return self._pending.get("linkToken") if self._pending else None
+
+    def _stop_poll_thread(self) -> None:
+        if self._poll_thread and self._poll_thread.is_alive():
+            self._stop.set()
+            self._poll_thread.join(timeout=5)
+        self._stop.clear()
 
     def start(
         self,
@@ -27,7 +35,8 @@ class AgentLinkFlow:
         *,
         on_error: Callable[[str], None] | None = None,
     ) -> bool:
-        self._stop.clear()
+        self._stop_poll_thread()
+
         session = self._api.create_link_session()
         if not session:
             log.warning("Could not start agent link session")
@@ -35,30 +44,34 @@ class AgentLinkFlow:
                 on_error("Could not reach the server. Check your internet connection and try again.")
             return False
 
+        self._poll_generation += 1
+        generation = self._poll_generation
         self._pending = session
         link_token = session["linkToken"]
-        sign_in_url = f"{self._web_url}/?link={link_token}"
+        encoded_token = urllib.parse.quote(link_token, safe="")
+        sign_in_url = f"{self._web_url}/?link={encoded_token}"
         open_url_in_launcher_or_browser(sign_in_url, link_token=link_token)
         log.info("Opened sign-in page: %s", sign_in_url)
 
-        if self._poll_thread and self._poll_thread.is_alive():
-            self._stop.set()
-            self._poll_thread.join(timeout=1)
-
-        self._stop.clear()
-
         def poll() -> None:
+            poll_session = session
+            poll_gen = generation
             deadline = time.time() + 900
             while not self._stop.is_set() and time.time() < deadline:
+                if self._poll_generation != poll_gen:
+                    return
                 result = self._api.exchange_link_session(
-                    session["linkToken"],
-                    session["agentSecret"],
+                    poll_session["linkToken"],
+                    poll_session["agentSecret"],
                 )
                 if result:
-                    self._pending = None
+                    if self._poll_generation == poll_gen:
+                        self._pending = None
                     on_tokens(result["idToken"], result.get("refreshToken", ""))
                     return
                 time.sleep(1)
+            if self._poll_generation != poll_gen:
+                return
             self._pending = None
             log.warning("Agent link session timed out before credentials were exchanged")
             if on_error:
@@ -69,5 +82,6 @@ class AgentLinkFlow:
         return True
 
     def stop(self) -> None:
-        self._stop.set()
+        self._poll_generation += 1
+        self._stop_poll_thread()
         self._pending = None

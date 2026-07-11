@@ -6,13 +6,35 @@ import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
 import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
-import { waitForLocalAgentAuthenticated } from "@/features/activity/utils/local-agent"
+import { waitForLocalAgentAuthenticated, fetchLocalAgentHealth } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 
 type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 
 const INVALID_LINK_MESSAGE =
   "This linking session is invalid or expired. Open Virtual Tracker Agent and click Sign In again."
+
+async function assertAgentReadyForLink(linkToken: string): Promise<void> {
+  const health = await fetchLocalAgentHealth()
+  if (!health?.ok) {
+    throw new Error(
+      "Virtual Tracker Agent is not running on this PC. Open the agent, click Sign In, then return here.",
+    )
+  }
+  if (health.authenticated) {
+    return
+  }
+  if (!health.linkPending) {
+    throw new Error(
+      "The desktop agent is not waiting for this link. In the agent, click Sign In (or Open Link Page), then Link this account here again.",
+    )
+  }
+  if (health.linkToken && health.linkToken !== linkToken) {
+    throw new Error(
+      "This browser tab has an outdated link. In the agent, click Open Link Page, then Link this account again.",
+    )
+  }
+}
 
 export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
   const router = useRouter()
@@ -41,6 +63,20 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
     async function linkAgent() {
       setState("linking")
       try {
+        await assertAgentReadyForLink(trimmedToken)
+        const alreadyLinked = await fetchLocalAgentHealth()
+        if (cancelled || attemptId !== attemptRef.current) return
+        if (alreadyLinked?.authenticated) {
+          const finishResult = await finishAgentLinkSuccess()
+          if (cancelled || attemptId !== attemptRef.current) return
+          if (finishResult === "no-tab") {
+            router.replace(DASHBOARD_PATH)
+            return
+          }
+          setState("success")
+          return
+        }
+
         const auth = getFirebaseAuth()
         const currentUser = auth.currentUser
         const refreshToken =
@@ -51,7 +87,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
-        const agentReady = await waitForLocalAgentAuthenticated()
+        const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!agentReady) {
           throw new Error(

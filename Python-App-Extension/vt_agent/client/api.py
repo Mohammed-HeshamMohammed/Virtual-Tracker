@@ -159,6 +159,13 @@ class ApiClient:
             if res.status_code == 409:
                 return None
             if not res.ok:
+                from vt_agent.log import log
+
+                log.warning(
+                    "Link exchange failed (%s): %s",
+                    res.status_code,
+                    res.text[:200],
+                )
                 return None
             data = res.json().get("data") or {}
             id_token = data.get("idToken")
