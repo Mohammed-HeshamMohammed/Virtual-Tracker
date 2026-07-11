@@ -4,7 +4,8 @@ const DEFAULT_AGENT_AUTH_PORT = 17389
 type LoopbackFetchInit = RequestInit & { targetAddressSpace?: "loopback" }
 
 function loopbackFetch(url: string, init: LoopbackFetchInit = {}): Promise<Response> {
-  return fetch(url, { ...init, targetAddressSpace: "loopback" })
+  // targetAddressSpace is a Chrome LNA extension not yet in lib.dom RequestInit.
+  return fetch(url, { ...init, targetAddressSpace: "loopback" } as RequestInit)
 }
 
 /** Prime Chrome loopback permission (LNA) before POSTing credentials to the agent. */
