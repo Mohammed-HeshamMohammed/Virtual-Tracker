@@ -11,13 +11,14 @@ import React, {
 } from "react"
 import { useAuth } from "@/shared/providers/app"
 import { fetchAgentStatus, type ActivityCaptureMode, type AgentStatus } from "@/features/activity/services/activity-api"
-import { pingLocalAgent } from "@/features/activity/utils/local-agent"
+import { isLocalAgentAuthenticated, pingLocalAgent } from "@/features/activity/utils/local-agent"
 import type { AgentTimerReadiness } from "@/features/activity/utils/agent-timer-gate"
 
 interface AgentStatusContextValue {
   captureMode: ActivityCaptureMode
   isAgentMode: boolean
   isLocalAgentRunning: boolean
+  isLocalAgentAuthenticated: boolean
   isAgentLinked: boolean
   agentIngestEnabled: boolean
   authPort: number
@@ -49,6 +50,7 @@ export function AgentStatusProvider({
   const { isLoggedIn } = useAuth()
   const [remote, setRemote] = useState<AgentStatus | null>(null)
   const [isLocalAgentRunning, setIsLocalAgentRunning] = useState(false)
+  const [isLocalAgentAuthenticated, setIsLocalAgentAuthenticated] = useState(false)
   const [pollingArmed, setPollingArmed] = useState(!deferPollingUntilRefresh)
 
   const authPort = remote?.authPort ?? 17389
@@ -64,6 +66,7 @@ export function AgentStatusProvider({
       return {
         canStartTimer: false,
         isLocalAgentRunning: false,
+        isLocalAgentAuthenticated: false,
         isAgentLinked: false,
         agentIngestEnabled: false,
       }
@@ -71,15 +74,20 @@ export function AgentStatusProvider({
     setPollingArmed(true)
     const status = await fetchAgentStatus()
     const port = status?.authPort ?? 17389
-    const localOk = await pingLocalAgent(port)
+    const [localOk, localAuthenticated] = await Promise.all([
+      pingLocalAgent(port),
+      isLocalAgentAuthenticated(port),
+    ])
     if (status) setRemote(status)
     setIsLocalAgentRunning(localOk)
+    setIsLocalAgentAuthenticated(localAuthenticated)
     const ingest = status?.agentIngestEnabled ?? false
     const linked = Boolean(status?.linkedAt)
-    const canStart = localOk && ingest && linked
+    const canStart = localOk && localAuthenticated && ingest
     return {
       canStartTimer: canStart,
       isLocalAgentRunning: localOk,
+      isLocalAgentAuthenticated: localAuthenticated,
       isAgentLinked: linked,
       agentIngestEnabled: ingest,
     }
@@ -100,7 +108,12 @@ export function AgentStatusProvider({
   useEffect(() => {
     if (!isLoggedIn || !pollingArmed) return
     const localTimer = setInterval(() => {
-      void pingLocalAgent(authPort).then(setIsLocalAgentRunning)
+      void Promise.all([pingLocalAgent(authPort), isLocalAgentAuthenticated(authPort)]).then(
+        ([running, authenticated]) => {
+          setIsLocalAgentRunning(running)
+          setIsLocalAgentAuthenticated(authenticated)
+        },
+      )
     }, LOCAL_POLL_MS)
     const remoteTimer = setInterval(() => {
       void fetchAgentStatus().then((status) => {
@@ -119,13 +132,14 @@ export function AgentStatusProvider({
     return () => window.removeEventListener("vt-agent-linked", onLinked)
   }, [refreshAgentStatus])
 
-  const canStartTimer = isLocalAgentRunning && agentIngestEnabled && isAgentLinked
+  const canStartTimer = isLocalAgentRunning && isLocalAgentAuthenticated && agentIngestEnabled
 
   const value = useMemo<AgentStatusContextValue>(
     () => ({
       captureMode,
       isAgentMode,
       isLocalAgentRunning,
+      isLocalAgentAuthenticated,
       isAgentLinked,
       agentIngestEnabled,
       authPort,
@@ -138,6 +152,7 @@ export function AgentStatusProvider({
       captureMode,
       isAgentMode,
       isLocalAgentRunning,
+      isLocalAgentAuthenticated,
       isAgentLinked,
       agentIngestEnabled,
       authPort,

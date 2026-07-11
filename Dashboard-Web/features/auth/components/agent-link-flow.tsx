@@ -6,6 +6,7 @@ import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
 import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
+import { waitForLocalAgentAuthenticated } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 
 type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
@@ -49,6 +50,14 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         const result = await completeAgentLink(trimmedToken, refreshToken)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
+
+        const agentReady = await waitForLocalAgentAuthenticated()
+        if (cancelled || attemptId !== attemptRef.current) return
+        if (!agentReady) {
+          throw new Error(
+            "The desktop agent did not receive credentials. Keep Virtual Tracker Agent open on this PC, then click Try again.",
+          )
+        }
 
         const finishResult = await finishAgentLinkSuccess()
         if (cancelled || attemptId !== attemptRef.current) return
@@ -120,6 +129,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
             <>
               <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
               <p className="text-sm text-slate-400">Completing secure link…</p>
+              <p className="text-xs text-slate-500">Keep the desktop agent open on this PC.</p>
             </>
           )}
 
