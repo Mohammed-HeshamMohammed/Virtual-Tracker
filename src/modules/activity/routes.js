@@ -258,6 +258,22 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
+      if (
+        (action === "start" || action === "resume") &&
+        getActivityCaptureMode() === "agent" &&
+        isDesktopAgentEventIngestEnabled()
+      ) {
+        const memberSnap = await db.collection("members").doc(member.memberId).get();
+        const memberRow = memberSnap.data() || {};
+        if (!memberRow.desktop_agent_linked_at) {
+          sendJson(res, origin, 409, {
+            success: false,
+            error: "Link the Virtual Tracker desktop agent to your account before starting the timer.",
+          });
+          return true;
+        }
+      }
+
       const now = new Date();
       let open = await findOpenSession(db, member.memberId);
 
@@ -1127,12 +1143,6 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 400, { success: false, error: completed.error });
         return true;
       }
-      await db.collection("members").doc(member.memberId).update({
-        desktop_agent_linked_at: new Date(),
-        agent_source: body?.source === "python" ? "python" : "electron",
-        updated_by: body?.source === "python" ? "python" : "agent",
-        updated_at: new Date(),
-      });
       sendJson(res, origin, 200, { success: true, data: { memberId: member.memberId } });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
@@ -1159,6 +1169,15 @@ export async function routeActivity(req, res, url, origin) {
       const code = exchanged.error === "Link session is not ready" ? 409 : 400;
       sendJson(res, origin, code, { success: false, error: exchanged.error });
       return true;
+    }
+    const memberId = typeof exchanged.data?.memberId === "string" ? exchanged.data.memberId : "";
+    if (memberId) {
+      await db.collection("members").doc(memberId).update({
+        desktop_agent_linked_at: new Date(),
+        agent_source: exchanged.data?.agentSource === "python" ? "python" : "electron",
+        updated_by: exchanged.data?.agentSource === "python" ? "python" : "agent",
+        updated_at: new Date(),
+      });
     }
     sendJson(res, origin, 200, { success: true, data: exchanged.data });
     return true;
