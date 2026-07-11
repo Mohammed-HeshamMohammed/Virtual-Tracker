@@ -95,11 +95,12 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
+        // Primary path: agent polls backend link/exchange after complete (Chrome 150+ safe).
         await ensureLoopbackAgentAccess()
         await resumeLocalAgentLinkPoll()
-        const delivered = await deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
-        const agentReady =
-          delivered || (await waitForLocalAgentAuthenticated(undefined, delivered ? 15_000 : 90_000))
+        void deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
+
+        const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!agentReady) {
           const health = await fetchLocalAgentHealth()
@@ -109,7 +110,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
             )
           }
           throw new Error(
-            "The desktop agent did not receive credentials. Keep Virtual Tracker Agent open on this PC, then click Try again.",
+            "The desktop agent did not finish linking. Keep Virtual Tracker Agent open on this PC, then click Try again.",
           )
         }
 

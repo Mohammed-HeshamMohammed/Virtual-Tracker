@@ -87,7 +87,7 @@ export async function resumeLocalAgentLinkPoll(
   }
 }
 
-/** Deliver Firebase credentials directly to the local agent after backend link/complete. */
+/** Best-effort localhost handoff; linking must succeed via backend link/exchange poll. */
 export async function deliverLocalAgentCredentials(
   linkToken: string,
   idToken: string,
