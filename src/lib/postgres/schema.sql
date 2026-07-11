@@ -266,3 +266,116 @@ DROP TRIGGER IF EXISTS trg_device_bans_updated_at ON device_bans;
 CREATE TRIGGER trg_device_bans_updated_at
   BEFORE UPDATE ON device_bans
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- Per-member task timer mirror (Firestore remains source of truth until cutover)
+-- ---------------------------------------------------------------------------
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+        CREATE TYPE task_status AS ENUM ('to_do', 'in_progress', 'in_review', 'completed');
+    END IF;
+END$$;
+
+CREATE TABLE IF NOT EXISTS task_member_progress (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id                UUID NOT NULL,
+  member_id              UUID NOT NULL,
+  active_seconds         BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+  idle_seconds           BIGINT NOT NULL DEFAULT 0 CHECK (idle_seconds >= 0),
+  progress_percentage    NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (progress_percentage >= 0),
+  accumulated_work_time  BIGINT NOT NULL DEFAULT 0 CHECK (accumulated_work_time >= 0),
+  last_started_at        TIMESTAMPTZ,
+  last_activity_at       TIMESTAMPTZ,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (task_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tmp_task_id   ON task_member_progress (task_id);
+CREATE INDEX IF NOT EXISTS idx_tmp_member_id ON task_member_progress (member_id);
+
+CREATE TABLE IF NOT EXISTS timer_sessions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id               UUID NOT NULL,
+  member_id             UUID NOT NULL,
+  started_at            TIMESTAMPTZ NOT NULL,
+  ended_at              TIMESTAMPTZ,
+  active_seconds        BIGINT,
+  idle_seconds          BIGINT,
+  source                TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'desktop_agent')),
+  activity_session_id   VARCHAR(128)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ts_task_member ON timer_sessions (task_id, member_id);
+CREATE INDEX IF NOT EXISTS idx_ts_open ON timer_sessions (member_id, task_id) WHERE ended_at IS NULL;
+
+CREATE OR REPLACE VIEW task_progress_aggregate AS
+SELECT
+  task_id,
+  SUM(active_seconds) AS total_active_seconds,
+  SUM(idle_seconds)   AS total_idle_seconds,
+  COUNT(DISTINCT member_id) AS contributing_members
+FROM task_member_progress
+GROUP BY task_id;
+
+DROP TRIGGER IF EXISTS trg_tmp_updated_at ON task_member_progress;
+CREATE TRIGGER trg_tmp_updated_at
+  BEFORE UPDATE ON task_member_progress
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Activity capture (screenshots, apps, URLs)
+
+CREATE TABLE IF NOT EXISTS activity_screenshots (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        UUID NOT NULL,
+  session_id       VARCHAR(128) NOT NULL,
+  task_id          UUID,
+  task_title       VARCHAR(500),
+  screenshot_url   TEXT NOT NULL,
+  has_image        BOOLEAN NOT NULL DEFAULT true,
+  app_name         VARCHAR(200) NOT NULL DEFAULT 'Browser',
+  page_title       VARCHAR(300) NOT NULL DEFAULT '',
+  activity_level   INTEGER NOT NULL DEFAULT 50 CHECK (activity_level >= 0 AND activity_level <= 100),
+  captured_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC);
+CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id);
+CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC);
+
+CREATE TABLE IF NOT EXISTS activity_app_logs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        UUID NOT NULL,
+  session_id       VARCHAR(128) NOT NULL,
+  task_id          UUID,
+  task_title       VARCHAR(500),
+  app_name         VARCHAR(200) NOT NULL DEFAULT 'Unknown',
+  page_title       VARCHAR(300) NOT NULL DEFAULT '',
+  started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at         TIMESTAMPTZ,
+  duration_seconds INTEGER NOT NULL DEFAULT 30 CHECK (duration_seconds >= 0),
+  source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_act_app_member_started ON activity_app_logs (member_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_act_app_started ON activity_app_logs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS activity_url_logs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        UUID NOT NULL,
+  session_id       VARCHAR(128) NOT NULL,
+  task_id          UUID,
+  task_title       VARCHAR(500),
+  url              TEXT NOT NULL,
+  domain           VARCHAR(255) NOT NULL DEFAULT '',
+  page_title       VARCHAR(300) NOT NULL DEFAULT '',
+  visited_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  duration_seconds INTEGER NOT NULL DEFAULT 30 CHECK (duration_seconds >= 0),
+  source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC);

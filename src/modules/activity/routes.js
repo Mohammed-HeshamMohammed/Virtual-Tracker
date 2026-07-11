@@ -29,6 +29,16 @@ import {
 import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
+import {
+  fetchPgAppLogs,
+  fetchPgScreenshotById,
+  fetchPgScreenshots,
+  fetchPgUrlLogs,
+  insertActivityAppLog,
+  insertActivityScreenshot,
+  insertActivityUrlLog,
+  isActivityEventsPgEnabled,
+} from "../../lib/postgres/activity-events-postgres.service.js";
 
 function toIso(value) {
   if (!value) return null;
@@ -469,28 +479,70 @@ export async function routeActivity(req, res, url, origin) {
                 captured_at: capturedAt,
                 source,
               });
+              void insertActivityScreenshot({
+                id,
+                memberId: member.memberId,
+                sessionId,
+                taskId: sessionTaskId,
+                taskTitle: sessionTaskTitle,
+                screenshotUrl: objectPath,
+                appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
+                pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+                activityLevel:
+                  typeof ev.activityLevel === "number"
+                    ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
+                    : 50,
+                capturedAt,
+                source,
+              });
               count++;
             })(),
           );
           continue;
         }
         if (type === "app") {
+          const appRow = {
+            id,
+            memberId: member.memberId,
+            sessionId,
+            taskId: sessionTaskId,
+            taskTitle: sessionTaskTitle,
+            appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Unknown",
+            pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+            startedAt: now,
+            durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
+            source: typeof body.source === "string" ? body.source : "web",
+          };
           batch.set(db.collection("activity_app_logs").doc(id), {
             id,
             member_id: member.memberId,
             session_id: sessionId,
             task_id: sessionTaskId,
             task_title: sessionTaskTitle,
-            app_name: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Unknown",
-            page_title: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+            app_name: appRow.appName,
+            page_title: appRow.pageTitle,
             started_at: now,
             ended_at: null,
-            duration_seconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
-            source: typeof body.source === "string" ? body.source : "web",
+            duration_seconds: appRow.durationSeconds,
+            source: appRow.source,
           });
+          void insertActivityAppLog(appRow);
           count++;
         } else if (type === "url") {
           const urlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
+          const urlRow = {
+            id,
+            memberId: member.memberId,
+            sessionId,
+            taskId: sessionTaskId,
+            taskTitle: sessionTaskTitle,
+            url: urlStr,
+            domain: parseDomain(urlStr),
+            pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+            visitedAt: now,
+            durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
+            source: typeof body.source === "string" ? body.source : "web",
+          };
           batch.set(db.collection("activity_url_logs").doc(id), {
             id,
             member_id: member.memberId,
@@ -498,12 +550,13 @@ export async function routeActivity(req, res, url, origin) {
             task_id: sessionTaskId,
             task_title: sessionTaskTitle,
             url: urlStr,
-            domain: parseDomain(urlStr),
-            page_title: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+            domain: urlRow.domain,
+            page_title: urlRow.pageTitle,
             visited_at: now,
-            duration_seconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
-            source: typeof body.source === "string" ? body.source : "web",
+            duration_seconds: urlRow.durationSeconds,
+            source: urlRow.source,
           });
+          void insertActivityUrlLog(urlRow);
           count++;
         }
       }
@@ -581,28 +634,40 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const doc = await db.collection("activity_screenshots").doc(screenshotId).get();
-      if (!doc.exists) {
-        sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
-        return true;
+
+      let ownerId = "";
+      let screenshotPath = "";
+      let resolvedId = screenshotId;
+
+      const pgRow = isActivityEventsPgEnabled() ? await fetchPgScreenshotById(screenshotId) : null;
+      if (pgRow) {
+        ownerId = String(pgRow.member_id ?? "");
+        screenshotPath = typeof pgRow.screenshot_url === "string" ? pgRow.screenshot_url : "";
+        resolvedId = String(pgRow.id ?? screenshotId);
+      } else {
+        const doc = await db.collection("activity_screenshots").doc(screenshotId).get();
+        if (!doc.exists) {
+          sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
+          return true;
+        }
+        const d = doc.data() || {};
+        ownerId = typeof d.member_id === "string" ? d.member_id : "";
+        screenshotPath = typeof d.screenshot_url === "string" ? d.screenshot_url : "";
+        resolvedId = doc.id;
       }
-      const d = doc.data() || {};
-      const ownerId = typeof d.member_id === "string" ? d.member_id : "";
+
       const scope = await resolveActivityFeedScope(db, member.memberId, { memberId: ownerId });
       if (scope.forbidden) {
         sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
         return true;
       }
       let imageUrl = "";
-      const screenshotPath = typeof d.screenshot_url === "string" ? d.screenshot_url : "";
       if (screenshotPath) {
         imageUrl = await getSignedUrl(screenshotPath, 15);
-      } else if (typeof d.image_data === "string" && d.image_data) {
-        imageUrl = d.image_data.startsWith("data:") ? d.image_data : `data:image/jpeg;base64,${d.image_data}`;
       }
       sendJson(res, origin, 200, {
         success: true,
-        data: { id: doc.id, imageData: imageUrl, screenshotUrl: imageUrl },
+        data: { id: resolvedId, imageData: imageUrl, screenshotUrl: imageUrl },
       });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Screenshot load failed" });
@@ -667,6 +732,37 @@ export async function routeActivity(req, res, url, origin) {
             : "Screenshot capture is only for task tracking (not enabled). Activity levels come from presence (mouse/keyboard) in the app.";
 
         const screenshotLimit = dayFilter ? 80 : 500;
+        let rows = [];
+
+        if (isActivityEventsPgEnabled()) {
+          const pgRows = await fetchPgScreenshots(scope.targetMemberIds, dayFilter, screenshotLimit);
+          const rowMemberIds = [...new Set(pgRows.map((r) => String(r.member_id)).filter(Boolean))];
+          const rowMemberMeta =
+            rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
+          rows = pgRows.map((d) => {
+            const memberId = String(d.member_id ?? "");
+            const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
+            const captured = toIso(d.captured_at);
+            const date = captured ? new Date(captured) : new Date();
+            const taskTitle =
+              (typeof d.task_title === "string" && d.task_title.trim()) || "No task linked";
+            return {
+              id: String(d.id),
+              memberId,
+              member: meta.name,
+              avatar: meta.initials,
+              project: taskTitle,
+              taskTitle,
+              capturedAt: captured || date.toISOString(),
+              timestamp: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+              time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
+              activityLevel: d.activity_level ?? 75,
+              activeApp: d.app_name || "Browser",
+              hasImage: d.has_image !== false,
+              pageTitle: d.page_title || "",
+            };
+          });
+        } else {
         let docs = await fetchActivityDocsScoped(
           db,
           "activity_screenshots",
@@ -703,7 +799,7 @@ export async function routeActivity(req, res, url, origin) {
             taskTitleBySession.set(sessionId, title.trim());
           }
         }
-        const rows = docs.map((doc) => {
+        rows = docs.map((doc) => {
           const d = doc.data();
           const meta = rowMemberMeta.get(d.member_id) || { name: "Unknown", initials: "??" };
           const captured = toIso(d.captured_at);
@@ -729,6 +825,7 @@ export async function routeActivity(req, res, url, origin) {
             pageTitle: d.page_title || "",
           };
         });
+        }
         sendJson(res, origin, 200, {
           success: true,
           data: rows,
@@ -740,30 +837,40 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       if (feedType === "apps") {
-        const docs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
         const byApp = new Map();
         const byMember = new Map();
 
-        for (const doc of docs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
-          const appName = normalizeAppName(d.app_name || "Unknown");
-          if (!appName) continue;
-          const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
-          const meta = memberMeta.get(d.member_id) || { name: "Unknown", initials: "??" };
-
-          const startedIso = toIso(d.started_at);
+        const ingestAppRow = (d, memberIdKey) => {
+          const appName = normalizeAppName(d.app_name || d.appName || "Unknown");
+          if (!appName) return;
+          const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : Number(d.durationSeconds ?? 0);
+          const meta = memberMeta.get(memberIdKey) || { name: "Unknown", initials: "??" };
+          const startedIso = toIso(d.started_at ?? d.startedAt);
           const appRow = byApp.get(appName) || { name: appName, totalSeconds: 0, sessions: 0, lastActivityAt: "" };
           appRow.totalSeconds += dur;
           appRow.sessions += 1;
           if (startedIso && startedIso > (appRow.lastActivityAt || "")) appRow.lastActivityAt = startedIso;
           byApp.set(appName, appRow);
-
-          const memRow = byMember.get(d.member_id) || { member: meta.name, avatar: meta.initials, totalSeconds: 0, apps: new Map() };
+          const memRow = byMember.get(memberIdKey) || { member: meta.name, avatar: meta.initials, totalSeconds: 0, apps: new Map() };
           memRow.totalSeconds += dur;
           const appDur = memRow.apps.get(appName) || 0;
           memRow.apps.set(appName, appDur + dur);
-          byMember.set(d.member_id, memRow);
+          byMember.set(memberIdKey, memRow);
+        };
+
+        if (isActivityEventsPgEnabled()) {
+          const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+          for (const d of pgRows) {
+            ingestAppRow(d, String(d.member_id ?? ""));
+          }
+        } else {
+        const docs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
+
+        for (const doc of docs) {
+          const d = doc.data();
+          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
+          ingestAppRow(d, d.member_id);
+        }
         }
 
         const formatDur = (sec) => {
@@ -817,74 +924,89 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       if (feedType === "urls") {
-        const docs = await fetchActivityDocsScoped(db, "activity_url_logs", scope.targetMemberIds, "visited_at", 500);
-        const appDocs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
         const byUrl = new Map();
 
-        for (const doc of docs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "visited_at", dayFilter)) continue;
+        const ingestUrlRow = (d, timeField) => {
           const urlStr = typeof d.url === "string" ? d.url.trim() : "";
-          if (!urlStr || !/^https?:\/\//i.test(urlStr)) continue;
+          if (!urlStr || !/^https?:\/\//i.test(urlStr)) return;
           const key = urlStr;
           const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
+          const visitedAt = toIso(d[timeField] ?? d.visited_at ?? d.visitedAt);
           const row = byUrl.get(key) || {
             domain: d.domain || parseDomain(urlStr),
             url: urlStr,
             totalSeconds: 0,
             visits: 0,
-            lastVisit: toIso(d.visited_at),
+            lastVisit: visitedAt,
             sourceKind: "url",
           };
           row.totalSeconds += dur;
           row.visits += 1;
-          if (toIso(d.visited_at) > (row.lastVisit || "")) row.lastVisit = toIso(d.visited_at);
+          if (visitedAt > (row.lastVisit || "")) row.lastVisit = visitedAt;
           byUrl.set(key, row);
-        }
+        };
 
-        for (const doc of appDocs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
-          const appName = normalizeAppName(d.app_name || "");
-          if (!appName || !isBrowserAppName(appName)) continue;
-          const pageTitle = typeof d.page_title === "string" ? d.page_title.trim() : "";
-          if (!pageTitle) continue;
+        const ingestAppUrlRow = (d) => {
+          const appName = normalizeAppName(d.app_name || d.appName || "");
+          if (!appName || !isBrowserAppName(appName)) return;
+          const pageTitle = typeof d.page_title === "string" ? d.page_title.trim() : String(d.pageTitle ?? "").trim();
+          if (!pageTitle) return;
           const httpFromTitle = extractHttpUrl(pageTitle);
+          const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
+          const startedIso = toIso(d.started_at ?? d.startedAt);
           if (httpFromTitle) {
             const key = httpFromTitle;
-            const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
             const row = byUrl.get(key) || {
               domain: parseDomain(httpFromTitle),
               url: httpFromTitle,
               totalSeconds: 0,
               visits: 0,
-              lastVisit: toIso(d.started_at),
+              lastVisit: startedIso,
               sourceKind: "url",
             };
             row.totalSeconds += dur;
             row.visits += 1;
-            const startedIso = toIso(d.started_at);
             if (startedIso > (row.lastVisit || "")) row.lastVisit = startedIso;
             byUrl.set(key, row);
-            continue;
+            return;
           }
           const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
-          if (!cleanTitle) continue;
+          if (!cleanTitle) return;
           const key = `window:${appName}:${cleanTitle}`;
-          const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
           const row = byUrl.get(key) || {
             domain: appName,
             url: cleanTitle,
             totalSeconds: 0,
             visits: 0,
-            lastVisit: toIso(d.started_at),
+            lastVisit: startedIso,
             sourceKind: "window",
           };
           row.totalSeconds += dur;
           row.visits += 1;
-          const startedIso = toIso(d.started_at);
           if (startedIso > (row.lastVisit || "")) row.lastVisit = startedIso;
           byUrl.set(key, row);
+        };
+
+        if (isActivityEventsPgEnabled()) {
+          const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
+          const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+          for (const d of urlRows) ingestUrlRow(d, "visited_at");
+          for (const d of appRows) ingestAppUrlRow(d);
+        } else {
+        const docs = await fetchActivityDocsScoped(db, "activity_url_logs", scope.targetMemberIds, "visited_at", 500);
+        const appDocs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
+
+        for (const doc of docs) {
+          const d = doc.data();
+          if (!matchesFeedDay(d, "visited_at", dayFilter)) continue;
+          ingestUrlRow(d, "visited_at");
+        }
+
+        for (const doc of appDocs) {
+          const d = doc.data();
+          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
+          ingestAppUrlRow(d);
+        }
         }
 
         const formatDur = (sec) => {

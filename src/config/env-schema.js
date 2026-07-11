@@ -85,6 +85,8 @@ const envSourceSchema = z
     ACTIVITY_WEB_CAPTURE_ENABLED: optionalTrimmedString,
     ACTIVITY_TASK_SCREENSHOTS_ENABLED: optionalTrimmedString,
     ACTIVITY_DESKTOP_AGENT_INGEST_ENABLED: optionalTrimmedString,
+    TASK_MEMBER_PROGRESS_PG_DUAL_WRITE: optionalTrimmedString,
+    ACTIVITY_EVENTS_PG_ENABLED: optionalTrimmedString,
     ACTIVITY_SESSION_STALE_MS: optionalTrimmedString,
     VT_AUTH_PORT: optionalTrimmedString,
     PRESENCE_ONLINE_MS: optionalTrimmedString,

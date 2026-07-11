@@ -17,6 +17,7 @@ import {
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { computeTimerAllowance, enforceTimerAllowanceOnSync } from "./timer-limit.service.js";
+import { syncMemberProgressToPostgres } from "../../lib/postgres/task-member-progress.service.js";
 
 export { estimateAssignmentSeconds, estimateTaskDurationSeconds, isManagementRole };
 
@@ -256,6 +257,18 @@ export async function syncTaskTimeTracking(db, {
   }, { currentCumulativeActiveSeconds: active });
 
   const freshTaskData = freshTaskSnap.data() ?? {};
+
+  await syncMemberProgressToPostgres({
+    taskId,
+    memberId: userId,
+    action,
+    activeSeconds: active,
+    idleSeconds: idle,
+    sessionId: sessionId ?? null,
+    plannedSeconds: estimatedSeconds,
+    source: "web",
+  });
+
   return {
     tracking: normalizeTracking(trackingDoc),
     activeSeconds: active,
