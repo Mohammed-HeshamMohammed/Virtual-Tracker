@@ -7,16 +7,23 @@ export async function completeAgentLink(
   refreshToken = "",
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await apiFetch(apiPath("/api/activity/agent/link/complete"), {
-      method: "POST",
-      body: JSON.stringify({
-        linkToken,
-        refreshToken,
-        source: "python",
-      }),
-    })
+    const res = await apiFetch(
+      apiPath("/api/activity/agent/link/complete"),
+      {
+        method: "POST",
+        body: JSON.stringify({
+          linkToken,
+          refreshToken,
+          source: "python",
+        }),
+      },
+      { json: true },
+    )
+    const json = await res.json().catch(() => ({}))
     if (!res.ok) {
-      const json = await res.json().catch(() => ({}))
+      return { ok: false, error: json.error || "Failed to complete agent link" }
+    }
+    if (json.success === false) {
       return { ok: false, error: json.error || "Failed to complete agent link" }
     }
     return { ok: true }

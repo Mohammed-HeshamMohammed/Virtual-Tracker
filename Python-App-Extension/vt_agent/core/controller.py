@@ -28,6 +28,7 @@ class AgentController:
         self._link_flow = AgentLinkFlow(self.api, settings.web_url)
         self.auth_server = AuthServer(
             settings.auth_port,
+            api_url=settings.api_url,
             get_pending_link=lambda: self._link_flow.pending_link_token,
             is_authenticated=lambda: self.api.is_authenticated,
             resume_link_poll=self._resume_link_poll,

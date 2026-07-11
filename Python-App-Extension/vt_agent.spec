@@ -9,7 +9,7 @@ block_cipher = None
 project_root = Path(SPECPATH)
 pkg_root = project_root / "vt_agent"
 
-api_url = os.environ.get("VT_API_URL", "https://dashapi.myvirtualtracker.com")
+api_url = os.environ.get("VT_API_URL", "https://appapi.myvirtualtracker.com")
 web_url = os.environ.get("VT_WEB_URL", "https://app.myvirtualtracker.com")
 auth_port = os.environ.get("VT_AUTH_PORT", "17389")
 

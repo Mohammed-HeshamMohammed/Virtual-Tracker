@@ -14,12 +14,14 @@ class AuthServer:
         self,
         port: int,
         *,
+        api_url: str = "",
         get_pending_link: Callable[[], str | None] | None = None,
         is_authenticated: Callable[[], bool] | None = None,
         resume_link_poll: Callable[[], bool] | None = None,
         apply_web_credentials: Callable[[str, str, str], bool] | None = None,
     ) -> None:
         self._port = port
+        self._api_url = api_url.rstrip("/")
         self._get_pending_link = get_pending_link
         self._is_authenticated = is_authenticated
         self._resume_link_poll = resume_link_poll
@@ -48,6 +50,7 @@ class AuthServer:
             self._server = None
 
     def _build_handler(self) -> type[BaseHTTPRequestHandler]:
+        api_url = self._api_url
         get_pending_link = self._get_pending_link
         is_authenticated = self._is_authenticated
         resume_link_poll = self._resume_link_poll
@@ -86,6 +89,8 @@ class AuthServer:
                     self._json(404, {"success": False, "error": "Not found"})
                     return
                 payload: dict[str, object] = {"ok": True, "agent": "python", "version": "0.2.0"}
+                if api_url:
+                    payload["apiUrl"] = api_url
                 if is_authenticated:
                     payload["authenticated"] = is_authenticated()
                 if get_pending_link:

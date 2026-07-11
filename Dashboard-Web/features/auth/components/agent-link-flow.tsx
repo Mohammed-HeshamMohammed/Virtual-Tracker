@@ -6,12 +6,13 @@ import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
 import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
+import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
 import {
   waitForLocalAgentAuthenticated,
   fetchLocalAgentHealth,
   ensureLoopbackAgentAccess,
   resumeLocalAgentLinkPoll,
-  deliverLocalAgentCredentials,
+  type LocalAgentHealth,
 } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 
@@ -20,6 +21,22 @@ type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 const INVALID_LINK_MESSAGE =
   "This linking session is invalid or expired. Open Virtual Tracker Agent and click Sign In again."
 
+function assertAgentApiHostMatches(health: LocalAgentHealth): void {
+  const expectedHost = new URL(getDashboardApiBaseUrl()).host
+  if (!health.apiUrl) return
+  let agentHost = ""
+  try {
+    agentHost = new URL(health.apiUrl).host
+  } catch {
+    return
+  }
+  if (agentHost && agentHost !== expectedHost) {
+    throw new Error(
+      `Desktop agent API (${agentHost}) does not match dashboard API (${expectedHost}). Rebuild Virtual Tracker Agent with VT_API_URL=${getDashboardApiBaseUrl()}, then click Sign In again.`,
+    )
+  }
+}
+
 async function assertAgentReadyForLink(linkToken: string): Promise<void> {
   const health = await fetchLocalAgentHealth()
   if (!health?.ok) {
@@ -27,6 +44,7 @@ async function assertAgentReadyForLink(linkToken: string): Promise<void> {
       "Virtual Tracker Agent is not running on this PC. Open the agent, click Sign In, then return here.",
     )
   }
+  assertAgentApiHostMatches(health)
   if (health.authenticated) {
     return
   }
@@ -86,7 +104,6 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         const auth = getFirebaseAuth()
         const currentUser = auth.currentUser
         if (!currentUser) throw new Error("Sign in expired. Refresh this page and try again.")
-        const idToken = await currentUser.getIdToken(true)
         const refreshToken =
           "refreshToken" in currentUser && typeof currentUser.refreshToken === "string"
             ? currentUser.refreshToken
@@ -98,7 +115,6 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         // Primary path: agent polls backend link/exchange after complete (Chrome 150+ safe).
         await ensureLoopbackAgentAccess()
         await resumeLocalAgentLinkPoll()
-        void deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
 
         const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
         if (cancelled || attemptId !== attemptRef.current) return
@@ -110,7 +126,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
             )
           }
           throw new Error(
-            "The desktop agent did not finish linking. Keep Virtual Tracker Agent open on this PC, then click Try again.",
+            "The desktop agent did not finish linking. Rebuild the agent (see TEAM_SETUP_GUIDE), click Sign In once, keep it open, then Try again.",
           )
         }
 
