@@ -11,7 +11,10 @@ import React, {
 } from "react"
 import { useAuth } from "@/shared/providers/app"
 import { fetchAgentStatus, type ActivityCaptureMode, type AgentStatus } from "@/features/activity/services/activity-api"
-import { isLocalAgentAuthenticated, pingLocalAgent } from "@/features/activity/utils/local-agent"
+import {
+  isLocalAgentAuthenticated as checkLocalAgentAuthenticated,
+  pingLocalAgent,
+} from "@/features/activity/utils/local-agent"
 import type { AgentTimerReadiness } from "@/features/activity/utils/agent-timer-gate"
 
 interface AgentStatusContextValue {
@@ -76,7 +79,7 @@ export function AgentStatusProvider({
     const port = status?.authPort ?? 17389
     const [localOk, localAuthenticated] = await Promise.all([
       pingLocalAgent(port),
-      isLocalAgentAuthenticated(port),
+      checkLocalAgentAuthenticated(port),
     ])
     if (status) setRemote(status)
     setIsLocalAgentRunning(localOk)
@@ -108,7 +111,7 @@ export function AgentStatusProvider({
   useEffect(() => {
     if (!isLoggedIn || !pollingArmed) return
     const localTimer = setInterval(() => {
-      void Promise.all([pingLocalAgent(authPort), isLocalAgentAuthenticated(authPort)]).then(
+      void Promise.all([pingLocalAgent(authPort), checkLocalAgentAuthenticated(authPort)]).then(
         ([running, authenticated]) => {
           setIsLocalAgentRunning(running)
           setIsLocalAgentAuthenticated(authenticated)
