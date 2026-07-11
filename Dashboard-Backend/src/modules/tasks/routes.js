@@ -12,6 +12,11 @@ import {
   syncTaskTimeTracking,
 } from "./task-time-tracking.js";
 import {
+  getMyProgressFromPostgres,
+  getTaskProgressAggregateFromPostgres,
+  isTaskMemberProgressPgEnabled,
+} from "../../lib/postgres/task-member-progress.service.js";
+import {
   getReviewQueue,
   getTaskParticipation,
   isReviewCenterRole,
@@ -400,6 +405,98 @@ export async function routeTasks(req, res, url, db, origin) {
   }
 
   const taskTimeTrackingMatch = /^\/api\/tasks\/([^/]+)\/time-tracking$/.exec(pn);
+
+  const taskProgressMeMatch = /^\/api\/tasks\/([^/]+)\/progress\/me$/.exec(pn);
+  if (taskProgressMeMatch && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    const taskId = taskProgressMeMatch[1];
+    const access = await assertTaskAccessible(req, res, origin, db, taskId);
+    if (!access) return true;
+    try {
+      const firestoreData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
+        includeMemberBreakdown: false,
+      });
+      const pgRow = isTaskMemberProgressPgEnabled()
+        ? await getMyProgressFromPostgres(taskId, viewer.memberId)
+        : null;
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          taskId,
+          memberId: viewer.memberId,
+          status: firestoreData.taskStatus,
+          assignmentStatus: firestoreData.assignmentStatus,
+          plannedDurationSeconds: firestoreData.estimatedSeconds,
+          myActiveSeconds: pgRow?.activeSeconds ?? firestoreData.activeSeconds,
+          myIdleSeconds: pgRow?.idleSeconds ?? firestoreData.idleSeconds,
+          myProgressPercent: pgRow?.progressPercentage ?? firestoreData.progressPercent,
+          lastStartedAt: pgRow?.lastStartedAt ?? firestoreData.tracking?.startedAt ?? null,
+          lastActivityAt: pgRow?.lastActivityAt ?? firestoreData.tracking?.lastActivityAt ?? null,
+          source: pgRow ? "postgres+firestore" : "firestore",
+        },
+      });
+    } catch (e) {
+      logSafeError("[tasks/progress/me GET]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to load member progress",
+      });
+    }
+    return true;
+  }
+
+  const taskProgressMatch = /^\/api\/tasks\/([^/]+)\/progress$/.exec(pn);
+  if (taskProgressMatch && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    const taskId = taskProgressMatch[1];
+    const access = await assertTaskAccessible(req, res, origin, db, taskId);
+    if (!access) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Only management can view task progress breakdown" });
+      return true;
+    }
+    try {
+      const firestoreData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
+        includeMemberBreakdown: true,
+      });
+      const pgData = isTaskMemberProgressPgEnabled()
+        ? await getTaskProgressAggregateFromPostgres(taskId)
+        : null;
+      const planned = firestoreData.estimatedSeconds ?? null;
+      const totalActive =
+        Number(pgData?.aggregate?.total_active_seconds ?? firestoreData.totalActiveSeconds ?? 0);
+      const totalIdle =
+        Number(pgData?.aggregate?.total_idle_seconds ?? firestoreData.totalIdleSeconds ?? 0);
+      const overallProgress =
+        planned && planned > 0 ? Math.min(100, Math.round((totalActive / planned) * 100)) : null;
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          taskId,
+          status: firestoreData.taskStatus,
+          plannedDurationSeconds: planned,
+          totalActiveSeconds: totalActive,
+          totalIdleSeconds: totalIdle,
+          overallProgressPercent: overallProgress ?? firestoreData.aggregatedProgressPercent,
+          contributingMembers:
+            pgData?.aggregate?.contributing_members ??
+            (firestoreData.memberContributions?.length ?? 0),
+          memberBreakdown: firestoreData.memberContributions ?? pgData?.memberBreakdown ?? [],
+          source: pgData ? "postgres+firestore" : "firestore",
+        },
+      });
+    } catch (e) {
+      logSafeError("[tasks/progress GET]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to load task progress",
+      });
+    }
+    return true;
+  }
+
   if (taskTimeTrackingMatch && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -437,6 +534,11 @@ export async function routeTasks(req, res, url, db, origin) {
     const allowed = new Set(["start", "idle", "resume", "stop", "sync"]);
     if (!allowed.has(action)) {
       sendJson(res, origin, 400, { success: false, error: "action must be start, idle, resume, stop, or sync" });
+      return true;
+    }
+    rejectUnknownFields(body, ["action", "activeSeconds", "idleSeconds", "sessionId"]);
+    if (typeof body.memberId === "string" || typeof body.userId === "string") {
+      sendJson(res, origin, 400, { success: false, error: "memberId/userId must not be sent; timer is scoped to the authenticated member" });
       return true;
     }
     const activeSeconds =
