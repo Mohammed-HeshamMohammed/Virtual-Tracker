@@ -54,7 +54,13 @@ const nextConfig = {
     return [
       {
         source: "/:path*",
-        headers: [{ key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" }],
+        headers: [
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+          {
+            key: "Permissions-Policy",
+            value: "loopback-network=(self), local-network=(self)",
+          },
+        ],
       },
     ]
   },
