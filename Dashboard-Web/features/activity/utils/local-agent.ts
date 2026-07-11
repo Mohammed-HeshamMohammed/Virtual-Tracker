@@ -68,6 +68,30 @@ export async function resumeLocalAgentLinkPoll(
   }
 }
 
+/** Deliver Firebase credentials directly to the local agent after backend link/complete. */
+export async function deliverLocalAgentCredentials(
+  linkToken: string,
+  idToken: string,
+  refreshToken = "",
+  port = DEFAULT_AGENT_AUTH_PORT,
+): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  if (!linkToken.trim() || !idToken.trim()) return false
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/link/credentials`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ linkToken, idToken, refreshToken }),
+      cache: "no-store",
+    })
+    if (!res.ok) return false
+    const json = (await res.json()) as { ok?: boolean }
+    return json.ok === true
+  } catch {
+    return false
+  }
+}
+
 export function openAgentAuthPage(webUrl: string, port = DEFAULT_AGENT_AUTH_PORT): void {
   if (typeof window === "undefined") return
   window.open(`${webUrl.replace(/\/$/, "")}/?port=${port}`, "_blank", "noopener,noreferrer")

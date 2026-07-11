@@ -31,6 +31,7 @@ class AgentController:
             get_pending_link=lambda: self._link_flow.pending_link_token,
             is_authenticated=lambda: self.api.is_authenticated,
             resume_link_poll=self._resume_link_poll,
+            apply_web_credentials=self._apply_web_credentials,
         )
         self._status_listeners: list[Callable[[str], None]] = []
         self.status = "Not signed in"
@@ -55,6 +56,9 @@ class AgentController:
             self._apply_tokens,
             on_error=lambda msg: self._on_status_changed(msg),
         )
+
+    def _apply_web_credentials(self, link_token: str, id_token: str, refresh_token: str) -> bool:
+        return self._link_flow.apply_web_credentials(link_token, id_token, refresh_token)
 
     @property
     def is_link_pending(self) -> bool:

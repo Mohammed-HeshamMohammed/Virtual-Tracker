@@ -114,6 +114,25 @@ class AgentLinkFlow:
             self._start_poll_thread(session, generation)
             return True
 
+    def apply_web_credentials(self, link_token: str, id_token: str, refresh_token: str) -> bool:
+        """Accept credentials from the browser after the backend link/complete call."""
+        on_tokens = self._on_tokens
+        with self._lock:
+            pending = self._pending
+            if not pending or pending.get("linkToken") != link_token:
+                log.warning("Rejected browser credentials: no matching pending link session")
+                return False
+            if not id_token:
+                return False
+            self._poll_generation += 1
+            self._stop_poll_thread()
+            self._pending = None
+        if on_tokens:
+            on_tokens(id_token, refresh_token or "")
+            log.info("Applied credentials from browser link handoff")
+            return True
+        return False
+
     def stop(self) -> None:
         with self._lock:
             self._poll_generation += 1

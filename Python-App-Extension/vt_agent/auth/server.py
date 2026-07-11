@@ -3,7 +3,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from vt_agent.constants import HEALTH_PATH, RESUME_LINK_PATH
+from vt_agent.constants import CREDENTIALS_LINK_PATH, HEALTH_PATH, RESUME_LINK_PATH
 from vt_agent.log import log
 
 
@@ -17,11 +17,13 @@ class AuthServer:
         get_pending_link: Callable[[], str | None] | None = None,
         is_authenticated: Callable[[], bool] | None = None,
         resume_link_poll: Callable[[], bool] | None = None,
+        apply_web_credentials: Callable[[str, str, str], bool] | None = None,
     ) -> None:
         self._port = port
         self._get_pending_link = get_pending_link
         self._is_authenticated = is_authenticated
         self._resume_link_poll = resume_link_poll
+        self._apply_web_credentials = apply_web_credentials
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -49,6 +51,7 @@ class AuthServer:
         get_pending_link = self._get_pending_link
         is_authenticated = self._is_authenticated
         resume_link_poll = self._resume_link_poll
+        apply_web_credentials = self._apply_web_credentials
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format: str, *args: object) -> None:
@@ -63,6 +66,14 @@ class AuthServer:
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(body)
+
+            def _read_json_body(self) -> dict[str, object]:
+                length = int(self.headers.get("Content-Length", 0))
+                if length <= 0:
+                    return {}
+                raw = self.rfile.read(length)
+                parsed = json.loads(raw.decode("utf-8"))
+                return parsed if isinstance(parsed, dict) else {}
 
             def do_GET(self) -> None:
                 if self.path != HEALTH_PATH:
@@ -79,19 +90,43 @@ class AuthServer:
                 self._json(200, payload)
 
             def do_POST(self) -> None:
-                if self.path != RESUME_LINK_PATH:
-                    self._json(404, {"success": False, "error": "Not found"})
+                if self.path == RESUME_LINK_PATH:
+                    resumed = resume_link_poll() if resume_link_poll else False
+                    link_token = get_pending_link() if get_pending_link else None
+                    self._json(
+                        200 if resumed else 409,
+                        {
+                            "ok": resumed,
+                            "linkPending": bool(link_token),
+                            "authenticated": is_authenticated() if is_authenticated else False,
+                        },
+                    )
                     return
-                resumed = resume_link_poll() if resume_link_poll else False
-                link_token = get_pending_link() if get_pending_link else None
-                self._json(
-                    200 if resumed else 409,
-                    {
-                        "ok": resumed,
-                        "linkPending": bool(link_token),
-                        "authenticated": is_authenticated() if is_authenticated else False,
-                    },
-                )
+
+                if self.path == CREDENTIALS_LINK_PATH:
+                    body = self._read_json_body()
+                    link_token = body.get("linkToken")
+                    id_token = body.get("idToken")
+                    refresh_token = body.get("refreshToken")
+                    if (
+                        not apply_web_credentials
+                        or not isinstance(link_token, str)
+                        or not isinstance(id_token, str)
+                    ):
+                        self._json(400, {"ok": False, "error": "Invalid credentials payload"})
+                        return
+                    refresh = refresh_token if isinstance(refresh_token, str) else ""
+                    applied = apply_web_credentials(link_token, id_token, refresh)
+                    self._json(
+                        200 if applied else 409,
+                        {
+                            "ok": applied,
+                            "authenticated": is_authenticated() if is_authenticated else False,
+                        },
+                    )
+                    return
+
+                self._json(404, {"success": False, "error": "Not found"})
 
             def do_OPTIONS(self) -> None:
                 self._json(204, {})
