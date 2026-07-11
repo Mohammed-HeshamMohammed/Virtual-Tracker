@@ -42,20 +42,33 @@ class AgentLinkFlow:
             poll_session = session
             poll_gen = generation
             deadline = time.time() + 900
+            attempt = 0
+            log.info("Link exchange polling started for session %s…", poll_session["linkToken"][:8])
             while not self._stop.is_set() and time.time() < deadline:
                 if self._poll_generation != poll_gen:
                     return
-                result = self._api.exchange_link_session(
+                attempt += 1
+                status, result = self._api.poll_link_exchange(
                     poll_session["linkToken"],
                     poll_session["agentSecret"],
                 )
                 if result:
+                    log.info("Link exchange succeeded (200) after %s poll(s)", attempt)
                     if self._poll_generation == poll_gen:
                         on_tokens(result["idToken"], result.get("refreshToken", ""))
                         self._pending = None
                     else:
                         on_tokens(result["idToken"], result.get("refreshToken", ""))
                     return
+                if status == 409 and (attempt == 1 or attempt % 15 == 0):
+                    log.info(
+                        "Link exchange not ready yet (409) — waiting for browser link/complete (poll #%s)",
+                        attempt,
+                    )
+                elif status not in (0, 409) and (attempt == 1 or attempt % 15 == 0):
+                    log.warning("Link exchange failed (%s) on poll #%s", status, attempt)
+                elif status == 0 and (attempt == 1 or attempt % 15 == 0):
+                    log.warning("Link exchange unreachable on poll #%s", attempt)
                 time.sleep(1)
             if self._poll_generation != poll_gen or self._stop.is_set():
                 return

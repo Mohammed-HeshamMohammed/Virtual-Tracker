@@ -37,6 +37,8 @@
 # ── Dashboard Web (SPA) ─────────────────────────────────────────────────────
 {$APP_DOMAIN} {
 	encode gzip
+	# Chrome Local Network Access — allow loopback fetches from the dashboard origin.
+	header Permissions-Policy "loopback-network=(self), local-network=(self)"
 	reverse_proxy dashboard-web:3000
 }
 

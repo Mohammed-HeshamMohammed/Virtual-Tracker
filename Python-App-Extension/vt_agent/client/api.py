@@ -148,7 +148,14 @@ class ApiClient:
         except requests.RequestException:
             return None
 
-    def exchange_link_session(self, link_token: str, agent_secret: str) -> dict[str, str] | None:
+    def poll_link_exchange(
+        self,
+        link_token: str,
+        agent_secret: str,
+    ) -> tuple[int, dict[str, str] | None]:
+        """Returns (HTTP status, tokens). Status 0 means a network error."""
+        from vt_agent.log import log
+
         try:
             res = self._session.post(
                 f"{self._api_url}/api/activity/agent/link/exchange",
@@ -157,24 +164,28 @@ class ApiClient:
                 timeout=HTTP_TIMEOUT_SEC,
             )
             if res.status_code == 409:
-                return None
+                return 409, None
             if not res.ok:
-                from vt_agent.log import log
-
                 log.warning(
                     "Link exchange failed (%s): %s",
                     res.status_code,
                     res.text[:200],
                 )
-                return None
+                return res.status_code, None
             data = res.json().get("data") or {}
             id_token = data.get("idToken")
             if not isinstance(id_token, str) or not id_token:
-                return None
+                log.warning("Link exchange returned 200 without idToken")
+                return res.status_code, None
             refresh = data.get("refreshToken")
-            return {
+            return 200, {
                 "idToken": id_token,
                 "refreshToken": refresh if isinstance(refresh, str) else "",
             }
-        except requests.RequestException:
-            return None
+        except requests.RequestException as exc:
+            log.warning("Link exchange network error: %s", exc)
+            return 0, None
+
+    def exchange_link_session(self, link_token: str, agent_secret: str) -> dict[str, str] | None:
+        status, tokens = self.poll_link_exchange(link_token, agent_secret)
+        return tokens if status == 200 else None
