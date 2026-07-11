@@ -1,11 +1,10 @@
-import os
-import urllib.request
-import urllib.parse
 import threading
 import time
+from collections.abc import Callable
 
 from vt_agent.client.api import ApiClient
 from vt_agent.log import log
+from vt_agent.utils import open_url_in_launcher_or_browser
 
 
 class AgentLinkFlow:
@@ -22,32 +21,25 @@ class AgentLinkFlow:
     def pending_link_token(self) -> str | None:
         return self._pending.get("linkToken") if self._pending else None
 
-    def start(self, on_tokens) -> None:
+    def start(
+        self,
+        on_tokens: Callable[[str, str], None],
+        *,
+        on_error: Callable[[str], None] | None = None,
+    ) -> bool:
         self._stop.clear()
         session = self._api.create_link_session()
         if not session:
             log.warning("Could not start agent link session")
-            return
+            if on_error:
+                on_error("Could not reach the server. Check your internet connection and try again.")
+            return False
 
         self._pending = session
         link_token = session["linkToken"]
-
-        launcher_port = os.environ.get("VT_LAUNCHER_PORT")
-        opened_in_launcher = False
-        if launcher_port:
-            try:
-                encoded_token = urllib.parse.quote(link_token)
-                url = f"http://localhost:{launcher_port}/open?link={encoded_token}"
-                req = urllib.request.Request(url)
-                with urllib.request.urlopen(req, timeout=3) as response:
-                    if response.status == 200:
-                        log.info("Successfully requested local launcher to open link in Dashboard")
-                        opened_in_launcher = True
-            except Exception as e:
-                log.warning("Failed to open link via local launcher API: %s", e)
-
-        if not opened_in_launcher:
-            webbrowser.open(f"{self._web_url}/?link={link_token}")
+        sign_in_url = f"{self._web_url}/?link={link_token}"
+        open_url_in_launcher_or_browser(sign_in_url, link_token=link_token)
+        log.info("Opened sign-in page: %s", sign_in_url)
 
         if self._poll_thread and self._poll_thread.is_alive():
             self._stop.set()
@@ -66,12 +58,15 @@ class AgentLinkFlow:
                     self._pending = None
                     on_tokens(result["idToken"], result.get("refreshToken", ""))
                     return
-                time.sleep(2)
+                time.sleep(1)
             self._pending = None
-            log.info("Agent link session timed out")
+            log.warning("Agent link session timed out before credentials were exchanged")
+            if on_error:
+                on_error("Link timed out. Keep the agent open, click Sign In, then Link this account again.")
 
         self._poll_thread = threading.Thread(target=poll, name="vt-link-poll", daemon=True)
         self._poll_thread.start()
+        return True
 
     def stop(self) -> None:
         self._stop.set()

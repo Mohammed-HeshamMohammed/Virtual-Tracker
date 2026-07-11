@@ -1,8 +1,23 @@
 import os
-import urllib.request
+import sys
 import urllib.parse
+import urllib.request
 import webbrowser
+
 from vt_agent.log import log
+
+
+def _open_in_system_browser(url: str) -> None:
+    if sys.platform == "win32":
+        os.startfile(url)  # type: ignore[attr-defined]
+        return
+    if sys.platform == "darwin":
+        import subprocess
+
+        subprocess.Popen(["open", url], close_fds=True)
+        return
+    webbrowser.open(url)
+
 
 def open_url_in_launcher_or_browser(fallback_url: str, link_token: str | None = None) -> None:
     """
@@ -29,4 +44,4 @@ def open_url_in_launcher_or_browser(fallback_url: str, link_token: str | None = 
             
     if not opened_in_launcher:
         log.info("Falling back to default system browser for URL: %s", fallback_url)
-        webbrowser.open(fallback_url)
+        _open_in_system_browser(fallback_url)

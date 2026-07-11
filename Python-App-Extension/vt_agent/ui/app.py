@@ -44,8 +44,14 @@ class WebviewApi:
         self._controller = controller
         self._app_ui = app_ui
 
-    def sign_in(self) -> None:
-        self._controller.open_sign_in()
+    def sign_in(self) -> dict[str, object]:
+        ok = self._controller.open_sign_in()
+        if ok:
+            return {"success": True}
+        return {
+            "success": False,
+            "error": "Could not reach the server. Check your internet connection and try again.",
+        }
 
     def open_web_app(self) -> None:
         self._controller.open_web_app()
@@ -68,10 +74,13 @@ class WebviewApi:
     def get_profile(self) -> dict:
         token = self._controller.api.id_token
         server_label = _server_label(self._controller.settings.api_url)
+        status = self._controller.status.lower()
+        link_pending = "linking" in status
         if not token:
             return {
                 "signedIn": False,
-                "name": "Not signed in",
+                "linkPending": link_pending,
+                "name": "Finish linking in browser" if link_pending else "Not signed in",
                 "avatarUrl": "",
                 "serverLabel": server_label,
             }
@@ -89,7 +98,7 @@ class WebviewApi:
         api_url = self._controller.settings.api_url
         connected = False
         try:
-            res = requests.get(f"{api_url}/api/health", timeout=2)
+            res = requests.get(f"{api_url}/health", timeout=2)
             connected = res.ok
         except requests.RequestException:
             connected = False

@@ -28,6 +28,7 @@ class AgentController:
         self.auth_server = AuthServer(
             settings.auth_port,
             get_pending_link=lambda: self._link_flow.pending_link_token,
+            is_authenticated=lambda: self.api.is_authenticated,
         )
         self._status_listeners: list[Callable[[str], None]] = []
         self.status = "Not signed in"
@@ -47,13 +48,25 @@ class AgentController:
         self.auth_server.stop()
         self.api.close()
 
-    def open_sign_in(self) -> None:
+    def open_sign_in(self) -> bool:
+        pending_token = self._link_flow.pending_link_token
+        if pending_token:
+            from vt_agent.utils import open_url_in_launcher_or_browser
+
+            sign_in_url = f"{self.settings.web_url}/?link={pending_token}"
+            open_url_in_launcher_or_browser(sign_in_url, link_token=pending_token)
+            self._on_status_changed("Linking account...")
+            return True
+
         self._link_flow.stop()
         self.tracker.stop()
         self.store.clear()
         self.api.set_tokens("", "")
-        self._on_status_changed("Linking account…")
-        self._link_flow.start(self._apply_tokens)
+        self._on_status_changed("Linking account...")
+        return self._link_flow.start(
+            self._apply_tokens,
+            on_error=lambda msg: self._on_status_changed(msg),
+        )
 
     def open_web_app(self) -> None:
         from vt_agent.utils import open_url_in_launcher_or_browser

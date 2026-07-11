@@ -15,9 +15,11 @@ class AuthServer:
         port: int,
         *,
         get_pending_link: Callable[[], str | None] | None = None,
+        is_authenticated: Callable[[], bool] | None = None,
     ) -> None:
         self._port = port
         self._get_pending_link = get_pending_link
+        self._is_authenticated = is_authenticated
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -43,6 +45,7 @@ class AuthServer:
 
     def _build_handler(self) -> type[BaseHTTPRequestHandler]:
         get_pending_link = self._get_pending_link
+        is_authenticated = self._is_authenticated
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format: str, *args: object) -> None:
@@ -63,8 +66,11 @@ class AuthServer:
                     self._json(404, {"success": False, "error": "Not found"})
                     return
                 payload: dict[str, object] = {"ok": True, "agent": "python", "version": "0.2.0"}
+                if is_authenticated:
+                    payload["authenticated"] = is_authenticated()
                 if get_pending_link:
                     link_token = get_pending_link()
+                    payload["linkPending"] = bool(link_token)
                     if link_token:
                         payload["linkToken"] = link_token
                 self._json(200, payload)

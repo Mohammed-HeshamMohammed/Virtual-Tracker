@@ -8,6 +8,37 @@ function callApi(methodName, ...args) {
   return Promise.reject(new Error(`API method '${methodName}' is not ready`));
 }
 
+let authStatusHint = null;
+
+function hintFromStatus(statusText) {
+  const normalized = (statusText || "").toLowerCase();
+  if (normalized.includes("not signed in")) {
+    return "Sign in to link this desktop agent to your account.";
+  }
+  if (normalized.includes("linking")) {
+    return "Complete sign-in in your browser, then click Link this account.";
+  }
+  if (normalized.includes("could not reach") || normalized.includes("connection")) {
+    return statusText;
+  }
+  if (normalized.includes("waiting")) {
+    return "Connected. Start the tracker timer in the dashboard.";
+  }
+  if (normalized.includes("active")) {
+    return "Desktop monitoring is running and uploading activity.";
+  }
+  if (normalized.includes("paused") || normalized.includes("idle")) {
+    return "Web timer is idle - desktop capture is paused.";
+  }
+  return null;
+}
+
+function applyHint(fallback) {
+  const hintEl = document.getElementById("link-hint");
+  if (!hintEl) return;
+  hintEl.textContent = authStatusHint || fallback || "Syncing telemetry data in real-time.";
+}
+
 function initialsFromName(name) {
   const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -37,7 +68,11 @@ function updateProfile(profile) {
   }
 
   if (signInLabel) {
-    signInLabel.textContent = profile?.signedIn ? "Re-link Account" : "Sign In";
+    if (profile?.linkPending) {
+      signInLabel.textContent = "Open Link Page";
+    } else {
+      signInLabel.textContent = profile?.signedIn ? "Re-link Account" : "Sign In";
+    }
   }
 }
 
@@ -54,29 +89,17 @@ function updateLinkStatus(link) {
   serverEl.textContent = link?.serverLabel || "Ext-Server: —";
 
   if (hintEl) {
-    hintEl.textContent = connected
-      ? "Syncing telemetry data in real-time."
-      : "Waiting for the backend server to come online.";
+    applyHint(
+      connected
+        ? "Syncing telemetry data in real-time."
+        : "Server unreachable. Sign in may still open your browser."
+    );
   }
 }
 
 window.updateStatus = function updateStatus(statusText) {
-  const normalized = (statusText || "").toLowerCase();
-  let hint = "Syncing telemetry data in real-time.";
-  if (normalized.includes("not signed in")) {
-    hint = "Sign in to link this desktop agent to your account.";
-  } else if (normalized.includes("linking")) {
-    hint = "Complete sign-in in your browser to link your account.";
-  } else if (normalized.includes("waiting")) {
-    hint = "Connected. Start the tracker timer in the dashboard.";
-  } else if (normalized.includes("active")) {
-    hint = "Desktop monitoring is running and uploading activity.";
-  } else if (normalized.includes("paused") || normalized.includes("idle")) {
-    hint = "Web timer is idle — desktop capture is paused.";
-  }
-  const hintEl = document.getElementById("link-hint");
-  if (hintEl) hintEl.textContent = hint;
-
+  authStatusHint = hintFromStatus(statusText);
+  applyHint();
   refreshProfile().catch(() => {});
 };
 
@@ -86,7 +109,13 @@ async function refreshProfile() {
     callApi("get_link_status").catch(() => null),
   ]);
   if (profile) updateProfile(profile);
-  if (link) updateLinkStatus(link);
+  if (link) {
+    if (link.status) {
+      authStatusHint = hintFromStatus(link.status);
+      applyHint();
+    }
+    updateLinkStatus(link);
+  }
 }
 
 function animateVizBars() {
@@ -98,11 +127,27 @@ function animateVizBars() {
 }
 
 function bindUi() {
+  async function handleSignIn() {
+    authStatusHint = "Opening browser for sign-in...";
+    applyHint();
+    try {
+      const result = await callApi("sign_in");
+      if (result && result.success === false) {
+        authStatusHint = result.error || "Sign-in failed. Try again.";
+        applyHint();
+      }
+    } catch (err) {
+      authStatusHint = "Sign-in is not ready yet. Close and reopen the agent, then try again.";
+      applyHint();
+      console.error(err);
+    }
+  }
+
   document.getElementById("btn-signin")?.addEventListener("click", () => {
-    callApi("sign_in").catch((err) => console.error(err));
+    handleSignIn().catch((err) => console.error(err));
   });
   document.getElementById("btn-session-login")?.addEventListener("click", () => {
-    callApi("sign_in").catch((err) => console.error(err));
+    handleSignIn().catch((err) => console.error(err));
   });
   document.getElementById("btn-open-app")?.addEventListener("click", () => {
     callApi("open_web_app").catch((err) => console.error(err));
