@@ -50,6 +50,24 @@ export async function waitForLocalAgentAuthenticated(
   return false
 }
 
+/** Ask the local agent to resume polling for linked credentials after web complete. */
+export async function resumeLocalAgentLinkPoll(
+  port = DEFAULT_AGENT_AUTH_PORT,
+): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/link/resume`, {
+      method: "POST",
+      cache: "no-store",
+    })
+    if (!res.ok) return false
+    const json = (await res.json()) as { ok?: boolean }
+    return json.ok === true
+  } catch {
+    return false
+  }
+}
+
 export function openAgentAuthPage(webUrl: string, port = DEFAULT_AGENT_AUTH_PORT): void {
   if (typeof window === "undefined") return
   window.open(`${webUrl.replace(/\/$/, "")}/?port=${port}`, "_blank", "noopener,noreferrer")

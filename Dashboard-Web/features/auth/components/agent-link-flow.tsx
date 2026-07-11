@@ -6,7 +6,11 @@ import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
 import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
-import { waitForLocalAgentAuthenticated, fetchLocalAgentHealth } from "@/features/activity/utils/local-agent"
+import {
+  waitForLocalAgentAuthenticated,
+  fetchLocalAgentHealth,
+  resumeLocalAgentLinkPoll,
+} from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 
 type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
@@ -87,9 +91,16 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
+        await resumeLocalAgentLinkPoll()
         const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!agentReady) {
+          const health = await fetchLocalAgentHealth()
+          if (!health?.linkPending) {
+            throw new Error(
+              "The desktop agent stopped waiting for credentials. In the agent, click Sign In, then Link this account here again.",
+            )
+          }
           throw new Error(
             "The desktop agent did not receive credentials. Keep Virtual Tracker Agent open on this PC, then click Try again.",
           )
