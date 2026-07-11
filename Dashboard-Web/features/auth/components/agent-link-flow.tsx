@@ -10,6 +10,7 @@ import {
   waitForLocalAgentAuthenticated,
   fetchLocalAgentHealth,
   resumeLocalAgentLinkPoll,
+  deliverLocalAgentCredentials,
 } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 
@@ -30,7 +31,7 @@ async function assertAgentReadyForLink(linkToken: string): Promise<void> {
   }
   if (!health.linkPending) {
     throw new Error(
-      "The desktop agent is not waiting for this link. In the agent, click Sign In (or Open Link Page), then Link this account here again.",
+      "The desktop agent is not waiting for this link. In the agent, click Sign In first, then return here and click Link this account.",
     )
   }
   if (health.linkToken && health.linkToken !== linkToken) {
@@ -83,22 +84,28 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
         const auth = getFirebaseAuth()
         const currentUser = auth.currentUser
+        if (!currentUser) throw new Error("Sign in expired. Refresh this page and try again.")
+        const idToken = await currentUser.getIdToken(true)
         const refreshToken =
-          currentUser && "refreshToken" in currentUser && typeof currentUser.refreshToken === "string"
+          "refreshToken" in currentUser && typeof currentUser.refreshToken === "string"
             ? currentUser.refreshToken
             : ""
         const result = await completeAgentLink(trimmedToken, refreshToken)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
-        await resumeLocalAgentLinkPoll()
-        const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
+        const delivered = await deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
+        if (!delivered) {
+          await resumeLocalAgentLinkPoll()
+        }
+        const agentReady =
+          delivered || (await waitForLocalAgentAuthenticated(undefined, delivered ? 15_000 : 90_000))
         if (cancelled || attemptId !== attemptRef.current) return
         if (!agentReady) {
           const health = await fetchLocalAgentHealth()
           if (!health?.linkPending) {
             throw new Error(
-              "The desktop agent stopped waiting for credentials. In the agent, click Sign In, then Link this account here again.",
+              "The desktop agent stopped waiting for credentials. In the agent, click Sign In first, then Link this account here again.",
             )
           }
           throw new Error(
