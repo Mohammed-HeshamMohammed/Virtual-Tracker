@@ -199,7 +199,7 @@ def run_ui(agent: AgentController, *, prompt_sign_in: bool = True) -> None:
             import time
 
             time.sleep(2)
-            if not agent.api.is_authenticated:
+            if not agent.api.is_authenticated and not agent.is_link_pending:
                 agent.open_sign_in()
 
         threading.Thread(target=auto_sign_in, daemon=True).start()

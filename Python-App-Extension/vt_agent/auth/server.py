@@ -3,7 +3,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Callable
 
-from vt_agent.constants import HEALTH_PATH
+from vt_agent.constants import HEALTH_PATH, RESUME_LINK_PATH
 from vt_agent.log import log
 
 
@@ -16,10 +16,12 @@ class AuthServer:
         *,
         get_pending_link: Callable[[], str | None] | None = None,
         is_authenticated: Callable[[], bool] | None = None,
+        resume_link_poll: Callable[[], bool] | None = None,
     ) -> None:
         self._port = port
         self._get_pending_link = get_pending_link
         self._is_authenticated = is_authenticated
+        self._resume_link_poll = resume_link_poll
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
@@ -46,6 +48,7 @@ class AuthServer:
     def _build_handler(self) -> type[BaseHTTPRequestHandler]:
         get_pending_link = self._get_pending_link
         is_authenticated = self._is_authenticated
+        resume_link_poll = self._resume_link_poll
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, format: str, *args: object) -> None:
@@ -55,7 +58,7 @@ class AuthServer:
                 body = json.dumps(payload).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
                 self.send_header("Access-Control-Allow-Headers", "Content-Type")
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -74,6 +77,21 @@ class AuthServer:
                     if link_token:
                         payload["linkToken"] = link_token
                 self._json(200, payload)
+
+            def do_POST(self) -> None:
+                if self.path != RESUME_LINK_PATH:
+                    self._json(404, {"success": False, "error": "Not found"})
+                    return
+                resumed = resume_link_poll() if resume_link_poll else False
+                link_token = get_pending_link() if get_pending_link else None
+                self._json(
+                    200 if resumed else 409,
+                    {
+                        "ok": resumed,
+                        "linkPending": bool(link_token),
+                        "authenticated": is_authenticated() if is_authenticated else False,
+                    },
+                )
 
             def do_OPTIONS(self) -> None:
                 self._json(204, {})

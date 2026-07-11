@@ -29,3 +29,4 @@ REGISTER_SOURCE = "python"
 
 AUTH_PATH = "/auth"
 HEALTH_PATH = "/health"
+RESUME_LINK_PATH = "/link/resume"
