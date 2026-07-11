@@ -56,10 +56,15 @@ export async function fetchActivitySession(): Promise<ActivitySession | null> {
   })
 }
 
-export async function postActivitySession(
+export type ActivitySessionPostResult = {
+  session: ActivitySession | null
+  error?: string
+}
+
+export async function postActivitySessionDetailed(
   action: ActivitySessionAction,
   counters?: { activeSeconds?: number; idleSeconds?: number; taskId?: string | null },
-): Promise<ActivitySession | null> {
+): Promise<ActivitySessionPostResult> {
   try {
     const res = await apiFetch(apiPath("/api/activity/session"), {
       method: "POST",
@@ -70,12 +75,26 @@ export async function postActivitySession(
         taskId: counters?.taskId ?? null,
       }),
     })
-    if (!res.ok) return null
-    const json = await res.json()
-    return json.data ?? null
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const message =
+        typeof json?.error === "string" && json.error.trim()
+          ? json.error
+          : "Failed to update activity session"
+      return { session: null, error: message }
+    }
+    return { session: json.data ?? null }
   } catch {
-    return null
+    return { session: null, error: "Network error while updating activity session" }
   }
+}
+
+export async function postActivitySession(
+  action: ActivitySessionAction,
+  counters?: { activeSeconds?: number; idleSeconds?: number; taskId?: string | null },
+): Promise<ActivitySession | null> {
+  const result = await postActivitySessionDetailed(action, counters)
+  return result.session
 }
 
 export async function postActivityEvents(sessionId: string, events: ActivityEvent[]): Promise<boolean> {

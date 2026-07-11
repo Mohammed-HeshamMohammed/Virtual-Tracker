@@ -9,6 +9,7 @@ import React, {
   type ReactNode,
 } from "react"
 import { AgentStatusProvider } from "@/features/activity/components/agent-status-context"
+import { ActivitySessionGuard } from "@/features/activity/components/activity-session-guard"
 import { ActivityTrackingProvider } from "@/features/activity/components/activity-tracking-context"
 import { WebActivityReporter } from "@/features/activity/components/web-activity-reporter"
 import { ActivityRuntimeBootstrap } from "@/features/activity/components/activity-runtime-bootstrap"
@@ -61,17 +62,18 @@ export function ActivityRuntimeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ActivityRuntimeContext.Provider value={value}>
-      {active ? (
-        <AgentStatusProvider deferPollingUntilRefresh>
+      <AgentStatusProvider deferPollingUntilRefresh={!active}>
+        <ActivitySessionGuard />
+        {active ? (
           <ActivityTrackingProvider deferInitialSessionRestore>
             <ActivityRuntimeBootstrap pending={pending} onComplete={clearPending} />
             <WebActivityReporter />
             {children}
           </ActivityTrackingProvider>
-        </AgentStatusProvider>
-      ) : (
-        children
-      )}
+        ) : (
+          children
+        )}
+      </AgentStatusProvider>
     </ActivityRuntimeContext.Provider>
   )
 }

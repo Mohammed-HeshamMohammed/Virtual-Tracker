@@ -11,7 +11,7 @@ import React, {
 } from "react"
 import { useAuth } from "@/shared/providers/app"
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
-import { fetchActivitySession, postActivitySession } from "@/features/activity/services/activity-api"
+import { fetchActivitySession, postActivitySession, postActivitySessionDetailed } from "@/features/activity/services/activity-api"
 import { fetchTaskTimeTracking, syncTaskTimeTrackingApi } from "@/features/tasks/api/task-time-tracking-api"
 import { ACTIVITY_SESSION_SYNC_MS } from "@/infrastructure/config/firestore-throttle"
 import { startIdleWatch } from "@/features/activity/utils/idle-detector"
@@ -61,9 +61,9 @@ const ActivityTrackingContext = createContext<ActivityTrackingContextValue | und
 
 const SYNC_MS = ACTIVITY_SESSION_SYNC_MS
 const SESSION_POLL_MS = 5_000
-const AGENT_CHECK_MS = 10_000
-/** Consecutive failed agent checks before auto-pausing (avoids flaky localhost pings). */
-const AGENT_FAIL_PAUSE_THRESHOLD = 3
+const AGENT_CHECK_MS = 5_000
+/** Pause immediately when the agent is unavailable in desktop capture mode. */
+const AGENT_FAIL_PAUSE_THRESHOLD = 1
 /** Consecutive missing session polls before treating the session as ended. */
 const SESSION_MISS_STOP_THRESHOLD = 3
 const STORAGE_KEY = "vt-activity-session"
@@ -427,6 +427,7 @@ export function ActivityTrackingProvider({
     }
 
     tickTimerRef.current = setInterval(() => {
+      if (isAgentMode && !canStartTimer) return
       if (phaseRef.current === "active") {
         activeRef.current += 1
         setActiveSeconds(activeRef.current)
@@ -473,6 +474,8 @@ export function ActivityTrackingProvider({
     restoreSession,
     syncSession,
     handleTaskLimitReached,
+    isAgentMode,
+    canStartTimer,
   ])
 
   useEffect(() => {
@@ -514,7 +517,14 @@ export function ActivityTrackingProvider({
       if (session.status === "idle" && phaseRef.current === "active") {
         applyPhase("idle")
       } else if (session.status === "active" && phaseRef.current === "idle") {
-        applyPhase("active")
+        const readiness = await refreshAgentStatus()
+        if (readiness.canStartTimer) applyPhase("active")
+        else {
+          await postActivitySession("idle", sessionCounters())
+          notifyAgentTimerBlocked(
+            `${getAgentTimerBlockMessage(readiness)} Timer stays paused until the agent is linked.`,
+          )
+        }
       }
     }
 
@@ -527,7 +537,7 @@ export function ActivityTrackingProvider({
       if (sessionPollRef.current) clearInterval(sessionPollRef.current)
       sessionPollRef.current = null
     }
-  }, [phase, applyPhase])
+  }, [phase, applyPhase, refreshAgentStatus, sessionCounters])
 
   useEffect(() => {
     if (phase !== "active") {
@@ -550,17 +560,15 @@ export function ActivityTrackingProvider({
   }, [phase, setIdle, isAgentMode])
 
   useEffect(() => {
-    if (phase !== "active") {
-      agentFailStreakRef.current = 0
-      return
-    }
-    const checkAgent = async () => {
+    if (!isAgentMode || (phase !== "active" && phase !== "idle")) return
+
+    const enforceAgentReady = async () => {
       const readiness = await refreshAgentStatus()
       if (readiness.canStartTimer) {
         agentFailStreakRef.current = 0
         return
       }
-      if (phaseRef.current !== "active") return
+      if (phaseRef.current !== "active" && phaseRef.current !== "idle") return
       agentFailStreakRef.current += 1
       if (agentFailStreakRef.current < AGENT_FAIL_PAUSE_THRESHOLD) return
       agentFailStreakRef.current = 0
@@ -569,12 +577,13 @@ export function ActivityTrackingProvider({
         `${getAgentTimerBlockMessage(readiness)} Timer paused until the agent reconnects.`,
       )
     }
-    void checkAgent()
+
+    void enforceAgentReady()
     const interval = setInterval(() => {
-      void checkAgent()
+      void enforceAgentReady()
     }, AGENT_CHECK_MS)
     return () => clearInterval(interval)
-  }, [phase, refreshAgentStatus, setIdle])
+  }, [isAgentMode, phase, refreshAgentStatus, setIdle])
 
   const startTracking = useCallback(async (): Promise<boolean> => {
     if (!(await ensureAgentReadyForTimer())) return false
@@ -599,12 +608,16 @@ export function ActivityTrackingProvider({
       )
     }
     const counters = sessionCounters()
-    const session = await postActivitySession("start", counters)
-    if (session?.id) {
-      sessionRef.current = session.id
-      setSessionId(session.id)
+    const started = await postActivitySessionDetailed("start", counters)
+    if (!started.session) {
+      notifyAgentTimerBlocked(started.error ?? getAgentTimerBlockMessage(await refreshAgentStatus()))
+      return false
+    }
+    if (started.session.id) {
+      sessionRef.current = started.session.id
+      setSessionId(started.session.id)
       try {
-        sessionStorage.setItem(STORAGE_KEY, session.id)
+        sessionStorage.setItem(STORAGE_KEY, started.session.id)
       } catch {
         /* ignore */
       }
@@ -613,7 +626,7 @@ export function ActivityTrackingProvider({
     applyPhase("active")
     pingActivityFeeds()
     return true
-  }, [applyPhase, applyTimerAllowance, ensureAgentReadyForTimer, sessionCounters, syncTaskTracking])
+  }, [applyPhase, applyTimerAllowance, ensureAgentReadyForTimer, refreshAgentStatus, sessionCounters, syncTaskTracking])
 
   const resumeTracking = useCallback(async (): Promise<boolean> => {
     if (!(await ensureAgentReadyForTimer())) return false
@@ -638,16 +651,20 @@ export function ActivityTrackingProvider({
       )
     }
     const counters = sessionCounters()
-    const session = await postActivitySession("resume", counters)
-    if (session?.id) {
-      sessionRef.current = session.id
-      setSessionId(session.id)
+    const resumed = await postActivitySessionDetailed("resume", counters)
+    if (!resumed.session) {
+      notifyAgentTimerBlocked(resumed.error ?? getAgentTimerBlockMessage(await refreshAgentStatus()))
+      return false
+    }
+    if (resumed.session.id) {
+      sessionRef.current = resumed.session.id
+      setSessionId(resumed.session.id)
     }
     await syncTaskTracking("resume")
     applyPhase("active")
     pingActivityFeeds()
     return true
-  }, [applyPhase, applyTimerAllowance, ensureAgentReadyForTimer, sessionCounters, syncTaskTracking])
+  }, [applyPhase, applyTimerAllowance, ensureAgentReadyForTimer, refreshAgentStatus, sessionCounters, syncTaskTracking])
 
   const toggleTimer = useCallback(async (): Promise<boolean> => {
     if (phaseRef.current === "active") {

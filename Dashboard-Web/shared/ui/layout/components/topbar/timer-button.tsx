@@ -11,6 +11,7 @@ import { useTheme } from "@/shared/providers/app"
 import { useActivityTracking } from "@/features/activity/components/activity-tracking-context"
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 import { useActivityRuntime } from "@/features/activity"
+import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 import { subscribeTimerOpenPopup } from "@/features/activity/components/activity-runtime-bootstrap"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { AGENT_TIMER_BLOCKED_EVENT, getAgentTimerBlockMessage } from "@/features/activity/utils/agent-timer-gate"
@@ -39,6 +40,7 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer }: TimerBut
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { requestActivityRuntime } = useActivityRuntime()
+  const { refreshAgentStatus } = useAgentStatus()
   const [pipNotice, setPipNotice] = useState<string | null>(null)
 
   useEffect(() => {
@@ -50,9 +52,15 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer }: TimerBut
     return () => window.removeEventListener(AGENT_TIMER_BLOCKED_EVENT, onAgentBlocked)
   }, [])
 
-  function handleTimerClick() {
+  async function handleTimerClick() {
     if (!selectedTaskForTimer) {
       setPipNotice("Please select a task from the sidebar before starting the timer.")
+      return
+    }
+
+    const readiness = await refreshAgentStatus()
+    if (!readiness.canStartTimer) {
+      setPipNotice(getAgentTimerBlockMessage(readiness))
       return
     }
 
