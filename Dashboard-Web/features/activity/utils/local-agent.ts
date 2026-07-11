@@ -5,6 +5,7 @@ export interface LocalAgentHealth {
   agent?: string
   authenticated?: boolean
   linkPending?: boolean
+  linkToken?: string
 }
 
 /** Fetch health payload from the local desktop agent. */
