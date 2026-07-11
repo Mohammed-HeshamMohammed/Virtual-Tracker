@@ -22,6 +22,7 @@ export async function ensureLoopbackAgentAccess(port = DEFAULT_AGENT_AUTH_PORT):
 export interface LocalAgentHealth {
   ok: boolean
   agent?: string
+  apiUrl?: string
   authenticated?: boolean
   linkPending?: boolean
   linkToken?: string
