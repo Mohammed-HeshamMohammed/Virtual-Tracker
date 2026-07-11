@@ -51,8 +51,10 @@ class AgentLinkFlow:
                 )
                 if result:
                     if self._poll_generation == poll_gen:
+                        on_tokens(result["idToken"], result.get("refreshToken", ""))
                         self._pending = None
-                    on_tokens(result["idToken"], result.get("refreshToken", ""))
+                    else:
+                        on_tokens(result["idToken"], result.get("refreshToken", ""))
                     return
                 time.sleep(1)
             if self._poll_generation != poll_gen or self._stop.is_set():
@@ -126,9 +128,10 @@ class AgentLinkFlow:
                 return False
             self._poll_generation += 1
             self._stop_poll_thread()
-            self._pending = None
         if on_tokens:
             on_tokens(id_token, refresh_token or "")
+            with self._lock:
+                self._pending = None
             log.info("Applied credentials from browser link handoff")
             return True
         return False

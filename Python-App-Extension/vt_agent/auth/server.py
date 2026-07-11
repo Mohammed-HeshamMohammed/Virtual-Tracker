@@ -57,12 +57,18 @@ class AuthServer:
             def log_message(self, format: str, *args: object) -> None:
                 return
 
+            def _send_cors_headers(self) -> None:
+                requested_headers = self.headers.get("Access-Control-Request-Headers", "Content-Type")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+                self.send_header("Access-Control-Allow-Headers", requested_headers)
+                # Chrome Private Network Access / Local Network Access preflight.
+                self.send_header("Access-Control-Allow-Private-Network", "true")
+
             def _json(self, code: int, payload: dict[str, object]) -> None:
                 body = json.dumps(payload).encode("utf-8")
                 self.send_response(code)
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
+                self._send_cors_headers()
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 self.wfile.write(body)
@@ -129,6 +135,8 @@ class AuthServer:
                 self._json(404, {"success": False, "error": "Not found"})
 
             def do_OPTIONS(self) -> None:
-                self._json(204, {})
+                self.send_response(204)
+                self._send_cors_headers()
+                self.end_headers()
 
         return Handler

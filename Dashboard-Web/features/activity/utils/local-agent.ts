@@ -1,5 +1,23 @@
 const DEFAULT_AGENT_AUTH_PORT = 17389
 
+/** Chrome Local Network Access: mark loopback fetches from the public dashboard origin. */
+type LoopbackFetchInit = RequestInit & { targetAddressSpace?: "loopback" }
+
+function loopbackFetch(url: string, init: LoopbackFetchInit = {}): Promise<Response> {
+  return fetch(url, { ...init, targetAddressSpace: "loopback" })
+}
+
+/** Prime Chrome loopback permission (LNA) before POSTing credentials to the agent. */
+export async function ensureLoopbackAgentAccess(port = DEFAULT_AGENT_AUTH_PORT): Promise<boolean> {
+  if (typeof window === "undefined") return false
+  try {
+    await loopbackFetch(`http://127.0.0.1:${port}/health`, { method: "GET", cache: "no-store" })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export interface LocalAgentHealth {
   ok: boolean
   agent?: string
@@ -14,7 +32,7 @@ export async function fetchLocalAgentHealth(
 ): Promise<LocalAgentHealth | null> {
   if (typeof window === "undefined") return null
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+    const res = await loopbackFetch(`http://127.0.0.1:${port}/health`, {
       method: "GET",
       cache: "no-store",
     })
@@ -56,7 +74,7 @@ export async function resumeLocalAgentLinkPoll(
 ): Promise<boolean> {
   if (typeof window === "undefined") return false
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/link/resume`, {
+    const res = await loopbackFetch(`http://127.0.0.1:${port}/link/resume`, {
       method: "POST",
       cache: "no-store",
     })
@@ -78,7 +96,7 @@ export async function deliverLocalAgentCredentials(
   if (typeof window === "undefined") return false
   if (!linkToken.trim() || !idToken.trim()) return false
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/link/credentials`, {
+    const res = await loopbackFetch(`http://127.0.0.1:${port}/link/credentials`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ linkToken, idToken, refreshToken }),

@@ -9,6 +9,7 @@ import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services
 import {
   waitForLocalAgentAuthenticated,
   fetchLocalAgentHealth,
+  ensureLoopbackAgentAccess,
   resumeLocalAgentLinkPoll,
   deliverLocalAgentCredentials,
 } from "@/features/activity/utils/local-agent"
@@ -94,10 +95,9 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
+        await ensureLoopbackAgentAccess()
+        await resumeLocalAgentLinkPoll()
         const delivered = await deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
-        if (!delivered) {
-          await resumeLocalAgentLinkPoll()
-        }
         const agentReady =
           delivered || (await waitForLocalAgentAuthenticated(undefined, delivered ? 15_000 : 90_000))
         if (cancelled || attemptId !== attemptRef.current) return
