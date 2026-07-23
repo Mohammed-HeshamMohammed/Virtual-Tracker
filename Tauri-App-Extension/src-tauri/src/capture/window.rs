@@ -1,9 +1,12 @@
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+use std::thread;
+use std::time::{Duration, Instant};
 
-use crate::constants::MAX_URL_LEN;
+use crate::constants::{MAX_URL_LEN, URL_SCRIPT_TIMEOUT_SEC};
 
 static DISPLAY_OVERRIDES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
@@ -45,9 +48,8 @@ const BROWSER_EXES: &[&str] = &[
 pub struct ForegroundWindow {
     pub app_name: String,
     pub title: String,
-    pub exe_name: String,
-    pub hwnd: usize,
     pub process_name: String,
+    pub hwnd: usize,
     pub is_browser: bool,
     pub browser_hint: String,
 }
@@ -62,9 +64,8 @@ pub fn get_foreground_window() -> ForegroundWindow {
         ForegroundWindow {
             app_name: "Unknown".into(),
             title: "Unknown".into(),
-            exe_name: "unknown".into(),
-            hwnd: 0,
             process_name: String::new(),
+            hwnd: 0,
             is_browser: false,
             browser_hint: String::new(),
         }
@@ -104,7 +105,6 @@ fn get_foreground_window_win() -> ForegroundWindow {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
         let mut process_name = String::from("Unknown");
-        let mut exe_path = String::new();
         if pid != 0 {
             if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
                 let mut buf = [0u16; MAX_PATH as usize];
@@ -117,8 +117,8 @@ fn get_foreground_window_win() -> ForegroundWindow {
                 )
                 .is_ok()
                 {
-                    exe_path = String::from_utf16_lossy(&buf[..size as usize]);
-                    if let Some(name) = PathBuf::from(&exe_path).file_name() {
+                    let full_path = String::from_utf16_lossy(&buf[..size as usize]);
+                    if let Some(name) = PathBuf::from(full_path.as_str()).file_name() {
                         process_name = name.to_string_lossy().to_string();
                     }
                 }
@@ -134,9 +134,8 @@ fn get_foreground_window_win() -> ForegroundWindow {
         ForegroundWindow {
             app_name,
             title,
-            exe_name: process_name.clone(),
-            hwnd: hwnd_val,
             process_name,
+            hwnd: hwnd_val,
             is_browser,
             browser_hint,
         }
@@ -196,6 +195,33 @@ fn browser_hint_from_exe(exe: &str) -> String {
     }
 }
 
+fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String> {
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().ok()?;
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let mut out = String::new();
+                if let Some(mut stdout) = child.stdout.take() {
+                    let _ = stdout.read_to_string(&mut out);
+                }
+                if status.success() {
+                    return Some(out);
+                }
+                return None;
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+            Ok(None) => thread::sleep(Duration::from_millis(40)),
+            Err(_) => return None,
+        }
+    }
+}
+
 pub fn read_browser_url(
     script_path: &PathBuf,
     macos_script_path: &PathBuf,
@@ -204,6 +230,7 @@ pub fn read_browser_url(
     if !window.is_browser {
         return None;
     }
+    let timeout = Duration::from_secs(URL_SCRIPT_TIMEOUT_SEC);
     #[cfg(windows)]
     {
         let _ = macos_script_path;
@@ -222,13 +249,15 @@ pub fn read_browser_url(
         if window.hwnd != 0 {
             cmd.args(["-WindowHandle", &window.hwnd.to_string()]);
         }
-        if !window.browser_hint.is_empty() {
-            cmd.args(["-BrowserHint", &window.browser_hint]);
+        let hint = if window.browser_hint.is_empty() {
+            browser_hint_from_exe(&window.process_name.to_lowercase())
+        } else {
+            window.browser_hint.clone()
+        };
+        if !hint.is_empty() {
+            cmd.args(["-BrowserHint", &hint]);
         }
-        let output = cmd
-            .output()
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = run_command_timeout(cmd, timeout)?;
         let url = stdout.lines().next().unwrap_or("").trim();
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());
@@ -241,13 +270,11 @@ pub fn read_browser_url(
         if !macos_script_path.exists() {
             return None;
         }
-        let output = Command::new("osascript")
-            .arg(macos_script_path)
-            .arg(&window.exe_name)
+        let mut cmd = Command::new("osascript");
+        cmd.arg(macos_script_path)
             .arg(&window.process_name)
-            .output()
-            .ok()?;
-        let stdout = String::from_utf8_lossy(&output.stdout);
+            .arg(&window.process_name);
+        let stdout = run_command_timeout(cmd, timeout)?;
         let url = stdout.lines().next().unwrap_or("").trim();
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());
@@ -256,7 +283,7 @@ pub fn read_browser_url(
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        let _ = (script_path, macos_script_path);
+        let _ = (script_path, macos_script_path, timeout, window);
         None
     }
 }

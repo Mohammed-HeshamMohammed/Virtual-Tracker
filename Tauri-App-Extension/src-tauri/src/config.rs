@@ -10,7 +10,6 @@ pub struct Settings {
     pub api_url: String,
     pub web_url: String,
     pub auth_port: u16,
-    pub launcher_url: String,
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
     pub url_script_path: PathBuf,
@@ -48,10 +47,6 @@ impl Settings {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(17389),
-            launcher_url: env::var("VT_LAUNCHER_URL")
-                .unwrap_or_else(|_| "http://127.0.0.1:17800".into())
-                .trim_end_matches('/')
-                .to_string(),
             store_path,
             prefs_path,
             url_script_path: resolve_script(&project_root, "get-browser-url.ps1"),
