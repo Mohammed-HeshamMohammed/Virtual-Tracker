@@ -1,0 +1,20 @@
+# Logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+src-tauri/target/
+
+# Env / secrets
+.env
+.env.production
+agent-store.json
+
+# Editor
+.DS_Store
+.idea/
+.vscode/

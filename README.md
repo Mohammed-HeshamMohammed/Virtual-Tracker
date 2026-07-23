@@ -8,6 +8,7 @@ Split layout for containerized VPS deployment.
 | [Dashboard-Backend](./Dashboard-Backend) | Members, invites, projects, activity API | `vt-dashboard-backend` |
 | [Dashboard-Web](./Dashboard-Web) | Next.js dashboard app | `vt-dashboard-web` |
 | [Landing-Web](./Landing-Web) | Marketing site | `vt-landing-web` |
+| [Tauri-App-Extension](./Tauri-App-Extension) | Desktop activity agent (Tauri + React) | local install |
 | [deploy](./deploy) | Docker Compose + Caddy gateway | `vt-gateway` |
 
 ## Production (Hostinger / any VPS)
