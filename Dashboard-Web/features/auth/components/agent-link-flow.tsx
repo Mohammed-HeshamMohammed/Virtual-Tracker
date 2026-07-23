@@ -12,6 +12,7 @@ import {
   fetchLocalAgentHealth,
   ensureLoopbackAgentAccess,
   resumeLocalAgentLinkPoll,
+  deliverLocalAgentCredentials,
   type LocalAgentHealth,
 } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
@@ -116,18 +117,33 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         await ensureLoopbackAgentAccess()
         await resumeLocalAgentLinkPoll()
 
-        const agentReady = await waitForLocalAgentAuthenticated(undefined, 90_000)
+        // Fallback: deliver tokens to localhost if the agent is still waiting.
+        try {
+          const idToken = await currentUser.getIdToken(true)
+          await deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
+        } catch {
+          /* ignore — exchange poll may still succeed */
+        }
+
+        const agentReady = await waitForLocalAgentAuthenticated(undefined, 45_000)
         if (cancelled || attemptId !== attemptRef.current) return
         if (!agentReady) {
           const health = await fetchLocalAgentHealth()
-          if (!health?.linkPending) {
+          if (!health?.authenticated) {
+            if (!health?.ok) {
+              throw new Error(
+                "Link was approved, but Virtual Tracker Agent is not reachable on this PC. Keep the agent open, then Try again.",
+              )
+            }
+            if (!health.linkPending) {
+              throw new Error(
+                "The desktop agent stopped waiting for credentials. In the agent, click Sign In first, then Link this account here again.",
+              )
+            }
             throw new Error(
-              "The desktop agent stopped waiting for credentials. In the agent, click Sign In first, then Link this account here again.",
+              "The desktop agent did not finish linking yet. Keep it open, click Sign In once if needed, then Try again.",
             )
           }
-          throw new Error(
-            "The desktop agent did not finish linking. Rebuild the agent (see TEAM_SETUP_GUIDE), click Sign In once, keep it open, then Try again.",
-          )
         }
 
         const finishResult = await finishAgentLinkSuccess()
@@ -209,8 +225,15 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
               <CheckCircle2 className="h-8 w-8 text-emerald-400" />
               <p className="text-sm text-slate-300 font-medium">Agent linked successfully</p>
               <p className="text-sm text-slate-400">
-                Return to your Virtual Tracker tab. You can close this window.
+                You can close this tab and return to Virtual Tracker Agent.
               </p>
+              <button
+                type="button"
+                onClick={() => router.replace(DASHBOARD_PATH)}
+                className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Go to dashboard
+              </button>
             </>
           )}
 
