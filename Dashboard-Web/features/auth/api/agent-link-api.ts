@@ -14,7 +14,7 @@ export async function completeAgentLink(
         body: JSON.stringify({
           linkToken,
           refreshToken,
-          source: "python",
+          source: "tauri",
         }),
       },
       { json: true },
