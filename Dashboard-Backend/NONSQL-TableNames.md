@@ -70,11 +70,9 @@ Quick-reference of every collection stored in **Firestore** and path stored in t
 | Collection Name        | Doc ID Key | Description                                                                       |
 | :--------------------- | :--------- | :-------------------------------------------------------------------------------- |
 | `activity_sessions`    | UUID v4    | Base telemetry chunks wrapping active/idle tracking cycles.                       |
-| `activity_app_logs`    | UUID v4    | Logged active desktop apps utilized per tracking frame.                           |
-| `activity_url_logs`    | UUID v4    | Browser domain and URL logs captured per tracking frame.                          |
 | `activity_alert_log`   | UUID v4    | Warning alerts created for low keyboard/mouse activity or missing telemetry.     |
 
-Screenshots moved to PostgreSQL — `activity_screenshots.image_data` (bytea) is now the source of truth, no per-screenshot Firestore write or GCS upload. Rows older than 7 days get cold-archived to GCS as a per-member ZIP and deleted; see `scripts/archive-screenshots.mjs`.
+Screenshots, app logs, and URL logs all moved to PostgreSQL (`activity_screenshots`, `activity_app_logs`, `activity_url_logs`) — no per-event Firestore write anymore, and the corresponding generic schema-CRUD entities were removed so nothing can write to Firestore for these through that path either. Screenshot rows older than 7 days get cold-archived to GCS as a per-member ZIP and deleted; see `scripts/archive-screenshots.mjs`.
 
 ### 7. System (Source of Truth: NoSQL)
 

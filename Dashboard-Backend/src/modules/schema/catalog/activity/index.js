@@ -15,47 +15,6 @@ export const activitySchemas = [
     },
   },
   {
-    key: "activity-screenshots",
-    collection: "activity_screenshots",
-    fields: {
-      id: "uuid",
-      member_id: "uuid",
-      session_id: "uuid",
-      screenshot_url: "string",
-      app_name: "string",
-      page_title: "string",
-      activity_level: "int",
-      captured_at: "timestamp",
-    },
-  },
-  {
-    key: "activity-app-logs",
-    collection: "activity_app_logs",
-    fields: {
-      id: "uuid",
-      member_id: "uuid",
-      session_id: "uuid",
-      app_name: "string",
-      started_at: "timestamp",
-      ended_at: "timestamp",
-      duration_seconds: "int",
-    },
-  },
-  {
-    key: "activity-url-logs",
-    collection: "activity_url_logs",
-    fields: {
-      id: "uuid",
-      member_id: "uuid",
-      session_id: "uuid",
-      url: "string",
-      domain: "string",
-      page_title: "string",
-      visited_at: "timestamp",
-      duration_seconds: "int",
-    },
-  },
-  {
     key: "activity-alert-log",
     collection: "activity_alert_log",
     fields: {

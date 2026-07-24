@@ -89,8 +89,8 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. Standar
 | `notifications` | - | `notifications` | Workspace notification alerts |
 | `activity-sessions` | `activity_sessions` | - | Work session logging triggers |
 | `activity-screenshots`| `activity_screenshots` | - | Telemetry base64 image captures |
-| `activity-app-logs` | `activity_app_logs` | - | Captured desktop app telemetry |
-| `activity-url-logs` | `activity_url_logs` | - | Visited web page telemetry logs |
+| `activity-app-logs` | - | `activity_app_logs` | Captured desktop app telemetry |
+| `activity-url-logs` | - | `activity_url_logs` | Visited web page telemetry logs |
 | `activity-alert-log` | `activity_alert_log` | - | System notification dispatch records |
 
 ### 4. Special Telemetry & Real-Time Sync
