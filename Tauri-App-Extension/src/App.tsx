@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 type ProfileInfo = {
@@ -345,6 +347,20 @@ function MainApp() {
   useEffect(() => {
     void refreshTasks().catch(console.error);
   }, [refreshTasks, signedIn]);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const update = await check();
+        if (update) {
+          await update.downloadAndInstall();
+          await relaunch();
+        }
+      } catch (err) {
+        console.error("update check failed", err);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!tracking) {

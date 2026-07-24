@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "agent-v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install frontend deps
+        working-directory: Tauri-App-Extension
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: Tauri-App-Extension
+          tagName: agent-v__VERSION__
+          releaseName: "Agent v__VERSION__"
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

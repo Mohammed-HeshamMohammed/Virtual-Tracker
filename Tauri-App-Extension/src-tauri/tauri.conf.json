@@ -62,7 +62,11 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEVENTVENEFERDQwNjFFRTIKUldUaUhnYlVyZFJWN1VXeGFFWmp1cGU4T2pkWlFOS1NZSllFUkNMb2JQaFJiRTdkVmMwSXpvaWkK"
+      "active": true,
+      "endpoints": [
+        "https://github.com/Mohammed-HeshamMohammed/Virtual-Tracker/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgyMTZBNDRCODU3MEE0OTIKUldTU3BIQ0ZTNlFXZ3RmOGlqMXcrMGR6Umx2Qk9vNHJQVEhnS3JWVitNS284a1E5TUpRUUxxYzgK"
     }
   }
 }
