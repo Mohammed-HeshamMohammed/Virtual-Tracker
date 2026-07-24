@@ -15,7 +15,7 @@ use crate::config::Settings;
 use crate::constants::{APP_VERSION, MIN_TOKEN_LENGTH};
 use crate::prefs::{AppSettingsView, UserPreferences};
 use crate::types::{
-    ActionResult, AgentProject, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
+    ActionResult, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
 };
 use crate::util::{open_url_in_launcher_or_browser, server_label};
 

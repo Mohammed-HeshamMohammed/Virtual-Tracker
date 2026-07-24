@@ -22,7 +22,7 @@ use crate::config::Settings;
 use crate::constants::APP_VERSION;
 use crate::prefs::UserPreferences;
 use crate::types::{
-    ActionResult, AgentProject, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
+    ActionResult, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
 };
 
 struct AppState {
