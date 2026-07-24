@@ -203,16 +203,14 @@ INTERNAL_SERVICE_SECRET=dev-local-secret
 ```
 
 ### 3. PostgreSQL Option (Optional)
-If you wish to log `time-entries` and `timesheets` in a PostgreSQL database instead of Firestore:
 1. Provide a `POSTGRES_URL` in your `.env` file:
    ```env
    POSTGRES_URL=postgresql://user:password@localhost:5432/virtual_tracker
    ```
-2. Initialize the tables once by running the script:
-   ```bash
-   # Run against your Postgres instance
-   psql -d virtual_tracker -f src/lib/postgres/schema.sql
-   ```
+2. That's it - tables and indexes are created/kept up to date automatically on
+   every server start (`src/lib/postgres/ensure-lookup-schema.js`). No manual
+   `psql`/migration step needed. `src/lib/postgres/schema.sql` is a reference
+   snapshot only, not something you need to run.
 
 ### 4. Run the Dev Server
 ```bash

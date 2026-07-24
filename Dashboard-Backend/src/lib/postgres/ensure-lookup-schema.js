@@ -210,6 +210,18 @@ const MEMBER_DATA_DDL = [
   payload    JSONB        NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
+  `CREATE TABLE IF NOT EXISTS notifications (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID        NOT NULL,
+  type         VARCHAR(60) NOT NULL DEFAULT 'system',
+  title        VARCHAR(300) NOT NULL,
+  message      TEXT        NOT NULL,
+  link         TEXT        NOT NULL DEFAULT '',
+  read         BOOLEAN     NOT NULL DEFAULT false,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_notif_recipient_created ON notifications (recipient_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread ON notifications (recipient_id, read) WHERE read = false`,
   `CREATE TABLE IF NOT EXISTS member_tree_cache (
   member_id    UUID        PRIMARY KEY,
   ancestors    JSONB       NOT NULL DEFAULT '[]'::jsonb,
@@ -295,7 +307,8 @@ GROUP BY task_id`,
   session_id       VARCHAR(128) NOT NULL,
   task_id          UUID,
   task_title       VARCHAR(500),
-  screenshot_url   TEXT NOT NULL,
+  screenshot_url   TEXT,
+  image_data       BYTEA,
   has_image        BOOLEAN NOT NULL DEFAULT true,
   app_name         VARCHAR(200) NOT NULL DEFAULT 'Browser',
   page_title       VARCHAR(300) NOT NULL DEFAULT '',
@@ -303,6 +316,9 @@ GROUP BY task_id`,
   captured_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
+  // Already-existing (pre-bytea) tables: widen and add the new column in place.
+  `ALTER TABLE activity_screenshots ALTER COLUMN screenshot_url DROP NOT NULL`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS image_data BYTEA`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
   `CREATE TABLE IF NOT EXISTS activity_app_logs (

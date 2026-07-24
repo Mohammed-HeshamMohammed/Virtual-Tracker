@@ -1,5 +1,10 @@
--- Virtual Tracker — PostgreSQL schema for time_entries and timesheets.
--- Run once against the virtual_tracker database.
+-- Virtual Tracker — PostgreSQL schema reference (time_entries, timesheets,
+-- notifications, activity_* tables, etc.).
+--
+-- Reference only — nothing here needs to be run by hand. Every table/index/
+-- column below is also applied automatically on server start by
+-- src/lib/postgres/ensure-lookup-schema.js, which is the real source of
+-- truth. Keep the two in sync when changing either.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
