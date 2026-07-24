@@ -213,10 +213,6 @@ If you wish to log `time-entries` and `timesheets` in a PostgreSQL database inst
    # Run against your Postgres instance
    psql -d virtual_tracker -f src/lib/postgres/schema.sql
    ```
-3. (Optional) Run the migration script to copy existing Firestore time entries to Postgres:
-   ```bash
-   node --env-file-if-exists=.env scripts/migrate-to-postgres.mjs
-   ```
 
 ### 4. Run the Dev Server
 ```bash
@@ -273,7 +269,6 @@ Dashboard-Backend/
 │   ├── clean-member-presence.mjs
 │   ├── dev-watch.mjs       # Dev watcher configuration
 │   ├── lint-env-access.mjs
-│   ├── migrate-to-postgres.mjs
 │   └── verify-user-email.mjs
 │
 └── src/
