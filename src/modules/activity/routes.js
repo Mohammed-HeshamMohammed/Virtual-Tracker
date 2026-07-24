@@ -446,7 +446,6 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      const batch = db.batch();
       const now = new Date();
       let count = 0;
       const screenshotWrites = [];
@@ -511,19 +510,6 @@ export async function routeActivity(req, res, url, origin) {
             durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
             source: typeof body.source === "string" ? body.source : "web",
           };
-          batch.set(db.collection("activity_app_logs").doc(id), {
-            id,
-            member_id: member.memberId,
-            session_id: sessionId,
-            task_id: sessionTaskId,
-            task_title: sessionTaskTitle,
-            app_name: appRow.appName,
-            page_title: appRow.pageTitle,
-            started_at: now,
-            ended_at: null,
-            duration_seconds: appRow.durationSeconds,
-            source: appRow.source,
-          });
           void insertActivityAppLog(appRow);
           count++;
         } else if (type === "url") {
@@ -541,26 +527,12 @@ export async function routeActivity(req, res, url, origin) {
             durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
             source: typeof body.source === "string" ? body.source : "web",
           };
-          batch.set(db.collection("activity_url_logs").doc(id), {
-            id,
-            member_id: member.memberId,
-            session_id: sessionId,
-            task_id: sessionTaskId,
-            task_title: sessionTaskTitle,
-            url: urlStr,
-            domain: urlRow.domain,
-            page_title: urlRow.pageTitle,
-            visited_at: now,
-            duration_seconds: urlRow.durationSeconds,
-            source: urlRow.source,
-          });
           void insertActivityUrlLog(urlRow);
           count++;
         }
       }
 
       if (screenshotWrites.length) await Promise.all(screenshotWrites);
-      if (count > 0) await batch.commit();
 
       const hadScreenshot = events.some((ev) => ev && typeof ev === "object" && ev.type === "screenshot");
       const hadAppOnly = events.some((ev) => ev && typeof ev === "object" && ev.type === "app");

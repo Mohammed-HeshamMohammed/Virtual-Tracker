@@ -1105,8 +1105,8 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 | `notifications` | `notifications` | **Postgres** `notifications` |
 | `activity-sessions` | `activity_sessions` | Firestore |
 | `activity-screenshots` | `activity_screenshots` | Firestore |
-| `activity-app-logs` | `activity_app_logs` | Firestore |
-| `activity-url-logs` | `activity_url_logs` | Firestore |
+| `activity-app-logs` | `activity_app_logs` | **Postgres** `activity_app_logs` |
+| `activity-url-logs` | `activity_url_logs` | **Postgres** `activity_url_logs` |
 | `activity-alert-log` | `activity_alert_log` | Firestore |
 
 `GET /api/schema/entities` returns the catalog metadata. Generic CRUD: `GET/POST /api/{key}`, `GET/PATCH/DELETE /api/{key}/:id`.
