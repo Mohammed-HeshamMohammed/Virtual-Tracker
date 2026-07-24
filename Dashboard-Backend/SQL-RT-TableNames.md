@@ -15,6 +15,7 @@ High-frequency transaction tables. These house timesheets, logs, and hourly reco
 | :------------- | :---------- | :-------------------------------------------------------------------------- |
 | `time_entries` | `UUID` (PK) | Individual logged time segments containing project, task, duration, and status. |
 | `timesheets`   | `UUID` (PK) | Period-based timesheet aggregations submitted by members for approval.       |
+| `notifications` | `UUID` (PK) | In-app dashboard notifications served in the system bell panel. Moved off Firestore. |
 
 ### 2. Synchronized Lookup Tables
 Relational representation of organization options, roles, and categories.
@@ -79,7 +80,22 @@ Relational representation of organization options, roles, and categories.
   - `idx_ts_member_status` ON `(member_id, status)`
   - `idx_ts_approved_by` ON `(approved_by)` WHERE `approved_by IS NOT NULL`
 
-### 3. `roles`
+### 3. `notifications`
+- **Purpose**: In-app notifications delivered to a member (task assignments, transfer requests, budget alerts, etc.).
+- **Schema Fields**:
+  - `id`: `UUID` (Primary Key, defaults to `gen_random_uuid()`)
+  - `recipient_id`: `UUID` (Not Null)
+  - `type`: `VARCHAR(60)` (Not Null, default `system`)
+  - `title`: `VARCHAR(300)` (Not Null)
+  - `message`: `TEXT` (Not Null)
+  - `link`: `TEXT` (Not Null, default `''`)
+  - `read`: `BOOLEAN` (Not Null, default `false`)
+  - `created_at`: `TIMESTAMPTZ` (Not Null, default `now()`)
+- **Indexes**:
+  - `idx_notif_recipient_created` ON `(recipient_id, created_at DESC)`
+  - `idx_notif_recipient_unread` ON `(recipient_id, read)` WHERE `read = false`
+
+### 4. `roles`
 - **Purpose**: Tracks platform authorization levels.
 - **Schema Fields**:
   - `id`: `UUID` (Primary Key, defaults to `gen_random_uuid()`)
@@ -92,7 +108,7 @@ Relational representation of organization options, roles, and categories.
 - **Indexes**:
   - `idx_roles_name` ON `(name)`
 
-### 4. `lookup_tables`
+### 5. `lookup_tables`
 - **Purpose**: System constants for lookup settings.
 - **Schema Fields**:
   - `id`: `UUID` (Primary Key, defaults to `gen_random_uuid()`)
@@ -108,7 +124,7 @@ Relational representation of organization options, roles, and categories.
 - **Indexes**:
   - `idx_lookup_category` ON `(category, list_ranking)`
 
-### 5. `org_field_options`
+### 6. `org_field_options`
 - **Purpose**: Extra configuration tags for standard drops.
 - **Schema Fields**:
   - `id`: `UUID` (Primary Key, defaults to `gen_random_uuid()`)

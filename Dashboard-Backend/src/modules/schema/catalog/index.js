@@ -10,7 +10,6 @@ import { activitySchemas } from "./activity/index.js";
 import { memberRelationshipSchemas } from "./member-relationships/index.js";
 import { memberTransferRequestSchemas } from "./hierarchy/index.js";
 import { timesheetSchemas } from "./timesheets/index.js";
-import { notificationSchemas } from "./notifications/index.js";
 import { schemaRulesByKey } from "./rules.js";
 
 export const schemaEntities = [
@@ -24,7 +23,6 @@ export const schemaEntities = [
   ...memberRelationshipSchemas,
   ...memberTransferRequestSchemas,
   ...timesheetSchemas,
-  ...notificationSchemas,
 ];
 export const schemaByKey = new Map(schemaEntities.map((entity) => [entity.key, entity]));
 export const foreignKeyCollectionByField = {

@@ -1,5 +1,4 @@
-import { getDb } from "../../config/firebase.js";
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
+import { query } from "../../lib/postgres/client.js";
 import { requireAuthContext } from "../../http/auth-context.js";
 import { sendJson } from "../../http/response.js";
 import { listNotificationsForMember, markAllNotificationsAsRead, markNotificationAsRead } from "./service.js";
@@ -14,12 +13,6 @@ import { listNotificationsForMember, markAllNotificationsAsRead, markNotificatio
 export async function routeNotifications(req, res, url, origin) {
   if (!url.pathname.startsWith("/api/notifications")) return false;
 
-  const db = getDb();
-  if (!db) {
-    sendJson(res, origin, 503, { success: false, error: "Firebase is not configured." });
-    return true;
-  }
-
   const viewer = requireAuthContext(req, res, origin);
   if (!viewer) return true;
 
@@ -28,7 +21,7 @@ export async function routeNotifications(req, res, url, origin) {
   // GET /api/notifications
   if (url.pathname === "/api/notifications" && req.method === "GET") {
     try {
-      const data = await listNotificationsForMember(db, memberId);
+      const data = await listNotificationsForMember(null, memberId);
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e.message });
@@ -41,7 +34,7 @@ export async function routeNotifications(req, res, url, origin) {
   if (readMatch && req.method === "POST") {
     const notificationId = readMatch[1];
     try {
-      const success = await markNotificationAsRead(db, notificationId, memberId);
+      const success = await markNotificationAsRead(null, notificationId, memberId);
       if (success) {
         sendJson(res, origin, 200, { success: true });
       } else {
@@ -56,7 +49,7 @@ export async function routeNotifications(req, res, url, origin) {
   // POST /api/notifications/read-all
   if (url.pathname === "/api/notifications/read-all" && req.method === "POST") {
     try {
-      await markAllNotificationsAsRead(db, memberId);
+      await markAllNotificationsAsRead(null, memberId);
       sendJson(res, origin, 200, { success: true });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e.message });
@@ -69,13 +62,14 @@ export async function routeNotifications(req, res, url, origin) {
   if (deleteMatch && req.method === "DELETE") {
     const notificationId = deleteMatch[1];
     try {
-      const ref = db.collection(COLLECTIONS.notifications).doc(notificationId);
-      const snap = await ref.get();
-      if (!snap.exists || snap.data().recipient_id !== memberId) {
+      const rows = await query(
+        `DELETE FROM notifications WHERE id = $1 AND recipient_id = $2 RETURNING id`,
+        [notificationId, memberId],
+      );
+      if (rows.length === 0) {
         sendJson(res, origin, 404, { success: false, error: "Not found or unauthorized" });
         return true;
       }
-      await ref.delete();
       sendJson(res, origin, 200, { success: true });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e.message });

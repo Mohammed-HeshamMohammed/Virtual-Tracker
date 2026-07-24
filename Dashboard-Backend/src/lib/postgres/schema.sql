@@ -377,5 +377,19 @@ CREATE TABLE IF NOT EXISTS activity_url_logs (
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 );
 
+CREATE TABLE IF NOT EXISTS notifications (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID        NOT NULL,
+  type         VARCHAR(60) NOT NULL DEFAULT 'system',
+  title        VARCHAR(300) NOT NULL,
+  message      TEXT        NOT NULL,
+  link         TEXT        NOT NULL DEFAULT '',
+  read         BOOLEAN     NOT NULL DEFAULT false,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notif_recipient_created ON notifications (recipient_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread  ON notifications (recipient_id, read) WHERE read = false;
+
 CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC);
 CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC);

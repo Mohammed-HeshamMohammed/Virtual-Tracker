@@ -75,12 +75,13 @@ Quick-reference of every collection stored in **Firestore** and path stored in t
 | `activity_url_logs`    | UUID v4    | Browser domain and URL logs captured per tracking frame.                          |
 | `activity_alert_log`   | UUID v4    | Warning alerts created for low keyboard/mouse activity or missing telemetry.     |
 
-### 7. System & Notifications (Source of Truth: NoSQL)
+### 7. System (Source of Truth: NoSQL)
 
 | Collection Name                | Doc ID Key   | Description                                                                     |
 | :----------------------------- | :----------- | :------------------------------------------------------------------------------ |
-| `notifications_VirtualTacker`  | UUID v4      | In-app dashboard notifications served in the system bell panel.                 |
 | `system_meta`                  | String Keys  | Migration status markers, bootstrap keys, and active dashboard snapshots.        |
+
+Notifications moved to PostgreSQL (`notifications` table) — see SQL-RT-TableNames.md. Not stored in Firestore anymore.
 
 ---
 

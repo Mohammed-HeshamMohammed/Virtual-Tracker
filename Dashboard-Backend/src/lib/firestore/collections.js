@@ -13,7 +13,6 @@ export const COLLECTIONS = Object.freeze({
   jobTypes: "job_types",
   taxTypes: "tax_types",
   projects: "projects_VirtualTacker",
-  notifications: "notifications_VirtualTacker",
 });
 
 /** Old mobile-app collections — don't touch from this backend. */
