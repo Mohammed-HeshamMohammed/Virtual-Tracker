@@ -18,3 +18,5 @@ agent-store.json
 .DS_Store
 .idea/
 .vscode/
+# Tauri private key
+updater-key.pem

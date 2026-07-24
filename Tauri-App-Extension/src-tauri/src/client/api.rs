@@ -297,7 +297,63 @@ impl ApiClient {
             .map(|s| s.to_string())
     }
 
-    pub fn fetch_assigned_tasks(&mut self) -> Result<Vec<crate::types::AgentTask>, String> {
+    pub fn fetch_projects(&mut self) -> Result<Vec<crate::types::AgentProject>, String> {
+        if !self.refresh_token_if_needed() {
+            return Err("Not signed in".into());
+        }
+        let auth = self
+            .auth_headers()
+            .ok_or_else(|| "Not signed in".to_string())?;
+        let url = format!("{}/api/projects", self.api_url);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("Failed to load projects ({})", res.status().as_u16()));
+        }
+        let body: Value = res.json().map_err(|e| e.to_string())?;
+        let list = body
+            .get("data")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut projects = Vec::new();
+        for item in list {
+            let id = item
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if id.is_empty() {
+                continue;
+            }
+            let name = item
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Untitled project")
+                .to_string();
+            let status = item
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if status.eq_ignore_ascii_case("archived") {
+                continue;
+            }
+            projects.push(crate::types::AgentProject { id, name });
+        }
+        projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        Ok(projects)
+    }
+
+    pub fn fetch_assigned_tasks(
+        &mut self,
+        project_id: Option<&str>,
+    ) -> Result<Vec<crate::types::AgentTask>, String> {
         if !self.refresh_token_if_needed() {
             return Err("Not signed in".into());
         }
@@ -307,11 +363,17 @@ impl ApiClient {
         let auth = self
             .auth_headers()
             .ok_or_else(|| "Not signed in".to_string())?;
-        let url = format!(
+        let mut url = format!(
             "{}/api/tasks?assigned_to={}",
             self.api_url,
             urlencoding::encode(&member_id)
         );
+        if let Some(pid) = project_id {
+            let pid = pid.trim();
+            if !pid.is_empty() {
+                url.push_str(&format!("&project_id={}", urlencoding::encode(pid)));
+            }
+        }
         let res = self
             .client
             .get(url)
@@ -358,7 +420,18 @@ impl ApiClient {
             {
                 continue;
             }
-            tasks.push(crate::types::AgentTask { id, title, status });
+            let project_id = item
+                .get("projectId")
+                .or_else(|| item.get("project_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            tasks.push(crate::types::AgentTask {
+                id,
+                title,
+                status,
+                project_id,
+            });
         }
         tasks.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase()));
         Ok(tasks)

@@ -22,7 +22,7 @@ use crate::config::Settings;
 use crate::constants::APP_VERSION;
 use crate::prefs::UserPreferences;
 use crate::types::{
-    ActionResult, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
+    ActionResult, AgentProject, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
 };
 
 struct AppState {
@@ -146,8 +146,16 @@ fn save_preferences(
 }
 
 #[tauri::command]
-fn list_tasks(state: tauri::State<'_, AppState>) -> Result<Vec<AgentTask>, String> {
-    state.controller.list_tasks()
+fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<AgentProject>, String> {
+    state.controller.list_projects()
+}
+
+#[tauri::command]
+fn list_tasks(
+    state: tauri::State<'_, AppState>,
+    project_id: Option<String>,
+) -> Result<Vec<AgentTask>, String> {
+    state.controller.list_tasks(project_id.as_deref())
 }
 
 #[tauri::command]
@@ -225,6 +233,7 @@ pub fn run() {
             get_link_status,
             get_app_settings,
             save_preferences,
+            list_projects,
             list_tasks,
             get_session,
             start_task_session,

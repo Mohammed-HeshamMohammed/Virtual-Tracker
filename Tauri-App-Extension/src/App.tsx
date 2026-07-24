@@ -36,10 +36,16 @@ type AppSettingsView = {
   preferences: UserPreferences;
 };
 
+type AgentProject = {
+  id: string;
+  name: string;
+};
+
 type AgentTask = {
   id: string;
   title: string;
   status: string;
+  projectId?: string;
 };
 
 type SessionInfo = {
@@ -246,6 +252,8 @@ function MainApp() {
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [link, setLink] = useState<LinkStatus | null>(null);
   const [version, setVersion] = useState("0.2.0");
+  const [projects, setProjects] = useState<AgentProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -276,13 +284,31 @@ function MainApp() {
     }
   }, []);
 
+  const refreshProjects = useCallback(async () => {
+    if (!signedIn) {
+      setProjects([]);
+      return;
+    }
+    try {
+      const next = await invoke<AgentProject[]>("list_projects");
+      setProjects(next);
+      setSelectedProjectId((current) =>
+        current && next.some((p) => p.id === current) ? current : "",
+      );
+    } catch {
+      setProjects([]);
+    }
+  }, [signedIn]);
+
   const refreshTasks = useCallback(async () => {
     if (!signedIn) {
       setTasks([]);
       return;
     }
     try {
-      const next = await invoke<AgentTask[]>("list_tasks");
+      const next = await invoke<AgentTask[]>("list_tasks", {
+        projectId: selectedProjectId || null,
+      });
       setTasks(next);
       setSelectedTaskId((current) => {
         if (current && next.some((t) => t.id === current)) return current;
@@ -291,7 +317,7 @@ function MainApp() {
     } catch {
       setTasks([]);
     }
-  }, [signedIn]);
+  }, [signedIn, selectedProjectId]);
 
   useEffect(() => {
     void invoke<string>("get_version")
@@ -311,6 +337,10 @@ function MainApp() {
       window.clearInterval(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    void refreshProjects().catch(console.error);
+  }, [refreshProjects, signedIn]);
 
   useEffect(() => {
     void refreshTasks().catch(console.error);
@@ -460,6 +490,28 @@ function MainApp() {
           </nav>
         ) : (
           <>
+            {projects.length > 0 ? (
+              <section className="task-card">
+                <label className="task-label" htmlFor="project-select">
+                  Project
+                </label>
+                <select
+                  id="project-select"
+                  className="task-select"
+                  value={selectedProjectId}
+                  disabled={busy || tracking}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                >
+                  <option value="">All projects</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </section>
+            ) : null}
+
             <section className="task-card">
               <label className="task-label" htmlFor="task-select">
                 Your tasks

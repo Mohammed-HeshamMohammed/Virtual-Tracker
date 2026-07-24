@@ -65,6 +65,15 @@ pub struct AgentTask {
     pub id: String,
     pub title: String,
     pub status: String,
+    #[serde(default)]
+    pub project_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProject {
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
