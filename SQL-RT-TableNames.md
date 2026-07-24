@@ -19,6 +19,8 @@ High-frequency transaction tables. These house timesheets, logs, and hourly reco
 | `activity_screenshots` | `UUID` (PK) | Desktop-agent screenshots stored as `bytea` (`image_data`). Rows older than 7 days are cold-archived to GCS as a per-member ZIP and deleted (`scripts/archive-screenshots.mjs`, run ~every 3 weeks). |
 | `activity_app_logs` | `UUID` (PK) | Logged active desktop apps per tracking frame. Moved off Firestore. |
 | `activity_url_logs` | `UUID` (PK) | Browser domain/URL logs per tracking frame. Moved off Firestore. |
+| `activity_sessions` | `UUID` (PK) | Active/idle/stopped tracking sessions per member, with active/idle second tallies. Moved off Firestore. |
+| `activity_alert_log` | `UUID` (PK) | Cooldown-deduped record of low-activity/missing-screenshot alerts sent. Moved off Firestore. |
 
 ### 2. Synchronized Lookup Tables
 Relational representation of organization options, roles, and categories.

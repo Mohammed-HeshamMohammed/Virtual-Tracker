@@ -2,12 +2,11 @@
 
 import {
   buildMemberMetaMap,
-  fetchActivityDocsScoped,
   getProjectScopedMemberIds,
   resolveActivityFeedScope,
   resolveMemberRoleName,
-  SCREENSHOT_FEED_SELECT,
 } from "../activity/activity-scope.js";
+import { fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.service.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import {
   budgetSpent,
@@ -279,21 +278,13 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
         : activityMemberIds.filter((id) => projectMemberIds.has(id));
   }
 
-  const screenshotDocs = await fetchActivityDocsScoped(
-    db,
-    "activity_screenshots",
-    activityMemberIds,
-    "captured_at",
-    40,
-    SCREENSHOT_FEED_SELECT,
-  );
-  const rowMemberIds = [...new Set(screenshotDocs.map((doc) => doc.data()?.member_id).filter(Boolean))];
+  const screenshotRows = await fetchPgScreenshots(activityMemberIds, null, 40);
+  const rowMemberIds = [...new Set(screenshotRows.map((row) => String(row.member_id ?? "")).filter(Boolean))];
   const rowMemberMeta = rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
   const projectNameById = new Map(projectRows.map((row) => [row.id, row.name]));
 
-  const globalFeed = screenshotDocs.slice(0, 2).map((doc) => {
-    const d = doc.data() || {};
-    const meta = rowMemberMeta.get(d.member_id) || { name: "Unknown", initials: "??" };
+  const globalFeed = screenshotRows.slice(0, 2).map((d) => {
+    const meta = rowMemberMeta.get(String(d.member_id ?? "")) || { name: "Unknown", initials: "??" };
     const captured = toIso(d.captured_at);
     return {
       person: meta.name,

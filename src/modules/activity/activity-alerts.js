@@ -1,7 +1,12 @@
-import crypto from "node:crypto";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors } from "../member-relationships/service.js";
 import { getProjectScopedMemberIds, resolveMemberRoleName } from "./activity-scope.js";
+import {
+  fetchLatestPgScreenshot,
+  getPgSessionById,
+  recordPgAlertSent,
+  wasPgAlertSentRecently,
+} from "../../lib/postgres/activity-events-postgres.service.js";
 
 const LEADERSHIP_ROLES = new Set(["owner", "superadmin", "admin"]);
 const COOLDOWN_MS = 60 * 60 * 1000;
@@ -61,40 +66,16 @@ export async function resolveActivityAlertRecipients(db, subjectMemberId, subjec
   return [...recipients];
 }
 
-async function wasAlertSentRecently(db, subjectMemberId, alertType) {
-  const snap = await db
-    .collection("activity_alert_log")
-    .where("subject_member_id", "==", subjectMemberId)
-    .where("alert_type", "==", alertType)
-    .limit(5)
-    .get();
-  const now = Date.now();
-  for (const doc of snap.docs) {
-    const sentAt = doc.data()?.sent_at;
-    const ms =
-      sentAt instanceof Date
-        ? sentAt.getTime()
-        : typeof sentAt?.toDate === "function"
-          ? sentAt.toDate().getTime()
-          : 0;
-    if (now - ms < COOLDOWN_MS) return true;
-  }
-  return false;
+async function wasAlertSentRecently(subjectMemberId, alertType) {
+  return wasPgAlertSentRecently(subjectMemberId, alertType, COOLDOWN_MS);
 }
 
-async function recordAlertSent(db, subjectMemberId, alertType, recipientIds) {
-  const id = crypto.randomUUID();
-  await db.collection("activity_alert_log").doc(id).set({
-    id,
-    subject_member_id: subjectMemberId,
-    alert_type: alertType,
-    recipient_ids: recipientIds,
-    sent_at: new Date(),
-  });
+async function recordAlertSent(subjectMemberId, alertType, recipientIds) {
+  await recordPgAlertSent(subjectMemberId, alertType, recipientIds);
 }
 
 export async function dispatchActivityAlert(db, subjectMemberId, alertType, title, message, link = "/") {
-  if (await wasAlertSentRecently(db, subjectMemberId, alertType)) return { skipped: "cooldown" };
+  if (await wasAlertSentRecently(subjectMemberId, alertType)) return { skipped: "cooldown" };
 
   const roleName = await resolveMemberRoleName(db, subjectMemberId);
   const roleKey = normalizeRole(roleName);
@@ -113,33 +94,17 @@ export async function dispatchActivityAlert(db, subjectMemberId, alertType, titl
     });
   }
 
-  await recordAlertSent(db, subjectMemberId, alertType, recipients);
+  await recordAlertSent(subjectMemberId, alertType, recipients);
   return { sent: recipients.length };
-}
-
-function timestampMs(value) {
-  if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  if (value instanceof Date) return value.getTime();
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? ms : 0;
 }
 
 /** After app-only ingest while session is active — alert if no recent screenshot. */
 export async function maybeAlertMissingScreenshot(db, memberId, sessionId) {
-  const sessionSnap = await db.collection("activity_sessions").doc(sessionId).get();
-  if (!sessionSnap.exists || sessionSnap.data()?.status !== "active") return;
+  const session = await getPgSessionById(sessionId);
+  if (!session || session.status !== "active") return;
 
-  const snap = await db
-    .collection("activity_screenshots")
-    .where("member_id", "==", memberId)
-    .where("session_id", "==", sessionId)
-    .limit(30)
-    .get();
-  const latest = [...snap.docs].sort(
-    (a, b) => timestampMs(b.data()?.captured_at) - timestampMs(a.data()?.captured_at),
-  )[0];
-  const lastMs = latest ? timestampMs(latest.data()?.captured_at) : 0;
+  const latest = await fetchLatestPgScreenshot(memberId, sessionId);
+  const lastMs = latest?.captured_at ? new Date(latest.captured_at).getTime() : 0;
   if (lastMs && Date.now() - lastMs < NO_SCREENSHOT_MS) return;
 
   const memberDoc = await db.collection("members").doc(memberId).get();

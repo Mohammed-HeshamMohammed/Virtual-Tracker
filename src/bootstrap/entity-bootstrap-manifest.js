@@ -60,11 +60,9 @@ export const ENTITY_BOOTSTRAP_MANIFEST = [
   { collection: "tasks/*/hours", entityKey: "task-hours", policy: "on_demand" },
   { collection: "tasks/*/time_tracking", entityKey: "task-time-tracking", policy: "runtime", notes: "Active timer state per user/task" },
 
-  // --- Activity (runtime only; no login bootstrap) ---
-  { collection: "activity_sessions", entityKey: "activity-sessions", policy: "runtime" },
-  { collection: "activity_screenshots", entityKey: "activity-screenshots", policy: "runtime" },
-  { collection: "activity_app_logs", entityKey: "activity-app-logs", policy: "runtime" },
-  { collection: "activity_url_logs", entityKey: "activity-url-logs", policy: "runtime" },
+  // --- Activity: moved to PostgreSQL (activity_sessions, activity_screenshots,
+  // activity_app_logs, activity_url_logs, activity_alert_log) - see
+  // src/lib/postgres/ensure-lookup-schema.js, no Firestore bootstrap applies.
 
   // --- System ---
   { collection: "system_meta", policy: "org_marker", notes: "entity_bootstrap + member_document_ids markers" },

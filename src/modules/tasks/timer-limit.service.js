@@ -5,7 +5,8 @@ import {
   getMemberLimitHours,
   memberUsesShiftsForLimits,
 } from "./task-workload-validation.js";
-import { getRollingWeekDays, startOfDay, timestampMs } from "../dashboard/dashboard-utils.js";
+import { getRollingWeekDays, startOfDay } from "../dashboard/dashboard-utils.js";
+import { sumPgMemberActiveSeconds } from "../../lib/postgres/activity-events-postgres.service.js";
 
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
@@ -16,16 +17,7 @@ export const TIMER_LIMIT_REACHED_MESSAGE =
  * @param {{ fromMs: number, toMs: number, taskId?: string }} range
  */
 async function sumMemberActiveSeconds(db, memberId, { fromMs, toMs, taskId }) {
-  const snap = await db.collection("activity_sessions").where("member_id", "==", memberId).limit(120).get();
-  let total = 0;
-  for (const doc of snap.docs) {
-    const row = doc.data() || {};
-    if (taskId && row.task_id !== taskId) continue;
-    const startedMs = timestampMs(row.started_at);
-    if (startedMs < fromMs || startedMs > toMs) continue;
-    total += Math.max(0, Math.floor(Number(row.active_seconds ?? 0)));
-  }
-  return total;
+  return sumPgMemberActiveSeconds(memberId, { fromMs, toMs, taskId });
 }
 
 /**

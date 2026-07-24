@@ -1,4 +1,5 @@
 import { deleteMemberTreeCache } from "../../../lib/postgres/member-data-store.js";
+import { reassignPgActivityMemberId } from "../../../lib/postgres/activity-events-postgres.service.js";
 import { deleteMemberProfileData } from "./member-profile.service.js";
 
 const MEMBER_AUTH_INDEX = "member_auth_index";
@@ -13,10 +14,6 @@ const MEMBER_REFERENCES = [
   { collection: "member_relationships", fields: ["parent_member_id", "child_member_id"] },
   { collection: "client_projects", fields: ["assigned_by"] },
   { collection: "members_field_data", fields: ["memberDocId"] },
-  { collection: "activity_sessions", fields: ["member_id"] },
-  { collection: "activity_screenshots", fields: ["member_id"] },
-  { collection: "activity_app_logs", fields: ["member_id"] },
-  { collection: "activity_url_logs", fields: ["member_id"] },
 ];
 
 function presenceScore(data) {
@@ -67,6 +64,7 @@ async function reassignMemberReferences(db, fromId, toId) {
       await batch.commit();
     }
   }
+  await reassignPgActivityMemberId(fromId, toId);
   await deleteMemberTreeCache(db, fromId);
 }
 

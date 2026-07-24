@@ -15,10 +15,8 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import {
   buildMemberMetaMap,
-  fetchActivityDocsScoped,
   memberOptionsFromMeta,
   resolveActivityFeedScope,
-  SCREENSHOT_FEED_SELECT,
 } from "./activity-scope.js";
 import { maybeAlertLowActivity, maybeAlertMissingScreenshot } from "./activity-alerts.js";
 import {
@@ -30,14 +28,17 @@ import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
 import {
+  createPgSession,
   fetchPgAppLogs,
   fetchPgScreenshotById,
   fetchPgScreenshots,
   fetchPgUrlLogs,
+  findOpenPgSession,
+  getPgSessionById,
   insertActivityAppLog,
   insertActivityScreenshot,
   insertActivityUrlLog,
-  isActivityEventsPgEnabled,
+  updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 
 function toIso(value) {
@@ -49,20 +50,6 @@ function toIso(value) {
     if (Number.isFinite(ms)) return new Date(ms).toISOString();
   }
   return null;
-}
-
-function docDayKey(value) {
-  const iso = toIso(value);
-  if (!iso) return null;
-  const d = new Date(iso);
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-function matchesFeedDay(data, timeField, dayFilter) {
-  if (!dayFilter) return true;
-  return docDayKey(data?.[timeField]) === dayFilter;
 }
 
 function parseDomain(url) {
@@ -132,14 +119,6 @@ function normalizeAppName(raw) {
   return name;
 }
 
-function timestampMs(value) {
-  if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  if (value instanceof Date) return value.getTime();
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? ms : 0;
-}
-
 /**
  * Authenticated member from req context (auth middleware).
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -163,14 +142,8 @@ async function resolveMember(db, req) {
   return { memberId: viewer.memberId, uid: viewer.uid, name, initials };
 }
 
-async function findOpenSession(db, memberId) {
-  const snap = await db.collection("activity_sessions").where("member_id", "==", memberId).limit(40).get();
-  const open = snap.docs
-    .filter((d) => d.data()?.ended_at == null)
-    .sort((a, b) => timestampMs(b.data()?.started_at) - timestampMs(a.data()?.started_at));
-  if (!open.length) return null;
-  const doc = open[0];
-  return { id: doc.id, ...doc.data() };
+async function findOpenSession(memberId) {
+  return findOpenPgSession(memberId);
 }
 
 function normalizeSession(id, data) {
@@ -218,7 +191,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const open = await findOpenSession(db, member.memberId);
+      const open = await findOpenSession(member.memberId);
       sendJson(res, origin, 200, {
         success: true,
         data: open ? normalizeSession(open.id, open) : null,
@@ -275,88 +248,84 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       const now = new Date();
-      let open = await findOpenSession(db, member.memberId);
+      let open = await findOpenSession(member.memberId);
 
       if (action === "start") {
         if (!open) {
           const id = crypto.randomUUID();
-          const row = {
+          open = await createPgSession({
             id,
-            member_id: member.memberId,
+            memberId: member.memberId,
+            taskId,
             status: "active",
-            started_at: now,
-            ended_at: null,
-            active_seconds: activeSeconds ?? 0,
-            idle_seconds: idleSeconds ?? 0,
-            task_id: taskId,
-            updated_at: now,
-          };
-          await db.collection("activity_sessions").doc(id).set(row);
-          open = row;
+            startedAt: now,
+            endedAt: null,
+            activeSeconds: activeSeconds ?? 0,
+            idleSeconds: idleSeconds ?? 0,
+            updatedAt: now,
+          });
         } else if (open.status !== "active") {
-          await db.collection("activity_sessions").doc(open.id).update({
+          await updatePgSession(open.id, {
             status: "active",
-            updated_at: now,
-            ...(taskId ? { task_id: taskId } : {}),
-            ...(activeSeconds !== undefined ? { active_seconds: activeSeconds } : {}),
-            ...(idleSeconds !== undefined ? { idle_seconds: idleSeconds } : {}),
+            updatedAt: now,
+            ...(taskId ? { taskId } : {}),
+            ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
           open.status = "active";
         }
       } else if (action === "idle") {
         if (open) {
-          await db.collection("activity_sessions").doc(open.id).update({
+          await updatePgSession(open.id, {
             status: "idle",
-            updated_at: now,
-            ...(taskId ? { task_id: taskId } : {}),
-            ...(activeSeconds !== undefined ? { active_seconds: activeSeconds } : {}),
-            ...(idleSeconds !== undefined ? { idle_seconds: idleSeconds } : {}),
+            updatedAt: now,
+            ...(taskId ? { taskId } : {}),
+            ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
           open.status = "idle";
         }
       } else if (action === "resume") {
         if (open) {
-          await db.collection("activity_sessions").doc(open.id).update({
+          await updatePgSession(open.id, {
             status: "active",
-            updated_at: now,
-            ...(taskId ? { task_id: taskId } : {}),
-            ...(activeSeconds !== undefined ? { active_seconds: activeSeconds } : {}),
-            ...(idleSeconds !== undefined ? { idle_seconds: idleSeconds } : {}),
+            updatedAt: now,
+            ...(taskId ? { taskId } : {}),
+            ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
           open.status = "active";
         } else {
           const id = crypto.randomUUID();
-          const row = {
+          open = await createPgSession({
             id,
-            member_id: member.memberId,
+            memberId: member.memberId,
+            taskId,
             status: "active",
-            started_at: now,
-            ended_at: null,
-            active_seconds: activeSeconds ?? 0,
-            idle_seconds: idleSeconds ?? 0,
-            task_id: taskId,
-            updated_at: now,
-          };
-          await db.collection("activity_sessions").doc(id).set(row);
-          open = row;
+            startedAt: now,
+            endedAt: null,
+            activeSeconds: activeSeconds ?? 0,
+            idleSeconds: idleSeconds ?? 0,
+            updatedAt: now,
+          });
         }
       } else if (action === "stop") {
         if (open) {
-          await db.collection("activity_sessions").doc(open.id).update({
+          await updatePgSession(open.id, {
             status: "stopped",
-            ended_at: now,
-            updated_at: now,
-            ...(activeSeconds !== undefined ? { active_seconds: activeSeconds } : {}),
-            ...(idleSeconds !== undefined ? { idle_seconds: idleSeconds } : {}),
+            endedAt: now,
+            updatedAt: now,
+            ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
           open = null;
         }
       } else if (action === "sync" && open) {
-        await db.collection("activity_sessions").doc(open.id).update({
-          updated_at: now,
-          ...(taskId ? { task_id: taskId } : {}),
-          ...(activeSeconds !== undefined ? { active_seconds: activeSeconds } : {}),
-          ...(idleSeconds !== undefined ? { idle_seconds: idleSeconds } : {}),
+        await updatePgSession(open.id, {
+          updatedAt: now,
+          ...(taskId ? { taskId } : {}),
+          ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+          ...(idleSeconds !== undefined ? { idleSeconds } : {}),
         });
       }
 
@@ -420,13 +389,12 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const sessionSnap = await db.collection("activity_sessions").doc(sessionId).get();
-      if (!sessionSnap.exists || sessionSnap.data()?.member_id !== member.memberId) {
+      const sessionData = await getPgSessionById(sessionId);
+      if (!sessionData || String(sessionData.member_id) !== member.memberId) {
         sendJson(res, origin, 404, { success: false, error: "Session not found" });
         return true;
       }
 
-      const sessionData = sessionSnap.data() || {};
       const sessionTaskId = typeof sessionData.task_id === "string" ? sessionData.task_id : null;
       let sessionTaskTitle = null;
       if (sessionTaskId) {
@@ -605,28 +573,15 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      let ownerId = "";
-      let screenshotPath = "";
-      let imageBytes = null;
-      let resolvedId = screenshotId;
-
-      const pgRow = isActivityEventsPgEnabled() ? await fetchPgScreenshotById(screenshotId) : null;
-      if (pgRow) {
-        ownerId = String(pgRow.member_id ?? "");
-        screenshotPath = typeof pgRow.screenshot_url === "string" ? pgRow.screenshot_url : "";
-        imageBytes = pgRow.image_data ?? null;
-        resolvedId = String(pgRow.id ?? screenshotId);
-      } else {
-        const doc = await db.collection("activity_screenshots").doc(screenshotId).get();
-        if (!doc.exists) {
-          sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
-          return true;
-        }
-        const d = doc.data() || {};
-        ownerId = typeof d.member_id === "string" ? d.member_id : "";
-        screenshotPath = typeof d.screenshot_url === "string" ? d.screenshot_url : "";
-        resolvedId = doc.id;
+      const pgRow = await fetchPgScreenshotById(screenshotId);
+      if (!pgRow) {
+        sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
+        return true;
       }
+      const ownerId = String(pgRow.member_id ?? "");
+      const screenshotPath = typeof pgRow.screenshot_url === "string" ? pgRow.screenshot_url : "";
+      const imageBytes = pgRow.image_data ?? null;
+      const resolvedId = String(pgRow.id ?? screenshotId);
 
       const scope = await resolveActivityFeedScope(db, member.memberId, { memberId: ownerId });
       if (scope.forbidden) {
@@ -710,86 +665,21 @@ export async function routeActivity(req, res, url, origin) {
             : "Screenshot capture is only for task tracking (not enabled). Activity levels come from presence (mouse/keyboard) in the app.";
 
         const screenshotLimit = dayFilter ? 80 : 500;
-        let rows = [];
 
-        if (isActivityEventsPgEnabled()) {
-          const pgRows = await fetchPgScreenshots(scope.targetMemberIds, dayFilter, screenshotLimit);
-          const rowMemberIds = [...new Set(pgRows.map((r) => String(r.member_id)).filter(Boolean))];
-          const rowMemberMeta =
-            rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
-          rows = pgRows.map((d) => {
-            const memberId = String(d.member_id ?? "");
-            const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
-            const captured = toIso(d.captured_at);
-            const date = captured ? new Date(captured) : new Date();
-            const taskTitle =
-              (typeof d.task_title === "string" && d.task_title.trim()) || "No task linked";
-            return {
-              id: String(d.id),
-              memberId,
-              member: meta.name,
-              avatar: meta.initials,
-              project: taskTitle,
-              taskTitle,
-              capturedAt: captured || date.toISOString(),
-              timestamp: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-              time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-              activityLevel: d.activity_level ?? 75,
-              activeApp: d.app_name || "Browser",
-              hasImage: d.has_image !== false,
-              pageTitle: d.page_title || "",
-            };
-          });
-        } else {
-        let docs = await fetchActivityDocsScoped(
-          db,
-          "activity_screenshots",
-          scope.targetMemberIds,
-          "captured_at",
-          screenshotLimit,
-          SCREENSHOT_FEED_SELECT,
-        );
-        if (dayFilter) {
-          docs = docs.filter((doc) => matchesFeedDay(doc.data(), "captured_at", dayFilter));
-        }
-        const rowMemberIds = [...new Set(docs.map((doc) => doc.data()?.member_id).filter(Boolean))];
+        const pgRows = await fetchPgScreenshots(scope.targetMemberIds, dayFilter, screenshotLimit);
+        const rowMemberIds = [...new Set(pgRows.map((r) => String(r.member_id)).filter(Boolean))];
         const rowMemberMeta =
           rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
-        const legacySessionIds = [
-          ...new Set(
-            docs
-              .filter((doc) => {
-                const d = doc.data() || {};
-                return !d.task_title && typeof d.session_id === "string" && d.session_id;
-              })
-              .map((doc) => doc.data().session_id),
-          ),
-        ];
-        const taskTitleBySession = new Map();
-        for (const sessionId of legacySessionIds.slice(0, 100)) {
-          const sessionSnap = await db.collection("activity_sessions").doc(sessionId).get();
-          const taskId = sessionSnap.exists ? sessionSnap.data()?.task_id : null;
-          if (typeof taskId !== "string" || !taskId) continue;
-          const taskSnap = await db.collection("tasks").doc(taskId).get();
-          if (!taskSnap.exists) continue;
-          const title = taskSnap.data()?.title;
-          if (typeof title === "string" && title.trim()) {
-            taskTitleBySession.set(sessionId, title.trim());
-          }
-        }
-        rows = docs.map((doc) => {
-          const d = doc.data();
-          const meta = rowMemberMeta.get(d.member_id) || { name: "Unknown", initials: "??" };
+        const rows = pgRows.map((d) => {
+          const memberId = String(d.member_id ?? "");
+          const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
           const captured = toIso(d.captured_at);
           const date = captured ? new Date(captured) : new Date();
-          const hasImage = d.has_image === true || d.has_image === undefined;
           const taskTitle =
-            (typeof d.task_title === "string" && d.task_title.trim()) ||
-            taskTitleBySession.get(d.session_id) ||
-            "No task linked";
+            (typeof d.task_title === "string" && d.task_title.trim()) || "No task linked";
           return {
-            id: doc.id,
-            memberId: d.member_id,
+            id: String(d.id),
+            memberId,
             member: meta.name,
             avatar: meta.initials,
             project: taskTitle,
@@ -799,11 +689,10 @@ export async function routeActivity(req, res, url, origin) {
             time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             activityLevel: d.activity_level ?? 75,
             activeApp: d.app_name || "Browser",
-            hasImage,
+            hasImage: d.has_image !== false,
             pageTitle: d.page_title || "",
           };
         });
-        }
         sendJson(res, origin, 200, {
           success: true,
           data: rows,
@@ -836,19 +725,9 @@ export async function routeActivity(req, res, url, origin) {
           byMember.set(memberIdKey, memRow);
         };
 
-        if (isActivityEventsPgEnabled()) {
-          const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
-          for (const d of pgRows) {
-            ingestAppRow(d, String(d.member_id ?? ""));
-          }
-        } else {
-        const docs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
-
-        for (const doc of docs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
-          ingestAppRow(d, d.member_id);
-        }
+        const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+        for (const d of pgRows) {
+          ingestAppRow(d, String(d.member_id ?? ""));
         }
 
         const formatDur = (sec) => {
@@ -965,27 +844,10 @@ export async function routeActivity(req, res, url, origin) {
           byUrl.set(key, row);
         };
 
-        if (isActivityEventsPgEnabled()) {
-          const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
-          const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
-          for (const d of urlRows) ingestUrlRow(d, "visited_at");
-          for (const d of appRows) ingestAppUrlRow(d);
-        } else {
-        const docs = await fetchActivityDocsScoped(db, "activity_url_logs", scope.targetMemberIds, "visited_at", 500);
-        const appDocs = await fetchActivityDocsScoped(db, "activity_app_logs", scope.targetMemberIds, "started_at", 500);
-
-        for (const doc of docs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "visited_at", dayFilter)) continue;
-          ingestUrlRow(d, "visited_at");
-        }
-
-        for (const doc of appDocs) {
-          const d = doc.data();
-          if (!matchesFeedDay(d, "started_at", dayFilter)) continue;
-          ingestAppUrlRow(d);
-        }
-        }
+        const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
+        const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+        for (const d of urlRows) ingestUrlRow(d, "visited_at");
+        for (const d of appRows) ingestAppUrlRow(d);
 
         const formatDur = (sec) => {
           const h = Math.floor(sec / 3600);

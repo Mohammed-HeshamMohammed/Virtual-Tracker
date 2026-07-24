@@ -1103,13 +1103,10 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 | `time-entries` | `time_entries` | **Postgres** `time_entries` |
 | `timesheets` | `timesheets` | **Postgres** `timesheets` |
 | `notifications` | `notifications` | **Postgres** `notifications` |
-| `activity-sessions` | `activity_sessions` | Firestore |
-| `activity-screenshots` | `activity_screenshots` | Firestore |
-| `activity-app-logs` | `activity_app_logs` | **Postgres** `activity_app_logs` |
-| `activity-url-logs` | `activity_url_logs` | **Postgres** `activity_url_logs` |
-| `activity-alert-log` | `activity_alert_log` | Firestore |
 
 `GET /api/schema/entities` returns the catalog metadata. Generic CRUD: `GET/POST /api/{key}`, `GET/PATCH/DELETE /api/{key}/:id`.
+
+The whole activity domain (`activity_sessions`, `activity_screenshots`, `activity_app_logs`, `activity_url_logs`, `activity_alert_log`) was removed from this generic-CRUD catalog entirely and moved to **Postgres** — none of them are reachable via `/api/{key}` anymore, only through the dedicated `/api/activity/*` routes. See SQL-RT-TableNames.md.
 
 **Dedicated routes (not only schema CRUD):**
 
