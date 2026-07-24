@@ -92,12 +92,8 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         const alreadyLinked = await fetchLocalAgentHealth()
         if (cancelled || attemptId !== attemptRef.current) return
         if (alreadyLinked?.authenticated) {
-          const finishResult = await finishAgentLinkSuccess()
+          await finishAgentLinkSuccess()
           if (cancelled || attemptId !== attemptRef.current) return
-          if (finishResult === "no-tab") {
-            router.replace(DASHBOARD_PATH)
-            return
-          }
           setState("success")
           return
         }
@@ -146,12 +142,8 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
           }
         }
 
-        const finishResult = await finishAgentLinkSuccess()
+        await finishAgentLinkSuccess()
         if (cancelled || attemptId !== attemptRef.current) return
-        if (finishResult === "no-tab") {
-          router.replace(DASHBOARD_PATH)
-          return
-        }
         setState("success")
       } catch (e) {
         if (cancelled || attemptId !== attemptRef.current) return
@@ -229,10 +221,23 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
               </p>
               <button
                 type="button"
-                onClick={() => router.replace(DASHBOARD_PATH)}
+                onClick={() => {
+                  try {
+                    window.close()
+                  } catch {
+                    /* ignore */
+                  }
+                }}
                 className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
               >
-                Go to dashboard
+                Close this tab
+              </button>
+              <button
+                type="button"
+                onClick={() => router.replace(DASHBOARD_PATH)}
+                className="w-full rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-slate-800"
+              >
+                Go to dashboard instead
               </button>
             </>
           )}

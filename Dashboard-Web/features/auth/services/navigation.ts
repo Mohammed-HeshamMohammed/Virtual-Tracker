@@ -15,22 +15,21 @@ export async function finishAgentLinkSuccess(): Promise<AgentLinkFinishResult> {
   const dashboardOpen = await pingDashboardTab()
   broadcastAgentLinked()
 
-  if (dashboardOpen) {
-    if (window.opener && !window.opener.closed) {
-      try {
-        window.opener.postMessage({ type: "vt-agent-linked" }, window.location.origin)
-        window.opener.focus()
-      } catch {
-        /* ignore */
-      }
-    }
+  if (window.opener && !window.opener.closed) {
     try {
-      window.close()
+      window.opener.postMessage({ type: "vt-agent-linked" }, window.location.origin)
+      window.opener.focus()
     } catch {
-      /* browsers block close for tabs opened by the OS / Python agent */
+      /* ignore */
     }
-    return "existing-tab"
   }
 
-  return "no-tab"
+  try {
+    window.close()
+  } catch {
+    /* browsers block close for tabs with more than one history entry; the
+       caller falls back to showing an explicit "you can close this tab" screen */
+  }
+
+  return dashboardOpen ? "existing-tab" : "no-tab"
 }
