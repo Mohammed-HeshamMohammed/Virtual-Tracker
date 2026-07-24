@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, Manager, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -74,50 +74,23 @@ fn close_window(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn close_settings_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("settings") {
-        window.close().map_err(|e| e.to_string())?;
-    }
+fn set_window_view(app: AppHandle, view: String) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window missing".to_string())?;
+    let (min_w, min_h, w, h) = if view == "settings" {
+        (320.0, 480.0, 320.0, 540.0)
+    } else {
+        (320.0, 600.0, 320.0, 650.0)
+    };
+    window
+        .set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))
+        .map_err(|e| e.to_string())?;
+    window
+        .set_size(tauri::LogicalSize::new(w, h))
+        .map_err(|e| e.to_string())?;
+    window.center().map_err(|e| e.to_string())?;
     Ok(())
-}
-
-#[tauri::command]
-fn open_settings_window(app: AppHandle) -> Result<(), String> {
-    // WebviewWindow creation must happen on the main thread on Windows (WebView2
-    // requires it); command handlers run on a worker thread, so this hops back.
-    app.clone().run_on_main_thread(move || {
-        if let Some(window) = app.get_webview_window("settings") {
-            let _ = window.show();
-            let _ = window.set_focus();
-            return;
-        }
-
-        let win = match WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
-            .title("Settings")
-            .inner_size(380.0, 560.0)
-            .resizable(false)
-            .maximizable(false)
-            .minimizable(true)
-            .decorations(false)
-            .background_color(tauri::window::Color(6, 14, 32, 255))
-            .center()
-            .build()
-        {
-            Ok(win) => win,
-            Err(e) => {
-                log::error!("failed to create settings window: {e}");
-                return;
-            }
-        };
-
-        let win_clone = win.clone();
-        win.on_window_event(move |event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                let _ = win_clone.hide();
-            }
-        });
-    })
-    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -184,11 +157,6 @@ fn stop_session(state: tauri::State<'_, AppState>) -> ActionResult {
     state.controller.stop_session()
 }
 
-#[tauri::command]
-fn window_label(window: tauri::WebviewWindow) -> String {
-    window.label().to_string()
-}
-
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
@@ -238,8 +206,7 @@ pub fn run() {
             minimize_window,
             minimize_current,
             close_window,
-            close_settings_window,
-            open_settings_window,
+            set_window_view,
             get_status,
             get_version,
             get_profile,
@@ -251,7 +218,6 @@ pub fn run() {
             get_session,
             start_task_session,
             stop_session,
-            window_label,
         ])
         .setup(move |app| {
             let handle = app.handle().clone();

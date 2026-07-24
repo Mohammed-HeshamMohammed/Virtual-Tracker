@@ -38,12 +38,10 @@ type AppSettingsView = {
   preferences: UserPreferences;
 };
 
-
 type AgentTask = {
   id: string;
   title: string;
   status: string;
-  projectId?: string;
 };
 
 type ProjectInfo = {
@@ -168,7 +166,7 @@ function TitleBar({
   );
 }
 
-function SettingsApp() {
+function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState<AppSettingsView | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -203,10 +201,7 @@ function SettingsApp() {
 
   return (
     <main className="agent-tray settings-window">
-      <TitleBar
-        title="Settings"
-        onClose={() => void invoke("close_settings_window")}
-      />
+      <TitleBar title="Settings" onClose={onBack} />
       <div className="content settings-content">
         <section className="settings-card">
           <h3 className="settings-section-label">Connection</h3>
@@ -273,6 +268,7 @@ function SettingsApp() {
 }
 
 function MainApp() {
+  const [view, setView] = useState<"home" | "settings">("home");
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [link, setLink] = useState<LinkStatus | null>(null);
   const [version, setVersion] = useState("0.2.0");
@@ -393,6 +389,10 @@ function MainApp() {
   }, [checkForUpdate]);
 
   useEffect(() => {
+    void invoke("set_window_view", { view }).catch(() => undefined);
+  }, [view]);
+
+  useEffect(() => {
     if (!tracking) {
       setBars(Array.from({ length: 9 }, () => 12));
       return;
@@ -464,6 +464,10 @@ function MainApp() {
   const tone = statusTone(link?.status || "", signedIn);
   const displayName = profile?.name || "Not signed in";
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
+
+  if (view === "settings") {
+    return <SettingsPanel onBack={() => setView("home")} />;
+  }
 
   return (
     <main className="agent-tray">
@@ -538,28 +542,6 @@ function MainApp() {
           </nav>
         ) : (
           <>
-            {projects.length > 0 ? (
-              <section className="task-card">
-                <label className="task-label" htmlFor="project-select">
-                  Project
-                </label>
-                <select
-                  id="project-select"
-                  className="task-select"
-                  value={selectedProjectId}
-                  disabled={busy || tracking}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                >
-                  <option value="">All projects</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </section>
-            ) : null}
-
             <section className="task-card">
               <label className="task-label" htmlFor="project-select">
                 Project
@@ -659,7 +641,7 @@ function MainApp() {
             type="button"
             title="Settings"
             aria-label="Settings"
-            onClick={() => void invoke("open_settings_window")}
+            onClick={() => setView("settings")}
           >
             <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
               <path
@@ -676,8 +658,6 @@ function MainApp() {
 }
 
 export default function App() {
-  const [label, setLabel] = useState<string | null>(null);
-
   useEffect(() => {
     const block = (event: Event) => {
       event.preventDefault();
@@ -697,10 +677,6 @@ export default function App() {
     document.addEventListener("dragstart", block);
     window.addEventListener("keydown", blockKeys, true);
 
-    void invoke<string>("window_label")
-      .then(setLabel)
-      .catch(() => setLabel("main"));
-
     return () => {
       document.removeEventListener("contextmenu", block);
       document.removeEventListener("dragstart", block);
@@ -708,8 +684,5 @@ export default function App() {
     };
   }, []);
 
-  if (!label) {
-    return <main className="agent-tray boot" />;
-  }
-  return label === "settings" ? <SettingsApp /> : <MainApp />;
+  return <MainApp />;
 }
