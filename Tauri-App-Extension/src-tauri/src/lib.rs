@@ -40,14 +40,6 @@ fn open_web_app(state: tauri::State<'_, AppState>) {
 }
 
 #[tauri::command]
-fn hide_to_tray(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
-        window.hide().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 fn minimize_window(app: AppHandle) -> Result<(), String> {
     let label = app
         .webview_windows()
@@ -68,28 +60,12 @@ fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
 
+/// The titlebar close button quits the whole app, same as the tray's Quit item -
+/// not a hide-to-tray anymore.
 #[tauri::command]
-fn close_window(app: AppHandle) -> Result<(), String> {
-    hide_to_tray(app)
-}
-
-#[tauri::command]
-fn set_window_view(app: AppHandle, view: String) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window missing".to_string())?;
-    let (min_w, min_h, w, h) = if view == "settings" {
-        (320.0, 480.0, 320.0, 540.0)
-    } else {
-        (320.0, 600.0, 320.0, 650.0)
-    };
-    window
-        .set_min_size(Some(tauri::LogicalSize::new(min_w, min_h)))
-        .map_err(|e| e.to_string())?;
-    window
-        .set_size(tauri::LogicalSize::new(w, h))
-        .map_err(|e| e.to_string())?;
-    window.center().map_err(|e| e.to_string())?;
+fn close_window(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.controller.stop();
+    app.exit(0);
     Ok(())
 }
 
@@ -202,11 +178,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sign_in,
             open_web_app,
-            hide_to_tray,
             minimize_window,
             minimize_current,
             close_window,
-            set_window_view,
             get_status,
             get_version,
             get_profile,
@@ -276,10 +250,12 @@ pub fn run() {
 
             if let Some(window) = app.get_webview_window("main") {
                 let win = window.clone();
+                let close_controller = Arc::clone(&controller);
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = win.hide();
+                        close_controller.stop();
+                        win.app_handle().exit(0);
                     }
                 });
                 if start_hidden {

@@ -14,8 +14,8 @@ Your admin will send you **one installer file**.
 
 ## Tips
 
-- Closing the window **hides** the agent to the system tray (it keeps running)
-- Quit only from the tray menu → **Quit**
+- Closing the window **quits** the agent (tracking stops with it)
+- Use the tray icon's **Show** to reopen it, or **Quit** to exit from there instead
 - If sign-in fails, check your internet connection and ask an admin that the activity API is up
 
 ## Permissions (Windows)

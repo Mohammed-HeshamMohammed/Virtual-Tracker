@@ -55,4 +55,6 @@ Gear icon opens settings inside the agent (not an external launcher):
 
 ## Window chrome
 
-Custom title bar with **Minimize** and **Close** (hides to tray). No maximize.
+Custom title bar with **Minimize** and **Close** (quits the app). No maximize. The tray icon still lets you reopen/quit, but closing the window itself now exits the process rather than hiding to tray.
+
+Settings opens as a view inside the same window (no resize, no second window) with a **Back** button in place of the logo; its Close button quits the app the same as the home screen's.

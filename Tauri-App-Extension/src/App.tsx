@@ -93,25 +93,48 @@ function statusLabel(status: string, signedIn: boolean): string {
 function TitleBar({
   title,
   onClose,
+  onBack,
   onCheckUpdate,
   checkingUpdate,
 }: {
   title: string;
   onClose: () => void;
+  onBack?: () => void;
   onCheckUpdate?: () => void;
   checkingUpdate?: boolean;
 }) {
   return (
     <header className="titlebar">
       <div className="titlebar-drag" data-tauri-drag-region>
-        <img
-          className="titlebar-logo-img"
-          src="/app-icon.ico"
-          width={16}
-          height={16}
-          alt=""
-          draggable={false}
-        />
+        {onBack ? (
+          <button
+            className="win-btn titlebar-back"
+            type="button"
+            title="Back"
+            aria-label="Back"
+            onClick={onBack}
+          >
+            <svg viewBox="0 0 12 12" aria-hidden="true">
+              <path
+                d="M7.5 2.5 3 6l4.5 3.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        ) : (
+          <img
+            className="titlebar-logo-img"
+            src="/app-icon.ico"
+            width={16}
+            height={16}
+            alt=""
+            draggable={false}
+          />
+        )}
         <span className="titlebar-label" data-tauri-drag-region>
           {title}
         </span>
@@ -201,7 +224,7 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
 
   return (
     <main className="agent-tray settings-window">
-      <TitleBar title="Settings" onClose={onBack} />
+      <TitleBar title="Settings" onBack={onBack} onClose={() => void invoke("close_window")} />
       <div className="content settings-content">
         <section className="settings-card">
           <h3 className="settings-section-label">Connection</h3>
@@ -387,10 +410,6 @@ function MainApp() {
   useEffect(() => {
     void checkForUpdate();
   }, [checkForUpdate]);
-
-  useEffect(() => {
-    void invoke("set_window_view", { view }).catch(() => undefined);
-  }, [view]);
 
   useEffect(() => {
     if (!tracking) {

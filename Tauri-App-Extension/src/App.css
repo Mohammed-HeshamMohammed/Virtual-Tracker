@@ -128,6 +128,17 @@ body {
   height: 10px;
 }
 
+.titlebar-back {
+  width: 24px;
+  margin-left: -8px;
+  flex-shrink: 0;
+}
+
+.titlebar-back svg {
+  width: 12px;
+  height: 12px;
+}
+
 .win-btn:hover {
   background: rgba(255, 255, 255, 0.06);
 }
