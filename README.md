@@ -86,7 +86,7 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. Standar
 | `member-transfer-requests`| `member_transfer_requests` | - | Organizational node change logs |
 | `time-entries` | `time_entries` | `time_entries` | Work time slots |
 | `timesheets` | `timesheets` | `timesheets` | Periodic payroll sheets |
-| `notifications` | `notifications_VirtualTacker` | - | Workspace notification alerts |
+| `notifications` | - | `notifications` | Workspace notification alerts |
 | `activity-sessions` | `activity_sessions` | - | Work session logging triggers |
 | `activity-screenshots`| `activity_screenshots` | - | Telemetry base64 image captures |
 | `activity-app-logs` | `activity_app_logs` | - | Captured desktop app telemetry |

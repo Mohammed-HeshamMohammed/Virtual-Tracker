@@ -1102,7 +1102,7 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 | `member-transfer-requests` | `member_transfer_requests` | Firestore |
 | `time-entries` | `time_entries` | **Postgres** `time_entries` |
 | `timesheets` | `timesheets` | **Postgres** `timesheets` |
-| `notifications` | `notifications_VirtualTacker` | Firestore |
+| `notifications` | `notifications` | **Postgres** `notifications` |
 | `activity-sessions` | `activity_sessions` | Firestore |
 | `activity-screenshots` | `activity_screenshots` | Firestore |
 | `activity-app-logs` | `activity_app_logs` | Firestore |
@@ -1228,7 +1228,7 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 |----------------------|------------|--------|
 | `time_entries` | `time-entries` | **Postgres** when configured |
 | `timesheets` | `timesheets` | **Postgres** when configured |
-| `notifications_VirtualTacker` | `notifications` | In-app notifications |
+| `notifications` (table) | `notifications` | **Postgres** — in-app notifications |
 | `member_transfer_requests` | `member-transfer-requests` | Hierarchy transfer workflow |
 | `activity_alert_log` | `activity-alert-log` | Activity alert dedupe log |
 | `deactivation_requests` | — | Account deactivation approval queue |

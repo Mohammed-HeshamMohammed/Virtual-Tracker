@@ -1,5 +1,4 @@
-import crypto from "node:crypto";
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
+import { query } from "../../lib/postgres/client.js";
 
 /**
  * @typedef {Object} NotificationPayload
@@ -10,85 +9,58 @@ import { COLLECTIONS } from "../../lib/firestore/collections.js";
  * @property {string} [link] - URL or path to navigate to when clicked
  */
 
-/** Insert in-app notification row. */
-export async function createNotification(db, payload) {
+function normalizeRow(row) {
+  const createdAt = row.created_at;
+  return {
+    id: row.id,
+    recipient_id: row.recipient_id,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    link: row.link || "",
+    read: Boolean(row.read),
+    created_at: createdAt instanceof Date ? createdAt.getTime() : createdAt,
+  };
+}
+
+/** Insert in-app notification row. `db` is unused - kept for call-site compatibility. */
+export async function createNotification(_db, payload) {
   if (!payload.recipient_id || !payload.title || !payload.message) {
     throw new Error("Missing required notification fields");
   }
 
-  const id = crypto.randomUUID();
-  const notification = {
-    id,
-    recipient_id: payload.recipient_id,
-    type: payload.type || "system",
-    title: payload.title,
-    message: payload.message,
-    link: payload.link || "",
-    read: false,
-    created_at: new Date(),
-  };
-
-  await db.collection(COLLECTIONS.notifications).doc(id).set(notification);
-  return id;
+  const rows = await query(
+    `INSERT INTO notifications (recipient_id, type, title, message, link)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id`,
+    [payload.recipient_id, payload.type || "system", payload.title, payload.message, payload.link || ""],
+  );
+  return rows[0].id;
 }
 
 /** Lists the most recent notifications for a member, newest first. */
-export async function listNotificationsForMember(db, memberId, limit = 30) {
-  const snapshot = await db
-    .collection(COLLECTIONS.notifications)
-    .where("recipient_id", "==", memberId)
-    .orderBy("created_at", "desc")
-    .limit(limit)
-    .get();
-
-  return snapshot.docs.map((doc) => {
-    const data = doc.data();
-    const createdAt = data.created_at;
-    return {
-      id: doc.id,
-      recipient_id: data.recipient_id,
-      type: data.type,
-      title: data.title,
-      message: data.message,
-      link: data.link || "",
-      read: Boolean(data.read),
-      created_at: typeof createdAt?.toDate === "function" ? createdAt.toDate().getTime() : createdAt,
-    };
-  });
+export async function listNotificationsForMember(_db, memberId, limit = 30) {
+  const rows = await query(
+    `SELECT id, recipient_id, type, title, message, link, read, created_at
+     FROM notifications
+     WHERE recipient_id = $1
+     ORDER BY created_at DESC
+     LIMIT $2`,
+    [memberId, limit],
+  );
+  return rows.map(normalizeRow);
 }
 
 /** Mark one notification read (checks recipient_id). */
-export async function markNotificationAsRead(db, notificationId, memberId) {
-  const ref = db.collection(COLLECTIONS.notifications).doc(notificationId);
-  const snap = await ref.get();
-  
-  if (!snap.exists) return false;
-  if (snap.data().recipient_id !== memberId) return false;
-
-  await ref.update({ read: true });
-  return true;
+export async function markNotificationAsRead(_db, notificationId, memberId) {
+  const rows = await query(
+    `UPDATE notifications SET read = true WHERE id = $1 AND recipient_id = $2 RETURNING id`,
+    [notificationId, memberId],
+  );
+  return rows.length > 0;
 }
 
-/** Mark all unread notifications read (batched). */
-export async function markAllNotificationsAsRead(db, memberId) {
-  const BATCH_SIZE = 500;
-
-  while (true) {
-    const snapshot = await db
-      .collection(COLLECTIONS.notifications)
-      .where("recipient_id", "==", memberId)
-      .where("read", "==", false)
-      .limit(BATCH_SIZE)
-      .get();
-
-    if (snapshot.empty) return;
-
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => {
-      batch.update(doc.ref, { read: true });
-    });
-    await batch.commit();
-
-    if (snapshot.size < BATCH_SIZE) return;
-  }
+/** Mark all unread notifications read. */
+export async function markAllNotificationsAsRead(_db, memberId) {
+  await query(`UPDATE notifications SET read = true WHERE recipient_id = $1 AND read = false`, [memberId]);
 }
