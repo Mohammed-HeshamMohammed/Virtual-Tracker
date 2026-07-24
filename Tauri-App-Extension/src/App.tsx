@@ -38,10 +38,6 @@ type AppSettingsView = {
   preferences: UserPreferences;
 };
 
-type AgentProject = {
-  id: string;
-  name: string;
-};
 
 type AgentTask = {
   id: string;
