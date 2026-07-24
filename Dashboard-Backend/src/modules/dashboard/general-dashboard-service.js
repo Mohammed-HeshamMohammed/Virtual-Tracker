@@ -2,12 +2,12 @@
 
 import {
   buildMemberMetaMap,
-  fetchActivityDocsScoped,
   getProjectScopedMemberIds,
   resolveActivityFeedScope,
   resolveMemberRoleName,
 } from "../activity/activity-scope.js";
 import { buildOpenSessionIndex } from "../activity/activity-session-status.js";
+import { fetchPgAppLogs, fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.service.js";
 import { resolveEffectivePresence, timestampMs as presenceTimestampMs } from "../members/services/presence-status.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import {
@@ -19,6 +19,7 @@ import {
   startOfDay,
   str,
   timestampMs,
+  toIso,
 } from "./dashboard-utils.js";
 
 function getLastNDays(n) {
@@ -370,19 +371,10 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const weekStartKey = weekDays[0].dateKey;
 
   const base = await loadDashboardBase(db);
-  const [screenshotDocs, appDocs, sessionIndex] = await Promise.all([
-    fetchActivityDocsScoped(db, "activity_screenshots", allMemberIds, "captured_at", 200, [
-      "member_id",
-      "captured_at",
-      "activity_level",
-    ]),
-    fetchActivityDocsScoped(db, "activity_app_logs", allMemberIds, "started_at", 400, [
-      "member_id",
-      "app_name",
-      "duration_seconds",
-      "started_at",
-    ]),
-    buildOpenSessionIndex(db),
+  const [screenshotRows, appRows, sessionIndex] = await Promise.all([
+    fetchPgScreenshots(allMemberIds, null, 200),
+    fetchPgAppLogs(allMemberIds, null, 400),
+    buildOpenSessionIndex(),
   ]);
 
   const timeEntriesSnap = { docs: pseudoDocsFromSerialized(base.timeEntries) };
@@ -499,24 +491,17 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
       : [...new Set([...(allMemberIds ?? []), viewerMemberId])];
   const presenceByMember = await buildPresenceByMember(db, presenceMemberIds);
 
-  const screenshots = screenshotDocs.map((doc) => {
-    const d = doc.data() || {};
-    const captured = d.captured_at?.toDate?.()?.toISOString?.() ?? String(d.captured_at ?? "");
-    return {
-      memberId: d.member_id,
-      capturedAt: captured,
-      activityLevel: d.activity_level ?? 0,
-    };
-  });
+  const screenshots = screenshotRows.map((d) => ({
+    memberId: String(d.member_id ?? ""),
+    capturedAt: toIso(d.captured_at) ?? "",
+    activityLevel: d.activity_level ?? 0,
+  }));
 
-  const appLogs = appDocs.map((doc) => {
-    const d = doc.data() || {};
-    return {
-      memberId: d.member_id,
-      appName: d.app_name || "Unknown",
-      durationSeconds: typeof d.duration_seconds === "number" ? d.duration_seconds : 0,
-    };
-  });
+  const appLogs = appRows.map((d) => ({
+    memberId: String(d.member_id ?? ""),
+    appName: d.app_name || "Unknown",
+    durationSeconds: typeof d.duration_seconds === "number" ? d.duration_seconds : 0,
+  }));
 
   const shared = {
     timeEntries,

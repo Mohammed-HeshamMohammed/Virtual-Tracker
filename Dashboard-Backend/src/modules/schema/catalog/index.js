@@ -6,7 +6,6 @@ import { clientSchemas } from "./clients/index.js";
 import { projectSchemas } from "./projects/index.js";
 import { taskSchemas } from "./tasks/index.js";
 import { teamSchemas } from "./teams/index.js";
-import { activitySchemas } from "./activity/index.js";
 import { memberRelationshipSchemas } from "./member-relationships/index.js";
 import { memberTransferRequestSchemas } from "./hierarchy/index.js";
 import { timesheetSchemas } from "./timesheets/index.js";
@@ -19,7 +18,6 @@ export const schemaEntities = [
   ...projectSchemas,
   ...taskSchemas,
   ...teamSchemas,
-  ...activitySchemas,
   ...memberRelationshipSchemas,
   ...memberTransferRequestSchemas,
   ...timesheetSchemas,

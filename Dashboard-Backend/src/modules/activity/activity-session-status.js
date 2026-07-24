@@ -1,8 +1,8 @@
 import { getActivitySessionStaleMs } from "../../config/activity-session.js";
+import { fetchAllOpenPgSessions, findOpenPgSession } from "../../lib/postgres/activity-events-postgres.service.js";
 
 function timestampMs(value) {
   if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
   if (value instanceof Date) return value.getTime();
   const ms = Date.parse(String(value));
   return Number.isFinite(ms) ? ms : 0;
@@ -23,24 +23,15 @@ export function effectiveTrackingStatusFromSession(session) {
 }
 
 /**
- * Latest open session per member (ended_at == null).
- * @param {import("firebase-admin/firestore").Firestore} db
+ * Latest open session per member.
  * @returns {Promise<Map<string, Record<string, unknown>>>}
  */
-export async function buildOpenSessionIndex(db) {
-  const snap = await db
-    .collection("activity_sessions")
-    .select("member_id", "status", "updated_at", "started_at", "ended_at", "task_id")
-    .limit(500)
-    .get();
-
+export async function buildOpenSessionIndex() {
+  const rows = await fetchAllOpenPgSessions();
   const byMember = new Map();
-  for (const doc of snap.docs) {
-    const data = doc.data() || {};
-    if (data.ended_at != null) continue;
-    const memberId = typeof data.member_id === "string" ? data.member_id : "";
+  for (const row of rows) {
+    const memberId = typeof row.member_id === "string" ? row.member_id : String(row.member_id ?? "");
     if (!memberId) continue;
-    const row = { id: doc.id, ...data };
     const prev = byMember.get(memberId);
     if (!prev || timestampMs(row.updated_at) >= timestampMs(prev.updated_at)) {
       byMember.set(memberId, row);
@@ -49,28 +40,18 @@ export async function buildOpenSessionIndex(db) {
   return byMember;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
-export async function findOpenSessionForMember(db, memberId) {
-  const snap = await db.collection("activity_sessions").where("member_id", "==", memberId).limit(40).get();
-  const open = snap.docs
-    .filter((d) => d.data()?.ended_at == null)
-    .sort((a, b) => timestampMs(b.data()?.updated_at) - timestampMs(a.data()?.updated_at));
-  if (!open.length) return null;
-  const doc = open[0];
-  return { id: doc.id, ...doc.data() };
+/** @param {string} memberId */
+export async function findOpenSessionForMember(memberId) {
+  return findOpenPgSession(memberId);
 }
 
 /**
  * Add tracking_status + last_presence_at from open activity session.
- * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Array<Record<string, unknown> & { id: string }>} members
  */
-export async function enrichMembersWithSessionStatus(db, members) {
+export async function enrichMembersWithSessionStatus(members) {
   if (!members.length) return members;
-  const index = await buildOpenSessionIndex(db);
+  const index = await buildOpenSessionIndex();
   return members.map((m) => {
     const session = index.get(m.id) ?? null;
     const trackingStatus = effectiveTrackingStatusFromSession(session);

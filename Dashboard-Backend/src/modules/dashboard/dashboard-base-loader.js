@@ -5,6 +5,7 @@ import { COLLECTIONS } from "../../lib/firestore/collections.js";
 import { isPostgresConfigured } from "../../lib/postgres/client.js";
 import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
+import { fetchPgSessionsForDashboard } from "../../lib/postgres/activity-events-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
 const SNAPSHOT_DOC_ID = "dashboard_aggregates";
@@ -60,7 +61,7 @@ async function fetchFreshBase(db) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
-  const [projectsSnap, budgetsSnap, projectMembersSnap, tasksSnap, sessionsSnap] = await Promise.all([
+  const [projectsSnap, budgetsSnap, projectMembersSnap, tasksSnap] = await Promise.all([
       db.collection(COLLECTIONS.projects).select("status", "name", "updated_at", "created_at").limit(300).get(),
       db
         .collection("project_budgets")
@@ -85,11 +86,6 @@ async function fetchFreshBase(db) {
         )
         .limit(800)
         .get(),
-      db
-        .collection("activity_sessions")
-        .select("member_id", "task_id", "started_at", "active_seconds", "idle_seconds", "updated_at", "ended_at")
-        .limit(500)
-        .get(),
     ]);
 
   const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
@@ -104,13 +100,27 @@ async function fetchFreshBase(db) {
     },
   }));
 
+  const sessionRows = await fetchPgSessionsForDashboard(500);
+  const sessions = sessionRows.map((row) => ({
+    id: String(row.id ?? ""),
+    data: {
+      member_id: row.member_id,
+      task_id: row.task_id,
+      started_at: row.started_at,
+      active_seconds: row.active_seconds,
+      idle_seconds: row.idle_seconds,
+      updated_at: row.updated_at,
+      ended_at: row.ended_at,
+    },
+  }));
+
   return {
     projects: projectsSnap.docs.map(serializeDoc),
     budgets: budgetsSnap.docs.map(serializeDoc),
     projectMembers: projectMembersSnap.docs.map(serializeDoc),
     tasks: tasksSnap.docs.map(serializeDoc),
     timeEntries,
-    sessions: sessionsSnap.docs.map(serializeDoc),
+    sessions,
     projectCount: projectsSnap.size,
     fetchedAt: Date.now(),
   };

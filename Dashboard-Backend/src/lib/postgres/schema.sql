@@ -403,3 +403,29 @@ CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread  ON notifications (recipie
 
 CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC);
 CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC);
+
+CREATE TABLE IF NOT EXISTS activity_sessions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id      UUID NOT NULL,
+  task_id        UUID,
+  status         VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'idle', 'stopped')),
+  started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  ended_at       TIMESTAMPTZ,
+  active_seconds INTEGER NOT NULL DEFAULT 0,
+  idle_seconds   INTEGER NOT NULL DEFAULT 0,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id);
+CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS activity_alert_log (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_member_id UUID NOT NULL,
+  alert_type        VARCHAR(60) NOT NULL,
+  recipient_ids     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  sent_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_act_alert_subject_type ON activity_alert_log (subject_member_id, alert_type, sent_at DESC);
