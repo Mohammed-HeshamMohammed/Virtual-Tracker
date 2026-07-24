@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * One-time migration: Firestore time_entries + timesheets + notifications → PostgreSQL.
+ * One-time migration: Firestore time_entries + timesheets → PostgreSQL.
  */
 import { getDb } from "../src/config/firebase.js";
 import { query, isPostgresConfigured } from "../src/lib/postgres/client.js";
@@ -70,32 +70,6 @@ async function migrateTimesheets(db) {
   console.log(`Migrated ${count} timesheets`);
 }
 
-async function migrateNotifications(db) {
-  const snap = await db.collection("notifications_VirtualTacker").get();
-  let count = 0;
-  for (const doc of snap.docs) {
-    const d = doc.data();
-    await query(
-      `INSERT INTO notifications
-        (id, recipient_id, type, title, message, link, read, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (id) DO NOTHING`,
-      [
-        d.id ?? doc.id,
-        d.recipient_id,
-        d.type ?? "system",
-        d.title,
-        d.message,
-        d.link ?? "",
-        Boolean(d.read),
-        d.created_at?.toDate?.() ?? new Date(),
-      ],
-    );
-    count++;
-  }
-  console.log(`Migrated ${count} notifications`);
-}
-
 const db = getDb();
 if (!db) {
   console.error("Firestore not configured");
@@ -108,5 +82,4 @@ if (!isPostgresConfigured()) {
 
 await migrateTimeEntries(db);
 await migrateTimesheets(db);
-await migrateNotifications(db);
 console.log("Migration complete");
