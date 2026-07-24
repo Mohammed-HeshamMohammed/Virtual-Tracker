@@ -9,14 +9,6 @@
       ]
     },
     {
-      "collectionGroup": "notifications_VirtualTacker",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "recipient_id", "order": "ASCENDING" },
-        { "fieldPath": "read", "order": "ASCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "project_members",
       "queryScope": "COLLECTION",
       "fields": [
