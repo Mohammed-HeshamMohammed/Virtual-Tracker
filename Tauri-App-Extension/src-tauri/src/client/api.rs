@@ -297,7 +297,7 @@ impl ApiClient {
             .map(|s| s.to_string())
     }
 
-    pub fn fetch_projects(&mut self) -> Result<Vec<crate::types::AgentProject>, String> {
+    pub fn fetch_viewer_projects(&mut self) -> Result<Vec<crate::types::ProjectInfo>, String> {
         if !self.refresh_token_if_needed() {
             return Err("Not signed in".into());
         }
@@ -336,15 +336,7 @@ impl ApiClient {
                 .and_then(|v| v.as_str())
                 .unwrap_or("Untitled project")
                 .to_string();
-            let status = item
-                .get("status")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if status.eq_ignore_ascii_case("archived") {
-                continue;
-            }
-            projects.push(crate::types::AgentProject { id, name });
+            projects.push(crate::types::ProjectInfo { id, name });
         }
         projects.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(projects)
@@ -368,11 +360,8 @@ impl ApiClient {
             self.api_url,
             urlencoding::encode(&member_id)
         );
-        if let Some(pid) = project_id {
-            let pid = pid.trim();
-            if !pid.is_empty() {
-                url.push_str(&format!("&project_id={}", urlencoding::encode(pid)));
-            }
+        if let Some(pid) = project_id.filter(|p| !p.is_empty()) {
+            url.push_str(&format!("&project_id={}", urlencoding::encode(pid)));
         }
         let res = self
             .client

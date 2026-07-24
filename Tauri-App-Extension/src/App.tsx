@@ -50,6 +50,11 @@ type AgentTask = {
   projectId?: string;
 };
 
+type ProjectInfo = {
+  id: string;
+  name: string;
+};
+
 type SessionInfo = {
   id?: string | null;
   status: string;
@@ -94,9 +99,13 @@ function statusLabel(status: string, signedIn: boolean): string {
 function TitleBar({
   title,
   onClose,
+  onCheckUpdate,
+  checkingUpdate,
 }: {
   title: string;
   onClose: () => void;
+  onCheckUpdate?: () => void;
+  checkingUpdate?: boolean;
 }) {
   return (
     <header className="titlebar">
@@ -114,6 +123,23 @@ function TitleBar({
         </span>
       </div>
       <div className="titlebar-controls">
+        {onCheckUpdate ? (
+          <button
+            className="win-btn"
+            type="button"
+            title="Check for updates"
+            aria-label="Check for updates"
+            disabled={checkingUpdate}
+            onClick={onCheckUpdate}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"
+              />
+            </svg>
+          </button>
+        ) : null}
         <button
           className="win-btn"
           type="button"
@@ -254,16 +280,32 @@ function MainApp() {
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [link, setLink] = useState<LinkStatus | null>(null);
   const [version, setVersion] = useState("0.2.0");
-  const [projects, setProjects] = useState<AgentProject[]>([]);
+  const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [bars, setBars] = useState<number[]>(() =>
     Array.from({ length: 9 }, () => 20),
   );
+
+  const checkForUpdate = useCallback(async () => {
+    setCheckingUpdate(true);
+    try {
+      const update = await check();
+      if (update) {
+        await update.downloadAndInstall();
+        await relaunch();
+      }
+    } catch (err) {
+      console.error("update check failed", err);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }, []);
 
   const signedIn = Boolean(profile?.signedIn);
   const tracking =
@@ -289,10 +331,11 @@ function MainApp() {
   const refreshProjects = useCallback(async () => {
     if (!signedIn) {
       setProjects([]);
+      setSelectedProjectId("");
       return;
     }
     try {
-      const next = await invoke<AgentProject[]>("list_projects");
+      const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
       setSelectedProjectId((current) =>
         current && next.some((p) => p.id === current) ? current : "",
@@ -303,13 +346,14 @@ function MainApp() {
   }, [signedIn]);
 
   const refreshTasks = useCallback(async () => {
-    if (!signedIn) {
+    if (!signedIn || !selectedProjectId) {
       setTasks([]);
+      setSelectedTaskId("");
       return;
     }
     try {
       const next = await invoke<AgentTask[]>("list_tasks", {
-        projectId: selectedProjectId || null,
+        projectId: selectedProjectId,
       });
       setTasks(next);
       setSelectedTaskId((current) => {
@@ -346,21 +390,11 @@ function MainApp() {
 
   useEffect(() => {
     void refreshTasks().catch(console.error);
-  }, [refreshTasks, signedIn]);
+  }, [refreshTasks]);
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const update = await check();
-        if (update) {
-          await update.downloadAndInstall();
-          await relaunch();
-        }
-      } catch (err) {
-        console.error("update check failed", err);
-      }
-    })();
-  }, []);
+    void checkForUpdate();
+  }, [checkForUpdate]);
 
   useEffect(() => {
     if (!tracking) {
@@ -440,6 +474,8 @@ function MainApp() {
       <TitleBar
         title="Virtual Tracker"
         onClose={() => void invoke("close_window")}
+        onCheckUpdate={() => void checkForUpdate()}
+        checkingUpdate={checkingUpdate}
       />
 
       <div className="content home-content">
@@ -529,6 +565,32 @@ function MainApp() {
             ) : null}
 
             <section className="task-card">
+              <label className="task-label" htmlFor="project-select">
+                Project
+              </label>
+              <select
+                id="project-select"
+                className="task-select"
+                value={selectedProjectId}
+                disabled={busy || tracking || projects.length === 0}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+              >
+                {projects.length === 0 ? (
+                  <option value="">No projects</option>
+                ) : (
+                  <>
+                    <option value="">Select a project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </>
+                )}
+              </select>
+            </section>
+
+            <section className="task-card">
               <label className="task-label" htmlFor="task-select">
                 Your tasks
               </label>
@@ -536,10 +598,12 @@ function MainApp() {
                 id="task-select"
                 className="task-select"
                 value={selectedTaskId}
-                disabled={busy || tracking || tasks.length === 0}
+                disabled={busy || tracking || !selectedProjectId || tasks.length === 0}
                 onChange={(e) => setSelectedTaskId(e.target.value)}
               >
-                {tasks.length === 0 ? (
+                {!selectedProjectId ? (
+                  <option value="">Select a project first</option>
+                ) : tasks.length === 0 ? (
                   <option value="">No assigned tasks</option>
                 ) : (
                   tasks.map((task) => (

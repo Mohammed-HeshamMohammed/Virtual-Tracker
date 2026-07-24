@@ -96,6 +96,7 @@ fn open_settings_window(app: AppHandle) -> Result<(), String> {
         .maximizable(false)
         .minimizable(true)
         .decorations(false)
+        .background_color(tauri::window::Color(6, 14, 32, 255))
         .center()
         .build()
         .map_err(|e| e.to_string())?;
@@ -146,7 +147,7 @@ fn save_preferences(
 }
 
 #[tauri::command]
-fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<AgentProject>, String> {
+fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<crate::types::ProjectInfo>, String> {
     state.controller.list_projects()
 }
 
