@@ -321,6 +321,7 @@ GROUP BY task_id`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS image_data BYTEA`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC)`,
   `CREATE TABLE IF NOT EXISTS activity_app_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id        UUID NOT NULL,
@@ -335,6 +336,7 @@ GROUP BY task_id`,
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_member_started ON activity_app_logs (member_id, started_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_act_app_started ON activity_app_logs (started_at DESC)`,
   `CREATE TABLE IF NOT EXISTS activity_url_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id        UUID NOT NULL,
@@ -349,6 +351,7 @@ GROUP BY task_id`,
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC)`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
