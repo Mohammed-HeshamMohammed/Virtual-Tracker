@@ -268,8 +268,12 @@ impl AgentController {
         }
     }
 
-    pub fn list_tasks(&self) -> Result<Vec<AgentTask>, String> {
-        self.api.lock().fetch_assigned_tasks()
+    pub fn list_projects(&self) -> Result<Vec<crate::types::ProjectInfo>, String> {
+        self.api.lock().fetch_viewer_projects()
+    }
+
+    pub fn list_tasks(&self, project_id: Option<&str>) -> Result<Vec<AgentTask>, String> {
+        self.api.lock().fetch_assigned_tasks(project_id)
     }
 
     pub fn get_session(&self) -> SessionInfo {
