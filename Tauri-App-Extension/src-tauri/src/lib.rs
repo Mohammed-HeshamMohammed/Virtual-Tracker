@@ -85,7 +85,7 @@ fn close_settings_window(app: AppHandle) -> Result<(), String> {
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
     // WebviewWindow creation must happen on the main thread on Windows (WebView2
     // requires it); command handlers run on a worker thread, so this hops back.
-    app.run_on_main_thread(move || {
+    app.clone().run_on_main_thread(move || {
         if let Some(window) = app.get_webview_window("settings") {
             let _ = window.show();
             let _ = window.set_focus();
