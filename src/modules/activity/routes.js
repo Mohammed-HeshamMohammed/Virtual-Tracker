@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import sharp from "sharp";
-import { uploadToGCS, getSignedUrl } from "../../lib/gcs/upload.js";
+import { getSignedUrl } from "../../lib/gcs/upload.js";
 import {
   getActivityCaptureMode,
   isActivityScreenshotsEnabled,
@@ -475,33 +475,15 @@ export async function routeActivity(req, res, url, origin) {
                 .webp({ quality: 75 })
                 .toBuffer();
               const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
-              const capturedMs = capturedAt.getTime();
-              const objectPath = `activity-screenshots/${member.memberId}/${sessionId}/${capturedMs}.webp`;
-              await uploadToGCS(webp, objectPath, "image/webp", false);
-              batch.set(db.collection("activity_screenshots").doc(id), {
-                id,
-                member_id: member.memberId,
-                session_id: sessionId,
-                task_id: sessionTaskId,
-                task_title: sessionTaskTitle,
-                screenshot_url: objectPath,
-                has_image: true,
-                app_name: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
-                page_title: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
-                activity_level:
-                  typeof ev.activityLevel === "number"
-                    ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
-                    : 50,
-                captured_at: capturedAt,
-                source,
-              });
+              // Stored as bytea in Postgres (image_data) - no per-screenshot GCS upload or
+              // Firestore write. The archive job moves rows out to GCS once they age out.
               void insertActivityScreenshot({
                 id,
                 memberId: member.memberId,
                 sessionId,
                 taskId: sessionTaskId,
                 taskTitle: sessionTaskTitle,
-                screenshotUrl: objectPath,
+                imageData: webp,
                 appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
                 pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
                 activityLevel:
@@ -653,12 +635,14 @@ export async function routeActivity(req, res, url, origin) {
 
       let ownerId = "";
       let screenshotPath = "";
+      let imageBytes = null;
       let resolvedId = screenshotId;
 
       const pgRow = isActivityEventsPgEnabled() ? await fetchPgScreenshotById(screenshotId) : null;
       if (pgRow) {
         ownerId = String(pgRow.member_id ?? "");
         screenshotPath = typeof pgRow.screenshot_url === "string" ? pgRow.screenshot_url : "";
+        imageBytes = pgRow.image_data ?? null;
         resolvedId = String(pgRow.id ?? screenshotId);
       } else {
         const doc = await db.collection("activity_screenshots").doc(screenshotId).get();
@@ -677,8 +661,14 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
         return true;
       }
+
+      // Bytea rows (the common case now) are served straight from Postgres as a data
+      // URL, gated by the auth + ownership checks above instead of a signed link.
+      // Older/archived rows only carry screenshot_url and still use the signed-URL path.
       let imageUrl = "";
-      if (screenshotPath) {
+      if (imageBytes) {
+        imageUrl = `data:image/webp;base64,${Buffer.from(imageBytes).toString("base64")}`;
+      } else if (screenshotPath) {
         imageUrl = await getSignedUrl(screenshotPath, 15);
       }
       sendJson(res, origin, 200, {

@@ -41,7 +41,8 @@ async function pgQuery(sql, params = []) {
  *   sessionId: string,
  *   taskId?: string | null,
  *   taskTitle?: string | null,
- *   screenshotUrl: string,
+ *   screenshotUrl?: string | null,
+ *   imageData?: Buffer | null,
  *   appName: string,
  *   pageTitle: string,
  *   activityLevel: number,
@@ -57,9 +58,9 @@ export async function insertActivityScreenshot(row) {
   try {
     await pgQuery(
       `INSERT INTO activity_screenshots (
-         id, member_id, session_id, task_id, task_title, screenshot_url, has_image,
+         id, member_id, session_id, task_id, task_title, screenshot_url, image_data, has_image,
          app_name, page_title, activity_level, captured_at, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, true, $7, $8, $9, $10, $11)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12)
        ON CONFLICT (id) DO NOTHING`,
       [
         row.id,
@@ -67,7 +68,8 @@ export async function insertActivityScreenshot(row) {
         row.sessionId,
         taskId,
         row.taskTitle ?? null,
-        row.screenshotUrl,
+        row.screenshotUrl ?? null,
+        row.imageData ?? null,
         row.appName.slice(0, 200),
         row.pageTitle.slice(0, 300),
         row.activityLevel,
@@ -247,7 +249,7 @@ export async function fetchPgScreenshotById(screenshotId) {
   const id = parseProgressUuid(screenshotId);
   if (!id) return null;
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, screenshot_url, has_image, app_name, page_title, captured_at
+    `SELECT id, member_id, session_id, screenshot_url, image_data, has_image, app_name, page_title, captured_at
      FROM activity_screenshots WHERE id = $1 LIMIT 1`,
     [id],
   );
