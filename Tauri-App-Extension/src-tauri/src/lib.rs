@@ -83,31 +83,41 @@ fn close_settings_window(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn open_settings_window(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("settings") {
-        window.show().map_err(|e| e.to_string())?;
-        window.set_focus().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-
-    let win = WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
-        .title("Settings")
-        .inner_size(380.0, 560.0)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(true)
-        .decorations(false)
-        .background_color(tauri::window::Color(6, 14, 32, 255))
-        .center()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let win_clone = win.clone();
-    win.on_window_event(move |event| {
-        if let WindowEvent::CloseRequested { .. } = event {
-            let _ = win_clone.hide();
+    // WebviewWindow creation must happen on the main thread on Windows (WebView2
+    // requires it); command handlers run on a worker thread, so this hops back.
+    app.run_on_main_thread(move || {
+        if let Some(window) = app.get_webview_window("settings") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            return;
         }
-    });
-    Ok(())
+
+        let win = match WebviewWindowBuilder::new(&app, "settings", WebviewUrl::App("index.html".into()))
+            .title("Settings")
+            .inner_size(380.0, 560.0)
+            .resizable(false)
+            .maximizable(false)
+            .minimizable(true)
+            .decorations(false)
+            .background_color(tauri::window::Color(6, 14, 32, 255))
+            .center()
+            .build()
+        {
+            Ok(win) => win,
+            Err(e) => {
+                log::error!("failed to create settings window: {e}");
+                return;
+            }
+        };
+
+        let win_clone = win.clone();
+        win.on_window_event(move |event| {
+            if let WindowEvent::CloseRequested { .. } = event {
+                let _ = win_clone.hide();
+            }
+        });
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
