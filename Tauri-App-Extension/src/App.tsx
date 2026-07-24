@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { exit, relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 type ProfileInfo = {
@@ -163,6 +163,61 @@ function TitleBar({
         </button>
       </div>
     </header>
+  );
+}
+
+function ConsentGate({ onAllow }: { onAllow: () => void }) {
+  const [quitting, setQuitting] = useState(false);
+
+  const decline = async () => {
+    setQuitting(true);
+    try {
+      await exit(0);
+    } catch {
+      setQuitting(false);
+    }
+  };
+
+  return (
+    <main className="agent-tray">
+      <TitleBar title="Virtual Tracker" onClose={() => void decline()} />
+      <div className="content home-content">
+        <section className="hero-card">
+          <div className="hero-top">
+            <div className="avatar-wrap">
+              <div className="avatar-fallback">VT</div>
+            </div>
+            <div className="hero-copy">
+              <span className="hero-kicker">Permission needed</span>
+              <h1 className="hero-name">Allow activity tracking?</h1>
+            </div>
+          </div>
+          <p className="signal-text">
+            Virtual Tracker captures screenshots, the active app/window title, and
+            URLs while a tracking session is running. It only runs while you have a
+            task selected and tracking started. Continue?
+          </p>
+        </section>
+        <nav className="actions">
+          <button
+            className="btn btn-primary"
+            type="button"
+            disabled={quitting}
+            onClick={onAllow}
+          >
+            Yes, continue
+          </button>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={quitting}
+            onClick={() => void decline()}
+          >
+            No, quit
+          </button>
+        </nav>
+      </div>
+    </main>
   );
 }
 
@@ -658,6 +713,8 @@ function MainApp() {
 }
 
 export default function App() {
+  const [consented, setConsented] = useState(false);
+
   useEffect(() => {
     const block = (event: Event) => {
       event.preventDefault();
@@ -684,5 +741,8 @@ export default function App() {
     };
   }, []);
 
+  if (!consented) {
+    return <ConsentGate onAllow={() => setConsented(true)} />;
+  }
   return <MainApp />;
 }
