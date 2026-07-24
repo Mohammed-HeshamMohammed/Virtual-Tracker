@@ -121,7 +121,7 @@ export function Sidebar({
                 className={cn("text-[24px] tracking-tight leading-none", t.logoTitle)}
                 style={{ fontFamily: "'Exo 2', system-ui, sans-serif", fontWeight: 500 }}
               >
-                Virtual Tracker <span style={{ fontSize: '16px', fontWeight: 600 }}>OS</span>
+                Virtual Tracker
               </h1>
               <p
                 className={cn("text-[9px] uppercase tracking-widest font-medium leading-tight mt-0.5", t.logoSub)}
