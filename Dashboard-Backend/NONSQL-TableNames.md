@@ -70,10 +70,11 @@ Quick-reference of every collection stored in **Firestore** and path stored in t
 | Collection Name        | Doc ID Key | Description                                                                       |
 | :--------------------- | :--------- | :-------------------------------------------------------------------------------- |
 | `activity_sessions`    | UUID v4    | Base telemetry chunks wrapping active/idle tracking cycles.                       |
-| `activity_screenshots` | UUID v4    | Screenshot metadata and thumbnails uploaded during session intervals.              |
 | `activity_app_logs`    | UUID v4    | Logged active desktop apps utilized per tracking frame.                           |
 | `activity_url_logs`    | UUID v4    | Browser domain and URL logs captured per tracking frame.                          |
 | `activity_alert_log`   | UUID v4    | Warning alerts created for low keyboard/mouse activity or missing telemetry.     |
+
+Screenshots moved to PostgreSQL — `activity_screenshots.image_data` (bytea) is now the source of truth, no per-screenshot Firestore write or GCS upload. Rows older than 7 days get cold-archived to GCS as a per-member ZIP and deleted; see `scripts/archive-screenshots.mjs`.
 
 ### 7. System (Source of Truth: NoSQL)
 

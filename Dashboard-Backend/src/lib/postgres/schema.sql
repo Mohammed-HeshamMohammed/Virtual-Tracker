@@ -333,7 +333,8 @@ CREATE TABLE IF NOT EXISTS activity_screenshots (
   session_id       VARCHAR(128) NOT NULL,
   task_id          UUID,
   task_title       VARCHAR(500),
-  screenshot_url   TEXT NOT NULL,
+  screenshot_url   TEXT,
+  image_data       BYTEA,
   has_image        BOOLEAN NOT NULL DEFAULT true,
   app_name         VARCHAR(200) NOT NULL DEFAULT 'Browser',
   page_title       VARCHAR(300) NOT NULL DEFAULT '',
@@ -341,6 +342,10 @@ CREATE TABLE IF NOT EXISTS activity_screenshots (
   captured_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 );
+
+-- Existing installs: widen screenshot_url to nullable and add the bytea column.
+ALTER TABLE activity_screenshots ALTER COLUMN screenshot_url DROP NOT NULL;
+ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS image_data BYTEA;
 
 CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC);
 CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id);
