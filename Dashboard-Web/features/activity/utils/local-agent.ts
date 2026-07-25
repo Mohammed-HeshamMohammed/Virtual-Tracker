@@ -1,11 +1,12 @@
 const DEFAULT_AGENT_AUTH_PORT = 17389
 
 /** Chrome Local Network Access: mark loopback fetches from the public dashboard origin. */
-type LoopbackFetchInit = RequestInit & { targetAddressSpace?: "loopback" }
+type LoopbackFetchInit = RequestInit & { targetAddressSpace?: "local" }
 
 function loopbackFetch(url: string, init: LoopbackFetchInit = {}): Promise<Response> {
   // targetAddressSpace is a Chrome LNA extension not yet in lib.dom RequestInit.
-  return fetch(url, { ...init, targetAddressSpace: "loopback" } as RequestInit)
+  // Valid values are "private" and "local" — 127.0.0.1 is "local" (loopback isn't a real value).
+  return fetch(url, { ...init, targetAddressSpace: "local" } as RequestInit)
 }
 
 let lastHealthCheckErrorLogged: string | null = null
