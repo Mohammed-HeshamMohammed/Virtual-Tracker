@@ -12,6 +12,7 @@ pub struct Settings {
     pub auth_port: u16,
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
+    pub queue_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
     pub is_production: bool,
@@ -30,6 +31,7 @@ impl Settings {
 
         let store_path = data_dir.join("agent-store.json");
         let prefs_path = data_dir.join("preferences.json");
+        let queue_path = data_dir.join("pending-events.jsonl");
 
         let default_api = PROD_API_URL;
         let default_web = PROD_WEB_URL;
@@ -49,6 +51,7 @@ impl Settings {
                 .unwrap_or(17389),
             store_path,
             prefs_path,
+            queue_path,
             url_script_path: resolve_script(&project_root, "get-browser-url.ps1"),
             macos_url_script_path: resolve_script(
                 &project_root,

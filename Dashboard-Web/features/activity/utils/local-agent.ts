@@ -63,12 +63,6 @@ export async function fetchLocalAgentHealth(
   }
 }
 
-/** Ping the local Python/Electron agent auth server. */
-export async function pingLocalAgent(port = DEFAULT_AGENT_AUTH_PORT): Promise<boolean> {
-  const health = await fetchLocalAgentHealth(port)
-  return health?.ok === true
-}
-
 export async function isLocalAgentAuthenticated(
   port = DEFAULT_AGENT_AUTH_PORT,
 ): Promise<boolean> {

@@ -5,6 +5,7 @@ mod client;
 mod config;
 mod constants;
 mod prefs;
+mod queue;
 mod types;
 mod util;
 

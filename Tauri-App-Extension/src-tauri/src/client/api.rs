@@ -88,11 +88,14 @@ impl ApiClient {
         }
     }
 
-    pub fn fetch_session(&mut self) -> Option<Value> {
+    /// `Ok(None)` = reachable, genuinely no active session. `Err(())` = could not
+    /// reach the backend at all — the caller should keep tracking under the last
+    /// known session rather than treat this the same as "no session".
+    pub fn fetch_session(&mut self) -> Result<Option<Value>, ()> {
         if !self.refresh_token_if_needed() {
-            return None;
+            return Err(());
         }
-        let auth = self.auth_headers()?;
+        let auth = self.auth_headers().ok_or(())?;
         let url = format!("{}/api/activity/session", self.api_url);
         let res = self
             .client
@@ -100,12 +103,12 @@ impl ApiClient {
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-            .ok()?;
+            .map_err(|_| ())?;
         if !res.status().is_success() {
-            return None;
+            return Err(());
         }
-        let body: Value = res.json().ok()?;
-        body.get("data").cloned()
+        let body: Value = res.json().map_err(|_| ())?;
+        Ok(body.get("data").cloned())
     }
 
     pub fn post_events(&mut self, session_id: &str, events: &[ActivityEvent]) -> bool {
@@ -484,7 +487,7 @@ impl ApiClient {
     }
 
     pub fn current_session_info(&mut self) -> crate::types::SessionInfo {
-        match self.fetch_session() {
+        match self.fetch_session().unwrap_or(None) {
             Some(session) => crate::types::SessionInfo {
                 id: session
                     .get("id")

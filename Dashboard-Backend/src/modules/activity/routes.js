@@ -40,6 +40,7 @@ import {
   insertActivityUrlLog,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
+import { isAgentOnline, touchAgentHeartbeat } from "./agent-heartbeat.js";
 
 function toIso(value) {
   if (!value) return null;
@@ -191,6 +192,9 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
+      // The desktop agent polls this same endpoint every 5s without a browser Origin
+      // header — piggyback its own liveness on that instead of a separate heartbeat call.
+      if (!origin) void touchAgentHeartbeat(member.memberId);
       const open = await findOpenSession(member.memberId);
       sendJson(res, origin, 200, {
         success: true,
@@ -911,6 +915,7 @@ export async function routeActivity(req, res, url, origin) {
           linkedAt: toIso(row.desktop_agent_linked_at),
           agentSource: typeof row.agent_source === "string" ? row.agent_source : null,
           authPort: getEnv().activity.vtAuthPort,
+          agentOnline: await isAgentOnline(member.memberId),
         },
       });
     } catch (e) {
