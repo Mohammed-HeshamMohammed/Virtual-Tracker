@@ -13,6 +13,7 @@ pub struct Settings {
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
     pub queue_path: PathBuf,
+    pub log_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
     pub is_production: bool,
@@ -32,6 +33,7 @@ impl Settings {
         let store_path = data_dir.join("agent-store.json");
         let prefs_path = data_dir.join("preferences.json");
         let queue_path = data_dir.join("pending-events.jsonl");
+        let log_path = data_dir.join("agent.log");
 
         let default_api = PROD_API_URL;
         let default_web = PROD_WEB_URL;
@@ -60,6 +62,7 @@ impl Settings {
             store_path,
             prefs_path,
             queue_path,
+            log_path,
             url_script_path,
             macos_url_script_path,
             is_production,
@@ -71,7 +74,7 @@ impl Settings {
     }
 }
 
-fn app_data_dir(project_root: &PathBuf) -> PathBuf {
+pub fn app_data_dir(project_root: &PathBuf) -> PathBuf {
     if cfg!(debug_assertions) {
         return project_root.clone();
     }
@@ -80,7 +83,7 @@ fn app_data_dir(project_root: &PathBuf) -> PathBuf {
         .join(".virtualtracker")
 }
 
-fn project_root() -> PathBuf {
+pub fn project_root() -> PathBuf {
     if let Ok(manifest) = env::var("CARGO_MANIFEST_DIR") {
         return PathBuf::from(manifest).join("..");
     }

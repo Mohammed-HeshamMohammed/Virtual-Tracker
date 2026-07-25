@@ -162,10 +162,49 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+/// Installed builds run with no attached console, so stderr-only logging (the
+/// env_logger default) is invisible — nobody could ever see why a screenshot
+/// or URL upload failed. Logs to a file next to the other agent state
+/// (agent-store.json etc), and still echoes to stderr for `cargo run`/dev use.
+struct TeeWriter {
+    file: std::fs::File,
+}
+
+impl std::io::Write for TeeWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let _ = std::io::stderr().write_all(buf);
+        self.file.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = std::io::stderr().flush();
+        self.file.flush()
+    }
+}
+
+fn init_logging() {
+    let data_dir = crate::config::app_data_dir(&crate::config::project_root());
+    let _ = std::fs::create_dir_all(&data_dir);
+    let log_path = data_dir.join("agent.log");
+
+    // Cap growth — this is a rolling diagnostic log, not an audit trail.
+    if let Ok(meta) = std::fs::metadata(&log_path) {
+        if meta.len() > 5 * 1024 * 1024 {
+            let _ = std::fs::remove_file(&log_path);
+        }
+    }
+
+    let mut builder = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    if let Ok(file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+        builder.target(env_logger::Target::Pipe(Box::new(TeeWriter { file })));
+    }
+    let _ = builder.try_init();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let _ = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-        .try_init();
+    init_logging();
 
     let settings = Settings::load();
     let prefs = settings.preferences_store().load();
