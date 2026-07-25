@@ -70,6 +70,13 @@ impl ActivityTracker {
         *self.session_id.lock() = None;
     }
 
+    /// The session currently being tracked, if any — used to cleanly close it
+    /// server-side on quit instead of leaving it "active" forever (which would
+    /// otherwise get silently resumed the next time the agent signs in).
+    pub fn current_session_id(&self) -> Option<String> {
+        self.session_id.lock().clone()
+    }
+
     fn emit_status(&self, text: &str) {
         if let Some(cb) = &self.on_status {
             cb(text.to_string());

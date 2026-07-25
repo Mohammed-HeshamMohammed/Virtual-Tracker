@@ -38,8 +38,11 @@ pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&s
 pub fn open_system_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         let _ = Command::new("cmd")
             .args(["/C", "start", "", url])
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn();
     }
     #[cfg(target_os = "macos")]

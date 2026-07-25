@@ -50,7 +50,12 @@ impl PreferencesStore {
 
     pub fn load(&self) -> UserPreferences {
         if !self.path.exists() {
-            return UserPreferences::default();
+            // Write the defaults back immediately so the file actually exists
+            // again after being deleted, instead of only reappearing once the
+            // user happens to toggle a setting.
+            let defaults = UserPreferences::default();
+            let _ = self.save(&defaults);
+            return defaults;
         }
         match fs::read_to_string(&self.path) {
             Ok(text) => serde_json::from_str(&text).unwrap_or_default(),

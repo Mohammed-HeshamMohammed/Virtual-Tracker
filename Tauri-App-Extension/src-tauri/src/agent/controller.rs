@@ -75,7 +75,14 @@ impl AgentController {
 
     pub fn stop(&self) {
         self.link_flow.stop();
+        // Close the session server-side on a clean quit — otherwise it's left
+        // "active" forever and silently resumes (with whatever task it had) the
+        // next time the agent signs in, with no user action involved.
         if let Some(tracker) = self.tracker.lock().as_ref() {
+            if let Some(session_id) = tracker.current_session_id() {
+                let _ = self.api.lock().post_session_action("stop", None);
+                log::info!("Closed session {session_id} on quit");
+            }
             tracker.stop();
         }
         self.auth_server.stop();

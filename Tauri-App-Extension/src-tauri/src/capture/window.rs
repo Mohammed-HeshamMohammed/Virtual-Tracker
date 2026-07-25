@@ -8,6 +8,14 @@ use std::time::{Duration, Instant};
 
 use crate::constants::{MAX_URL_LEN, URL_SCRIPT_TIMEOUT_SEC};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+/// Suppresses the console window a spawned powershell/cmd process would
+/// otherwise flash on screen — this runs silently in the background.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 static DISPLAY_OVERRIDES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
 fn overrides() -> &'static HashMap<&'static str, &'static str> {
@@ -248,6 +256,7 @@ pub fn read_browser_url(
             return None;
         }
         let mut cmd = Command::new("powershell");
+        cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.args([
             "-STA",
             "-NoProfile",
