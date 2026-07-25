@@ -590,7 +590,7 @@ export function ActivityTrackingProvider({
   const startTracking = useCallback(async (): Promise<boolean> => {
     if (!(await ensureAgentReadyForTimer())) return false
     if (!currentTaskRef.current?.id) {
-      notifyAgentTimerBlocked("Please select a task from the sidebar before starting the timer.")
+      notifyAgentTimerBlocked("Select a project and task in the Virtual Tracker Agent before starting the timer.")
       return false
     }
     const taskId = currentTaskRef.current.id
@@ -633,7 +633,7 @@ export function ActivityTrackingProvider({
   const resumeTracking = useCallback(async (): Promise<boolean> => {
     if (!(await ensureAgentReadyForTimer())) return false
     if (!currentTaskRef.current?.id) {
-      notifyAgentTimerBlocked("Please select a task from the sidebar before resuming the timer.")
+      notifyAgentTimerBlocked("Select a project and task in the Virtual Tracker Agent before resuming the timer.")
       return false
     }
     const taskId = currentTaskRef.current.id

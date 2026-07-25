@@ -15,9 +15,7 @@ import { NAV_SECTIONS, type NavSection, type NavSubItem } from "@/shared/ui/layo
 import { SIDEBAR_THEME_DARK as dark, SIDEBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { prefetchChunkForPage } from "@/app"
 import { canAccessAllSidebarTabs, canAccessReviewCenter, canSeePmTasksSection } from "@/features/auth"
-import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
-import { SidebarTaskSelector } from "@/shared/ui/layout/components/sidebar/sidebar-task-selector"
 import { SidebarUserCard } from "@/shared/ui/layout/components/sidebar/sidebar-user-card"
 
 interface SidebarProps {
@@ -25,8 +23,6 @@ interface SidebarProps {
   onToggleCollapse: () => void
   activeItem: string
   onNavigate: (id: string) => void
-  selectedTaskForTimer: any
-  setSelectedTaskForTimer: (task: any) => void
 }
 
 function Divider({ sep }: { sep: string }) {
@@ -42,8 +38,6 @@ export function Sidebar({
   onToggleCollapse,
   activeItem,
   onNavigate,
-  selectedTaskForTimer,
-  setSelectedTaskForTimer,
 }: SidebarProps) {
   const { isDark } = useTheme()
   const { memberRole } = useAuth()
@@ -54,7 +48,6 @@ export function Sidebar({
 
   const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
   const canSeeReviewCenter = canAccessReviewCenter(memberRole)
-  const isClient = isClientRole(memberRole)
 
   const isSectionActive = (s: NavSection) =>
     s.id === activeItem || s.pages?.some((p: NavSubItem) => p.id === activeItem) || false
@@ -244,14 +237,6 @@ export function Sidebar({
         <Divider sep={t.sep} />
 
         <div className="mt-3 space-y-3">
-          {!isClient && (
-            <SidebarTaskSelector
-              isCollapsed={isCollapsed}
-              selectedTaskForTimer={selectedTaskForTimer}
-              setSelectedTaskForTimer={setSelectedTaskForTimer}
-            />
-          )}
-
           <button
             className={cn("relative w-full flex items-center justify-center py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02] active:scale-95 overflow-hidden group", t.addTaskText)}
             style={{ background: `linear-gradient(135deg, ${t.addTaskFrom}, ${t.addTaskTo})` }} type="button"
