@@ -53,6 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Screenshots", id: "activity-screenshots" },
       { label: "Apps",        id: "activity-apps"        },
       { label: "URLs",        id: "activity-urls"        },
+      { label: "Tools",       id: "activity-tools"       },
     ],
   },
   {
