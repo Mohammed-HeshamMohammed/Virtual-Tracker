@@ -126,12 +126,20 @@ function TitleBar({
   onBack,
   onCheckUpdate,
   checkingUpdate,
+  onRefresh,
+  refreshing,
+  onOpenSettings,
+  version,
 }: {
   title: string;
   onClose: () => void;
   onBack?: () => void;
   onCheckUpdate?: () => void;
   checkingUpdate?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  onOpenSettings?: () => void;
+  version?: string;
 }) {
   return (
     <header className="titlebar">
@@ -168,8 +176,42 @@ function TitleBar({
         <span className="titlebar-label" data-tauri-drag-region>
           {title}
         </span>
+        {onRefresh ? (
+          <button
+            className="win-btn"
+            type="button"
+            title="Refresh projects & tasks"
+            aria-label="Refresh projects & tasks"
+            disabled={refreshing}
+            onClick={onRefresh}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshing ? "spin" : undefined}>
+              <path
+                fill="currentColor"
+                d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+              />
+            </svg>
+          </button>
+        ) : null}
+        {onOpenSettings ? (
+          <button
+            className="win-btn"
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={onOpenSettings}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.484.484 0 0 0 14.06 2h-3.88c-.24 0-.45.17-.49.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54c.05.24.25.41.49.41h3.88c.24 0 .44-.17.49-.41l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
+              />
+            </svg>
+          </button>
+        ) : null}
       </div>
       <div className="titlebar-controls">
+        {version ? <span className="titlebar-version">v{version}</span> : null}
         {onCheckUpdate ? (
           <button
             className="win-btn"
@@ -672,6 +714,10 @@ function MainApp() {
         onClose={() => void invoke("close_window")}
         onCheckUpdate={() => void checkForUpdate()}
         checkingUpdate={checkingUpdate}
+        onRefresh={() => void handleManualRefresh()}
+        refreshing={refreshingData}
+        onOpenSettings={() => setView("settings")}
+        version={version}
       />
 
       <div className="app-body">
@@ -875,47 +921,6 @@ function MainApp() {
           )}
         </section>
       </div>
-
-      <footer className="footer">
-        <div className="footer-tools">
-          <button
-            className="footer-icon"
-            type="button"
-            title="Refresh projects & tasks"
-            aria-label="Refresh projects & tasks"
-            disabled={refreshingData}
-            onClick={() => void handleManualRefresh()}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="18"
-              height="18"
-              aria-hidden="true"
-              className={refreshingData ? "spin" : undefined}
-            >
-              <path
-                fill="currentColor"
-                d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-              />
-            </svg>
-          </button>
-          <button
-            className="footer-icon"
-            type="button"
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => setView("settings")}
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.484.484 0 0 0 14.06 2h-3.88c-.24 0-.45.17-.49.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54c.05.24.25.41.49.41h3.88c.24 0 .44-.17.49-.41l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
-              />
-            </svg>
-          </button>
-        </div>
-        <span className="footer-version">v{version}</span>
-      </footer>
     </main>
   );
 }

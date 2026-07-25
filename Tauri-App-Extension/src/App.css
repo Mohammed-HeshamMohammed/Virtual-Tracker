@@ -109,7 +109,16 @@ body {
 
 .titlebar-controls {
   display: flex;
+  align-items: center;
   height: 100%;
+  gap: 8px;
+}
+
+.titlebar-version {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 10px;
+  color: rgba(163, 170, 196, 0.4);
+  white-space: nowrap;
 }
 
 .win-btn {
@@ -146,6 +155,24 @@ body {
 .win-close:hover {
   background: rgba(255, 110, 132, 0.18);
   color: #ff6e84;
+}
+
+.win-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .content {
@@ -505,58 +532,6 @@ body {
 
 .btn-tertiary:hover {
   color: var(--on-surface);
-}
-
-.footer {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  background: var(--surface-low);
-  border-top: 1px solid rgba(109, 117, 140, 0.08);
-}
-
-.footer-tools {
-  display: flex;
-  gap: 14px;
-}
-
-.footer-icon {
-  border: none;
-  background: transparent;
-  color: var(--on-surface-variant);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: 6px;
-}
-
-.footer-icon:hover {
-  color: var(--primary);
-}
-
-.footer-icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.footer-icon .spin {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.footer-version {
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 10px;
-  color: rgba(163, 170, 196, 0.4);
 }
 
 .boot {
