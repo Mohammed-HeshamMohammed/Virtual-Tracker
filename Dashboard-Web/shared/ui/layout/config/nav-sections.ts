@@ -201,6 +201,7 @@ export function getSectionForPage(pageId: string): NavSection | undefined {
 
 const EXTRA_PAGE_LABELS: Record<string, string> = {
   profile: "Edit account",
+  "download-agent": "Download Tracker Agent",
 }
 
 export function getPageLabel(pageId: string): string {

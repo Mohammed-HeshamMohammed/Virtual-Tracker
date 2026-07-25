@@ -89,6 +89,8 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
       <div ref={sectionRef} className="relative flex items-center gap-1.5">
         {activeItem === "profile" ? (
           <span className={cn("text-sm font-bold whitespace-nowrap rounded-lg px-2 py-1", t.pageBtn)}>Edit account</span>
+        ) : activeItem === "download-agent" ? (
+          <span className={cn("text-sm font-bold whitespace-nowrap rounded-lg px-2 py-1", t.pageBtn)}>Download Tracker Agent</span>
         ) : activeItem === "settings-all" ? (
           <span className={cn("text-sm font-bold whitespace-nowrap rounded-lg px-2 py-1", t.pageBtn)}>Settings</span>
         ) : activeItem === "reports-all" ? (

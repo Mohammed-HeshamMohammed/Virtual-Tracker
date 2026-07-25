@@ -15,3 +15,4 @@ export type AppChunkId =
   | "financials"
   | "settings"
   | "profile"
+  | "download-agent"

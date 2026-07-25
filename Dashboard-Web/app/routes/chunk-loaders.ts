@@ -14,6 +14,7 @@ export const CHUNK_COMPONENTS: Record<AppChunkId, LazyExoticComponent<ComponentT
   financials: lazy(() => import("@/app/routes/chunks/financials-chunk") as Promise<ChunkModule>),
   settings: lazy(() => import("@/app/routes/chunks/settings-chunk") as Promise<ChunkModule>),
   profile: lazy(() => import("@/app/routes/chunks/profile-chunk") as Promise<ChunkModule>),
+  "download-agent": lazy(() => import("@/app/routes/chunks/download-agent-chunk") as Promise<ChunkModule>),
 }
 
 /** Raw import fns for idle prefetch (no React wrapper). */
@@ -27,4 +28,5 @@ export const CHUNK_IMPORTS: Record<AppChunkId, () => Promise<unknown>> = {
   financials: () => import("@/app/routes/chunks/financials-chunk"),
   settings: () => import("@/app/routes/chunks/settings-chunk"),
   profile: () => import("@/app/routes/chunks/profile-chunk"),
+  "download-agent": () => import("@/app/routes/chunks/download-agent-chunk"),
 }

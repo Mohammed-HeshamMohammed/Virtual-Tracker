@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -290,6 +290,96 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
   );
 }
 
+type DropdownOption = { id: string; label: string };
+
+function Dropdown({
+  id,
+  value,
+  options,
+  placeholder,
+  emptyLabel,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  value: string;
+  options: DropdownOption[];
+  placeholder: string;
+  emptyLabel: string;
+  disabled?: boolean;
+  onChange: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDown(e: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+
+  const selected = options.find((o) => o.id === value);
+  const isEmpty = options.length === 0;
+
+  return (
+    <div className="dropdown" ref={rootRef}>
+      <button
+        id={id}
+        type="button"
+        className={`dropdown-trigger${open ? " open" : ""}`}
+        disabled={disabled || isEmpty}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="dropdown-value">
+          {selected ? selected.label : isEmpty ? emptyLabel : placeholder}
+        </span>
+        <svg
+          className={`dropdown-chevron${open ? " open" : ""}`}
+          viewBox="0 0 12 12"
+          width="10"
+          height="10"
+          aria-hidden="true"
+        >
+          <path
+            d="M2.5 4.5 6 8l3.5-3.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open && !isEmpty ? (
+        <div className="dropdown-menu">
+          {options.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={`dropdown-item${option.id === value ? " active" : ""}`}
+              onClick={() => {
+                onChange(option.id);
+                setOpen(false);
+              }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MainApp() {
   const [view, setView] = useState<"home" | "settings">("home");
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
@@ -303,6 +393,7 @@ function MainApp() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [refreshingData, setRefreshingData] = useState(false);
   const [bars, setBars] = useState<number[]>(() =>
     Array.from({ length: 9 }, () => 20),
   );
@@ -379,6 +470,19 @@ function MainApp() {
       setTasks([]);
     }
   }, [signedIn, selectedProjectId]);
+
+  const handleManualRefresh = async () => {
+    if (refreshingData) return;
+    setRefreshingData(true);
+    try {
+      await Promise.all([refresh(), refreshProjects()]);
+      await refreshTasks();
+    } catch (err) {
+      console.error("manual refresh failed", err);
+    } finally {
+      setRefreshingData(false);
+    }
+  };
 
   useEffect(() => {
     void invoke<string>("get_version")
@@ -565,51 +669,30 @@ function MainApp() {
               <label className="task-label" htmlFor="project-select">
                 Project
               </label>
-              <select
+              <Dropdown
                 id="project-select"
-                className="task-select"
                 value={selectedProjectId}
-                disabled={busy || tracking || projects.length === 0}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
-              >
-                {projects.length === 0 ? (
-                  <option value="">No projects</option>
-                ) : (
-                  <>
-                    <option value="">Select a project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
+                options={projects.map((project) => ({ id: project.id, label: project.name }))}
+                placeholder="Select a project"
+                emptyLabel="No projects"
+                disabled={busy || tracking}
+                onChange={setSelectedProjectId}
+              />
             </section>
 
             <section className="task-card">
               <label className="task-label" htmlFor="task-select">
                 Your tasks
               </label>
-              <select
+              <Dropdown
                 id="task-select"
-                className="task-select"
                 value={selectedTaskId}
-                disabled={busy || tracking || !selectedProjectId || tasks.length === 0}
-                onChange={(e) => setSelectedTaskId(e.target.value)}
-              >
-                {!selectedProjectId ? (
-                  <option value="">Select a project first</option>
-                ) : tasks.length === 0 ? (
-                  <option value="">No assigned tasks</option>
-                ) : (
-                  tasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
-                    </option>
-                  ))
-                )}
-              </select>
+                options={tasks.map((task) => ({ id: task.id, label: task.title }))}
+                placeholder="Select a task"
+                emptyLabel={!selectedProjectId ? "Select a project first" : "No assigned tasks"}
+                disabled={busy || tracking || !selectedProjectId}
+                onChange={setSelectedTaskId}
+              />
             </section>
 
             <nav className="actions">
@@ -655,6 +738,27 @@ function MainApp() {
 
       <footer className="footer">
         <div className="footer-tools">
+          <button
+            className="footer-icon"
+            type="button"
+            title="Refresh projects & tasks"
+            aria-label="Refresh projects & tasks"
+            disabled={refreshingData}
+            onClick={() => void handleManualRefresh()}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="18"
+              height="18"
+              aria-hidden="true"
+              className={refreshingData ? "spin" : undefined}
+            >
+              <path
+                fill="currentColor"
+                d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+              />
+            </svg>
+          </button>
           <button
             className="footer-icon"
             type="button"

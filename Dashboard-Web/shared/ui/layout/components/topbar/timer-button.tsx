@@ -21,21 +21,23 @@ import { setTimerTask, type TimerTaskRef } from "@/features/activity/utils/timer
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 import { PipTimerWidget } from "@/shared/ui/layout/components/topbar/pip-timer-widget"
 import { useDocumentPip } from "@/shared/ui/layout/hooks/use-document-pip"
+import type { NavigateHandler } from "@/app/routes/types"
 
 interface TimerButtonProps {
   isCollapsed?: boolean
   selectedTaskForTimer: any
+  onNavigate: NavigateHandler
 }
 
-export function TimerButton({ isCollapsed = false, selectedTaskForTimer }: TimerButtonProps) {
+export function TimerButton({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
   const { active } = useActivityRuntime()
   if (!active) {
-    return <TimerButtonIdle isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} />
+    return <TimerButtonIdle isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
   }
-  return <TimerButtonLive isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} />
+  return <TimerButtonLive isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
 }
 
-function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer }: TimerButtonProps) {
+function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { requestActivityRuntime } = useActivityRuntime()
@@ -59,6 +61,10 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer }: TimerBut
 
     const readiness = await refreshAgentStatus()
     if (!readiness.canStartTimer) {
+      if (!readiness.isLocalAgentRunning) {
+        onNavigate("download-agent")
+        return
+      }
       setPipNotice(getAgentTimerBlockMessage(readiness))
       return
     }
@@ -121,7 +127,7 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer }: TimerBut
   )
 }
 
-function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer }: TimerButtonProps) {
+function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { phase, activeSeconds, idleSeconds, progressPercent, taskStatus, taskLimitSeconds, isTimerRunning, isAgentCapturing, startTracking, resumeTracking, toggleTimer, setCurrentTask } =
@@ -212,6 +218,10 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer }: TimerBut
     if (phase === "online" || phase === "idle") {
       const readiness = await refreshAgentStatus()
       if (!readiness.canStartTimer) {
+        if (!readiness.isLocalAgentRunning) {
+          onNavigate("download-agent")
+          return
+        }
         showNotice(getAgentTimerBlockMessage(readiness))
         return
       }
@@ -219,6 +229,10 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer }: TimerBut
       const started = await beginTimerSession(phase === "online" ? "start" : "resume")
       if (!started) {
         const after = await refreshAgentStatus()
+        if (!after.isLocalAgentRunning) {
+          onNavigate("download-agent")
+          return
+        }
         showNotice(getAgentTimerBlockMessage(after))
       }
       return

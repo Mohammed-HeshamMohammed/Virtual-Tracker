@@ -59,6 +59,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "settings-billing-plans": "settings",
 
   profile: "profile",
+  "download-agent": "download-agent",
 }
 
 for (const pageId of Object.keys(SHIFT_STYLE_HUB_REPORTS)) {

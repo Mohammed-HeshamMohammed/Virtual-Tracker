@@ -8,6 +8,7 @@ import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { canAccessAllSidebarTabs } from "@/features/auth"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { GlobalSearchBar } from "@/shared/ui/layout/components/topbar/global-search-bar"
 import { NotificationsBell } from "@/shared/ui/layout/components/topbar/notifications-bell"
 import { Breadcrumbs } from "@/shared/ui/layout/components/topbar/breadcrumbs"
@@ -26,6 +27,7 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false, selectedTa
   const { memberRole } = useAuth()
 
   const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
+  const isClient = isClientRole(memberRole)
 
   return (
     <header className={cn(
@@ -56,7 +58,9 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false, selectedTa
 
         <div className={cn("h-8 w-px mx-1", t.divider)} />
 
-        <TimerButton isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} />
+        {!isClient && (
+          <TimerButton isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
+        )}
       </div>
     </header>
   )
