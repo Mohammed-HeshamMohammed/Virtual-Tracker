@@ -12,7 +12,6 @@ import { BACKEND_RECONNECTING_HINT, BACKEND_UNAVAILABLE_MESSAGE } from "@/infras
 import { cn } from "@/shared/utils/utils"
 import { Sidebar, Topbar, PageSearchProvider } from "@/shared/ui/layout"
 import { HierarchyAssignmentBanner } from "@/shared/ui/layout/hierarchy-assignment-banner"
-import type { TimerTaskRef } from "@/features/activity/utils/timer-task-storage"
 import { configureTimerStorageScope, clearAllTaskTimerStateForScope } from "@/features/activity/utils/timer-task-storage"
 import { PageContent } from "@/app/page-content"
 import { isFullBleedPage } from "@/app/page-layout"
@@ -21,7 +20,6 @@ import { ActivityRuntimeProvider } from "@/features/activity"
 
 export function DashboardShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [selectedTaskForTimer, setSelectedTaskForTimer] = useState<TimerTaskRef | null>(null)
   const { isDark } = useTheme()
   const { isLoggedIn, sessionReady, memberRole, sessionStatusMessage, sessionConnectionError, retryConnection, backendReconnecting, initError, memberId } = useAuth()
   const { activeItem, setActiveItem: setActiveItemRaw, shellReady } =
@@ -40,7 +38,6 @@ export function DashboardShell() {
     configureTimerStorageScope(memberId)
     if (!memberId) {
       clearAllTaskTimerStateForScope()
-      setSelectedTaskForTimer(null)
     }
   }, [memberId])
 
@@ -97,15 +94,12 @@ export function DashboardShell() {
           onToggleCollapse={() => setIsSidebarCollapsed((p) => !p)}
           activeItem={activeItem}
           onNavigate={setActiveItem}
-          selectedTaskForTimer={selectedTaskForTimer}
-          setSelectedTaskForTimer={setSelectedTaskForTimer}
         />
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <Topbar
             activeItem={activeItem}
             onNavigate={setActiveItem}
             isCollapsed={!isSidebarCollapsed}
-            selectedTaskForTimer={selectedTaskForTimer}
           />
           <HierarchyAssignmentBanner />
           <main className="w-full flex-1 overflow-hidden p-8">

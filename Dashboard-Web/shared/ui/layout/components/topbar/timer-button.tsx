@@ -17,31 +17,31 @@ import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared
 import { AGENT_TIMER_BLOCKED_EVENT, getAgentTimerBlockMessage } from "@/features/activity/utils/agent-timer-gate"
 import { TASK_TIMER_LIMIT_EVENT } from "@/features/activity/components/activity-tracking-context"
 import { TIMER_LIMIT_REACHED_MESSAGE } from "@/features/activity/utils/timer-limit"
-import { TimerTaskSelectionSync } from "@/features/activity/components/timer-task-selection-sync"
-import { setTimerTask, type TimerTaskRef } from "@/features/activity/utils/timer-task-storage"
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 import { PipTimerWidget } from "@/shared/ui/layout/components/topbar/pip-timer-widget"
 import { useDocumentPip } from "@/shared/ui/layout/hooks/use-document-pip"
 import type { NavigateHandler } from "@/app/routes/types"
 
-/** How often to check for a session someone/something else already started (e.g. the desktop agent). */
+/** How often to check for a session the desktop agent already started. */
 const EXTERNAL_SESSION_POLL_MS = 8_000
 
 interface TimerButtonProps {
   isCollapsed?: boolean
-  selectedTaskForTimer: any
   onNavigate: NavigateHandler
 }
 
-export function TimerButton({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
+export function TimerButton({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { active } = useActivityRuntime()
   if (!active) {
-    return <TimerButtonIdle isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
+    return <TimerButtonIdle isCollapsed={isCollapsed} onNavigate={onNavigate} />
   }
-  return <TimerButtonLive isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
+  return <TimerButtonLive isCollapsed={isCollapsed} onNavigate={onNavigate} />
 }
 
-function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
+/** Idle: task selection and starting both happen in the desktop agent now — this
+ * button only detects an agent-started session and reflects it (or points at the
+ * agent/backend when it can't). It never starts anything itself. */
+function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { requestActivityRuntime } = useActivityRuntime()
@@ -53,8 +53,6 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
     void refreshAgentStatus()
   }, [refreshAgentStatus])
 
-  // The agent can start tracking on its own (its own project/task picker, not the
-  // web sidebar's). Notice that and reflect it here instead of staying stuck idle.
   useEffect(() => {
     if (!isLocalAgentRunning) return
     let cancelled = false
@@ -83,41 +81,13 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
   }, [])
 
   const agentMissing = !isLocalAgentRunning
-  const isDisabled = !agentMissing && !selectedTaskForTimer
 
-  async function handleTimerClick() {
+  function handleTimerClick() {
     if (agentMissing) {
       onNavigate("activity-tools")
       return
     }
-
-    if (!selectedTaskForTimer) {
-      setPipNotice("Please select a task from the sidebar before starting the timer.")
-      return
-    }
-
-    const readiness = await refreshAgentStatus()
-    if (!readiness.canStartTimer) {
-      if (!readiness.isLocalAgentRunning) {
-        onNavigate("activity-tools")
-        return
-      }
-      setPipNotice(getAgentTimerBlockMessage(readiness))
-      return
-    }
-
-    const taskRef: TimerTaskRef = {
-      id: selectedTaskForTimer.id,
-      title: selectedTaskForTimer.title,
-      durationHoursPerDay: selectedTaskForTimer.durationHoursPerDay ?? null,
-      durationDays: selectedTaskForTimer.durationDays ?? null,
-      overtimeHoursPerDay: selectedTaskForTimer.overtimeHoursPerDay ?? null,
-      startDate: selectedTaskForTimer.startDate ?? null,
-      dueDate: selectedTaskForTimer.dueDate ?? null,
-      workingDays: selectedTaskForTimer.workingDays ?? null,
-    }
-    setTimerTask(taskRef)
-    requestActivityRuntime({ action: "start", openPopup: true })
+    setPipNotice("Start tracking from the Virtual Tracker Agent on your computer.")
   }
 
   return (
@@ -155,12 +125,10 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={handleTimerClick}
-          disabled={isDisabled}
           className={cn(
             "relative flex items-center font-bold text-sm text-white rounded-xl overflow-hidden transition-shadow",
             isCollapsed ? "p-2.5" : "gap-2 px-4 py-2",
-            isDisabled && "cursor-not-allowed opacity-50",
-            agentMissing && !isDisabled && "opacity-70",
+            agentMissing && "opacity-70",
             isDark ? "shadow-lg shadow-[#4be277]/20" : "shadow-lg shadow-green-600/20",
           )}
           style={{
@@ -193,10 +161,10 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
   )
 }
 
-function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate }: TimerButtonProps) {
+function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
-  const { phase, activeSeconds, idleSeconds, progressPercent, taskStatus, taskLimitSeconds, isTimerRunning, isAgentCapturing, startTracking, resumeTracking, toggleTimer, setCurrentTask } =
+  const { phase, activeSeconds, idleSeconds, progressPercent, taskStatus, taskLimitSeconds, currentTask, isTimerRunning, isAgentCapturing, startTracking, resumeTracking, toggleTimer } =
     useActivityTracking()
   const { canStartTimer, refreshAgentStatus } = useAgentStatus()
 
@@ -263,24 +231,7 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
       return
     }
 
-    if (!selectedTaskForTimer) {
-      showNotice("Please select a task from the sidebar before starting the timer.")
-      return
-    }
-
-    const taskRef: TimerTaskRef = {
-      id: selectedTaskForTimer.id,
-      title: selectedTaskForTimer.title,
-      durationHoursPerDay: selectedTaskForTimer.durationHoursPerDay ?? null,
-      durationDays: selectedTaskForTimer.durationDays ?? null,
-      overtimeHoursPerDay: selectedTaskForTimer.overtimeHoursPerDay ?? null,
-      startDate: selectedTaskForTimer.startDate ?? null,
-      dueDate: selectedTaskForTimer.dueDate ?? null,
-      workingDays: selectedTaskForTimer.workingDays ?? null,
-    }
-    setTimerTask(taskRef)
-    setCurrentTask(taskRef)
-
+    // Task is already known from the session the agent started — nothing to pick here.
     if (phase === "online" || phase === "idle") {
       const readiness = await refreshAgentStatus()
       if (!readiness.canStartTimer) {
@@ -309,7 +260,6 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
 
   return (
     <>
-      <TimerTaskSelectionSync selectedTaskForTimer={selectedTaskForTimer} />
       <div
         className="relative"
         onMouseEnter={() => setShowTimerTooltip(true)}
@@ -364,12 +314,10 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={handleTimerClick}
-          disabled={!isTimerRunning && !selectedTaskForTimer}
           className={cn(
             "relative flex items-center font-bold text-sm text-white rounded-xl overflow-hidden transition-shadow",
             isCollapsed ? "p-2.5" : "gap-2 px-4 py-2",
-            !isTimerRunning && !canStartTimer && selectedTaskForTimer && "opacity-70",
-            !isTimerRunning && !selectedTaskForTimer && "cursor-not-allowed opacity-50",
+            !isTimerRunning && !canStartTimer && "opacity-70",
             isTimerRunning
               ? "bg-green-600 shadow-lg shadow-green-600/30 hover:bg-green-700"
               : isDark
@@ -431,7 +379,7 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
             isDark={isDark}
             onToggle={() => void toggleTimer()}
             onClose={closeTimerPopup}
-            taskName={selectedTaskForTimer?.title || "VirtualTracker OS Dashboard"}
+            taskName={currentTask?.title || "VirtualTracker OS Dashboard"}
           />,
           pipContainer,
         )}

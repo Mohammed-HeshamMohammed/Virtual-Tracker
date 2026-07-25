@@ -18,10 +18,9 @@ interface TopbarProps {
   activeItem: string
   onNavigate: (id: string) => void
   isCollapsed?: boolean
-  selectedTaskForTimer: any
 }
 
-export function Topbar({ activeItem, onNavigate, isCollapsed = false, selectedTaskForTimer }: TopbarProps) {
+export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { memberRole } = useAuth()
@@ -59,7 +58,7 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false, selectedTa
         <div className={cn("h-8 w-px mx-1", t.divider)} />
 
         {!isClient && (
-          <TimerButton isCollapsed={isCollapsed} selectedTaskForTimer={selectedTaskForTimer} onNavigate={onNavigate} />
+          <TimerButton isCollapsed={isCollapsed} onNavigate={onNavigate} />
         )}
       </div>
     </header>
