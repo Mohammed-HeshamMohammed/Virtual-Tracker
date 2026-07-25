@@ -107,19 +107,19 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
           {showAgentTooltip && agentMissing && (
             <motion.div
               key="timer-tooltip-agent-idle"
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
+              exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12 }}
               className={cn(
-                "absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
+                "absolute top-full mt-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
                 t.timerTooltip,
               )}
             >
               Download the Tracker Agent to start tracking from the web
               <span
                 className={cn(
-                  "absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent",
+                  "absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent",
                   t.timerArrow,
                 )}
               />
@@ -316,19 +316,19 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
           {tooltipKind === "agent-required" && (
             <motion.div
               key="timer-tooltip-agent"
-              initial={{ opacity: 0, y: 4 }}
+              initial={{ opacity: 0, y: -4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
+              exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.12 }}
               className={cn(
-                "absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
+                "absolute top-full mt-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
                 t.timerTooltip,
               )}
             >
               Download the Tracker Agent to start tracking from the web
               <span
                 className={cn(
-                  "absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent",
+                  "absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent",
                   t.timerArrow,
                 )}
               />
