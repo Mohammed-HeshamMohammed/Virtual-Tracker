@@ -12,9 +12,24 @@ impl ScreenCapture {
     }
 
     pub fn capture_jpeg_data_url(&self) -> Option<String> {
-        let monitors = xcap::Monitor::all().ok()?;
-        let monitor = monitors.into_iter().next()?;
-        let image = monitor.capture_image().ok()?;
+        let monitors = match xcap::Monitor::all() {
+            Ok(m) => m,
+            Err(err) => {
+                log::warn!("Screenshot skipped: could not enumerate monitors: {err}");
+                return None;
+            }
+        };
+        let Some(monitor) = monitors.into_iter().next() else {
+            log::warn!("Screenshot skipped: no monitors detected");
+            return None;
+        };
+        let image = match monitor.capture_image() {
+            Ok(img) => img,
+            Err(err) => {
+                log::warn!("Screenshot skipped: capture_image failed: {err}");
+                return None;
+            }
+        };
 
         let mut rgba = image;
         let width = rgba.width();
@@ -33,14 +48,15 @@ impl ScreenCapture {
         let mut jpeg = Vec::new();
         {
             let encoder = JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY);
-            encoder
-                .write_image(
-                    rgba.as_raw(),
-                    rgba.width(),
-                    rgba.height(),
-                    ColorType::Rgba8.into(),
-                )
-                .ok()?;
+            if let Err(err) = encoder.write_image(
+                rgba.as_raw(),
+                rgba.width(),
+                rgba.height(),
+                ColorType::Rgba8.into(),
+            ) {
+                log::warn!("Screenshot skipped: JPEG encode failed: {err}");
+                return None;
+            }
         }
         let encoded = base64::engine::general_purpose::STANDARD.encode(&jpeg);
         Some(format!("data:image/jpeg;base64,{encoded}"))
