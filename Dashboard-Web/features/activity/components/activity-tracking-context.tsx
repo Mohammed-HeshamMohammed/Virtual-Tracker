@@ -51,6 +51,8 @@ interface ActivityTrackingContextValue {
   setCurrentTask: (task: TimerTaskRef | null) => void
   canStartTimer: boolean
   startTracking: () => Promise<boolean>
+  /** Passively reflect whatever session already exists (e.g. one the desktop agent started) without POSTing a new one. */
+  restoreSession: () => Promise<void>
   setIdle: () => Promise<void>
   resumeTracking: () => Promise<boolean>
   stopTracking: () => Promise<void>
@@ -691,6 +693,7 @@ export function ActivityTrackingProvider({
     canStartTimer,
     setCurrentTask,
     startTracking,
+    restoreSession,
     setIdle,
     resumeTracking,
     stopTracking,

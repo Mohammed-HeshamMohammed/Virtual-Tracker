@@ -27,7 +27,7 @@ type ActivityRuntimeBootstrapProps = {
 }
 
 export function ActivityRuntimeBootstrap({ pending, onComplete }: ActivityRuntimeBootstrapProps) {
-  const { startTracking, resumeTracking, setCurrentTask } = useActivityTracking()
+  const { startTracking, resumeTracking, restoreSession, setCurrentTask } = useActivityTracking()
   const { refreshAgentStatus } = useAgentStatus()
 
   useEffect(() => {
@@ -36,6 +36,14 @@ export function ActivityRuntimeBootstrap({ pending, onComplete }: ActivityRuntim
     let cancelled = false
 
     void (async () => {
+      // Adopting an already-running session (e.g. one the desktop agent started):
+      // just reflect it, no task-selection or readiness gate, no POST.
+      if (pending.action === "adopt") {
+        await restoreSession()
+        if (!cancelled) onComplete()
+        return
+      }
+
       const task = getTimerTask()
       if (task) setCurrentTask(task)
 
@@ -65,7 +73,7 @@ export function ActivityRuntimeBootstrap({ pending, onComplete }: ActivityRuntim
     return () => {
       cancelled = true
     }
-  }, [pending, onComplete, refreshAgentStatus, resumeTracking, setCurrentTask, startTracking])
+  }, [pending, onComplete, refreshAgentStatus, resumeTracking, restoreSession, setCurrentTask, startTracking])
 
   return null
 }
