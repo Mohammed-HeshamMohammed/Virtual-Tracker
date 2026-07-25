@@ -11,6 +11,7 @@ import { useTheme } from "@/shared/providers/app"
 import { useActivityTracking } from "@/features/activity/components/activity-tracking-context"
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 import { useActivityRuntime } from "@/features/activity"
+import { fetchActivitySession } from "@/features/activity/services/activity-api"
 import { subscribeTimerOpenPopup } from "@/features/activity/components/activity-runtime-bootstrap"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { AGENT_TIMER_BLOCKED_EVENT, getAgentTimerBlockMessage } from "@/features/activity/utils/agent-timer-gate"
@@ -22,6 +23,9 @@ import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 import { PipTimerWidget } from "@/shared/ui/layout/components/topbar/pip-timer-widget"
 import { useDocumentPip } from "@/shared/ui/layout/hooks/use-document-pip"
 import type { NavigateHandler } from "@/app/routes/types"
+
+/** How often to check for a session someone/something else already started (e.g. the desktop agent). */
+const EXTERNAL_SESSION_POLL_MS = 8_000
 
 interface TimerButtonProps {
   isCollapsed?: boolean
@@ -48,6 +52,26 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
   useEffect(() => {
     void refreshAgentStatus()
   }, [refreshAgentStatus])
+
+  // The agent can start tracking on its own (its own project/task picker, not the
+  // web sidebar's). Notice that and reflect it here instead of staying stuck idle.
+  useEffect(() => {
+    if (!isLocalAgentRunning) return
+    let cancelled = false
+    async function checkForExternalSession() {
+      const session = await fetchActivitySession()
+      if (cancelled || !session) return
+      if (session.status === "active" || session.status === "idle") {
+        requestActivityRuntime({ action: "adopt", openPopup: false })
+      }
+    }
+    void checkForExternalSession()
+    const interval = setInterval(() => void checkForExternalSession(), EXTERNAL_SESSION_POLL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [isLocalAgentRunning, requestActivityRuntime])
 
   useEffect(() => {
     function onAgentBlocked(e: Event) {
