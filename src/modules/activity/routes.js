@@ -27,6 +27,7 @@ import {
 import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
+import { computeTimerAllowance, TIMER_LIMIT_REACHED_MESSAGE } from "../tasks/timer-limit.service.js";
 import {
   createPgSession,
   fetchPgAppLogs,
@@ -253,6 +254,31 @@ export async function routeActivity(req, res, url, origin) {
 
       const now = new Date();
       let open = await findOpenSession(member.memberId);
+
+      // Daily/weekly/task-total caps were computed but never actually gated
+      // starting a session here — enforceTimerAllowanceOnSync's rejection was
+      // only thrown from the best-effort task-tracking sync below, by which
+      // point the session was already created and marked active. Check first.
+      if (action === "start" || action === "resume") {
+        const effectiveTaskId = taskId || open?.task_id || null;
+        if (effectiveTaskId) {
+          const taskSnap = await db.collection("tasks").doc(effectiveTaskId).get();
+          if (taskSnap.exists) {
+            const task = { ...taskSnap.data(), id: effectiveTaskId };
+            const allowance = await computeTimerAllowance(db, member.memberId, task, {
+              currentCumulativeActiveSeconds: Math.max(0, Math.floor(activeSeconds ?? 0)),
+            });
+            if (allowance.limitReached) {
+              sendJson(res, origin, 403, {
+                success: false,
+                error: allowance.message || TIMER_LIMIT_REACHED_MESSAGE,
+                data: { timerAllowance: allowance },
+              });
+              return true;
+            }
+          }
+        }
+      }
 
       if (action === "start") {
         if (!open) {
