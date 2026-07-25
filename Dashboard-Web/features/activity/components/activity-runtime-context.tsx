@@ -15,10 +15,9 @@ import { WebActivityReporter } from "@/features/activity/components/web-activity
 import { ActivityRuntimeBootstrap } from "@/features/activity/components/activity-runtime-bootstrap"
 
 export type ActivityRuntimePending = {
-  /** "adopt" reflects a session that already exists (e.g. one the desktop agent
-   * started) without POSTing a new one — no task-selection or readiness gate. */
-  action: "start" | "resume" | "adopt"
-  openPopup?: boolean
+  /** The only action left: reflect a session the desktop agent already started.
+   * No task-selection, no readiness gate, no POST — the agent owns starting/stopping. */
+  action: "adopt"
 }
 
 type ActivityRuntimeContextValue = {
