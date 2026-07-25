@@ -11,7 +11,7 @@ import { getEnv } from "../../config/env.js";
 import { getAuthAdmin, getDb } from "../../config/firebase.js";
 import { getAuthContext } from "../../http/auth-context.js";
 import { readIdToken } from "../../http/auth-token.js";
-import { readJsonBody } from "../../http/read-json-body.js";
+import { readJsonBody, MAX_ACTIVITY_EVENTS_BODY_BYTES } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import {
   buildMemberMetaMap,
@@ -375,7 +375,7 @@ export async function routeActivity(req, res, url, origin) {
   if (pn === "/api/activity/events" && req.method === "POST") {
     let body;
     try {
-      body = await readJsonBody(req);
+      body = await readJsonBody(req, MAX_ACTIVITY_EVENTS_BODY_BYTES);
     } catch (e) {
       sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
       return true;
@@ -437,7 +437,9 @@ export async function routeActivity(req, res, url, origin) {
                 ? ev.image_data
                 : "";
           if (!imageData) continue;
-          if (imageData.length > 900_000) {
+          // Leaves headroom under MAX_ACTIVITY_EVENTS_BODY_BYTES for the rest of the
+          // JSON envelope (sessionId, appName, pageTitle, etc).
+          if (imageData.length > 2_300_000) {
             logSafeWarn("[activity events] screenshot dropped: oversized", {
               memberId: member.memberId,
               sessionId,
