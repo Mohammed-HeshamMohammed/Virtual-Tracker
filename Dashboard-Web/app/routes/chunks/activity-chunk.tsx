@@ -8,6 +8,7 @@ import type { ActivitySubPage } from "@/features/activity/components/activity-sh
 import { ActivityScreenshots } from "@/features/activity"
 import { ActivityAppsContent } from "@/features/activity"
 import { ActivityURLsContent } from "@/features/activity"
+import { ActivityToolsPage } from "@/features/activity/components/activity-tools-page"
 import type { PageChunkProps } from "@/app/routes/types"
 
 function ActivityPageContent({ pageId }: { pageId: ActivitySubPage }) {
@@ -42,6 +43,10 @@ function ActivityPageGate({ pageId }: PageChunkProps) {
 }
 
 export default function ActivityChunk(props: PageChunkProps) {
+  if (props.pageId === "activity-tools") {
+    return <ActivityToolsPage />
+  }
+
   return (
     <PeopleTeamScopeProvider>
       <ActivityFeedProvider>

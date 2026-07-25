@@ -53,6 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Screenshots", id: "activity-screenshots" },
       { label: "Apps",        id: "activity-apps"        },
       { label: "URLs",        id: "activity-urls"        },
+      { label: "Tools",       id: "activity-tools"       },
     ],
   },
   {
@@ -201,7 +202,6 @@ export function getSectionForPage(pageId: string): NavSection | undefined {
 
 const EXTRA_PAGE_LABELS: Record<string, string> = {
   profile: "Edit account",
-  "download-agent": "Download Tracker Agent",
 }
 
 export function getPageLabel(pageId: string): string {

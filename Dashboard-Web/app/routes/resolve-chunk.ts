@@ -22,6 +22,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "activity-screenshots": "activity",
   "activity-apps": "activity",
   "activity-urls": "activity",
+  "activity-tools": "activity",
 
   "timesheets-view": "timesheets",
   "timesheets-approvals": "timesheets",
@@ -59,7 +60,6 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "settings-billing-plans": "settings",
 
   profile: "profile",
-  "download-agent": "download-agent",
 }
 
 for (const pageId of Object.keys(SHIFT_STYLE_HUB_REPORTS)) {

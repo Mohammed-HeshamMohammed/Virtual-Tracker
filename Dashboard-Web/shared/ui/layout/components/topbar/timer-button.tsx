@@ -41,8 +41,13 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
   const { isDark } = useTheme()
   const t = isDark ? dark : light
   const { requestActivityRuntime } = useActivityRuntime()
-  const { refreshAgentStatus } = useAgentStatus()
+  const { isLocalAgentRunning, refreshAgentStatus } = useAgentStatus()
   const [pipNotice, setPipNotice] = useState<string | null>(null)
+  const [showAgentTooltip, setShowAgentTooltip] = useState(false)
+
+  useEffect(() => {
+    void refreshAgentStatus()
+  }, [refreshAgentStatus])
 
   useEffect(() => {
     function onAgentBlocked(e: Event) {
@@ -53,7 +58,15 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
     return () => window.removeEventListener(AGENT_TIMER_BLOCKED_EVENT, onAgentBlocked)
   }, [])
 
+  const agentMissing = !isLocalAgentRunning
+  const isDisabled = !agentMissing && !selectedTaskForTimer
+
   async function handleTimerClick() {
+    if (agentMissing) {
+      onNavigate("activity-tools")
+      return
+    }
+
     if (!selectedTaskForTimer) {
       setPipNotice("Please select a task from the sidebar before starting the timer.")
       return
@@ -62,7 +75,7 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
     const readiness = await refreshAgentStatus()
     if (!readiness.canStartTimer) {
       if (!readiness.isLocalAgentRunning) {
-        onNavigate("download-agent")
+        onNavigate("activity-tools")
         return
       }
       setPipNotice(getAgentTimerBlockMessage(readiness))
@@ -85,16 +98,45 @@ function TimerButtonIdle({ isCollapsed = false, selectedTaskForTimer, onNavigate
 
   return (
     <>
-      <div className="relative">
+      <div
+        className="relative"
+        onMouseEnter={() => setShowAgentTooltip(true)}
+        onMouseLeave={() => setShowAgentTooltip(false)}
+      >
+        <AnimatePresence>
+          {showAgentTooltip && agentMissing && (
+            <motion.div
+              key="timer-tooltip-agent-idle"
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.12 }}
+              className={cn(
+                "absolute bottom-full mb-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
+                t.timerTooltip,
+              )}
+            >
+              Download the Tracker Agent to start tracking from the web
+              <span
+                className={cn(
+                  "absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent",
+                  t.timerArrow,
+                )}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <motion.button
           whileHover={{ scale: 1.03 }}
           whileTap={{ scale: 0.97 }}
           onClick={handleTimerClick}
-          disabled={!selectedTaskForTimer}
+          disabled={isDisabled}
           className={cn(
             "relative flex items-center font-bold text-sm text-white rounded-xl overflow-hidden transition-shadow",
             isCollapsed ? "p-2.5" : "gap-2 px-4 py-2",
-            !selectedTaskForTimer && "cursor-not-allowed opacity-50",
+            isDisabled && "cursor-not-allowed opacity-50",
+            agentMissing && !isDisabled && "opacity-70",
             isDark ? "shadow-lg shadow-[#4be277]/20" : "shadow-lg shadow-green-600/20",
           )}
           style={{
@@ -219,7 +261,7 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
       const readiness = await refreshAgentStatus()
       if (!readiness.canStartTimer) {
         if (!readiness.isLocalAgentRunning) {
-          onNavigate("download-agent")
+          onNavigate("activity-tools")
           return
         }
         showNotice(getAgentTimerBlockMessage(readiness))
@@ -230,7 +272,7 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
       if (!started) {
         const after = await refreshAgentStatus()
         if (!after.isLocalAgentRunning) {
-          onNavigate("download-agent")
+          onNavigate("activity-tools")
           return
         }
         showNotice(getAgentTimerBlockMessage(after))
@@ -283,7 +325,7 @@ function TimerButtonLive({ isCollapsed = false, selectedTaskForTimer, onNavigate
                 t.timerTooltip,
               )}
             >
-              Agent required — run Python-App-Extension
+              Download the Tracker Agent to start tracking from the web
               <span
                 className={cn(
                   "absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent",
