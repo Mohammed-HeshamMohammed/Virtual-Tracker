@@ -468,49 +468,103 @@ impl ApiClient {
             return Err(err.to_string());
         }
         let data = body.get("data");
-        Ok(crate::types::SessionInfo {
-            id: data
-                .and_then(|d| d.get("id"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            status: data
-                .and_then(|d| d.get("status"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("stopped")
-                .to_string(),
-            task_id: data
-                .and_then(|d| d.get("taskId").or_else(|| d.get("task_id")))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            task_title: None,
-        })
+        Ok(session_info_from_json(data))
     }
 
     pub fn current_session_info(&mut self) -> crate::types::SessionInfo {
         match self.fetch_session().unwrap_or(None) {
-            Some(session) => crate::types::SessionInfo {
-                id: session
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                status: session
-                    .get("status")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("stopped")
-                    .to_string(),
-                task_id: session
-                    .get("taskId")
-                    .or_else(|| session.get("task_id"))
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                task_title: None,
-            },
+            Some(session) => session_info_from_json(Some(&session)),
             None => crate::types::SessionInfo {
                 id: None,
                 status: "stopped".into(),
                 task_id: None,
                 task_title: None,
+                active_seconds: 0,
+                idle_seconds: 0,
             },
         }
+    }
+
+    /// Per-task time-tracking summary — daily total, task estimate, and any
+    /// overtime allowance. Was shown in the web dashboard's timer popup; that
+    /// popup is gone, this is now its only home.
+    pub fn fetch_task_time_tracking(
+        &mut self,
+        task_id: &str,
+    ) -> Option<crate::types::TaskTimeTracking> {
+        if !self.refresh_token_if_needed() {
+            return None;
+        }
+        let auth = self.auth_headers()?;
+        let url = format!(
+            "{}/api/tasks/{}/time-tracking",
+            self.api_url,
+            urlencoding::encode(task_id)
+        );
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        let body: Value = res.json().ok()?;
+        let data = body.get("data")?;
+        let allowance = data.get("timerAllowance");
+        Some(crate::types::TaskTimeTracking {
+            active_seconds: data.get("activeSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+            idle_seconds: data.get("idleSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+            task_status: data
+                .get("taskStatus")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            estimated_seconds: data.get("estimatedSeconds").and_then(|v| v.as_u64()),
+            progress_percent: data.get("progressPercent").and_then(|v| v.as_f64()),
+            worked_today_seconds: allowance
+                .and_then(|a| a.get("workedTodaySeconds"))
+                .and_then(|v| v.as_u64()),
+            allowed_remaining_seconds: allowance
+                .and_then(|a| a.get("allowedRemainingSeconds"))
+                .and_then(|v| v.as_i64()),
+            limit_reached: allowance
+                .and_then(|a| a.get("limitReached"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            allowance_message: allowance
+                .and_then(|a| a.get("message"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        })
+    }
+}
+
+fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
+    crate::types::SessionInfo {
+        id: data
+            .and_then(|d| d.get("id"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        status: data
+            .and_then(|d| d.get("status"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("stopped")
+            .to_string(),
+        task_id: data
+            .and_then(|d| d.get("taskId").or_else(|| d.get("task_id")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        task_title: None,
+        active_seconds: data
+            .and_then(|d| d.get("activeSeconds"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        idle_seconds: data
+            .and_then(|d| d.get("idleSeconds"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
     }
 }

@@ -3,23 +3,19 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { Timer, Play, Clock, ChevronUp } from "lucide-react"
+import { Timer, Play, Clock } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useActivityTracking } from "@/features/activity/components/activity-tracking-context"
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 import { useActivityRuntime } from "@/features/activity"
 import { fetchActivitySession } from "@/features/activity/services/activity-api"
-import { subscribeTimerOpenPopup } from "@/features/activity/components/activity-runtime-bootstrap"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { AGENT_TIMER_BLOCKED_EVENT } from "@/features/activity/utils/agent-timer-gate"
 import { TASK_TIMER_LIMIT_EVENT } from "@/features/activity/components/activity-tracking-context"
 import { TIMER_LIMIT_REACHED_MESSAGE } from "@/features/activity/utils/timer-limit"
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
-import { PipTimerWidget } from "@/shared/ui/layout/components/topbar/pip-timer-widget"
-import { useDocumentPip } from "@/shared/ui/layout/hooks/use-document-pip"
 import type { NavigateHandler } from "@/app/routes/types"
 
 /** How often to check for a session the desktop agent already started. */
@@ -30,12 +26,14 @@ interface TimerButtonProps {
   onNavigate: NavigateHandler
 }
 
+/** The Tauri agent is the only thing that starts, stops, or shows detail for a
+ * tracking session — this button is a read-only mirror of agent+backend state. */
 export function TimerButton({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { active } = useActivityRuntime()
   if (!active) {
     return <TimerButtonIdle isCollapsed={isCollapsed} onNavigate={onNavigate} />
   }
-  return <TimerButtonLive isCollapsed={isCollapsed} onNavigate={onNavigate} />
+  return <TimerButtonLive isCollapsed={isCollapsed} />
 }
 
 /** Idle: task selection and starting both happen in the desktop agent now — this
@@ -46,7 +44,7 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
   const t = isDark ? dark : light
   const { requestActivityRuntime } = useActivityRuntime()
   const { isLocalAgentRunning, refreshAgentStatus } = useAgentStatus()
-  const [pipNotice, setPipNotice] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [showAgentTooltip, setShowAgentTooltip] = useState(false)
 
   useEffect(() => {
@@ -60,7 +58,7 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
       const session = await fetchActivitySession()
       if (cancelled || !session) return
       if (session.status === "active" || session.status === "idle") {
-        requestActivityRuntime({ action: "adopt", openPopup: false })
+        requestActivityRuntime({ action: "adopt" })
       }
     }
     void checkForExternalSession()
@@ -74,7 +72,7 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
   useEffect(() => {
     function onAgentBlocked(e: Event) {
       const message = (e as CustomEvent<{ message: string }>).detail?.message
-      if (message) setPipNotice(message)
+      if (message) setNotice(message)
     }
     window.addEventListener(AGENT_TIMER_BLOCKED_EVENT, onAgentBlocked)
     return () => window.removeEventListener(AGENT_TIMER_BLOCKED_EVENT, onAgentBlocked)
@@ -89,7 +87,7 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
     }
     // Agent is connected but hasn't started tracking — nothing to trigger from
     // here, starting only happens in the agent's own UI.
-    setPipNotice("Open the Virtual Tracker Agent on your computer to start tracking.")
+    setNotice("Open the Virtual Tracker Agent on your computer to start tracking.")
   }
 
   return (
@@ -157,38 +155,20 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
         </motion.button>
       </div>
 
-      <NotifyToastHost
-        message={pipNotice}
-        onDismiss={() => setPipNotice(null)}
-        title="Timer"
-        tone="error"
-      />
+      <NotifyToastHost message={notice} onDismiss={() => setNotice(null)} title="Timer" tone="error" />
     </>
   )
 }
 
-function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) {
+/** Live: a session exists (adopted from the agent). Pure read-only reflection —
+ * no popup, no stop/start controls. Those live in the Tauri app now. */
+function TimerButtonLive({ isCollapsed = false }: Pick<TimerButtonProps, "isCollapsed">) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
-  const { phase, activeSeconds, taskStatus, currentTask, isTimerRunning, isAgentCapturing, stopTracking } =
-    useActivityTracking()
+  const { phase, activeSeconds, isTimerRunning, isAgentCapturing } = useActivityTracking()
 
   const [showTimerTooltip, setShowTimerTooltip] = useState(false)
-  const [pipNotice, setPipNotice] = useState<string | null>(null)
-
-  const {
-    showPopup,
-    pipContainer,
-    setPipNotice: setPipHookNotice,
-    isTimerPopupOpen,
-    openTimerPopup,
-    closeTimerPopup,
-  } = useDocumentPip()
-
-  function showNotice(message: string) {
-    setPipNotice(message)
-    setPipHookNotice(message)
-  }
+  const [notice, setNotice] = useState<string | null>(null)
 
   function fmt(s: number) {
     const h = Math.floor(s / 3600),
@@ -200,11 +180,11 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
   useEffect(() => {
     function onAgentBlocked(e: Event) {
       const message = (e as CustomEvent<{ message: string }>).detail?.message
-      if (message) showNotice(message)
+      if (message) setNotice(message)
     }
     function onTimerLimit(e: Event) {
       const detail = (e as CustomEvent<{ message?: string }>).detail
-      showNotice(detail?.message || TIMER_LIMIT_REACHED_MESSAGE)
+      setNotice(detail?.message || TIMER_LIMIT_REACHED_MESSAGE)
     }
     window.addEventListener(AGENT_TIMER_BLOCKED_EVENT, onAgentBlocked)
     window.addEventListener(TASK_TIMER_LIMIT_EVENT, onTimerLimit)
@@ -214,28 +194,10 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
     }
   }, [])
 
-  useEffect(() => subscribeTimerOpenPopup(() => void openTimerPopup()), [openTimerPopup])
-
   const tooltipKind = showTimerTooltip && phase === "idle" && activeSeconds > 0 ? "idle" : null
 
-  // Reflects agent+backend state only — never starts, resumes, or stops anything
-  // itself. It just opens the popup where the real controls live.
-  async function handleTimerClick() {
-    if (isTimerPopupOpen()) {
-      closeTimerPopup()
-      return
-    }
-    await openTimerPopup()
-  }
-
-  async function handleStopFromPip() {
-    closeTimerPopup()
-    await stopTracking()
-  }
-
-  function handleStartNowFromPip() {
-    closeTimerPopup()
-    onNavigate("activity-tools")
+  function handleTimerClick() {
+    setNotice("Manage tracking from the Virtual Tracker Agent on your computer.")
   }
 
   return (
@@ -317,30 +279,10 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
               {isTimerRunning ? fmt(activeSeconds) : phase === "idle" ? "Paused" : "Start timer"}
             </motion.span>
           )}
-          {!isCollapsed && isTimerRunning && (
-            <motion.div animate={{ rotate: showPopup ? 180 : 0 }} transition={{ duration: 0.18 }} className="shrink-0">
-              <ChevronUp className="w-3.5 h-3.5 text-white/70" />
-            </motion.div>
-          )}
         </motion.button>
       </div>
 
-      {pipContainer &&
-        createPortal(
-          <PipTimerWidget
-            activeSeconds={activeSeconds}
-            taskStatus={taskStatus}
-            isTimerRunning={isTimerRunning}
-            isDark={isDark}
-            onStop={() => void handleStopFromPip()}
-            onStartNow={handleStartNowFromPip}
-            onClose={closeTimerPopup}
-            taskName={currentTask?.title || "VirtualTracker OS Dashboard"}
-          />,
-          pipContainer,
-        )}
-
-      <NotifyToastHost message={pipNotice} onDismiss={() => setPipNotice(null)} title="Timer" tone="error" />
+      <NotifyToastHost message={notice} onDismiss={() => setNotice(null)} title="Timer" tone="error" />
     </>
   )
 }

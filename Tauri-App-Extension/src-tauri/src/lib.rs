@@ -125,6 +125,14 @@ fn get_session(state: tauri::State<'_, AppState>) -> SessionInfo {
 }
 
 #[tauri::command]
+fn get_task_time_tracking(
+    state: tauri::State<'_, AppState>,
+    task_id: String,
+) -> Option<crate::types::TaskTimeTracking> {
+    state.controller.get_task_time_tracking(&task_id)
+}
+
+#[tauri::command]
 fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> ActionResult {
     state.controller.start_task_session(&task_id)
 }
@@ -191,6 +199,7 @@ pub fn run() {
             list_projects,
             list_tasks,
             get_session,
+            get_task_time_tracking,
             start_task_session,
             stop_session,
         ])

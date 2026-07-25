@@ -54,6 +54,8 @@ type SessionInfo = {
   status: string;
   taskId?: string | null;
   taskTitle?: string | null;
+  activeSeconds?: number;
+  idleSeconds?: number;
 };
 
 type ActionResult = {
@@ -61,6 +63,33 @@ type ActionResult = {
   error?: string;
   session?: SessionInfo;
 };
+
+type TaskTimeTracking = {
+  activeSeconds: number;
+  idleSeconds: number;
+  taskStatus: string;
+  estimatedSeconds?: number | null;
+  progressPercent?: number | null;
+  workedTodaySeconds?: number | null;
+  allowedRemainingSeconds?: number | null;
+  limitReached: boolean;
+  allowanceMessage?: string | null;
+};
+
+function fmtClock(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
+function fmtHours(totalSeconds: number | null | undefined): string {
+  if (totalSeconds == null || totalSeconds <= 0) return "0h";
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
 
 function initialsFromName(name: string): string {
   const parts = String(name || "?")
@@ -390,6 +419,8 @@ function MainApp() {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
+  const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -511,6 +542,39 @@ function MainApp() {
     void refreshTasks().catch(console.error);
   }, [refreshTasks]);
 
+  const refreshTaskTracking = useCallback(async () => {
+    if (!selectedTaskId) {
+      setTaskTracking(null);
+      return;
+    }
+    try {
+      const next = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
+        taskId: selectedTaskId,
+      });
+      setTaskTracking(next);
+    } catch {
+      setTaskTracking(null);
+    }
+  }, [selectedTaskId]);
+
+  useEffect(() => {
+    void refreshTaskTracking();
+    const timer = window.setInterval(() => void refreshTaskTracking(), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshTaskTracking]);
+
+  // Re-sync from the last server snapshot, then tick locally so the clock is
+  // smooth between 5s polls instead of jumping.
+  useEffect(() => {
+    setLiveActiveSeconds(session?.activeSeconds ?? 0);
+  }, [session?.activeSeconds]);
+
+  useEffect(() => {
+    if (!tracking) return;
+    const timer = window.setInterval(() => setLiveActiveSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [tracking]);
+
   useEffect(() => {
     void checkForUpdate();
   }, [checkForUpdate]);
@@ -588,6 +652,14 @@ function MainApp() {
   const displayName = profile?.name || "Not signed in";
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
+  const remainingLabel = !taskTracking
+    ? "—"
+    : taskTracking.limitReached
+      ? "Limit reached"
+      : taskTracking.allowedRemainingSeconds == null
+        ? "No cap"
+        : `${fmtHours(taskTracking.allowedRemainingSeconds)} left`;
+
   if (view === "settings") {
     return <SettingsPanel onBack={() => setView("home")} />;
   }
@@ -643,6 +715,38 @@ function MainApp() {
                   : "Sign in to link this PC to your account"}
             </p>
           </div>
+
+          {signedIn && selectedTaskId ? (
+            <div className="time-stats">
+              <div className="time-clock">
+                <span className="time-clock-label">{tracking ? "Elapsed" : "Paused"}</span>
+                <span className="time-clock-value">{fmtClock(liveActiveSeconds)}</span>
+              </div>
+              <div className="time-chip-row">
+                <div className="time-chip">
+                  <span className="time-chip-label">Today</span>
+                  <span className="time-chip-value">{fmtHours(taskTracking?.workedTodaySeconds)}</span>
+                </div>
+                <div className="time-chip">
+                  <span className="time-chip-label">Task total</span>
+                  <span className="time-chip-value">
+                    {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
+                  </span>
+                </div>
+                <div className="time-chip">
+                  <span className="time-chip-label">Remaining</span>
+                  <span className={`time-chip-value${taskTracking?.limitReached ? " warn" : ""}`}>
+                    {remainingLabel}
+                  </span>
+                </div>
+              </div>
+              {taskTracking?.limitReached ? (
+                <p className="time-limit-warning">
+                  {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </section>
 
         {!signedIn ? (

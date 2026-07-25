@@ -280,6 +280,13 @@ impl AgentController {
         self.api.lock().current_session_info()
     }
 
+    pub fn get_task_time_tracking(&self, task_id: &str) -> Option<crate::types::TaskTimeTracking> {
+        if task_id.trim().is_empty() {
+            return None;
+        }
+        self.api.lock().fetch_task_time_tracking(task_id.trim())
+    }
+
     pub fn start_task_session(&self, task_id: &str) -> ActionResult {
         if task_id.trim().is_empty() {
             return ActionResult {
