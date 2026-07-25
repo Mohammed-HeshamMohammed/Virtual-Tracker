@@ -284,7 +284,7 @@ pub fn read_browser_url(
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());
         }
-        log::debug!("URL capture: no URL in script output for {} ({:?})", window.process_name, url);
+        log::warn!("URL capture: no URL in script output for {} ({:?})", window.process_name, url);
         None
     }
     #[cfg(target_os = "macos")]

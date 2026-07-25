@@ -234,10 +234,15 @@ impl ActivityTracker {
             self.queue.enqueue(session_id, &[app_event]);
         }
 
-        let mut url_ok = true;
+        // Was true unconditionally whenever no URL was captured at all (not a
+        // browser, or the capture script came back empty) — every non-browser
+        // app log line was claiming "+ URL" it never had.
+        let mut url_sent = false;
         if let Some(url_event) = self.events.url_slice(window) {
-            url_ok = self.api.lock().post_events(session_id, &[url_event.clone()]);
-            if !url_ok {
+            let url_ok = self.api.lock().post_events(session_id, &[url_event.clone()]);
+            if url_ok {
+                url_sent = true;
+            } else {
                 self.queue.enqueue(session_id, &[url_event]);
             }
         }
@@ -247,7 +252,7 @@ impl ActivityTracker {
             log::info!(
                 "Logged app slice: {}{}",
                 window.app_name,
-                if url_ok { " + URL" } else { "" }
+                if url_sent { " + URL" } else { "" }
             );
         } else {
             log::warn!("App/URL upload failed for session {session_id}, queued for retry");
