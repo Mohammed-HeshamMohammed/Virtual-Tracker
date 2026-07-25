@@ -33,6 +33,7 @@ pub struct AppSettingsView {
     pub version: String,
     pub is_production: bool,
     pub preferences: UserPreferences,
+    pub log_path: String,
 }
 
 pub struct PreferencesStore {

@@ -36,6 +36,7 @@ type AppSettingsView = {
   version: string;
   isProduction: boolean;
   preferences: UserPreferences;
+  logPath: string;
 };
 
 type AgentTask = {
@@ -312,6 +313,22 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
             <span>Mode</span>
             <code>{settings?.isProduction ? "Production" : "Development"}</code>
           </div>
+        </section>
+
+        <section className="settings-card">
+          <h3 className="settings-section-label">Diagnostics</h3>
+          <div className="settings-row static">
+            <span>Log file</span>
+            <code>{settings?.logPath || "—"}</code>
+          </div>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={!settings?.logPath}
+            onClick={() => void invoke("open_log_file").catch(() => setMessage("No log file yet"))}
+          >
+            Open log file
+          </button>
         </section>
 
         <section className="settings-card">

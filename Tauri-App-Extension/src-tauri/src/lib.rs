@@ -96,6 +96,11 @@ fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSetti
 }
 
 #[tauri::command]
+fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    state.controller.open_log_file()
+}
+
+#[tauri::command]
 fn save_preferences(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
@@ -239,6 +244,7 @@ pub fn run() {
             get_profile,
             get_link_status,
             get_app_settings,
+            open_log_file,
             save_preferences,
             list_projects,
             list_tasks,

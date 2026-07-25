@@ -213,7 +213,18 @@ impl AgentController {
             version: APP_VERSION.to_string(),
             is_production: self.settings.is_production,
             preferences: self.settings.preferences_store().load(),
+            log_path: self.settings.log_path.to_string_lossy().to_string(),
         }
+    }
+
+    /// Opens the diagnostic log file with the OS default handler (Notepad on
+    /// Windows). Errors if nothing has been logged yet.
+    pub fn open_log_file(&self) -> Result<(), String> {
+        if !self.settings.log_path.exists() {
+            return Err("No log file yet — run the agent for a bit first.".into());
+        }
+        crate::util::open_system_browser(&self.settings.log_path.to_string_lossy());
+        Ok(())
     }
 
     pub fn save_preferences(&self, preferences: UserPreferences) -> Result<(), String> {
