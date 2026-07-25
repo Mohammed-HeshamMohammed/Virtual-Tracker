@@ -174,6 +174,11 @@ pub fn run() {
     let controller = AgentController::new(settings);
 
     tauri::Builder::default()
+        // Must be registered first: a second launch hits this instead of running
+        // its own app, so only one copy of the agent is ever tracking at once.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
