@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { motion, AnimatePresence } from "framer-motion"
-import { Timer, Play, ChevronUp } from "lucide-react"
+import { Timer, Play, Clock, ChevronUp } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useActivityTracking } from "@/features/activity/components/activity-tracking-context"
@@ -14,7 +14,7 @@ import { useActivityRuntime } from "@/features/activity"
 import { fetchActivitySession } from "@/features/activity/services/activity-api"
 import { subscribeTimerOpenPopup } from "@/features/activity/components/activity-runtime-bootstrap"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { AGENT_TIMER_BLOCKED_EVENT, getAgentTimerBlockMessage } from "@/features/activity/utils/agent-timer-gate"
+import { AGENT_TIMER_BLOCKED_EVENT } from "@/features/activity/utils/agent-timer-gate"
 import { TASK_TIMER_LIMIT_EVENT } from "@/features/activity/components/activity-tracking-context"
 import { TIMER_LIMIT_REACHED_MESSAGE } from "@/features/activity/utils/timer-limit"
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
@@ -87,7 +87,9 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
       onNavigate("activity-tools")
       return
     }
-    setPipNotice("Start tracking from the Virtual Tracker Agent on your computer.")
+    // Agent is connected but hasn't started tracking — nothing to trigger from
+    // here, starting only happens in the agent's own UI.
+    setPipNotice("Open the Virtual Tracker Agent on your computer to start tracking.")
   }
 
   return (
@@ -137,7 +139,11 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
               : "linear-gradient(135deg,#006e2f,#22c55e)",
           }}
         >
-          <Play className={cn("shrink-0 fill-white", isCollapsed ? "w-5 h-5 ml-0.5" : "w-4 h-4 ml-0.5")} />
+          {agentMissing ? (
+            <Play className={cn("shrink-0 fill-white", isCollapsed ? "w-5 h-5 ml-0.5" : "w-4 h-4 ml-0.5")} />
+          ) : (
+            <Clock className={cn("shrink-0", isCollapsed ? "w-5 h-5" : "w-4 h-4")} />
+          )}
           {!isCollapsed && (
             <motion.span
               initial={{ opacity: 0 }}
@@ -145,7 +151,7 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
               transition={{ duration: 0.15 }}
               className={cn("whitespace-nowrap", isDark ? "text-[#0c1324]" : "text-white")}
             >
-              Start timer
+              {agentMissing ? "Start Now" : "Agent ready"}
             </motion.span>
           )}
         </motion.button>
@@ -164,9 +170,8 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
 function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
-  const { phase, activeSeconds, idleSeconds, progressPercent, taskStatus, taskLimitSeconds, currentTask, isTimerRunning, isAgentCapturing, startTracking, resumeTracking, toggleTimer } =
+  const { phase, activeSeconds, taskStatus, currentTask, isTimerRunning, isAgentCapturing, stopTracking } =
     useActivityTracking()
-  const { canStartTimer, refreshAgentStatus } = useAgentStatus()
 
   const [showTimerTooltip, setShowTimerTooltip] = useState(false)
   const [pipNotice, setPipNotice] = useState<string | null>(null)
@@ -211,51 +216,26 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
 
   useEffect(() => subscribeTimerOpenPopup(() => void openTimerPopup()), [openTimerPopup])
 
-  async function beginTimerSession(action: "start" | "resume"): Promise<boolean> {
-    const ok = action === "start" ? await startTracking() : await resumeTracking()
-    if (!ok) return false
-    await openTimerPopup()
-    return true
-  }
+  const tooltipKind = showTimerTooltip && phase === "idle" && activeSeconds > 0 ? "idle" : null
 
-  const tooltipKind =
-    showTimerTooltip && !canStartTimer && (phase === "online" || phase === "idle")
-      ? "agent-required"
-      : showTimerTooltip && phase === "idle" && activeSeconds > 0
-        ? "idle"
-        : null
-
+  // Reflects agent+backend state only — never starts, resumes, or stops anything
+  // itself. It just opens the popup where the real controls live.
   async function handleTimerClick() {
     if (isTimerPopupOpen()) {
       closeTimerPopup()
       return
     }
-
-    // Task is already known from the session the agent started — nothing to pick here.
-    if (phase === "online" || phase === "idle") {
-      const readiness = await refreshAgentStatus()
-      if (!readiness.canStartTimer) {
-        if (!readiness.isLocalAgentRunning) {
-          onNavigate("activity-tools")
-          return
-        }
-        showNotice(getAgentTimerBlockMessage(readiness))
-        return
-      }
-
-      const started = await beginTimerSession(phase === "online" ? "start" : "resume")
-      if (!started) {
-        const after = await refreshAgentStatus()
-        if (!after.isLocalAgentRunning) {
-          onNavigate("activity-tools")
-          return
-        }
-        showNotice(getAgentTimerBlockMessage(after))
-      }
-      return
-    }
-
     await openTimerPopup()
+  }
+
+  async function handleStopFromPip() {
+    closeTimerPopup()
+    await stopTracking()
+  }
+
+  function handleStartNowFromPip() {
+    closeTimerPopup()
+    onNavigate("activity-tools")
   }
 
   return (
@@ -287,27 +267,6 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
               />
             </motion.div>
           )}
-          {tooltipKind === "agent-required" && (
-            <motion.div
-              key="timer-tooltip-agent"
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.12 }}
-              className={cn(
-                "absolute top-full mt-2 left-1/2 -translate-x-1/2 text-xs font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap shadow-lg z-50 pointer-events-none max-w-[220px] text-center",
-                t.timerTooltip,
-              )}
-            >
-              Download the Tracker Agent to start tracking from the web
-              <span
-                className={cn(
-                  "absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent",
-                  t.timerArrow,
-                )}
-              />
-            </motion.div>
-          )}
         </AnimatePresence>
 
         <motion.button
@@ -317,7 +276,6 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
           className={cn(
             "relative flex items-center font-bold text-sm text-white rounded-xl overflow-hidden transition-shadow",
             isCollapsed ? "p-2.5" : "gap-2 px-4 py-2",
-            !isTimerRunning && !canStartTimer && "opacity-70",
             isTimerRunning
               ? "bg-green-600 shadow-lg shadow-green-600/30 hover:bg-green-700"
               : isDark
@@ -356,7 +314,7 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
               transition={{ duration: 0.15 }}
               className={cn("whitespace-nowrap", isTimerRunning ? "" : isDark ? "text-[#0c1324]" : "text-white")}
             >
-              {isTimerRunning ? fmt(activeSeconds) : phase === "idle" ? "Resume timer" : "Start timer"}
+              {isTimerRunning ? fmt(activeSeconds) : phase === "idle" ? "Paused" : "Start timer"}
             </motion.span>
           )}
           {!isCollapsed && isTimerRunning && (
@@ -371,13 +329,11 @@ function TimerButtonLive({ isCollapsed = false, onNavigate }: TimerButtonProps) 
         createPortal(
           <PipTimerWidget
             activeSeconds={activeSeconds}
-            idleSeconds={idleSeconds}
-            progressPercent={progressPercent}
-            plannedSeconds={taskLimitSeconds}
             taskStatus={taskStatus}
             isTimerRunning={isTimerRunning}
             isDark={isDark}
-            onToggle={() => void toggleTimer()}
+            onStop={() => void handleStopFromPip()}
+            onStartNow={handleStartNowFromPip}
             onClose={closeTimerPopup}
             taskName={currentTask?.title || "VirtualTracker OS Dashboard"}
           />,

@@ -9,15 +9,6 @@ function fmtDuration(seconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
 }
 
-function fmtPlanned(seconds: number | null | undefined): string {
-  if (seconds == null || seconds <= 0) return "—"
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0 && m > 0) return `${h}h ${m}m`
-  if (h > 0) return `${h}h`
-  return `${m}m`
-}
-
 function formatStatus(status: string | null | undefined): string {
   if (!status) return "—"
   return status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
@@ -25,24 +16,22 @@ function formatStatus(status: string | null | undefined): string {
 
 export function PipTimerWidget({
   activeSeconds,
-  idleSeconds = 0,
-  progressPercent = null,
-  plannedSeconds = null,
   taskStatus = null,
   isTimerRunning,
   isDark,
-  onToggle,
+  onStop,
+  onStartNow,
   onClose,
   taskName,
 }: {
   activeSeconds: number
-  idleSeconds?: number
-  progressPercent?: number | null
-  plannedSeconds?: number | null
   taskStatus?: string | null
   isTimerRunning: boolean
   isDark: boolean
-  onToggle: () => void
+  /** Running: stop the session — the desktop agent picks this up on its next poll and stops capturing. */
+  onStop: () => void
+  /** Not running: starting only happens in the agent, so this just points the user there. */
+  onStartNow: () => void
   onClose: () => void
   taskName: string
 }) {
@@ -116,10 +105,11 @@ export function PipTimerWidget({
           </span>
 
           <button
-            onClick={onToggle}
+            onClick={isTimerRunning ? onStop : onStartNow}
             style={{
-              width: 32,
               height: 32,
+              minWidth: isTimerRunning ? 32 : undefined,
+              padding: isTimerRunning ? 0 : "0 12px",
               borderRadius: 8,
               border: "none",
               cursor: "pointer",
@@ -127,28 +117,26 @@ export function PipTimerWidget({
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              whiteSpace: "nowrap",
               background: isTimerRunning ? "#ef4444" : "linear-gradient(135deg,#006e2f,#22c55e)",
               boxShadow: isTimerRunning ? "0 4px 14px rgba(239,68,68,0.35)" : "0 4px 14px rgba(34,197,94,0.35)",
             }}
             type="button"
           >
-            {isTimerRunning ? "⏹" : "▶"}
+            {isTimerRunning ? (
+              "⏹"
+            ) : (
+              <>
+                <span>▶</span>
+                <span>Start Now</span>
+              </>
+            )}
           </button>
         </div>
       </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, fontSize: 10, color: sub }}>
-        <span>Planned: {fmtPlanned(plannedSeconds)}</span>
-        <span>Active: {fmtDuration(activeSeconds)}</span>
-        <span>Idle: {fmtDuration(idleSeconds)}</span>
-        {progressPercent != null ? <span>Progress: {progressPercent}%</span> : null}
-      </div>
-
-      {progressPercent != null ? (
-        <div style={{ height: 4, borderRadius: 999, background: isDark ? "#334155" : "#e2e8f0", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${Math.min(100, progressPercent)}%`, background: "#22c55e", borderRadius: 999 }} />
-        </div>
-      ) : null}
 
       <button
         onClick={onClose}
