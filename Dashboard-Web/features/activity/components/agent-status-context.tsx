@@ -11,10 +11,6 @@ import React, {
 } from "react"
 import { useAuth } from "@/shared/providers/app"
 import { fetchAgentStatus, type ActivityCaptureMode, type AgentStatus } from "@/features/activity/services/activity-api"
-import {
-  isLocalAgentAuthenticated as checkLocalAgentAuthenticated,
-  pingLocalAgent,
-} from "@/features/activity/utils/local-agent"
 import type { AgentTimerReadiness } from "@/features/activity/utils/agent-timer-gate"
 
 interface AgentStatusContextValue {
@@ -33,8 +29,8 @@ interface AgentStatusContextValue {
 
 const AgentStatusContext = createContext<AgentStatusContextValue | undefined>(undefined)
 
-const LOCAL_POLL_MS = 5_000
-const BACKEND_POLL_MS = 30_000
+/** Backend heartbeat TTL is 15s (see Dashboard-Backend agent-heartbeat.js) — poll faster than that. */
+const POLL_MS = 8_000
 
 export function useAgentStatus() {
   const ctx = useContext(AgentStatusContext)
@@ -52,8 +48,6 @@ export function AgentStatusProvider({
 }) {
   const { isLoggedIn } = useAuth()
   const [remote, setRemote] = useState<AgentStatus | null>(null)
-  const [isLocalAgentRunning, setIsLocalAgentRunning] = useState(false)
-  const [isLocalAgentAuthenticated, setIsLocalAgentAuthenticated] = useState(false)
   const [pollingArmed, setPollingArmed] = useState(!deferPollingUntilRefresh)
 
   const authPort = remote?.authPort ?? 17389
@@ -61,11 +55,14 @@ export function AgentStatusProvider({
   const isAgentMode = captureMode === "agent"
   const isAgentLinked = Boolean(remote?.linkedAt)
   const agentIngestEnabled = remote?.agentIngestEnabled ?? false
+  // "Running" and "authenticated" are now both just: has the desktop agent's own
+  // traffic touched the backend recently? No more probing 127.0.0.1 from the browser.
+  const isLocalAgentRunning = remote?.agentOnline === true
+  const isLocalAgentAuthenticated = isLocalAgentRunning && isAgentLinked
 
   const refreshAgentStatus = useCallback(async (): Promise<AgentTimerReadiness> => {
     if (!isLoggedIn) {
       setRemote(null)
-      setIsLocalAgentRunning(false)
       return {
         canStartTimer: false,
         isLocalAgentRunning: false,
@@ -76,21 +73,15 @@ export function AgentStatusProvider({
     }
     setPollingArmed(true)
     const status = await fetchAgentStatus()
-    const port = status?.authPort ?? 17389
-    const [localOk, localAuthenticated] = await Promise.all([
-      pingLocalAgent(port),
-      checkLocalAgentAuthenticated(port),
-    ])
     if (status) setRemote(status)
-    setIsLocalAgentRunning(localOk)
-    setIsLocalAgentAuthenticated(localAuthenticated)
-    const ingest = status?.agentIngestEnabled ?? false
+    const running = status?.agentOnline === true
     const linked = Boolean(status?.linkedAt)
-    const canStart = localOk && localAuthenticated && ingest
+    const authenticated = running && linked
+    const ingest = status?.agentIngestEnabled ?? false
     return {
-      canStartTimer: canStart,
-      isLocalAgentRunning: localOk,
-      isLocalAgentAuthenticated: localAuthenticated,
+      canStartTimer: running && authenticated && ingest,
+      isLocalAgentRunning: running,
+      isLocalAgentAuthenticated: authenticated,
       isAgentLinked: linked,
       agentIngestEnabled: ingest,
     }
@@ -110,24 +101,13 @@ export function AgentStatusProvider({
 
   useEffect(() => {
     if (!isLoggedIn || !pollingArmed) return
-    const localTimer = setInterval(() => {
-      void Promise.all([pingLocalAgent(authPort), checkLocalAgentAuthenticated(authPort)]).then(
-        ([running, authenticated]) => {
-          setIsLocalAgentRunning(running)
-          setIsLocalAgentAuthenticated(authenticated)
-        },
-      )
-    }, LOCAL_POLL_MS)
-    const remoteTimer = setInterval(() => {
+    const timer = setInterval(() => {
       void fetchAgentStatus().then((status) => {
         if (status) setRemote(status)
       })
-    }, BACKEND_POLL_MS)
-    return () => {
-      clearInterval(localTimer)
-      clearInterval(remoteTimer)
-    }
-  }, [isLoggedIn, authPort, pollingArmed])
+    }, POLL_MS)
+    return () => clearInterval(timer)
+  }, [isLoggedIn, pollingArmed])
 
   useEffect(() => {
     const onLinked = () => void refreshAgentStatus()

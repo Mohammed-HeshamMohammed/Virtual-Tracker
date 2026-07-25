@@ -131,6 +131,7 @@ export interface AgentStatus {
   linkedAt: string | null
   agentSource: string | null
   authPort: number
+  agentOnline: boolean
 }
 
 export async function fetchAgentStatus(): Promise<AgentStatus | null> {
