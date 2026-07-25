@@ -832,7 +832,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  border-left: 1px solid rgba(109, 117, 140, 0.12);
+  border-right: 1px solid rgba(109, 117, 140, 0.12);
   background: rgba(9, 19, 40, 0.4);
 }
 

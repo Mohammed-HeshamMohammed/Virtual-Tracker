@@ -675,71 +675,6 @@ function MainApp() {
       />
 
       <div className="app-body">
-        <section className="page-area">
-          <div className="page-header">
-            <span className="page-eyebrow">Today</span>
-            <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
-          </div>
-
-          {signedIn && selectedTaskId ? (
-            <>
-              <div className="page-clock">
-                <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
-                <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
-              </div>
-
-              <div className="stat-grid">
-                <div className="stat-card">
-                  <span className="stat-card-label">Today, this task</span>
-                  <span className="stat-card-value">{fmtHours(taskTracking?.workedTodayOnTaskSeconds)}</span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-card-label">Task total</span>
-                  <span className="stat-card-value">
-                    {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
-                  </span>
-                </div>
-                <div className="stat-card">
-                  <span className="stat-card-label">Remaining</span>
-                  <span className={`stat-card-value${taskTracking?.limitReached ? " warn" : ""}`}>
-                    {remainingLabel}
-                  </span>
-                </div>
-              </div>
-
-              {taskTracking?.progressPercent != null ? (
-                <div className="page-progress">
-                  <div className="page-progress-row">
-                    <span>Task progress</span>
-                    <span>{Math.round(taskTracking.progressPercent)}%</span>
-                  </div>
-                  <div className="progress-track">
-                    <div
-                      className="progress-fill"
-                      style={{ width: `${Math.min(100, Math.max(0, taskTracking.progressPercent))}%` }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-
-              {taskTracking?.limitReached ? (
-                <p className="page-limit-banner">
-                  {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <div className="page-empty">
-              <span className="page-empty-title">{signedIn ? "No task selected" : "Not signed in"}</span>
-              <p className="page-empty-text">
-                {signedIn
-                  ? "Pick a project and task on the right, then start tracking to see today's stats here."
-                  : "Sign in on the right to link this PC to your account."}
-              </p>
-            </div>
-          )}
-        </section>
-
         <aside className="side-panel">
           <section className="hero-card">
             <div className="hero-top">
@@ -874,6 +809,71 @@ function MainApp() {
 
           {actionError ? <p className="inline-error">{actionError}</p> : null}
         </aside>
+
+        <section className="page-area">
+          <div className="page-header">
+            <span className="page-eyebrow">Today</span>
+            <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
+          </div>
+
+          {signedIn && selectedTaskId ? (
+            <>
+              <div className="page-clock">
+                <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
+                <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
+              </div>
+
+              <div className="stat-grid">
+                <div className="stat-card">
+                  <span className="stat-card-label">Today, this task</span>
+                  <span className="stat-card-value">{fmtHours(taskTracking?.workedTodayOnTaskSeconds)}</span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card-label">Task total</span>
+                  <span className="stat-card-value">
+                    {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
+                  </span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card-label">Remaining</span>
+                  <span className={`stat-card-value${taskTracking?.limitReached ? " warn" : ""}`}>
+                    {remainingLabel}
+                  </span>
+                </div>
+              </div>
+
+              {taskTracking?.progressPercent != null ? (
+                <div className="page-progress">
+                  <div className="page-progress-row">
+                    <span>Task progress</span>
+                    <span>{Math.round(taskTracking.progressPercent)}%</span>
+                  </div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${Math.min(100, Math.max(0, taskTracking.progressPercent))}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {taskTracking?.limitReached ? (
+                <p className="page-limit-banner">
+                  {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <div className="page-empty">
+              <span className="page-empty-title">{signedIn ? "No task selected" : "Not signed in"}</span>
+              <p className="page-empty-text">
+                {signedIn
+                  ? "Pick a project and task on the left, then start tracking to see today's stats here."
+                  : "Sign in on the left to link this PC to your account."}
+              </p>
+            </div>
+          )}
+        </section>
       </div>
 
       <footer className="footer">
