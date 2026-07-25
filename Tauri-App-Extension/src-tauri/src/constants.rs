@@ -10,7 +10,8 @@ pub const PROD_API_URL: &str = "https://appapi.myvirtualtracker.com";
 
 pub const SESSION_POLL_SEC: u64 = 5;
 pub const APP_LOG_INTERVAL_SEC: u64 = 15;
-pub const FIRST_SCREENSHOT_DELAY_SEC: u64 = 20;
+/// Kept comfortably under 20s even with SESSION_POLL_SEC tick jitter.
+pub const FIRST_SCREENSHOT_DELAY_SEC: u64 = 5;
 
 pub const SCREENSHOT_MIN_DELAY_SEC: u64 = 90;
 pub const SCREENSHOT_MAX_DELAY_SEC: u64 = 210;

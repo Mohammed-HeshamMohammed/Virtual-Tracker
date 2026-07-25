@@ -99,9 +99,15 @@ fn resolve_script(project_root: &PathBuf, name: &str) -> PathBuf {
         // Dev build: CARGO_MANIFEST_DIR/../scripts/<name>.
         project_root.join("scripts").join(name),
         project_root.join(name),
-        // Release build: tauri.conf.json bundles "../scripts/<name>" as a resource,
-        // which nsis/msi place under resources/scripts/<name> next to the exe —
-        // try that nested form first, then the flat form in case that changes.
+        // Release build: tauri.conf.json declares the resource as
+        // "../scripts/<name>" (relative to src-tauri) — NSIS/MSI preserve that
+        // leading ".." literally as an "_up_" folder next to the exe. Confirmed
+        // from an actual installed build: <installdir>\_up_\scripts\<name>.
+        exe_dir
+            .as_ref()
+            .map(|d| d.join("_up_").join("scripts").join(name))
+            .unwrap_or_default(),
+        // Older guesses, kept in case a future bundler version changes this.
         exe_dir
             .as_ref()
             .map(|d| d.join("resources").join("scripts").join(name))

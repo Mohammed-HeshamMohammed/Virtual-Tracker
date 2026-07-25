@@ -45,14 +45,18 @@ impl ScreenCapture {
             );
         }
 
+        // JPEG has no alpha channel — the encoder rejects Rgba8 outright ("does not
+        // support the color type Rgba8"), which silently killed every screenshot.
+        let rgb = image::DynamicImage::ImageRgba8(rgba).into_rgb8();
+
         let mut jpeg = Vec::new();
         {
             let encoder = JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY);
             if let Err(err) = encoder.write_image(
-                rgba.as_raw(),
-                rgba.width(),
-                rgba.height(),
-                ColorType::Rgba8.into(),
+                rgb.as_raw(),
+                rgb.width(),
+                rgb.height(),
+                ColorType::Rgb8.into(),
             ) {
                 log::warn!("Screenshot skipped: JPEG encode failed: {err}");
                 return None;
