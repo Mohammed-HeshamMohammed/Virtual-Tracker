@@ -113,6 +113,8 @@ pub struct TaskTimeTracking {
     pub progress_percent: Option<f64>,
     /// Total active seconds worked today across all tasks.
     pub worked_today_seconds: Option<u64>,
+    /// Active seconds worked today on this specific task.
+    pub worked_today_on_task_seconds: Option<u64>,
     /// Seconds left before the member/task cap (allowance already accounts for
     /// any overtime the org has granted). None means no cap applies.
     pub allowed_remaining_seconds: Option<i64>,

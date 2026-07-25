@@ -71,6 +71,7 @@ type TaskTimeTracking = {
   estimatedSeconds?: number | null;
   progressPercent?: number | null;
   workedTodaySeconds?: number | null;
+  workedTodayOnTaskSeconds?: number | null;
   allowedRemainingSeconds?: number | null;
   limitReached: boolean;
   allowanceMessage?: string | null;
@@ -689,8 +690,8 @@ function MainApp() {
 
               <div className="stat-grid">
                 <div className="stat-card">
-                  <span className="stat-card-label">Today, all tasks</span>
-                  <span className="stat-card-value">{fmtHours(taskTracking?.workedTodaySeconds)}</span>
+                  <span className="stat-card-label">Today, this task</span>
+                  <span className="stat-card-value">{fmtHours(taskTracking?.workedTodayOnTaskSeconds)}</span>
                 </div>
                 <div className="stat-card">
                   <span className="stat-card-label">Task total</span>

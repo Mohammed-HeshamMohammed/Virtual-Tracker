@@ -527,6 +527,9 @@ impl ApiClient {
             worked_today_seconds: allowance
                 .and_then(|a| a.get("workedTodaySeconds"))
                 .and_then(|v| v.as_u64()),
+            worked_today_on_task_seconds: allowance
+                .and_then(|a| a.get("workedTodayOnTaskSeconds"))
+                .and_then(|v| v.as_u64()),
             allowed_remaining_seconds: allowance
                 .and_then(|a| a.get("allowedRemainingSeconds"))
                 .and_then(|v| v.as_i64()),
