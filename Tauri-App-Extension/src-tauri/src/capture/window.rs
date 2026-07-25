@@ -222,6 +222,10 @@ fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String
     }
 }
 
+/// Logs the missing-script warning once per process instead of every poll —
+/// it fires on every browser-focused tick otherwise, which is noisy.
+static WARNED_MISSING_SCRIPT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
 pub fn read_browser_url(
     script_path: &PathBuf,
     macos_script_path: &PathBuf,
@@ -235,6 +239,12 @@ pub fn read_browser_url(
     {
         let _ = macos_script_path;
         if !script_path.exists() {
+            if WARNED_MISSING_SCRIPT.set(()).is_ok() {
+                log::warn!(
+                    "URL capture disabled: script not found at {}",
+                    script_path.display()
+                );
+            }
             return None;
         }
         let mut cmd = Command::new("powershell");
@@ -257,24 +267,37 @@ pub fn read_browser_url(
         if !hint.is_empty() {
             cmd.args(["-BrowserHint", &hint]);
         }
-        let stdout = run_command_timeout(cmd, timeout)?;
+        let Some(stdout) = run_command_timeout(cmd, timeout) else {
+            log::warn!("URL capture: get-browser-url.ps1 failed or timed out for {}", window.process_name);
+            return None;
+        };
         let url = stdout.lines().next().unwrap_or("").trim();
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());
         }
+        log::debug!("URL capture: no URL in script output for {} ({:?})", window.process_name, url);
         None
     }
     #[cfg(target_os = "macos")]
     {
         let _ = script_path;
         if !macos_script_path.exists() {
+            if WARNED_MISSING_SCRIPT.set(()).is_ok() {
+                log::warn!(
+                    "URL capture disabled: script not found at {}",
+                    macos_script_path.display()
+                );
+            }
             return None;
         }
         let mut cmd = Command::new("osascript");
         cmd.arg(macos_script_path)
             .arg(&window.process_name)
             .arg(&window.process_name);
-        let stdout = run_command_timeout(cmd, timeout)?;
+        let Some(stdout) = run_command_timeout(cmd, timeout) else {
+            log::warn!("URL capture: osascript failed or timed out for {}", window.process_name);
+            return None;
+        };
         let url = stdout.lines().next().unwrap_or("").trim();
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());

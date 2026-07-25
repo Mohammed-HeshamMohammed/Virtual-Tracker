@@ -673,152 +673,126 @@ function MainApp() {
         checkingUpdate={checkingUpdate}
       />
 
-      <div className="content home-content">
-        <section className="hero-card">
-          <div className="hero-top">
-            <div className="avatar-wrap">
-              {profile?.avatarUrl ? (
-                <img
-                  className="avatar-img"
-                  src={profile.avatarUrl}
-                  alt=""
-                  draggable={false}
-                />
-              ) : (
-                <div className="avatar-fallback">
-                  {signedIn ? initialsFromName(displayName) : "VT"}
-                </div>
-              )}
-            </div>
-            <div className="hero-copy">
-              <span className="hero-kicker">Desktop Agent</span>
-              <h1 className="hero-name">{displayName}</h1>
-            </div>
-            <span className={`pill pill-${tone}`}>{statusLabel(link?.status || "", signedIn)}</span>
-          </div>
-
-          <div className={`signal${tracking ? " live" : ""}`}>
-            <div className="viz-bars" aria-hidden="true">
-              {bars.map((height, index) => (
-                <span
-                  key={index}
-                  className="viz-bar"
-                  style={{ height: `${height}%` }}
-                />
-              ))}
-            </div>
-            <p className="signal-text">
-              {tracking
-                ? `Tracking${selectedTask ? ` · ${selectedTask.title}` : ""}`
-                : signedIn
-                  ? "Select a task and start when you’re ready"
-                  : "Sign in to link this PC to your account"}
-            </p>
+      <div className="app-body">
+        <section className="page-area">
+          <div className="page-header">
+            <span className="page-eyebrow">Today</span>
+            <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
           </div>
 
           {signedIn && selectedTaskId ? (
-            <div className="time-stats">
-              <div className="time-clock">
-                <span className="time-clock-label">{tracking ? "Elapsed" : "Paused"}</span>
-                <span className="time-clock-value">{fmtClock(liveActiveSeconds)}</span>
+            <>
+              <div className="page-clock">
+                <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
+                <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
               </div>
-              <div className="time-chip-row">
-                <div className="time-chip">
-                  <span className="time-chip-label">Today</span>
-                  <span className="time-chip-value">{fmtHours(taskTracking?.workedTodaySeconds)}</span>
+
+              <div className="stat-grid">
+                <div className="stat-card">
+                  <span className="stat-card-label">Today, all tasks</span>
+                  <span className="stat-card-value">{fmtHours(taskTracking?.workedTodaySeconds)}</span>
                 </div>
-                <div className="time-chip">
-                  <span className="time-chip-label">Task total</span>
-                  <span className="time-chip-value">
+                <div className="stat-card">
+                  <span className="stat-card-label">Task total</span>
+                  <span className="stat-card-value">
                     {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
                   </span>
                 </div>
-                <div className="time-chip">
-                  <span className="time-chip-label">Remaining</span>
-                  <span className={`time-chip-value${taskTracking?.limitReached ? " warn" : ""}`}>
+                <div className="stat-card">
+                  <span className="stat-card-label">Remaining</span>
+                  <span className={`stat-card-value${taskTracking?.limitReached ? " warn" : ""}`}>
                     {remainingLabel}
                   </span>
                 </div>
               </div>
+
+              {taskTracking?.progressPercent != null ? (
+                <div className="page-progress">
+                  <div className="page-progress-row">
+                    <span>Task progress</span>
+                    <span>{Math.round(taskTracking.progressPercent)}%</span>
+                  </div>
+                  <div className="progress-track">
+                    <div
+                      className="progress-fill"
+                      style={{ width: `${Math.min(100, Math.max(0, taskTracking.progressPercent))}%` }}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
               {taskTracking?.limitReached ? (
-                <p className="time-limit-warning">
+                <p className="page-limit-banner">
                   {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
                 </p>
               ) : null}
+            </>
+          ) : (
+            <div className="page-empty">
+              <span className="page-empty-title">{signedIn ? "No task selected" : "Not signed in"}</span>
+              <p className="page-empty-text">
+                {signedIn
+                  ? "Pick a project and task on the right, then start tracking to see today's stats here."
+                  : "Sign in on the right to link this PC to your account."}
+              </p>
             </div>
-          ) : null}
+          )}
         </section>
 
-        {!signedIn ? (
-          <nav className="actions">
-            <button
-              className="btn btn-primary"
-              type="button"
-              disabled={busy}
-              onClick={() => void handleSignIn()}
-            >
-              {profile?.linkPending ? "Open link page" : "Sign in"}
-            </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
-              onClick={() => void invoke("open_web_app")}
-            >
-              Open dashboard
-            </button>
-          </nav>
-        ) : (
-          <>
-            <section className="task-card">
-              <label className="task-label" htmlFor="project-select">
-                Project
-              </label>
-              <Dropdown
-                id="project-select"
-                value={selectedProjectId}
-                options={projects.map((project) => ({ id: project.id, label: project.name }))}
-                placeholder="Select a project"
-                emptyLabel="No projects"
-                disabled={busy || tracking}
-                onChange={setSelectedProjectId}
-              />
-            </section>
+        <aside className="side-panel">
+          <section className="hero-card">
+            <div className="hero-top">
+              <div className="avatar-wrap">
+                {profile?.avatarUrl ? (
+                  <img
+                    className="avatar-img"
+                    src={profile.avatarUrl}
+                    alt=""
+                    draggable={false}
+                  />
+                ) : (
+                  <div className="avatar-fallback">
+                    {signedIn ? initialsFromName(displayName) : "VT"}
+                  </div>
+                )}
+              </div>
+              <div className="hero-copy">
+                <span className="hero-kicker">Desktop Agent</span>
+                <h1 className="hero-name">{displayName}</h1>
+              </div>
+              <span className={`pill pill-${tone}`}>{statusLabel(link?.status || "", signedIn)}</span>
+            </div>
 
-            <section className="task-card">
-              <label className="task-label" htmlFor="task-select">
-                Your tasks
-              </label>
-              <Dropdown
-                id="task-select"
-                value={selectedTaskId}
-                options={tasks.map((task) => ({ id: task.id, label: task.title }))}
-                placeholder="Select a task"
-                emptyLabel={!selectedProjectId ? "Select a project first" : "No assigned tasks"}
-                disabled={busy || tracking || !selectedProjectId}
-                onChange={setSelectedTaskId}
-              />
-            </section>
+            <div className={`signal${tracking ? " live" : ""}`}>
+              <div className="viz-bars" aria-hidden="true">
+                {bars.map((height, index) => (
+                  <span
+                    key={index}
+                    className="viz-bar"
+                    style={{ height: `${height}%` }}
+                  />
+                ))}
+              </div>
+              <p className="signal-text">
+                {tracking
+                  ? `Tracking${selectedTask ? ` · ${selectedTask.title}` : ""}`
+                  : signedIn
+                    ? "Select a task and start when you’re ready"
+                    : "Sign in to link this PC to your account"}
+              </p>
+            </div>
+          </section>
 
+          {!signedIn ? (
             <nav className="actions">
-              {tracking ? (
-                <button
-                  className="btn btn-danger"
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void handleStop()}
-                >
-                  Stop tracking
-                </button>
-              ) : (
-                <button
-                  className="btn btn-primary"
-                  type="button"
-                  disabled={busy || !selectedTaskId}
-                  onClick={() => void handleStart()}
-                >
-                  Start tracking
-                </button>
-              )}
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={busy}
+                onClick={() => void handleSignIn()}
+              >
+                {profile?.linkPending ? "Open link page" : "Sign in"}
+              </button>
               <button
                 className="btn btn-secondary"
                 type="button"
@@ -826,18 +800,79 @@ function MainApp() {
               >
                 Open dashboard
               </button>
-              <button
-                className="btn btn-tertiary"
-                type="button"
-                onClick={() => void handleSignIn()}
-              >
-                Re-link account
-              </button>
             </nav>
-          </>
-        )}
+          ) : (
+            <>
+              <section className="task-card">
+                <label className="task-label" htmlFor="project-select">
+                  Project
+                </label>
+                <Dropdown
+                  id="project-select"
+                  value={selectedProjectId}
+                  options={projects.map((project) => ({ id: project.id, label: project.name }))}
+                  placeholder="Select a project"
+                  emptyLabel="No projects"
+                  disabled={busy || tracking}
+                  onChange={setSelectedProjectId}
+                />
+              </section>
 
-        {actionError ? <p className="inline-error">{actionError}</p> : null}
+              <section className="task-card">
+                <label className="task-label" htmlFor="task-select">
+                  Your tasks
+                </label>
+                <Dropdown
+                  id="task-select"
+                  value={selectedTaskId}
+                  options={tasks.map((task) => ({ id: task.id, label: task.title }))}
+                  placeholder="Select a task"
+                  emptyLabel={!selectedProjectId ? "Select a project first" : "No assigned tasks"}
+                  disabled={busy || tracking || !selectedProjectId}
+                  onChange={setSelectedTaskId}
+                />
+              </section>
+
+              <nav className="actions">
+                {tracking ? (
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleStop()}
+                  >
+                    Stop tracking
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-primary"
+                    type="button"
+                    disabled={busy || !selectedTaskId}
+                    onClick={() => void handleStart()}
+                  >
+                    Start tracking
+                  </button>
+                )}
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  onClick={() => void invoke("open_web_app")}
+                >
+                  Open dashboard
+                </button>
+                <button
+                  className="btn btn-tertiary"
+                  type="button"
+                  onClick={() => void handleSignIn()}
+                >
+                  Re-link account
+                </button>
+              </nav>
+            </>
+          )}
+
+          {actionError ? <p className="inline-error">{actionError}</p> : null}
+        </aside>
       </div>
 
       <footer className="footer">

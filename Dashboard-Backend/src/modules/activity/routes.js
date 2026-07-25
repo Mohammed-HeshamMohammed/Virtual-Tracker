@@ -436,35 +436,49 @@ export async function routeActivity(req, res, url, origin) {
               : typeof ev.image_data === "string"
                 ? ev.image_data
                 : "";
-          if (!imageData || imageData.length > 900_000) continue;
+          if (!imageData) continue;
+          if (imageData.length > 900_000) {
+            logSafeWarn("[activity events] screenshot dropped: oversized", {
+              memberId: member.memberId,
+              sessionId,
+              bytes: imageData.length,
+            });
+            continue;
+          }
           screenshotWrites.push(
             (async () => {
-              const raw = imageData.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
-              const buffer = Buffer.from(raw, "base64");
-              const webp = await sharp(buffer)
-                .resize({ width: 1280, height: 720, fit: "inside", withoutEnlargement: true })
-                .webp({ quality: 75 })
-                .toBuffer();
-              const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
-              // Stored as bytea in Postgres (image_data) - no per-screenshot GCS upload or
-              // Firestore write. The archive job moves rows out to GCS once they age out.
-              void insertActivityScreenshot({
-                id,
-                memberId: member.memberId,
-                sessionId,
-                taskId: sessionTaskId,
-                taskTitle: sessionTaskTitle,
-                imageData: webp,
-                appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
-                pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
-                activityLevel:
-                  typeof ev.activityLevel === "number"
-                    ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
-                    : 50,
-                capturedAt,
-                source,
-              });
-              count++;
+              try {
+                const raw = imageData.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
+                const buffer = Buffer.from(raw, "base64");
+                const webp = await sharp(buffer)
+                  .resize({ width: 1280, height: 720, fit: "inside", withoutEnlargement: true })
+                  .webp({ quality: 75 })
+                  .toBuffer();
+                const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
+                // Stored as bytea in Postgres (image_data) - no per-screenshot GCS upload or
+                // Firestore write. The archive job moves rows out to GCS once they age out.
+                await insertActivityScreenshot({
+                  id,
+                  memberId: member.memberId,
+                  sessionId,
+                  taskId: sessionTaskId,
+                  taskTitle: sessionTaskTitle,
+                  imageData: webp,
+                  appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
+                  pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
+                  activityLevel:
+                    typeof ev.activityLevel === "number"
+                      ? Math.max(0, Math.min(100, Math.floor(ev.activityLevel)))
+                      : 50,
+                  capturedAt,
+                  source,
+                });
+                count++;
+              } catch (err) {
+                // Don't let one bad screenshot (corrupt base64, sharp/libvips failure)
+                // fail the whole batch response — log it so it's actually diagnosable.
+                logSafeWarn("[activity events] screenshot insert failed", err);
+              }
             })(),
           );
           continue;
@@ -520,6 +534,7 @@ export async function routeActivity(req, res, url, origin) {
 
       sendJson(res, origin, 200, { success: true, data: { inserted: count } });
     } catch (e) {
+      logSafeWarn("[activity events] ingest failed", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Event ingest failed" });
     }
     return true;

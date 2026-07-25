@@ -36,6 +36,14 @@ impl Settings {
         let default_api = PROD_API_URL;
         let default_web = PROD_WEB_URL;
 
+        let url_script_path = resolve_script(&project_root, "get-browser-url.ps1");
+        let macos_url_script_path = resolve_script(&project_root, "get-browser-url-macos.applescript");
+        log::info!(
+            "URL script resolved to {} (exists: {})",
+            url_script_path.display(),
+            url_script_path.exists()
+        );
+
         Self {
             api_url: env::var("VT_API_URL")
                 .unwrap_or_else(|_| default_api.into())
@@ -52,11 +60,8 @@ impl Settings {
             store_path,
             prefs_path,
             queue_path,
-            url_script_path: resolve_script(&project_root, "get-browser-url.ps1"),
-            macos_url_script_path: resolve_script(
-                &project_root,
-                "get-browser-url-macos.applescript",
-            ),
+            url_script_path,
+            macos_url_script_path,
             is_production,
         }
     }
@@ -86,12 +91,21 @@ fn project_root() -> PathBuf {
 }
 
 fn resolve_script(project_root: &PathBuf, name: &str) -> PathBuf {
+    let exe_dir = env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let candidates = [
+        // Dev build: CARGO_MANIFEST_DIR/../scripts/<name>.
         project_root.join("scripts").join(name),
         project_root.join(name),
-        env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.join("resources").join(name)))
+        // Release build: tauri.conf.json bundles "../scripts/<name>" as a resource,
+        // which nsis/msi place under resources/scripts/<name> next to the exe —
+        // try that nested form first, then the flat form in case that changes.
+        exe_dir
+            .as_ref()
+            .map(|d| d.join("resources").join("scripts").join(name))
+            .unwrap_or_default(),
+        exe_dir
+            .as_ref()
+            .map(|d| d.join("resources").join(name))
             .unwrap_or_default(),
     ];
     for path in candidates {

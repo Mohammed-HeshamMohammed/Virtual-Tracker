@@ -15,9 +15,9 @@
       {
         "label": "main",
         "title": "Virtual Callers",
-        "width": 320,
-        "height": 650,
-        "minWidth": 320,
+        "width": 920,
+        "height": 600,
+        "minWidth": 920,
         "minHeight": 600,
         "resizable": false,
         "maximizable": false,
