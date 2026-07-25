@@ -8,6 +8,17 @@ function loopbackFetch(url: string, init: LoopbackFetchInit = {}): Promise<Respo
   return fetch(url, { ...init, targetAddressSpace: "loopback" } as RequestInit)
 }
 
+let lastHealthCheckErrorLogged: string | null = null
+
+/** Surface loopback fetch failures once per distinct error so DevTools shows the real cause. */
+function logHealthCheckFailure(url: string, err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  const key = `${url}::${message}`
+  if (key === lastHealthCheckErrorLogged) return
+  lastHealthCheckErrorLogged = key
+  console.warn(`[VT agent-check] loopback fetch to ${url} failed: ${message}`)
+}
+
 /** Prime Chrome loopback permission (LNA) before POSTing credentials to the agent. */
 export async function ensureLoopbackAgentAccess(port = DEFAULT_AGENT_AUTH_PORT): Promise<boolean> {
   if (typeof window === "undefined") return false
@@ -33,14 +44,20 @@ export async function fetchLocalAgentHealth(
   port = DEFAULT_AGENT_AUTH_PORT,
 ): Promise<LocalAgentHealth | null> {
   if (typeof window === "undefined") return null
+  const url = `http://127.0.0.1:${port}/health`
   try {
-    const res = await loopbackFetch(`http://127.0.0.1:${port}/health`, {
+    const res = await loopbackFetch(url, {
       method: "GET",
       cache: "no-store",
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      logHealthCheckFailure(url, `HTTP ${res.status}`)
+      return null
+    }
+    lastHealthCheckErrorLogged = null
     return (await res.json()) as LocalAgentHealth
-  } catch {
+  } catch (err) {
+    logHealthCheckFailure(url, err)
     return null
   }
 }
