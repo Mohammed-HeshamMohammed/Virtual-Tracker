@@ -8,6 +8,7 @@ node_modules/
 # Build
 dist/
 src-tauri/target/
+.vite/
 
 # Env / secrets
 .env
