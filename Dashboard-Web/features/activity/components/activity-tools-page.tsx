@@ -4,7 +4,10 @@ import { Download, Monitor } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 
-const RELEASES_URL = "https://github.com/Mohammed-HeshamMohammed/Virtual-Tracker/releases/latest"
+// Self-hosted so the button always resolves even if the GitHub release step
+// is skipped/delayed - overwrite this file (keep the name stable) on every
+// new agent build so this link never needs a code change.
+const DOWNLOAD_URL = "/downloads/VirtualTrackerAgent-setup.exe"
 
 export function ActivityToolsPage() {
   const { isDark } = useTheme()
@@ -36,9 +39,8 @@ export function ActivityToolsPage() {
         </div>
 
         <a
-          href={RELEASES_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+          href={DOWNLOAD_URL}
+          download
           className="flex shrink-0 items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-green-600/20 transition-transform hover:scale-[1.02] active:scale-95"
           style={{ background: "linear-gradient(135deg,#006e2f,#22c55e)" }}
         >
