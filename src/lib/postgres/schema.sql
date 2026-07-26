@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS time_entries (
   billable     BOOLEAN     NOT NULL DEFAULT false,
   status       VARCHAR(20) NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending', 'approved', 'rejected')),
+  source       VARCHAR(20) NOT NULL DEFAULT 'manual'
+                           CHECK (source IN ('manual', 'tracked')),
   created_by   VARCHAR(255),
   updated_by   VARCHAR(255),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),

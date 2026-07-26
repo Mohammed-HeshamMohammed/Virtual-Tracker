@@ -5,6 +5,7 @@ import {
 } from "../../lib/firestore/task-subcollections.js";
 import {
   ensureAssignmentForUser,
+  estimateAssignmentOvertimeSeconds,
   estimateAssignmentSeconds,
   estimateTaskDurationSeconds,
   getReviewQueue,
@@ -184,7 +185,11 @@ export async function syncTaskTimeTracking(db, {
     action,
   );
   const active = enforced.activeSeconds;
-  const estimatedSeconds = assignment.expectedSeconds ?? estimateAssignmentSeconds(task);
+  // Always recompute live from the task's current hours - assignment.expectedSeconds is a
+  // snapshot only refreshed when the assignee list changes, so it silently goes stale (and
+  // drops any overtime added later) if the task's hours are edited after assignment. Matches
+  // what computeTimerAllowance already does for enforcement, so display and enforcement agree.
+  const estimatedSeconds = estimateAssignmentSeconds(task);
 
   if (!trackingDoc) {
     const id = crypto.randomUUID();
@@ -293,7 +298,9 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const doc = await findTrackingDoc(db, taskId, userId);
   const taskSnap = await db.collection("tasks").doc(taskId).get();
   const taskData = taskSnap.data() ?? {};
-  const estimatedSeconds = assignment.expectedSeconds ?? estimateAssignmentSeconds(taskData);
+  // Always live - see the comment on the identical line in syncTaskTimeTracking above.
+  const estimatedSeconds = estimateAssignmentSeconds(taskData);
+  const overtimeSeconds = estimateAssignmentOvertimeSeconds(taskData);
   const includeMemberBreakdown = options.includeMemberBreakdown === true;
 
   let memberContributions = null;
@@ -325,6 +332,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       assignmentStatus: assignment.status,
       assignmentId: assignment.id,
       estimatedSeconds,
+      overtimeSeconds,
       progressPercent: null,
       totalActiveSeconds: taskData.total_active_seconds ?? 0,
       totalIdleSeconds: taskData.total_idle_seconds ?? 0,
@@ -348,6 +356,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     assignmentStatus: assignment.status,
     assignmentId: assignment.id,
     estimatedSeconds,
+    overtimeSeconds,
     progressPercent: tracking.progressPercent ?? progressPercentFor(tracking.activeSeconds, estimatedSeconds),
     totalActiveSeconds: taskData.total_active_seconds ?? tracking.activeSeconds,
     totalIdleSeconds: taskData.total_idle_seconds ?? tracking.idleSeconds,
