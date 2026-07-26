@@ -974,7 +974,7 @@ export async function routeActivity(req, res, url, origin) {
     } catch {
       body = {};
     }
-    const session = await createAgentLinkSession(db, {
+    const session = await createAgentLinkSession({
       agentSource: body?.source === "python" ? "python" : "electron",
     });
     sendJson(res, origin, 200, { success: true, data: session });
@@ -1006,7 +1006,7 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
       const refreshToken = typeof body?.refreshToken === "string" ? body.refreshToken : "";
-      const completed = await completeAgentLinkSession(db, linkToken, {
+      const completed = await completeAgentLinkSession(linkToken, {
         memberId: member.memberId,
         idToken,
         refreshToken,
@@ -1036,7 +1036,7 @@ export async function routeActivity(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "linkToken and agentSecret are required" });
       return true;
     }
-    const exchanged = await exchangeAgentLinkSession(db, linkToken, agentSecret);
+    const exchanged = await exchangeAgentLinkSession(linkToken, agentSecret);
     if (!exchanged.ok) {
       const code = exchanged.error === "Link session is not ready" ? 409 : 400;
       sendJson(res, origin, code, { success: false, error: exchanged.error });
