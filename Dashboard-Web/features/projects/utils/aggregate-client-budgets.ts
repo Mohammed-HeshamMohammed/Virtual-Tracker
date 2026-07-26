@@ -13,8 +13,8 @@ export type AggregatedProjectBudgetFields = {
 }
 
 function mapClientBudgetTypeToProject(type: ClientBudget["type"]): string {
-  if (type === "hourly") return "Amount limit"
-  return "Total cost"
+  if (type === "hourly") return "Hours based"
+  return "Cost based"
 }
 
 function mapClientResetsToProject(resets: string): string {

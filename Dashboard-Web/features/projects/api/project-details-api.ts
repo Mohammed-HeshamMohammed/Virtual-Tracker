@@ -428,7 +428,10 @@ function ensureActorInMembers(
 }
 
 function shouldPersistBudget(payload: CreateProjectFormPayload): boolean {
-  return Boolean(payload.budgetType.trim() && payload.budgetBasedOn.trim())
+  const hasType = Boolean(payload.budgetType.trim())
+  if (!hasType) return false
+  if (payload.budgetType === "Hours based") return true
+  return Boolean(payload.budgetBasedOn.trim())
 }
 
 function buildBudgetFields(payload: CreateProjectFormPayload) {

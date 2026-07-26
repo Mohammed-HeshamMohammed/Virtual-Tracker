@@ -125,7 +125,7 @@ function createDefaultAddForm(): AddProjectFormState {
     viewers: [],
     memberLimit: "",
     hasBudget: true,
-    budgetType: "Total cost",
+    budgetType: "Cost based",
     budgetBasedOn: "Bill rate",
     budgetResets: "Never",
     budgetNotifyAt: "",
@@ -397,7 +397,7 @@ export function ProjectModal({
           memberLimit: payload.memberLimitMembers ?? "",
           memberLimitMembers: payload.memberLimitMemberIds,
           hasBudget: payload.hasBudget,
-          budgetType: payload.budgetType || "Total cost",
+          budgetType: payload.budgetType || "Cost based",
           budgetBasedOn: payload.budgetBasedOn || "Bill rate",
           budgetResets: payload.budgetResets,
           budgetNotifyAt: payload.budgetNotifyAt,
@@ -844,39 +844,62 @@ export function ProjectModal({
                     </p>
                   ) : null}
                   <div className={FORM_GRID}>
-                    <FormField label="Type" required>
+                    <FormField label="Type" required className={addForm.budgetType === "Hours based" ? "sm:col-span-2" : undefined}>
                       <ProjectModalSelect
                         value={addForm.budgetType}
-                        onChange={(value) => setAddForm((p) => ({ ...p, budgetType: value }))}
+                        onChange={(value) => setAddForm((p) => ({
+                          ...p,
+                          budgetType: value,
+                          budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
+                        }))}
                         placeholder="Select a type"
-                        options={["Total cost", "Hours limit", "Amount limit"]}
+                        options={["Cost based", "Hours based"]}
                       />
                     </FormField>
-                    <FormField label="Based on" required>
-                      <ProjectModalSelect
-                        value={addForm.budgetBasedOn}
-                        onChange={(value) => setAddForm((p) => ({ ...p, budgetBasedOn: value }))}
-                        placeholder="Select a rate"
-                        options={["Bill rate", "Pay rate"]}
-                      />
-                    </FormField>
-                    <FormField label="Cost" required className="sm:col-span-2" error={budgetFieldErrors.budgetTotal}>
+                    {addForm.budgetType !== "Hours based" ? (
+                      <FormField label="Based on" required>
+                        <ProjectModalSelect
+                          value={addForm.budgetBasedOn}
+                          onChange={(value) => setAddForm((p) => ({ ...p, budgetBasedOn: value }))}
+                          placeholder="Select a rate"
+                          options={["Bill rate", "Pay rate"]}
+                        />
+                      </FormField>
+                    ) : null}
+                    <FormField
+                      label={addForm.budgetType === "Hours based" ? "Hours" : "Cost"}
+                      required
+                      className="sm:col-span-2"
+                      error={budgetFieldErrors.budgetTotal}
+                    >
                       <div className="relative">
-                        <span
-                          className={cn(
-                            "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
-                            formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                          )}
-                        >
-                          $
-                        </span>
+                        {addForm.budgetType !== "Hours based" ? (
+                          <span
+                            className={cn(
+                              "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
+                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                            )}
+                          >
+                            $
+                          </span>
+                        ) : null}
                         <input
                           type="number"
                           min={0}
                           value={addForm.budgetTotal}
                           onChange={(e) => updateAddForm({ budgetTotal: e.target.value })}
-                          className={cn(formTheme.control, "pl-7")}
+                          className={cn(formTheme.control, addForm.budgetType !== "Hours based" ? "pl-7" : "", addForm.budgetType === "Hours based" ? "pr-7" : "")}
                         />
+                        {addForm.budgetType === "Hours based" ? (
+                          <span
+                            className={cn(
+                              "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                            )}
+                          >
+                            h
+                          </span>
+                        ) : null}
                       </div>
                     </FormField>
                   </div>
@@ -906,7 +929,7 @@ export function ProjectModal({
                             formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
                           )}
                         >
-                          % budget
+                          {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
                         </span>
                       </div>
                     </FormField>
@@ -923,7 +946,7 @@ export function ProjectModal({
                   <SettingToggleRow
                     checked={addForm.hasBudget}
                     onChange={(next) => updateAddForm({ hasBudget: next })}
-                    label="Stop timers when budget is reached"
+                    label={addForm.budgetType === "Hours based" ? "Stop timers when hours limit is reached" : "Stop timers when budget is reached"}
                   />
 
                   <FormField label="Stop timers at" className="max-w-xs" error={budgetFieldErrors.budgetStopTimersAt}>
@@ -939,7 +962,7 @@ export function ProjectModal({
                           formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
                         )}
                       >
-                        % budget
+                        {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
                       </span>
                     </div>
                   </FormField>
