@@ -1,6 +1,11 @@
 import { getPostgresPool } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { normalizeAppName } from "../../modules/activity/app-name.js";
+
+// Allows a couple of missed 15s agent ticks (network blip, retry) before treating
+// the app/tab as ended and starting a fresh row instead of extending a stale one.
+const APP_LOG_MERGE_GRACE_MS = 120_000;
 
 /**
  * @param {string[] | null | undefined} memberIds
@@ -80,30 +85,56 @@ export async function insertActivityScreenshot(row) {
   }
 }
 
-/** @param {Record<string, unknown>} row */
+/** Find-or-create the shared app row for this canonical name; returns its id. */
+async function resolveAppId(name) {
+  const result = await pgQuery(
+    `INSERT INTO apps (name) VALUES ($1)
+     ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+     RETURNING id`,
+    [name],
+  );
+  return result?.rows?.[0]?.id ?? null;
+}
+
+/**
+ * Logs one capture tick for a session's foreground app. If the same app+tab is
+ * still open in this session (last row updated within the merge grace window),
+ * extends its duration instead of inserting a new row - otherwise inserts one.
+ * @param {Record<string, unknown>} row
+ */
 export async function insertActivityAppLog(row) {
   const memberId = parseProgressUuid(String(row.memberId ?? ""));
   if (!memberId) return;
   const taskId = row.taskId ? parseProgressUuid(String(row.taskId)) : null;
+  const appName = normalizeAppName(String(row.appName ?? "Unknown").slice(0, 200)) || "Unknown";
+  const pageTitle = String(row.pageTitle ?? "").slice(0, 300);
+  const startedAt = row.startedAt instanceof Date ? row.startedAt : new Date();
+  const durationSeconds = Math.max(0, Math.floor(Number(row.durationSeconds ?? 30)));
+  const source = normalizeSource(String(row.source ?? "web"));
+
   try {
+    const appId = await resolveAppId(appName);
+    const cutoff = new Date(startedAt.getTime() - APP_LOG_MERGE_GRACE_MS);
+    const merged = await pgQuery(
+      `UPDATE activity_app_logs
+       SET duration_seconds = duration_seconds + $1, ended_at = $2
+       WHERE id = (
+         SELECT id FROM activity_app_logs
+         WHERE session_id = $3 AND app_id = $4 AND page_title = $5 AND ended_at >= $6
+         ORDER BY started_at DESC LIMIT 1
+       )
+       RETURNING id`,
+      [durationSeconds, startedAt, row.sessionId, appId, pageTitle, cutoff],
+    );
+    if (merged?.rows?.length) return;
+
     await pgQuery(
       `INSERT INTO activity_app_logs (
-         id, member_id, session_id, task_id, task_title, app_name, page_title,
-         started_at, duration_seconds, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         id, member_id, session_id, task_id, task_title, app_id, page_title,
+         started_at, ended_at, duration_seconds, source
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10)
        ON CONFLICT (id) DO NOTHING`,
-      [
-        row.id,
-        memberId,
-        row.sessionId,
-        taskId,
-        row.taskTitle ?? null,
-        String(row.appName ?? "Unknown").slice(0, 200),
-        String(row.pageTitle ?? "").slice(0, 300),
-        row.startedAt instanceof Date ? row.startedAt : new Date(),
-        Math.max(0, Math.floor(Number(row.durationSeconds ?? 30))),
-        normalizeSource(String(row.source ?? "web")),
-      ],
+      [row.id, memberId, row.sessionId, taskId, row.taskTitle ?? null, appId, pageTitle, startedAt, durationSeconds, source],
     );
   } catch (err) {
     logSafeWarn("[activity-events pg app]", err);
@@ -182,19 +213,20 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit) {
   let where = "WHERE 1=1";
   if (ids !== null) {
     params.push(ids);
-    where += ` AND member_id = ANY($${params.length}::uuid[])`;
+    where += ` AND l.member_id = ANY($${params.length}::uuid[])`;
   }
   if (dayFilter) {
     params.push(dayFilter);
-    where += ` AND started_at::date = $${params.length}::date`;
+    where += ` AND l.started_at::date = $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, task_id, task_title, app_name, page_title,
-            started_at, duration_seconds, source
-     FROM activity_app_logs
+    `SELECT l.id, l.member_id, l.session_id, l.task_id, l.task_title, a.name AS app_name, l.page_title,
+            l.started_at, l.duration_seconds, l.source
+     FROM activity_app_logs l
+     JOIN apps a ON a.id = l.app_id
      ${where}
-     ORDER BY started_at DESC
+     ORDER BY l.started_at DESC
      LIMIT $${params.length}`,
     params,
   );
