@@ -191,7 +191,7 @@ function ActivityShellStickyBar() {
 
 function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; children: ReactNode }) {
   return (
-    <div className="w-full">
+    <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={pageId}
@@ -220,7 +220,7 @@ export function ActivityShell({
 
   return (
     <ActivityShellProvider pageId={normalizedPage}>
-      <div className="-mt-2 w-full">
+      <div className="-mt-2 flex h-full min-h-0 w-full flex-col">
         <ActivityShellStickyBar />
         <ActivityShellBody pageId={normalizedPage}>{children}</ActivityShellBody>
       </div>

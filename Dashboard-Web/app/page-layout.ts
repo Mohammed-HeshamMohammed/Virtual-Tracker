@@ -8,6 +8,9 @@ export const FULL_BLEED_PAGE_IDS = new Set([
   "pm-projects",
   "pm-tasks",
   "pm-clients",
+  "activity-apps",
+  "activity-urls",
+  "activity-screenshots",
 ])
 
 export function isFullBleedPage(pageId: string): boolean {
