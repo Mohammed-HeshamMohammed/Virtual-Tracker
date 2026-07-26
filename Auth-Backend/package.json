@@ -15,7 +15,7 @@
     "zod": "^3.25.76"
   },
   "overrides": {
-    "protobufjs": ">=7.5.5",
+    "protobufjs": ">=8.7.1",
     "@tootallnate/once": ">=3.0.0",
     "http-proxy-agent": ">=7.0.0",
     "teeny-request": ">=9.0.0",
