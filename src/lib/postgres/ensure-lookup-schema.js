@@ -322,13 +322,20 @@ GROUP BY task_id`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC)`,
+  // Shared app-name dimension: one row per distinct app across every member, so
+  // activity_app_logs stores a small app_id instead of repeating the name text.
+  `CREATE TABLE IF NOT EXISTS apps (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name       VARCHAR(200) NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
   `CREATE TABLE IF NOT EXISTS activity_app_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id        UUID NOT NULL,
   session_id       VARCHAR(128) NOT NULL,
   task_id          UUID,
   task_title       VARCHAR(500),
-  app_name         VARCHAR(200) NOT NULL DEFAULT 'Unknown',
+  app_id           UUID NOT NULL REFERENCES apps(id),
   page_title       VARCHAR(300) NOT NULL DEFAULT '',
   started_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   ended_at         TIMESTAMPTZ,
@@ -337,6 +344,9 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_member_started ON activity_app_logs (member_id, started_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_started ON activity_app_logs (started_at DESC)`,
+  // Used to find the still-open row for the same app+tab in a session, to extend
+  // its duration instead of inserting a brand-new row on every capture tick.
+  `CREATE INDEX IF NOT EXISTS idx_act_app_session_open ON activity_app_logs (session_id, app_id, page_title, started_at DESC)`,
   `CREATE TABLE IF NOT EXISTS activity_url_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id        UUID NOT NULL,

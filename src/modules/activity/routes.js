@@ -19,6 +19,7 @@ import {
   resolveActivityFeedScope,
 } from "./activity-scope.js";
 import { maybeAlertLowActivity, maybeAlertMissingScreenshot } from "./activity-alerts.js";
+import { isBrowserAppName, normalizeAppName } from "./app-name.js";
 import {
   completeAgentLinkSession,
   createAgentLinkSession,
@@ -62,30 +63,6 @@ function parseDomain(url) {
   }
 }
 
-const APP_EXE_DISPLAY_NAMES = {
-  "chrome.exe": "Google Chrome",
-  "msedge.exe": "Microsoft Edge",
-  "firefox.exe": "Mozilla Firefox",
-  "brave.exe": "Brave",
-  "opera.exe": "Opera",
-  "cursor.exe": "Cursor",
-  "code.exe": "VS Code",
-  "explorer.exe": "File Explorer",
-  "python.exe": "Python",
-  "pythonw.exe": "Python",
-};
-
-function isInvalidAppName(name) {
-  const text = String(name || "").trim();
-  if (!text || text.toLowerCase() === "unknown") return true;
-  const lower = text.toLowerCase();
-  return lower.includes("://") || lower.includes("media-stream") || lower.startsWith("current-web-contents");
-}
-
-function isBrowserAppName(name) {
-  return /chrome|firefox|edge|opera|brave|safari|vivaldi|browser|chromium/i.test(String(name || ""));
-}
-
 function extractHttpUrl(text) {
   const match = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
   return match ? match[0] : "";
@@ -107,18 +84,6 @@ function titleFromBrowserPageTitle(pageTitle, appName) {
     if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
   }
   return title;
-}
-
-function normalizeAppName(raw) {
-  const name = String(raw || "").trim();
-  if (isInvalidAppName(name)) return null;
-  const mapped = APP_EXE_DISPLAY_NAMES[name.toLowerCase()];
-  if (mapped) return mapped;
-  if (name.toLowerCase().endsWith(".exe")) {
-    const stem = name.slice(0, -4).replace(/\./g, " ").trim();
-    return stem ? stem.charAt(0).toUpperCase() + stem.slice(1) : null;
-  }
-  return name;
 }
 
 /**
@@ -524,7 +489,7 @@ export async function routeActivity(req, res, url, origin) {
             durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
             source: typeof body.source === "string" ? body.source : "web",
           };
-          void insertActivityAppLog(appRow);
+          await insertActivityAppLog(appRow);
           count++;
         } else if (type === "url") {
           const urlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
