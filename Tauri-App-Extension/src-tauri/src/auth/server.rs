@@ -15,6 +15,7 @@ use crate::constants::{
 pub struct AuthServer {
     port: u16,
     api_url: String,
+    web_url: String,
     api: Arc<Mutex<ApiClient>>,
     link_flow: Arc<AgentLinkFlow>,
     stop: Arc<Mutex<bool>>,
@@ -24,12 +25,14 @@ impl AuthServer {
     pub fn new(
         port: u16,
         api_url: String,
+        web_url: String,
         api: Arc<Mutex<ApiClient>>,
         link_flow: Arc<AgentLinkFlow>,
     ) -> Self {
         Self {
             port,
             api_url,
+            web_url,
             api,
             link_flow,
             stop: Arc::new(Mutex::new(false)),
@@ -48,6 +51,7 @@ impl AuthServer {
         log::info!("Agent health listening on http://{addr}");
 
         let api_url = self.api_url.clone();
+        let web_url = self.web_url.clone();
         let api = Arc::clone(&self.api);
         let link_flow = Arc::clone(&self.link_flow);
         let stop = Arc::clone(&self.stop);
@@ -59,7 +63,7 @@ impl AuthServer {
                     if *stop.lock() {
                         break;
                     }
-                    handle_request(request, &api_url, &api, &link_flow);
+                    handle_request(request, &api_url, &web_url, &api, &link_flow);
                 }
             })
             .ok();
@@ -78,6 +82,7 @@ impl AuthServer {
 fn handle_request(
     mut request: Request,
     api_url: &str,
+    web_url: &str,
     api: &Arc<Mutex<ApiClient>>,
     link_flow: &Arc<AgentLinkFlow>,
 ) {
@@ -86,7 +91,7 @@ fn handle_request(
     let path = url.split('?').next().unwrap_or(&url);
 
     if method == Method::Options {
-        let _ = respond_empty(request, StatusCode(204));
+        let _ = respond_empty(request, StatusCode(204), web_url);
         return;
     }
 
@@ -101,7 +106,7 @@ fn handle_request(
             "linkPending": link_token.is_some(),
             "linkToken": link_token,
         });
-        let _ = respond_json(request, StatusCode(200), &payload);
+        let _ = respond_json(request, StatusCode(200), &payload, web_url);
         return;
     }
 
@@ -121,6 +126,7 @@ fn handle_request(
                 StatusCode(409)
             },
             &payload,
+            web_url,
         );
         return;
     }
@@ -141,6 +147,7 @@ fn handle_request(
                 request,
                 StatusCode(400),
                 &json!({"ok": false, "error": "Invalid credentials payload"}),
+                web_url,
             );
             return;
         }
@@ -157,6 +164,7 @@ fn handle_request(
                 StatusCode(409)
             },
             &payload,
+            web_url,
         );
         return;
     }
@@ -165,6 +173,7 @@ fn handle_request(
         request,
         StatusCode(404),
         &json!({"success": false, "error": "Not found"}),
+        web_url,
     );
 }
 
@@ -177,9 +186,15 @@ fn read_body(request: &mut Request) -> Value {
     serde_json::from_slice(&buf).unwrap_or_else(|_| json!({}))
 }
 
-fn cors_headers() -> Vec<Header> {
+/// Only the configured dashboard origin may read these responses — this server
+/// is reachable by any process on localhost, and a wildcard origin would let
+/// any webpage the user has open (via a cross-origin fetch) read auth state
+/// and the live link token off it.
+fn cors_headers(origin: &str) -> Vec<Header> {
     vec![
-        Header::from_bytes("Access-Control-Allow-Origin", "*").unwrap(),
+        Header::from_bytes("Access-Control-Allow-Origin", origin).unwrap_or_else(|_| {
+            Header::from_bytes("Access-Control-Allow-Origin", "null").expect("static header")
+        }),
         Header::from_bytes("Access-Control-Allow-Methods", "GET, POST, OPTIONS").unwrap(),
         Header::from_bytes("Access-Control-Allow-Headers", "Content-Type").unwrap(),
         Header::from_bytes("Access-Control-Allow-Private-Network", "true").unwrap(),
@@ -191,11 +206,12 @@ fn respond_json(
     request: Request,
     status: StatusCode,
     payload: &Value,
+    origin: &str,
 ) -> Result<(), std::io::Error> {
     let body = serde_json::to_vec(payload).unwrap_or_else(|_| b"{}".to_vec());
     let response = Response::new(
         status,
-        cors_headers(),
+        cors_headers(origin),
         Cursor::new(body.clone()),
         Some(body.len()),
         None,
@@ -203,8 +219,8 @@ fn respond_json(
     request.respond(response)
 }
 
-fn respond_empty(request: Request, status: StatusCode) -> Result<(), std::io::Error> {
-    let mut headers = cors_headers();
+fn respond_empty(request: Request, status: StatusCode, origin: &str) -> Result<(), std::io::Error> {
+    let mut headers = cors_headers(origin);
     headers.pop(); // drop Content-Type for empty
     let response = Response::new(status, headers, Cursor::new(Vec::new()), Some(0), None);
     request.respond(response)

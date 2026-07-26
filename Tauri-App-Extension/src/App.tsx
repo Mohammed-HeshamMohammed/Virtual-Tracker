@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -30,11 +30,7 @@ type UserPreferences = {
 };
 
 type AppSettingsView = {
-  apiUrl: string;
-  webUrl: string;
-  authPort: number;
   version: string;
-  isProduction: boolean;
   preferences: UserPreferences;
   logPath: string;
 };
@@ -124,95 +120,30 @@ function statusLabel(status: string, signedIn: boolean): string {
 function TitleBar({
   title,
   onClose,
-  onBack,
   onCheckUpdate,
   checkingUpdate,
-  onRefresh,
-  refreshing,
-  onOpenSettings,
-  version,
 }: {
   title: string;
   onClose: () => void;
-  onBack?: () => void;
   onCheckUpdate?: () => void;
   checkingUpdate?: boolean;
-  onRefresh?: () => void;
-  refreshing?: boolean;
-  onOpenSettings?: () => void;
-  version?: string;
 }) {
   return (
     <header className="titlebar">
       <div className="titlebar-drag" data-tauri-drag-region>
-        {onBack ? (
-          <button
-            className="win-btn titlebar-back"
-            type="button"
-            title="Back"
-            aria-label="Back"
-            onClick={onBack}
-          >
-            <svg viewBox="0 0 12 12" aria-hidden="true">
-              <path
-                d="M7.5 2.5 3 6l4.5 3.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
-        ) : (
-          <img
-            className="titlebar-logo-img"
-            src="/app-icon.ico"
-            width={16}
-            height={16}
-            alt=""
-            draggable={false}
-          />
-        )}
+        <img
+          className="titlebar-logo-img"
+          src="/app-icon.ico"
+          width={16}
+          height={16}
+          alt=""
+          draggable={false}
+        />
         <span className="titlebar-label" data-tauri-drag-region>
           {title}
         </span>
-        {onRefresh ? (
-          <button
-            className="win-btn"
-            type="button"
-            title="Refresh projects & tasks"
-            aria-label="Refresh projects & tasks"
-            disabled={refreshing}
-            onClick={onRefresh}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshing ? "spin" : undefined}>
-              <path
-                fill="currentColor"
-                d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-              />
-            </svg>
-          </button>
-        ) : null}
-        {onOpenSettings ? (
-          <button
-            className="win-btn"
-            type="button"
-            title="Settings"
-            aria-label="Settings"
-            onClick={onOpenSettings}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.484.484 0 0 0 14.06 2h-3.88c-.24 0-.45.17-.49.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54c.05.24.25.41.49.41h3.88c.24 0 .44-.17.49-.41l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
-              />
-            </svg>
-          </button>
-        ) : null}
       </div>
       <div className="titlebar-controls">
-        {version ? <span className="titlebar-version">v{version}</span> : null}
         {onCheckUpdate ? (
           <button
             className="win-btn"
@@ -276,6 +207,12 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
     void load().catch(console.error);
   }, [load]);
 
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [message]);
+
   const toggle = async (key: keyof UserPreferences, value: boolean) => {
     if (!settings) return;
     setSaving(true);
@@ -296,25 +233,29 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
   const prefs = settings?.preferences;
 
   return (
-    <main className="agent-tray settings-window">
-      <TitleBar title="Settings" onBack={onBack} onClose={() => void invoke("close_window")} />
+    <main className="agent-tray settings-window view-settings">
+      <TitleBar title="Settings" onClose={() => void invoke("close_window")} />
+      <div className="settings-back-row">
+        <button
+          className="settings-back-btn"
+          type="button"
+          title="Back"
+          aria-label="Back"
+          onClick={onBack}
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path
+              d="M7.5 2.5 3 6l4.5 3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
       <div className="content settings-content">
-        <section className="settings-card">
-          <h3 className="settings-section-label">Connection</h3>
-          <div className="settings-row static">
-            <span>Dashboard</span>
-            <code>{settings?.webUrl || "—"}</code>
-          </div>
-          <div className="settings-row static">
-            <span>API</span>
-            <code>{settings?.apiUrl || "—"}</code>
-          </div>
-          <div className="settings-row static">
-            <span>Mode</span>
-            <code>{settings?.isProduction ? "Production" : "Development"}</code>
-          </div>
-        </section>
-
         <section className="settings-card">
           <h3 className="settings-section-label">Diagnostics</h3>
           <div className="settings-row static">
@@ -371,7 +312,11 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
           </label>
         </section>
 
-        {message ? <p className="settings-message">{message}</p> : null}
+        {message ? (
+          <p className="settings-message" role="status" aria-live="polite">
+            {message}
+          </p>
+        ) : null}
 
         <p className="settings-version">v{settings?.version || "—"}</p>
       </div>
@@ -399,7 +344,9 @@ function Dropdown({
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -419,14 +366,82 @@ function Dropdown({
   const selected = options.find((o) => o.id === value);
   const isEmpty = options.length === 0;
 
+  const openAt = (index: number) => {
+    setActiveIndex(Math.max(0, Math.min(options.length - 1, index)));
+    setOpen(true);
+  };
+
+  const commit = (index: number) => {
+    const option = options[index];
+    if (!option) return;
+    onChange(option.id);
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
+
+  const onTriggerKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (isEmpty) return;
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        if (!open) {
+          openAt(options.findIndex((o) => o.id === value));
+        } else {
+          setActiveIndex((i) => Math.min(options.length - 1, i + 1));
+        }
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        if (!open) {
+          openAt(options.findIndex((o) => o.id === value));
+        } else {
+          setActiveIndex((i) => Math.max(0, i - 1));
+        }
+        break;
+      case "Home":
+        if (open) {
+          e.preventDefault();
+          setActiveIndex(0);
+        }
+        break;
+      case "End":
+        if (open) {
+          e.preventDefault();
+          setActiveIndex(options.length - 1);
+        }
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        if (open) commit(activeIndex);
+        else openAt(Math.max(0, options.findIndex((o) => o.id === value)));
+        break;
+      case "Escape":
+        if (open) {
+          e.preventDefault();
+          setOpen(false);
+        }
+        break;
+      default:
+        break;
+    }
+  };
+
   return (
     <div className="dropdown" ref={rootRef}>
       <button
         id={id}
+        ref={triggerRef}
         type="button"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={`${id}-listbox`}
+        aria-activedescendant={open && options[activeIndex] ? `${id}-opt-${activeIndex}` : undefined}
         className={`dropdown-trigger${open ? " open" : ""}`}
         disabled={disabled || isEmpty}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? setOpen(false) : openAt(Math.max(0, options.findIndex((o) => o.id === value))))}
+        onKeyDown={onTriggerKeyDown}
       >
         <span className="dropdown-value">
           {selected ? selected.label : isEmpty ? emptyLabel : placeholder}
@@ -449,16 +464,17 @@ function Dropdown({
         </svg>
       </button>
       {open && !isEmpty ? (
-        <div className="dropdown-menu">
-          {options.map((option) => (
+        <div className="dropdown-menu" role="listbox" id={`${id}-listbox`}>
+          {options.map((option, index) => (
             <button
               key={option.id}
+              id={`${id}-opt-${index}`}
               type="button"
-              className={`dropdown-item${option.id === value ? " active" : ""}`}
-              onClick={() => {
-                onChange(option.id);
-                setOpen(false);
-              }}
+              role="option"
+              aria-selected={option.id === value}
+              className={`dropdown-item${option.id === value ? " active" : ""}${index === activeIndex ? " highlighted" : ""}`}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => commit(index)}
             >
               {option.label}
             </button>
@@ -471,6 +487,7 @@ function Dropdown({
 
 function MainApp() {
   const [view, setView] = useState<"home" | "settings">("home");
+  const [loadingProfile, setLoadingProfile] = useState(true);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [link, setLink] = useState<LinkStatus | null>(null);
   const [version, setVersion] = useState("0.2.0");
@@ -523,6 +540,7 @@ function MainApp() {
         setSelectedTaskId(nextSession.taskId);
       }
     }
+    setLoadingProfile(false);
   }, []);
 
   const refreshProjects = useCallback(async () => {
@@ -579,7 +597,9 @@ function MainApp() {
     void invoke<string>("get_version")
       .then(setVersion)
       .catch(() => undefined);
-    void refresh().catch(console.error);
+    void refresh()
+      .catch(console.error)
+      .finally(() => setLoadingProfile(false));
 
     const onStatus = () => {
       void refresh().catch(console.error);
@@ -709,7 +729,9 @@ function MainApp() {
   };
 
   const tone = statusTone(link?.status || "", signedIn);
-  const displayName = profile?.name || "Not signed in";
+  const displayName = loadingProfile ? "Loading…" : profile?.name || "Not signed in";
+  const firstName =
+    signedIn && profile?.name ? profile.name.trim().split(/\s+/)[0] : displayName;
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
 
   const remainingLabel = !taskTracking
@@ -725,16 +747,12 @@ function MainApp() {
   }
 
   return (
-    <main className="agent-tray">
+    <main className="agent-tray view-home">
       <TitleBar
         title="Virtual Tracker"
         onClose={() => void invoke("close_window")}
         onCheckUpdate={() => void checkForUpdate()}
         checkingUpdate={checkingUpdate}
-        onRefresh={() => void handleManualRefresh()}
-        refreshing={refreshingData}
-        onOpenSettings={() => setView("settings")}
-        version={version}
       />
 
       <div className="app-body">
@@ -757,9 +775,11 @@ function MainApp() {
               </div>
               <div className="hero-copy">
                 <span className="hero-kicker">Desktop Agent</span>
-                <h1 className="hero-name">{displayName}</h1>
+                <h1 className="hero-name">{firstName}</h1>
               </div>
-              <span className={`pill pill-${tone}`}>{statusLabel(link?.status || "", signedIn)}</span>
+              <span className={`pill pill-${loadingProfile ? "idle" : tone}`}>
+                {loadingProfile ? "Loading" : statusLabel(link?.status || "", signedIn)}
+              </span>
             </div>
 
             <div className={`signal${tracking ? " live" : ""}`}>
@@ -773,17 +793,24 @@ function MainApp() {
                 ))}
               </div>
               <p className="signal-text">
-                {tracking
-                  ? `Tracking${selectedTask ? ` · ${selectedTask.title}` : ""}`
-                  : signedIn
-                    ? "Select a task and start when you’re ready"
-                    : "Sign in to link this PC to your account"}
+                {loadingProfile
+                  ? "Checking your session…"
+                  : tracking
+                    ? `Tracking${selectedTask ? ` · ${selectedTask.title}` : ""}`
+                    : signedIn
+                      ? "Select a task and start when you’re ready"
+                      : "Sign in to link this PC to your account"}
               </p>
             </div>
           </section>
 
-          {!signedIn ? (
-            <nav className="actions">
+          {loadingProfile ? (
+            <div className="side-skeleton side-panel-swap" aria-hidden="true">
+              <span className="skeleton-bar skeleton-bar-lg" />
+              <span className="skeleton-bar" />
+            </div>
+          ) : !signedIn ? (
+            <nav className="actions side-panel-swap">
               <button
                 className="btn btn-primary"
                 type="button"
@@ -802,7 +829,7 @@ function MainApp() {
             </nav>
           ) : (
             <>
-              <section className="task-card">
+              <section className="task-card side-panel-swap">
                 <label className="task-label" htmlFor="project-select">
                   Project
                 </label>
@@ -817,7 +844,7 @@ function MainApp() {
                 />
               </section>
 
-              <section className="task-card">
+              <section className="task-card side-panel-swap" style={{ animationDelay: "0.03s" }}>
                 <label className="task-label" htmlFor="task-select">
                   Your tasks
                 </label>
@@ -832,7 +859,7 @@ function MainApp() {
                 />
               </section>
 
-              <nav className="actions">
+              <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
                 {tracking ? (
                   <button
                     className="btn btn-danger"
@@ -871,22 +898,54 @@ function MainApp() {
           )}
 
           {actionError ? <p className="inline-error">{actionError}</p> : null}
+
+          <button
+            className="settings-corner-btn"
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setView("settings")}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.484.484 0 0 0 14.06 2h-3.88c-.24 0-.45.17-.49.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54c.05.24.25.41.49.41h3.88c.24 0 .44-.17.49-.41l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
+              />
+            </svg>
+          </button>
         </aside>
 
         <section className="page-area">
           <div className="page-header">
-            <span className="page-eyebrow">Today</span>
-            <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
+            <div className="page-header-titles">
+              <span className="page-eyebrow">Today</span>
+              <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
+            </div>
+            <button
+              className="page-refresh-btn"
+              type="button"
+              title="Refresh projects & tasks"
+              aria-label="Refresh projects & tasks"
+              disabled={refreshingData}
+              onClick={() => void handleManualRefresh()}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshingData ? "spin" : undefined}>
+                <path
+                  fill="currentColor"
+                  d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
+                />
+              </svg>
+            </button>
           </div>
 
           {signedIn && selectedTaskId ? (
             <>
-              <div className="page-clock">
+              <div className="page-clock page-content-swap">
                 <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
                 <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
               </div>
 
-              <div className="stat-grid">
+              <div className="stat-grid page-content-swap" style={{ animationDelay: "0.04s" }}>
                 <div className="stat-card">
                   <span className="stat-card-label">Today, this task</span>
                   <span className="stat-card-value">{fmtHours(taskTracking?.workedTodayOnTaskSeconds)}</span>
@@ -927,7 +986,7 @@ function MainApp() {
               ) : null}
             </>
           ) : (
-            <div className="page-empty">
+            <div className="page-empty page-content-swap">
               <span className="page-empty-title">{signedIn ? "No task selected" : "Not signed in"}</span>
               <p className="page-empty-text">
                 {signedIn
@@ -936,6 +995,8 @@ function MainApp() {
               </p>
             </div>
           )}
+
+          <span className="version-banner">v{version}</span>
         </section>
       </div>
     </main>

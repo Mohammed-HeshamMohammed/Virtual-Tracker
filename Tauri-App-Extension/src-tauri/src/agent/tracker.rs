@@ -52,10 +52,10 @@ impl ActivityTracker {
         }
     }
 
+    /// Caller (`AgentController::start_tracker`) always stops any prior tracker
+    /// and builds a fresh instance before calling this, so there's no existing
+    /// loop to guard against here — just clear the stop flag and spawn.
     pub fn start(self: &Arc<Self>) {
-        if !self.stop.swap(false, Ordering::SeqCst) {
-            // was already running potentially — always spawn fresh if previous stopped
-        }
         self.stop.store(false, Ordering::SeqCst);
         self.activity.start();
         let tracker = Arc::clone(self);
@@ -216,7 +216,7 @@ impl ActivityTracker {
         let Some(event) = self.events.screenshot(window) else {
             return;
         };
-        if self.api.lock().post_events(session_id, &[event.clone()]) {
+        if self.api.lock().post_events(session_id, std::slice::from_ref(&event)) {
             log::info!("Activity uploaded");
         } else {
             self.queue.enqueue(session_id, &[event]);
@@ -229,7 +229,7 @@ impl ActivityTracker {
         window: &crate::capture::window::ForegroundWindow,
     ) {
         let app_event = self.events.app_slice(window);
-        let app_ok = self.api.lock().post_events(session_id, &[app_event.clone()]);
+        let app_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&app_event));
         if !app_ok {
             self.queue.enqueue(session_id, &[app_event]);
         }
@@ -239,7 +239,7 @@ impl ActivityTracker {
         // app log line was claiming "+ URL" it never had.
         let mut url_sent = false;
         if let Some(url_event) = self.events.url_slice(window) {
-            let url_ok = self.api.lock().post_events(session_id, &[url_event.clone()]);
+            let url_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&url_event));
             if url_ok {
                 url_sent = true;
             } else {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::thread;
@@ -235,8 +235,8 @@ fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String
 static WARNED_MISSING_SCRIPT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 pub fn read_browser_url(
-    script_path: &PathBuf,
-    macos_script_path: &PathBuf,
+    script_path: &Path,
+    macos_script_path: &Path,
     window: &ForegroundWindow,
 ) -> Option<String> {
     if !window.is_browser {

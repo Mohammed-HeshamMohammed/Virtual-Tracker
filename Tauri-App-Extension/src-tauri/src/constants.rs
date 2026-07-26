@@ -1,6 +1,7 @@
 //! Shared timing and API limits (aligned with the former Python agent + web tracker).
 
-pub const APP_VERSION: &str = "0.2.0";
+/// Always matches Cargo.toml's `version` at compile time — no separate string to drift.
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const AGENT_NAME: &str = "tauri";
 
 /// Production dashboard frontend.

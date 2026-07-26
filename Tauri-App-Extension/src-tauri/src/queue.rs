@@ -50,6 +50,10 @@ impl EventQueue {
         let Ok(file) = File::open(&self.path) else {
             return;
         };
+        // filter_map (not map_while): a single bad line shouldn't cut off every
+        // batch queued after it - this is a finite local file, not a stream that
+        // could error forever, so clippy's infinite-loop concern doesn't apply here.
+        #[allow(clippy::lines_filter_map_ok)]
         let lines: Vec<String> = BufReader::new(file).lines().filter_map(Result::ok).collect();
         if lines.is_empty() {
             return;
@@ -77,6 +81,9 @@ impl EventQueue {
         let Ok(file) = File::open(&self.path) else {
             return;
         };
+        // Same reasoning as flush() above - finite local file, keep partial
+        // recovery past a single bad line instead of truncating at it.
+        #[allow(clippy::lines_filter_map_ok)]
         let lines: Vec<String> = BufReader::new(file).lines().filter_map(Result::ok).collect();
         if lines.len() < MAX_QUEUED_BATCHES {
             return;

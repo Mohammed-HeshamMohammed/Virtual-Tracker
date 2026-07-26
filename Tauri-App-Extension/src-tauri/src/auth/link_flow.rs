@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -135,8 +135,6 @@ impl AgentLinkFlow {
         let pending = Arc::clone(&self.pending);
         let on_tokens = Arc::clone(&self.on_tokens);
         let on_error = Arc::clone(&self.on_error);
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let _ = cancelled;
 
         thread::Builder::new()
             .name("vt-link-poll".into())
@@ -166,13 +164,13 @@ impl AgentLinkFlow {
                         return;
                     }
 
-                    if status == 409 && (attempt == 1 || attempt % 15 == 0) {
+                    if status == 409 && (attempt == 1 || attempt.is_multiple_of(15)) {
                         log::info!(
                             "Link exchange not ready yet (409) — waiting for browser link/complete (poll #{attempt})"
                         );
-                    } else if status != 0 && status != 409 && (attempt == 1 || attempt % 15 == 0) {
+                    } else if status != 0 && status != 409 && (attempt == 1 || attempt.is_multiple_of(15)) {
                         log::warn!("Link exchange failed ({status}) on poll #{attempt}");
-                    } else if status == 0 && (attempt == 1 || attempt % 15 == 0) {
+                    } else if status == 0 && (attempt == 1 || attempt.is_multiple_of(15)) {
                         log::warn!("Link exchange unreachable on poll #{attempt}");
                     }
                     thread::sleep(Duration::from_secs(1));

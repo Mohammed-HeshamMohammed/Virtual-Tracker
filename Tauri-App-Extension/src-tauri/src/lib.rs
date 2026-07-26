@@ -41,22 +41,6 @@ fn open_web_app(state: tauri::State<'_, AppState>) {
 }
 
 #[tauri::command]
-fn minimize_window(app: AppHandle) -> Result<(), String> {
-    let label = app
-        .webview_windows()
-        .keys()
-        .next()
-        .cloned()
-        .unwrap_or_else(|| "main".into());
-    // Prefer focused window; fall back to main.
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = label;
-        window.minimize().map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
 fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
@@ -236,7 +220,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sign_in,
             open_web_app,
-            minimize_window,
             minimize_current,
             close_window,
             get_status,
@@ -258,10 +241,14 @@ pub fn run() {
             let status_controller = Arc::clone(&controller);
             status_controller.add_status_listener(Arc::new(move |text| {
                 if let Some(window) = handle.get_webview_window("main") {
-                    let safe = text.replace('\\', "\\\\").replace('\'', "\\'");
-                    let _ = window.eval(&format!(
-                        "window.dispatchEvent(new CustomEvent('vt-status', {{ detail: '{safe}' }}));"
-                    ));
+                    // JSON string escaping is a strict subset of valid JS string-literal
+                    // escaping, so the serialized value can be embedded directly - handles
+                    // quotes, backslashes, and control chars a hand-rolled replace() would miss.
+                    if let Ok(json) = serde_json::to_string(&text) {
+                        let _ = window.eval(format!(
+                            "window.dispatchEvent(new CustomEvent('vt-status', {{ detail: {json} }}));"
+                        ));
+                    }
                 }
             }));
 

@@ -42,6 +42,7 @@ impl AgentController {
         let auth_server = AuthServer::new(
             settings.auth_port,
             settings.api_url.clone(),
+            settings.web_url.clone(),
             Arc::clone(&api),
             Arc::clone(&link_flow),
         );
@@ -214,11 +215,7 @@ impl AgentController {
 
     pub fn get_app_settings(&self) -> AppSettingsView {
         AppSettingsView {
-            api_url: self.settings.api_url.clone(),
-            web_url: self.settings.web_url.clone(),
-            auth_port: self.settings.auth_port,
             version: APP_VERSION.to_string(),
-            is_production: self.settings.is_production,
             preferences: self.settings.preferences_store().load(),
             log_path: self.settings.log_path.to_string_lossy().to_string(),
         }

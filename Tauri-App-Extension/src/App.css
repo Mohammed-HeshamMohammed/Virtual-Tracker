@@ -45,34 +45,12 @@ body {
   box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
 }
 
-.scanline {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(to right, transparent, var(--primary), transparent);
-  opacity: 0.1;
-  animation: scan 4s linear infinite;
-  pointer-events: none;
-  z-index: 2;
-}
-
-@keyframes scan {
-  0% {
-    top: 0;
-  }
-  100% {
-    top: 100%;
-  }
-}
-
 .titlebar {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   height: 36px;
   background: var(--surface-low);
-  border-bottom: 1px solid rgba(109, 117, 140, 0.12);
   position: relative;
   z-index: 3;
 }
@@ -114,13 +92,6 @@ body {
   gap: 8px;
 }
 
-.titlebar-version {
-  font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 10px;
-  color: rgba(163, 170, 196, 0.4);
-  white-space: nowrap;
-}
-
 .win-btn {
   display: grid;
   place-items: center;
@@ -135,17 +106,6 @@ body {
 .win-btn svg {
   width: 10px;
   height: 10px;
-}
-
-.titlebar-back {
-  width: 24px;
-  margin-left: -8px;
-  flex-shrink: 0;
-}
-
-.titlebar-back svg {
-  width: 12px;
-  height: 12px;
 }
 
 .win-btn:hover {
@@ -187,32 +147,6 @@ body {
 .settings-content {
   gap: 14px;
   width: 100%;
-  max-width: 420px;
-  margin: 0 auto;
-}
-
-.settings-back {
-  align-self: flex-start;
-  border: none;
-  background: transparent;
-  color: var(--primary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-}
-
-.settings-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: var(--on-surface);
-}
-
-.settings-subtitle {
-  font-size: 12px;
-  color: rgba(163, 170, 196, 0.75);
-  line-height: 1.45;
-  margin-top: -6px;
 }
 
 .settings-card {
@@ -223,6 +157,15 @@ body {
   border-radius: 12px;
   background: rgba(25, 37, 64, 0.55);
   border: 1px solid rgba(109, 117, 140, 0.1);
+  animation: fade-slide-up 0.25s ease both;
+}
+
+.settings-card:nth-child(2) {
+  animation-delay: 0.04s;
+}
+
+.settings-card:nth-child(3) {
+  animation-delay: 0.08s;
 }
 
 .settings-section-label {
@@ -281,105 +224,6 @@ body {
   color: var(--primary);
 }
 
-.link-card {
-  position: relative;
-}
-
-.link-card-glow {
-  position: absolute;
-  inset: -2px;
-  border-radius: 12px;
-  background: linear-gradient(
-    to right,
-    rgba(186, 158, 255, 0.2),
-    rgba(192, 140, 247, 0.2)
-  );
-  filter: blur(6px);
-  opacity: 0.3;
-  pointer-events: none;
-}
-
-.link-card-inner {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 18px;
-  border-radius: 12px;
-  background: rgba(25, 37, 64, 0.6);
-  border: 1px solid rgba(109, 117, 140, 0.1);
-}
-
-.link-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.link-card-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
-.status-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(186, 158, 255, 0.1);
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  color: var(--primary);
-}
-
-.status-badge.offline {
-  background: rgba(255, 110, 132, 0.1);
-  color: #ff6e84;
-}
-
-.status-badge-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-  animation: pulse-dot 2s infinite;
-}
-
-.status-badge.offline .status-badge-dot {
-  background: #ff6e84;
-  animation: none;
-}
-
-@keyframes pulse-dot {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.7;
-    transform: scale(1.15);
-  }
-}
-
-.link-server {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--on-surface);
-}
-
-.link-hint {
-  font-size: 12px;
-  color: rgba(163, 170, 196, 0.7);
-  margin-top: 4px;
-}
-
 .viz-bars {
   display: flex;
   align-items: flex-end;
@@ -401,15 +245,6 @@ body {
 }
 .viz-bar:nth-child(6) {
   background: rgba(186, 158, 255, 0.8);
-}
-
-.session-card {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 14px;
-  border-radius: 12px;
-  background: rgba(20, 31, 56, 0.3);
 }
 
 .avatar-wrap {
@@ -437,44 +272,6 @@ body {
   font-weight: 700;
   color: var(--on-surface);
   background: linear-gradient(135deg, var(--primary-dim), var(--secondary));
-}
-
-.session-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.session-label {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
-.session-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--on-surface);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-login {
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  color: var(--primary);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: 8px;
-}
-
-.session-login:hover {
-  color: var(--primary-dim);
-  background: rgba(186, 158, 255, 0.08);
 }
 
 .actions {
@@ -532,10 +329,6 @@ body {
 
 .btn-tertiary:hover {
   color: var(--on-surface);
-}
-
-.boot {
-  background: var(--surface);
 }
 
 .hero-card {
@@ -639,10 +432,15 @@ body {
 }
 
 .page-area {
+  position: relative;
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  margin: 16px 16px 16px 0;
   padding: 28px 32px;
+  border-radius: 20px;
+  background: var(--surface-high);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
   gap: 22px;
@@ -650,8 +448,63 @@ body {
 
 .page-header {
   display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-header-titles {
+  display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+}
+
+.page-refresh-btn {
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.page-refresh-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.page-refresh-btn:hover:not(:disabled) {
+  background: rgba(186, 158, 255, 0.1);
+  color: var(--primary);
+}
+
+.page-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.version-banner {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--on-surface-variant);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .page-eyebrow {
@@ -800,6 +653,7 @@ body {
 }
 
 .side-panel {
+  position: relative;
   width: 300px;
   flex-shrink: 0;
   overflow-y: auto;
@@ -807,8 +661,35 @@ body {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  border-right: 1px solid rgba(109, 117, 140, 0.12);
   background: rgba(9, 19, 40, 0.4);
+}
+
+.settings-corner-btn {
+  position: absolute;
+  bottom: 16px;
+  left: 18px;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.settings-corner-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.settings-corner-btn:hover {
+  background: rgba(186, 158, 255, 0.1);
+  color: var(--primary);
 }
 
 .task-card {
@@ -894,6 +775,7 @@ body {
   flex-direction: column;
   gap: 2px;
   background: var(--surface-high);
+  animation: dropdown-in 0.15s ease both;
   border: 1px solid rgba(109, 117, 140, 0.18);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
@@ -948,11 +830,159 @@ body {
   padding-top: 16px;
 }
 
+.settings-back-row {
+  flex-shrink: 0;
+  padding: 14px 18px 0;
+}
+
+.settings-back-btn {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.settings-back-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.settings-back-btn:hover {
+  background: rgba(186, 158, 255, 0.1);
+  color: var(--primary);
+}
+
 .settings-version {
   margin-top: auto;
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 10px;
   color: rgba(163, 170, 196, 0.4);
   text-align: right;
+}
+
+/* Keyboard focus - visible ring on every interactive element, hidden for mouse clicks. */
+.win-btn:focus-visible,
+.btn:focus-visible,
+.dropdown-trigger:focus-visible,
+.dropdown-item:focus-visible,
+.settings-toggle input:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.dropdown-item.highlighted {
+  background: rgba(186, 158, 255, 0.14);
+}
+
+.side-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px;
+}
+
+.skeleton-bar {
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    rgba(148, 163, 196, 0.08) 25%,
+    rgba(148, 163, 196, 0.18) 37%,
+    rgba(148, 163, 196, 0.08) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.4s ease infinite;
+}
+
+.skeleton-bar-lg {
+  height: 44px;
+}
+
+@keyframes skeleton-sweep {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0 50%;
+  }
+}
+
+/* View / content transitions - slide + fade on mount, no exit animation
+   (React unmounts these instantly; only entrances are worth animating here). */
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes fade-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.view-home {
+  animation: slide-in-left 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.view-settings {
+  animation: slide-in-right 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.side-panel-swap,
+.page-content-swap {
+  animation: fade-slide-up 0.25s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-home,
+  .view-settings,
+  .side-panel-swap,
+  .page-content-swap,
+  .settings-card,
+  .dropdown-menu {
+    animation: none;
+  }
 }
 

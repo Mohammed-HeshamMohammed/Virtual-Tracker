@@ -27,11 +27,7 @@ impl Default for UserPreferences {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettingsView {
-    pub api_url: String,
-    pub web_url: String,
-    pub auth_port: u16,
     pub version: String,
-    pub is_production: bool,
     pub preferences: UserPreferences,
     pub log_path: String,
 }

@@ -3,6 +3,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::auth::dpapi;
+
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct StorePayload {
@@ -23,14 +25,18 @@ impl TokenStore {
         if !self.path.exists() {
             return (String::new(), String::new());
         }
-        match fs::read_to_string(&self.path) {
-            Ok(text) => match serde_json::from_str::<StorePayload>(&text) {
-                Ok(data) => (data.id_token, data.refresh_token),
-                Err(err) => {
-                    log::warn!("Could not read token store: {err}");
-                    (String::new(), String::new())
-                }
-            },
+        let bytes = match fs::read(&self.path) {
+            Ok(b) => b,
+            Err(err) => {
+                log::warn!("Could not read token store: {err}");
+                return (String::new(), String::new());
+            }
+        };
+        // Current format is DPAPI-encrypted; fall back to reading it as plain
+        // JSON for stores written before encryption-at-rest was added.
+        let json_bytes = dpapi::unprotect(&bytes).unwrap_or(bytes);
+        match serde_json::from_slice::<StorePayload>(&json_bytes) {
+            Ok(data) => (data.id_token, data.refresh_token),
             Err(err) => {
                 log::warn!("Could not read token store: {err}");
                 (String::new(), String::new())
@@ -46,10 +52,14 @@ impl TokenStore {
             id_token: id_token.to_string(),
             refresh_token: refresh_token.to_string(),
         };
-        if let Ok(text) = serde_json::to_string_pretty(&payload) {
-            if let Err(err) = fs::write(&self.path, text) {
-                log::warn!("Could not write token store: {err}");
-            }
+        let Ok(json) = serde_json::to_vec(&payload) else {
+            return;
+        };
+        // Encrypt at rest when DPAPI is available (Windows); otherwise write
+        // plain JSON same as before rather than losing the tokens entirely.
+        let bytes = dpapi::protect(&json).unwrap_or(json);
+        if let Err(err) = fs::write(&self.path, bytes) {
+            log::warn!("Could not write token store: {err}");
         }
     }
 

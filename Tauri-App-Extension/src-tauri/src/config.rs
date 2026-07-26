@@ -1,6 +1,6 @@
 use std::env;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::constants::{PROD_API_URL, PROD_WEB_URL};
 use crate::prefs::PreferencesStore;
@@ -16,7 +16,6 @@ pub struct Settings {
     pub log_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
-    pub is_production: bool,
 }
 
 impl Settings {
@@ -25,7 +24,6 @@ impl Settings {
         // Debug builds also default to production unless VT_* overrides are set.
         load_env_files();
 
-        let is_production = !cfg!(debug_assertions);
         let project_root = project_root();
         let data_dir = app_data_dir(&project_root);
         let _ = fs::create_dir_all(&data_dir);
@@ -65,7 +63,6 @@ impl Settings {
             log_path,
             url_script_path,
             macos_url_script_path,
-            is_production,
         }
     }
 
@@ -74,9 +71,9 @@ impl Settings {
     }
 }
 
-pub fn app_data_dir(project_root: &PathBuf) -> PathBuf {
+pub fn app_data_dir(project_root: &Path) -> PathBuf {
     if cfg!(debug_assertions) {
-        return project_root.clone();
+        return project_root.to_path_buf();
     }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -93,7 +90,7 @@ pub fn project_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-fn resolve_script(project_root: &PathBuf, name: &str) -> PathBuf {
+fn resolve_script(project_root: &Path, name: &str) -> PathBuf {
     let exe_dir = env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let candidates = [
         // Dev build: CARGO_MANIFEST_DIR/../scripts/<name>.

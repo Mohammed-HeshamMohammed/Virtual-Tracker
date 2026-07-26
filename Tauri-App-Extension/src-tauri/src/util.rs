@@ -1,4 +1,5 @@
 use std::env;
+#[cfg(not(target_os = "windows"))]
 use std::process::Command;
 
 use reqwest::blocking::Client;
@@ -38,12 +39,28 @@ pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&s
 pub fn open_system_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = Command::new("cmd")
-            .args(["/C", "start", "", url])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
+        // ShellExecuteW hands the URL straight to the OS's URL handler - unlike
+        // `cmd /C start`, it never reparses the string as a command line, so
+        // shell metacharacters (&, |, %VAR%) in `url` can't be interpreted.
+        use windows::core::PCWSTR;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+        fn to_wide(s: &str) -> Vec<u16> {
+            s.encode_utf16().chain(std::iter::once(0)).collect()
+        }
+        let operation = to_wide("open");
+        let file = to_wide(url);
+        unsafe {
+            ShellExecuteW(
+                None,
+                PCWSTR(operation.as_ptr()),
+                PCWSTR(file.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            );
+        }
     }
     #[cfg(target_os = "macos")]
     {

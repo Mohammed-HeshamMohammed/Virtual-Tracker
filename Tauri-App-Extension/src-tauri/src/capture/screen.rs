@@ -12,14 +12,7 @@ impl ScreenCapture {
     }
 
     pub fn capture_jpeg_data_url(&self) -> Option<String> {
-        let monitors = match xcap::Monitor::all() {
-            Ok(m) => m,
-            Err(err) => {
-                log::warn!("Screenshot skipped: could not enumerate monitors: {err}");
-                return None;
-            }
-        };
-        let Some(monitor) = monitors.into_iter().next() else {
+        let Some(monitor) = active_monitor() else {
             log::warn!("Screenshot skipped: no monitors detected");
             return None;
         };
@@ -65,4 +58,37 @@ impl ScreenCapture {
         let encoded = base64::engine::general_purpose::STANDARD.encode(&jpeg);
         Some(format!("data:image/jpeg;base64,{encoded}"))
     }
+}
+
+/// Picks the monitor under the cursor so multi-monitor setups capture whatever
+/// screen the user is actually looking at, instead of always the first monitor
+/// `xcap::Monitor::all()` happens to enumerate. Falls back to that first monitor
+/// if the cursor position is unavailable or doesn't resolve to one.
+fn active_monitor() -> Option<xcap::Monitor> {
+    if let Some((x, y)) = cursor_position() {
+        if let Ok(monitor) = xcap::Monitor::from_point(x, y) {
+            return Some(monitor);
+        }
+    }
+    match xcap::Monitor::all() {
+        Ok(monitors) => monitors.into_iter().next(),
+        Err(err) => {
+            log::warn!("Screenshot: could not enumerate monitors: {err}");
+            None
+        }
+    }
+}
+
+#[cfg(windows)]
+fn cursor_position() -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = POINT::default();
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+    Some((point.x, point.y))
+}
+
+#[cfg(not(windows))]
+fn cursor_position() -> Option<(i32, i32)> {
+    None
 }
