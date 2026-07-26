@@ -588,6 +588,15 @@ body {
   text-overflow: ellipsis;
 }
 
+.stat-card-sub {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .stat-card-value.warn {
   color: #fbbf24;
 }

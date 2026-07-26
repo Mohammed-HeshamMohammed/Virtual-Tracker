@@ -195,6 +195,7 @@ impl ApiClient {
                 .unwrap_or("")
                 .to_string(),
             estimated_seconds: data.get("estimatedSeconds").and_then(|v| v.as_u64()),
+            overtime_seconds: data.get("overtimeSeconds").and_then(|v| v.as_u64()),
             progress_percent: data.get("progressPercent").and_then(|v| v.as_f64()),
             worked_today_seconds: allowance
                 .and_then(|a| a.get("workedTodaySeconds"))

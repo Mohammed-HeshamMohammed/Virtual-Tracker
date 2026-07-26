@@ -47,6 +47,7 @@ const TIME_ENTRY_COLUMNS = [
   "description",
   "billable",
   "status",
+  "source",
   "created_by",
   "updated_by",
   "created_at",
@@ -166,10 +167,12 @@ export async function createPostgresRow(entityKey, payload) {
     return createLookupPostgresRow(entityKey, payload);
   }
   if (entityKey === "time-entries") {
+    // This is the only writer time_entries has - every row created here comes from the
+    // Manual Time form, not from the agent/timer, so 'manual' is a fact, not a default guess.
     const rows = await query(
       `INSERT INTO time_entries
-        (id, member_id, project_id, task_id, date, start_time, end_time, duration, description, billable, status, created_by, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        (id, member_id, project_id, task_id, date, start_time, end_time, duration, description, billable, status, source, created_by, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING ${TIME_ENTRY_COLUMNS.join(", ")}`,
       [
         payload.id,
@@ -183,6 +186,7 @@ export async function createPostgresRow(entityKey, payload) {
         payload.description ?? null,
         payload.billable ?? false,
         payload.status ?? "pending",
+        "manual",
         payload.created_by ?? null,
         payload.updated_by ?? null,
       ],

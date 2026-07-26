@@ -110,6 +110,9 @@ pub struct TaskTimeTracking {
     #[serde(default)]
     pub task_status: String,
     pub estimated_seconds: Option<u64>,
+    /// The portion of estimated_seconds that comes from overtime hours specifically,
+    /// broken out so it's visible instead of only ever appearing merged into the total.
+    pub overtime_seconds: Option<u64>,
     pub progress_percent: Option<f64>,
     /// Total active seconds worked today across all tasks.
     pub worked_today_seconds: Option<u64>,

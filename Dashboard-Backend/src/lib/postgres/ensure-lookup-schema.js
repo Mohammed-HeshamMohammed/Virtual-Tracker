@@ -75,11 +75,16 @@ $$ LANGUAGE plpgsql`,
   billable     BOOLEAN     NOT NULL DEFAULT false,
   status       VARCHAR(20) NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending', 'approved', 'rejected')),
+  source       VARCHAR(20) NOT NULL DEFAULT 'manual'
+                           CHECK (source IN ('manual', 'tracked')),
   created_by   VARCHAR(255),
   updated_by   VARCHAR(255),
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // Pre-existing databases created before `source` existed - every row time_entries has ever
+  // held came from the manual-entry form, so backfilling 'manual' is exactly correct, not a guess.
+  "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'manual'",
   "CREATE INDEX IF NOT EXISTS idx_te_member_date    ON time_entries (member_id, date DESC)",
   "CREATE INDEX IF NOT EXISTS idx_te_project_date   ON time_entries (project_id, date DESC)",
   "CREATE INDEX IF NOT EXISTS idx_te_member_project ON time_entries (member_id, project_id)",

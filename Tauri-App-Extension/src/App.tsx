@@ -66,6 +66,7 @@ type TaskTimeTracking = {
   idleSeconds: number;
   taskStatus: string;
   estimatedSeconds?: number | null;
+  overtimeSeconds?: number | null;
   progressPercent?: number | null;
   workedTodaySeconds?: number | null;
   workedTodayOnTaskSeconds?: number | null;
@@ -691,6 +692,10 @@ function MainApp() {
       setActionError("Select a task to start tracking");
       return;
     }
+    if (taskTracking?.limitReached) {
+      setActionError(taskTracking.allowanceMessage || "Maximum allowed work time reached.");
+      return;
+    }
     setBusy(true);
     setActionError(null);
     try {
@@ -873,7 +878,8 @@ function MainApp() {
                   <button
                     className="btn btn-primary"
                     type="button"
-                    disabled={busy || !selectedTaskId}
+                    disabled={busy || !selectedTaskId || Boolean(taskTracking?.limitReached)}
+                    title={taskTracking?.limitReached ? taskTracking.allowanceMessage || "Maximum allowed work time reached." : undefined}
                     onClick={() => void handleStart()}
                   >
                     Start tracking
@@ -955,6 +961,9 @@ function MainApp() {
                   <span className="stat-card-value">
                     {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
                   </span>
+                  {taskTracking?.overtimeSeconds ? (
+                    <span className="stat-card-sub">+{fmtHours(taskTracking.overtimeSeconds)} overtime</span>
+                  ) : null}
                 </div>
                 <div className="stat-card">
                   <span className="stat-card-label">Remaining</span>
