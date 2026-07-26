@@ -374,6 +374,19 @@ GROUP BY task_id`,
   sent_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_alert_subject_type ON activity_alert_log (subject_member_id, alert_type, sent_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS agent_link_sessions (
+  link_token               TEXT PRIMARY KEY,
+  agent_secret             TEXT NOT NULL,
+  status                   VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'exchanged')),
+  member_id                UUID,
+  id_token                 TEXT,
+  refresh_token            TEXT NOT NULL DEFAULT '',
+  agent_source             VARCHAR(20) NOT NULL DEFAULT 'electron' CHECK (agent_source IN ('electron', 'python')),
+  expires_at               TIMESTAMPTZ NOT NULL,
+  invalid_exchange_attempts INTEGER NOT NULL DEFAULT 0,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at               TIMESTAMPTZ
+)`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
