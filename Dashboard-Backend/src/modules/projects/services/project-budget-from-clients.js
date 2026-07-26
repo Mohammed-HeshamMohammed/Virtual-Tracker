@@ -2,8 +2,8 @@ import { generateUUID, now } from "../../schema/catalog/index.js";
 import { computeClientContributionForProject, normalizeBudget } from "../../clients/services/budget-logic.js";
 
 function mapClientTypeToProjectType(type) {
-  if (type === "hourly") return "Amount limit";
-  return "Total cost";
+  if (type === "hourly") return "Hours based";
+  return "Cost based";
 }
 
 function mapResetsToProject(resets) {
