@@ -18,6 +18,7 @@ import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstra
 import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
 import { removeProjectOfficeMemberRoles } from "./src/modules/projects/migrate-remove-office-member-roles.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
+import { scheduleAbandonedSessionSweep } from "./src/modules/activity/abandoned-session-sweep.service.js";
 
 let activeServer = null;
 
@@ -73,6 +74,7 @@ export async function startServer(port = getEnv().server.port) {
     }
     scheduleOrganizationMaintenance(db, "server-startup");
     scheduleTeamWeeklyReports(db);
+    scheduleAbandonedSessionSweep();
     removeProjectOfficeMemberRoles().catch((err) => {
       logError(err, "project-office-member-roles-migration");
     });

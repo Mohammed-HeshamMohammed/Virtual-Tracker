@@ -40,6 +40,8 @@ pub struct ProfileInfo {
     #[serde(default)]
     pub link_pending: bool,
     pub name: String,
+    #[serde(default)]
+    pub email: String,
     pub avatar_url: String,
     pub server_label: String,
 }
@@ -113,6 +115,11 @@ pub struct TaskTimeTracking {
     /// The portion of estimated_seconds that comes from overtime hours specifically,
     /// broken out so it's visible instead of only ever appearing merged into the total.
     pub overtime_seconds: Option<u64>,
+    /// Raw schedule breakdown behind estimated_seconds ("7 days x 8h/day"),
+    /// since the multiplied total alone doesn't show the reader how it's built.
+    pub working_days: Option<u64>,
+    pub hours_per_day: Option<f64>,
+    pub overtime_hours_per_day: Option<f64>,
     pub progress_percent: Option<f64>,
     /// Total active seconds worked today across all tasks.
     pub worked_today_seconds: Option<u64>,
@@ -124,4 +131,45 @@ pub struct TaskTimeTracking {
     #[serde(default)]
     pub limit_reached: bool,
     pub allowance_message: Option<String>,
+}
+
+/// The viewer's own daily/weekly work-hour limits (People > member > Limits),
+/// for the profile view — separate from TaskTimeTracking, which is scoped to
+/// one task's allowance rather than the member's overall caps.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberLimits {
+    #[serde(default)]
+    pub daily_hours: f64,
+    #[serde(default)]
+    pub weekly_hours: f64,
+    /// If true, this member is scheduled by shifts instead of daily/weekly
+    /// caps, so daily_hours/weekly_hours don't apply (matches
+    /// memberUsesShiftsForLimits on the backend).
+    #[serde(default)]
+    pub uses_shifts: bool,
+}
+
+/// The viewer's own People-page member record (GET /api/members/current) -
+/// the same data the web dashboard's Members table shows for this person,
+/// not just what's in their Firebase JWT claims.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MemberProfile {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub avatar_url: String,
+    #[serde(default)]
+    pub role: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub date_added: String,
+    #[serde(default)]
+    pub phone: String,
+    #[serde(default)]
+    pub teams: u32,
 }

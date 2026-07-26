@@ -8,6 +8,7 @@ type ProfileInfo = {
   signedIn: boolean;
   linkPending?: boolean;
   name: string;
+  email?: string;
   avatarUrl: string;
   serverLabel: string;
 };
@@ -67,12 +68,34 @@ type TaskTimeTracking = {
   taskStatus: string;
   estimatedSeconds?: number | null;
   overtimeSeconds?: number | null;
+  workingDays?: number | null;
+  hoursPerDay?: number | null;
+  overtimeHoursPerDay?: number | null;
   progressPercent?: number | null;
   workedTodaySeconds?: number | null;
   workedTodayOnTaskSeconds?: number | null;
   allowedRemainingSeconds?: number | null;
   limitReached: boolean;
   allowanceMessage?: string | null;
+};
+
+type MemberLimits = {
+  dailyHours: number;
+  weeklyHours: number;
+  usesShifts: boolean;
+};
+
+// The viewer's own People-page member record - richer than what's in the
+// Firebase JWT claims (role, status, date added, team count).
+type MemberProfile = {
+  name: string;
+  email: string;
+  avatarUrl: string;
+  role: string;
+  status: string;
+  dateAdded: string;
+  phone: string;
+  teams: number;
 };
 
 function fmtClock(totalSeconds: number): string {
@@ -83,11 +106,19 @@ function fmtClock(totalSeconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+// Sub-hour values need mins/seconds to actually look like they're recording
+// (an active task sitting at "0h" for the first 59 minutes reads as broken,
+// even though the real number underneath is fine) — hour-scale values still
+// just show hours/minutes since seconds aren't meaningful at that scale.
 function fmtHours(totalSeconds: number | null | undefined): string {
-  if (totalSeconds == null || totalSeconds <= 0) return "0h";
-  const h = Math.floor(totalSeconds / 3600);
-  const m = Math.floor((totalSeconds % 3600) / 60);
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  if (totalSeconds == null || totalSeconds <= 0) return "0s";
+  const total = Math.floor(totalSeconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
 }
 
 function initialsFromName(name: string): string {
@@ -325,6 +356,136 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
   );
 }
 
+function fmtLimitHours(hours: number): string {
+  if (!hours || hours <= 0) return "No cap";
+  return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
+}
+
+function ProfilePanel({
+  profile,
+  memberProfile,
+  memberLimits,
+  onBack,
+  onSignOut,
+  signingOut,
+}: {
+  profile: ProfileInfo | null;
+  memberProfile: MemberProfile | null;
+  memberLimits: MemberLimits | null;
+  onBack: () => void;
+  onSignOut: () => void;
+  signingOut: boolean;
+}) {
+  // memberProfile (People-page record) is the richer, canonical source once
+  // it loads; profile (JWT claims) is what's available immediately so the
+  // page isn't blank on first open.
+  const displayName = memberProfile?.name || profile?.name || "Not signed in";
+  const displayEmail = memberProfile?.email || profile?.email || "";
+  const displayAvatar = memberProfile?.avatarUrl || profile?.avatarUrl || "";
+
+  return (
+    <main className="agent-tray settings-window view-settings">
+      <TitleBar title="Profile" onClose={() => void invoke("close_window")} />
+      <div className="settings-back-row">
+        <button
+          className="settings-back-btn"
+          type="button"
+          title="Back"
+          aria-label="Back"
+          onClick={onBack}
+        >
+          <svg viewBox="0 0 12 12" aria-hidden="true">
+            <path
+              d="M7.5 2.5 3 6l4.5 3.5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+      <div className="content settings-content">
+        <section className="settings-card">
+          <div className="hero-top">
+            <div className="avatar-wrap">
+              {displayAvatar ? (
+                <img className="avatar-img" src={displayAvatar} alt="" draggable={false} />
+              ) : (
+                <div className="avatar-fallback">{initialsFromName(displayName)}</div>
+              )}
+            </div>
+            <div className="hero-copy">
+              <h1 className="hero-name">{displayName}</h1>
+              {displayEmail ? <span className="hero-kicker">{displayEmail}</span> : null}
+            </div>
+          </div>
+          {memberProfile ? (
+            <>
+              <div className="settings-row static">
+                <span>Role</span>
+                <code>{memberProfile.role || "—"}</code>
+              </div>
+              <div className="settings-row static">
+                <span>Status</span>
+                <code>{memberProfile.status || "—"}</code>
+              </div>
+              {memberProfile.dateAdded ? (
+                <div className="settings-row static">
+                  <span>Member since</span>
+                  <code>{memberProfile.dateAdded}</code>
+                </div>
+              ) : null}
+              {memberProfile.phone ? (
+                <div className="settings-row static">
+                  <span>Phone</span>
+                  <code>{memberProfile.phone}</code>
+                </div>
+              ) : null}
+              <div className="settings-row static">
+                <span>Teams</span>
+                <code>{memberProfile.teams}</code>
+              </div>
+            </>
+          ) : (
+            <p className="settings-message">Loading…</p>
+          )}
+        </section>
+
+        <section className="settings-card">
+          <h3 className="settings-section-label">Your work-hour limits</h3>
+          {memberLimits?.usesShifts ? (
+            <p className="settings-message">Your hours are scheduled by shifts instead of a daily/weekly cap.</p>
+          ) : memberLimits ? (
+            <>
+              <div className="settings-row static">
+                <span>Daily limit</span>
+                <code>{fmtLimitHours(memberLimits.dailyHours)}</code>
+              </div>
+              <div className="settings-row static">
+                <span>Weekly limit</span>
+                <code>{fmtLimitHours(memberLimits.weeklyHours)}</code>
+              </div>
+            </>
+          ) : (
+            <p className="settings-message">Loading…</p>
+          )}
+        </section>
+
+        <button
+          className="btn btn-danger"
+          type="button"
+          disabled={signingOut}
+          onClick={onSignOut}
+        >
+          Log out
+        </button>
+      </div>
+    </main>
+  );
+}
+
 type DropdownOption = { id: string; label: string };
 
 function Dropdown({
@@ -487,11 +648,14 @@ function Dropdown({
 }
 
 function MainApp() {
-  const [view, setView] = useState<"home" | "settings">("home");
+  const [view, setView] = useState<"home" | "settings" | "profile">("home");
+  const [signingOut, setSigningOut] = useState(false);
+  const [memberLimits, setMemberLimits] = useState<MemberLimits | null>(null);
+  const [memberProfile, setMemberProfile] = useState<MemberProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [link, setLink] = useState<LinkStatus | null>(null);
-  const [version, setVersion] = useState("0.2.0");
+  const [version, setVersion] = useState("0.4.0");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
@@ -644,6 +808,18 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [refreshTaskTracking]);
 
+  // Limits and the People-page member record rarely change - fetch once when
+  // the profile view opens rather than polling them alongside task tracking.
+  useEffect(() => {
+    if (view !== "profile" || !signedIn) return;
+    invoke<MemberLimits>("get_member_limits")
+      .then(setMemberLimits)
+      .catch(() => setMemberLimits(null));
+    invoke<MemberProfile>("get_member_profile")
+      .then(setMemberProfile)
+      .catch(() => setMemberProfile(null));
+  }, [view, signedIn]);
+
   // Re-sync from the last server snapshot, then tick locally so the clock is
   // smooth between 5s polls instead of jumping.
   useEffect(() => {
@@ -684,6 +860,20 @@ function MainApp() {
       setActionError("Sign-in is not ready yet. Reopen the agent and try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setActionError(null);
+    try {
+      await invoke("sign_out");
+      setView("home");
+      await refresh();
+    } catch {
+      setActionError("Could not sign out. Try again.");
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -747,8 +937,29 @@ function MainApp() {
         ? "No cap"
         : `${fmtHours(taskTracking.allowedRemainingSeconds)} left`;
 
+  // Whole-task budget remaining, independent of whichever daily/weekly cap
+  // "Remaining" above is currently bound by. activeSeconds here is the
+  // cumulative total worked on this task across every day, so this decreases
+  // by real time worked whether it came out of regular or overtime hours.
+  const taskBudgetRemainingLabel = !taskTracking?.estimatedSeconds
+    ? "—"
+    : fmtHours(Math.max(0, taskTracking.estimatedSeconds - taskTracking.activeSeconds));
+
   if (view === "settings") {
     return <SettingsPanel onBack={() => setView("home")} />;
+  }
+
+  if (view === "profile") {
+    return (
+      <ProfilePanel
+        profile={profile}
+        memberProfile={memberProfile}
+        memberLimits={memberLimits}
+        onBack={() => setView("home")}
+        onSignOut={() => void handleSignOut()}
+        signingOut={signingOut}
+      />
+    );
   }
 
   return (
@@ -764,7 +975,14 @@ function MainApp() {
         <aside className="side-panel">
           <section className="hero-card">
             <div className="hero-top">
-              <div className="avatar-wrap">
+              <button
+                type="button"
+                className="avatar-wrap avatar-button"
+                disabled={!signedIn}
+                title={signedIn ? "View profile" : undefined}
+                aria-label="View profile"
+                onClick={() => setView("profile")}
+              >
                 {profile?.avatarUrl ? (
                   <img
                     className="avatar-img"
@@ -777,7 +995,7 @@ function MainApp() {
                     {signedIn ? initialsFromName(displayName) : "VT"}
                   </div>
                 )}
-              </div>
+              </button>
               <div className="hero-copy">
                 <span className="hero-kicker">Desktop Agent</span>
                 <h1 className="hero-name">{firstName}</h1>
@@ -961,8 +1179,13 @@ function MainApp() {
                   <span className="stat-card-value">
                     {taskTracking?.estimatedSeconds ? fmtHours(taskTracking.estimatedSeconds) : "—"}
                   </span>
-                  {taskTracking?.overtimeSeconds ? (
-                    <span className="stat-card-sub">+{fmtHours(taskTracking.overtimeSeconds)} overtime</span>
+                  {taskTracking?.workingDays && taskTracking?.hoursPerDay ? (
+                    <span className="stat-card-sub">
+                      {taskTracking.workingDays}d × {taskTracking.hoursPerDay}h/day
+                      {taskTracking.overtimeHoursPerDay
+                        ? ` +${taskTracking.overtimeHoursPerDay}h OT`
+                        : ""}
+                    </span>
                   ) : null}
                 </div>
                 <div className="stat-card">
@@ -970,6 +1193,11 @@ function MainApp() {
                   <span className={`stat-card-value${taskTracking?.limitReached ? " warn" : ""}`}>
                     {remainingLabel}
                   </span>
+                </div>
+                <div className="stat-card">
+                  <span className="stat-card-label">Task budget left</span>
+                  <span className="stat-card-value">{taskBudgetRemainingLabel}</span>
+                  <span className="stat-card-sub">across the whole task, incl. overtime used</span>
                 </div>
               </div>
 

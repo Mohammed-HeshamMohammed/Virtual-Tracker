@@ -14,6 +14,7 @@ src-tauri/target/
 .env
 .env.production
 agent-store.json
+preferences.json
 
 # Editor
 .DS_Store

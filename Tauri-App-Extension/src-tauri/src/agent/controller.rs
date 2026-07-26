@@ -76,17 +76,28 @@ impl AgentController {
 
     pub fn stop(&self) {
         self.link_flow.stop();
-        // Close the session server-side on a clean quit — otherwise it's left
-        // "active" forever and silently resumes (with whatever task it had) the
-        // next time the agent signs in, with no user action involved.
+        self.flush_and_stop_tracker("quit");
+        self.auth_server.stop();
+    }
+
+    /// Closes the open session server-side with the tracker's real accumulated
+    /// active/idle seconds (not 0s) before tearing it down — shared by a clean
+    /// quit, sign-out, and re-link, so none of them silently leave the session
+    /// "active" forever or drop the time already worked.
+    fn flush_and_stop_tracker(&self, reason: &str) {
         if let Some(tracker) = self.tracker.lock().as_ref() {
             if let Some(session_id) = tracker.current_session_id() {
-                let _ = self.api.lock().post_session_action("stop", None);
-                log::info!("Closed session {session_id} on quit");
+                let (task_id, active_seconds, idle_seconds) = tracker.current_task_progress();
+                let _ = self.api.lock().post_session_action(
+                    "stop",
+                    task_id.as_deref(),
+                    active_seconds,
+                    idle_seconds,
+                );
+                log::info!("Closed session {session_id} on {reason} ({active_seconds}s active)");
             }
             tracker.stop();
         }
-        self.auth_server.stop();
     }
 
     pub fn status(&self) -> String {
@@ -163,9 +174,7 @@ impl AgentController {
         }
 
         self.link_flow.stop();
-        if let Some(tracker) = self.tracker.lock().as_ref() {
-            tracker.stop();
-        }
+        self.flush_and_stop_tracker("re-link");
         self.store.clear();
         self.api.lock().set_tokens("", "");
         self.on_status_changed("Linking account...".into());
@@ -194,6 +203,17 @@ impl AgentController {
                 ),
             }
         }
+    }
+
+    /// Distinct from open_sign_in/"Re-link account": signs out cleanly (flush +
+    /// stop the session, clear tokens) and stops there — no new browser link
+    /// flow gets started, unlike re-link which immediately begins one.
+    pub fn sign_out(self: &Arc<Self>) {
+        self.link_flow.stop();
+        self.flush_and_stop_tracker("sign-out");
+        self.store.clear();
+        self.api.lock().set_tokens("", "");
+        self.on_status_changed("Not signed in".into());
     }
 
     fn resume_link_poll(self: &Arc<Self>) -> bool {
@@ -249,17 +269,23 @@ impl AgentController {
                 } else {
                     "Not signed in".into()
                 },
+                email: String::new(),
                 avatar_url: String::new(),
                 server_label: server,
             };
         };
         let claims = jwt_payload(&token);
+        let email = claims
+            .get("email")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let name = claims
             .get("name")
-            .or_else(|| claims.get("email"))
             .and_then(|v| v.as_str())
-            .unwrap_or("Signed in")
-            .to_string();
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| if email.is_empty() { "Signed in".into() } else { email.clone() });
         let avatar_url = claims
             .get("picture")
             .and_then(|v| v.as_str())
@@ -269,6 +295,7 @@ impl AgentController {
             signed_in: true,
             link_pending: false,
             name,
+            email,
             avatar_url,
             server_label: server,
         }
@@ -302,6 +329,14 @@ impl AgentController {
         self.api.lock().fetch_task_time_tracking(task_id.trim())
     }
 
+    pub fn get_member_limits(&self) -> Option<crate::types::MemberLimits> {
+        self.api.lock().fetch_member_limits()
+    }
+
+    pub fn get_member_profile(&self) -> Option<crate::types::MemberProfile> {
+        self.api.lock().fetch_member_profile()
+    }
+
     pub fn start_task_session(&self, task_id: &str) -> ActionResult {
         if task_id.trim().is_empty() {
             return ActionResult {
@@ -310,11 +345,18 @@ impl AgentController {
                 session: None,
             };
         }
-        match self
-            .api
-            .lock()
-            .post_session_action("start", Some(task_id.trim()))
-        {
+        // Seed with the task's known cumulative totals instead of 0s so a
+        // stop/resume (or a session reused across tasks) doesn't reset the
+        // clock the enforcement check on the other end evaluates against.
+        let tracking = self.api.lock().fetch_task_time_tracking(task_id.trim());
+        let active_baseline = tracking.as_ref().map(|t| t.active_seconds).unwrap_or(0);
+        let idle_baseline = tracking.as_ref().map(|t| t.idle_seconds).unwrap_or(0);
+        match self.api.lock().post_session_action(
+            "start",
+            Some(task_id.trim()),
+            active_baseline,
+            idle_baseline,
+        ) {
             Ok(session) => {
                 self.on_status_changed_local("Task session active".into());
                 ActionResult {
@@ -332,7 +374,17 @@ impl AgentController {
     }
 
     pub fn stop_session(&self) -> ActionResult {
-        match self.api.lock().post_session_action("stop", None) {
+        let (task_id, active_seconds, idle_seconds) = self
+            .tracker
+            .lock()
+            .as_ref()
+            .map(|t| t.current_task_progress())
+            .unwrap_or((None, 0, 0));
+        match self
+            .api
+            .lock()
+            .post_session_action("stop", task_id.as_deref(), active_seconds, idle_seconds)
+        {
             Ok(session) => {
                 self.on_status_changed_local("Signed in — waiting for timer".into());
                 ActionResult {

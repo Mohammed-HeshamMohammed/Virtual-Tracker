@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useRef } from "react"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
@@ -15,6 +15,10 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
+import { TablePagination } from "@/shared/tables/ui"
+
+const ACTIVITY_TABLE_ROWS_PER_PAGE = 10
 
 interface AppUsage {
   id: string
@@ -85,6 +89,9 @@ export function ActivityAppsContent() {
     return searched
   }, [categoryFiltered, searchLower, sortOrder])
   const hasData = appsSource.length > 0 || membersSource.length > 0
+  const tableRef = useRef<HTMLDivElement>(null)
+  const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
+    usePaginatedTable(filteredApps, ACTIVITY_TABLE_ROWS_PER_PAGE)
   const showDayEmpty = !loading && !hasData
   const showSearchEmpty = !loading && hasData && filteredApps.length === 0
   const showMainContent = !loading && hasData && !showSearchEmpty
@@ -210,12 +217,11 @@ export function ActivityAppsContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredApps.map((app, index) => (
+                    {visibleRows.map((app, index) => (
                       <motion.tr
                         key={app.id || `${app.name}-${index}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        transition={{ delay: 0.02 + index * 0.02 }}
                         className="hover:bg-slate-50/80"
                       >
                         <td className="px-5 py-4">
@@ -260,6 +266,15 @@ export function ActivityAppsContent() {
                     ))}
                   </tbody>
                 </table>
+              {filteredApps.length > 0 ? (
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={filteredApps.length}
+                  rowsPerPage={rowsPerPage}
+                  onPageChange={setCurrentPage}
+                />
+              ) : null}
             </motion.div>
           </ActivitySection>
 

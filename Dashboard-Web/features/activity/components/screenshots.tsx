@@ -14,6 +14,10 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
+import { TablePagination } from "@/shared/tables/ui"
+
+const SCREENSHOTS_PER_PAGE = 8
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
@@ -446,6 +450,9 @@ export function ActivityScreenshots() {
     })
   }, [allScreenshots, searchLower, sortOrder])
 
+  const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
+    usePaginatedTable(displayScreenshots, SCREENSHOTS_PER_PAGE)
+
   const hasDayData = allScreenshots.length > 0
   const isAllDays = day.dayMode === "all"
   const showCaptureBanner = !loading && !!disabledReason && hasDayData
@@ -491,16 +498,13 @@ export function ActivityScreenshots() {
       ) : null}
 
       {!loading && displayScreenshots.length > 0 && viewMode === "grid" ? (
-        <ActivitySection
-          title="Captured screenshots"
-          description={`${displayScreenshots.length} capture${displayScreenshots.length !== 1 ? "s" : ""} for ${day.selectedDayLabel}`}
-        >
+        <div className="space-y-4">
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
           >
-          {displayScreenshots.map((screenshot, index) => (
+          {visibleRows.map((screenshot, index) => (
             <motion.div
               key={screenshot.id}
               initial={{ opacity: 0, scale: 0.98 }}
@@ -555,12 +559,18 @@ export function ActivityScreenshots() {
             </motion.div>
           ))}
           </motion.div>
-        </ActivitySection>
+          {displayScreenshots.length > 0 ? (
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              totalItems={displayScreenshots.length}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setCurrentPage}
+            />
+          ) : null}
+        </div>
       ) : !loading && displayScreenshots.length > 0 ? (
-        <ActivitySection
-          title="Captured screenshots"
-          description={`${displayScreenshots.length} capture${displayScreenshots.length !== 1 ? "s" : ""} for ${day.selectedDayLabel}`}
-        >
+        <div className="space-y-4">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -579,7 +589,7 @@ export function ActivityScreenshots() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {displayScreenshots.map((screenshot) => (
+              {visibleRows.map((screenshot) => (
                 <tr
                   key={screenshot.id}
                   className="hover:bg-slate-50 transition-colors cursor-pointer"
@@ -621,7 +631,16 @@ export function ActivityScreenshots() {
             </tbody>
           </table>
         </motion.div>
-        </ActivitySection>
+        {displayScreenshots.length > 0 ? (
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={displayScreenshots.length}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setCurrentPage}
+          />
+        ) : null}
+        </div>
       ) : null}
 
       {showInsights ? (

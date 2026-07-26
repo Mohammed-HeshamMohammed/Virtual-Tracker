@@ -290,7 +290,7 @@ export async function fetchLatestPgScreenshot(memberId, sessionId) {
 // activity_sessions
 // ---------------------------------------------------------------------------
 
-const SESSION_COLUMNS = "id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, updated_at";
+const SESSION_COLUMNS = "id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at";
 
 /** Most recently started open (ended_at IS NULL) session for a member. */
 export async function findOpenPgSession(memberId) {
@@ -315,15 +315,16 @@ export async function getPgSessionById(sessionId) {
 
 /**
  * @param {{ id: string, memberId: string, taskId?: string|null, status: string,
- *   startedAt: Date, endedAt?: Date|null, activeSeconds?: number, idleSeconds?: number, updatedAt: Date }} row
+ *   startedAt: Date, endedAt?: Date|null, activeSeconds?: number, idleSeconds?: number,
+ *   source?: string, updatedAt: Date }} row
  */
 export async function createPgSession(row) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return null;
   const taskId = row.taskId ? parseProgressUuid(row.taskId) : null;
   const result = await pgQuery(
-    `INSERT INTO activity_sessions (id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO activity_sessions (id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      ON CONFLICT (id) DO NOTHING
      RETURNING ${SESSION_COLUMNS}`,
     [
@@ -335,6 +336,7 @@ export async function createPgSession(row) {
       row.endedAt ?? null,
       row.activeSeconds ?? 0,
       row.idleSeconds ?? 0,
+      normalizeSource(row.source),
       row.updatedAt,
     ],
   );

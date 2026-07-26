@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useRef } from "react"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
@@ -15,6 +15,10 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
+import { TablePagination } from "@/shared/tables/ui"
+
+const ACTIVITY_TABLE_ROWS_PER_PAGE = 10
 
 interface URLUsage {
   id: string
@@ -73,6 +77,9 @@ export function ActivityURLsContent() {
     return [...searched].sort((a, b) => b.visits - a.visits)
   }, [blockedFiltered, searchLower, sortOrder])
   const hasData = urlsSource.length > 0
+  const tableRef = useRef<HTMLDivElement>(null)
+  const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
+    usePaginatedTable(filteredURLs, ACTIVITY_TABLE_ROWS_PER_PAGE)
   const showDayEmpty = !loading && !hasData
   const showSearchEmpty = !loading && hasData && filteredURLs.length === 0
   const showMainContent = !loading && hasData && !showSearchEmpty
@@ -204,12 +211,11 @@ export function ActivityURLsContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredURLs.map((url, index) => (
+                    {visibleRows.map((url, index) => (
                       <motion.tr
                         key={url.url || `${url.domain}-${index}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        transition={{ delay: 0.02 + index * 0.02 }}
                         className="hover:bg-slate-50/80"
                       >
                         <td className="px-5 py-4">
@@ -276,6 +282,15 @@ export function ActivityURLsContent() {
                     ))}
                   </tbody>
                 </table>
+              {filteredURLs.length > 0 ? (
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={filteredURLs.length}
+                  rowsPerPage={rowsPerPage}
+                  onPageChange={setCurrentPage}
+                />
+              ) : null}
             </motion.div>
           </ActivitySection>
 

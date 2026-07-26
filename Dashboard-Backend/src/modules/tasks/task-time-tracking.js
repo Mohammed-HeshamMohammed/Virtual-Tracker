@@ -14,6 +14,7 @@ import {
   recomputeTaskStatus,
   reviewAssignment,
   updateAssignmentStatus,
+  workingDaysForTask,
 } from "./task-assignments.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
@@ -301,6 +302,12 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   // Always live - see the comment on the identical line in syncTaskTimeTracking above.
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
   const overtimeSeconds = estimateAssignmentOvertimeSeconds(taskData);
+  // Raw schedule breakdown ("7 days x 8h/day") - estimatedSeconds/overtimeSeconds
+  // are these three numbers pre-multiplied together, which is enough to
+  // enforce a cap but not enough to show the reader how the total was built.
+  const workingDays = workingDaysForTask(taskData);
+  const hoursPerDay = Number(taskData.duration_hours_per_day ?? taskData.durationHoursPerDay ?? 0);
+  const overtimeHoursPerDay = Number(taskData.overtime_hours_per_day ?? taskData.overtimeHoursPerDay ?? 0);
   const includeMemberBreakdown = options.includeMemberBreakdown === true;
 
   let memberContributions = null;
@@ -333,6 +340,9 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       assignmentId: assignment.id,
       estimatedSeconds,
       overtimeSeconds,
+      workingDays,
+      hoursPerDay,
+      overtimeHoursPerDay,
       progressPercent: null,
       totalActiveSeconds: taskData.total_active_seconds ?? 0,
       totalIdleSeconds: taskData.total_idle_seconds ?? 0,
@@ -357,6 +367,9 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     assignmentId: assignment.id,
     estimatedSeconds,
     overtimeSeconds,
+    workingDays,
+    hoursPerDay,
+    overtimeHoursPerDay,
     progressPercent: tracking.progressPercent ?? progressPercentFor(tracking.activeSeconds, estimatedSeconds),
     totalActiveSeconds: taskData.total_active_seconds ?? tracking.activeSeconds,
     totalIdleSeconds: taskData.total_idle_seconds ?? tracking.idleSeconds,

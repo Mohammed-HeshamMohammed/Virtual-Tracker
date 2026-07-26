@@ -35,6 +35,13 @@ fn sign_in(state: tauri::State<'_, AppState>) -> SignInResult {
     state.controller.open_sign_in()
 }
 
+/// Distinct from sign_in/"Re-link account": ends the session and clears
+/// tokens, but does not start a new browser link flow afterward.
+#[tauri::command]
+fn sign_out(state: tauri::State<'_, AppState>) {
+    state.controller.sign_out();
+}
+
 #[tauri::command]
 fn open_web_app(state: tauri::State<'_, AppState>) {
     state.controller.open_web_app();
@@ -119,6 +126,16 @@ fn get_task_time_tracking(
     task_id: String,
 ) -> Option<crate::types::TaskTimeTracking> {
     state.controller.get_task_time_tracking(&task_id)
+}
+
+#[tauri::command]
+fn get_member_limits(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberLimits> {
+    state.controller.get_member_limits()
+}
+
+#[tauri::command]
+fn get_member_profile(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberProfile> {
+    state.controller.get_member_profile()
 }
 
 #[tauri::command]
@@ -219,6 +236,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sign_in,
+            sign_out,
             open_web_app,
             minimize_current,
             close_window,
@@ -233,6 +251,8 @@ pub fn run() {
             list_tasks,
             get_session,
             get_task_time_tracking,
+            get_member_limits,
+            get_member_profile,
             start_task_session,
             stop_session,
         ])

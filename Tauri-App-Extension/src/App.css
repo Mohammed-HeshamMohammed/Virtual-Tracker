@@ -257,6 +257,20 @@ body {
   flex-shrink: 0;
 }
 
+.avatar-button {
+  padding: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.avatar-button:disabled {
+  cursor: default;
+}
+
+.avatar-button:not(:disabled):hover {
+  border-color: rgba(186, 158, 255, 0.5);
+}
+
 .avatar-img {
   width: 100%;
   height: 100%;
@@ -557,7 +571,7 @@ body {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
 }
 

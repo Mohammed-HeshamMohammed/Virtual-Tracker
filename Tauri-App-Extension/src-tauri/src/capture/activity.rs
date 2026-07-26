@@ -10,6 +10,11 @@ pub struct ActivityMeter {
     input_count: AtomicU64,
     window_start_ms: AtomicU64,
     started: AtomicBool,
+    /// Timestamp of the last observed mouse/keyboard input, independent of the
+    /// scoring window above - used to tell the tracker "no input for N
+    /// seconds" so it can count idle vs. active seconds honestly instead of
+    /// treating every tick as active just because a session is open.
+    last_input_ms: AtomicU64,
 }
 
 impl ActivityMeter {
@@ -18,6 +23,7 @@ impl ActivityMeter {
             input_count: AtomicU64::new(0),
             window_start_ms: AtomicU64::new(now_ms()),
             started: AtomicBool::new(false),
+            last_input_ms: AtomicU64::new(now_ms()),
         })
     }
 
@@ -72,6 +78,16 @@ impl ActivityMeter {
 
     fn on_input(&self) {
         self.input_count.fetch_add(1, Ordering::Relaxed);
+        self.last_input_ms.store(now_ms(), Ordering::Relaxed);
+    }
+
+    /// Seconds since the last observed mouse/keyboard input. On platforms with
+    /// no input hook wired yet (non-Windows, see run_listeners below) this
+    /// only grows from process start and never resets, same limitation `score`
+    /// already has there.
+    pub fn idle_seconds(&self) -> u64 {
+        let last = self.last_input_ms.load(Ordering::Relaxed);
+        now_ms().saturating_sub(last) / 1000
     }
 
     pub fn score(&self) -> u32 {

@@ -196,6 +196,9 @@ impl ApiClient {
                 .to_string(),
             estimated_seconds: data.get("estimatedSeconds").and_then(|v| v.as_u64()),
             overtime_seconds: data.get("overtimeSeconds").and_then(|v| v.as_u64()),
+            working_days: data.get("workingDays").and_then(|v| v.as_u64()),
+            hours_per_day: data.get("hoursPerDay").and_then(|v| v.as_f64()),
+            overtime_hours_per_day: data.get("overtimeHoursPerDay").and_then(|v| v.as_f64()),
             progress_percent: data.get("progressPercent").and_then(|v| v.as_f64()),
             worked_today_seconds: allowance
                 .and_then(|a| a.get("workedTodaySeconds"))
@@ -214,6 +217,74 @@ impl ApiClient {
                 .and_then(|a| a.get("message"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+        })
+    }
+
+    /// The viewer's own daily/weekly work-hour limits, for the profile view.
+    pub fn fetch_member_limits(&mut self) -> Option<crate::types::MemberLimits> {
+        if !self.refresh_token_if_needed() {
+            return None;
+        }
+        let auth = self.auth_headers()?;
+        let url = format!("{}/api/activity/limits", self.api_url);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        let body: Value = res.json().ok()?;
+        let data = body.get("data")?;
+        Some(crate::types::MemberLimits {
+            daily_hours: data.get("dailyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            weekly_hours: data.get("weeklyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            uses_shifts: data.get("usesShifts").and_then(|v| v.as_bool()).unwrap_or(false),
+        })
+    }
+
+    /// The viewer's own People-page member record, for the profile view.
+    pub fn fetch_member_profile(&mut self) -> Option<crate::types::MemberProfile> {
+        if !self.refresh_token_if_needed() {
+            return None;
+        }
+        let auth = self.auth_headers()?;
+        let url = format!("{}/api/members/current", self.api_url);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        let body: Value = res.json().ok()?;
+        let data = body.get("data")?;
+        let str_field = |key: &str| {
+            data.get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        };
+        Some(crate::types::MemberProfile {
+            name: str_field("name"),
+            email: str_field("email"),
+            avatar_url: str_field("avatarUrl"),
+            // role_name (from role enrichment) is the human label; role can be
+            // a raw id/slug when enrichment didn't attach a name.
+            role: {
+                let named = str_field("role_name");
+                if named.is_empty() { str_field("role") } else { named }
+            },
+            status: str_field("status"),
+            date_added: str_field("dateAdded"),
+            phone: str_field("phone"),
+            teams: data.get("teams").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         })
     }
 }

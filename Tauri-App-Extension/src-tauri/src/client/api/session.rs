@@ -33,6 +33,8 @@ impl ApiClient {
         &mut self,
         action: &str,
         task_id: Option<&str>,
+        active_seconds: u64,
+        idle_seconds: u64,
     ) -> Result<crate::types::SessionInfo, String> {
         if !self.refresh_token_if_needed() {
             return Err("Not signed in".into());
@@ -43,8 +45,8 @@ impl ApiClient {
         let url = format!("{}/api/activity/session", self.api_url);
         let mut payload = json!({
             "action": action,
-            "activeSeconds": 0,
-            "idleSeconds": 0,
+            "activeSeconds": active_seconds,
+            "idleSeconds": idle_seconds,
         });
         if let Some(tid) = task_id {
             payload["taskId"] = json!(tid);
