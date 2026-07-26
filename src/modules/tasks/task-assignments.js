@@ -86,7 +86,9 @@ export function countWorkingDaysBetween(startValue, endValue) {
   return count;
 }
 
-function workingDaysForTask(taskData) {
+/** Exported so callers (e.g. getTaskTimeTracking) can show "7 days x 8h/day"
+ * as a distinct breakdown instead of only ever seeing it pre-multiplied. */
+export function workingDaysForTask(taskData) {
   let workingDays = countWorkingDaysBetween(
     taskData.start_date ?? taskData.startDate,
     taskData.due_date ?? taskData.dueDate,

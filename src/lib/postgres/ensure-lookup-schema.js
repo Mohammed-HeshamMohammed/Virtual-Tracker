@@ -376,8 +376,11 @@ GROUP BY task_id`,
   ended_at       TIMESTAMPTZ,
   active_seconds INTEGER NOT NULL DEFAULT 0,
   idle_seconds   INTEGER NOT NULL DEFAULT 0,
+  source         VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent')),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // Pre-existing databases created before `source` existed on this table.
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC)`,

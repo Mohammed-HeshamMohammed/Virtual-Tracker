@@ -426,6 +426,7 @@ CREATE TABLE IF NOT EXISTS activity_sessions (
   ended_at       TIMESTAMPTZ,
   active_seconds INTEGER NOT NULL DEFAULT 0,
   idle_seconds   INTEGER NOT NULL DEFAULT 0,
+  source         VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent')),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

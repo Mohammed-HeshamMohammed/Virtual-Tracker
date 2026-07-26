@@ -29,6 +29,7 @@ import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
 import { computeTimerAllowance, TIMER_LIMIT_REACHED_MESSAGE } from "../tasks/timer-limit.service.js";
+import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
   createPgSession,
   fetchPgAppLogs,
@@ -42,7 +43,7 @@ import {
   insertActivityUrlLog,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
-import { isAgentOnline, touchAgentHeartbeat } from "./agent-heartbeat.js";
+import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
 
 function toIso(value) {
   if (!value) return null;
@@ -109,8 +110,23 @@ async function resolveMember(db, req) {
   return { memberId: viewer.memberId, uid: viewer.uid, name, initials };
 }
 
+/**
+ * A desktop-agent session left open by a crash/kill (no clean stop) never gets
+ * closed on its own - the agent isn't there anymore to call "stop". Every
+ * caller of findOpenSession routes through here, so on the first request
+ * after the agent's heartbeat (15s TTL) has lapsed, close it server-side
+ * instead of leaving it "active" forever with stale hours. The background
+ * sweep (abandoned-session-sweep.service.js) covers the case where nobody
+ * hits this endpoint again for that member at all.
+ */
 async function findOpenSession(memberId) {
-  return findOpenPgSession(memberId);
+  const open = await findOpenPgSession(memberId);
+  if (!open) return null;
+  if (await isSessionAbandoned(open)) {
+    await closeAbandonedSession(open);
+    return null;
+  }
+  return open;
 }
 
 function normalizeSession(id, data) {
@@ -165,6 +181,37 @@ export async function routeActivity(req, res, url, origin) {
       sendJson(res, origin, 200, {
         success: true,
         data: open ? normalizeSession(open.id, open) : null,
+      });
+    } catch (e) {
+      sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
+    }
+    return true;
+  }
+
+  // The viewer's own daily/weekly work-hour limits - previously only ever read
+  // internally by enforcement (timer-limit.service.js); this is the first
+  // self-serve read of them, for a profile view to show "how many hours am I
+  // allowed" without duplicating the People > member > Limits configuration.
+  if (pn === "/api/activity/limits" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      const [dailyHours, weeklyHours, usesShifts] = await Promise.all([
+        getMemberLimitHours(db, member.memberId, "daily"),
+        getMemberLimitHours(db, member.memberId, "weekly"),
+        memberUsesShiftsForLimits(db, member.memberId),
+      ]);
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { dailyHours, weeklyHours, usesShifts },
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
@@ -257,6 +304,7 @@ export async function routeActivity(req, res, url, origin) {
             endedAt: null,
             activeSeconds: activeSeconds ?? 0,
             idleSeconds: idleSeconds ?? 0,
+            source: origin ? "web" : "agent",
             updatedAt: now,
           });
         } else if (open.status !== "active") {
@@ -301,6 +349,7 @@ export async function routeActivity(req, res, url, origin) {
             endedAt: null,
             activeSeconds: activeSeconds ?? 0,
             idleSeconds: idleSeconds ?? 0,
+            source: origin ? "web" : "agent",
             updatedAt: now,
           });
         }
