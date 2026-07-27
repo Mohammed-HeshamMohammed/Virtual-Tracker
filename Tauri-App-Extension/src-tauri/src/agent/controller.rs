@@ -288,6 +288,10 @@ impl AgentController {
             .unwrap_or_else(|| if email.is_empty() { "Signed in".into() } else { email.clone() });
         let avatar_url = claims
             .get("picture")
+            .or_else(|| claims.get("avatar_url"))
+            .or_else(|| claims.get("avatarUrl"))
+            .or_else(|| claims.get("photoURL"))
+            .or_else(|| claims.get("photo_url"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();

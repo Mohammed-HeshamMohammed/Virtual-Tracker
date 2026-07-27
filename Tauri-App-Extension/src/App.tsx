@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
+import { toast } from "./Toast";
 
 type ProfileInfo = {
   signedIn: boolean;
@@ -665,11 +666,16 @@ function MainApp() {
   const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [refreshingData, setRefreshingData] = useState(false);
   const [bars, setBars] = useState<number[]>(() =>
     Array.from({ length: 9 }, () => 20),
   );
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [profile?.avatarUrl]);
 
   const checkForUpdate = useCallback(async () => {
     setCheckingUpdate(true);
@@ -853,11 +859,15 @@ function MainApp() {
     try {
       const result = await invoke<SignInResult>("sign_in");
       if (result && result.success === false) {
-        setActionError(result.error || "Sign-in failed");
+        const msg = result.error || "Sign-in failed";
+        setActionError(msg);
+        toast.error(msg);
       }
       await refresh();
     } catch {
-      setActionError("Sign-in is not ready yet. Reopen the agent and try again.");
+      const msg = "Sign-in is not ready yet. Reopen the agent and try again.";
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -879,11 +889,15 @@ function MainApp() {
 
   const handleStart = async () => {
     if (!selectedTaskId) {
-      setActionError("Select a task to start tracking");
+      const msg = "Select a task to start tracking";
+      setActionError(msg);
+      toast.error(msg);
       return;
     }
     if (taskTracking?.limitReached) {
-      setActionError(taskTracking.allowanceMessage || "Maximum allowed work time reached.");
+      const msg = taskTracking.allowanceMessage || "Maximum allowed work time reached.";
+      setActionError(msg);
+      toast.error(msg);
       return;
     }
     setBusy(true);
@@ -893,13 +907,18 @@ function MainApp() {
         taskId: selectedTaskId,
       });
       if (!result.success) {
-        setActionError(result.error || "Could not start session");
+        const msg = result.error || "Could not start session";
+        setActionError(msg);
+        toast.error(msg);
       } else if (result.session) {
         setSession(result.session);
+        toast.success("Tracking session started");
       }
       await refresh();
     } catch {
-      setActionError("Could not start session");
+      const msg = "Could not start session";
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -911,13 +930,18 @@ function MainApp() {
     try {
       const result = await invoke<ActionResult>("stop_session");
       if (!result.success) {
-        setActionError(result.error || "Could not stop session");
+        const msg = result.error || "Could not stop session";
+        setActionError(msg);
+        toast.error(msg);
       } else if (result.session) {
         setSession(result.session);
+        toast.message("Tracking session paused");
       }
       await refresh();
     } catch {
-      setActionError("Could not stop session");
+      const msg = "Could not stop session";
+      setActionError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -983,12 +1007,14 @@ function MainApp() {
                 aria-label="View profile"
                 onClick={() => setView("profile")}
               >
-                {profile?.avatarUrl ? (
+                {profile?.avatarUrl && !avatarError ? (
                   <img
                     className="avatar-img"
                     src={profile.avatarUrl}
                     alt=""
+                    referrerPolicy="no-referrer"
                     draggable={false}
+                    onError={() => setAvatarError(true)}
                   />
                 ) : (
                   <div className="avatar-fallback">
