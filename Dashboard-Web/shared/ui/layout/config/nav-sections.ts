@@ -33,7 +33,7 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: LayoutDashboard,
     pages: [
       { label: "Command Center", id: "command-center" },
-      { label: "General",        id: "general"        },
+      { label: "General",        id: "general", hideFromDropdown: true },
     ],
   },
   {
