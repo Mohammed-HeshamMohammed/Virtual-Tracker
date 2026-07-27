@@ -51,7 +51,7 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
     if (!canAccessAllTabs && section.id === "dashboard") {
       return {
         ...section,
-        pages: section.pages?.filter((p: NavSubItem) => p.id === "general"),
+        pages: section.pages?.filter((p: NavSubItem) => p.id === "command-center"),
         subsections: undefined
       }
     }

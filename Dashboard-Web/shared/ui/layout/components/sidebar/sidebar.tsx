@@ -85,7 +85,7 @@ export function Sidebar({
         if (s.id === "dashboard") {
           return {
             ...s,
-            pages: s.pages?.filter((p: NavSubItem) => p.id === "general")
+            pages: s.pages?.filter((p: NavSubItem) => p.id === "command-center")
           }
         }
         if (s.id === "project-management") {

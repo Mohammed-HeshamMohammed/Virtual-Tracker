@@ -21,6 +21,9 @@ Object.keys(SHIFT_STYLE_HUB_REPORTS).forEach((pageId) => COMING_SOON_PAGES.add(p
 // Legacy / hub routes not listed in nav subsections.
 COMING_SOON_PAGES.add("reports-daily")
 
+// General dashboard disabled — placeholder only (no API calls).
+COMING_SOON_PAGES.add("general")
+
 // Favorites hub is not yet implemented.
 COMING_SOON_PAGES.add("favorites")
 

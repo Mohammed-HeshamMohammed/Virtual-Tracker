@@ -86,12 +86,6 @@ interface ActivityToolbarSecondaryRowProps {
   pageFilters?: ReactNode
 }
 
-const PAGE_LABELS: Record<ActivitySubPage, string> = {
-  "activity-screenshots": "Screenshots",
-  "activity-apps": "Apps",
-  "activity-urls": "URLs",
-}
-
 export function ActivityToolbarSecondaryRow({
   pageId,
   isAllDays,
@@ -125,10 +119,6 @@ export function ActivityToolbarSecondaryRow({
   return (
     <div className="mt-2.5 flex flex-col gap-2 border-t border-slate-100 pt-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-          {PAGE_LABELS[pageId]}
-        </span>
-
         <div
           className="flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5"
           role="group"
