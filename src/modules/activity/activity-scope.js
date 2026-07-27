@@ -1,6 +1,7 @@
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/services/relation-sync.js";
 import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
+import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
@@ -94,7 +95,12 @@ export async function resolveActivityFeedScope(db, viewerMemberId, options = {})
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
 
-  let allowedMemberIds = await getVisibleMemberIds(db, viewerMemberId, roleName);
+  // Activity feeds (screenshots/apps/urls) are private behavioral data, not the org
+  // roster — getVisibleMemberIds gives employees a full-org read for directory/People-tree
+  // purposes, which is too broad here. Narrow to self only for this module.
+  let allowedMemberIds = isEmployeeRole(roleName)
+    ? [viewerMemberId]
+    : await getVisibleMemberIds(db, viewerMemberId, roleName);
   const canFilterByProject = PROJECT_SCOPE_ROLES.has(roleKey);
 
   if (projectScopeOnly && canFilterByProject) {
