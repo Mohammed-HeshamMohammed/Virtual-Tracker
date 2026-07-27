@@ -219,9 +219,16 @@ export function ProjectsTab({
           <td key="budget" className={cellClass} style={cellStyle}>
             {project.budget ? (
               project.budget.total ? (
-                <BudgetBar spent={project.budget.spent} total={project.budget.total} isDark={isDark} />
+                <BudgetBar
+                  spent={project.budget.spent}
+                  total={project.budget.total}
+                  type={project.budget.type}
+                  isDark={isDark}
+                />
               ) : (
-                <span className={cn("text-xs", t.tableCellMuted)}>{formatProjectBudget(project.budget.spent)}</span>
+                <span className={cn("text-xs", t.tableCellMuted)}>
+                  {formatProjectBudget(project.budget.spent, project.budget.type)}
+                </span>
               )
             ) : (
               <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>

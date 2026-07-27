@@ -7,6 +7,8 @@ export type ProjectListItem = {
   members: number
   memberLimit: number | null
   todos: { done: number; total: number }
-  budget: { spent: number; total: number | null; currency: string } | null
+  // type replaces the old hardcoded "currency: $" - an Hours-based project's
+  // total/spent are hours, not dollars, and rendering always assumed dollars.
+  budget: { spent: number; total: number | null; type: "hours" | "cost" } | null
   memberIds: string[]
 }

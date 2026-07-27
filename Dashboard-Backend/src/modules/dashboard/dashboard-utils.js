@@ -1,5 +1,7 @@
 /** Shared helpers for dashboard aggregation services. */
 
+import { listProjectIdsForMemberPg } from "../../lib/postgres/projects-postgres.service.js";
+
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export function normalizeRole(roleName) {
@@ -101,12 +103,7 @@ export function calculateHealth(status, tasksForProject) {
  * @param {string} memberId
  */
 export async function getMemberProjectIds(db, memberId) {
-  const ids = new Set();
-  const pmSnap = await db.collection("project_members").where("member_id", "==", memberId).limit(200).get();
-  for (const doc of pmSnap.docs) {
-    const pid = str(doc.data(), "project_id", "projectId");
-    if (pid) ids.add(pid);
-  }
+  const ids = new Set(await listProjectIdsForMemberPg(memberId));
   const memberDoc = await db.collection("members").doc(memberId).get();
   if (memberDoc.exists) {
     for (const pid of memberDoc.data()?.projects || []) {

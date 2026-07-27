@@ -6,8 +6,23 @@ import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 
 const LIST_LIMIT = 200;
+
+// projects/project_budgets/project_members/team_projects/project_member_limits
+// are Postgres-backed now (see PROPOSAL-Projects-Migration-to-PostgreSQL.md) -
+// fetchCollectionList below only knows Firestore, so these route through here
+// instead, then get normalizeDoc()'d the same way so downstream field-name
+// lookups (row.project_id ?? row.projectId) keep working either way.
+/**
+ * @param {string} table
+ * @param {number} limit
+ */
+async function fetchPgCollectionList(table, limit) {
+  const rows = await pgQuery(`SELECT * FROM ${table} LIMIT $1`, [limit]);
+  return rows.map((row) => normalizeDoc(row));
+}
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -78,11 +93,11 @@ export async function getBootstrapWarmPayload(db, viewer) {
     tasksRaw,
   ] = await Promise.all([
     getVisibleMemberIds(db, viewer.memberId, roleName),
-    fetchCollectionList(db, "projects"),
-    fetchCollectionList(db, "project_budgets"),
-    fetchCollectionList(db, "project_members"),
-    fetchCollectionList(db, "team_projects"),
-    fetchCollectionList(db, "project_member_limits"),
+    fetchPgCollectionList("projects", LIST_LIMIT),
+    fetchPgCollectionList("project_budgets", LIST_LIMIT),
+    fetchPgCollectionList("project_members", LIST_LIMIT),
+    fetchPgCollectionList("team_projects", LIST_LIMIT),
+    fetchPgCollectionList("project_member_limits", LIST_LIMIT),
     fetchCollectionList(db, "teams"),
     fetchCollectionList(db, "team_members"),
     fetchCollectionList(db, "tasks"),

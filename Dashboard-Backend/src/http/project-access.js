@@ -1,6 +1,7 @@
-import { COLLECTIONS } from "../lib/firestore/collections.js";
 import { getAuthContext } from "./auth-context.js";
 import { sendJson } from "./response.js";
+import { getProjectPg, listProjectIdsForMemberPg } from "../lib/postgres/projects-postgres.service.js";
+import { query } from "../lib/postgres/client.js";
 
 function normalizeRole(roleName) {
   return String(roleName || "")
@@ -24,14 +25,7 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
   }
 
   const ids = new Set();
-  const pmSnap = await db
-    .collection("project_members")
-    .where("member_id", "==", viewerMemberId)
-    .select("project_id")
-    .limit(200)
-    .get();
-  for (const doc of pmSnap.docs) {
-    const pid = String(doc.data()?.project_id ?? "").trim();
+  for (const pid of await listProjectIdsForMemberPg(viewerMemberId)) {
     if (pid) ids.add(pid);
   }
 
@@ -79,17 +73,12 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
   const roleKey = normalizeRole(viewer.roleName);
   if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
 
-  const snap = await db
-    .collection("project_members")
-    .where("project_id", "==", pid)
-    .where("member_id", "==", viewer.memberId)
-    .limit(10)
-    .get();
+  const rows = await query(
+    "SELECT project_role FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 10",
+    [pid, viewer.memberId],
+  );
 
-  return snap.docs.some((doc) => {
-    const row = doc.data() || {};
-    return normalizeProjectRole(row.project_role ?? row.projectRole) === "manager";
-  });
+  return rows.some((row) => normalizeProjectRole(row.project_role) === "manager");
 }
 
 /**
@@ -107,11 +96,9 @@ export async function viewerCanWriteProject(db, viewer, projectId) {
   if (allowedProjects === null) return true;
   if (allowedProjects.includes(pid)) return true;
 
-  const projectDoc = await db.collection(COLLECTIONS.projects).doc(pid).get();
-  if (!projectDoc.exists) return false;
-  const row = projectDoc.data() || {};
-  const createdBy = String(row.created_by ?? row.createdBy ?? "").trim();
-  return createdBy === viewer.memberId;
+  const project = await getProjectPg(pid);
+  if (!project) return false;
+  return String(project.created_by ?? "").trim() === viewer.memberId;
 }
 
 /**

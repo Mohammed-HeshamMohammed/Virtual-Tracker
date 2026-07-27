@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import { FieldValue } from "firebase-admin/firestore";
-import { COLLECTIONS } from "../../../lib/firestore/collections.js";
 import {
   isPostgresLookupReady,
   resetPostgresLookupReadyCache,
@@ -15,6 +14,8 @@ import { getLookupData } from "../../../lib/postgres/lookup-cache.js";
 import { deactivationGovernanceForRole } from "../../../http/role-hierarchy.js";
 import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
+import { addProjectMemberPg, listProjectIdsForMemberPg, removeProjectMemberPg } from "../../../lib/postgres/projects-postgres.service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Employee L2", "Employee L1", "Employee L0", "Client", "Viewer"];
 
@@ -295,27 +296,14 @@ export async function getPendingAuthProjectIds(db, pendingUid) {
  */
 export async function syncProjectMembersForMember(db, memberId, projectIds, assignedBy = "") {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
-  const existing = await db.collection("project_members").where("member_id", "==", memberId).get();
-  const batch = db.batch();
-  const existingIds = new Set();
-  for (const doc of existing.docs) {
-    const projectId = doc.data()?.project_id;
-    if (typeof projectId !== "string") continue;
-    existingIds.add(projectId);
-    if (!ids.includes(projectId)) batch.delete(doc.ref);
+  const existingIds = new Set(await listProjectIdsForMemberPg(memberId));
+  for (const projectId of existingIds) {
+    if (!ids.includes(projectId)) await removeProjectMemberPg(projectId, memberId);
   }
   for (const projectId of ids) {
     if (existingIds.has(projectId)) continue;
-    const id = crypto.randomUUID();
-    batch.set(db.collection("project_members").doc(id), {
-      id,
-      member_id: memberId,
-      project_id: projectId,
-      assigned_at: new Date(),
-      assigned_by: assignedBy,
-    });
+    await addProjectMemberPg(projectId, memberId, { actorId: assignedBy || null });
   }
-  if (existing.docs.length > 0 || ids.length > 0) await batch.commit();
 }
 
 /**
@@ -347,14 +335,13 @@ export async function deletePendingAuthProjects(db, pendingUid) {
  * @param {string} memberId
  */
 export async function cascadeDeleteMemberRelations(db, memberId) {
-  const [teamMembers, projectMembers] = await Promise.all([
+  const [teamMembers] = await Promise.all([
     db.collection("team_members").where("member_id", "==", memberId).get(),
-    db.collection("project_members").where("member_id", "==", memberId).get(),
+    pgQuery("DELETE FROM project_members WHERE member_id = $1", [memberId]),
   ]);
   const batch = db.batch();
   for (const doc of teamMembers.docs) batch.delete(doc.ref);
-  for (const doc of projectMembers.docs) batch.delete(doc.ref);
-  if (teamMembers.size + projectMembers.size > 0) await batch.commit();
+  if (teamMembers.size > 0) await batch.commit();
 }
 
 /**
@@ -528,17 +515,11 @@ export async function enrichTeamProjectsWithNames(db, rows) {
     ),
   ];
   const nameByProjectId = new Map();
-
-  for (let i = 0; i < projectIds.length; i += 30) {
-    const chunk = projectIds.slice(i, i + 30);
-    const refs = chunk.map((id) => db.collection(COLLECTIONS.projects).doc(id));
-    const snaps = await db.getAll(...refs);
-
-    for (const snap of snaps) {
-      if (!snap.exists) continue;
-      const data = snap.data() || {};
-      const name = typeof data.name === "string" && data.name.trim() ? data.name.trim() : null;
-      if (name) nameByProjectId.set(snap.id, name);
+  if (projectIds.length > 0) {
+    const projectRows = await pgQuery("SELECT id, name FROM projects WHERE id = ANY($1::uuid[])", [projectIds]);
+    for (const row of projectRows) {
+      const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : null;
+      if (name) nameByProjectId.set(row.id, name);
     }
   }
 

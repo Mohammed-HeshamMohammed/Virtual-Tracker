@@ -13,7 +13,7 @@ export type OverviewCoreProject = {
   s: "active" | "archived"
   h: OverviewHealth
   p: { d: number; t: number }
-  b: { sp: number; tot: number } | null
+  b: { sp: number; tot: number; ty: "hours" | "cost" } | null
   m: number
   ml: number | null
   c: number

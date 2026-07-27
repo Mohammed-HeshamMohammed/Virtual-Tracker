@@ -1,6 +1,7 @@
 // Project overview aggregates — minimal fields, server-side joins.
 
-import { COLLECTIONS } from "../../../lib/firestore/collections.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { computeProjectSpentPg } from "../../../lib/postgres/projects-postgres.service.js";
 
 function toIso(value) {
   if (!value) return "";
@@ -35,46 +36,37 @@ function calculateHealth(status, tasksForProject) {
   return "stalled";
 }
 
-function budgetSpent(total, row) {
-  const pct = num(row, "_seedBudgetSpentPct", "seedBudgetSpentPct");
-  if (pct > 0 && total > 0) return Math.round(total * Math.min(pct, 1));
-  return 0;
-}
-
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ allowedProjectIds?: Set<string> | null }} [options]
  */
 export async function getOverviewCore(db, options = {}) {
   const allowed = options.allowedProjectIds ?? null;
-  const [projectsSnap, budgetsSnap, projectMembersSnap, limitsSnap, tasksSnap] = await Promise.all([
-    db.collection(COLLECTIONS.projects).select("status", "name").limit(200).get(),
-    db.collection("project_budgets").select("project_id", "projectId", "cost", "seedBudgetSpentPct", "_seedBudgetSpentPct").limit(200).get(),
-    db.collection("project_members").select("project_id", "projectId", "member_id", "memberId").limit(2000).get(),
-    db.collection("project_member_limits").select("project_id", "projectId", "cost").limit(200).get(),
+  const [projectRows, budgetRows, memberRows, limitRows, tasksSnap] = await Promise.all([
+    pgQuery("SELECT id, status, name FROM projects LIMIT 200"),
+    pgQuery("SELECT project_id, cost, type, based_on, include_non_billable_time FROM project_budgets LIMIT 200"),
+    pgQuery("SELECT project_id, member_id FROM project_members LIMIT 2000"),
+    pgQuery("SELECT project_id, cost FROM project_member_limits LIMIT 200"),
     db.collection("tasks").select("project_id", "projectId", "status").limit(500).get(),
   ]);
 
   const budgetByProject = new Map();
-  for (const doc of budgetsSnap.docs) {
-    const row = doc.data() || {};
-    const pid = str(row, "project_id", "projectId");
+  for (const row of budgetRows) {
+    const pid = row.project_id;
     if (pid && !budgetByProject.has(pid)) budgetByProject.set(pid, row);
   }
 
   const memberCountByProject = new Map();
-  for (const doc of projectMembersSnap.docs) {
-    const row = doc.data() || {};
-    const pid = str(row, "project_id", "projectId");
+  for (const row of memberRows) {
+    const pid = row.project_id;
     if (!pid) continue;
     memberCountByProject.set(pid, (memberCountByProject.get(pid) ?? 0) + 1);
   }
 
   const memberLimitByProject = new Map();
-  for (const doc of limitsSnap.docs) {
-    const row = doc.data() || {};
-    const pid = str(row, "project_id", "projectId");
-    const cost = num(row, "cost");
+  for (const row of limitRows) {
+    const pid = row.project_id;
+    const cost = Number(row.cost ?? 0);
     if (pid && cost > 0) memberLimitByProject.set(pid, cost);
   }
 
@@ -100,10 +92,9 @@ export async function getOverviewCore(db, options = {}) {
   let onTrack = 0;
 
   let colorIndex = 0;
-  for (const doc of projectsSnap.docs) {
-    const id = doc.id;
+  for (const row of projectRows) {
+    const id = row.id;
     if (allowed !== null && !allowed.has(id)) continue;
-    const row = doc.data() || {};
     const status = (str(row, "status") || "active").toLowerCase();
     const isActive = status !== "archived";
     const projectTasks = tasksByProject.get(id) ?? [];
@@ -113,7 +104,8 @@ export async function getOverviewCore(db, options = {}) {
 
     const budgetRow = budgetByProject.get(id);
     const budgetTotal = budgetRow ? num(budgetRow, "cost") : 0;
-    const spent = budgetRow ? budgetSpent(budgetTotal, budgetRow) : 0;
+    const spent = budgetRow && budgetTotal > 0 ? await computeProjectSpentPg(db, id, budgetRow) : 0;
+    const budgetType = budgetRow && str(budgetRow, "type") === "Hours based" ? "hours" : "cost";
 
     const members = memberCountByProject.get(id) ?? 0;
     const memberLimit = memberLimitByProject.get(id) ?? null;
@@ -132,7 +124,7 @@ export async function getOverviewCore(db, options = {}) {
       s: isActive ? "active" : "archived",
       h: health,
       p: { d: done, t: total },
-      b: budgetTotal > 0 ? { sp: spent, tot: budgetTotal } : null,
+      b: budgetTotal > 0 ? { sp: spent, tot: budgetTotal, ty: budgetType } : null,
       m: members > 0 ? members : 1,
       ml: memberLimit,
       c: colorIndex % 10,
@@ -163,21 +155,21 @@ export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
 
-  const [tasksSnap, projectsSnap, clientsSnap, budgetsSnap, linksSnap, membersSnap] = await Promise.all([
+  const [tasksSnap, projectRows, clientsSnap, budgetsSnap, clientProjectRows, membersSnap] = await Promise.all([
     db.collection("tasks").select("project_id", "projectId", "status", "title", "priority", "assigned_to", "assignedTo").limit(taskLimit).get(),
-    db.collection(COLLECTIONS.projects).select("name").limit(200).get(),
+    pgQuery("SELECT id, name FROM projects LIMIT 200"),
     db.collection("clients").select("status", "name", "email_addresses", "email").limit(100).get(),
     db.collection("client_budgets").select("client_id", "clientId", "cost").limit(100).get(),
-    db.collection("client_projects").select("client_id", "clientId", "project_id", "projectId").limit(500).get(),
+    pgQuery("SELECT client_id, project_id FROM client_projects LIMIT 500"),
     db.collection("members").select("first_name", "firstName", "last_name", "lastName", "name").limit(200).get(),
   ]);
 
   const projectNameById = new Map();
   const projectColorById = new Map();
   let idx = 0;
-  for (const doc of projectsSnap.docs) {
-    projectNameById.set(doc.id, str(doc.data(), "name") || "Project");
-    projectColorById.set(doc.id, idx % 10);
+  for (const row of projectRows) {
+    projectNameById.set(row.id, str(row, "name") || "Project");
+    projectColorById.set(row.id, idx % 10);
     idx += 1;
   }
 
@@ -243,10 +235,9 @@ export async function getOverviewPanels(db, options = {}) {
   }
 
   const projectsByClient = new Map();
-  for (const doc of linksSnap.docs) {
-    const row = doc.data() || {};
-    const cid = str(row, "client_id", "clientId");
-    const pid = str(row, "project_id", "projectId");
+  for (const row of clientProjectRows) {
+    const cid = row.client_id;
+    const pid = row.project_id;
     if (!cid || !pid) continue;
     if (!projectsByClient.has(cid)) projectsByClient.set(cid, []);
     projectsByClient.get(cid).push(pid);

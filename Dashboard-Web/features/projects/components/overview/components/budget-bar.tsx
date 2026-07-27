@@ -9,13 +9,19 @@ export function fmt$(n: number) {
   return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n}`
 }
 
+export function fmtBudget(n: number, type: "hours" | "cost" = "cost") {
+  if (type === "hours") return Number.isInteger(n) ? `${n}h` : `${n.toFixed(1)}h`
+  return fmt$(n)
+}
+
 interface BudgetBarProps {
   used: number
   total: number
+  type?: "hours" | "cost"
   mini?: boolean
 }
 
-export function BudgetBar({ used, total, mini = false }: BudgetBarProps) {
+export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBarProps) {
   const pct = Math.min(Math.round((used / total) * 100), 100)
   const color = pct >= 100 ? "bg-red-500" : pct >= 85 ? "bg-amber-500" : "bg-emerald-500"
 
@@ -31,8 +37,8 @@ export function BudgetBar({ used, total, mini = false }: BudgetBarProps) {
       </div>
       {!mini && (
         <span className="text-xs text-slate-500">
-          {fmt$(used)}
-          <span className="text-slate-300">/{fmt$(total)}</span>
+          {fmtBudget(used, type)}
+          <span className="text-slate-300">/{fmtBudget(total, type)}</span>
         </span>
       )}
     </div>

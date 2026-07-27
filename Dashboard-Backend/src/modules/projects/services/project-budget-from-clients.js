@@ -1,5 +1,9 @@
-import { generateUUID, now } from "../../schema/catalog/index.js";
 import { computeClientContributionForProject, normalizeBudget } from "../../clients/services/budget-logic.js";
+import {
+  listClientIdsForProjectPg,
+  listProjectMembersPg,
+  upsertProjectBudgetPg,
+} from "../../../lib/postgres/projects-postgres.service.js";
 
 function mapClientTypeToProjectType(type) {
   if (type === "hourly") return "Hours based";
@@ -28,23 +32,20 @@ async function readClientBudget(db, clientId) {
   });
 }
 
-async function countProjectMembers(db, projectId) {
-  const snap = await db.collection("project_members").where("project_id", "==", projectId).limit(500).get();
-  return Math.max(1, snap.size);
+async function countProjectMembers(projectId) {
+  const rows = await listProjectMembersPg(projectId);
+  return Math.max(1, rows.length);
 }
 
 /** Sum linked client budget caps for one project. */
 export async function aggregateProjectBudgetFromClients(db, projectId) {
-  const linksSnap = await db.collection("client_projects").where("project_id", "==", projectId).limit(50).get();
-  const clientIds = linksSnap.docs
-    .map((doc) => String(doc.data()?.client_id ?? doc.data()?.clientId ?? "").trim())
-    .filter(Boolean);
+  const clientIds = (await listClientIdsForProjectPg(projectId)).map((id) => String(id).trim()).filter(Boolean);
 
   if (clientIds.length === 0) {
     return { totalCost: 0, primaryBudget: null, clientCount: 0 };
   }
 
-  const memberCount = await countProjectMembers(db, projectId);
+  const memberCount = await countProjectMembers(projectId);
   let totalCost = 0;
   let primaryBudget = null;
 
@@ -69,30 +70,14 @@ export async function syncProjectBudgetFromClients(db, projectId) {
   const { totalCost, primaryBudget } = await aggregateProjectBudgetFromClients(db, projectId);
   if (!primaryBudget || totalCost <= 0) return { skipped: "no_client_budgets" };
 
-  const budgetsSnap = await db.collection("project_budgets").where("project_id", "==", projectId).limit(1).get();
-  const payload = {
+  const row = await upsertProjectBudgetPg(projectId, {
     type: mapClientTypeToProjectType(primaryBudget.type),
-    based_on: "Bill rate",
+    basedOn: "Bill rate",
     cost: totalCost,
     resets: mapResetsToProject(primaryBudget.resets),
-    stop_timers_when_reached: true,
-    updated_at: now(),
-  };
-
-  if (budgetsSnap.empty) {
-    const id = generateUUID();
-    await db.collection("project_budgets").doc(id).set({
-      id,
-      project_id: projectId,
-      ...payload,
-      notify_project_members: false,
-      include_non_billable_time: true,
-      created_at: now(),
-    });
-    return { created: true, totalCost };
-  }
-
-  const doc = budgetsSnap.docs[0];
-  await doc.ref.update(payload);
-  return { updated: true, totalCost, budgetId: doc.id };
+    stopTimersWhenReached: true,
+    notifyProjectMembers: false,
+    includeNonBillableTime: true,
+  });
+  return { updated: true, totalCost, budgetId: row?.id };
 }

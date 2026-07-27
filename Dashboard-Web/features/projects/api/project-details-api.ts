@@ -64,6 +64,9 @@ export interface ProjectBudgetRow {
   resets: string
   startDate: string
   includeNonBillableTime: boolean
+  /** Real value computed server-side from tracked time x rate - not stored, not
+   * fabricated, and not something to send back on create/update (read-only). */
+  spent?: number
 }
 
 export interface ProjectMemberLimitRow {
@@ -221,6 +224,7 @@ async function getProjectBudgets(projectId?: string, options: RequestOptions & {
     includeNonBillableTime: Boolean(
       row.include_non_billable_time ?? row.includeNonBillableTime ?? true,
     ),
+    spent: Number(row.spent ?? 0),
   }))
 }
 
@@ -676,7 +680,7 @@ export interface EnrichedProjectListContext {
 
 async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
   const [budgets, members, teamLinks, limits] = await Promise.all([
-    getProjectBudgets(undefined, { fields: ["id", "project_id", "cost"] }).catch(() => [] as ProjectBudgetRow[]),
+    getProjectBudgets(undefined, { fields: ["id", "project_id", "cost", "type", "based_on"] }).catch(() => [] as ProjectBudgetRow[]),
     getProjectMemberRows({ fields: ["id", "project_id", "member_id"] }).catch(() => [] as ProjectMemberRow[]),
     getTeamProjectLinks().catch(() => [] as TeamProjectLink[]),
     getProjectMemberLimits(undefined, { fields: ["id", "project_id", "cost"] }).catch(() => [] as ProjectMemberLimitRow[]),

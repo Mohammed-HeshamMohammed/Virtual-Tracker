@@ -1,4 +1,4 @@
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getAuthContext } from "../../http/auth-context.js";
 import { assertManagementRole } from "../../http/authorization.js";
 import { applyVisibilityFilter } from "../schema/visibility.js";
@@ -69,9 +69,9 @@ export async function routeClients(req, res, url, db, origin) {
   if (pn === "/api/clients/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [membersSnap, projectsSnap, clientsSnap] = await Promise.all([
+      const [membersSnap, projectRows, clientsSnap] = await Promise.all([
         db.collection("members").limit(500).get(),
-        db.collection(COLLECTIONS.projects).limit(500).get(),
+        pgQuery("SELECT id, name, status FROM projects LIMIT 500"),
         db.collection("clients").limit(500).get(),
       ]);
 
@@ -103,14 +103,13 @@ export async function routeClients(req, res, url, db, origin) {
         .filter(Boolean)
         .sort((a, b) => a.label.localeCompare(b.label));
 
-      const projects = projectsSnap.docs
-        .map((doc) => {
-          const d = doc.data() || {};
-          const status = String(d.status ?? "active").toLowerCase();
+      const projects = projectRows
+        .map((row) => {
+          const status = String(row.status ?? "active").toLowerCase();
           if (status === "archived" || status === "completed") return null;
           return {
-            id: doc.id,
-            label: typeof d.name === "string" && d.name.trim() ? d.name.trim() : "Unnamed project",
+            id: row.id,
+            label: typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Unnamed project",
           };
         })
         .filter(Boolean)

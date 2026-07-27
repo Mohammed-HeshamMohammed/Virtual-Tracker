@@ -1,12 +1,19 @@
 // Shared dashboard aggregates. Snapshotted in system_meta when org has 100+ projects.
 
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
-import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { isPostgresConfigured, query as pgQuery } from "../../lib/postgres/client.js";
 import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { fetchPgSessionsForDashboard } from "../../lib/postgres/activity-events-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
+
+/** Postgres rows -> the same {id, data} shape serializeDoc() produces for
+ * Firestore docs, so every downstream consumer (general-dashboard-service.js,
+ * command-center-service.js, via pseudoDocsFromSerialized) keeps working
+ * unchanged regardless of which store a given collection actually lives in. */
+function pgRowsToSerialized(rows) {
+  return rows.map((row) => ({ id: row.id, data: row }));
+}
 
 const SNAPSHOT_DOC_ID = "dashboard_aggregates";
 const SNAPSHOT_TTL_MS = 5 * 60 * 1000;
@@ -61,32 +68,28 @@ async function fetchFreshBase(db) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
-  const [projectsSnap, budgetsSnap, projectMembersSnap, tasksSnap] = await Promise.all([
-      db.collection(COLLECTIONS.projects).select("status", "name", "updated_at", "created_at").limit(300).get(),
-      db
-        .collection("project_budgets")
-        .select("project_id", "projectId", "cost", "seedBudgetSpentPct", "_seedBudgetSpentPct")
-        .limit(300)
-        .get(),
-      db.collection("project_members").select("project_id", "projectId", "member_id", "memberId").limit(3000).get(),
-      db
-        .collection("tasks")
-        .select(
-          "project_id",
-          "projectId",
-          "status",
-          "title",
-          "priority",
-          "assigned_to",
-          "assignedTo",
-          "updated_at",
-          "updatedAt",
-          "created_at",
-          "createdAt",
-        )
-        .limit(800)
-        .get(),
-    ]);
+  const [projectRows, budgetRows, projectMemberRows, tasksSnap] = await Promise.all([
+    pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
+    pgQuery("SELECT id, project_id, cost, type FROM project_budgets LIMIT 300"),
+    pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
+    db
+      .collection("tasks")
+      .select(
+        "project_id",
+        "projectId",
+        "status",
+        "title",
+        "priority",
+        "assigned_to",
+        "assignedTo",
+        "updated_at",
+        "updatedAt",
+        "created_at",
+        "createdAt",
+      )
+      .limit(800)
+      .get(),
+  ]);
 
   const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
   const timeEntries = pgRows.map((row) => ({
@@ -115,13 +118,13 @@ async function fetchFreshBase(db) {
   }));
 
   return {
-    projects: projectsSnap.docs.map(serializeDoc),
-    budgets: budgetsSnap.docs.map(serializeDoc),
-    projectMembers: projectMembersSnap.docs.map(serializeDoc),
+    projects: pgRowsToSerialized(projectRows),
+    budgets: pgRowsToSerialized(budgetRows),
+    projectMembers: pgRowsToSerialized(projectMemberRows),
     tasks: tasksSnap.docs.map(serializeDoc),
     timeEntries,
     sessions,
-    projectCount: projectsSnap.size,
+    projectCount: projectRows.length,
     fetchedAt: Date.now(),
   };
 }
