@@ -39,6 +39,8 @@ export function Avatar({
       <UserAvatarImage
         src={src}
         alt={alt ?? initials}
+        fallbackInitials={initials}
+        fallbackColor={color}
         className={cn("shrink-0 rounded-full object-cover", dim)}
       />
     )
