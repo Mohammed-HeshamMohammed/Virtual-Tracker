@@ -111,7 +111,7 @@ export function ProjectHealthGrid({
                   </td>
                   <td className="px-4 py-3.5">
                     {p.budget?.total ? (
-                      <BudgetBar used={p.budget.spent} total={p.budget.total} mini />
+                      <BudgetBar used={p.budget.spent} total={p.budget.total} type={p.budget.type} mini />
                     ) : (
                       <span className="text-xs text-slate-300">—</span>
                     )}

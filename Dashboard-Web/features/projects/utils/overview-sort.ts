@@ -5,7 +5,7 @@ export type OverviewSortableProject = {
   status: "active" | "archived"
   health: OverviewProjectHealth
   todos: { done: number; total: number }
-  budget: { spent: number; total: number | null; currency: string } | null
+  budget: { spent: number; total: number | null; type: "hours" | "cost" } | null
 }
 
 /** Higher = better health for descending sort. */

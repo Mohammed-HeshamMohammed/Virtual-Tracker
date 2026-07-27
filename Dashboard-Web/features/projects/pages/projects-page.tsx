@@ -52,11 +52,13 @@ function mapApiProject(
     members,
     memberLimit,
     todos: { done: 0, total: 0 },
+    // spent is now real - computed server-side from tracked time x rate
+    // (see computeProjectSpentPg in Dashboard-Backend), not fabricated.
     budget: budgetRow
       ? {
-        spent: 0,
+        spent: budgetRow.spent ?? 0,
         total: budgetRow.cost,
-        currency: "$",
+        type: budgetRow.type === "Hours based" ? "hours" : "cost",
       }
       : null,
     memberIds: ctx.memberIdsByProject.get(id) ?? [],

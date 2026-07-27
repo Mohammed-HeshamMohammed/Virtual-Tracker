@@ -59,7 +59,7 @@ function mapCoreProject(row: OverviewCoreProject): OverviewProject {
     members: row.m,
     memberLimit: row.ml,
     todos: { done: row.p.d, total: row.p.t },
-    budget: row.b ? { spent: row.b.sp, total: row.b.tot, currency: "$" } : null,
+    budget: row.b ? { spent: row.b.sp, total: row.b.tot, type: row.b.ty } : null,
     health: row.h,
   }
 }

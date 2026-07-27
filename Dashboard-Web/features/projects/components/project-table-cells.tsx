@@ -3,12 +3,25 @@
 
 import { cn } from "@/shared/utils/utils"
 
-export function formatProjectBudget(n: number) {
+export function formatProjectBudget(n: number, type: "hours" | "cost" = "cost") {
+  if (type === "hours") {
+    return Number.isInteger(n) ? `${n}h` : `${n.toFixed(1)}h`
+  }
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   return `$${n}`
 }
 
-export function BudgetBar({ spent, total, isDark = false }: { spent: number; total: number; isDark?: boolean }) {
+export function BudgetBar({
+  spent,
+  total,
+  type = "cost",
+  isDark = false,
+}: {
+  spent: number
+  total: number
+  type?: "hours" | "cost"
+  isDark?: boolean
+}) {
   const pct = Math.min(Math.round((spent / total) * 100), 100)
   const color = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400"
   return (
@@ -17,8 +30,8 @@ export function BudgetBar({ spent, total, isDark = false }: { spent: number; tot
         <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
       </div>
       <span className={cn("text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-        {formatProjectBudget(spent)}
-        <span className={isDark ? "text-[#3d4a3d]" : "text-slate-300"}>/{formatProjectBudget(total)}</span>
+        {formatProjectBudget(spent, type)}
+        <span className={isDark ? "text-[#3d4a3d]" : "text-slate-300"}>/{formatProjectBudget(total, type)}</span>
       </span>
     </div>
   )
