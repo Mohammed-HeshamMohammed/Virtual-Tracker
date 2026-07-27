@@ -8,10 +8,11 @@ import { X, Share2 } from "lucide-react"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
 import { cn } from "@/shared/utils/utils"
 import { MAX_INVITES_PER_SUBMIT } from "@/features/members/config/members-config"
-import type { AddMembersResult, AddMembersSubmission, MemberRole, AccountFormFields, InviteFormRow } from "@/features/members/models/member"
+import type { AddMembersResult, AddMembersSubmission, MemberRole, AccountFormFields, InviteFormRow, MigratableAuthUser } from "@/features/members/models/member"
 import { InviteForm } from "@/features/members/components/modals/add-members/invite-form"
 import { AccountForm } from "@/features/members/components/modals/add-members/account-form"
-import { validateEmailsForAddMembers } from "@/features/members/api/member-api"
+import { MigrateForm } from "@/features/members/components/modals/add-members/migrate-form"
+import { validateEmailsForAddMembers, fetchMigratableUsers } from "@/features/members/api/member-api"
 import { isValidEmail, validateEmailField, validatePayRate, validatePersonName } from "@/shared/validation"
 import { sanitizePersonNameInput } from "@/shared/validation/person-name"
 import { NotifyToastHost } from "@/shared/ui/layout"
@@ -39,6 +40,13 @@ export function formatAddMembersPending(payload: AddMembersSubmission): { title:
     return {
       title: "Add members",
       message: `Sending ${count} invite${count === 1 ? "" : "s"}…`,
+    }
+  }
+  if (payload.mode === "migrate") {
+    const count = payload.uids.length
+    return {
+      title: "Add members",
+      message: `Migrating ${count} member${count === 1 ? "" : "s"}…`,
     }
   }
   const email = payload.rows[0]?.email ?? "member"
@@ -81,6 +89,22 @@ export function formatAddMembersSuccess(result: AddMembersResult): { message: st
     }
   }
 
+  if (result.mode === "migrate") {
+    const succeeded = result.results.filter((r) => r.success).length
+    const failed = result.results.length - succeeded
+    if (failed === 0) {
+      return { tone: "info", message: `${succeeded} member${succeeded === 1 ? "" : "s"} migrated successfully.` }
+    }
+    const failedList = result.results
+      .filter((r) => !r.success)
+      .map((r) => `${r.uid}: ${r.error}`)
+      .join("\n")
+    return {
+      tone: "info",
+      message: `${succeeded} migrated, ${failed} failed.\n\n${failedList}`,
+    }
+  }
+
   if (result.emailSent) {
     return {
       tone: "info",
@@ -107,7 +131,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   const assignableRoles = useMemo(() => listAssignableRoles(memberRole), [memberRole])
   const defaultRole = assignableRoles[assignableRoles.length - 1] ?? "Viewer"
 
-  const [mode, setMode] = useComponentState<"invites" | "accounts">("invites")
+  const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate">("invites")
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
 
   // Send invites state
@@ -123,9 +147,19 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   })
   const [accountRole, setAccountRole] = useComponentState<MemberRole>(defaultRole)
   const [sendWelcomeEmail, setSendWelcomeEmail] = useComponentState(true)
+
+  // Migrate existing Firebase Auth users state
+  const [migratableUsers, setMigratableUsers] = useComponentState<MigratableAuthUser[]>([])
+  const [migrateNextPageToken, setMigrateNextPageToken] = useComponentState<string | null>(null)
+  const [migrateSelectedUids, setMigrateSelectedUids] = useComponentState<Set<string>>(new Set())
+  const [migrateFilterText, setMigrateFilterText] = useComponentState("")
+  const [migrateRole, setMigrateRole] = useComponentState<MemberRole>(defaultRole)
+  const [migrateLoading, setMigrateLoading] = useComponentState(false)
+  const [migrateLoadedOnce, setMigrateLoadedOnce] = useComponentState(false)
+
   const [toast, setToast] = useComponentState<{ message: string; title: string; tone: NotifyAlertTone } | null>(null)
   const [shareLinkBusy, setShareLinkBusy] = useComponentState(false)
-  const prevModeRef = useRef<"invites" | "accounts">("invites")
+  const prevModeRef = useRef<"invites" | "accounts" | "migrate">("invites")
   const dismissToast = useCallback(() => {
     setToast(null)
   }, [])
@@ -137,7 +171,56 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     if (!assignableRoles.includes(accountRole)) {
       setAccountRole(defaultRole)
     }
-  }, [assignableRoles, defaultRole, inviteRole, accountRole])
+    if (!assignableRoles.includes(migrateRole)) {
+      setMigrateRole(defaultRole)
+    }
+  }, [assignableRoles, defaultRole, inviteRole, accountRole, migrateRole])
+
+  useEffect(() => {
+    if (mode !== "migrate" || migrateLoadedOnce) return
+    setMigrateLoadedOnce(true)
+    setMigrateLoading(true)
+    fetchMigratableUsers()
+      .then(({ users, nextPageToken }) => {
+        setMigratableUsers(users)
+        setMigrateNextPageToken(nextPageToken)
+      })
+      .catch((e) => {
+        setToast({
+          title: "Migrate",
+          tone: "error",
+          message: e instanceof Error ? e.message : "Could not load unlinked accounts.",
+        })
+      })
+      .finally(() => setMigrateLoading(false))
+  }, [mode, migrateLoadedOnce])
+
+  function toggleMigrateUid(uid: string) {
+    setMigrateSelectedUids((prev) => {
+      const next = new Set(prev)
+      if (next.has(uid)) next.delete(uid)
+      else next.add(uid)
+      return next
+    })
+  }
+
+  function loadMoreMigratable() {
+    if (!migrateNextPageToken || migrateLoading) return
+    setMigrateLoading(true)
+    fetchMigratableUsers({ pageToken: migrateNextPageToken })
+      .then(({ users, nextPageToken }) => {
+        setMigratableUsers((prev) => [...prev, ...users])
+        setMigrateNextPageToken(nextPageToken)
+      })
+      .catch((e) => {
+        setToast({
+          title: "Migrate",
+          tone: "error",
+          message: e instanceof Error ? e.message : "Could not load more accounts.",
+        })
+      })
+      .finally(() => setMigrateLoading(false))
+  }
 
   function addInviteRow() {
     setInviteRows((prev) => (prev.length >= MAX_INVITES_PER_SUBMIT ? prev : [...prev, { email: "", payRate: "" }]))
@@ -259,6 +342,23 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
       return
     }
 
+    if (mode === "migrate") {
+      const uids = [...migrateSelectedUids]
+      if (uids.length === 0) {
+        setToast({ message: "Select at least one account to migrate.", title: "Add members", tone: "error" })
+        return
+      }
+      setIsSubmitting(true)
+      const payload: AddMembersSubmission = { mode: "migrate", uids, role: migrateRole }
+      onPending?.(payload)
+      onClose()
+      void onAdd(payload)
+        .then((result) => onSuccess?.(result))
+        .catch((e) => onError?.(e instanceof Error ? e.message : "Could not migrate members."))
+      setIsSubmitting(false)
+      return
+    }
+
     const first = accountForm.firstName.trim()
     const last = accountForm.lastName.trim()
     const name = [first, last].filter(Boolean).join(" ").trim()
@@ -351,6 +451,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
               [
                 { id: "invites" as const, label: "Send invites" },
                 { id: "accounts" as const, label: "Create account" },
+                { id: "migrate" as const, label: "Migrate" },
               ] as const
             ).map((tab) => {
               const active = mode === tab.id
@@ -414,7 +515,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   onUpdateRow={updateInviteRow}
                   onRoleChange={setInviteRole}
                 />
-              ) : (
+              ) : mode === "accounts" ? (
                 <AccountForm
                   form={accountForm}
                   role={accountRole}
@@ -423,6 +524,20 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   onUpdateField={updateAccountField}
                   onRoleChange={setAccountRole}
                   onToggleWelcomeEmail={() => setSendWelcomeEmail((v) => !v)}
+                />
+              ) : (
+                <MigrateForm
+                  users={migratableUsers}
+                  selectedUids={migrateSelectedUids}
+                  onToggle={toggleMigrateUid}
+                  filterText={migrateFilterText}
+                  onFilterChange={setMigrateFilterText}
+                  role={migrateRole}
+                  roleOptions={assignableRoles}
+                  onRoleChange={setMigrateRole}
+                  isLoading={migrateLoading}
+                  hasMore={Boolean(migrateNextPageToken)}
+                  onLoadMore={loadMoreMigratable}
                 />
               )}
             </motion.div>
@@ -462,7 +577,13 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
               disabled={isSubmitting}
               className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50" type="button"
             >
-              {isSubmitting ? "Checking…" : mode === "invites" ? "Send invites" : "Create account"}
+              {isSubmitting
+                ? "Checking…"
+                : mode === "invites"
+                  ? "Send invites"
+                  : mode === "accounts"
+                    ? "Create account"
+                    : "Migrate"}
             </button>
           </div>
         </div>

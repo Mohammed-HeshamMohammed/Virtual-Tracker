@@ -93,6 +93,17 @@ export type AccountFormRow = { name: string; email: string; payRate: string }
 /** Local fields for create-account modal. */
 export type AccountFormFields = { firstName: string; lastName: string; email: string; payRate: string }
 
+/** Firebase Auth user not yet linked to a `members` row (Migrate tab candidate). */
+export type MigratableAuthUser = {
+  uid: string
+  email: string
+  displayName: string
+  phoneNumber: string
+  creationTime: string | null
+}
+
+export type MigrateResultRow = { uid: string; success: boolean; memberId?: string; error?: string }
+
 export type AddMembersSubmission =
   | {
       mode: "invites"
@@ -104,6 +115,11 @@ export type AddMembersSubmission =
       rows: AccountFormRow[]
       role: MemberRole
       sendWelcomeEmail: boolean
+    }
+  | {
+      mode: "migrate"
+      uids: string[]
+      role: MemberRole
     }
 
 export type AddMembersResult =
@@ -121,6 +137,10 @@ export type AddMembersResult =
       email: string
       emailSent: boolean
       tempPassword?: string
+    }
+  | {
+      mode: "migrate"
+      results: MigrateResultRow[]
     }
 
 export type MemberPatchBody = {

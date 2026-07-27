@@ -14,6 +14,7 @@ import {
   getInviteLink,
   getInvites,
   invalidateMemberProfileCache,
+  migrateAuthUsers,
   preprovisionMember,
   renewInvite,
   resendInviteEmail,
@@ -99,6 +100,15 @@ export function useMemberMutations({
         emailChannel: result.emailChannel,
         emailConfigured: result.emailsSent > 0 || (result.emailChannel !== undefined && result.emailChannel !== "skipped"),
       }
+    }
+
+    if (payload.mode === "migrate") {
+      const results = await migrateAuthUsers(payload.uids, payload.role)
+      if (results.some((r) => r.success)) {
+        const refreshed = await refreshMembersFromApi()
+        setMembers(refreshed)
+      }
+      return { mode: "migrate", results }
     }
 
     const row = payload.rows[0]
