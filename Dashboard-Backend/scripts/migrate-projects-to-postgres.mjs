@@ -88,6 +88,31 @@ function bool(row, fallback, ...keys) {
   return fallback;
 }
 
+function normalizeProjectStatus(value) {
+  const s = String(value || "active").trim().toLowerCase();
+  if (s === "paused") return "paused";
+  if (s === "archived") return "archived";
+  return "active";
+}
+
+function normalizeBudgetType(value) {
+  if (!value) return "Cost based";
+  const s = String(value).trim().toLowerCase();
+  if (s === "hours based" || s === "hours" || s === "hourly") return "Hours based";
+  return "Cost based";
+}
+
+function normalizeBudgetResets(value) {
+  if (!value) return "Never";
+  const s = String(value).trim();
+  const lower = s.toLowerCase();
+  if (lower === "monthly") return "Monthly";
+  if (lower === "weekly") return "Weekly";
+  if (lower === "quarterly") return "Quarterly";
+  if (lower === "yearly") return "Yearly";
+  return "Never";
+}
+
 async function runQuery(sql, params) {
   if (dryRun) return [];
   return query(sql, params);
@@ -114,7 +139,7 @@ async function migrateProjects(db) {
       [
         id,
         str(d, "name") ?? "Untitled project",
-        str(d, "status") ?? "active",
+        normalizeProjectStatus(str(d, "status")),
         bool(d, true, "billable"),
         bool(d, false, "disable_activity", "disableActivity"),
         bool(d, true, "allow_project_tracking", "allowProjectTracking"),
@@ -187,7 +212,7 @@ async function migrateProjectBudgets(db) {
       [
         id,
         projectId,
-        str(d, "type") ?? "Cost based",
+        normalizeBudgetType(str(d, "type")),
         str(d, "based_on", "basedOn"),
         num(d, "cost") ?? 0,
         bool(d, false, "notify_project_members", "notifyProjectMembers"),
@@ -195,7 +220,7 @@ async function migrateProjectBudgets(db) {
         str(d, "who_to_notify", "whoToNotify"),
         bool(d, false, "stop_timers_when_reached", "stopTimersWhenReached"),
         num(d, "stop_timers_at_pct", "stopTimersAtPct"),
-        str(d, "resets") ?? "Never",
+        normalizeBudgetResets(str(d, "resets")),
         toDateOrNull(d.start_date ?? d.startDate)?.toISOString().slice(0, 10) ?? null,
         bool(d, true, "include_non_billable_time", "includeNonBillableTime"),
         toDate(d.created_at ?? d.createdAt),
@@ -231,10 +256,10 @@ async function migrateProjectMemberLimits(db) {
         id,
         projectId,
         memberId,
-        str(d, "type"),
+        normalizeBudgetType(str(d, "type")),
         str(d, "based_on", "basedOn"),
         num(d, "cost"),
-        str(d, "resets") ?? "Never",
+        normalizeBudgetResets(str(d, "resets")),
         toDateOrNull(d.start_date ?? d.startDate)?.toISOString().slice(0, 10) ?? null,
         num(d, "notify_at_pct", "notifyAtPct"),
         bool(d, true, "notify_project_members", "notifyProjectMembers"),
