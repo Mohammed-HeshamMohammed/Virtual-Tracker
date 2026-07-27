@@ -2,7 +2,7 @@
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { extractRoleFromRecord } from "@/features/auth"
 import { apiPath } from "@/infrastructure/api/path"
-import type { Member, Invite, MemberRole, MemberStatus, InviteListKind } from "@/features/members/models/member"
+import type { Member, Invite, MemberRole, MemberStatus, InviteListKind, MigratableAuthUser, MigrateResultRow } from "@/features/members/models/member"
 import { extractApiError, apiFetch, fetchJsonWithRetry, readJsonSafe, type RequestOptions } from "@/infrastructure/api/http"
 import { throwIfQuotaExceeded, isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
 import { MANAGE_MODAL_TABS } from "@/features/members/config/members-config"
@@ -890,6 +890,42 @@ export async function validateEmailsForAddMembers(
     allOk: json.allOk === true,
     results: Array.isArray(json.results) ? json.results : [],
   }
+}
+
+/** Firebase Auth users not yet linked to a `members` row — Migrate tab candidates. */
+export async function fetchMigratableUsers(
+  params: { pageToken?: string; email?: string; phone?: string } = {},
+): Promise<{ users: MigratableAuthUser[]; nextPageToken: string | null }> {
+  const q = new URLSearchParams()
+  if (params.pageToken) q.set("pageToken", params.pageToken)
+  if (params.email) q.set("email", params.email)
+  if (params.phone) q.set("phone", params.phone)
+  const qs = q.toString()
+  const res = await apiFetch(apiPath(`/api/members/migratable${qs ? `?${qs}` : ""}`))
+  const json = (await res.json()) as {
+    success?: boolean
+    error?: string
+    users?: MigratableAuthUser[]
+    nextPageToken?: string | null
+  }
+  if (!res.ok || json.success !== true) {
+    throw new Error(json.error || `Failed to load migratable users: ${res.status}`)
+  }
+  return { users: Array.isArray(json.users) ? json.users : [], nextPageToken: json.nextPageToken ?? null }
+}
+
+/** Adopt existing Firebase Auth users (already signed in elsewhere, e.g. the mobile app) into Virtual Tracker. */
+export async function migrateAuthUsers(uids: string[], role: MemberRole): Promise<MigrateResultRow[]> {
+  const res = await apiFetch(apiPath("/api/members/migrate"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uids, role }),
+  })
+  const json = (await res.json()) as { success?: boolean; error?: string; results?: MigrateResultRow[] }
+  if (!res.ok || json.success !== true) {
+    throw new Error(json.error || `Migration failed: ${res.status}`)
+  }
+  return Array.isArray(json.results) ? json.results : []
 }
 
 export type ResolvePublicInviteResult = {
