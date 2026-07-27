@@ -6,6 +6,7 @@ import {
 } from "./budget-logic.js";
 import { isPostgresConfigured } from "../../../lib/postgres/client.js";
 import { sumBillableHoursForProjectInPeriod as sumBillableHoursPg } from "../../schema/services/postgres-crud.service.js";
+import { getProjectBudgetPg, listClientIdsForProjectPg, listProjectIdsForClientPg } from "../../../lib/postgres/projects-postgres.service.js";
 
 function parseEntryDate(value) {
 
@@ -153,9 +154,7 @@ export async function resolveProjectSpendInPeriod(db, projectId, period) {
 
   const hours = await sumBillableHoursForProjectInPeriod(db, projectId, period);
 
-  const budgetsSnap = await db.collection("project_budgets").where("project_id", "==", projectId).limit(1).get();
-
-  const projectBudget = normalizeProjectBudgetRow(budgetsSnap.docs[0]?.data());
+  const projectBudget = normalizeProjectBudgetRow(await getProjectBudgetPg(projectId));
 
   if (!projectBudget || projectBudget.cost <= 0) {
 
@@ -181,9 +180,9 @@ export async function resolveProjectSpendInPeriod(db, projectId, period) {
 
 export async function countClientsOnProject(db, projectId) {
 
-  const snap = await db.collection("client_projects").where("project_id", "==", projectId).limit(50).get();
+  const clientIds = await listClientIdsForProjectPg(projectId);
 
-  return Math.max(1, snap.size);
+  return Math.max(1, clientIds.length);
 
 }
 
@@ -215,13 +214,7 @@ export async function resolveClientBudgetUsage(db, clientId, budget, options = {
 
   if (!projectIds) {
 
-    const linksSnap = await db.collection("client_projects").where("client_id", "==", clientId).get();
-
-    projectIds = linksSnap.docs
-
-      .map((doc) => String(doc.data()?.project_id ?? doc.data()?.projectId ?? "").trim())
-
-      .filter(Boolean);
+    projectIds = (await listProjectIdsForClientPg(clientId)).map((id) => String(id).trim()).filter(Boolean);
 
   }
 

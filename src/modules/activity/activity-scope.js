@@ -1,5 +1,6 @@
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/services/relation-sync.js";
+import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
@@ -23,17 +24,7 @@ export async function resolveMemberRoleName(db, memberId) {
 /** Member IDs on projects the viewer belongs to (via project_members + members.projects). */
 export async function getProjectScopedMemberIds(db, viewerMemberId) {
   const ids = new Set([viewerMemberId]);
-  const projectIds = new Set();
-
-  const pmSnap = await db
-    .collection("project_members")
-    .where("member_id", "==", viewerMemberId)
-    .limit(200)
-    .get();
-  for (const doc of pmSnap.docs) {
-    const pid = doc.data()?.project_id;
-    if (pid) projectIds.add(pid);
-  }
+  const projectIds = new Set(await listProjectIdsForMemberPg(viewerMemberId));
 
   const memberDoc = await db.collection("members").doc(viewerMemberId).get();
   const memberProjects = memberDoc.exists ? memberDoc.data()?.projects || [] : [];
@@ -41,20 +32,8 @@ export async function getProjectScopedMemberIds(db, viewerMemberId) {
     if (pid) projectIds.add(pid);
   }
 
-  const projectIdList = [...projectIds];
-  const CHUNK = 30;
-  for (let i = 0; i < projectIdList.length; i += CHUNK) {
-    const chunk = projectIdList.slice(i, i + CHUNK);
-    if (!chunk.length) continue;
-    const teamSnap = await db
-      .collection("project_members")
-      .where("project_id", "in", chunk)
-      .limit(200 * chunk.length)
-      .get();
-    for (const doc of teamSnap.docs) {
-      const mid = doc.data()?.member_id;
-      if (mid) ids.add(mid);
-    }
+  for (const mid of await listMemberIdsForProjectsPg([...projectIds])) {
+    if (mid) ids.add(mid);
   }
 
   return ids;

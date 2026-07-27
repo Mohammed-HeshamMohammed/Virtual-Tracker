@@ -1,5 +1,5 @@
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
 import { isManagementRole } from "../../http/auth-context.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import { canCreateTransferRequests } from "../hierarchy/hierarchy-placement.js";
 import { hasHierarchyAssignmentRestriction } from "../hierarchy/hierarchy-placement.js";
@@ -92,8 +92,8 @@ async function getDashboardSummaryCounts(db, viewer) {
   const globalScope = PROJECT_SCOPE_ROLES.has(normalized);
 
   if (globalScope) {
-    const [projects, tasks, members, teams] = await Promise.all([
-      db.collection(COLLECTIONS.projects).count().get(),
+    const [projectRows, tasks, members, teams] = await Promise.all([
+      pgQuery("SELECT COUNT(*)::int AS count FROM projects"),
       db.collection("tasks").count().get(),
       db.collection("members").count().get(),
       db.collection("teams").count().get(),
@@ -101,15 +101,15 @@ async function getDashboardSummaryCounts(db, viewer) {
     return {
       ready: true,
       scoped: false,
-      projects: projects.data().count,
+      projects: projectRows[0]?.count ?? 0,
       tasks: tasks.data().count,
       members: members.data().count,
       teams: teams.data().count,
     };
   }
 
-  const [projectMemberships, assignedTasks, teamMemberships] = await Promise.all([
-    db.collection("project_members").where("member_id", "==", viewer.memberId).count().get(),
+  const [projectMembershipRows, assignedTasks, teamMemberships] = await Promise.all([
+    pgQuery("SELECT COUNT(*)::int AS count FROM project_members WHERE member_id = $1", [viewer.memberId]),
     db.collection("tasks").where("assigned_to", "==", viewer.memberId).count().get(),
     db.collection("team_members").where("member_id", "==", viewer.memberId).count().get(),
   ]);
@@ -117,7 +117,7 @@ async function getDashboardSummaryCounts(db, viewer) {
   return {
     ready: true,
     scoped: true,
-    projects: projectMemberships.data().count,
+    projects: projectMembershipRows[0]?.count ?? 0,
     tasks: assignedTasks.data().count,
     members: null,
     teams: teamMemberships.data().count,

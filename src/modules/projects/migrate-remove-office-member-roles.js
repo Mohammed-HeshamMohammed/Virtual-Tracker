@@ -1,5 +1,6 @@
 import { getDb } from "../../config/firebase.js";
 import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 
 const MARKER_DOC = "project_office_member_roles_removed";
 
@@ -22,40 +23,24 @@ export async function removeProjectOfficeMemberRoles() {
     return { success: true, alreadyCompleted: true, deleted: 0 };
   }
 
-  const linksSnap = await db.collection("project_members").get();
+  // project_members is Postgres-backed now (see PROPOSAL-Projects-Migration-to-PostgreSQL.md).
+  const rows = await pgQuery("SELECT id, project_role FROM project_members");
+  const idsToDelete = rows.filter((row) => isOfficeMemberProjectRole(row.project_role)).map((row) => row.id);
   let deleted = 0;
-  let batch = db.batch();
-  let batchCount = 0;
-
-  for (const doc of linksSnap.docs) {
-    const data = doc.data() || {};
-    const role = data.project_role ?? data.projectRole;
-    if (!isOfficeMemberProjectRole(role)) continue;
-
-    batch.delete(doc.ref);
-    batchCount += 1;
-    deleted += 1;
-
-    if (batchCount >= 400) {
-      await batch.commit();
-      batch = db.batch();
-      batchCount = 0;
-    }
-  }
-
-  if (batchCount > 0) {
-    await batch.commit();
+  if (idsToDelete.length > 0) {
+    await pgQuery("DELETE FROM project_members WHERE id = ANY($1::uuid[])", [idsToDelete]);
+    deleted = idsToDelete.length;
   }
 
   await setSystemMetaDoc(db, MARKER_DOC, {
     completed: true,
     deletedCount: deleted,
-    scannedCount: linksSnap.size,
+    scannedCount: rows.length,
     completedAt: new Date().toISOString(),
   });
 
   console.info(
-    `[project-office-member-roles-migration] Scanned ${linksSnap.size} project member links; deleted ${deleted}.`,
+    `[project-office-member-roles-migration] Scanned ${rows.length} project member links; deleted ${deleted}.`,
   );
 
   return { success: true, deleted };

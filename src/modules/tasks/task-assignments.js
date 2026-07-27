@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { validateAssigneeWorkLimits } from "./task-workload-validation.js";
-import { COLLECTIONS } from "../../lib/firestore/collections.js";
 import { taskChildCollectionRef } from "../../lib/firestore/task-subcollections.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
+import { getProjectPg, listProjectIdsForMemberPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
 
 const REVIEW_CENTER_ROLES = new Set([
   "owner",
@@ -176,13 +176,8 @@ async function getDirectParentIds(db, memberId) {
 
 async function getProjectMemberIds(db, projectId) {
   if (!projectId) return [];
-  const snap = await db
-    .collection("project_members")
-    .where("project_id", "==", projectId)
-    .limit(200)
-    .get()
-    .catch(() => ({ docs: [] }));
-  return snap.docs?.map((d) => d.data()?.member_id).filter(Boolean) ?? [];
+  const rows = await listProjectMembersPg(projectId).catch(() => []);
+  return rows.map((r) => r.member_id).filter(Boolean);
 }
 
 async function getProjectLeadershipIds(db, projectId, excludeMemberId) {
@@ -663,13 +658,7 @@ async function getClientProjectIds(db, memberId) {
   const projects = memberDoc.data()?.projects;
   if (Array.isArray(projects) && projects.length > 0) return projects;
 
-  const pmSnap = await db
-    .collection("project_members")
-    .where("member_id", "==", memberId)
-    .limit(100)
-    .get()
-    .catch(() => ({ docs: [] }));
-  return pmSnap.docs?.map((d) => d.data()?.project_id).filter(Boolean) ?? [];
+  return listProjectIdsForMemberPg(memberId).catch(() => []);
 }
 
 async function isAssignmentVisible(db, viewerMemberId, viewerRole, assignment, task) {
@@ -717,8 +706,8 @@ async function enrichAssignmentRow(db, assignment, trackingByKey, caches) {
   async function loadProject(projectId) {
     if (!projectId) return { name: "" };
     if (projectCache.has(projectId)) return projectCache.get(projectId);
-    const snap = await db.collection(COLLECTIONS.projects).doc(projectId).get();
-    const name = snap.exists ? snap.data()?.name ?? "" : "";
+    const project = await getProjectPg(projectId);
+    const name = project?.name ?? "";
     projectCache.set(projectId, { name });
     return projectCache.get(projectId);
   }

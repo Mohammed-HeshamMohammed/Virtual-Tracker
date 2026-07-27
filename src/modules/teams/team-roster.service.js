@@ -19,6 +19,7 @@ import { getManageableMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { generateUUID, now } from "../schema/catalog/index.js";
 import { applyTeamWriteMetadata, validateForeignKeys } from "../schema/services/schema-crud.service.js";
+import { getProjectPg, linkTeamProjectPg, listProjectIdsForTeamPg, unlinkTeamProjectPg } from "../../lib/postgres/projects-postgres.service.js";
 
 export function validateTeamRoster(memberIds, leadIds) {
   if (!Array.isArray(memberIds) || memberIds.length === 0) {
@@ -218,19 +219,17 @@ export async function createTeamInitialRoster(db, viewer, teamId, roster) {
     batch.set(db.collection("team_members").doc(payload.id), payload);
   }
 
-  for (const projectId of roster.projectIds) {
-    const payload = {
-      id: generateUUID(),
-      team_id: teamId,
-      project_id: projectId,
-      assigned_at: now(),
-    };
-    applyTeamWriteMetadata("team-projects", payload, viewer.memberId, true);
-    await validateForeignKeys(db, payload, { entityKey: "team-projects" });
-    batch.set(db.collection("team_projects").doc(payload.id), payload);
-  }
-
   await batch.commit();
+
+  // team_projects is Postgres-backed now (see PROPOSAL-Projects-Migration-to-PostgreSQL.md) -
+  // can't share the Firestore batch above with team_members, so this runs as a
+  // separate step. project_id existence is checked directly against Postgres
+  // instead of the generic validateForeignKeys (which still only knows how to
+  // check Firestore collections).
+  for (const projectId of roster.projectIds) {
+    if (!(await getProjectPg(projectId))) throw new Error("project_id references missing project");
+    await linkTeamProjectPg(teamId, projectId, viewer.memberId);
+  }
 }
 
 /** Replace team roster on edit (Owner or team lead). */
@@ -244,9 +243,9 @@ export async function syncTeamRoster(db, viewer, teamId, roster) {
     throw err;
   }
 
-  const [existingMembersSnap, existingProjectsSnap] = await Promise.all([
+  const [existingMembersSnap, existingProjectIdsList] = await Promise.all([
     db.collection("team_members").where("team_id", "==", teamId).get(),
-    db.collection("team_projects").where("team_id", "==", teamId).get(),
+    listProjectIdsForTeamPg(teamId),
   ]);
 
   const existingMemberIds = new Set(
@@ -297,31 +296,19 @@ export async function syncTeamRoster(db, viewer, teamId, roster) {
     batch.set(db.collection("team_members").doc(payload.id), payload);
   }
 
-  for (const doc of existingProjectsSnap.docs) {
-    const row = doc.data() || {};
-    const projectId = typeof row.project_id === "string" ? row.project_id : "";
-    if (!projectId || !desiredProjectIds.has(projectId)) {
-      batch.delete(doc.ref);
+  await batch.commit();
+
+  // team_projects is Postgres-backed now - separate step, same reasoning as
+  // createTeamInitialRoster above.
+  const existingProjectIds = new Set(existingProjectIdsList);
+  for (const projectId of existingProjectIds) {
+    if (!desiredProjectIds.has(projectId)) {
+      await unlinkTeamProjectPg(teamId, projectId);
     }
   }
-
-  const existingProjectIds = new Set(
-    existingProjectsSnap.docs
-      .map((doc) => doc.data()?.project_id)
-      .filter((id) => typeof id === "string"),
-  );
   for (const projectId of roster.projectIds) {
     if (existingProjectIds.has(projectId)) continue;
-    const payload = {
-      id: generateUUID(),
-      team_id: teamId,
-      project_id: projectId,
-      assigned_at: now(),
-    };
-    applyTeamWriteMetadata("team-projects", payload, viewer.memberId, true);
-    await validateForeignKeys(db, payload, { entityKey: "team-projects" });
-    batch.set(db.collection("team_projects").doc(payload.id), payload);
+    if (!(await getProjectPg(projectId))) throw new Error("project_id references missing project");
+    await linkTeamProjectPg(teamId, projectId, viewer.memberId);
   }
-
-  await batch.commit();
 }

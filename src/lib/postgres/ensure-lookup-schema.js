@@ -392,6 +392,115 @@ GROUP BY task_id`,
   sent_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_alert_subject_type ON activity_alert_log (subject_member_id, alert_type, sent_at DESC)`,
+  // ─── Projects domain (migrated from Firestore - see PROPOSAL-Projects-Migration-to-PostgreSQL.md) ───
+  // Column set pulled from the live Firestore field catalog
+  // (src/modules/schema/catalog/{projects,clients,teams}/index.js), not invented.
+  // The FK from time_entries.project_id is deliberately NOT added here - it must
+  // only go on after the one-time backfill script (scripts/migrate-projects-to-postgres.js)
+  // has run and confirmed no orphaned project_id values, otherwise this statement
+  // would fail on every boot before that script has ever run and block everything
+  // listed after it in this array (this loop stops at the first failing statement).
+  `CREATE TABLE IF NOT EXISTS projects (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                    VARCHAR(200) NOT NULL,
+  status                  VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'paused', 'archived')),
+  billable                BOOLEAN NOT NULL DEFAULT true,
+  disable_activity        BOOLEAN NOT NULL DEFAULT false,
+  allow_project_tracking  BOOLEAN NOT NULL DEFAULT true,
+  disable_idle_time       BOOLEAN NOT NULL DEFAULT false,
+  client_id               UUID,
+  managers_notes          TEXT,
+  users_notes             TEXT,
+  viewers_notes           TEXT,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by              UUID,
+  updated_by              UUID,
+  archived_by             UUID,
+  archived_at             TIMESTAMPTZ
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,
+  `CREATE TABLE IF NOT EXISTS project_members (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  member_id     UUID NOT NULL,
+  project_role  VARCHAR(40),
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by   UUID,
+  updated_by    UUID,
+  UNIQUE (project_id, member_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members (project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_pm_member ON project_members (member_id)`,
+  // type/based_on/resets etc. exist in the live Firestore doc today but were never
+  // read by overview-service.js - that omission is the root cause of the budget-type
+  // display bug (see proposal doc "Related Bug" section). Carrying them forward here.
+  `CREATE TABLE IF NOT EXISTS project_budgets (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id                  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  type                        VARCHAR(20) NOT NULL DEFAULT 'Cost based' CHECK (type IN ('Cost based', 'Hours based')),
+  based_on                    VARCHAR(20),
+  cost                        NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  notify_project_members      BOOLEAN NOT NULL DEFAULT false,
+  notify_at_pct               NUMERIC(5, 2),
+  who_to_notify               VARCHAR(255),
+  stop_timers_when_reached    BOOLEAN NOT NULL DEFAULT false,
+  stop_timers_at_pct          NUMERIC(5, 2),
+  resets                      VARCHAR(20) NOT NULL DEFAULT 'Never' CHECK (resets IN ('Never', 'Weekly', 'Monthly')),
+  start_date                  DATE,
+  include_non_billable_time   BOOLEAN NOT NULL DEFAULT true,
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by                  UUID,
+  updated_by                  UUID
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_pb_project ON project_budgets (project_id)`,
+  // Real shape mirrors project_budgets, NOT a bare daily/weekly integer pair - matches
+  // the live Firestore doc. Note: the only current reader (overview-service.js) treats
+  // `cost` as a max-member headcount, not a budget amount - see proposal doc "Related
+  // Bug" #6. Schema carried forward as-is; the semantic mismatch is a follow-up decision,
+  // not something to silently redesign during a storage migration.
+  `CREATE TABLE IF NOT EXISTS project_member_limits (
+  id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id              UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  member_id               UUID NOT NULL,
+  type                    VARCHAR(20),
+  based_on                VARCHAR(20),
+  cost                    NUMERIC(12, 2),
+  resets                  VARCHAR(20) NOT NULL DEFAULT 'Never',
+  start_date              DATE,
+  notify_at_pct           NUMERIC(5, 2),
+  notify_project_members  BOOLEAN NOT NULL DEFAULT true,
+  created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by              UUID,
+  updated_by              UUID,
+  UNIQUE (project_id, member_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_pml_project ON project_member_limits (project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_pml_member ON project_member_limits (member_id)`,
+  `CREATE TABLE IF NOT EXISTS client_projects (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id     UUID NOT NULL,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by   UUID,
+  UNIQUE (client_id, project_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_cp_client ON client_projects (client_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_cp_project ON client_projects (project_id)`,
+  `CREATE TABLE IF NOT EXISTS team_projects (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id       UUID NOT NULL,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  assigned_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by   UUID,
+  UNIQUE (team_id, project_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_tp_team ON team_projects (team_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_tp_project ON team_projects (project_id)`,
   `CREATE TABLE IF NOT EXISTS agent_link_sessions (
   link_token               TEXT PRIMARY KEY,
   agent_secret             TEXT NOT NULL,

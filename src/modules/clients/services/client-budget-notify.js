@@ -7,6 +7,7 @@ import {
   normalizeBudget,
 } from "./budget-logic.js";
 import { resolveClientBudgetUsage } from "./client-budget-usage.js";
+import { listClientIdsForProjectPg, listProjectIdsForClientPg, listProjectMembersPg } from "../../../lib/postgres/projects-postgres.service.js";
 
 const AUTOMATION_COLLECTION = "client_automation_state";
 const NOTIFY_TYPE = "client_budget_threshold";
@@ -100,17 +101,11 @@ export async function resolveClientBudgetNotifyRecipients(db, clientId, clientRo
   const linkedMemberId = String(clientRow?.member_id ?? clientRow?.memberId ?? "").trim();
   if (linkedMemberId) recipients.add(linkedMemberId);
 
-  const linksSnap = await db.collection("client_projects").where("client_id", "==", clientId).limit(50).get();
-  for (const link of linksSnap.docs) {
-    const projectId = String(link.data()?.project_id ?? link.data()?.projectId ?? "").trim();
-    if (!projectId) continue;
-    const membersSnap = await db
-      .collection("project_members")
-      .where("project_id", "==", projectId)
-      .limit(50)
-      .get();
-    for (const memberDoc of membersSnap.docs) {
-      const memberId = String(memberDoc.data()?.member_id ?? memberDoc.data()?.memberId ?? "").trim();
+  const projectIds = (await listProjectIdsForClientPg(clientId)).map((id) => String(id).trim()).filter(Boolean);
+  for (const projectId of projectIds) {
+    const memberRows = await listProjectMembersPg(projectId);
+    for (const row of memberRows) {
+      const memberId = String(row.member_id ?? "").trim();
       if (!memberId) continue;
       const roleName = await resolveMemberRoleName(db, memberId);
       if (MANAGEMENT_ROLES.has(normalizeRole(roleName))) recipients.add(memberId);
@@ -199,11 +194,9 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
 export async function maybeNotifyClientBudgetsForProject(db, projectId) {
   if (!projectId) return [];
 
-  const linksSnap = await db.collection("client_projects").where("project_id", "==", projectId).limit(20).get();
+  const clientIds = (await listClientIdsForProjectPg(projectId)).map((id) => String(id).trim()).filter(Boolean);
   const results = [];
-  for (const link of linksSnap.docs) {
-    const clientId = String(link.data()?.client_id ?? link.data()?.clientId ?? "").trim();
-    if (!clientId) continue;
+  for (const clientId of clientIds) {
     results.push(await evaluateAndNotifyClientBudget(db, clientId));
   }
   return results;

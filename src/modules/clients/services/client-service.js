@@ -1,5 +1,11 @@
-import { COLLECTIONS } from "../../../lib/firestore/collections.js";
 import { FieldValue } from "firebase-admin/firestore";
+import {
+  getProjectPg,
+  linkClientProjectPg,
+  listProjectIdsForClientPg,
+  unlinkClientProjectPg,
+} from "../../../lib/postgres/projects-postgres.service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 import { generateUUID, now } from "../../schema/catalog/index.js";
 import {
   evaluateAndNotifyClientBudget,
@@ -233,13 +239,7 @@ export function mapClientResponse(clientDoc, budgetDoc, invoicingDoc, projectIds
 }
 
 async function loadProjectIdsForClient(db, clientId) {
-  const snap = await db.collection("client_projects").where("client_id", "==", clientId).get();
-  return snap.docs
-    .map((doc) => {
-      const row = doc.data() || {};
-      return String(row.project_id ?? row.projectId ?? "").trim();
-    })
-    .filter(Boolean);
+  return (await listProjectIdsForClientPg(clientId)).map((id) => String(id).trim()).filter(Boolean);
 }
 
 async function assertMemberExists(db, memberId) {
@@ -250,10 +250,8 @@ async function assertMemberExists(db, memberId) {
 
 async function assertProjectsExist(db, projectIds) {
   if (!projectIds.length) return;
-  const refs = projectIds.map((id) => db.collection(COLLECTIONS.projects).doc(id));
-  const snaps = await db.getAll(...refs);
-  for (const snap of snaps) {
-    if (!snap.exists) throw new Error("projects contains missing project id");
+  for (const id of projectIds) {
+    if (!(await getProjectPg(id))) throw new Error("projects contains missing project id");
   }
 }
 
@@ -358,45 +356,19 @@ export async function upsertClientInvoicing(db, clientId, invoicing, invoicingId
 
 export async function syncClientProjects(db, clientId, projectIds, actorId) {
   const desired = new Set(projectIds);
-  const snap = await db.collection("client_projects").where("client_id", "==", clientId).get();
-  const batch = db.batch();
-  let writes = 0;
+  const existing = new Set(await listProjectIdsForClientPg(clientId));
 
-  for (const doc of snap.docs) {
-    const row = doc.data() || {};
-    const projectId = String(row.project_id ?? row.projectId ?? "").trim();
-    if (!desired.has(projectId)) {
-      batch.delete(doc.ref);
-      writes += 1;
-    }
+  for (const projectId of existing) {
+    if (!desired.has(projectId)) await unlinkClientProjectPg(clientId, projectId);
   }
-
-  const existing = new Set(
-    snap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return String(row.project_id ?? row.projectId ?? "").trim();
-    }),
-  );
-
   for (const projectId of desired) {
     if (existing.has(projectId)) continue;
-    const id = generateUUID();
-    const ref = db.collection("client_projects").doc(id);
-    batch.set(ref, {
-      id,
-      client_id: clientId,
-      project_id: projectId,
-      assigned_at: now(),
-      ...(actorId ? { assigned_by: actorId } : {}),
-    });
-    writes += 1;
+    await linkClientProjectPg(clientId, projectId, actorId || null);
   }
-
-  if (writes > 0) await batch.commit();
 }
 
 export async function listClientsEnriched(db) {
-  const [clientsSnap, budgetsSnap, invoicingSnap, linksSnap] = await Promise.all([
+  const [clientsSnap, budgetsSnap, invoicingSnap, clientProjectRows] = await Promise.all([
     db.collection("clients")
       .select(
         "status",
@@ -462,15 +434,7 @@ export async function listClientsEnriched(db) {
       )
       .limit(1000)
       .get(),
-    db.collection("client_projects")
-      .select(
-        "client_id",
-        "clientId",
-        "project_id",
-        "projectId"
-      )
-      .limit(2000)
-      .get(),
+    pgQuery("SELECT client_id, project_id FROM client_projects LIMIT 2000"),
   ]);
 
   const budgetByClient = new Map();
@@ -488,10 +452,9 @@ export async function listClientsEnriched(db) {
   }
 
   const projectsByClient = new Map();
-  for (const doc of linksSnap.docs) {
-    const row = doc.data() || {};
-    const cid = String(row.client_id ?? row.clientId ?? "").trim();
-    const pid = String(row.project_id ?? row.projectId ?? "").trim();
+  for (const row of clientProjectRows) {
+    const cid = String(row.client_id ?? "").trim();
+    const pid = String(row.project_id ?? "").trim();
     if (!cid || !pid) continue;
     if (!projectsByClient.has(cid)) projectsByClient.set(cid, []);
     projectsByClient.get(cid).push(pid);

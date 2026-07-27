@@ -4,6 +4,7 @@ import { getManageableMemberIds, getVisibleMemberIds } from "../modules/member-r
 import { isEmployeeRole } from "./role-hierarchy.js";
 import { canAccessMember } from "./authorization.js";
 import { canBeTeamMember } from "./team-member-assign-policy.js";
+import { listTeamIdsForProjectPg } from "../lib/postgres/projects-postgres.service.js";
 
 /** Owner-tier roles can manage any team. */
 export function canManageAllTeams(roleName) {
@@ -200,13 +201,8 @@ export async function isMemberOnTeam(db, teamId, targetMemberId) {
  */
 export async function isProjectOnTeam(db, teamId, projectId) {
   if (!teamId || !projectId) return false;
-  const snap = await db
-    .collection("team_projects")
-    .where("team_id", "==", teamId)
-    .where("project_id", "==", projectId)
-    .limit(1)
-    .get();
-  return !snap.empty;
+  const teamIds = await listTeamIdsForProjectPg(projectId);
+  return teamIds.includes(teamId);
 }
 
 /** Team roster assign: visible member or existing roster row when editing. */
