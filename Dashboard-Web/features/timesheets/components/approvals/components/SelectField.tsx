@@ -20,10 +20,10 @@ export function SelectField<T extends string>({ value, onChange, options }: Sele
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+        className="w-full flex items-center justify-between px-3 py-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-700 dark:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
       >
         <span>{label}</span>
-        <ChevronDown className={cn("w-4 h-4 text-slate-400 transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("w-4 h-4 text-slate-400 dark:text-slate-500 transition-transform", open && "rotate-180")} />
       </button>
       <AnimatePresence>
         {open && (
@@ -34,7 +34,7 @@ export function SelectField<T extends string>({ value, onChange, options }: Sele
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: -4 }}
               transition={{ duration: 0.12 }}
-              className="absolute left-0 top-full mt-1 z-20 w-full bg-white rounded-xl border border-slate-200 shadow-lg py-1"
+              className="absolute left-0 top-full mt-1 z-20 w-full bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-lg py-1"
             >
               {options.map((opt) => (
                 <button
@@ -45,8 +45,8 @@ export function SelectField<T extends string>({ value, onChange, options }: Sele
                     setOpen(false)
                   }}
                   className={cn(
-                    "w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-50 transition-colors",
-                    opt.value === value && "bg-blue-50 text-blue-600"
+                    "w-full flex items-center justify-between px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors",
+                    opt.value === value && "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400"
                   )}
                 >
                   {opt.label}

@@ -34,8 +34,8 @@ function ToolbarChip({
         className={cn(
           "inline-flex h-8 shrink-0 items-center rounded-md px-2.5 text-xs font-medium transition-colors sm:text-sm",
           active
-            ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200"
-            : "text-slate-500 hover:bg-white/80 hover:text-slate-700",
+            ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600"
+            : "text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-700/60 hover:text-slate-700 dark:hover:text-slate-200",
         )}
       >
         {children}
@@ -54,8 +54,8 @@ function ToolbarChip({
         className={cn(
           "inline-flex h-8 shrink-0 items-center rounded-md px-2.5 text-xs font-medium transition-colors sm:text-sm",
           active
-            ? "bg-white text-slate-800 shadow-sm ring-1 ring-slate-200"
-            : "text-slate-500 hover:bg-white/80 hover:text-slate-700",
+            ? "bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm ring-1 ring-slate-200 dark:ring-slate-600"
+            : "text-slate-500 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-700/60 hover:text-slate-700 dark:hover:text-slate-200",
         )}
       >
         {children}
@@ -117,10 +117,10 @@ export function ActivityToolbarSecondaryRow({
   })
 
   return (
-    <div className="mt-2.5 flex flex-col gap-2 border-t border-slate-100 pt-2.5 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mt-2.5 flex flex-col gap-2 border-t border-slate-100 dark:border-slate-800 pt-2.5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         <div
-          className="flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5"
+          className="flex shrink-0 items-center rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-0.5"
           role="group"
           aria-label="Date range"
         >
@@ -146,7 +146,7 @@ export function ActivityToolbarSecondaryRow({
               ariaExpanded={showDayPicker}
               ariaHasPopup="dialog"
             >
-              <Calendar className="mr-1 h-3.5 w-3.5 shrink-0 text-blue-600" />
+              <Calendar className="mr-1 h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
               Pick date
             </ToolbarChip>
           </ScreenshotDayPickerPopover>
@@ -158,7 +158,7 @@ export function ActivityToolbarSecondaryRow({
           <button
             type="button"
             onClick={onClearSearch}
-            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/60"
           >
             <X className="h-3.5 w-3.5" />
             Clear search
@@ -169,7 +169,7 @@ export function ActivityToolbarSecondaryRow({
           <button
             type="button"
             onClick={onResetFilters}
-            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+            className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 text-xs font-medium text-slate-600 dark:text-slate-300 transition-colors hover:bg-slate-50 dark:hover:bg-slate-700/60"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Reset filters
@@ -177,15 +177,15 @@ export function ActivityToolbarSecondaryRow({
         ) : null}
       </div>
 
-      <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-500">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
         {memberLabel ? (
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">{memberLabel}</span>
+          <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-1 font-medium text-slate-600 dark:text-slate-300">{memberLabel}</span>
         ) : null}
-        <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700 ring-1 ring-emerald-100">
+        <span className="rounded-full bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 font-medium text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-100 dark:ring-emerald-900/60">
           {periodLabel}
         </span>
         {!isAllDays ? (
-          <span className="hidden text-slate-400 sm:inline">{formattedDay}</span>
+          <span className="hidden text-slate-400 dark:text-slate-500 sm:inline">{formattedDay}</span>
         ) : null}
       </div>
     </div>

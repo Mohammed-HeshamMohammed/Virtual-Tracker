@@ -17,7 +17,7 @@ export function ViewToggle({
 
   return (
     <div
-      className="relative inline-flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
+      className="relative inline-flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-slate-800 p-0.5"
       role="tablist"
       aria-label="Dashboard scope"
     >
@@ -33,11 +33,11 @@ export function ViewToggle({
           {view === v ? (
             <motion.div
               layoutId="general-dashboard-view-pill"
-              className="absolute inset-0 rounded-full bg-white shadow-sm"
+              className="absolute inset-0 rounded-full bg-white dark:bg-slate-700 shadow-sm"
               transition={{ type: "spring", stiffness: 500, damping: 30 }}
             />
           ) : null}
-          <span className={cn("relative z-10", view === v ? "text-slate-900" : "text-slate-500 hover:text-slate-700")}>
+          <span className={cn("relative z-10", view === v ? "text-slate-900 dark:text-slate-100" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200")}>
             {v === "me" ? "Me" : "Team"}
           </span>
         </button>

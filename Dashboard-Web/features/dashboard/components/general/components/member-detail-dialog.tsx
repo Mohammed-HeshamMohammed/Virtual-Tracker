@@ -30,11 +30,11 @@ export function MemberDetailDialog({
             <DialogHeader>
               <div className="flex items-center gap-3 pr-8">
                 <div className="relative shrink-0">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 text-sm font-semibold text-slate-600">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
                     {member.initials || memberInitials(member.name)}
                   </div>
                   <span
-                    className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white ${statusColor[member.status]}`}
+                    className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-slate-900 ${statusColor[member.status]}`}
                   />
                 </div>
                 <div className="min-w-0 text-left">
@@ -47,8 +47,8 @@ export function MemberDetailDialog({
               </div>
             </DialogHeader>
             {member.time ? (
-              <p className="text-sm text-slate-600">
-                Session time: <span className="font-semibold text-slate-900">{member.time}</span>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                Session time: <span className="font-semibold text-slate-900 dark:text-slate-100">{member.time}</span>
               </p>
             ) : null}
           </>

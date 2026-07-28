@@ -65,13 +65,13 @@ export function CommandCenter({ onNavigate }: { onNavigate?: (id: string, state?
 
   if (!activeProject) {
     return (
-      <div className="flex min-h-[480px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 px-8 text-center">
-        <p className="text-base font-bold text-slate-900">No projects yet</p>
-        <p className="text-sm text-slate-500">Create a project to populate the Command Center.</p>
+      <div className="flex min-h-[480px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 px-8 text-center">
+        <p className="text-base font-bold text-slate-900 dark:text-slate-100">No projects yet</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">Create a project to populate the Command Center.</p>
         <button
           type="button"
           onClick={() => onNavigate?.("pm-projects")}
-          className="rounded-xl border border-emerald-200 px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50"
+          className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 px-4 py-2 text-sm font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/60"
         >
           Go to Projects
         </button>
@@ -92,11 +92,11 @@ export function CommandCenter({ onNavigate }: { onNavigate?: (id: string, state?
             className="flex items-center justify-between gap-4"
           >
             <div className="flex items-center gap-3">
-              <span className="px-4 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-full uppercase tracking-wide">
+              <span className="px-4 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full uppercase tracking-wide">
                 Last 7 Days
               </span>
               {refreshing && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 dark:text-slate-500">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Refreshing
                 </span>
@@ -105,7 +105,7 @@ export function CommandCenter({ onNavigate }: { onNavigate?: (id: string, state?
             <ProjectSelector projects={projects} selected={d} onSelect={setSelectedProject} />
           </motion.div>
           {error && (
-            <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/60 px-4 py-2 text-sm text-amber-800 dark:text-amber-300">
               <span>Showing cached data — latest refresh failed.</span>
               <button type="button" onClick={retry} className="font-bold underline">
                 Retry

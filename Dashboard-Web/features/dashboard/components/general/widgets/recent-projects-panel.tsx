@@ -39,10 +39,10 @@ export function RecentProjectsPanel({ onNavigate }: { onNavigate?: (id: string) 
               <div className={`h-10 w-1 shrink-0 rounded-full ${color}`} />
               <div className="min-w-0 flex-1">
                 <div className="mb-1 flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-semibold text-slate-800">{project.name}</span>
-                  <span className="shrink-0 text-xs font-medium text-slate-500">{project.progress}%</span>
+                  <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{project.name}</span>
+                  <span className="shrink-0 text-xs font-medium text-slate-500 dark:text-slate-400">{project.progress}%</span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${project.progress}%` }}
@@ -51,7 +51,7 @@ export function RecentProjectsPanel({ onNavigate }: { onNavigate?: (id: string) 
                   />
                 </div>
               </div>
-              <span className="shrink-0 text-[11px] text-slate-400">{project.memberCount} members</span>
+              <span className="shrink-0 text-[11px] text-slate-400 dark:text-slate-500">{project.memberCount} members</span>
             </li>
           )
         })}

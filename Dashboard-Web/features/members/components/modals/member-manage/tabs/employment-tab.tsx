@@ -19,7 +19,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
   return (
     <div className="space-y-8">
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Job details</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Job details</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <ManageableFieldOptionsSelect
             fieldType="jobTitle"
@@ -45,7 +45,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
           <div>
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
               <span className={MODAL_LABEL}>Work address</span>
-              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-600" htmlFor="fallback-id">
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-medium text-slate-600 dark:text-slate-400" htmlFor="fallback-id">
                 <Checkbox
                   checked={state.empMailing}
                   onChange={() => setState(s => ({ ...s, empMailing: !s.empMailing }))}
@@ -65,7 +65,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Hiring details</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Hiring details</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <ManageableFieldOptionsSelect
             fieldType="employmentType"
@@ -108,7 +108,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
                 placeholder="0"
                 className={cn(MODAL_INPUT, "rounded-r-none border-r-0")}
               />
-              <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-500">
+              <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-2.5 text-xs font-medium text-slate-500 dark:text-slate-400">
                 %
               </span>
             </div>
@@ -125,7 +125,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
                 placeholder="0"
                 className={cn(MODAL_INPUT, "rounded-r-none border-r-0")}
               />
-              <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-2.5 text-xs font-medium text-slate-500">
+              <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-2.5 text-xs font-medium text-slate-500 dark:text-slate-400">
                 %
               </span>
             </div>
@@ -134,7 +134,7 @@ export function EmploymentTab({ state, setState }: TabProps) {
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Accounting</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Accounting</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className={MODAL_LABEL}>Tax info</label>
@@ -165,20 +165,20 @@ export function EmploymentTab({ state, setState }: TabProps) {
           <div>
             <div className="mb-1 flex items-center gap-1">
               <label className={MODAL_LABEL}>Currency</label>
-              <Info className="h-3.5 w-3.5 text-slate-400" aria-hidden aria-label="Interactive control" />
+              <Info className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" aria-hidden aria-label="Interactive control" />
             </div>
             <input
               type="text"
               disabled
               placeholder="Currency"
-              className={cn(MODAL_INPUT, "cursor-not-allowed bg-slate-50 text-slate-400")}
+              className={cn(MODAL_INPUT, "cursor-not-allowed bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500")}
             />
           </div>
         </div>
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Timeline</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Timeline</h3>
         <div className="grid gap-4 sm:grid-cols-2" aria-label="Interactive control">
           <div>
             <label className={MODAL_LABEL}>Start date</label>

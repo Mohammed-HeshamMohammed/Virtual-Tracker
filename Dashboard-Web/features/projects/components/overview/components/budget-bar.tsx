@@ -27,7 +27,7 @@ export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBa
 
   return (
     <div className={cn("flex items-center gap-2", mini && "gap-1.5")}>
-      <div className={cn("bg-slate-100 rounded-full overflow-hidden", mini ? "w-16 h-1" : "w-24 h-1.5")}>
+      <div className={cn("bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden", mini ? "w-16 h-1" : "w-24 h-1.5")}>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
@@ -36,9 +36,9 @@ export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBa
         />
       </div>
       {!mini && (
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-slate-500 dark:text-slate-400">
           {fmtBudget(used, type)}
-          <span className="text-slate-300">/{fmtBudget(total, type)}</span>
+          <span className="text-slate-300 dark:text-slate-600">/{fmtBudget(total, type)}</span>
         </span>
       )}
     </div>

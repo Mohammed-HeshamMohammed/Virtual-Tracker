@@ -235,7 +235,7 @@ export function canManageActivityData(role: string): boolean {
 
 /** Default landing page after sign-in — dashboard first for every role. */
 export function defaultNavItemForRole(_role: string): string {
-  return "general"
+  return "command-center"
 }
 
 const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "settings"])

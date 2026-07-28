@@ -34,15 +34,15 @@ export function AppsUrlsPanel({ onNavigate }: { onNavigate?: (id: string) => voi
       <ul className="space-y-3">
         {apps.map((app, i) => (
           <li key={app.name} className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold text-slate-600">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-300">
               {app.name.charAt(0).toUpperCase()}
             </div>
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="truncate text-sm font-semibold text-slate-800">{app.name}</span>
-                <span className="shrink-0 text-xs text-slate-500">{formatSecondsAsHhMm(app.totalSeconds)}</span>
+                <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{app.name}</span>
+                <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">{formatSecondsAsHhMm(app.totalSeconds)}</span>
               </div>
-              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                 <motion.div
                   initial={{ width: 0 }}
                   animate={{ width: `${app.percent}%` }}

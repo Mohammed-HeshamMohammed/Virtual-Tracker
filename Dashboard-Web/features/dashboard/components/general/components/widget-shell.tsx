@@ -62,11 +62,11 @@ export function WidgetShell({
     return (
       <div
         className={cn(
-          "flex h-full min-h-0 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-center shadow-sm",
+          "flex h-full min-h-0 flex-col items-center justify-center rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 text-center shadow-sm",
           className,
         )}
       >
-        <p className="text-sm text-slate-500">{emptyMessage}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{emptyMessage}</p>
       </div>
     )
   }
@@ -109,7 +109,7 @@ export function PanelShell({
       empty={empty}
       emptyMessage={emptyMessage}
       className={cn(
-        "flex h-full min-h-0 flex-col rounded-3xl border border-slate-100 bg-white p-6 shadow-sm sm:p-7",
+        "flex h-full min-h-0 flex-col rounded-3xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm sm:p-7",
         className,
       )}
     >
@@ -124,8 +124,8 @@ export function PanelShell({
             {icon}
           </div>
           <div className="min-w-0">
-            <h3 className="truncate text-base font-bold text-slate-900">{title}</h3>
-            {subtitle ? <p className="truncate text-xs text-slate-500">{subtitle}</p> : null}
+            <h3 className="truncate text-base font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+            {subtitle ? <p className="truncate text-xs text-slate-500 dark:text-slate-400">{subtitle}</p> : null}
           </div>
         </div>
         {action ? <div className="shrink-0">{action}</div> : null}
@@ -160,7 +160,7 @@ export function StatShell({
       error={error}
       onRetry={onRetry}
       className={cn(
-        "relative flex h-full min-h-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-100 bg-white p-5 shadow-sm sm:p-6",
+        "relative flex h-full min-h-0 flex-col justify-between overflow-hidden rounded-3xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm sm:p-6",
         className,
       )}
     >
@@ -173,8 +173,8 @@ export function StatShell({
         {icon}
       </div>
       <div className="min-h-0 flex-1 flex flex-col justify-end">
-        <p className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{value}</p>
-        <p className="mt-1 truncate text-sm font-medium text-slate-500">{label}</p>
+        <p className="text-2xl font-black tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">{value}</p>
+        <p className="mt-1 truncate text-sm font-medium text-slate-500 dark:text-slate-400">{label}</p>
       </div>
     </WidgetShell>
   )

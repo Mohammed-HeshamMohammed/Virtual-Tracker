@@ -11,15 +11,15 @@ export const PORTAL_DROPDOWN_BACKDROP_Z = "z-[601]"
 export const PORTAL_DROPDOWN_MENU_Z = "z-[610]"
 
 export const MODAL_INPUT =
-  "w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
-export const MODAL_LABEL = "mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400"
+  "w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-2 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400 dark:focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:focus:ring-emerald-500"
+export const MODAL_LABEL = "mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500"
 /** Single focus ring around input + suffix (e.g. hrs/wk) */
 export const MODAL_INPUT_GROUP =
-  "flex w-full min-w-0 rounded-lg border border-slate-200 bg-white focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-400"
+  "flex w-full min-w-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus-within:border-blue-400 dark:focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-blue-400 dark:focus-within:ring-emerald-500"
 export const MODAL_INPUT_GROUP_FIELD =
-  "min-w-0 flex-1 border-0 bg-transparent px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+  "min-w-0 flex-1 border-0 bg-transparent px-2.5 py-2 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
 export const MODAL_INPUT_GROUP_SUFFIX =
-  "flex shrink-0 select-none items-center border-l border-slate-200 bg-slate-100 px-3 text-xs text-slate-500"
+  "flex shrink-0 select-none items-center border-l border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400"
 
 export const ALL_MEMBER_COLS = [
   { key: "status", label: "Status" },

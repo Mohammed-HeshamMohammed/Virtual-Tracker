@@ -152,8 +152,8 @@ function Stepper({ step }: { step: number }) {
                   done
                     ? "bg-emerald-500 border-emerald-500 text-white"
                     : active
-                      ? "bg-white border-blue-400 text-blue-500"
-                      : "bg-white border-slate-200 text-slate-400"
+                      ? "bg-white dark:bg-slate-800 border-blue-400 dark:border-emerald-500 text-blue-500 dark:text-emerald-400"
+                      : "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500"
                 )}
               >
                 {done ? <Check className="w-4 h-4" /> : s.n}
@@ -161,7 +161,7 @@ function Stepper({ step }: { step: number }) {
               <span
                 className={cn(
                   "text-[10px] font-bold tracking-wider uppercase text-center leading-tight whitespace-nowrap",
-                  active ? "text-blue-500" : done ? "text-slate-400" : "text-slate-400"
+                  active ? "text-blue-500 dark:text-emerald-400" : done ? "text-slate-400 dark:text-slate-500" : "text-slate-400 dark:text-slate-500"
                 )}
               >
                 {s.label}
@@ -169,7 +169,7 @@ function Stepper({ step }: { step: number }) {
             </div>
             {i < TEAM_STEPS.length - 1 && (
               <div className="w-28 h-0.5 mt-[18px] relative">
-                <div className="absolute inset-0 bg-slate-200 rounded-full" />
+                <div className="absolute inset-0 bg-slate-200 dark:bg-slate-700 rounded-full" />
                 <motion.div
                   className="absolute inset-y-0 left-0 bg-emerald-500 rounded-full"
                   initial={{ width: 0 }}
@@ -555,16 +555,16 @@ export function AddTeamModal({
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={{ scale: 0.96, y: 12, opacity: 0 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className="bg-white rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col"
+        className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between gap-3 px-7 pt-6 pb-2 shrink-0">
-          <h2 className="text-xl font-bold text-slate-800">{isEdit ? "Edit team" : "New team"}</h2>
+          <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{isEdit ? "Edit team" : "New team"}</h2>
           <div className="flex items-center gap-2">
             <MyTeamScopeSwitch />
-            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors" type="button">
-              <X className="w-5 h-5 text-slate-400" />
+            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
+              <X className="w-5 h-5 text-slate-400 dark:text-slate-500" />
             </button>
           </div>
         </div>
@@ -587,7 +587,7 @@ export function AddTeamModal({
                 className="space-y-4 pt-2"
               >
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">
                     TEAM NAME*
                   </label>
                   <input
@@ -596,7 +596,7 @@ export function AddTeamModal({
                     onChange={(e) => setTeamName(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && teamName.trim() && handleNext()}
                     placeholder="Enter a team name"
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 transition-colors" aria-label="Interactive control"
+                    className="w-full px-4 py-3 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-400 dark:focus:border-emerald-500 focus:ring-2 focus:ring-blue-400/20 dark:focus:ring-emerald-500/20 transition-colors" aria-label="Interactive control"
                   />
                 </div>
               </motion.div>
@@ -612,7 +612,7 @@ export function AddTeamModal({
                 className="space-y-5 pt-2"
               >
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
                     MEMBERS
                   </label>
                   <MultiSelect
@@ -628,11 +628,11 @@ export function AddTeamModal({
                 </div>
                 <div>
                   <div className="flex items-center gap-1.5 mb-1.5">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                       TEAM LEADS
                     </label>
                     <Tooltip text="Team leads can manage members, approve timesheets and more.">
-                      <Info className="w-4 h-4 text-slate-400 cursor-default" />
+                      <Info className="w-4 h-4 text-slate-400 dark:text-slate-500 cursor-default" />
                     </Tooltip>
                   </div>
                   <MultiSelect
@@ -644,7 +644,7 @@ export function AddTeamModal({
                       setSaveError(null)
                     }}
                   />
-                  <p className="text-xs text-slate-400 mt-2">
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
                     Only Employee L2 and above can be team leads. At least one member and one team lead are required.
                   </p>
                 </div>
@@ -661,7 +661,7 @@ export function AddTeamModal({
                 className="space-y-5 pt-2"
               >
                 <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
                     PROJECTS
                   </label>
                   <MultiSelect
@@ -684,11 +684,11 @@ export function AddTeamModal({
 
         {/* Schedule report toggle */}
         <div className="px-7 pb-4">
-          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 px-4 py-3">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-slate-800">Schedule weekly report</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Schedule weekly report</span>
               <Tooltip text="Automatically schedule a weekly time and activity report for this team to be sent to you and the team leads.">
-                <Info className="w-4 h-4 text-slate-400 cursor-default" />
+                <Info className="w-4 h-4 text-slate-400 dark:text-slate-500 cursor-default" />
               </Tooltip>
             </div>
             <button
@@ -698,7 +698,7 @@ export function AddTeamModal({
               onClick={() => setScheduleReport((v) => !v)}
               className={cn(
                 "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200",
-                scheduleReport ? "bg-blue-500" : "bg-slate-200"
+                scheduleReport ? "bg-blue-500 dark:bg-emerald-500" : "bg-slate-200 dark:bg-slate-700"
               )}
             >
               {scheduleReport && (
@@ -717,14 +717,14 @@ export function AddTeamModal({
         </div>
 
         {saveError ? (
-          <p className="px-7 pb-2 text-sm text-red-500">{saveError}</p>
+          <p className="px-7 pb-2 text-sm text-red-500 dark:text-red-400">{saveError}</p>
         ) : null}
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-7 py-4 border-t border-slate-100 shrink-0 bg-white rounded-b-2xl">
+        <div className="flex items-center justify-between px-7 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 rounded-b-2xl">
           <button
             onClick={onClose}
-            className="px-5 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors" type="button"
+            className="px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" type="button"
           >
             Cancel
           </button>
@@ -732,7 +732,7 @@ export function AddTeamModal({
             {step > 1 && (
               <button
                 onClick={handleBack}
-                className="px-5 py-2.5 text-sm font-medium text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors" type="button"
+                className="px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" type="button"
               >
                 Back
               </button>
@@ -744,7 +744,7 @@ export function AddTeamModal({
                     (step === 1 && !teamName.trim()) ||
                     (step === 2 && Boolean(rosterValidationError))
                   }
-                  className="px-6 py-2.5 bg-blue-500 text-white text-sm font-semibold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" type="button"
+                  className="px-6 py-2.5 bg-blue-500 dark:bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-600 dark:hover:bg-emerald-500 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" type="button"
                 >
                   Next
                 </button>
@@ -752,7 +752,7 @@ export function AddTeamModal({
                 <button
                   onClick={handleSave}
                   disabled={saving || Boolean(rosterValidationError)}
-                  className="px-6 py-2.5 bg-blue-500 text-white text-sm font-semibold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" type="button"
+                  className="px-6 py-2.5 bg-blue-500 dark:bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-600 dark:hover:bg-emerald-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" type="button"
                 >
                   {saving ? "Saving…" : isEdit ? "Save changes" : "Save"}
                 </button>

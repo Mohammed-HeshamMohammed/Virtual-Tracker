@@ -75,7 +75,7 @@ export function TransferAcceptForm({ token }: { token: string }) {
 
   if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-600 shadow-sm">
+      <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-8 text-center text-sm text-slate-600 dark:text-slate-400 shadow-sm">
         Loading invitation…
       </div>
     )
@@ -83,7 +83,7 @@ export function TransferAcceptForm({ token }: { token: string }) {
 
   if (pageError) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-8 text-center text-sm text-amber-900 shadow-sm">
+      <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/60 p-8 text-center text-sm text-amber-900 dark:text-amber-300 shadow-sm">
         {pageError}
       </div>
     )
@@ -91,7 +91,7 @@ export function TransferAcceptForm({ token }: { token: string }) {
 
   if (done) {
     return (
-      <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-8 text-center text-sm text-emerald-900 shadow-sm">
+      <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/60 p-8 text-center text-sm text-emerald-900 dark:text-emerald-300 shadow-sm">
         You have joined the team. Redirecting…
       </div>
     )

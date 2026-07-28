@@ -31,12 +31,12 @@ export function BudgetsPanel() {
         {budgets.map((budget, i) => (
           <li key={budget.id}>
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="truncate text-sm font-semibold text-slate-800">{budget.name}</span>
-              <span className="shrink-0 text-xs text-slate-500">
+              <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{budget.name}</span>
+              <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
                 {formatUsd0(budget.remaining)} left · {formatUsd0(budget.total)}
               </span>
             </div>
-            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
               <motion.div
                 initial={{ width: 0 }}
                 animate={{ width: `${budget.spentPercent}%` }}

@@ -148,31 +148,31 @@ export function InviteManageModal({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.97, opacity: 0, y: 10 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="flex max-h-[min(90vh,52rem)] w-full max-w-208 flex-col rounded-2xl bg-white shadow-2xl min-h-0"
+            className="flex max-h-[min(90vh,52rem)] w-full max-w-208 flex-col rounded-2xl bg-white dark:bg-slate-900 shadow-2xl min-h-0"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
                   <ChevronLeft className="h-4 w-4" />
                   Invites
                 </button>
-                <span className="hidden text-slate-300 sm:inline">/</span>
-                <h1 className="truncate text-base font-bold text-slate-900 sm:text-lg">{invite.email}</h1>
+                <span className="hidden text-slate-300 dark:text-slate-700 sm:inline">/</span>
+                <h1 className="truncate text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">{invite.email}</h1>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <div className="relative">
-                  <button type="button" onClick={() => setHeaderMenuOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+                  <button type="button" onClick={() => setHeaderMenuOpen((v) => !v)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700/60">
                     Actions
-                    <ChevronDown className="h-4 w-4 text-slate-500" />
+                    <ChevronDown className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                   </button>
                   {headerMenuOpen && (
                     <>
                       <div className="fixed inset-0 z-72" aria-hidden onClick={() => setHeaderMenuOpen(false)} />
-                      <div className="absolute right-0 top-full z-81 mt-1 w-52 rounded-xl border border-slate-100 bg-white py-1 shadow-xl">
-                        <button type="button" onClick={onHeaderManageProfile} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 hover:bg-slate-50">
-                          <Settings className="h-4 w-4 shrink-0 text-slate-400" />
+                      <div className="absolute right-0 top-full z-81 mt-1 w-52 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-xl">
+                        <button type="button" onClick={onHeaderManageProfile} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/60">
+                          <Settings className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
                           Manage profile fields
                         </button>
                       </div>
@@ -183,7 +183,7 @@ export function InviteManageModal({
                   type="button"
                   disabled={busy || isPendingAccount}
                   onClick={() => void handleSave()}
-                  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 disabled:opacity-60"
+                  className="rounded-lg bg-blue-500 dark:bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 dark:hover:bg-emerald-500 disabled:opacity-60"
                 >
                   {busy ? "Saving…" : "Save changes"}
                 </button>
@@ -191,7 +191,7 @@ export function InviteManageModal({
             </div>
 
             {/* Tabs */}
-            <div className="shrink-0 overflow-x-auto border-b border-slate-200 px-4">
+            <div className="shrink-0 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-4">
               <div className="flex min-w-max gap-1">
                 {MANAGE_MODAL_TABS.map((t) => (
                   <button
@@ -200,7 +200,7 @@ export function InviteManageModal({
                     onClick={() => setActiveTab(t.id)}
                     className={cn(
                       "border-b-2 px-3 py-3 text-xs font-semibold tracking-wide transition-colors sm:px-4 sm:text-sm",
-                      activeTab === t.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-800",
+                      activeTab === t.id ? "border-blue-500 dark:border-emerald-500 text-blue-600 dark:text-emerald-400" : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100",
                     )}
                   >
                     {t.label}
@@ -210,13 +210,13 @@ export function InviteManageModal({
             </div>
 
             {/* Invite Info Bar */}
-            <div className="flex shrink-0 items-center gap-4 border-b border-slate-100 bg-slate-50/40 px-5 py-3.5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                <Mail className="h-5 w-5 text-blue-500" />
+            <div className="flex shrink-0 items-center gap-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 px-5 py-3.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950/60">
+                <Mail className="h-5 w-5 text-blue-500 dark:text-blue-400" />
               </div>
-              <div className="hidden h-10 w-px shrink-0 bg-slate-200 sm:block" aria-hidden />
+              <div className="hidden h-10 w-px shrink-0 bg-slate-200 dark:bg-slate-700 sm:block" aria-hidden />
               <div className="min-w-0 flex-1 text-sm leading-snug">
-                <span className="break-all text-slate-600">{invite.email}</span>
+                <span className="break-all text-slate-600 dark:text-slate-300">{invite.email}</span>
               </div>
             </div>
 
@@ -224,17 +224,17 @@ export function InviteManageModal({
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}
             >
               {isPendingAccount && (
-                <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/60 px-3 py-2 text-sm text-amber-900 dark:text-amber-300">
                   This row is a pre-provisioned account: the user can sign in but has not completed first login yet. Remove here to delete the
                   pending Auth user and this row; role and pay cannot be edited from this list.
                 </div>
               )}
-              {saveError && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{saveError}</div>}
+              {saveError && <div className="mb-4 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-3 py-2 text-sm text-red-800 dark:text-red-300">{saveError}</div>}
 
               {activeTab === "info" && (
                 <div className="space-y-6">
                   <section>
-                    <h3 className="mb-3 text-sm font-bold text-slate-800">Identity</h3>
+                    <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Identity</h3>
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="sm:col-span-2">
                         <label className={MODAL_LABEL} htmlFor="fallback-id">Email</label>
@@ -265,14 +265,14 @@ export function InviteManageModal({
                     />
                   </div>
                   <div>
-                    <h3 className="mb-2 text-sm font-bold text-slate-800">Projects</h3>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    <h3 className="mb-2 text-sm font-bold text-slate-800 dark:text-slate-100">Projects</h3>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                       {invite.projects === 0 ? "No projects assigned" : `${invite.projects} project(s)`}
                     </div>
                   </div>
                   <div>
-                    <h3 className="mb-2 text-sm font-bold text-slate-800">Teams</h3>
-                    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    <h3 className="mb-2 text-sm font-bold text-slate-800 dark:text-slate-100">Teams</h3>
+                    <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                       {invite.teams || "None"}
                     </div>
                   </div>
@@ -287,7 +287,7 @@ export function InviteManageModal({
                   </div>
                   <div className="flex flex-wrap items-center gap-3 opacity-60">
                     <Toggle checked={false} onChange={() => {}} />
-                    <span className="text-sm text-slate-600">Require timesheet approval</span>
+                    <span className="text-sm text-slate-600 dark:text-slate-400">Require timesheet approval</span>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -303,7 +303,7 @@ export function InviteManageModal({
                           readOnly={isPendingAccount}
                           disabled={isPendingAccount}
                         />
-                        <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-3 text-xs text-slate-500">USD/hr</span>
+                        <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400">USD/hr</span>
                       </div>
                     </div>
                     <div>
@@ -345,9 +345,9 @@ export function InviteManageModal({
 
               {activeTab === "settings" && (
                 <div className="space-y-8">
-                  <section className="rounded-xl border border-red-100 bg-red-50/40 p-4">
-                    <h3 className="mb-2 text-sm font-bold text-red-900">{isPendingAccount ? "Remove pending account" : "Remove invite"}</h3>
-                    <p className="mb-3 text-sm text-red-800/90">
+                  <section className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-950/30 p-4">
+                    <h3 className="mb-2 text-sm font-bold text-red-900 dark:text-red-300">{isPendingAccount ? "Remove pending account" : "Remove invite"}</h3>
+                    <p className="mb-3 text-sm text-red-800/90 dark:text-red-300/80">
                       {isPendingAccount
                         ? "Deletes the pending Auth user and frees this email. This cannot be undone."
                         : "Permanently remove this invite. This cannot be undone."}
@@ -361,7 +361,7 @@ export function InviteManageModal({
                         <button type="button" disabled={busy} onClick={() => void handleRemove()} className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
                           {busy ? "Removing…" : "Yes, remove permanently"}
                         </button>
-                        <button type="button" disabled={busy} onClick={() => setRemoveConfirm(false)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                        <button type="button" disabled={busy} onClick={() => setRemoveConfirm(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60">Cancel</button>
                       </div>
                     )}
                   </section>

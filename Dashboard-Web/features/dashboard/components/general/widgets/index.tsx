@@ -25,7 +25,7 @@ const RecentProjectsPanel = dynamic(() => import("@/features/dashboard/component
 
 function WidgetLazyFallback() {
   return (
-    <div className="flex h-full min-h-0 items-center justify-center rounded-3xl border border-slate-100 bg-white shadow-sm">
+    <div className="flex h-full min-h-0 items-center justify-center rounded-3xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm">
       <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
     </div>
   )

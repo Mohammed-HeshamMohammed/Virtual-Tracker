@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { Info, ChevronDown } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { Toggle } from "@/shared/ui/toggle";
 import { MODAL_LABEL } from "@/features/members/config/members-config"
 import type { Member } from "@/features/members/models/member"
@@ -26,14 +26,14 @@ interface SettingsTabProps extends TabProps {
 }
 
 const DROPDOWN_BASE =
-  "flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50 w-48"
+  "flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700/60 w-48"
 const DROPDOWN_ITEM =
-  "w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-lg last:rounded-b-lg"
-const DROPDOWN_MENU = "absolute z-10 mt-1 w-48 rounded-lg border border-slate-200 bg-white shadow-lg"
+  "w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 first:rounded-t-lg last:rounded-b-lg"
+const DROPDOWN_MENU = "absolute z-10 mt-1 w-48 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg"
 
 function ComingSoonBadge() {
   return (
-    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+    <span className="rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
       Coming soon
     </span>
   )
@@ -49,12 +49,12 @@ function DisabledSetting({
   children?: React.ReactNode
 }) {
   return (
-    <div className="pointer-events-none rounded-xl border border-slate-200 bg-slate-50/80 p-4 opacity-60">
+    <div className="pointer-events-none rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 p-4 opacity-60">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-semibold text-slate-700">{label}</span>
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</span>
         <ComingSoonBadge />
       </div>
-      {hint ? <p className="mb-3 text-xs text-slate-500">{hint}</p> : null}
+      {hint ? <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{hint}</p> : null}
       {children}
     </div>
   )
@@ -76,7 +76,7 @@ function IdleTimeoutDropdown({
       <div className="relative mt-2">
         <button type="button" onClick={() => setOpen(!open)} className={DROPDOWN_BASE}>
           <span>{value}</span>
-          <ChevronDown className="h-4 w-4 text-slate-400" />
+          <ChevronDown className="h-4 w-4 text-slate-400 dark:text-slate-500" />
         </button>
         {open && (
           <div className={DROPDOWN_MENU}>
@@ -111,6 +111,7 @@ export function SettingsTab({
   limitedSelfManage = false,
 }: SettingsTabProps) {
   const { user, memberId, memberRole } = useAuth()
+  const { isDark } = useTheme()
   const { canManageMembers } = usePermissions()
   const [resetMessage, setResetMessage] = useState<string | null>(null)
   const [resetError, setResetError] = useState<string | null>(null)
@@ -150,20 +151,20 @@ export function SettingsTab({
   if (limitedSelfManage) {
     return (
       <div className="max-w-md">
-        <section id="member-reset-password" className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-          <h3 className="mb-2 text-sm font-bold text-slate-800">Password</h3>
-          <p className="mb-3 text-xs text-slate-500">
+        <section id="member-reset-password" className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-4">
+          <h3 className="mb-2 text-sm font-bold text-slate-800 dark:text-slate-100">Password</h3>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Send a password reset email so you can choose a new password.
           </p>
-          {resetMessage ? <p className="mb-2 text-sm text-emerald-700">{resetMessage}</p> : null}
-          {resetError ? <p className="mb-2 text-sm text-red-700">{resetError}</p> : null}
+          {resetMessage ? <p className="mb-2 text-sm text-emerald-700 dark:text-emerald-400">{resetMessage}</p> : null}
+          {resetError ? <p className="mb-2 text-sm text-red-700 dark:text-red-400">{resetError}</p> : null}
           <button
             type="button"
             disabled={resetBusy || !(member.email || user?.email)}
             onClick={() => void handlePasswordReset()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700/60 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Info className="h-4 w-4 text-slate-500" />
+            <Info className="h-4 w-4 text-slate-500 dark:text-slate-400" />
             {resetBusy ? "Sending…" : "Reset password…"}
           </button>
         </section>
@@ -174,7 +175,7 @@ export function SettingsTab({
   return (
     <div className="flex flex-col gap-6 lg:flex-row">
       <section id="member-time-tracking-settings" className="flex-1 space-y-4">
-        <h3 className="text-sm font-bold text-slate-800">Time tracking</h3>
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Time tracking</h3>
 
         <DisabledSetting
           label="Able to track time"
@@ -182,18 +183,18 @@ export function SettingsTab({
         >
           <div className="flex items-center gap-3">
             <Toggle checked={state.ableToTrack} onChange={() => {}} disabled />
-            <span className="text-sm text-slate-600">Able to track time</span>
+            <span className="text-sm text-slate-600 dark:text-slate-400">Able to track time</span>
           </div>
         </DisabledSetting>
 
         <DisabledSetting label="Keep idle time" hint="This setting is not yet available.">
-          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
+          <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5">
             {(["Prompt", "Always", "Never"] as const).map((m) => (
               <span
                 key={m}
                 className={cn(
                   "rounded-md px-3 py-1.5 text-xs font-semibold",
-                  state.idleMode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500",
+                  state.idleMode === m ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm" : "text-slate-500 dark:text-slate-400",
                 )}
               >
                 {m}
@@ -209,10 +210,10 @@ export function SettingsTab({
 
         <DisabledSetting label="Modify Time (manual time)" hint="This setting is not yet available.">
           <div className="flex flex-wrap items-end gap-6">
-            <span className="text-sm text-slate-600">{state.manualTime || "Off"}</span>
+            <span className="text-sm text-slate-600 dark:text-slate-400">{state.manualTime || "Off"}</span>
             <div className="flex items-center gap-3">
               <Toggle checked={state.requireApproval || false} onChange={() => {}} disabled />
-              <span className="text-sm text-slate-600">Require approval</span>
+              <span className="text-sm text-slate-600 dark:text-slate-400">Require approval</span>
             </div>
           </div>
         </DisabledSetting>
@@ -221,15 +222,15 @@ export function SettingsTab({
           label="Profile fields"
           hint="This setting is not yet available."
         >
-          <span className="text-sm text-slate-600">Manage profile fields</span>
+          <span className="text-sm text-slate-600 dark:text-slate-400">Manage profile fields</span>
         </DisabledSetting>
 
         {showManageEmployeeTeams && canManageMembers ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-800">Manage Employee teams</span>
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Manage Employee teams</span>
             </div>
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
               Allow this member to create teams and assign members at Employee L2 and below.
             </p>
             <div className="flex items-center gap-3">
@@ -237,35 +238,35 @@ export function SettingsTab({
                 checked={state.manageEmployeeTeams}
                 onChange={() => setState((s) => ({ ...s, manageEmployeeTeams: !s.manageEmployeeTeams }))}
               />
-              <span className="text-sm text-slate-600">Manage Employee teams</span>
+              <span className="text-sm text-slate-600 dark:text-slate-400">Manage Employee teams</span>
             </div>
           </div>
         ) : null}
       </section>
 
       <div className="w-full space-y-4 lg:w-80">
-        <section id="member-reset-password" className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-          <h3 className="mb-2 text-sm font-bold text-slate-800">Password</h3>
-          <p className="mb-3 text-xs text-slate-500">
+        <section id="member-reset-password" className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-4">
+          <h3 className="mb-2 text-sm font-bold text-slate-800 dark:text-slate-100">Password</h3>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             Send a Firebase password reset email so the member can choose a new password.
           </p>
-          {resetMessage ? <p className="mb-2 text-sm text-emerald-700">{resetMessage}</p> : null}
-          {resetError ? <p className="mb-2 text-sm text-red-700">{resetError}</p> : null}
+          {resetMessage ? <p className="mb-2 text-sm text-emerald-700 dark:text-emerald-400">{resetMessage}</p> : null}
+          {resetError ? <p className="mb-2 text-sm text-red-700 dark:text-red-400">{resetError}</p> : null}
           <button
             type="button"
             disabled={resetBusy || !(member.email || user?.email)}
             onClick={() => void handlePasswordReset()}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-800 dark:text-slate-200 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-700/60 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <Info className="h-4 w-4 text-slate-500" />
+            <Info className="h-4 w-4 text-slate-500 dark:text-slate-400" />
             {resetBusy ? "Sending…" : "Reset password…"}
           </button>
         </section>
 
         {showAdminRemove ? (
-          <section className="rounded-xl border border-red-100 bg-red-50/40 p-4">
-            <h3 className="mb-2 text-sm font-bold text-red-900">Remove member</h3>
-            <p className="mb-3 text-sm text-red-800/90">
+          <section className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-950/30 p-4">
+            <h3 className="mb-2 text-sm font-bold text-red-900 dark:text-red-300">Remove member</h3>
+            <p className="mb-3 text-sm text-red-800/90 dark:text-red-300/80">
               Permanently remove {member.name} from the organization. This cannot be undone.
             </p>
             {!removeConfirm ? (
@@ -290,7 +291,7 @@ export function SettingsTab({
                   type="button"
                   disabled={busy}
                   onClick={() => setRemoveConfirm(false)}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60"
                 >
                   Cancel
                 </button>
@@ -300,9 +301,9 @@ export function SettingsTab({
         ) : null}
 
         {showSelfRemove ? (
-          <section className="rounded-xl border border-red-100 bg-red-50/40 p-4">
-            <h3 className="mb-2 text-sm font-bold text-red-900">Remove myself</h3>
-            <p className="mb-3 text-sm text-red-800/90">
+          <section className="rounded-xl border border-red-100 dark:border-red-900/50 bg-red-50/40 dark:bg-red-950/30 p-4">
+            <h3 className="mb-2 text-sm font-bold text-red-900 dark:text-red-300">Remove myself</h3>
+            <p className="mb-3 text-sm text-red-800/90 dark:text-red-300/80">
               {isViewer
                 ? "Permanently delete your account, profile, and member records."
                 : "Request account deactivation. An Admin, Super Admin, or Owner will review your request."}
@@ -324,7 +325,7 @@ export function SettingsTab({
         mode={isViewer ? "delete" : "request"}
         user={user}
         isEmailPasswordUser={isEmailPasswordUser}
-        isDark={false}
+        isDark={isDark}
         onDeleted={() => void clearLocalSessionAfterAccountDeletion()}
       />
     </div>
