@@ -46,8 +46,8 @@ function TreeViewModeToggle({
   return (
     <div
       className={cn(
-        "inline-flex rounded-lg border p-0.5",
-        isDark ? "border-[#3d4a3d]/40 bg-[#191f31]" : "border-slate-200 bg-slate-100",
+        "inline-flex rounded-xl border p-1 shadow-inner",
+        isDark ? "border-slate-800 bg-slate-900/80" : "border-slate-200/80 bg-slate-100/80",
       )}
       role="group"
       aria-label="Tree view mode"
@@ -56,14 +56,14 @@ function TreeViewModeToggle({
         type="button"
         onClick={() => onChange("list")}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-all",
+          "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
           viewMode === "list"
             ? isDark
-              ? "bg-[#151b2d] text-[#dce1fb] shadow-sm"
-              : "bg-white text-slate-900 shadow-sm"
+              ? "bg-slate-800 text-white shadow-sm ring-1 ring-slate-700"
+              : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
             : isDark
-              ? "text-[#bccbb9] hover:text-[#dce1fb]"
-              : "text-slate-500 hover:text-slate-700",
+              ? "text-slate-400 hover:text-slate-200"
+              : "text-slate-500 hover:text-slate-800",
         )}
       >
         <LayoutList className="h-3.5 w-3.5" />
@@ -73,14 +73,14 @@ function TreeViewModeToggle({
         type="button"
         onClick={() => onChange("connections")}
         className={cn(
-          "inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold transition-all",
+          "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
           viewMode === "connections"
             ? isDark
-              ? "bg-[#151b2d] text-[#dce1fb] shadow-sm"
-              : "bg-white text-slate-900 shadow-sm"
+              ? "bg-slate-800 text-white shadow-sm ring-1 ring-slate-700"
+              : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
             : isDark
-              ? "text-[#bccbb9] hover:text-[#dce1fb]"
-              : "text-slate-500 hover:text-slate-700",
+              ? "text-slate-400 hover:text-slate-200"
+              : "text-slate-500 hover:text-slate-800",
         )}
       >
         <Share2 className="h-3.5 w-3.5" />

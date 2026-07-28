@@ -75,10 +75,10 @@ export function ActivityControlBar({
   pageFilters,
 }: ActivityControlBarProps) {
   return (
-    <div className="overflow-visible rounded-xl border border-slate-100 bg-white p-3 shadow-sm sm:p-3.5">
+    <div className="overflow-visible rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 sm:p-4 shadow-sm shadow-slate-900/5 transition-all">
       <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
         <div
-          className="flex shrink-0 items-center rounded-lg border border-slate-200 bg-slate-50/80 p-0.5"
+          className="flex shrink-0 items-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-0.5 shadow-inner"
           role="group"
           aria-label="Day navigation"
         >
@@ -86,15 +86,15 @@ export function ActivityControlBar({
             type="button"
             onClick={() => onShiftDay(-1)}
             disabled={isAllDays}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-white disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 transition-colors hover:bg-white dark:hover:bg-slate-700/60 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
             aria-label="Previous day"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <div
             className={cn(
-              "flex h-8 min-w-[5.5rem] items-center justify-center px-3 text-xs font-medium sm:min-w-[6.5rem] sm:text-sm",
-              isAllDays ? "text-emerald-700" : "text-slate-700",
+              "flex h-8 min-w-[5.5rem] items-center justify-center px-3 text-xs font-semibold sm:min-w-[6.5rem] sm:text-sm tracking-tight",
+              isAllDays ? "text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-700 dark:text-slate-200",
             )}
             aria-live="polite"
           >
@@ -104,7 +104,7 @@ export function ActivityControlBar({
             type="button"
             onClick={() => onShiftDay(1)}
             disabled={isAllDays || isSelectedToday}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-600 transition-colors hover:bg-white disabled:opacity-30"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 dark:text-slate-300 transition-colors hover:bg-white dark:hover:bg-slate-700/60 hover:text-slate-900 dark:hover:text-white disabled:opacity-30"
             aria-label="Next day"
           >
             <ChevronRight className="h-4 w-4" />
@@ -117,7 +117,7 @@ export function ActivityControlBar({
 
         <div className="relative min-w-0 flex-1 basis-full sm:basis-48 sm:min-w-[11rem]">
           <Search
-            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
             aria-hidden
           />
           <input
@@ -126,7 +126,7 @@ export function ActivityControlBar({
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="h-9 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-sm text-slate-700 transition-colors placeholder:text-slate-400 focus:border-[#22C55E] focus:outline-none focus:ring-2 focus:ring-[#22C55E]/20"
+            className="h-9 w-full rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/60 pl-8 pr-3 text-sm text-slate-900 dark:text-slate-100 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
         </div>
 

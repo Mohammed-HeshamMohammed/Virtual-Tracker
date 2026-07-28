@@ -58,18 +58,18 @@ export function TimesheetsApprovalsContent() {
   }
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-transparent text-slate-900 dark:text-slate-100">
       {/* Tabs */}
-      <div className="border-b border-slate-200">
+      <div className="border-b border-slate-200/80 dark:border-slate-800">
         <div className="max-w-5xl mx-auto px-6">
           <div className="flex gap-6">
             <button
               onClick={() => setActiveTab("timesheets")}
               className={cn(
-                "py-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors",
+                "py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all",
                 activeTab === "timesheets"
-                  ? "border-blue-500 text-blue-500"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
+                  ? "border-emerald-500 text-emerald-600 dark:text-emerald-400"
+                  : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
               )}
             >
               TIMESHEETS
@@ -77,10 +77,10 @@ export function TimesheetsApprovalsContent() {
             <button
               onClick={() => setActiveTab("manual-time")}
               className={cn(
-                "py-4 text-xs font-semibold uppercase tracking-wider border-b-2 transition-colors",
+                "py-4 text-xs font-bold uppercase tracking-wider border-b-2 transition-all",
                 activeTab === "manual-time"
-                  ? "border-blue-500 text-blue-500"
-                  : "border-transparent text-slate-500 hover:text-slate-700"
+                  ? "border-emerald-500 text-emerald-600 dark:text-emerald-400"
+                  : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
               )}
             >
               MANUAL TIME REQUESTS
@@ -90,7 +90,7 @@ export function TimesheetsApprovalsContent() {
       </div>
 
       {/* Content */}
-      <div className="max-w-5xl mx-auto px-6 py-12">
+      <div className="max-w-5xl mx-auto px-6 py-8">
         <AnimatePresence mode="wait">
           {activeTab === "timesheets" ? (
             <motion.div

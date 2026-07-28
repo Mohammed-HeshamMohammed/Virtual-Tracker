@@ -244,12 +244,14 @@ export function TeamsPage() {
       <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-2">
         <div className="mb-3 flex shrink-0 items-center justify-between gap-4">
           <div className="flex flex-1 items-center gap-3">
-            <button className={cn("flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold", t.tabActive)} type="button">
-              <Users className="h-4 w-4" />
+            <button
+              className="flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 px-3.5 py-2 text-sm font-semibold text-emerald-700 dark:text-emerald-300 shadow-sm" type="button"
+            >
+              <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
               Teams
-              <span className={cn("ml-1 rounded-full px-2 py-0.5 text-xs", t.tabBadge)}>{teams.length}</span>
+              <span className="ml-1 rounded-full bg-emerald-200/80 dark:bg-emerald-900/80 px-2 py-0.5 text-xs font-bold text-emerald-800 dark:text-emerald-200 tabular-nums">{teams.length}</span>
             </button>
-            <div className={cn("relative flex-1 max-w-md rounded-lg border", t.searchWrap)}>
+            <div className={cn("relative flex-1 max-w-md rounded-xl border", t.searchWrap)}>
               <Search className={cn("absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2", t.searchIcon)} />
               <input
                 value={search}
@@ -270,7 +272,7 @@ export function TeamsPage() {
             {canManageTeams && (
               <button
                 onClick={openCreateTeamModal}
-                className={cn("flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors", t.btnPrimary)} type="button"
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] hover:shadow-emerald-600/30 active:scale-95 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400" type="button"
               >
                 <Plus className="h-4 w-4" />
                 Add team

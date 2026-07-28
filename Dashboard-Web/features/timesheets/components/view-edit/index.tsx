@@ -56,12 +56,14 @@ export function TimesheetsViewEdit() {
     <div className="space-y-8 p-4 md:p-6">
       <motion.section {...contentEnter(0.05)} className="space-y-4">
         <motion.div {...sectionHeaderEnter(0.08)} className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="h-5 w-5 text-amber-600" />
-            <h2 className="text-lg font-semibold text-slate-800">Needs Review</h2>
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200/80 dark:border-amber-800/80">
+              <ClipboardCheck className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">Needs Review</h2>
             <motion.span
               {...badgePop}
-              className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+              className="rounded-full bg-amber-100 dark:bg-amber-950/80 border border-amber-200/80 dark:border-amber-800/80 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:text-amber-300"
             >
               In Review
             </motion.span>
@@ -80,12 +82,14 @@ export function TimesheetsViewEdit() {
       </motion.section>
 
       <motion.section {...contentEnter(0.12)} className="space-y-4">
-        <motion.div {...sectionHeaderEnter(0.15)} className="flex items-center gap-2">
-          <AlertTriangle className="h-5 w-5 text-red-500" />
-          <h2 className="text-lg font-semibold text-slate-800">Priority Monitor</h2>
+        <motion.div {...sectionHeaderEnter(0.15)} className="flex items-center gap-2.5">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
+            <AlertTriangle className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+          </div>
+          <h2 className="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100">Priority Monitor</h2>
           <motion.span
             {...badgePop}
-            className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700"
+            className="rounded-full bg-rose-100 dark:bg-rose-950/80 border border-rose-200/80 dark:border-rose-800/80 px-2.5 py-0.5 text-xs font-semibold text-rose-800 dark:text-rose-300"
           >
             High / Urgent
           </motion.span>

@@ -545,67 +545,81 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       <motion.div className="flex h-full min-h-0 flex-col overflow-hidden">
       <motion.div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-2">
         {canManageMembers && (
-          <div className="mb-4 flex shrink-0 items-center justify-between gap-4">
+          <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setActiveTab("members")}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors",
-                  activeTab === "members" ? t.tabActive : t.tabInactive
+                  "flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl transition-all shadow-sm",
+                  activeTab === "members"
+                    ? "border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300"
+                    : "border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-700/80 hover:text-slate-900 dark:hover:text-white"
                 )} type="button"
               >
-                <Users className="h-4 w-4" />
+                <Users className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                 Members
-                <span className={cn("ml-1 rounded-full px-2 py-0.5 text-xs", t.tabBadge)}>{filteredMembers.length}</span>
+                <span className={cn(
+                  "ml-1 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums",
+                  activeTab === "members"
+                    ? "bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200"
+                    : "bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300"
+                )}>{filteredMembers.length}</span>
               </button>
               <button
                 onClick={() => setActiveTab("invites")}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors",
-                  activeTab === "invites" ? t.tabActive : t.tabInactive
+                  "flex items-center gap-2 px-3.5 py-2 text-sm font-semibold rounded-xl transition-all shadow-sm",
+                  activeTab === "invites"
+                    ? "border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300"
+                    : "border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 hover:bg-slate-100/80 dark:hover:bg-slate-700/80 hover:text-slate-900 dark:hover:text-white"
                 )} type="button"
               >
-                <UserPlus className="h-4 w-4" />
+                <UserPlus className="h-4 w-4 text-teal-600 dark:text-teal-400" />
                 Invites
-                <span className={cn("ml-1 rounded-full px-2 py-0.5 text-xs", t.tabBadge)}>{visibleInvites.length}</span>
+                <span className={cn(
+                  "ml-1 rounded-full px-2 py-0.5 text-xs font-bold tabular-nums",
+                  activeTab === "invites"
+                    ? "bg-emerald-200/80 dark:bg-emerald-900/80 text-emerald-800 dark:text-emerald-200"
+                    : "bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300"
+                )}>{visibleInvites.length}</span>
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setShowOnboarding(true)}
-                className={cn("flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors", t.btnSecondary)} type="button"
+                className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80" type="button"
               >
-                <Check className="h-4 w-4" />
+                <Check className="h-4 w-4 text-emerald-500" />
                 Onboarding
               </button>
               {canViewMembersTree && (
                 <button
                   onClick={() => onNavigate?.("people-members-tree")}
-                  className={cn("flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors", t.btnSecondary)} type="button"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80" type="button"
                 >
-                  <Network className="h-4 w-4" />
+                  <Network className="h-4 w-4 text-indigo-500" />
                   Members tree
                 </button>
               )}
               {canManageMemberBans && (
                 <button
                   onClick={() => onNavigate?.("people-member-bans")}
-                  className={cn("flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors", t.btnSecondary)} type="button"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80" type="button"
                 >
-                  <ShieldBan className="h-4 w-4" />
+                  <ShieldBan className="h-4 w-4 text-rose-500" />
                   Banned members
                 </button>
               )}
               <button
                 onClick={() => setShowFilters(true)}
-                className={cn("relative flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors", t.btnSecondary)}
+                className="relative flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80"
                 type="button"
               >
-                <SlidersHorizontal className="h-4 w-4" />
+                <SlidersHorizontal className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                 Filters
                 {activeFilterCount > 0 && (
-                  <span className={cn("ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold", t.tabBadge)}>
+                  <span className="ml-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
                     {activeFilterCount}
                   </span>
                 )}
@@ -613,16 +627,16 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
               {canCreateTransferRequests && (
                 <button
                   onClick={() => setShowRecruit(true)}
-                  className={cn("flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors", t.btnSecondary)}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80"
                   type="button"
                 >
-                  <Users className="h-4 w-4" />
+                  <Users className="h-4 w-4 text-amber-500" />
                   Recruit member
                 </button>
               )}
               <button
                 onClick={() => setShowAdd(true)}
-                className={cn("flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg transition-colors", t.btnPrimary)} type="button"
+                className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] hover:shadow-emerald-600/30 active:scale-95 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400" type="button"
               >
                 <UserPlus className="h-4 w-4" />
                 Add members

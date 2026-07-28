@@ -207,7 +207,7 @@ export function ReviewQueueTable({
             {...buttonTap}
             onClick={() => void loadRows()}
             disabled={loading}
-            className="inline-flex h-[38px] shrink-0 items-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+            className="inline-flex h-[38px] shrink-0 items-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-4 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80 disabled:opacity-60"
           >
             Refresh
           </motion.button>
@@ -216,25 +216,25 @@ export function ReviewQueueTable({
 
       <motion.div
         {...tableContainerEnter}
-        className="overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm"
+        className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl"
       >
         <table className="min-w-full text-left text-sm">
-          <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-medium uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
             <tr>
-              <th className="px-4 py-3">Employee</th>
-              <th className="px-4 py-3">Project</th>
-              <th className="px-4 py-3">Task</th>
-              <th className="px-4 py-3">Priority</th>
-              <th className="px-4 py-3">Status</th>
-              {showParticipation ? <th className="px-4 py-3">Participation</th> : null}
-              <th className="px-4 py-3">Expected</th>
-              <th className="px-4 py-3">Logged</th>
-              <th className="px-4 py-3">Progress</th>
-              <th className="px-4 py-3">Last activity</th>
-              {showReviewColumn ? <th className="px-4 py-3">Review</th> : null}
+              <th className="px-4 py-3.5">Employee</th>
+              <th className="px-4 py-3.5">Project</th>
+              <th className="px-4 py-3.5">Task</th>
+              <th className="px-4 py-3.5">Priority</th>
+              <th className="px-4 py-3.5">Status</th>
+              {showParticipation ? <th className="px-4 py-3.5">Participation</th> : null}
+              <th className="px-4 py-3.5">Expected</th>
+              <th className="px-4 py-3.5">Logged</th>
+              <th className="px-4 py-3.5">Progress</th>
+              <th className="px-4 py-3.5">Last activity</th>
+              {showReviewColumn ? <th className="px-4 py-3.5">Review</th> : null}
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-50">
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             <AnimatePresence mode="wait">
               {loading ? (
                 <motion.tr
@@ -244,7 +244,7 @@ export function ReviewQueueTable({
                   exit={{ opacity: 0 }}
                 >
                   <td colSpan={colSpan} className="px-4 py-8 text-center">
-                    <motion.span {...loadingPulse} className="text-slate-400">
+                    <motion.span {...loadingPulse} className="text-slate-400 dark:text-slate-500 font-medium">
                       Loading…
                     </motion.span>
                   </td>
@@ -254,7 +254,7 @@ export function ReviewQueueTable({
                   key="empty"
                   {...emptyStateEnter}
                 >
-                  <td colSpan={colSpan} className="px-4 py-8 text-center text-slate-400">
+                  <td colSpan={colSpan} className="px-4 py-8 text-center text-slate-400 dark:text-slate-500 font-medium">
                     {variant === "needs-review"
                       ? "No assignments awaiting review."
                       : "No high-priority assignments to monitor."}
@@ -277,13 +277,13 @@ export function ReviewQueueTable({
                       transition={rowTransition(index)}
                       layout
                       className={cn(
-                        "hover:bg-slate-50/60",
-                        variant === "priority-monitor" && isHighPriority && "bg-amber-50/40",
+                        "hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors",
+                        variant === "priority-monitor" && isHighPriority && "bg-amber-50/40 dark:bg-amber-950/20",
                       )}
                     >
-                      <td className="px-4 py-3 font-medium text-slate-800">{row.employeeName}</td>
-                      <td className="px-4 py-3 text-slate-600">{row.projectName || "—"}</td>
-                      <td className="px-4 py-3 text-slate-700">{row.taskTitle}</td>
+                      <td className="px-4 py-3.5 font-semibold text-slate-900 dark:text-slate-100">{row.employeeName}</td>
+                      <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300 font-medium">{row.projectName || "—"}</td>
+                      <td className="px-4 py-3.5 text-slate-700 dark:text-slate-200 font-medium">{row.taskTitle}</td>
                       <td className="px-4 py-3">
                         <motion.span
                           initial={{ scale: 0.9, opacity: 0 }}
