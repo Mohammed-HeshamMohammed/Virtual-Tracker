@@ -11,7 +11,12 @@ const AUTH_LIMIT = 60;
 const VALIDATE_PASSWORD_LIMIT = 40;
 const PUBLIC_INVITE_LIMIT = 15;
 const PRESENCE_LIMIT = 30;
-const ACTIVITY_LIMIT = 60;
+// Shared per-IP across scope+feed+agent/status: several teammates behind one office
+// NAT, or a few browser tabs, all draw from the same bucket, plus the dashboard's
+// own burst refetches (toggling project scope, closing the add-member modal) can
+// spend 5-10 requests in under a second. 60/min was tight enough to false-positive
+// on normal use, not just abuse.
+const ACTIVITY_LIMIT = 240;
 const SEARCH_LIMIT = 40;
 
 /**
