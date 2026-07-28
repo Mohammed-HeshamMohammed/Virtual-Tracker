@@ -514,6 +514,70 @@ GROUP BY task_id`,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ
 )`,
+  // ─── Tasks domain (Phase 2 of implementation.md - Firestore -> Postgres) ───
+  // Schema-stand-up only: additive, nothing reads from these tables yet, zero
+  // behavior change. Column set pulled from the live Firestore field catalog
+  // (src/modules/schema/catalog/tasks/index.js), not invented. Must come after
+  // the projects-domain block above in this array - both FKs reference
+  // projects(id), and this loop stops at the first failing statement.
+  `CREATE TABLE IF NOT EXISTS tasks (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id                  UUID NOT NULL REFERENCES projects(id),
+  team_id                     UUID,
+  title                       TEXT NOT NULL,
+  description                 TEXT,
+  status                      VARCHAR(30) NOT NULL DEFAULT 'todo',
+  priority                    VARCHAR(20),
+  order_index                 INT,
+  duration_hours_per_day      NUMERIC(6,2),
+  duration_days               INT,
+  working_days                INT,
+  overtime_hours_per_day      NUMERIC(6,2),
+  assigned_to                 UUID,
+  start_date                  TIMESTAMPTZ,
+  due_date                    TIMESTAMPTZ,
+  review_state                VARCHAR(20),
+  reviewed_by                 UUID,
+  reviewed_at                 TIMESTAMPTZ,
+  total_active_seconds        BIGINT NOT NULL DEFAULT 0,
+  total_idle_seconds          BIGINT NOT NULL DEFAULT 0,
+  aggregated_progress_percent NUMERIC(5,2),
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by                  UUID,
+  updated_by                  UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_assigned_status ON tasks (assigned_to, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks (project_id, status)`,
+  `CREATE TABLE IF NOT EXISTS task_assignments (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id            UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id            UUID NOT NULL,
+  project_id         UUID NOT NULL REFERENCES projects(id),
+  status             VARCHAR(20) NOT NULL DEFAULT 'todo',
+  expected_seconds   INT,
+  required           BOOLEAN NOT NULL DEFAULT true,
+  review_state       VARCHAR(20),
+  reviewed_by        UUID,
+  reviewed_at        TIMESTAMPTZ,
+  review_notes       TEXT,
+  entered_review_at  TIMESTAMPTZ,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (task_id, user_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_assignments_project ON task_assignments (project_id)`,
+  // task_member_progress already exists (added earlier for the activity-data
+  // migration) - extend it to cover the remaining Firestore time_tracking
+  // fields instead of creating a separate table. New columns are nullable, so
+  // this is safe to run against a table that already has rows: existing rows
+  // simply get NULL, which trivially satisfies the FK on project_id.
+  `ALTER TABLE task_member_progress
+    ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id),
+    ADD COLUMN IF NOT EXISTS session_id VARCHAR(128),
+    ADD COLUMN IF NOT EXISTS review_notes TEXT`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
