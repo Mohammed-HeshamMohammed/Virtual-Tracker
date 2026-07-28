@@ -46,16 +46,16 @@ export function ProductivityTrendsSection({ project }: ProductivityTrendsSection
     <SectionCard className="lg:col-span-2">
       <div className="flex justify-between items-center mb-10">
         <div>
-          <h3 className="text-xl font-bold tracking-tight text-slate-900">Weekly Productivity Trends</h3>
-          <p className="mt-1 text-xs text-slate-500">
+          <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Weekly Productivity Trends</h3>
+          <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
             Task activity for {project.name} · {selectedDay?.label ?? "—"}
           </p>
         </div>
         <div className="flex gap-4">
-          {[{ color: "bg-green-700", label: "Active" }, { color: "bg-slate-200", label: "Idle" }].map(({ color, label }) => (
+          {[{ color: "bg-emerald-500 dark:bg-emerald-400", label: "Active" }, { color: "bg-slate-200 dark:bg-slate-700", label: "Idle" }].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-2">
-              <div className={`w-3 h-3 rounded-full ${color}`} />
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+              <div className={`w-2.5 h-2.5 rounded-full ${color}`} />
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</span>
             </div>
           ))}
         </div>
@@ -65,18 +65,18 @@ export function ProductivityTrendsSection({ project }: ProductivityTrendsSection
         <svg className="w-full h-full" viewBox="0 0 800 200" preserveAspectRatio="none">
           <defs>
             <linearGradient id={`ccGrad-${project.id}`} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#22c55e" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#22c55e" stopOpacity="0" />
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
             </linearGradient>
           </defs>
           <path d={project.chartFill} fill={`url(#ccGrad-${project.id})`} />
-          <path d={project.chartPath} fill="none" stroke="#006e2f" strokeWidth="4" strokeLinecap="round" />
+          <path d={project.chartPath} fill="none" stroke="#10b981" strokeWidth="4" strokeLinecap="round" />
           {highlightPoint && (
             <circle
               cx={highlightPoint.x}
               cy={highlightPoint.y}
               r="6"
-              fill="#006e2f"
+              fill="#10b981"
               stroke="#fff"
               strokeWidth="2"
             />
@@ -94,8 +94,8 @@ export function ProductivityTrendsSection({ project }: ProductivityTrendsSection
               onClick={() => setSelectedDayKey(day.key)}
               className={
                 selected
-                  ? "text-xs font-bold text-green-700 underline underline-offset-8"
-                  : "text-xs font-bold text-slate-400 hover:text-slate-600"
+                  ? "text-xs font-bold text-emerald-600 dark:text-emerald-400 underline underline-offset-8 transition-colors"
+                  : "text-xs font-bold text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
               }
             >
               {day.label}

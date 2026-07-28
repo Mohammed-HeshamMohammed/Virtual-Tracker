@@ -45,13 +45,13 @@ interface MemberAppUsage {
 const getCategoryColor = (category: string) => {
   if (category === "productive") return "bg-emerald-500"
   if (category === "neutral") return "bg-slate-400"
-  return "bg-red-500"
+  return "bg-rose-500"
 }
 
 const getCategoryBgColor = (category: string) => {
-  if (category === "productive") return "bg-emerald-100 text-emerald-700"
-  if (category === "neutral") return "bg-slate-100 text-slate-700"
-  return "bg-red-100 text-red-700"
+  if (category === "productive") return "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80"
+  if (category === "neutral") return "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80"
+  return "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/80"
 }
 
 type AppsFeed = { apps: AppUsage[]; members: MemberAppUsage[] }
@@ -201,61 +201,61 @@ export function ActivityAppsContent() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm"
+              className="overflow-x-auto rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl"
             >
               <table className="w-full min-w-[640px]">
-                <thead className="bg-slate-50">
-                    <tr className="border-b border-slate-100">
+                <thead className="bg-slate-50/80 dark:bg-slate-800/60">
+                    <tr className="border-b border-slate-200/80 dark:border-slate-800">
                       {["Application", "Time", "Share", "Sessions", "Category"].map((h) => (
                         <th
                           key={h}
-                          className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500"
+                          className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
                         >
                           {h}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                     {visibleRows.map((app, index) => (
                       <motion.tr
                         key={app.id || `${app.name}-${index}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="hover:bg-slate-50/80"
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors"
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
                             <div
                               className={cn(
-                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-bold text-white",
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm",
                                 getCategoryColor(app.category),
                               )}
                             >
                               {app.name.charAt(0)}
                             </div>
-                            <span className="font-medium text-slate-800">{app.name}</span>
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">{app.name}</span>
                           </div>
                         </td>
                         <td className="px-5 py-4">
-                          <span className="text-sm font-semibold text-slate-700">{app.totalTime}</span>
+                          <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{app.totalTime}</span>
                         </td>
                         <td className="px-5 py-4">
                           <div className="flex min-w-[120px] items-center gap-2">
-                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                               <div
-                                className={cn("h-full rounded-full", getCategoryColor(app.category))}
+                                className={cn("h-full rounded-full transition-all", getCategoryColor(app.category))}
                                 style={{ width: `${app.percentage}%` }}
                               />
                             </div>
-                            <span className="w-10 text-xs text-slate-500">{app.percentage}%</span>
+                            <span className="w-10 text-xs font-medium text-slate-500 dark:text-slate-400">{app.percentage}%</span>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-600">{app.sessions}</td>
+                        <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">{app.sessions}</td>
                         <td className="px-5 py-4">
                           <span
                             className={cn(
-                              "inline-flex rounded-full px-2.5 py-1 text-xs font-medium capitalize",
+                              "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize tracking-tight",
                               getCategoryBgColor(app.category),
                             )}
                           >
@@ -284,17 +284,17 @@ export function ActivityAppsContent() {
               animate={{ opacity: 1, y: 0 }}
               className="grid grid-cols-1 gap-4 md:grid-cols-3"
             >
-              <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">Productive</p>
-                    <p className="mt-1 text-2xl font-bold text-slate-800">{summaryStats.productive}</p>
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Productive</p>
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100">
-                    <TrendingUp className="h-6 w-6 text-emerald-600" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
+                    <TrendingUp className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                   </div>
                 </div>
-                <p className="mt-4 text-xs text-slate-500">productive apps</p>
+                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
               </div>
 
               <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
