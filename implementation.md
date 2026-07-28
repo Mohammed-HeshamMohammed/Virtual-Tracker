@@ -201,7 +201,7 @@ Field lists below are taken directly from the authoritative Firestore schema dec
 
 ### Data Migration Plan (concrete steps)
 
-1. **Additive schema first.** Run the `CREATE TABLE tasks`, `CREATE TABLE task_assignments`, and `ALTER TABLE task_member_progress` statements above in a migration file under `Dashboard-Backend`'s existing Postgres migration mechanism. Nothing reads from these yet — pure schema stand-up, zero behavior change, safe to ship independently.
+1. ✅ **Additive schema first — IMPLEMENTED.** `CREATE TABLE tasks`, `CREATE TABLE task_assignments`, and the `task_member_progress` extension added to `Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js`'s `MEMBER_DATA_DDL` array (this codebase's actual migration mechanism — confirmed there's no separate migration-file system; `ensure-lookup-schema.js` is applied idempotently on every server boot, same pattern the already-shipped `projects` migration used). Placed after the `projects`-domain block since both new tables FK into `projects(id)`. `node --check` confirms valid syntax; **not yet verified against a live Postgres instance** — that requires actually running `Dashboard-Backend` against the target database, which wasn't available in this session. Nothing reads from these tables yet — pure schema stand-up, zero behavior change, safe to have shipped independently of the rest of this plan.
 2. **Backfill script** (one-off Node.js script using the existing `firebase-admin` credentials already configured in `Dashboard-Backend`):
    - Page through every Firestore `tasks` doc (`db.collection("tasks")`), insert/upsert into Postgres `tasks`.
    - For each task, page through its `time_tracking` subcollection, upsert into `task_member_progress` (mapping `user_id → member_id` as above).
