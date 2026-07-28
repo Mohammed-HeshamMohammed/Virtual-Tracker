@@ -133,6 +133,57 @@ async function maybeNotifyAuthSessionRestricted(res: Response): Promise<void> {
   }
 }
 
+// ponytail: global gate, not per-caller debouncing. Every burst (rapid toggle, modal
+// close fanning out into several refetches) funnels through apiFetch, so one gate
+// caps request starts app-wide regardless of which feature fired them.
+const BASE_MIN_SPACING_MS = 60
+const MAX_MIN_SPACING_MS = 1000
+const CLEAN_REQUESTS_TO_NARROW = 20
+const MAX_CONCURRENT_REQUESTS = 6
+
+let requestGateChain: Promise<void> = Promise.resolve()
+let currentSpacingMs = BASE_MIN_SPACING_MS
+let consecutiveCleanRequests = 0
+let activeRequestCount = 0
+const concurrencyWaiters: Array<() => void> = []
+
+/** Widen spacing after a 429 — the server just told us to slow down. */
+function widenSpacingAfterRateLimit(): void {
+  consecutiveCleanRequests = 0
+  currentSpacingMs = Math.min(MAX_MIN_SPACING_MS, currentSpacingMs * 2)
+}
+
+/** Ease spacing back down once things have been clean for a while. */
+function narrowSpacingAfterSuccess(): void {
+  if (currentSpacingMs <= BASE_MIN_SPACING_MS) return
+  consecutiveCleanRequests += 1
+  if (consecutiveCleanRequests < CLEAN_REQUESTS_TO_NARROW) return
+  consecutiveCleanRequests = 0
+  currentSpacingMs = Math.max(BASE_MIN_SPACING_MS, Math.floor(currentSpacingMs / 2))
+}
+
+function throttleRequestStart(): Promise<void> {
+  const next = requestGateChain.then(
+    () => new Promise<void>((resolve) => setTimeout(resolve, currentSpacingMs)),
+  )
+  requestGateChain = next.catch(() => {})
+  return next
+}
+
+async function acquireConcurrencySlot(): Promise<void> {
+  if (activeRequestCount < MAX_CONCURRENT_REQUESTS) {
+    activeRequestCount += 1
+    return
+  }
+  await new Promise<void>((resolve) => concurrencyWaiters.push(resolve))
+  activeRequestCount += 1
+}
+
+function releaseConcurrencySlot(): void {
+  activeRequestCount = Math.max(0, activeRequestCount - 1)
+  concurrencyWaiters.shift()?.()
+}
+
 function parseRetryAfterMs(res: Response): number | undefined {
   const header = res.headers.get("Retry-After")
   if (!header) return undefined
@@ -148,6 +199,8 @@ async function performApiFetch(
   init: RequestInit,
   headers: Headers,
 ): Promise<Response> {
+  await throttleRequestStart()
+  await acquireConcurrencySlot()
   try {
     const res = await fetch(input, {
       ...init,
@@ -158,12 +211,14 @@ async function performApiFetch(
     })
     if (res.status === 429) {
       notifyBackendRateLimited(parseRetryAfterMs(res))
+      widenSpacingAfterRateLimit()
     } else if (isApiConnectionFailureStatus(res.status)) {
       notifyBackendConnectionLost(
         res.status === 503 ? BACKEND_TEMPORARILY_UNAVAILABLE_MESSAGE : undefined,
       )
     } else if (res.ok) {
       notifyBackendConnectionRestored()
+      narrowSpacingAfterSuccess()
     } else {
       await maybeNotifyAuthSessionRestricted(res)
     }
@@ -173,6 +228,8 @@ async function performApiFetch(
       notifyBackendConnectionLost()
     }
     throw error
+  } finally {
+    releaseConcurrencySlot()
   }
 }
 
