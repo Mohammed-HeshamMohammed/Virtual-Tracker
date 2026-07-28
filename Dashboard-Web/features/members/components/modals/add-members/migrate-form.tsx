@@ -48,10 +48,13 @@ export function MigrateForm({
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
         <input
+          id="migrate-filter"
+          name="migrate-filter"
           type="text"
           value={filterText}
           onChange={(e) => onFilterChange(e.target.value)}
           placeholder="Filter by email or name"
+          aria-label="Filter by email or name"
           className={`${inputCls} pl-8`}
         />
       </div>
@@ -73,6 +76,8 @@ export function MigrateForm({
               className="flex cursor-pointer items-center gap-2.5 border-b border-slate-100 dark:border-slate-800 px-3 py-2 last:border-b-0 hover:bg-slate-50 dark:hover:bg-slate-800/40"
             >
               <input
+                id={`migrate-uid-${u.uid}`}
+                name={`migrate-uid-${u.uid}`}
                 type="checkbox"
                 checked={selectedUids.has(u.uid)}
                 onChange={() => onToggle(u.uid)}

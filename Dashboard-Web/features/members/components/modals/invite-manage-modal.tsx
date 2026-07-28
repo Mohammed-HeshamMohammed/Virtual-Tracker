@@ -48,6 +48,13 @@ export function InviteManageModal({
   const [busy, setBusy] = useComponentState(false)
   const [saveError, setSaveError] = useComponentState<string | null>(null)
   const [removeConfirm, setRemoveConfirm] = useComponentState(false)
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  const [isClosing, setIsClosing] = useComponentState(false)
+  const handleClose = () => {
+    setIsClosing(true)
+    onClose()
+  }
 
   const isPendingAccount = invite.listKind === "pending_account"
 
@@ -67,6 +74,7 @@ export function InviteManageModal({
     setPrevId(invite.id)
     setPrevOpenEntry(openEntry)
     if (open) {
+      setIsClosing(false)
       setSaveError(null)
       setHeaderMenuOpen(false)
       setActiveTab(memberEntryToTab(openEntry))
@@ -105,7 +113,7 @@ export function InviteManageModal({
     setSaveError(null)
     try {
       if (Object.keys(body).length > 0) await onPatchInvite(invite.id, body)
-      onClose()
+      handleClose()
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Save failed")
     } finally {
@@ -117,7 +125,7 @@ export function InviteManageModal({
     setBusy(true)
     try {
       await Promise.resolve(onRemoveInvite(invite.id))
-      onClose()
+      handleClose()
     } finally {
       setBusy(false)
     }
@@ -130,7 +138,7 @@ export function InviteManageModal({
       sessionStorage.setItem("vt-custom-fields-sub:v1", "profile")
     } catch {}
     onNavigate?.("settings-members")
-    onClose()
+    handleClose()
   }
 
   return (
@@ -140,8 +148,11 @@ export function InviteManageModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-3 sm:p-6"
-          onClick={() => !busy && onClose()}
+          className={cn(
+            "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-3 sm:p-6",
+            isClosing && "pointer-events-none",
+          )}
+          onClick={() => !busy && handleClose()}
         >
           <motion.div
             initial={{ scale: 0.97, opacity: 0, y: 10 }}
@@ -154,7 +165,7 @@ export function InviteManageModal({
             {/* Header */}
             <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
+                <button type="button" onClick={() => !busy && handleClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
                   <ChevronLeft className="h-4 w-4" />
                   Invites
                 </button>

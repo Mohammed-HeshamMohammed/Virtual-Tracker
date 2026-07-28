@@ -30,10 +30,12 @@ export function AccountForm({
       <div className="space-y-2.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3">
         <div className="grid grid-cols-2 gap-2.5">
           <div>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <label htmlFor="add-member-first-name" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
               FIRST NAME*
             </label>
             <input
+              id="add-member-first-name"
+              name="firstName"
               type="text"
               value={form.firstName}
               onChange={(e) => onUpdateField("firstName", e.target.value)}
@@ -42,10 +44,12 @@ export function AccountForm({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <label htmlFor="add-member-last-name" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
               LAST NAME*
             </label>
             <input
+              id="add-member-last-name"
+              name="lastName"
               type="text"
               value={form.lastName}
               onChange={(e) => onUpdateField("lastName", e.target.value)}
@@ -55,10 +59,12 @@ export function AccountForm({
           </div>
         </div>
         <div>
-          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <label htmlFor="add-member-email" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             WORK EMAIL*
           </label>
           <input
+            id="add-member-email"
+            name="email"
             type="email"
             value={form.email}
             onChange={(e) => onUpdateField("email", e.target.value)}
@@ -67,10 +73,12 @@ export function AccountForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <label htmlFor="add-member-pay-rate" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
             PAY RATE (USD/HR)
           </label>
           <input
+            id="add-member-pay-rate"
+            name="payRate"
             type="number"
             value={form.payRate}
             onChange={(e) => onUpdateField("payRate", e.target.value)}
