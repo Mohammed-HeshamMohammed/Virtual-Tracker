@@ -133,6 +133,14 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
 
   const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate">("invites")
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  // Kill pointer-events the instant close is requested, independent of animation state.
+  const [isClosing, setIsClosing] = useComponentState(false)
+  const handleClose = useCallback(() => {
+    setIsClosing(true)
+    onClose()
+  }, [onClose])
 
   // Send invites state
   const [inviteRows, setInviteRows] = useComponentState<InviteFormRow[]>([{ email: "", payRate: "" }])
@@ -324,7 +332,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           role: inviteRole,
         }
         onPending?.(payload)
-        onClose()
+        handleClose()
         void onAdd(payload)
           .then((result) => onSuccess?.(result))
           .catch((e) =>
@@ -351,7 +359,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
       setIsSubmitting(true)
       const payload: AddMembersSubmission = { mode: "migrate", uids, role: migrateRole }
       onPending?.(payload)
-      onClose()
+      handleClose()
       void onAdd(payload)
         .then((result) => onSuccess?.(result))
         .catch((e) => onError?.(e instanceof Error ? e.message : "Could not migrate members."))
@@ -392,7 +400,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
         sendWelcomeEmail,
       }
       onPending?.(payload)
-      onClose()
+      handleClose()
       void onAdd(payload)
         .then((result) => onSuccess?.(result))
         .catch((e) =>
@@ -421,8 +429,11 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={modalTransition}
-      className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6",
+        isClosing && "pointer-events-none",
+      )}
+      onClick={handleClose}
     >
       <NotifyToastHost
         message={toast?.message ?? null}
@@ -440,7 +451,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
           <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Add members</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
+          <button onClick={handleClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
             <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
@@ -567,7 +578,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           </div>
           <div className="flex gap-2">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100 transition-colors" type="button"
             >
               Cancel

@@ -234,6 +234,13 @@ export function AddTeamModal({
   teamScopeMemberIds = null,
 }: AddTeamModalProps) {
   const isEdit = mode === "edit"
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  const [isClosing, setIsClosing] = useComponentState(false)
+  const handleClose = () => {
+    setIsClosing(true)
+    onClose()
+  }
   const [step, setStep] = useComponentState(1)
   const [teamName, setTeamName] = useComponentState(initial?.name ?? "")
   const [selectedMembers, setSelectedMembers] = useComponentState<string[]>(initial?.memberIds ?? [])
@@ -450,7 +457,7 @@ export function AddTeamModal({
         leadIds: rosterDraft.leadIds,
         projectIds: selectedProjects,
       })
-      onClose()
+      handleClose()
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Failed to save team")
     } finally {
@@ -547,8 +554,11 @@ export function AddTeamModal({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-6",
+        isClosing && "pointer-events-none",
+      )}
+      onClick={handleClose}
     >
       <motion.div
         initial={{ scale: 0.96, y: 12, opacity: 0 }}
@@ -563,7 +573,7 @@ export function AddTeamModal({
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{isEdit ? "Edit team" : "New team"}</h2>
           <div className="flex items-center gap-2">
             <MyTeamScopeSwitch />
-            <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
+            <button onClick={handleClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
               <X className="w-5 h-5 text-slate-400 dark:text-slate-500" />
             </button>
           </div>
@@ -723,7 +733,7 @@ export function AddTeamModal({
         {/* Footer */}
         <div className="flex items-center justify-between px-7 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 rounded-b-2xl">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="px-5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" type="button"
           >
             Cancel

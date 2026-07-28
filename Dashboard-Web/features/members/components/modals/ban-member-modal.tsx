@@ -29,6 +29,13 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  const [isClosing, setIsClosing] = useState(false)
+  const handleClose = () => {
+    setIsClosing(true)
+    onClose()
+  }
 
   useEffect(() => {
     if (presetMember || loadedMembers) return
@@ -81,8 +88,11 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={modalTransition}
-      className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6",
+        isClosing && "pointer-events-none",
+      )}
+      onClick={handleClose}
     >
       <motion.div
         initial={reduceMotion ? false : { scale: 0.97, y: 14, opacity: 0 }}
@@ -94,7 +104,7 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
       >
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 pb-4 pt-5">
           <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Ban member</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
+          <button onClick={handleClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
             <X className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
@@ -155,7 +165,7 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
           <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800 px-6 py-4">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 transition-colors hover:text-slate-800 dark:hover:text-slate-100"
             >
               Cancel

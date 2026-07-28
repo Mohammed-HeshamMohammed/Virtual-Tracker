@@ -187,6 +187,13 @@ export function MemberManageModal({
   const [prevId, setPrevId] = useComponentState<string | null>(null)
   const [prevOpen, setPrevOpen] = useComponentState(false)
   const [prevOpenEntry, setPrevOpenEntry] = useComponentState<MemberEntryAction | null>(null)
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  const [isClosing, setIsClosing] = useComponentState(false)
+  const handleClose = () => {
+    setIsClosing(true)
+    onClose()
+  }
 
   const { firstName, lastName } = splitMemberDisplayName(member.name)
   const fallback = useMemo<MemberFormState>(() => ({
@@ -217,6 +224,7 @@ export function MemberManageModal({
     setPrevId(member.id)
     setPrevOpenEntry(openEntry)
     if (open) {
+      setIsClosing(false)
       setSaveError(null)
       const wantedTab = memberEntryToTab(openEntry)
       const canShowWanted = visibleTabs.some((t) => t.id === wantedTab)
@@ -380,7 +388,7 @@ export function MemberManageModal({
           trackingStatus: formState.ableToTrack ? "online" : "offline",
         })
       }
-      onClose()
+      handleClose()
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : "Save failed")
     } finally {
@@ -392,7 +400,7 @@ export function MemberManageModal({
     setBusy(true)
     try {
       await Promise.resolve(onRemoveMember(member.id))
-      onClose()
+      handleClose()
     } finally {
       setBusy(false)
     }
@@ -416,8 +424,11 @@ export function MemberManageModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-3 sm:p-6"
-          onClick={() => !busy && onClose()}
+          className={cn(
+            "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-3 sm:p-6",
+            isClosing && "pointer-events-none",
+          )}
+          onClick={() => !busy && handleClose()}
         >
           <motion.div
             initial={{ scale: 0.97, opacity: 0, y: 10 }}
@@ -429,7 +440,7 @@ export function MemberManageModal({
           >
             <motion.div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
+                <button type="button" onClick={() => !busy && handleClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
                   <ChevronLeft className="h-4 w-4" />
                   Members
                 </button>

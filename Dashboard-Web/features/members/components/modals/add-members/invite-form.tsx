@@ -33,30 +33,36 @@ export function InviteForm({
           <div key={`invite-row-${i}`} className="flex gap-2.5">
             <div className="flex-1 min-w-0">
               {i === 0 && (
-                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
+                <label htmlFor={`invite-email-${i}`} className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
                   EMAIL*
                 </label>
               )}
               <input
+                id={`invite-email-${i}`}
+                name={`invite-email-${i}`}
                 type="email"
                 value={row.email}
                 onChange={(e) => onUpdateRow(i, "email", e.target.value)}
                 placeholder="Add an email"
+                aria-label={i === 0 ? undefined : "Email"}
                 className={inputCls}
               />
             </div>
             <div className="w-[152px] shrink-0">
               {i === 0 && (
-                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
+                <label htmlFor={`invite-pay-rate-${i}`} className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
                   PAY RATE
                 </label>
               )}
               <div className="flex" aria-label="Interactive control">
                 <input
+                  id={`invite-pay-rate-${i}`}
+                  name={`invite-pay-rate-${i}`}
                   type="number"
                   value={row.payRate}
                   onChange={(e) => onUpdateRow(i, "payRate", e.target.value)}
                   placeholder="Rate"
+                  aria-label={i === 0 ? undefined : "Pay rate"}
                   className="peer flex-1 min-w-0 px-2.5 py-2 border border-r-0 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-l-lg text-xs placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-400 dark:focus:border-emerald-500 transition-colors"
                 />
                 <span className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 border-l-0 border border-slate-200 dark:border-slate-700 rounded-r-lg text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap peer-focus:border-blue-400 dark:peer-focus:border-emerald-500 peer-focus:border-l-0 transition-colors">

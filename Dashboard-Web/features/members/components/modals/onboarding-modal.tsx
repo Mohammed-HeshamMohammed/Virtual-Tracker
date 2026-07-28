@@ -20,6 +20,13 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useComponentState("")
   const [sendingReminderForId, setSendingReminderForId] = useComponentState<string | null>(null)
   const [page, setPage] = useComponentState(0)
+  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
+  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
+  const [isClosing, setIsClosing] = useComponentState(false)
+  const handleClose = () => {
+    setIsClosing(true)
+    onClose()
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -96,8 +103,11 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      className={cn(
+        "fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4",
+        isClosing && "pointer-events-none",
+      )}
+      onClick={handleClose}
     >
       <motion.div
         initial={{ scale: 0.95, y: 8 }}
@@ -114,7 +124,7 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
               See the progress of members invited via email and send reminders to help them get fully onboarded.
             </p>
           </div>
-          <button onClick={onClose} className="mt-1 rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
+          <button onClick={handleClose} className="mt-1 rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
             <X className="h-5 w-5 text-slate-400 dark:text-slate-500" />
           </button>
         </div>
