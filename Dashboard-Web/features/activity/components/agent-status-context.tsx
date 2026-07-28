@@ -12,6 +12,7 @@ import React, {
 import { useAuth } from "@/shared/providers/app"
 import { fetchAgentStatus, type ActivityCaptureMode, type AgentStatus } from "@/features/activity/services/activity-api"
 import type { AgentTimerReadiness } from "@/features/activity/utils/agent-timer-gate"
+import { isBackendRateLimited } from "@/infrastructure/api/backend-connection-events"
 
 interface AgentStatusContextValue {
   captureMode: ActivityCaptureMode
@@ -102,6 +103,7 @@ export function AgentStatusProvider({
   useEffect(() => {
     if (!isLoggedIn || !pollingArmed) return
     const timer = setInterval(() => {
+      if (isBackendRateLimited()) return
       void fetchAgentStatus().then((status) => {
         if (status) setRemote(status)
       })

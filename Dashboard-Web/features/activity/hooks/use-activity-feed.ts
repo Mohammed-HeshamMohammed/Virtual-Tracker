@@ -6,6 +6,7 @@ import { fetchActivityFeed, type ActivityFeedQuery } from "@/features/activity/s
 import { useAuth } from "@/shared/providers/app"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
 import { isActivityFeedCacheFresh } from "@/features/activity/utils/activity-feed-cache"
+import { isBackendRateLimited } from "@/infrastructure/api/backend-connection-events"
 
 export type { ActivityMemberOption }
 
@@ -144,6 +145,7 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
 
   useEffect(() => {
     const onInvalidate = (event: Event) => {
+      if (isBackendRateLimited()) return
       const staleOnly = (event as CustomEvent<{ staleOnly?: boolean }>).detail?.staleOnly === true
       const cached = readCache(cacheKey)
       if (staleOnly) {
@@ -152,7 +154,13 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
         return
       }
       deleteCache(cacheKey)
-      void reloadRef.current({ force: true })
+      // Jittered so multiple mounted feed instances (apps/urls/screenshots, different
+      // day/scope variants) don't all refetch in the same tick and trip a rate limit.
+      const jitterMs = Math.floor(Math.random() * 400)
+      window.setTimeout(() => {
+        if (isBackendRateLimited()) return
+        void reloadRef.current({ force: true })
+      }, jitterMs)
     }
     window.addEventListener("vt-activity-feed-invalidate", onInvalidate)
     return () => window.removeEventListener("vt-activity-feed-invalidate", onInvalidate)

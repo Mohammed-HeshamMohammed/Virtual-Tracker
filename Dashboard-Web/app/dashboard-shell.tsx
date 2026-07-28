@@ -85,7 +85,7 @@ export function DashboardShell() {
       <PageSearchProvider activePageId={activeItem}>
       <div
         className={cn(
-          "relative flex h-full min-h-0 flex-1 overflow-hidden transition-colors duration-300",
+          "relative flex h-dvh min-h-0 overflow-hidden transition-colors duration-300",
           isDark ? "bg-[#151b2d]" : "bg-[#f0f4f8]",
         )}
       >

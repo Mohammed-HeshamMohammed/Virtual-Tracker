@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Ban, CheckCircle2, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { canViewParticipationMetrics } from "@/features/auth"
 import {
   fetchReviewQueue,
@@ -34,6 +34,10 @@ import {
   loadingPulse,
   buttonTap,
 } from "@/features/timesheets/components/view-edit/lib/motion"
+import { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
+import { TablePagination } from "@/shared/tables/ui"
+
+const REVIEW_QUEUE_ROWS_PER_PAGE = 10
 
 function formatSeconds(seconds: number): string {
   const totalMinutes = Math.max(0, Math.floor(seconds / 60))
@@ -55,7 +59,7 @@ function formatDate(iso: string | null): string {
 function ParticipationCell({ row }: { row: ReviewQueueRow }) {
   const total = row.totalAssignees
   const started = row.startedAssignees
-  if (total == null || total <= 1) return <span className="text-slate-400">—</span>
+  if (total == null || total <= 1) return <span className="text-slate-400 dark:text-slate-500">—</span>
 
   return (
     <motion.div
@@ -64,15 +68,15 @@ function ParticipationCell({ row }: { row: ReviewQueueRow }) {
       transition={{ duration: 0.18 }}
       className="flex flex-col gap-0.5"
     >
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-700">
-        <Users className="h-3 w-3 text-slate-400" />
+      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 dark:text-slate-200">
+        <Users className="h-3 w-3 text-slate-400 dark:text-slate-500" />
         {started ?? 0}/{total} started
       </span>
       {row.participationPercent != null ? (
-        <span className="text-[10px] text-slate-500">{row.participationPercent}% participation</span>
+        <span className="text-[10px] text-slate-500 dark:text-slate-400">{row.participationPercent}% participation</span>
       ) : null}
       {row.allAssigneesStarted ? (
-        <span className="text-[10px] font-medium text-emerald-600">All assignees started</span>
+        <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">All assignees started</span>
       ) : null}
     </motion.div>
   )
@@ -98,6 +102,7 @@ export function ReviewQueueTable({
   teamMemberIdsLoading = false,
 }: ReviewQueueTableProps) {
   const { memberRole } = useAuth()
+  const { isDark } = useTheme()
   const showParticipation = canViewParticipationMetrics(memberRole)
   const { submitReview } = useReviewQueueMutations({ canReviewAssignments })
 
@@ -140,6 +145,8 @@ export function ReviewQueueTable({
     if (!myTeamOnly || teamMemberIdsLoading || !teamMemberIds || teamMemberIds.size === 0) return rows
     return rows.filter((row) => teamMemberIds.has(row.userId))
   }, [rows, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
+  const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
+    usePaginatedTable(scopedRows, REVIEW_QUEUE_ROWS_PER_PAGE)
   const showFilters = variant === "needs-review"
   const showReviewColumn = variant === "needs-review" && canReviewAssignments
   const colSpan =
@@ -167,7 +174,7 @@ export function ReviewQueueTable({
   return (
     <div className="space-y-4">
       {loadError ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+        <div className="rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-3 py-2 text-sm text-red-800 dark:text-red-300">
           {loadError}
         </div>
       ) : null}
@@ -261,7 +268,7 @@ export function ReviewQueueTable({
                   </td>
                 </motion.tr>
               ) : (
-                scopedRows.map((row, index) => {
+                visibleRows.map((row, index) => {
                   const statusKey = row.assignmentStatus as TaskStatus
                   const statusCfg = STATUS_CONFIG[statusKey] ?? STATUS_CONFIG.todo
                   const priorityKey = (row.priority || "medium") as Priority
@@ -314,12 +321,12 @@ export function ReviewQueueTable({
                           <ParticipationCell row={row} />
                         </td>
                       ) : null}
-                      <td className="px-4 py-3 text-slate-600">{formatEstimated(row.expectedSeconds)}</td>
-                      <td className="px-4 py-3 text-slate-600">{formatSeconds(row.loggedSeconds)}</td>
-                      <td className="px-4 py-3 text-slate-600">
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatEstimated(row.expectedSeconds)}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{formatSeconds(row.loggedSeconds)}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
                         {row.progressPercent != null ? `${row.progressPercent}%` : "—"}
                       </td>
-                      <td className="px-4 py-3 text-slate-500">{formatDate(row.lastActivityAt)}</td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{formatDate(row.lastActivityAt)}</td>
                       {showReviewColumn ? (
                         <td className="px-4 py-3">
                           <div className="flex min-w-[220px] flex-col gap-2">
@@ -330,7 +337,7 @@ export function ReviewQueueTable({
                               onChange={(e) =>
                                 setReviewNotes((prev) => ({ ...prev, [row.assignmentId]: e.target.value }))
                               }
-                              className="w-full rounded-md border border-slate-200 px-2 py-1 text-xs transition-colors focus:border-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-200"
+                              className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-2 py-1 text-xs transition-colors focus:border-emerald-300 dark:focus:border-emerald-600 focus:outline-none focus:ring-1 focus:ring-emerald-200 dark:focus:ring-emerald-800"
                             />
                             <div className="flex gap-2">
                               <motion.button
@@ -364,6 +371,17 @@ export function ReviewQueueTable({
             </AnimatePresence>
           </tbody>
         </table>
+        {scopedRows.length > 0 ? (
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={scopedRows.length}
+            rowsPerPage={rowsPerPage}
+            onPageChange={setCurrentPage}
+            isDark={isDark}
+            borderClassName={isDark ? "border-slate-800" : "border-slate-100"}
+          />
+        ) : null}
       </motion.div>
     </div>
   )

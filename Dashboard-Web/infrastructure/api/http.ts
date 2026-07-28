@@ -13,6 +13,7 @@ import {
   isApiConnectionNetworkError,
   notifyBackendConnectionLost,
   notifyBackendConnectionRestored,
+  notifyBackendRateLimited,
 } from "@/infrastructure/api/backend-connection-events"
 import { apiPath } from "@/infrastructure/api/path"
 import { resolveApiBaseUrlForPath } from "@/infrastructure/api/url"
@@ -132,6 +133,16 @@ async function maybeNotifyAuthSessionRestricted(res: Response): Promise<void> {
   }
 }
 
+function parseRetryAfterMs(res: Response): number | undefined {
+  const header = res.headers.get("Retry-After")
+  if (!header) return undefined
+  const seconds = Number(header)
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000)
+  const dateMs = Date.parse(header)
+  if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now())
+  return undefined
+}
+
 async function performApiFetch(
   input: RequestInfo | URL,
   init: RequestInit,
@@ -145,7 +156,9 @@ async function performApiFetch(
       credentials: init.credentials ?? "same-origin",
       cache: init.cache ?? "no-store",
     })
-    if (isApiConnectionFailureStatus(res.status)) {
+    if (res.status === 429) {
+      notifyBackendRateLimited(parseRetryAfterMs(res))
+    } else if (isApiConnectionFailureStatus(res.status)) {
       notifyBackendConnectionLost(
         res.status === 503 ? BACKEND_TEMPORARILY_UNAVAILABLE_MESSAGE : undefined,
       )

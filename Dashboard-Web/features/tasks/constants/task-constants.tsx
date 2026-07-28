@@ -45,18 +45,18 @@ export interface Task {
 }
 
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  todo:        { label: "To do",       color: "text-slate-500",  bg: "bg-slate-100", icon: <Circle className="w-3.5 h-3.5" /> },
-  in_progress: { label: "In progress", color: "text-blue-600",   bg: "bg-blue-50",   icon: <Clock className="w-3.5 h-3.5" /> },
-  in_review:   { label: "In review",   color: "text-amber-600",  bg: "bg-amber-50",  icon: <AlertCircle className="w-3.5 h-3.5" /> },
-  blocked:     { label: "Blocked",     color: "text-red-600",     bg: "bg-red-50",    icon: <Ban className="w-3.5 h-3.5" /> },
-  done:        { label: "Done",        color: "text-emerald-600", bg: "bg-emerald-50", icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
+  todo:        { label: "To do",       color: "text-slate-500 dark:text-slate-400",     bg: "bg-slate-100 dark:bg-slate-800",       icon: <Circle className="w-3.5 h-3.5" /> },
+  in_progress: { label: "In progress", color: "text-blue-600 dark:text-blue-400",       bg: "bg-blue-50 dark:bg-blue-950/60",       icon: <Clock className="w-3.5 h-3.5" /> },
+  in_review:   { label: "In review",   color: "text-amber-600 dark:text-amber-400",     bg: "bg-amber-50 dark:bg-amber-950/60",     icon: <AlertCircle className="w-3.5 h-3.5" /> },
+  blocked:     { label: "Blocked",     color: "text-red-600 dark:text-red-400",         bg: "bg-red-50 dark:bg-red-950/60",         icon: <Ban className="w-3.5 h-3.5" /> },
+  done:        { label: "Done",        color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/60", icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
 }
 
 export const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; dot: string }> = {
-  low:    { label: "Low",    color: "text-slate-400",  dot: "bg-slate-300" },
-  medium: { label: "Medium", color: "text-blue-500",   dot: "bg-blue-400"  },
-  high:   { label: "High",   color: "text-amber-600",  dot: "bg-amber-400" },
-  urgent: { label: "Urgent", color: "text-red-500",    dot: "bg-red-400"   },
+  low:    { label: "Low",    color: "text-slate-400 dark:text-slate-500",  dot: "bg-slate-300" },
+  medium: { label: "Medium", color: "text-blue-500 dark:text-blue-400",    dot: "bg-blue-400"  },
+  high:   { label: "High",   color: "text-amber-600 dark:text-amber-400", dot: "bg-amber-400" },
+  urgent: { label: "Urgent", color: "text-red-500 dark:text-red-400",     dot: "bg-red-400"   },
 }
 
 export const BOARD_COLUMNS: TaskStatus[] = ["todo", "in_progress", "in_review", "blocked", "done"]
