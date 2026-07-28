@@ -33,6 +33,7 @@ import {
   writeStoredProjectScopeOnly,
   writeStoredSelectedMemberId,
 } from "@/features/activity/utils/activity-scope-preferences"
+import { isBackendRateLimited } from "@/infrastructure/api/backend-connection-events"
 
 export interface ActivityMemberOption {
   id: string
@@ -164,6 +165,7 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       if (!isActivityPageActive) return
       if (pingTimerRef.current) clearTimeout(pingTimerRef.current)
       pingTimerRef.current = setTimeout(() => {
+        if (isBackendRateLimited()) return
         clearActivityFeedCache()
         clearActivityApiFeedCache()
         window.dispatchEvent(new Event("vt-activity-feed-invalidate"))
@@ -179,6 +181,7 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isActivityPageActive || !isLoggedIn) return
     const poll = setInterval(() => {
+      if (isBackendRateLimited()) return
       window.dispatchEvent(new CustomEvent("vt-activity-feed-invalidate", { detail: { staleOnly: true } }))
     }, POLL_MS)
     return () => clearInterval(poll)
