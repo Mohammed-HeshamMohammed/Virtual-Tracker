@@ -109,15 +109,16 @@ function fmtClock(totalSeconds: number): string {
 
 // Sub-hour values need mins/seconds to actually look like they're recording
 // (an active task sitting at "0h" for the first 59 minutes reads as broken,
-// even though the real number underneath is fine) — hour-scale values still
-// just show hours/minutes since seconds aren't meaningful at that scale.
+// even though the real number underneath is fine). Right at an hour boundary
+// with 0 minutes elapsed, minutes alone would freeze on "Xh 0m" for up to a
+// full minute — show seconds there too until the first minute ticks over.
 function fmtHours(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || totalSeconds <= 0) return "0s";
   const total = Math.floor(totalSeconds);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  if (h > 0) return `${h}h ${m}m`;
+  if (h > 0) return m === 0 ? `${h}h ${s}s` : `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
