@@ -37,12 +37,12 @@ function SectionCard({
   return (
     <section
       className={cn(
-        "rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition-opacity",
+        "rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 shadow-sm transition-opacity",
         dimmed && "pointer-events-none opacity-50",
       )}
     >
-      <h3 className="text-sm font-bold text-slate-900">{title}</h3>
-      {description ? <p className="mt-1 text-xs text-slate-500">{description}</p> : null}
+      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{title}</h3>
+      {description ? <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{description}</p> : null}
       <div className="mt-4">{children}</div>
     </section>
   )
@@ -67,7 +67,7 @@ function LimitInput({
 }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <label htmlFor={id} className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
         {label}
       </label>
       <div className="flex">
@@ -90,13 +90,13 @@ function LimitInput({
           }}
           placeholder={placeholder}
           className={cn(
-            "peer min-w-0 flex-1 rounded-l-lg border border-r-0 border-slate-200 px-3 py-2.5 text-sm transition-colors placeholder:text-slate-400 focus:border-blue-400 focus:outline-none",
-            disabled && "cursor-not-allowed bg-slate-50 text-slate-400",
+            "peer min-w-0 flex-1 rounded-l-lg border border-r-0 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2.5 text-sm transition-colors placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400 dark:focus:border-emerald-500 focus:outline-none",
+            disabled && "cursor-not-allowed bg-slate-50 dark:bg-slate-800/60 text-slate-400 dark:text-slate-500",
           )}
         />
         <span
           className={cn(
-            "whitespace-nowrap rounded-r-lg border border-l-0 border-slate-200 bg-slate-100 px-3 py-2.5 text-sm text-slate-500 transition-colors peer-focus:border-blue-400",
+            "whitespace-nowrap rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-3 py-2.5 text-sm text-slate-500 dark:text-slate-400 transition-colors peer-focus:border-blue-400 dark:peer-focus:border-emerald-500",
             disabled && "opacity-60",
           )}
         >
@@ -139,16 +139,16 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
         >
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold text-slate-800">
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                 Use shifts to set work allowance limits
               </span>
               {shiftsComingSoon ? (
-                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                <span className="inline-flex rounded-full bg-amber-100 dark:bg-amber-950/60 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
                   Coming soon
                 </span>
               ) : null}
             </div>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               When enabled, weekly and daily caps follow this member&apos;s shift schedule.
             </p>
           </div>
@@ -156,10 +156,10 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
         </div>
 
         {shiftsComingSoon ? (
-          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
             <div className="flex gap-3">
-              <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" aria-hidden />
-              <p className="text-sm text-slate-600">{SHIFT_ALLOWANCE_COMING_SOON_MESSAGE}</p>
+              <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-slate-400 dark:text-slate-500" aria-hidden />
+              <p className="text-sm text-slate-600 dark:text-slate-400">{SHIFT_ALLOWANCE_COMING_SOON_MESSAGE}</p>
             </div>
           </div>
         ) : null}
@@ -182,8 +182,8 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
                     className={cn(
                       "flex h-11 min-w-11 flex-col items-center justify-center rounded-xl border-2 px-2 text-[10px] font-bold transition-colors sm:h-12 sm:min-w-12",
                       selected
-                        ? "border-blue-500 bg-blue-500 text-white"
-                        : "border-slate-200 bg-white text-slate-500 hover:border-blue-300 hover:text-blue-500",
+                        ? "border-blue-500 bg-blue-500 dark:border-emerald-500 dark:bg-emerald-500 text-white"
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:border-blue-300 dark:hover:border-emerald-700 hover:text-blue-500 dark:hover:text-emerald-400",
                     )}
                   >
                     {day.short}
@@ -192,14 +192,14 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
               )
             })}
           </div>
-          <p className="mt-3 text-sm text-slate-600">
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-400">
             {selectedDayLabels.length > 0 ? (
               <>
-                <span className="font-semibold text-slate-800">Selected: </span>
+                <span className="font-semibold text-slate-800 dark:text-slate-200">Selected: </span>
                 {selectedDayLabels.join(", ")}
               </>
             ) : (
-              <span className="text-slate-400">No working days selected</span>
+              <span className="text-slate-400 dark:text-slate-500">No working days selected</span>
             )}
           </p>
         </div>
@@ -220,7 +220,7 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             onChange={(weeklyLimit) => setState((s) => ({ ...s, weeklyLimit }))}
           />
           {dailyActive && !weeklyActive ? (
-            <p className="mt-2 text-xs text-slate-500">{WORK_LIMITS_EXCLUSION_HINT}</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{WORK_LIMITS_EXCLUSION_HINT}</p>
           ) : null}
         </SectionCard>
 
@@ -238,13 +238,13 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             onChange={(dailyLimit) => setState((s) => ({ ...s, dailyLimit }))}
           />
           {weeklyActive && !dailyActive ? (
-            <p className="mt-2 text-xs text-slate-500">{WORK_LIMITS_EXCLUSION_HINT}</p>
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{WORK_LIMITS_EXCLUSION_HINT}</p>
           ) : null}
         </SectionCard>
       </div>
 
       {bothActive ? (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+        <div className="rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-4 py-3 text-sm text-red-800 dark:text-red-300" role="alert">
           {WORK_LIMITS_EXCLUSION_HINT}
         </div>
       ) : null}
@@ -252,8 +252,8 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
       <SectionCard title="Tracking restrictions">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <span className="text-sm font-semibold text-slate-800">Disable time tracking on specific days</span>
-            <p className="mt-0.5 text-xs text-slate-500">When enabled, tracking can be blocked on selected days.</p>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Disable time tracking on specific days</span>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">When enabled, tracking can be blocked on selected days.</p>
           </div>
           <Toggle
             checked={disableTracking}

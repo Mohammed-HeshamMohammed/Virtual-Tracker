@@ -15,8 +15,8 @@ export function ActivitySection({ title, description, children, className }: Act
   return (
     <section className={cn("space-y-4", className)}>
       <div className="space-y-1">
-        <h2 className="text-lg font-semibold text-slate-800">{title}</h2>
-        {description ? <p className="text-sm text-slate-500">{description}</p> : null}
+        <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">{title}</h2>
+        {description ? <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p> : null}
       </div>
       {children}
     </section>

@@ -53,24 +53,24 @@ export function ReportCalendarGrid({
       <div className="mb-4 flex items-center justify-between px-1">
         <button
           onClick={() => onMonthChange(month === 0 ? year - 1 : year, month === 0 ? 11 : month - 1)}
-          className="rounded p-1 transition-colors hover:bg-slate-100" type="button"
+          className="rounded p-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button"
         >
-          <ChevronLeft className="h-4 w-4 text-slate-500" />
+          <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-slate-400" />
         </button>
         <span className="text-sm font-semibold">
-          <span className="text-blue-500">{CALENDAR_MONTHS[month]}</span>{" "}
-          <span className="text-slate-600">{year}</span>
+          <span className="text-blue-500 dark:text-blue-400">{CALENDAR_MONTHS[month]}</span>{" "}
+          <span className="text-slate-600 dark:text-slate-300">{year}</span>
         </span>
         <button
           onClick={() => onMonthChange(month === 11 ? year + 1 : year, month === 11 ? 0 : month + 1)}
-          className="rounded p-1 transition-colors hover:bg-slate-100" type="button"
+          className="rounded p-1 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button"
         >
-          <ChevronRight className="h-4 w-4 text-slate-500" />
+          <ChevronRight className="h-4 w-4 text-slate-500 dark:text-slate-400" />
         </button>
       </div>
       <div className="mb-1 grid grid-cols-7">
         {CALENDAR_DAY_NAMES.map((n) => (
-          <div key={n} className="py-1 text-center text-xs font-semibold text-slate-600">
+          <div key={n} className="py-1 text-center text-xs font-semibold text-slate-600 dark:text-slate-300">
             {n}
           </div>
         ))}
@@ -87,8 +87,8 @@ export function ReportCalendarGrid({
               className={cn(
                 "relative flex flex-1 cursor-pointer items-center justify-center text-sm transition-colors",
                 !cell.inMonth && "opacity-30",
-                inRange && "bg-blue-100",
-                (isStart || isEnd) && "bg-blue-500",
+                inRange && "bg-blue-100 dark:bg-blue-950/60",
+                (isStart || isEnd) && "bg-blue-500 dark:bg-blue-600",
                 isStart && "rounded-l-full",
                 isEnd && "rounded-r-full"
               )}
@@ -102,8 +102,8 @@ export function ReportCalendarGrid({
                   isStart || isEnd
                     ? "font-semibold text-white"
                     : cell.inMonth
-                      ? "text-slate-700 hover:bg-blue-100"
-                      : "text-slate-400",
+                      ? "text-slate-700 dark:text-slate-200 hover:bg-blue-100 dark:hover:bg-blue-950/60"
+                      : "text-slate-400 dark:text-slate-600",
                   isToday && !isStart && !isEnd && "font-bold"
                 )}
               >

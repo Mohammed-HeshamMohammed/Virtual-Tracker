@@ -71,20 +71,20 @@ export const getScreenshotActivityColor = (level: number) => {
 }
 
 const getActivityTextColor = (level: number) => {
-  if (level >= 80) return "text-emerald-600"
-  if (level >= 60) return "text-amber-600"
-  return "text-red-600"
+  if (level >= 80) return "text-emerald-600 dark:text-emerald-400"
+  if (level >= 60) return "text-amber-600 dark:text-amber-400"
+  return "text-red-600 dark:text-red-400"
 }
 
 function TopPersonRow({ avatar, name, value, accent }: { avatar: string; name: string; value: string; accent?: "green" | "amber" | "red" }) {
-  const accents = { green: "text-emerald-600", amber: "text-amber-600", red: "text-red-500" }
+  const accents = { green: "text-emerald-600 dark:text-emerald-400", amber: "text-amber-600 dark:text-amber-400", red: "text-red-500 dark:text-red-400" }
   return (
     <div className="flex items-center gap-2 py-0.5">
-      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[9px] font-semibold text-slate-500 shrink-0">
+      <div className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[9px] font-semibold text-slate-500 dark:text-slate-400 shrink-0">
         {avatar}
       </div>
-      <span className="text-xs text-slate-500 truncate flex-1">{name}</span>
-      <span className={cn("text-xs font-semibold shrink-0", accent ? accents[accent] : "text-slate-700")}>{value}</span>
+      <span className="text-xs text-slate-500 dark:text-slate-400 truncate flex-1">{name}</span>
+      <span className={cn("text-xs font-semibold shrink-0", accent ? accents[accent] : "text-slate-700 dark:text-slate-200")}>{value}</span>
     </div>
   )
 }
@@ -120,18 +120,18 @@ function WorkTimeSection({ data }: { data: Screenshot[] }) {
       </div>
       <div className="flex gap-3 flex-wrap">
         {[
-          { label: "Core", value: totals.core, color: "text-emerald-600", dot: "bg-emerald-400" },
-          { label: "Non-core", value: totals.nonCore, color: "text-amber-600", dot: "bg-amber-400" },
-          { label: "Unprod.", value: totals.unproductive, color: "text-red-500", dot: "bg-red-400" },
+          { label: "Core", value: totals.core, color: "text-emerald-600 dark:text-emerald-400", dot: "bg-emerald-400" },
+          { label: "Non-core", value: totals.nonCore, color: "text-amber-600 dark:text-amber-400", dot: "bg-amber-400" },
+          { label: "Unprod.", value: totals.unproductive, color: "text-red-500 dark:text-red-400", dot: "bg-red-400" },
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-1">
             <div className={cn("w-1.5 h-1.5 rounded-full", item.dot)} />
-            <span className="text-[10px] text-slate-400">{item.label}</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">{item.label}</span>
             <span className={cn("text-[10px] font-semibold", item.color)}>{item.value}%</span>
           </div>
         ))}
       </div>
-      <div className="border-t border-slate-100 pt-2 space-y-0.5">
+      <div className="border-t border-slate-100 dark:border-slate-800 pt-2 space-y-0.5">
         {topCore && (
           <TopPersonRow
             avatar={topCore[1].avatar}
@@ -176,13 +176,13 @@ function FocusTimeSection({ data }: { data: Screenshot[] }) {
   return (
     <div className="space-y-2.5">
       <div className="flex items-end gap-2">
-        <span className="text-2xl font-bold text-slate-800">{teamFocus}%</span>
-        <span className="text-xs text-slate-400 mb-1">team focus rate</span>
+        <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{teamFocus}%</span>
+        <span className="text-xs text-slate-400 dark:text-slate-500 mb-1">team focus rate</span>
       </div>
-      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+      <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
         <div className="h-full bg-blue-400 rounded-full transition-all" style={{ width: `${teamFocus}%` }} />
       </div>
-      <div className="border-t border-slate-100 pt-2 space-y-0.5">
+      <div className="border-t border-slate-100 dark:border-slate-800 pt-2 space-y-0.5">
         {mostFocused && (
           <TopPersonRow
             avatar={mostFocused[1].avatar}
@@ -231,17 +231,17 @@ function UnusualActivitySection({ data }: { data: Screenshot[] }) {
     <div className="space-y-2.5">
       <div className="grid grid-cols-3 gap-1.5">
         {[
-          { label: "Suspicious", count: flags.suspicious.length, color: "text-red-500", bg: "bg-red-50" },
-          { label: "High activity", count: flags.highActivity.length, color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Low input", count: flags.lowInput.length, color: "text-slate-500", bg: "bg-slate-50" },
+          { label: "Suspicious", count: flags.suspicious.length, color: "text-red-500 dark:text-red-400", bg: "bg-red-50 dark:bg-red-950/60" },
+          { label: "High activity", count: flags.highActivity.length, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/60" },
+          { label: "Low input", count: flags.lowInput.length, color: "text-slate-500 dark:text-slate-400", bg: "bg-slate-50 dark:bg-slate-800/60" },
         ].map((item) => (
           <div key={item.label} className={cn("rounded-lg p-2 text-center", item.bg)}>
             <div className={cn("text-base font-bold leading-tight", item.color)}>{item.count}</div>
-            <div className="text-[9px] text-slate-400 leading-tight mt-0.5">{item.label}</div>
+            <div className="text-[9px] text-slate-400 dark:text-slate-500 leading-tight mt-0.5">{item.label}</div>
           </div>
         ))}
       </div>
-      <div className="border-t border-slate-100 pt-2 space-y-0.5">
+      <div className="border-t border-slate-100 dark:border-slate-800 pt-2 space-y-0.5">
         {flags.highActivity[0] && (
           <TopPersonRow
             avatar={flags.highActivity[0].avatar}
@@ -259,7 +259,7 @@ function UnusualActivitySection({ data }: { data: Screenshot[] }) {
           />
         )}
         {flags.suspicious.length === 0 && flags.highActivity.length === 0 && flags.lowInput.length === 0 && (
-          <p className="text-xs text-slate-400 py-1">No unusual instances detected</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500 py-1">No unusual instances detected</p>
         )}
       </div>
     </div>
@@ -291,16 +291,16 @@ function BenchmarksSection({ data }: { data: Screenshot[] }) {
   return (
     <div className="space-y-2.5">
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-slate-50 rounded-lg p-2 text-center">
-          <div className="text-base font-bold text-slate-700 leading-tight">{memberCount}</div>
-          <div className="text-[9px] text-slate-400 mt-0.5">active members</div>
+        <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2 text-center">
+          <div className="text-base font-bold text-slate-700 dark:text-slate-200 leading-tight">{memberCount}</div>
+          <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">active members</div>
         </div>
-        <div className="bg-slate-50 rounded-lg p-2 text-center">
+        <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2 text-center">
           <div className={cn("text-base font-bold leading-tight", getActivityTextColor(teamAvgActivity))}>{teamAvgActivity}%</div>
-          <div className="text-[9px] text-slate-400 mt-0.5">avg. activity</div>
+          <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-0.5">avg. activity</div>
         </div>
       </div>
-      <div className="border-t border-slate-100 pt-2 space-y-0.5">
+      <div className="border-t border-slate-100 dark:border-slate-800 pt-2 space-y-0.5">
         {topWorked && (
           <TopPersonRow
             avatar={topWorked.avatar}
@@ -350,16 +350,16 @@ function ScreenshotThumbnail({
   }, [mayHaveImage, screenshot.id, src])
 
   return (
-    <div className={cn("relative aspect-video w-full bg-linear-to-br from-slate-100 to-slate-200", className)}>
+    <div className={cn("relative aspect-video w-full bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700", className)}>
       {src ? (
         <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover object-top" />
       ) : loading ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 border-t-slate-500" />
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-slate-300 dark:border-slate-600 border-t-slate-500 dark:border-t-slate-400" />
         </div>
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
-          <Monitor className="w-10 h-10 text-slate-300" />
+          <Monitor className="w-10 h-10 text-slate-300 dark:text-slate-700" />
         </div>
       )}
     </div>
@@ -467,13 +467,13 @@ export function ActivityScreenshots() {
       {loading ? <ActivityLoadingState label="Loading screenshots…" /> : null}
 
       {!loading && error ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/60 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
           {error}
         </div>
       ) : null}
 
       {showCaptureBanner ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+        <div className="rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/60 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
           {disabledReason}
         </div>
       ) : null}
@@ -511,7 +511,7 @@ export function ActivityScreenshots() {
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.03 + index * 0.03 }}
               whileHover={{ y: -4 }}
-              className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden group cursor-pointer"
+              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden group cursor-pointer"
               onClick={() => setSelectedScreenshot(screenshot)}
             >
               <div className="relative w-full">
@@ -534,24 +534,24 @@ export function ActivityScreenshots() {
               </div>
               <div className="p-4">
                 <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 flex items-center justify-center text-xs font-semibold text-slate-600">
+                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200">
                     {screenshot.avatar}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{screenshot.member}</p>
-                    <p className="text-xs text-slate-500">{screenshot.time}</p>
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{screenshot.member}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{screenshot.time}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-slate-500">
+                  <span className="truncate text-xs text-slate-500 dark:text-slate-400">
                     Task: {screenshot.project}
                   </span>
-                  <span className="shrink-0 text-xs font-medium text-slate-600">
+                  <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">
                     {formatActivityAppName(screenshot.activeApp)}
                   </span>
                 </div>
                 {screenshot.pageTitle ? (
-                  <p className="mt-1 truncate text-[11px] text-slate-400" title={screenshot.pageTitle}>
+                  <p className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500" title={screenshot.pageTitle}>
                     {screenshot.pageTitle}
                   </p>
                 ) : null}
@@ -575,40 +575,40 @@ export function ActivityScreenshots() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.2 }}
-          className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden"
+          className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden"
         >
           <table className="w-full">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-100">
+              <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
                 {["Member", "Time", "Task", "App", "Activity"].map((h) => (
-                  <th key={h} className="text-left text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">{h}</th>
+                  <th key={h} className="text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider px-5 py-3">{h}</th>
                 ))}
                 {canManage ? (
-                  <th className="text-right text-xs font-medium text-slate-500 uppercase tracking-wider px-5 py-3">Actions</th>
+                  <th className="text-right text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider px-5 py-3">Actions</th>
                 ) : null}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {visibleRows.map((screenshot) => (
                 <tr
                   key={screenshot.id}
-                  className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
                   onClick={() => setSelectedScreenshot(screenshot)}
                 >
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 flex items-center justify-center text-xs font-semibold text-slate-600">
+                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200">
                         {screenshot.avatar}
                       </div>
-                      <span className="text-sm font-medium text-slate-700">{screenshot.member}</span>
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{screenshot.member}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-4"><span className="text-sm text-slate-600">{screenshot.time}</span></td>
-                  <td className="px-5 py-4"><span className="text-sm text-slate-600">{screenshot.project}</span></td>
-                  <td className="px-5 py-4"><span className="text-sm text-slate-600">{screenshot.activeApp}</span></td>
+                  <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.time}</span></td>
+                  <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.project}</span></td>
+                  <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.activeApp}</span></td>
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-2">
-                      <div className="w-16 h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div className="w-16 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                         <div className={cn("h-full rounded-full", getScreenshotActivityColor(screenshot.activityLevel))} style={{ width: `${screenshot.activityLevel}%` }} />
                       </div>
                       <span className={cn("text-sm font-medium", getActivityTextColor(screenshot.activityLevel))}>{screenshot.activityLevel}%</span>
@@ -617,11 +617,11 @@ export function ActivityScreenshots() {
                   {canManage ? (
                     <td className="px-5 py-4">
                       <div className="flex items-center justify-end gap-1">
-                        <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedScreenshot(screenshot) }} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                          <Maximize2 className="w-4 h-4 text-slate-500" />
+                        <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedScreenshot(screenshot) }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                          <Maximize2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         </button>
-                        <button type="button" onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                          <Trash2 className="w-4 h-4 text-slate-500" />
+                        <button type="button" onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                          <Trash2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         </button>
                       </div>
                     </td>
@@ -657,11 +657,11 @@ export function ActivityScreenshots() {
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.12 + i * 0.05 }}
-              className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 flex flex-col gap-3"
+              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-4 flex flex-col gap-3"
             >
               <div className="flex items-center gap-2">
-                <span className="text-slate-400">{icon}</span>
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400">{title}</span>
+                <span className="text-slate-400 dark:text-slate-500">{icon}</span>
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500">{title}</span>
               </div>
               <Component data={displayScreenshots} />
             </motion.div>
@@ -684,26 +684,26 @@ export function ActivityScreenshots() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-xl max-w-4xl w-full overflow-hidden"
+              className="bg-white dark:bg-slate-900 rounded-xl max-w-4xl w-full overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between p-4 border-b border-slate-100">
+              <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-linear-to-br from-slate-200 to-slate-300 flex items-center justify-center font-semibold text-slate-600">
+                  <div className="w-10 h-10 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center font-semibold text-slate-600 dark:text-slate-200">
                     {selectedScreenshot.avatar}
                   </div>
                   <div>
-                    <p className="font-semibold text-slate-800">{selectedScreenshot.member}</p>
-                    <p className="text-sm text-slate-500">{selectedScreenshot.timestamp} at {selectedScreenshot.time}</p>
+                    <p className="font-semibold text-slate-800 dark:text-slate-100">{selectedScreenshot.member}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{selectedScreenshot.timestamp} at {selectedScreenshot.time}</p>
                   </div>
                 </div>
-                <button onClick={() => setSelectedScreenshot(null)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                  <X className="w-5 h-5 text-slate-500" />
+                <button onClick={() => setSelectedScreenshot(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                  <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
                 </button>
               </div>
-              <div className="relative aspect-video bg-linear-to-br from-slate-100 to-slate-200">
+              <div className="relative aspect-video bg-linear-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
                 {modalImageLoading ? (
-                  <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500">
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-500 dark:text-slate-400">
                     Loading image…
                   </div>
                 ) : modalImageData ? (
@@ -714,32 +714,32 @@ export function ActivityScreenshots() {
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <Monitor className="w-24 h-24 text-slate-300" />
+                    <Monitor className="w-24 h-24 text-slate-300 dark:text-slate-700" />
                   </div>
                 )}
               </div>
-              <div className="p-4 bg-slate-50 flex items-center justify-between">
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
                 <div className="flex items-center gap-6">
                   <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-slate-500" />
-                    <span className="text-sm text-slate-600">Activity: {selectedScreenshot.activityLevel}%</span>
+                    <Clock className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-300">Activity: {selectedScreenshot.activityLevel}%</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Monitor className="w-4 h-4 text-slate-500" />
-                    <span className="text-sm text-slate-600">{selectedScreenshot.activeApp}</span>
+                    <Monitor className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{selectedScreenshot.activeApp}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <User className="w-4 h-4 text-slate-500" />
-                    <span className="text-sm text-slate-600">{selectedScreenshot.project}</span>
+                    <User className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                    <span className="text-sm text-slate-600 dark:text-slate-300">{selectedScreenshot.project}</span>
                   </div>
                 </div>
                 {canManage ? (
                   <div className="flex items-center gap-2">
-                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
                       <Download className="w-4 h-4" />
                       Download
                     </button>
-                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-lg transition-colors">
                       <Trash2 className="w-4 h-4" />
                       Delete
                     </button>

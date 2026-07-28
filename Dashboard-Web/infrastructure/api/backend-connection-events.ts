@@ -40,6 +40,11 @@ export function serviceConnectingAttemptMessage(attempt: number): string {
 const DEFAULT_LOST_MESSAGE = BACKEND_UNAVAILABLE_MESSAGE
 
 let connectionLostActive = false
+let consecutiveFailureCount = 0
+/** A single flaky request (dev-server blip, one timed-out call among many concurrent
+ * ones) must not freeze the whole dashboard. Only declare the connection lost once
+ * failures happen back-to-back with no successful request in between. */
+const CONSECUTIVE_FAILURES_BEFORE_LOST = 2
 
 export function isApiConnectionFailureStatus(status: number): boolean {
   if (status === 0) return true
@@ -58,13 +63,17 @@ export function isApiConnectionNetworkError(error: unknown): boolean {
 
 export function notifyBackendConnectionLost(message = DEFAULT_LOST_MESSAGE): void {
   if (typeof window === "undefined") return
+  consecutiveFailureCount += 1
   if (connectionLostActive) return
+  if (consecutiveFailureCount < CONSECUTIVE_FAILURES_BEFORE_LOST) return
   connectionLostActive = true
   window.dispatchEvent(new CustomEvent(BACKEND_CONNECTION_LOST, { detail: { message } }))
 }
 
 export function notifyBackendConnectionRestored(): void {
   if (typeof window === "undefined") return
+  consecutiveFailureCount = 0
+  if (!connectionLostActive) return
   connectionLostActive = false
   window.dispatchEvent(new Event(BACKEND_CONNECTION_RESTORED))
 }

@@ -297,30 +297,30 @@ export function ActivityAppsContent() {
                 <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
               </div>
 
-              <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">Neutral</p>
-                    <p className="mt-1 text-2xl font-bold text-slate-800">{summaryStats.neutral}</p>
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Neutral</p>
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100">
-                    <Minus className="h-6 w-6 text-slate-600" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+                    <Minus className="h-6 w-6 text-slate-600 dark:text-slate-300" />
                   </div>
                 </div>
-                <p className="mt-4 text-xs text-slate-500">{summaryStats.sessionCount} sessions tracked</p>
+                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
               </div>
 
-              <div className="rounded-xl border border-slate-100 bg-white p-5 shadow-sm">
+              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-slate-500">Unproductive</p>
-                    <p className="mt-1 text-2xl font-bold text-slate-800">{summaryStats.unproductive}</p>
+                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Unproductive</p>
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
                   </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
-                    <TrendingDown className="h-6 w-6 text-red-600" />
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
+                    <TrendingDown className="h-6 w-6 text-rose-600 dark:text-rose-400" />
                   </div>
                 </div>
-                <p className="mt-4 text-xs text-slate-500">{summaryStats.appCount} apps total</p>
+                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
               </div>
             </motion.div>
           </ActivitySection>
@@ -330,35 +330,35 @@ export function ActivityAppsContent() {
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm"
+                className="overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl"
               >
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {membersSource.map((member, index) => (
                     <motion.div
                       key={member.memberId || `${member.member}-${index}`}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.03 + index * 0.03 }}
-                      className="p-4 transition-colors hover:bg-slate-50"
+                      className="p-4 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 text-sm font-semibold text-slate-600">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
                           {member.avatar}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="mb-2 flex items-center justify-between">
-                            <p className="font-medium text-slate-800">{member.member}</p>
-                            <span className="text-sm font-semibold text-emerald-600">
+                            <p className="font-medium text-slate-800 dark:text-slate-100">{member.member}</p>
+                            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
                               {member.productivePercent}% productive
                             </span>
                           </div>
-                          <div className="flex h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                             <div
                               className="h-full bg-emerald-500"
                               style={{ width: `${member.productivePercent}%` }}
                             />
                           </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
                             <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {member.productiveTime} tracked

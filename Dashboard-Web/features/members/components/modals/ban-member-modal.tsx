@@ -17,7 +17,7 @@ type BanMemberModalProps = {
 
 const MODAL_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1]
 const inputCls =
-  "w-full rounded-lg border border-slate-200 px-2.5 py-2 text-xs text-slate-700 placeholder:text-slate-400 transition-colors focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+  "w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-2 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors focus:border-blue-400 dark:focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:focus:ring-emerald-500"
 
 export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanMemberModalProps) {
   const reduceMotion = useReducedMotion()
@@ -89,13 +89,13 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={reduceMotion ? undefined : { scale: 0.97, y: 10, opacity: 0 }}
         transition={modalTransition}
-        className="flex max-h-[88vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 pb-4 pt-5">
-          <h2 className="text-lg font-bold text-slate-800">Ban member</h2>
-          <button onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100" type="button">
-            <X className="h-5 w-5 text-slate-500" />
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-6 pb-4 pt-5">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Ban member</h2>
+          <button onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
+            <X className="h-5 w-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
 
@@ -104,7 +104,7 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
             <div className="space-y-4">
               {!presetMember ? (
                 <div className="space-y-1.5">
-                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400" htmlFor="ban-member-select">
+                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500" htmlFor="ban-member-select">
                     Member*
                   </label>
                   <select
@@ -124,18 +124,18 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">Member</span>
-                  <div className={cn(inputCls, "bg-slate-50")}>
+                  <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Member</span>
+                  <div className={cn(inputCls, "bg-slate-50 dark:bg-slate-800/60")}>
                     <span className="font-semibold">{presetMember.name}</span>
                     {presetMember.email ? (
-                      <span className="ml-2 text-slate-500">{presetMember.email}</span>
+                      <span className="ml-2 text-slate-500 dark:text-slate-400">{presetMember.email}</span>
                     ) : null}
                   </div>
                 </div>
               )}
 
               <div className="space-y-1.5">
-                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400" htmlFor="ban-reason">
+                <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500" htmlFor="ban-reason">
                   Reason*
                 </label>
                 <textarea
@@ -148,15 +148,15 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
                 />
               </div>
 
-              {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              {error ? <p className="text-sm text-red-600 dark:text-red-400">{error}</p> : null}
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-6 py-4">
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800 px-6 py-4">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-800"
+              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 transition-colors hover:text-slate-800 dark:hover:text-slate-100"
             >
               Cancel
             </button>

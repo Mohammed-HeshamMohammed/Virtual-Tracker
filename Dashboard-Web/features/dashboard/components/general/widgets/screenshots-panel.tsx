@@ -81,9 +81,9 @@ export function ScreenshotsPanel({ onNavigate }: { onNavigate?: (id: string) => 
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: index * 0.04 }}
               onClick={() => setSelected(shot)}
-              className="group overflow-hidden rounded-xl border border-slate-100 bg-white text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+              className="group overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 text-left shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
             >
-              <div className="relative aspect-video bg-gradient-to-br from-slate-100 to-slate-200">
+              <div className="relative aspect-video bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700">
                 {shot.imageData ? (
                   <Image
                     src={shot.imageData}
@@ -94,7 +94,7 @@ export function ScreenshotsPanel({ onNavigate }: { onNavigate?: (id: string) => 
                   />
                 ) : (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <Monitor className="h-8 w-8 text-slate-300" />
+                    <Monitor className="h-8 w-8 text-slate-300 dark:text-slate-700" />
                   </div>
                 )}
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
@@ -110,8 +110,8 @@ export function ScreenshotsPanel({ onNavigate }: { onNavigate?: (id: string) => 
                 </span>
               </div>
               <div className="p-2.5">
-                <p className="truncate text-xs font-semibold text-slate-800">{shot.member}</p>
-                <p className="truncate text-[11px] text-slate-500">{shot.time}</p>
+                <p className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{shot.member}</p>
+                <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{shot.time}</p>
               </div>
             </motion.button>
           ))}
@@ -132,35 +132,35 @@ export function ScreenshotsPanel({ onNavigate }: { onNavigate?: (id: string) => 
               initial={{ scale: 0.94, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.94, opacity: 0 }}
-              className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-xl"
+              className="max-h-[90vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-xl"
               role="dialog"
               aria-modal="true"
               aria-labelledby="screenshot-preview-title"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-slate-100 p-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 p-4">
                 <div>
-                  <p id="screenshot-preview-title" className="font-bold text-slate-900">
+                  <p id="screenshot-preview-title" className="font-bold text-slate-900 dark:text-slate-100">
                     {selected.member}
                   </p>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
                     {selected.timestamp} · {selected.time}
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSelected(null)}
-                  className="rounded-lg p-2 hover:bg-slate-100"
+                  className="rounded-lg p-2 hover:bg-slate-100 dark:hover:bg-slate-800"
                   aria-label="Close"
                 >
-                  <X className="h-5 w-5 text-slate-500" />
+                  <X className="h-5 w-5 text-slate-500 dark:text-slate-400" />
                 </button>
               </div>
-              <div className="flex aspect-video items-center justify-center bg-slate-100">
+              <div className="flex aspect-video items-center justify-center bg-slate-100 dark:bg-slate-800">
                 {selected.imageData ? (
                   <Image src={selected.imageData} alt="" className="h-full w-full object-contain" width={800} height={450} />
                 ) : (
-                  <Monitor className="h-16 w-16 text-slate-300" />
+                  <Monitor className="h-16 w-16 text-slate-300 dark:text-slate-700" />
                 )}
               </div>
             </motion.div>

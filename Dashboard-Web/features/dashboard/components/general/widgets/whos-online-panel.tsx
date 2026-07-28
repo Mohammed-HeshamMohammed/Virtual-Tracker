@@ -32,7 +32,7 @@ export function WhosOnlinePanel() {
         empty={!loading && members.length === 0}
         emptyMessage="No team members in scope."
         action={
-          <div className="hidden items-center gap-3 text-[11px] font-medium text-slate-500 sm:flex">
+          <div className="hidden items-center gap-3 text-[11px] font-medium text-slate-500 dark:text-slate-400 sm:flex">
             <Legend color="bg-emerald-500" label="Working" />
             <Legend color="bg-amber-500" label="Idle" />
             <Legend color="bg-slate-400" label="Offline" />

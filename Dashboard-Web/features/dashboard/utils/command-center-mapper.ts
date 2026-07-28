@@ -21,12 +21,12 @@ const PROJECT_COLORS = [
 
 function healthUi(health: string): Pick<ProjectHealthItem, "status" | "statusColor" | "barColor"> {
   if (health === "on_track") {
-    return { status: "ON TRACK", statusColor: "text-emerald-600", barColor: "bg-emerald-500" }
+    return { status: "ON TRACK", statusColor: "text-emerald-600 dark:text-emerald-400", barColor: "bg-emerald-500" }
   }
   if (health === "at_risk") {
-    return { status: "AT RISK", statusColor: "text-amber-600", barColor: "bg-amber-500" }
+    return { status: "AT RISK", statusColor: "text-amber-600 dark:text-amber-400", barColor: "bg-amber-500" }
   }
-  return { status: "STALLED", statusColor: "text-slate-400", barColor: "bg-slate-300" }
+  return { status: "STALLED", statusColor: "text-slate-400 dark:text-slate-500", barColor: "bg-slate-300 dark:bg-slate-600" }
 }
 
 function mapHealth(items: CommandCenterApiPayload["projects"][number]["health"]): ProjectHealthItem[] {

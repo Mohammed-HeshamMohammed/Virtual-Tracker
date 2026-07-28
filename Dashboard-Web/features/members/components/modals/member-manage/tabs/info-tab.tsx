@@ -43,7 +43,7 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
   return (
     <div className="space-y-6">
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Identity</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Identity</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className={MODAL_LABEL} htmlFor="fallback-id">Employee ID</label>
@@ -71,10 +71,10 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
                   disabled={generatingId}
                   aria-label="Generate employee ID"
                   className={cn(
-                    "flex shrink-0 items-center gap-1 border-l border-slate-200 px-2.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
+                    "flex shrink-0 items-center gap-1 border-l border-slate-200 dark:border-slate-700 px-2.5 text-[10px] font-semibold uppercase tracking-wide transition-colors",
                     generatingId
-                      ? "cursor-not-allowed bg-slate-50 text-slate-400"
-                      : "bg-slate-50 text-blue-600 hover:bg-blue-50 hover:text-blue-700",
+                      ? "cursor-not-allowed bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500"
+                      : "bg-slate-50 dark:bg-slate-800 text-blue-600 dark:text-emerald-400 hover:bg-blue-50 dark:hover:bg-emerald-950/60 hover:text-blue-700 dark:hover:text-emerald-300",
                   )}
                 >
                   <Sparkles className="size-3.5" aria-hidden />
@@ -83,9 +83,9 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
               </IconTooltip>
             </div>
             {generateError ? (
-              <p className="mt-1 text-[11px] text-red-600">{generateError}</p>
+              <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{generateError}</p>
             ) : (
-              <p className="mt-1 text-[11px] text-slate-400">
+              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                 Uses first name + tree position; checks all existing IDs for uniqueness.
               </p>
             )}
@@ -101,11 +101,11 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
                 type="text"
                 value={(state.lastIp || member.lastIp)?.trim() || "—"}
                 readOnly
-                className={cn(MODAL_INPUT, "bg-slate-50 text-slate-600")}
+                className={cn(MODAL_INPUT, "bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400")}
                 aria-label="Last IP"
               />
             </IconTooltip>
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
               Updated automatically when the member signs in. Not editable.
             </p>
           </div>
@@ -183,7 +183,7 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
                   />
                   {state.phoneVerified && state.editPhone.trim() ? (
                     <span
-                      className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 pr-3 text-[11px] font-semibold text-emerald-600"
+                      className="pointer-events-none absolute inset-y-0 right-0 flex items-center gap-1 pr-3 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
                       aria-hidden
                     >
                       <CheckCircle2 className="size-3.5 shrink-0" />
@@ -192,9 +192,9 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
                   ) : null}
                 </div>
                 {!state.phoneVerified && state.editPhone.trim() ? (
-                  <p className="text-[11px] text-amber-700">Unverified — member must verify their own number</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400">Unverified — member must verify their own number</p>
                 ) : null}
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px] text-slate-400 dark:text-slate-500">
                   Only this member can verify their phone from Profile or Manage myself after sign-in.
                 </p>
               </div>
@@ -203,7 +203,7 @@ export function InfoTab({ member, state, setState, isSelfEdit = false, phoneVeri
         </div>
       </section>
       <section>
-        <h3 className="mb-3 text-sm font-bold text-slate-800">Contact</h3>
+        <h3 className="mb-3 text-sm font-bold text-slate-800 dark:text-slate-100">Contact</h3>
         <div className="grid gap-4 sm:grid-cols-2" aria-label="Interactive control">
           <div className="sm:col-span-2">
             <label className={MODAL_LABEL}>Personal email</label>

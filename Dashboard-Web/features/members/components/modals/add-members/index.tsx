@@ -435,18 +435,18 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={reduceMotion ? undefined : { scale: 0.97, y: 10, opacity: 0 }}
         transition={modalTransition}
-        className="flex max-h-[88vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+        className="flex max-h-[88vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 shrink-0">
-          <h2 className="text-lg font-bold text-slate-800">Add members</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors" type="button">
-            <X className="w-5 h-5 text-slate-500" />
+        <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Add members</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors" type="button">
+            <X className="w-5 h-5 text-slate-500 dark:text-slate-400" />
           </button>
         </div>
 
         <div className="shrink-0 px-6 pb-2.5 pt-3">
-          <div className="relative inline-flex gap-1 rounded-xl bg-slate-100 p-1">
+          <div className="relative inline-flex gap-1 rounded-xl bg-slate-100 dark:bg-slate-800 p-1">
             {(
               [
                 { id: "invites" as const, label: "Send invites" },
@@ -462,13 +462,13 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   onClick={() => setMode(tab.id)}
                   className={cn(
                     "relative z-10 rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors",
-                    active ? "text-slate-800" : "text-slate-500 hover:text-slate-700",
+                    active ? "text-slate-800 dark:text-slate-100" : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200",
                   )}
                 >
                   {active ? (
                     <motion.span
                       layoutId="add-members-tab-pill"
-                      className="absolute inset-0 rounded-lg bg-white shadow-sm"
+                      className="absolute inset-0 rounded-lg bg-white dark:bg-slate-700 shadow-sm"
                       transition={paneTransition}
                     />
                   ) : null}
@@ -544,7 +544,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           </AnimatePresence>
         </div>
 
-        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 px-6 py-4">
+        <div className="flex shrink-0 items-center justify-between border-t border-slate-100 dark:border-slate-800 px-6 py-4">
           <div className="min-h-8 min-w-38">
             <AnimatePresence initial={false}>
               {mode === "invites" ? (
@@ -557,7 +557,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   transition={paneTransition}
                   onClick={() => void handleShareInviteLink()}
                   disabled={!onShareLink || shareLinkBusy || isSubmitting}
-                  className="flex items-center gap-2 text-xs font-medium text-slate-400 transition-colors hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-2 text-xs font-medium text-slate-400 dark:text-slate-500 transition-colors hover:text-slate-600 dark:hover:text-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Share2 className="h-3.5 w-3.5" />
                   {shareLinkBusy ? "Creating link…" : "Share invite link"}
@@ -568,14 +568,14 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           <div className="flex gap-2">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors" type="button"
+              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100 transition-colors" type="button"
             >
               Cancel
             </button>
             <button
               onClick={() => void handleSend()}
               disabled={isSubmitting}
-              className="px-5 py-2 bg-blue-500 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 transition-colors disabled:opacity-50" type="button"
+              className="px-5 py-2 bg-blue-500 dark:bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 dark:hover:bg-emerald-500 transition-colors disabled:opacity-50" type="button"
             >
               {isSubmitting
                 ? "Checking…"

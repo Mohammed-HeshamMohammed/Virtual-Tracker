@@ -39,9 +39,9 @@ const getCategoryColor = (category: string) => {
 }
 
 const getCategoryBadge = (category: string) => {
-  if (category === "productive") return "bg-emerald-100 text-emerald-700"
-  if (category === "neutral") return "bg-slate-100 text-slate-700"
-  return "bg-red-100 text-red-700"
+  if (category === "productive") return "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300"
+  if (category === "neutral") return "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+  return "bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300"
 }
 
 export function ActivityURLsContent() {
@@ -186,37 +186,37 @@ export function ActivityURLsContent() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="overflow-x-auto rounded-xl border border-slate-100 bg-white shadow-sm"
+              className="overflow-x-auto rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
             >
               <table className="w-full min-w-[720px]">
-                <thead className="bg-slate-50">
+                <thead className="bg-slate-50 dark:bg-slate-800/60">
                     <tr>
-                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Site / title
                       </th>
-                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Time
                       </th>
-                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Visits
                       </th>
-                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">
+                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Category
                       </th>
                       {canManage ? (
-                        <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">
+                        <th className="px-5 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                           Actions
                         </th>
                       ) : null}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {visibleRows.map((url, index) => (
                       <motion.tr
                         key={url.url || `${url.domain}-${index}`}
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        className="hover:bg-slate-50/80"
+                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
@@ -229,10 +229,10 @@ export function ActivityURLsContent() {
                               <Globe className="h-4 w-4" />
                             </div>
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800">{url.domain}</p>
-                              <p className="truncate text-xs text-slate-500 max-w-[320px]">{url.url}</p>
+                              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{url.domain}</p>
+                              <p className="truncate text-xs text-slate-500 dark:text-slate-400 max-w-[320px]">{url.url}</p>
                               {url.sourceKind === "window" ? (
-                                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600">
+                                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
                                   Window title
                                 </p>
                               ) : null}
@@ -240,10 +240,10 @@ export function ActivityURLsContent() {
                           </div>
                         </td>
                         <td className="px-5 py-4">
-                          <p className="text-sm font-semibold text-slate-700">{url.totalTime}</p>
-                          <p className="text-xs text-slate-500">Avg: {url.avgTime}</p>
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{url.totalTime}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Avg: {url.avgTime}</p>
                         </td>
-                        <td className="px-5 py-4 text-sm text-slate-600">{url.visits}</td>
+                        <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300">{url.visits}</td>
                         <td className="px-5 py-4">
                           <span
                             className={cn(
@@ -262,18 +262,18 @@ export function ActivityURLsContent() {
                                   href={url.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="rounded-lg p-2 transition-colors hover:bg-slate-100"
+                                  className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                                   onClick={(e) => e.stopPropagation()}
                                 >
-                                  <ExternalLink className="h-4 w-4 text-slate-500" />
+                                  <ExternalLink className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                                 </a>
                               ) : (
-                                <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100" disabled>
-                                  <ExternalLink className="h-4 w-4 text-slate-300" />
+                                <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" disabled>
+                                  <ExternalLink className="h-4 w-4 text-slate-300 dark:text-slate-700" />
                                 </button>
                               )}
-                              <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100">
-                                <EyeOff className="h-4 w-4 text-slate-500" />
+                              <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+                                <EyeOff className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                               </button>
                             </div>
                           </td>
@@ -300,47 +300,47 @@ export function ActivityURLsContent() {
               animate={{ opacity: 1, y: 0 }}
               className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
             >
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
-              <TrendingUp className="w-5 h-5 text-emerald-600" />
+            <div className="w-10 h-10 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 flex items-center justify-center">
+              <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Productive</p>
-              <p className="text-xl font-bold text-slate-800">{productiveCount}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Productive</p>
+              <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{productiveCount}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
-              <Globe className="w-5 h-5 text-slate-600" />
+            <div className="w-10 h-10 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+              <Globe className="w-5 h-5 text-slate-600 dark:text-slate-300" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Neutral</p>
-              <p className="text-xl font-bold text-slate-800">{neutralCount}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Neutral</p>
+              <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{neutralCount}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
-              <TrendingDown className="w-5 h-5 text-red-600" />
+            <div className="w-10 h-10 rounded-lg bg-red-100 dark:bg-red-950/80 flex items-center justify-center">
+              <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Blocked</p>
-              <p className="text-xl font-bold text-slate-800">{blockedCount}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Blocked</p>
+              <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{blockedCount}</p>
             </div>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-              <Eye className="w-5 h-5 text-blue-600" />
+            <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center">
+              <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Sites / Visits</p>
-              <p className="text-xl font-bold text-slate-800">{urlCount} / {totalVisits}</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Sites / Visits</p>
+              <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{urlCount} / {totalVisits}</p>
             </div>
           </div>
         </div>
@@ -352,22 +352,22 @@ export function ActivityURLsContent() {
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm"
+                className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
               >
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
                   {memberOpts.map((member, index) => (
                     <motion.div
                       key={String(member.id ?? index)}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.03 + index * 0.03 }}
-                      className="p-4 transition-colors hover:bg-slate-50"
+                      className="p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 text-sm font-semibold text-slate-600">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
                           {member.initials}
                         </div>
-                        <p className="text-sm font-medium text-slate-800">{member.name}</p>
+                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{member.name}</p>
                       </div>
                     </motion.div>
                   ))}

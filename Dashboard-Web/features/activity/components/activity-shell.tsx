@@ -49,7 +49,7 @@ function ActivityPageFilters() {
             ariaLabel="Show blocked sites only"
             ariaPressed={showBlocked}
             active={showBlocked}
-            activeClassName="border-red-200 bg-red-50 text-red-600"
+            activeClassName="border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 text-red-600 dark:text-red-400"
           >
             <Shield className="h-4 w-4" />
           </ActivityToolbarIconButton>
@@ -154,7 +154,7 @@ function ActivityShellStickyBar() {
   }, [triggerRefresh, refreshTeamMemberIds])
 
   return (
-    <div className="sticky top-0 z-30 -mx-1 shrink-0 overflow-visible bg-white/95 px-1 pb-3 pt-0 backdrop-blur-md supports-backdrop-filter:bg-white/80">
+    <div className="sticky top-0 z-30 -mx-1 shrink-0 overflow-visible bg-white/95 dark:bg-slate-900/95 px-1 pb-3 pt-0 backdrop-blur-md supports-backdrop-filter:bg-white/80 dark:supports-backdrop-filter:bg-slate-900/80">
       <ActivityControlBar
         pageId={pageId}
         selectedDay={day.selectedDay}

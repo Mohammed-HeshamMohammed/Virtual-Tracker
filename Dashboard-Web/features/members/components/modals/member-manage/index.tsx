@@ -424,31 +424,31 @@ export function MemberManageModal({
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.97, opacity: 0, y: 10 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-            className="flex max-h-[min(90vh,52rem)] w-full max-w-208 flex-col rounded-2xl bg-white shadow-2xl min-h-0"
+            className="flex max-h-[min(90vh,52rem)] w-full max-w-208 flex-col rounded-2xl bg-white dark:bg-slate-900 shadow-2xl min-h-0"
             onClick={(e) => e.stopPropagation()}
           >
-            <motion.div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-3.5">
+            <motion.div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 px-5 py-3.5">
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 hover:text-slate-800">
+                <button type="button" onClick={() => !busy && onClose()} className="flex shrink-0 items-center gap-1 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100">
                   <ChevronLeft className="h-4 w-4" />
                   Members
                 </button>
-                <span className="hidden text-slate-300 sm:inline">/</span>
-                <h1 className="truncate text-base font-bold text-slate-900 sm:text-lg">{member.name}</h1>
+                <span className="hidden text-slate-300 dark:text-slate-700 sm:inline">/</span>
+                <h1 className="truncate text-base font-bold text-slate-900 dark:text-slate-100 sm:text-lg">{member.name}</h1>
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
                   disabled={busy || !canSaveProfile || !!saveValidationError}
                   onClick={() => void handleSave()}
-                  className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 disabled:opacity-60"
+                  className="rounded-lg bg-blue-500 dark:bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600 dark:hover:bg-emerald-500 disabled:opacity-60"
                 >
                   {busy ? "Saving…" : !canSaveProfile && showProfileSkeleton ? "Loading…" : "Save changes"}
                 </button>
               </div>
             </motion.div>
 
-            <div className="shrink-0 overflow-x-auto border-b border-slate-200 px-4">
+            <div className="shrink-0 overflow-x-auto border-b border-slate-200 dark:border-slate-800 px-4">
               <motion.div className="flex min-w-max gap-1">
                 {visibleTabs.map((t) => (
                   <button
@@ -457,7 +457,7 @@ export function MemberManageModal({
                     onClick={() => setActiveTab(t.id)}
                     className={cn(
                       "border-b-2 px-3 py-3 text-xs font-semibold tracking-wide transition-colors sm:px-4 sm:text-sm",
-                      activeTab === t.id ? "border-blue-500 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-800",
+                      activeTab === t.id ? "border-blue-500 dark:border-emerald-500 text-blue-600 dark:text-emerald-400" : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100",
                     )}
                   >
                     {t.label}
@@ -466,20 +466,20 @@ export function MemberManageModal({
               </motion.div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-4 border-b border-slate-100 bg-slate-50/40 px-5 py-3.5">
+            <div className="flex shrink-0 items-center gap-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 px-5 py-3.5">
               <Avatar initials={member.avatar} color={member.avatarColor} imageUrl={member.avatarUrl} alt={member.name} size="lg" />
-              <motion.div className="hidden h-10 w-px shrink-0 bg-slate-200 sm:block" aria-hidden />
+              <motion.div className="hidden h-10 w-px shrink-0 bg-slate-200 dark:bg-slate-700 sm:block" aria-hidden />
               <div className="min-w-0 flex-1 text-sm leading-snug">
-                <span className="font-semibold text-slate-900">
+                <span className="font-semibold text-slate-900 dark:text-slate-100">
                   {splitMemberDisplayName(member.name).firstName.trim() || member.name.trim().split(/\s+/)[0] || "—"}
                 </span>
-                <span className="text-slate-400"> , </span>
-                <span className="break-all text-slate-600">{member.email}</span>
+                <span className="text-slate-400 dark:text-slate-500"> , </span>
+                <span className="break-all text-slate-600 dark:text-slate-300">{member.email}</span>
               </div>
             </div>
 
             <div className="h-120 overflow-y-auto px-5 py-5 sm:px-6 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}>
-              {saveError && <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{saveError}</div>}
+              {saveError && <div className="mb-4 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-3 py-2 text-sm text-red-800 dark:text-red-300">{saveError}</div>}
               {showProfileSkeleton ? (
                 <MemberManageModalSkeleton activeTab={activeTab} />
               ) : (

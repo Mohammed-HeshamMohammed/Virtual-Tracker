@@ -3,8 +3,8 @@
 export function ManualTimeContent() {
   return (
     <div className="flex flex-col items-center justify-center py-12 text-center">
-      <h2 className="text-2xl font-semibold text-slate-800 mb-4">Manual time</h2>
-      <p className="text-sm text-slate-600 max-w-md mb-8 leading-relaxed">
+      <h2 className="text-2xl font-semibold text-slate-800 dark:text-slate-100 mb-4">Manual time</h2>
+      <p className="text-sm text-slate-600 dark:text-slate-400 max-w-md mb-8 leading-relaxed">
         By enabling the manual time approval setting, your team can submit requests for manager approval when adding manual time. Managers can then review and approve time entries, ensuring accurate project tracking, payroll and compliance.
       </p>
 

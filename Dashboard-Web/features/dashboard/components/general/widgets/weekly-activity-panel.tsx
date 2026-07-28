@@ -24,13 +24,13 @@ export function WeeklyActivityPanel() {
       empty={!loading && days.every((d) => d.activeHours === 0 && d.idleHours === 0)}
       emptyMessage="No activity recorded this week."
       action={
-        <div className="hidden items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:flex">
+        <div className="hidden items-center gap-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 sm:flex">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
             Active
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-slate-200" />
+            <span className="h-2.5 w-2.5 rounded-full bg-slate-200 dark:bg-slate-700" />
             Idle
           </span>
         </div>
@@ -56,8 +56,8 @@ export function WeeklyActivityPanel() {
             key={day.key}
             className={
               day.label === todayLabel
-                ? "text-[11px] font-bold text-emerald-700 underline decoration-2 underline-offset-4"
-                : "text-[11px] font-bold text-slate-400"
+                ? "text-[11px] font-bold text-emerald-700 dark:text-emerald-400 underline decoration-2 underline-offset-4"
+                : "text-[11px] font-bold text-slate-400 dark:text-slate-500"
             }
           >
             {day.label}
