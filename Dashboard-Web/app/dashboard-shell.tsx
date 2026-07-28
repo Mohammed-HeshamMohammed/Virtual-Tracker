@@ -17,6 +17,7 @@ import { PageContent } from "@/app/page-content"
 import { isFullBleedPage } from "@/app/page-layout"
 import { prefetchAppRoutesForRole } from "@/app/prefetch-routes"
 import { ActivityRuntimeProvider } from "@/features/activity"
+import { WidgetErrorBoundary } from "@/shared/ui/widget-error-boundary"
 
 export function DashboardShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
@@ -112,7 +113,9 @@ export function DashboardShell() {
                   : "bg-[#ffffff] shadow-lg",
               )}
             >
-              <PageContent activeItem={activeItem} onNavigate={setActiveItem} />
+              <WidgetErrorBoundary label="This page" isDark={isDark} onRetry={() => window.location.reload()}>
+                <PageContent activeItem={activeItem} onNavigate={setActiveItem} />
+              </WidgetErrorBoundary>
             </div>
           </main>
         </div>
