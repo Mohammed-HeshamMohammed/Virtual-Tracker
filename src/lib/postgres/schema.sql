@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS roles (
   updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name);
+-- No separate index on roles.name - the UNIQUE constraint above already backs one.
 
 CREATE TABLE IF NOT EXISTS lookup_tables (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS time_settings (
   updated_at                      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_time_settings_member ON time_settings (member_id);
+-- No separate index on time_settings.member_id - the UNIQUE constraint above already backs one.
 
 CREATE TABLE IF NOT EXISTS employment (
   id                   UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS employment (
   updated_at           TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_employment_member ON employment (member_id);
+-- No separate index on employment.member_id - the UNIQUE constraint above already backs one.
 
 CREATE TABLE IF NOT EXISTS member_bans (
   id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -278,12 +278,10 @@ CREATE TRIGGER trg_device_bans_updated_at
 -- Per-member task timer mirror (Firestore remains source of truth until cutover)
 -- ---------------------------------------------------------------------------
 
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
-        CREATE TYPE task_status AS ENUM ('to_do', 'in_progress', 'in_review', 'completed');
-    END IF;
-END$$;
+-- task_status enum removed (implementation.md Phase 4.5) - it was never wired
+-- to any column, and its values didn't match the real status strings in use
+-- (`todo`/`done`/`cancelled`/`archived`, not `to_do`/`completed`). tasks.status
+-- is a plain VARCHAR, matching every actual reader.
 
 CREATE TABLE IF NOT EXISTS task_member_progress (
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -292,7 +290,6 @@ CREATE TABLE IF NOT EXISTS task_member_progress (
   active_seconds         BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
   idle_seconds           BIGINT NOT NULL DEFAULT 0 CHECK (idle_seconds >= 0),
   progress_percentage    NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (progress_percentage >= 0),
-  accumulated_work_time  BIGINT NOT NULL DEFAULT 0 CHECK (accumulated_work_time >= 0),
   last_started_at        TIMESTAMPTZ,
   last_activity_at       TIMESTAMPTZ,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -303,20 +300,11 @@ CREATE TABLE IF NOT EXISTS task_member_progress (
 CREATE INDEX IF NOT EXISTS idx_tmp_task_id   ON task_member_progress (task_id);
 CREATE INDEX IF NOT EXISTS idx_tmp_member_id ON task_member_progress (member_id);
 
-CREATE TABLE IF NOT EXISTS timer_sessions (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  task_id               UUID NOT NULL,
-  member_id             UUID NOT NULL,
-  started_at            TIMESTAMPTZ NOT NULL,
-  ended_at              TIMESTAMPTZ,
-  active_seconds        BIGINT,
-  idle_seconds          BIGINT,
-  source                TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'desktop_agent')),
-  activity_session_id   VARCHAR(128)
-);
-
-CREATE INDEX IF NOT EXISTS idx_ts_task_member ON timer_sessions (task_id, member_id);
-CREATE INDEX IF NOT EXISTS idx_ts_open ON timer_sessions (member_id, task_id) WHERE ended_at IS NULL;
+-- timer_sessions removed (implementation.md Phase 4.2/4.3) - its only writer
+-- was the pre-Phase-2 dual-write mirror (TASK_MEMBER_PROGRESS_PG_DUAL_WRITE,
+-- defaulted false, never enabled here); task_member_progress has been the
+-- real primary store since Phase 2, so the mirror and this table were dead
+-- weight, not a table worth merging into activity_sessions.
 
 CREATE OR REPLACE VIEW task_progress_aggregate AS
 SELECT
@@ -332,6 +320,25 @@ CREATE TRIGGER trg_tmp_updated_at
   BEFORE UPDATE ON task_member_progress
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- Phase 4.8: trigger-maintained tasks.total_active_seconds/total_idle_seconds -
+-- cheaper than recomputing SUM() on every read, and doesn't depend on
+-- application code remembering to call it.
+CREATE OR REPLACE FUNCTION recompute_task_totals() RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE tasks SET
+    total_active_seconds = (SELECT COALESCE(SUM(active_seconds), 0) FROM task_member_progress WHERE task_id = COALESCE(NEW.task_id, OLD.task_id)),
+    total_idle_seconds   = (SELECT COALESCE(SUM(idle_seconds), 0)   FROM task_member_progress WHERE task_id = COALESCE(NEW.task_id, OLD.task_id)),
+    updated_at = now()
+  WHERE id = COALESCE(NEW.task_id, OLD.task_id);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_recompute_task_totals ON task_member_progress;
+CREATE TRIGGER trg_recompute_task_totals
+  AFTER INSERT OR UPDATE OR DELETE ON task_member_progress
+  FOR EACH ROW EXECUTE FUNCTION recompute_task_totals();
+
 -- Activity capture (screenshots, apps, URLs)
 
 CREATE TABLE IF NOT EXISTS activity_screenshots (
@@ -342,7 +349,6 @@ CREATE TABLE IF NOT EXISTS activity_screenshots (
   task_title       VARCHAR(500),
   screenshot_url   TEXT,
   image_data       BYTEA,
-  has_image        BOOLEAN NOT NULL DEFAULT true,
   app_name         VARCHAR(200) NOT NULL DEFAULT 'Browser',
   page_title       VARCHAR(300) NOT NULL DEFAULT '',
   activity_level   INTEGER NOT NULL DEFAULT 50 CHECK (activity_level >= 0 AND activity_level <= 100),
@@ -433,6 +439,28 @@ CREATE TABLE IF NOT EXISTS activity_sessions (
 CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id);
 CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_act_sess_task ON activity_sessions (task_id) WHERE task_id IS NOT NULL;
+
+-- Daily rollups (implementation.md Phase 4.6) - fixes the midnight-crossing bug
+-- where summing a session's active_seconds by started_at attributed a session
+-- that crossed midnight entirely to the day it started. Incremented by delta
+-- on each sync, attributed to the day the sync actually ran on.
+CREATE TABLE IF NOT EXISTS daily_member_active_seconds (
+  member_id      UUID NOT NULL,
+  day            DATE NOT NULL,
+  active_seconds BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS daily_member_task_active_seconds (
+  member_id      UUID NOT NULL,
+  task_id        UUID NOT NULL,
+  day            DATE NOT NULL,
+  active_seconds BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, task_id, day)
+);
 
 CREATE TABLE IF NOT EXISTS activity_alert_log (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

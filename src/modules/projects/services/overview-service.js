@@ -26,15 +26,53 @@ function num(row, ...keys) {
   return 0;
 }
 
-function calculateHealth(status, tasksForProject) {
+function calculateHealth(status, tasksTotal, tasksDone) {
   if (status === "archived") return "stalled";
-  if (!tasksForProject.length) return "on_track";
-  const done = tasksForProject.filter((t) => t.status === "done").length;
-  const progress = done / tasksForProject.length;
+  if (!tasksTotal) return "on_track";
+  const progress = tasksDone / tasksTotal;
   if (progress >= 0.7) return "on_track";
   if (progress >= 0.3) return "at_risk";
   return "stalled";
 }
+
+// Single indexed query: replaces 5 parallel Firestore-style capped reads
+// (200/200/2000/200/500) + in-app Map joins with one Postgres aggregate.
+// No arbitrary row ceiling - GROUP BY has no cap by construction.
+const OVERVIEW_CORE_SQL = `
+WITH task_counts AS (
+  SELECT project_id,
+    COUNT(*) AS tasks_total,
+    COUNT(*) FILTER (WHERE status = 'done') AS tasks_done
+  FROM tasks
+  GROUP BY project_id
+),
+member_counts AS (
+  SELECT project_id, COUNT(*) AS member_count
+  FROM project_members
+  GROUP BY project_id
+),
+member_limit_agg AS (
+  SELECT project_id, MAX(cost) FILTER (WHERE cost > 0) AS member_limit_cost
+  FROM project_member_limits
+  GROUP BY project_id
+)
+SELECT
+  p.id, p.name, p.status,
+  COALESCE(tc.tasks_total, 0) AS tasks_total,
+  COALESCE(tc.tasks_done, 0)  AS tasks_done,
+  COALESCE(mc.member_count, 0) AS member_count,
+  pb.cost AS budget_total,
+  pb.type AS budget_type,
+  pb.based_on,
+  pb.include_non_billable_time,
+  mla.member_limit_cost
+FROM projects p
+LEFT JOIN task_counts     tc  ON tc.project_id = p.id
+LEFT JOIN member_counts   mc  ON mc.project_id = p.id
+LEFT JOIN project_budgets pb  ON pb.project_id = p.id
+LEFT JOIN member_limit_agg mla ON mla.project_id = p.id
+WHERE ($1::uuid[] IS NULL OR p.id = ANY($1::uuid[]))
+ORDER BY p.created_at`;
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -42,46 +80,14 @@ function calculateHealth(status, tasksForProject) {
  */
 export async function getOverviewCore(db, options = {}) {
   const allowed = options.allowedProjectIds ?? null;
-  const [projectRows, budgetRows, memberRows, limitRows, taskRows] = await Promise.all([
-    pgQuery("SELECT id, status, name FROM projects LIMIT 200"),
-    pgQuery("SELECT project_id, cost, type, based_on, include_non_billable_time FROM project_budgets LIMIT 200"),
-    pgQuery("SELECT project_id, member_id FROM project_members LIMIT 2000"),
-    pgQuery("SELECT project_id, cost FROM project_member_limits LIMIT 200"),
-    pgQuery("SELECT project_id, status FROM tasks LIMIT 500"),
+  const allowedArray = allowed !== null ? [...allowed] : null;
+  // Org-wide totals, deliberately unscoped by `allowed` - matches the prior
+  // behavior where the summary card showed global counts while only the
+  // per-project cards below were visibility-filtered.
+  const [projectRows, [globalTaskTotals]] = await Promise.all([
+    pgQuery(OVERVIEW_CORE_SQL, [allowedArray]),
+    pgQuery("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'done')::int AS done FROM tasks"),
   ]);
-
-  const budgetByProject = new Map();
-  for (const row of budgetRows) {
-    const pid = row.project_id;
-    if (pid && !budgetByProject.has(pid)) budgetByProject.set(pid, row);
-  }
-
-  const memberCountByProject = new Map();
-  for (const row of memberRows) {
-    const pid = row.project_id;
-    if (!pid) continue;
-    memberCountByProject.set(pid, (memberCountByProject.get(pid) ?? 0) + 1);
-  }
-
-  const memberLimitByProject = new Map();
-  for (const row of limitRows) {
-    const pid = row.project_id;
-    const cost = Number(row.cost ?? 0);
-    if (pid && cost > 0) memberLimitByProject.set(pid, cost);
-  }
-
-  const tasksByProject = new Map();
-  let tasksDone = 0;
-  let tasksTotal = 0;
-  for (const row of taskRows) {
-    const pid = str(row, "project_id", "projectId");
-    const status = str(row, "status") || "todo";
-    if (!pid) continue;
-    tasksTotal += 1;
-    if (status === "done") tasksDone += 1;
-    if (!tasksByProject.has(pid)) tasksByProject.set(pid, []);
-    tasksByProject.get(pid).push({ status });
-  }
 
   const projects = [];
   let budgetSpentSum = 0;
@@ -93,21 +99,22 @@ export async function getOverviewCore(db, options = {}) {
   let colorIndex = 0;
   for (const row of projectRows) {
     const id = row.id;
-    if (allowed !== null && !allowed.has(id)) continue;
     const status = (str(row, "status") || "active").toLowerCase();
     const isActive = status !== "archived";
-    const projectTasks = tasksByProject.get(id) ?? [];
-    const done = projectTasks.filter((t) => t.status === "done").length;
-    const total = projectTasks.length;
-    const health = calculateHealth(status, projectTasks);
+    const total = Number(row.tasks_total ?? 0);
+    const done = Number(row.tasks_done ?? 0);
+    const health = calculateHealth(status, total, done);
 
-    const budgetRow = budgetByProject.get(id);
-    const budgetTotal = budgetRow ? num(budgetRow, "cost") : 0;
-    const spent = budgetRow && budgetTotal > 0 ? await computeProjectSpentPg(db, id, budgetRow) : 0;
-    const budgetType = budgetRow && str(budgetRow, "type") === "Hours based" ? "hours" : "cost";
+    const budgetTotal = num(row, "budget_total");
+    const budgetRow =
+      budgetTotal > 0
+        ? { type: row.budget_type, based_on: row.based_on, include_non_billable_time: row.include_non_billable_time }
+        : null;
+    const spent = budgetRow ? await computeProjectSpentPg(db, id, budgetRow) : 0;
+    const budgetType = budgetRow && String(budgetRow.type) === "Hours based" ? "hours" : "cost";
 
-    const members = memberCountByProject.get(id) ?? 0;
-    const memberLimit = memberLimitByProject.get(id) ?? null;
+    const members = Number(row.member_count ?? 0);
+    const memberLimit = row.member_limit_cost != null ? Number(row.member_limit_cost) : null;
 
     if (isActive) {
       activeProjects += 1;
@@ -135,8 +142,8 @@ export async function getOverviewCore(db, options = {}) {
     summary: {
       activeProjects,
       onTrack,
-      tasksDone,
-      tasksTotal,
+      tasksDone: globalTaskTotals?.done ?? 0,
+      tasksTotal: globalTaskTotals?.total ?? 0,
       budgetSpent: budgetSpentSum,
       budgetTotal: budgetTotalSum,
       teamMembers: teamMembersSum,
@@ -156,10 +163,10 @@ export async function getOverviewPanels(db, options = {}) {
 
   const [taskRows, projectRows, clientsSnap, budgetsSnap, clientProjectRows, membersSnap] = await Promise.all([
     pgQuery("SELECT id, project_id, status, title, priority, assigned_to FROM tasks LIMIT $1", [taskLimit]),
-    pgQuery("SELECT id, name FROM projects LIMIT 200"),
+    pgQuery("SELECT id, name FROM projects"),
     db.collection("clients").select("status", "name", "email_addresses", "email").limit(100).get(),
     db.collection("client_budgets").select("client_id", "clientId", "cost").limit(100).get(),
-    pgQuery("SELECT client_id, project_id FROM client_projects LIMIT 500"),
+    pgQuery("SELECT client_id, project_id FROM client_projects"),
     db.collection("members").select("first_name", "firstName", "last_name", "lastName", "name").limit(200).get(),
   ]);
 

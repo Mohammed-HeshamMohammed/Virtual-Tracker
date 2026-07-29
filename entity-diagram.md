@@ -665,6 +665,8 @@ erDiagram
 
 Project workspace. Scope tasks query by `project_id`; do not load all tasks with org-wide members.
 
+> **Note**: `TASKS`, `TASK_ASSIGNMENTS`, and `TASK_TIME_TRACKING` below moved to PostgreSQL (implementation.md Phase 2) - see `SQL-RT-TableNames.md` for the current schema. `TASK_ASSIGNMENTS.user_id` is now `member_id` (Phase 4.4). `TASK_TIME_TRACKING` itself no longer exists as a separate table - it was folded into `task_member_progress`, which also gained a trigger-maintained rollup back onto `TASKS.total_active_seconds`/`total_idle_seconds` (Phase 4.8). The blocks below predate the migration and haven't been redrawn.
+
 ```mermaid
 erDiagram
     direction TB
@@ -1087,13 +1089,13 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 | `project-members` | `project_members` | Firestore |
 | `project-budgets` | `project_budgets` | Firestore |
 | `project-member-limits` | `project_member_limits` | Firestore |
-| `tasks` | `tasks` | Firestore |
+| `tasks` | — | **Postgres** `tasks` (implementation.md Phase 2; no Firestore fallback) |
 | `task-subtasks` | `task_subtasks` | Firestore |
 | `task-comments` | `task_comments` | Firestore |
 | `task-attachments` | `task_attachments` | Firestore |
-| `task-assignments` | `task_assignments` | Firestore |
+| `task-assignments` | — | **Postgres** `task_assignments` (Phase 2; no Firestore fallback) |
 | `task-hours` | `task_hours` | Firestore |
-| `task-time-tracking` | `task_time_tracking` | Firestore |
+| ~~`task-time-tracking`~~ | — | **Removed from the generic catalog entirely** (legacy cleanup) - real store is Postgres `task_member_progress`, addressed by `(task_id, member_id)` not a generic `id`, so it's served only by the dedicated `/api/tasks/:id/time-tracking` route, not `/api/{key}` |
 | `teams` | `teams` | Firestore |
 | `team-members` | `team_members` | Firestore |
 | `team-projects` | `team_projects` | Firestore |
@@ -1107,6 +1109,8 @@ Registered in `src/modules/schema/catalog/index.js` as `schemaEntities`. HTTP pa
 `GET /api/schema/entities` returns the catalog metadata. Generic CRUD: `GET/POST /api/{key}`, `GET/PATCH/DELETE /api/{key}/:id`.
 
 The whole activity domain (`activity_sessions`, `activity_screenshots`, `activity_app_logs`, `activity_url_logs`, `activity_alert_log`) was removed from this generic-CRUD catalog entirely and moved to **Postgres** — none of them are reachable via `/api/{key}` anymore, only through the dedicated `/api/activity/*` routes. See SQL-RT-TableNames.md.
+
+`tasks` and `task_assignments` also moved to Postgres (implementation.md Phase 2) but stayed in the generic catalog, routed by `shouldRouteEntityToPostgres()` same as `time-entries`/`timesheets`. `task-time-tracking` was removed from the catalog entirely rather than wired to Postgres - the real store (`task_member_progress`) is addressed by `(task_id, member_id)`, not a generic `id`, and the only real client already uses the dedicated `/api/tasks/:id/time-tracking` route; the generic path had no caller and would have written into an orphaned Firestore collection if ever hit.
 
 **Dedicated routes (not only schema CRUD):**
 
@@ -1206,13 +1210,13 @@ Assignment and role data must not be duplicated on `members` documents. List vie
 | `teams` | `on_demand` | |
 | `team_members` | `on_demand` | |
 | `team_projects` | `on_demand` | |
-| `tasks` | `on_demand` | |
+| ~~`tasks`~~ | `on_demand` | **Moved to Postgres** (Phase 2) - row inert, kept for history |
 | `task_subtasks` | `on_demand` | |
 | `task_comments` | `on_demand` | |
 | `task_attachments` | `on_demand` | |
-| `task_assignments` | `on_demand` | Per-user task assignment + review |
+| ~~`task_assignments`~~ | `on_demand` | **Moved to Postgres** (Phase 2) - row inert, kept for history |
 | `task_hours` | `on_demand` | Submitted hours per task |
-| `task_time_tracking` | `runtime` | Active timer state per user/task |
+| ~~`task_time_tracking`~~ | `runtime` | **Moved to Postgres** `task_member_progress` (Phase 2) - row inert, kept for history |
 | `activity_sessions` | `runtime` | |
 | `activity_screenshots` | `runtime` | Ingest disabled unless env flags set |
 | `activity_app_logs` | `runtime` | |
@@ -1352,8 +1356,9 @@ Service: `src/modules/clients/services/client-service.js`, `budget-logic.js`, `i
 | GET/POST/PATCH/DELETE | `/api/tasks` (schema key) | Task CRUD via schema catalog |
 | PATCH | `/api/tasks/batch/reorder` | Bulk `order_index` updates |
 | GET | `/api/projects/:id/teams` | Teams linked to project via `team_projects` (used by task forms) |
-| GET/POST/PATCH/DELETE | `/api/task-subtasks`, `/api/task-comments`, `/api/task-attachments` | Task child entities |
-| GET/POST/PATCH/DELETE | `/api/task-assignments`, `/api/task-hours`, `/api/task-time-tracking` | Assignments, submitted hours, active timers |
+| GET/POST/PATCH/DELETE | `/api/task-subtasks`, `/api/task-comments`, `/api/task-attachments`, `/api/task-hours` | Task child entities (still Firestore) |
+| GET/POST/PATCH/DELETE | `/api/task-assignments` | Assignments - generic catalog, routed to Postgres |
+| GET | `/api/tasks/:id/time-tracking`, `/api/tasks/:id/progress`, `/api/tasks/:id/progress/me` | Active timer state - dedicated routes only, not generic catalog (see schema catalog entities section above) |
 
 ### Add / edit task modal → entity fields
 

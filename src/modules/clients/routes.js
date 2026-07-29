@@ -22,6 +22,7 @@ import {
   updateClientWithDetails,
 } from "./services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
+import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 
 function memberLabel(data) {
   const first = typeof data.first_name === "string" ? data.first_name : "";
@@ -69,14 +70,14 @@ export async function routeClients(req, res, url, db, origin) {
   if (pn === "/api/clients/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [membersSnap, projectRows, clientsSnap] = await Promise.all([
-        db.collection("members").limit(500).get(),
-        pgQuery("SELECT id, name, status FROM projects LIMIT 500"),
-        db.collection("clients").limit(500).get(),
+      const [membersDocs, projectRows, clientsDocs] = await Promise.all([
+        fetchAllDocs(db.collection("members")),
+        pgQuery("SELECT id, name, status FROM projects"),
+        fetchAllDocs(db.collection("clients")),
       ]);
 
       const linkedMemberIds = new Set(
-        clientsSnap.docs
+        clientsDocs
           .map((doc) => {
             const row = doc.data() || {};
             return String(row.member_id ?? row.memberId ?? "").trim();
@@ -84,7 +85,7 @@ export async function routeClients(req, res, url, db, origin) {
           .filter(Boolean),
       );
 
-      const rawMembers = membersSnap.docs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
+      const rawMembers = membersDocs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
       const enrichedMembers = await enrichMembersWithRoleNames(db, rawMembers);
 
       const clientMembers = enrichedMembers

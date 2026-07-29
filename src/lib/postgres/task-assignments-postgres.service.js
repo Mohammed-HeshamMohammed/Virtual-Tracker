@@ -10,7 +10,7 @@ import { query } from "./client.js";
 const ASSIGNMENT_COLUMNS = [
   "id",
   "task_id",
-  "user_id",
+  "member_id",
   "project_id",
   "status",
   "expected_seconds",
@@ -33,11 +33,11 @@ function normalizeAssignmentRow(row) {
   return out;
 }
 
-/** @param {string} taskId @param {string} userId */
-export async function findAssignmentPg(taskId, userId) {
+/** @param {string} taskId @param {string} memberId */
+export async function findAssignmentPg(taskId, memberId) {
   const rows = await query(
-    `SELECT ${ASSIGNMENT_COLUMNS.join(", ")} FROM task_assignments WHERE task_id = $1 AND user_id = $2 LIMIT 1`,
-    [taskId, userId],
+    `SELECT ${ASSIGNMENT_COLUMNS.join(", ")} FROM task_assignments WHERE task_id = $1 AND member_id = $2 LIMIT 1`,
+    [taskId, memberId],
   );
   return rows[0] ? normalizeAssignmentRow(rows[0]) : null;
 }
@@ -54,17 +54,17 @@ export async function getTaskAssignmentsPg(taskId) {
   return rows.map(normalizeAssignmentRow);
 }
 
-/** Upsert by (task_id, user_id) - matches the table's UNIQUE constraint and
+/** Upsert by (task_id, member_id) - matches the table's UNIQUE constraint and
  * the create-or-update pattern syncTaskAssignments/ensureAssignmentForUser need. */
 export async function upsertAssignmentPg(payload) {
   const id = payload.id ?? crypto.randomUUID();
   const rows = await query(
     `INSERT INTO task_assignments (
-       id, task_id, user_id, project_id, status, expected_seconds, required,
+       id, task_id, member_id, project_id, status, expected_seconds, required,
        review_state, reviewed_by, reviewed_at, review_notes, entered_review_at,
        created_at, updated_at
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-     ON CONFLICT (task_id, user_id) DO UPDATE SET
+     ON CONFLICT (task_id, member_id) DO UPDATE SET
        project_id = EXCLUDED.project_id, status = EXCLUDED.status,
        expected_seconds = EXCLUDED.expected_seconds, required = EXCLUDED.required,
        updated_at = EXCLUDED.updated_at
@@ -72,7 +72,7 @@ export async function upsertAssignmentPg(payload) {
     [
       id,
       payload.task_id,
-      payload.user_id,
+      payload.member_id,
       payload.project_id ?? null,
       payload.status ?? "todo",
       payload.expected_seconds ?? null,
@@ -125,10 +125,10 @@ export async function deleteAssignmentPg(id) {
 
 /** Task IDs assigned to any of these members - no 30-item chunking needed,
  * unlike the Firestore `in` version, since Postgres has no arity cap on ANY(). */
-export async function getTaskIdsAssignedToMembersPg(userIds) {
-  const unique = [...new Set(userIds.filter(Boolean))];
+export async function getTaskIdsAssignedToMembersPg(memberIds) {
+  const unique = [...new Set(memberIds.filter(Boolean))];
   if (!unique.length) return new Set();
-  const rows = await query("SELECT DISTINCT task_id FROM task_assignments WHERE user_id = ANY($1::uuid[])", [unique]);
+  const rows = await query("SELECT DISTINCT task_id FROM task_assignments WHERE member_id = ANY($1::uuid[])", [unique]);
   return new Set(rows.map((r) => r.task_id));
 }
 
@@ -168,7 +168,7 @@ export async function sumActiveAssignmentSecondsPg(memberId, excludeTaskId) {
   const rows = await query(
     `SELECT COALESCE(SUM(expected_seconds), 0) AS total
      FROM task_assignments
-     WHERE user_id = $1 AND status NOT IN ('done', 'cancelled')
+     WHERE member_id = $1 AND status NOT IN ('done', 'cancelled')
        ${excludeTaskId ? "AND task_id != $2" : ""}`,
     excludeTaskId ? [memberId, excludeTaskId] : [memberId],
   );
@@ -177,7 +177,7 @@ export async function sumActiveAssignmentSecondsPg(memberId, excludeTaskId) {
 
 /** True if this member has any assignment row on this task - the "was I
  * assigned" check task-access.js and tasks/routes.js need. */
-export async function hasAssignmentPg(taskId, userId) {
-  const rows = await query("SELECT 1 FROM task_assignments WHERE task_id = $1 AND user_id = $2 LIMIT 1", [taskId, userId]);
+export async function hasAssignmentPg(taskId, memberId) {
+  const rows = await query("SELECT 1 FROM task_assignments WHERE task_id = $1 AND member_id = $2 LIMIT 1", [taskId, memberId]);
   return rows.length > 0;
 }

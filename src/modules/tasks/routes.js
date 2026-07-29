@@ -12,11 +12,6 @@ import {
   syncTaskTimeTracking,
 } from "./task-time-tracking.js";
 import {
-  getMyProgressFromPostgres,
-  getTaskProgressAggregateFromPostgres,
-  isTaskMemberProgressPgEnabled,
-} from "../../lib/postgres/task-member-progress.service.js";
-import {
   getReviewQueue,
   getTaskParticipation,
   isReviewCenterRole,
@@ -411,26 +406,23 @@ export async function routeTasks(req, res, url, db, origin) {
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
     if (!access) return true;
     try {
-      const firestoreData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
+      const progressData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
         includeMemberBreakdown: false,
       });
-      const pgRow = isTaskMemberProgressPgEnabled()
-        ? await getMyProgressFromPostgres(taskId, viewer.memberId)
-        : null;
       sendJson(res, origin, 200, {
         success: true,
         data: {
           taskId,
           memberId: viewer.memberId,
-          status: firestoreData.taskStatus,
-          assignmentStatus: firestoreData.assignmentStatus,
-          plannedDurationSeconds: firestoreData.estimatedSeconds,
-          myActiveSeconds: pgRow?.activeSeconds ?? firestoreData.activeSeconds,
-          myIdleSeconds: pgRow?.idleSeconds ?? firestoreData.idleSeconds,
-          myProgressPercent: pgRow?.progressPercentage ?? firestoreData.progressPercent,
-          lastStartedAt: pgRow?.lastStartedAt ?? firestoreData.tracking?.startedAt ?? null,
-          lastActivityAt: pgRow?.lastActivityAt ?? firestoreData.tracking?.lastActivityAt ?? null,
-          source: pgRow ? "postgres+firestore" : "firestore",
+          status: progressData.taskStatus,
+          assignmentStatus: progressData.assignmentStatus,
+          plannedDurationSeconds: progressData.estimatedSeconds,
+          myActiveSeconds: progressData.activeSeconds,
+          myIdleSeconds: progressData.idleSeconds,
+          myProgressPercent: progressData.progressPercent,
+          lastStartedAt: progressData.tracking?.startedAt ?? null,
+          lastActivityAt: progressData.tracking?.lastActivityAt ?? null,
+          source: "postgres",
         },
       });
     } catch (e) {
@@ -455,33 +447,26 @@ export async function routeTasks(req, res, url, db, origin) {
       return true;
     }
     try {
-      const firestoreData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
+      const progressData = await getTaskTimeTracking(db, taskId, viewer.memberId, {
         includeMemberBreakdown: true,
       });
-      const pgData = isTaskMemberProgressPgEnabled()
-        ? await getTaskProgressAggregateFromPostgres(taskId)
-        : null;
-      const planned = firestoreData.estimatedSeconds ?? null;
-      const totalActive =
-        Number(pgData?.aggregate?.total_active_seconds ?? firestoreData.totalActiveSeconds ?? 0);
-      const totalIdle =
-        Number(pgData?.aggregate?.total_idle_seconds ?? firestoreData.totalIdleSeconds ?? 0);
+      const planned = progressData.estimatedSeconds ?? null;
+      const totalActive = Number(progressData.totalActiveSeconds ?? 0);
+      const totalIdle = Number(progressData.totalIdleSeconds ?? 0);
       const overallProgress =
         planned && planned > 0 ? Math.min(100, Math.round((totalActive / planned) * 100)) : null;
       sendJson(res, origin, 200, {
         success: true,
         data: {
           taskId,
-          status: firestoreData.taskStatus,
+          status: progressData.taskStatus,
           plannedDurationSeconds: planned,
           totalActiveSeconds: totalActive,
           totalIdleSeconds: totalIdle,
-          overallProgressPercent: overallProgress ?? firestoreData.aggregatedProgressPercent,
-          contributingMembers:
-            pgData?.aggregate?.contributing_members ??
-            (firestoreData.memberContributions?.length ?? 0),
-          memberBreakdown: firestoreData.memberContributions ?? pgData?.memberBreakdown ?? [],
-          source: pgData ? "postgres+firestore" : "firestore",
+          overallProgressPercent: overallProgress ?? progressData.aggregatedProgressPercent,
+          contributingMembers: progressData.memberContributions?.length ?? 0,
+          memberBreakdown: progressData.memberContributions ?? [],
+          source: "postgres",
         },
       });
     } catch (e) {

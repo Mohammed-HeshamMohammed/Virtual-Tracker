@@ -15,7 +15,6 @@ import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { computeTimerAllowance, enforceTimerAllowanceOnSync } from "./timer-limit.service.js";
 import {
-  syncMemberProgressToPostgres,
   getTrackingRowPg,
   getTaskTrackingRowsPg,
   upsertTrackingRowPg,
@@ -126,7 +125,7 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
       statusChanged = true;
       await notifyAssignmentStatusChange(db, {
         task,
-        assigneeId: row.user_id,
+        assigneeId: row.member_id,
         previousStatus: result.previousStatus,
         nextStatus: "in_review",
         actorName: userName || "A team member",
@@ -230,17 +229,6 @@ export async function syncTaskTimeTracking(db, {
     ...freshTaskData,
     id: taskId,
   }, { currentCumulativeActiveSeconds: active });
-
-  await syncMemberProgressToPostgres({
-    taskId,
-    memberId: userId,
-    action,
-    activeSeconds: active,
-    idleSeconds: idle,
-    sessionId: sessionId ?? null,
-    plannedSeconds: estimatedSeconds,
-    source: "web",
-  });
 
   return {
     tracking: normalizeTracking(trackingRow),

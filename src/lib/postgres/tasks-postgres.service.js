@@ -149,7 +149,9 @@ export async function listTasksPg(filters = {}) {
     conditions.push(`assigned_to = $${params.length}`);
   }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
-  const limit = Math.min(Math.max(filters.limit ?? 200, 1), 500);
+  // Ceiling raised from 500 to 5000 - dashboard-base-loader.js requests 800 and was
+  // being silently clamped down to 500 without either caller knowing.
+  const limit = Math.min(Math.max(filters.limit ?? 200, 1), 5000);
   const rows = await query(
     `SELECT ${TASK_COLUMNS.join(", ")} FROM tasks ${where} ORDER BY created_at DESC LIMIT ${limit}`,
     params,

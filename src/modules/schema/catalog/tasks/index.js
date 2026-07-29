@@ -77,7 +77,7 @@ export const taskSchemas = [
     fields: {
       id: "uuid",
       task_id: "uuid",
-      user_id: "uuid",
+      member_id: "uuid",
       project_id: "uuid",
       status: "string",
       expected_seconds: "int",
@@ -109,24 +109,12 @@ export const taskSchemas = [
       updated_by: "uuid",
     },
   },
-  {
-    key: "task-time-tracking",
-    collection: "tasks",
-    subcollection: "time_tracking",
-    parentIdField: "task_id",
-    fields: {
-      id: "uuid",
-      task_id: "uuid",
-      user_id: "uuid",
-      project_id: "uuid",
-      active_seconds: "int",
-      idle_seconds: "int",
-      started_at: "timestamp",
-      last_activity_at: "timestamp",
-      session_id: "string",
-      review_notes: "text",
-      created_at: "timestamp",
-      updated_at: "timestamp",
-    },
-  },
+  // task-time-tracking removed (implementation.md legacy cleanup) - this
+  // Firestore subcollection catalog entry backed a generic dispatcher path
+  // (/api/tasks/:id/time_tracking, underscore) that no real caller ever hit;
+  // the actual feature is served entirely by task-time-tracking.js's own
+  // dedicated /api/tasks/:id/time-tracking (hyphen) route against Postgres
+  // task_member_progress since Phase 2. Leaving this registered meant a
+  // reachable-but-dead endpoint could silently write into an orphaned
+  // Firestore collection nothing reads back from.
 ];

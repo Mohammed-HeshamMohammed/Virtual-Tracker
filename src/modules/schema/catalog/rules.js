@@ -23,7 +23,7 @@ export const schemaRulesByKey = {
     ],
   },
   "task-assignments": {
-    requiredOnCreate: ["task_id", "user_id", "status"],
+    requiredOnCreate: ["task_id", "member_id", "status"],
     validators: [
       {
         field: "status",

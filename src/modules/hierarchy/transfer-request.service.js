@@ -95,7 +95,7 @@ export async function notifyAdminRoles(db, title, message, link = "") {
 
   if (!roleIds.length) return;
 
-  const membersSnap = await db.collection("members").where("role_id", "in", roleIds.slice(0, 10)).limit(50).get();
+  const membersSnap = await db.collection("members").where("role_id", "in", roleIds.slice(0, 10)).get();
   const notified = new Set();
   for (const doc of membersSnap.docs) {
     if (notified.has(doc.id)) continue;

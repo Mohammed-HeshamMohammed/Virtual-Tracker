@@ -6,6 +6,7 @@ import {
   isOrganizationRootRole,
 } from "../../hierarchy/hierarchy-placement.js";
 import { normalizeRoleKey, rolePrivilegeRank } from "./relation-sync.js";
+import { fetchAllDocs } from "../../../lib/firestore/paginate-all.js";
 
 const MIN_EMPLOYEE_ID_LENGTH = 2;
 const MAX_EMPLOYEE_ID_LENGTH = 48;
@@ -135,9 +136,9 @@ function buildEmployeeIdCandidate(nameSlug, metrics, attempt, memberId) {
  * @param {{ firstName?: string }} [options]
  */
 export async function generateMemberEmployeeId(db, memberId, options = {}) {
-  const [membersSnap, relSnap, rolesSnap] = await Promise.all([
-    db.collection("members").limit(1200).get(),
-    db.collection("member_relationships").limit(2400).get(),
+  const [memberDocs, relDocs, rolesSnap] = await Promise.all([
+    fetchAllDocs(db.collection("members")),
+    fetchAllDocs(db.collection("member_relationships")),
     db.collection("roles").limit(100).get(),
   ]);
 
@@ -155,7 +156,7 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
   /** @type {Set<string>} */
   const takenIds = new Set();
 
-  for (const doc of membersSnap.docs) {
+  for (const doc of memberDocs) {
     const data = doc.data() || {};
     memberDataById.set(doc.id, data);
     dateAddedById.set(doc.id, timestampMs(data.date_added));
@@ -178,7 +179,7 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
   const workEmail = typeof targetData.work_email === "string" ? targetData.work_email : "";
   const nameSlug = slugFromFirstName(firstName, `${firstName} ${lastName}`.trim(), workEmail);
 
-  let edges = relSnap.docs
+  let edges = relDocs
     .map((doc) => {
       const row = doc.data() || {};
       return {

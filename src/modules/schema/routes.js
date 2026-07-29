@@ -90,7 +90,6 @@ const MANAGEMENT_WRITE_KEYS = new Set([
   "limits",
   "employment",
   "task-assignments",
-  "task-time-tracking",
   "teams",
   "team-members",
   "team-projects",

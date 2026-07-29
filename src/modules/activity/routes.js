@@ -748,7 +748,7 @@ export async function routeActivity(req, res, url, origin) {
             time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             activityLevel: d.activity_level ?? 75,
             activeApp: d.app_name || "Browser",
-            hasImage: d.has_image !== false,
+            hasImage: true,
             pageTitle: d.page_title || "",
           };
         });

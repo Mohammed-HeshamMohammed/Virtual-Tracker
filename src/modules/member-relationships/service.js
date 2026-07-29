@@ -175,7 +175,7 @@ async function loadValidationEdgesForNewRelationship(db, parentMemberId, childMe
   while (frontier.length > 0) {
     const batch = frontier.slice(0, 10);
     frontier = frontier.slice(10);
-    const snap = await db.collection("member_relationships").where("parent_member_id", "in", batch).limit(500).get();
+    const snap = await db.collection("member_relationships").where("parent_member_id", "in", batch).get();
     /** @type {string[]} */
     const next = [];
     for (const doc of snap.docs) {

@@ -24,6 +24,7 @@
     "migrate:lookups-to-postgres": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-lookups-to-postgres.mjs",
     "migrate:tasks-to-postgres": "node --use-system-ca --env-file-if-exists=.env scripts/migrate-tasks-to-postgres.mjs",
     "archive:screenshots": "node --use-system-ca --env-file-if-exists=.env scripts/archive-screenshots.mjs",
+    "delete:legacy-task-firestore-data": "node --use-system-ca --env-file-if-exists=.env scripts/delete-legacy-task-firestore-data.mjs",
     "test": "node --test test/*.test.js",
     "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
     "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
