@@ -4,8 +4,7 @@ import {
   getMemberLimitHours as getMemberLimitHoursFromStore,
   memberUsesShiftsForLimits as memberUsesShiftsForLimitsFromStore,
 } from "../../lib/postgres/member-data-store.js";
-
-const TERMINAL_STATUSES = new Set(["done", "cancelled"]);
+import { sumActiveAssignmentSecondsPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -46,15 +45,7 @@ export function computeEffectiveDailyCap(taskDailyHours, memberDailyLimit) {
  * @param {string} [excludeTaskId]
  */
 async function sumActiveAssignmentHours(db, memberId, excludeTaskId) {
-  const snap = await db.collection("task_assignments").where("user_id", "==", memberId).limit(200).get();
-  let totalSeconds = 0;
-  for (const doc of snap.docs) {
-    const row = doc.data() || {};
-    if (excludeTaskId && row.task_id === excludeTaskId) continue;
-    const status = String(row.status ?? "").toLowerCase();
-    if (TERMINAL_STATUSES.has(status)) continue;
-    totalSeconds += Number(row.expected_seconds ?? 0);
-  }
+  const totalSeconds = await sumActiveAssignmentSecondsPg(memberId, excludeTaskId);
   return totalSeconds / 3600;
 }
 

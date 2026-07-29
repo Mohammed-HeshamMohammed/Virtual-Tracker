@@ -1,8 +1,3 @@
-import crypto from "node:crypto";
-import {
-  taskChildCollectionRef,
-  taskChildDocRef,
-} from "../../lib/firestore/task-subcollections.js";
 import {
   ensureAssignmentForUser,
   estimateAssignmentOvertimeSeconds,
@@ -19,7 +14,15 @@ import {
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { computeTimerAllowance, enforceTimerAllowanceOnSync } from "./timer-limit.service.js";
-import { syncMemberProgressToPostgres } from "../../lib/postgres/task-member-progress.service.js";
+import {
+  syncMemberProgressToPostgres,
+  getTrackingRowPg,
+  getTaskTrackingRowsPg,
+  upsertTrackingRowPg,
+  updateTrackingFieldsPg,
+} from "../../lib/postgres/task-member-progress.service.js";
+import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { getTaskAssignmentsPg, getInReviewAssignmentsForTaskPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 
 export { estimateAssignmentSeconds, estimateTaskDurationSeconds, isManagementRole };
 
@@ -34,23 +37,25 @@ function toIso(value) {
   return null;
 }
 
-function normalizeTracking(doc) {
-  const d = doc.data ? doc.data() : doc;
-  const id = doc.id ?? d.id;
+// Accepts a task_member_progress row (Postgres: member_id, last_started_at)
+// directly now - kept the same output shape (userId, startedAt) so every
+// caller downstream of this function needed zero changes.
+function normalizeTracking(row) {
+  if (!row) return row;
   return {
-    id,
-    taskId: d.task_id,
-    userId: d.user_id,
-    projectId: d.project_id ?? null,
-    activeSeconds: typeof d.active_seconds === "number" ? d.active_seconds : 0,
-    idleSeconds: typeof d.idle_seconds === "number" ? d.idle_seconds : 0,
-    progressPercent: typeof d.progress_percentage === "number" ? d.progress_percentage : null,
-    startedAt: toIso(d.started_at),
-    lastActivityAt: toIso(d.last_activity_at),
-    sessionId: d.session_id ?? null,
-    reviewNotes: d.review_notes ?? "",
-    createdAt: toIso(d.created_at),
-    updatedAt: toIso(d.updated_at),
+    id: row.id,
+    taskId: row.task_id,
+    userId: row.member_id ?? row.user_id,
+    projectId: row.project_id ?? null,
+    activeSeconds: typeof row.active_seconds === "number" ? row.active_seconds : 0,
+    idleSeconds: typeof row.idle_seconds === "number" ? row.idle_seconds : 0,
+    progressPercent: typeof row.progress_percentage === "number" ? row.progress_percentage : null,
+    startedAt: toIso(row.last_started_at ?? row.started_at),
+    lastActivityAt: toIso(row.last_activity_at),
+    sessionId: row.session_id ?? null,
+    reviewNotes: row.review_notes ?? "",
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
   };
 }
 
@@ -61,36 +66,32 @@ function progressPercentFor(activeSeconds, estimatedSeconds) {
 
 /** Sum all member timers and persist task-level aggregates (TaskMemberProgress lives in task_time_tracking). */
 export async function aggregateTaskProgress(db, taskId) {
-  const taskRef = db.collection("tasks").doc(taskId);
-  const taskSnap = await taskRef.get();
-  if (!taskSnap.exists) return null;
+  const taskData = await getTaskPg(taskId);
+  if (!taskData) return null;
 
-  const taskData = taskSnap.data() ?? {};
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
-  const trackingSnap = await taskChildCollectionRef(db, taskId, "task-time-tracking").limit(100).get();
+  const trackingRows = await getTaskTrackingRowsPg(taskId);
 
   let totalActive = 0;
   let totalIdle = 0;
-  const now = new Date();
   const memberContributions = [];
 
-  for (const doc of trackingSnap.docs) {
-    const d = doc.data() ?? {};
-    const active = Math.max(0, Math.floor(d.active_seconds ?? 0));
-    const idle = Math.max(0, Math.floor(d.idle_seconds ?? 0));
+  for (const row of trackingRows) {
+    const active = Math.max(0, Math.floor(row.active_seconds ?? 0));
+    const idle = Math.max(0, Math.floor(row.idle_seconds ?? 0));
     totalActive += active;
     totalIdle += idle;
     const memberProgress = progressPercentFor(active, estimatedSeconds);
     memberContributions.push({
-      userId: d.user_id,
+      userId: row.member_id,
       activeSeconds: active,
       idleSeconds: idle,
       progressPercent: memberProgress,
-      lastActivityAt: toIso(d.last_activity_at),
+      lastActivityAt: toIso(row.last_activity_at),
     });
-    const existingProgress = typeof d.progress_percentage === "number" ? d.progress_percentage : null;
+    const existingProgress = typeof row.progress_percentage === "number" ? row.progress_percentage : null;
     if (existingProgress !== memberProgress) {
-      await doc.ref.update({ progress_percentage: memberProgress, updated_at: now });
+      await updateTrackingFieldsPg(taskId, row.member_id, { progress_percentage: memberProgress });
     }
   }
 
@@ -99,9 +100,8 @@ export async function aggregateTaskProgress(db, taskId) {
     total_active_seconds: totalActive,
     total_idle_seconds: totalIdle,
     aggregated_progress_percent: aggregatedProgress,
-    updated_at: now,
   };
-  await taskRef.update(patch);
+  await updateTaskPg(taskId, patch);
 
   return {
     totalActiveSeconds: totalActive,
@@ -115,22 +115,18 @@ export async function aggregateTaskProgress(db, taskId) {
 async function maybePromoteTaskToReview(db, taskId, task, userId, userName, estimatedSeconds, totalActiveSeconds) {
   if (estimatedSeconds == null || totalActiveSeconds < estimatedSeconds) return false;
 
-  const assignmentsSnap = await db
-    .collection("task_assignments")
-    .where("task_id", "==", taskId)
-    .limit(50)
-    .get();
+  const assignmentRows = await getTaskAssignmentsPg(taskId);
 
   let statusChanged = false;
-  for (const doc of assignmentsSnap.docs) {
-    const status = String(doc.data()?.status ?? "todo").toLowerCase();
+  for (const row of assignmentRows) {
+    const status = String(row.status ?? "todo").toLowerCase();
     if (status !== "in_progress" && status !== "todo") continue;
-    const result = await updateAssignmentStatus(db, doc.id, "in_review", userId);
+    const result = await updateAssignmentStatus(db, row.id, "in_review", userId);
     if (result && result.previousStatus !== result.nextStatus) {
       statusChanged = true;
       await notifyAssignmentStatusChange(db, {
         task,
-        assigneeId: doc.data()?.user_id,
+        assigneeId: row.user_id,
         previousStatus: result.previousStatus,
         nextStatus: "in_review",
         actorName: userName || "A team member",
@@ -142,15 +138,6 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
     await recomputeTaskStatus(db, taskId);
   }
   return statusChanged;
-}
-
-async function findTrackingDoc(db, taskId, userId) {
-  const snap = await taskChildCollectionRef(db, taskId, "task-time-tracking")
-    .where("user_id", "==", userId)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  return snap.docs[0];
 }
 
 /**
@@ -165,18 +152,16 @@ export async function syncTaskTimeTracking(db, {
   idleSeconds,
   sessionId,
 }) {
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) {
+  const task = await getTaskPg(taskId);
+  if (!task) {
     throw new Error("Task not found");
   }
-  const task = { ...taskSnap.data(), id: taskId };
   const projectId = task.project_id ?? null;
   const now = new Date();
   const assignment = await ensureAssignmentForUser(db, taskId, userId);
   let assignmentStatus = assignment.status;
   let statusChanged = false;
 
-  let trackingDoc = await findTrackingDoc(db, taskId, userId);
   const idle = Math.max(0, Math.floor(idleSeconds ?? 0));
   const enforced = await enforceTimerAllowanceOnSync(
     db,
@@ -192,38 +177,22 @@ export async function syncTaskTimeTracking(db, {
   // what computeTimerAllowance already does for enforcement, so display and enforcement agree.
   const estimatedSeconds = estimateAssignmentSeconds(task);
 
-  if (!trackingDoc) {
-    const id = crypto.randomUUID();
-    const row = {
-      id,
-      task_id: taskId,
-      user_id: userId,
-      project_id: projectId,
-      active_seconds: active,
-      idle_seconds: idle,
-      started_at: action === "start" || action === "resume" ? now : null,
-      last_activity_at: now,
-      session_id: sessionId ?? null,
-      review_notes: "",
-      created_at: now,
-      updated_at: now,
-    };
-    await taskChildDocRef(db, taskId, "task-time-tracking", id).set(row);
-    trackingDoc = { id, data: () => row };
-  } else {
-    const patch = {
-      active_seconds: active,
-      idle_seconds: idle,
-      last_activity_at: now,
-      updated_at: now,
-    };
-    if (sessionId) patch.session_id = sessionId;
-    if ((action === "start" || action === "resume") && !trackingDoc.data()?.started_at) {
-      patch.started_at = now;
-    }
-    await taskChildDocRef(db, taskId, "task-time-tracking", trackingDoc.id).update(patch);
-    trackingDoc = await taskChildDocRef(db, taskId, "task-time-tracking", trackingDoc.id).get();
-  }
+  // Single upsert covers both create and update - upsertTrackingRowPg's
+  // ON CONFLICT clause already keeps last_started_at COALESCE'd against the
+  // existing value, matching the old create-vs-update branch's "set
+  // started_at only if it wasn't already set" behavior without needing to
+  // read-before-write here.
+  const trackingRow = await upsertTrackingRowPg({
+    task_id: taskId,
+    member_id: userId,
+    project_id: projectId,
+    active_seconds: active,
+    idle_seconds: idle,
+    progress_percentage: progressPercentFor(active, estimatedSeconds) ?? 0,
+    last_started_at: action === "start" || action === "resume" ? now : null,
+    last_activity_at: now,
+    session_id: sessionId ?? null,
+  });
 
   if (action === "start" || action === "resume") {
     if (assignmentStatus === "todo" || assignmentStatus === "blocked") {
@@ -255,14 +224,12 @@ export async function syncTaskTimeTracking(db, {
   );
   if (reviewPromoted) statusChanged = true;
 
-  const freshTaskSnap = await db.collection("tasks").doc(taskId).get();
+  const freshTaskData = (await getTaskPg(taskId)) ?? {};
   const freshAssignment = await ensureAssignmentForUser(db, taskId, userId);
   const timerAllowance = await computeTimerAllowance(db, userId, {
-    ...freshTaskSnap.data(),
+    ...freshTaskData,
     id: taskId,
   }, { currentCumulativeActiveSeconds: active });
-
-  const freshTaskData = freshTaskSnap.data() ?? {};
 
   await syncMemberProgressToPostgres({
     taskId,
@@ -276,7 +243,7 @@ export async function syncTaskTimeTracking(db, {
   });
 
   return {
-    tracking: normalizeTracking(trackingDoc),
+    tracking: normalizeTracking(trackingRow),
     activeSeconds: active,
     idleSeconds: idle,
     taskStatus: freshTaskData.status ?? "todo",
@@ -296,9 +263,8 @@ export async function syncTaskTimeTracking(db, {
 
 export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const assignment = await ensureAssignmentForUser(db, taskId, userId);
-  const doc = await findTrackingDoc(db, taskId, userId);
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  const taskData = taskSnap.data() ?? {};
+  const trackingRow = await getTrackingRowPg(taskId, userId);
+  const taskData = (await getTaskPg(taskId)) ?? {};
   // Always live - see the comment on the identical line in syncTaskTimeTracking above.
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
   const overtimeSeconds = estimateAssignmentOvertimeSeconds(taskData);
@@ -326,7 +292,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     }
   }
 
-  if (!doc) {
+  if (!trackingRow) {
     const timerAllowance = await computeTimerAllowance(db, userId, {
       ...taskData,
       id: taskId,
@@ -352,7 +318,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     };
   }
 
-  const tracking = normalizeTracking(doc);
+  const tracking = normalizeTracking(trackingRow);
   const timerAllowance = await computeTimerAllowance(db, userId, {
     ...taskData,
     id: taskId,
@@ -414,17 +380,12 @@ export async function getManagementTaskTrackingRows(db, viewerMemberId, viewerRo
 
 /** @deprecated Use reviewAssignment from task-assignments */
 export async function reviewTaskTracking(db, { taskId, reviewerId, reviewerName, decision, notes }) {
-  const assignmentSnap = await db
-    .collection("task_assignments")
-    .where("task_id", "==", taskId)
-    .where("status", "==", "in_review")
-    .limit(1)
-    .get();
-  if (assignmentSnap.empty) throw new Error("No assignment in review for this task");
+  const inReviewRows = await getInReviewAssignmentsForTaskPg(taskId);
+  if (!inReviewRows.length) throw new Error("No assignment in review for this task");
 
   const mappedDecision = decision === "rework" ? "reject" : decision;
   return reviewAssignment(db, {
-    assignmentId: assignmentSnap.docs[0].id,
+    assignmentId: inReviewRows[0].id,
     reviewerId,
     reviewerName,
     decision: mappedDecision,

@@ -92,9 +92,9 @@ async function getDashboardSummaryCounts(db, viewer) {
   const globalScope = PROJECT_SCOPE_ROLES.has(normalized);
 
   if (globalScope) {
-    const [projectRows, tasks, members, teams] = await Promise.all([
+    const [projectRows, taskRows, members, teams] = await Promise.all([
       pgQuery("SELECT COUNT(*)::int AS count FROM projects"),
-      db.collection("tasks").count().get(),
+      pgQuery("SELECT COUNT(*)::int AS count FROM tasks"),
       db.collection("members").count().get(),
       db.collection("teams").count().get(),
     ]);
@@ -102,15 +102,15 @@ async function getDashboardSummaryCounts(db, viewer) {
       ready: true,
       scoped: false,
       projects: projectRows[0]?.count ?? 0,
-      tasks: tasks.data().count,
+      tasks: taskRows[0]?.count ?? 0,
       members: members.data().count,
       teams: teams.data().count,
     };
   }
 
-  const [projectMembershipRows, assignedTasks, teamMemberships] = await Promise.all([
+  const [projectMembershipRows, assignedTaskRows, teamMemberships] = await Promise.all([
     pgQuery("SELECT COUNT(*)::int AS count FROM project_members WHERE member_id = $1", [viewer.memberId]),
-    db.collection("tasks").where("assigned_to", "==", viewer.memberId).count().get(),
+    pgQuery("SELECT COUNT(*)::int AS count FROM tasks WHERE assigned_to = $1", [viewer.memberId]),
     db.collection("team_members").where("member_id", "==", viewer.memberId).count().get(),
   ]);
 
@@ -118,7 +118,7 @@ async function getDashboardSummaryCounts(db, viewer) {
     ready: true,
     scoped: true,
     projects: projectMembershipRows[0]?.count ?? 0,
-    tasks: assignedTasks.data().count,
+    tasks: assignedTaskRows[0]?.count ?? 0,
     members: null,
     teams: teamMemberships.data().count,
   };

@@ -62,6 +62,14 @@ export function taskChildDocRef(db, taskId, entityKey, docId) {
 }
 
 /**
+ * Deletes the Firestore child subcollections (comments/subtasks/attachments/
+ * hours/time_tracking - still Firestore-resident, out of scope for the
+ * Postgres migration) and the vestigial Firestore `tasks` doc mirror.
+ * task_assignments is NOT touched here anymore - it's fully Postgres now
+ * (task-assignments-postgres.service.js), and its `task_id` FK is
+ * `ON DELETE CASCADE`, so deleting the Postgres `tasks` row (deleteTaskPg,
+ * called by the schema/routes.js DELETE handler right after this) already
+ * cascade-deletes its task_assignments rows with no extra call needed.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} taskId
  */
@@ -71,8 +79,6 @@ export async function deleteTaskWithChildren(db, taskId) {
     const snap = await db.collection("tasks").doc(taskId).collection(sub).get();
     for (const doc of snap.docs) batch.delete(doc.ref);
   }
-  const assignmentsSnap = await db.collection("task_assignments").where("task_id", "==", taskId).get();
-  for (const doc of assignmentsSnap.docs) batch.delete(doc.ref);
   batch.delete(db.collection("tasks").doc(taskId));
   await batch.commit();
 }

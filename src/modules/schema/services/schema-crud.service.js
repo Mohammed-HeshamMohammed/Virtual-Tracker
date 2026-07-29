@@ -6,9 +6,17 @@ import { isManagementRole } from "../../tasks/task-assignments.js";
 import { rejectUnknownEntityFields } from "../../../http/validate-body.js";
 import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { lookupRowExistsInPostgres } from "../../../lib/postgres/lookup-postgres.service.js";
+import { query, isPostgresConfigured } from "../../../lib/postgres/client.js";
 import { foreignKeyCollectionByField, generateUUID, now, schemaRulesByKey } from "../catalog/index.js";
 
 const LOOKUP_FK_COLLECTIONS = new Set(["roles", "job_titles", "departments", "job_types", "tax_types"]);
+// project_id/task_id used to mean "check Firestore" via foreignKeyCollectionByField
+// (COLLECTIONS.projects / "tasks"), but both domains are now Postgres-resident -
+// projects unconditionally (direct cutover, no flag), tasks as of this change.
+// Checking the old Firestore collections here would reject every reference to a
+// project/task created after each domain's cutover, since new rows never land
+// in Firestore anymore. See implementation.md Phase 2.
+const POSTGRES_FK_TABLE_BY_FIELD = { project_id: "projects", task_id: "tasks" };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -89,6 +97,17 @@ export function applyTeamWriteMetadata(entityKey, payload, memberId, isCreate = 
 }
 
 async function assertTeamLinkedToProject(db, projectId, teamId) {
+  // team_projects moved to Postgres with the rest of the projects domain
+  // (unconditional, no flag - see the projects migration) - Firestore's copy
+  // is stale for anything linked after that cutover.
+  if (isPostgresConfigured()) {
+    const rows = await query("SELECT 1 FROM team_projects WHERE project_id = $1 AND team_id = $2 LIMIT 1", [
+      projectId,
+      teamId,
+    ]);
+    if (!rows.length) throw new Error("team_id must be a team assigned to this project");
+    return;
+  }
   const snap = await db.collection("team_projects").where("project_id", "==", projectId).limit(200).get();
   const linked = snap.docs.some((doc) => {
     const row = doc.data() || {};
@@ -104,6 +123,12 @@ export async function validateForeignKeys(db, payload, options = {}) {
     if ((await isPostgresLookupReady()) && LOOKUP_FK_COLLECTIONS.has(collection)) {
       const exists = await lookupRowExistsInPostgres(collection, String(value));
       if (!exists) throw new Error(`${field} references missing ${collection}`);
+      continue;
+    }
+    const pgTable = POSTGRES_FK_TABLE_BY_FIELD[field];
+    if (pgTable && isPostgresConfigured()) {
+      const rows = await query(`SELECT 1 FROM ${pgTable} WHERE id = $1 LIMIT 1`, [String(value)]);
+      if (!rows.length) throw new Error(`${field} references missing ${collection}`);
       continue;
     }
     const doc = await db.collection(collection).doc(value).get();

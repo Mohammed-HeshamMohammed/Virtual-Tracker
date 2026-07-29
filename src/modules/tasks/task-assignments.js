@@ -1,10 +1,25 @@
-import crypto from "node:crypto";
 import { validateAssigneeWorkLimits } from "./task-workload-validation.js";
-import { taskChildCollectionRef } from "../../lib/firestore/task-subcollections.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getProjectPg, listProjectIdsForMemberPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
+import { getTaskPg, listTasksPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import {
+  deleteAssignmentPg,
+  findAssignmentPg,
+  getAssignmentByIdPg,
+  getAssignmentsForTasksPg,
+  getTaskAssignmentsPg,
+  getTaskIdsAssignedToMembersPg,
+  listAllAssignmentsPg,
+  updateAssignmentPg,
+  upsertAssignmentPg,
+} from "../../lib/postgres/task-assignments-postgres.service.js";
+import {
+  getTaskTrackingRowsPg,
+  getAllTrackingRowsPg,
+  updateTrackingFieldsPg,
+} from "../../lib/postgres/task-member-progress.service.js";
 
 const REVIEW_CENTER_ROLES = new Set([
   "owner",
@@ -154,17 +169,6 @@ function normalizeAssignment(doc) {
   };
 }
 
-async function findAssignmentDoc(db, taskId, userId) {
-  const snap = await db
-    .collection("task_assignments")
-    .where("task_id", "==", taskId)
-    .where("user_id", "==", userId)
-    .limit(1)
-    .get();
-  if (snap.empty) return null;
-  return snap.docs[0];
-}
-
 async function getDirectParentIds(db, memberId) {
   const snap = await db
     .collection("member_relationships")
@@ -264,26 +268,24 @@ async function notifyAssignmentStatusChange(db, { task, assigneeId, previousStat
 }
 
 export async function getTaskAssignments(db, taskId) {
-  const snap = await db.collection("task_assignments").where("task_id", "==", taskId).limit(50).get();
-  return snap.docs.map((doc) => normalizeAssignment(doc));
+  const rows = await getTaskAssignmentsPg(taskId);
+  return rows.map((row) => normalizeAssignment(row));
 }
 
 export async function getTaskParticipation(db, taskId, viewerMemberId, viewerRole, options = {}) {
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) throw new Error("Task not found");
-  const task = taskSnap.data();
+  const task = await getTaskPg(taskId);
+  if (!task) throw new Error("Task not found");
 
   const assignments = await getTaskAssignments(db, taskId);
   const required = assignments.filter((a) => a.required !== false);
   const participation = computeParticipationStats(required);
 
-  const trackingSnap = await taskChildCollectionRef(db, taskId, "task-time-tracking").limit(50).get();
+  const trackingRows = await getTaskTrackingRowsPg(taskId);
   const trackingByUser = new Map();
-  for (const doc of trackingSnap.docs) {
-    const d = doc.data();
-    trackingByUser.set(d.user_id, {
-      startedAt: toIso(d.started_at),
-      activeSeconds: typeof d.active_seconds === "number" ? d.active_seconds : 0,
+  for (const row of trackingRows) {
+    trackingByUser.set(row.member_id, {
+      startedAt: toIso(row.last_started_at),
+      activeSeconds: typeof row.active_seconds === "number" ? row.active_seconds : 0,
     });
   }
 
@@ -342,9 +344,8 @@ export async function getTaskParticipation(db, taskId, viewerMemberId, viewerRol
 }
 
 export async function startTaskForUser(db, { taskId, userId, userName }) {
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) throw new Error("Task not found");
-  const task = taskSnap.data();
+  const task = await getTaskPg(taskId);
+  if (!task) throw new Error("Task not found");
 
   const assignment = await ensureAssignmentForUser(db, taskId, userId);
   let statusChanged = false;
@@ -366,21 +367,20 @@ export async function startTaskForUser(db, { taskId, userId, userName }) {
   }
 
   const taskStatus = await recomputeTaskStatus(db, taskId);
-  const freshTask = await db.collection("tasks").doc(taskId).get();
+  const freshTask = await getTaskPg(taskId);
   const participation = computeParticipationStats(await getTaskAssignments(db, taskId));
 
   return {
     assignmentStatus,
-    taskStatus: freshTask.data()?.status ?? taskStatus ?? "todo",
+    taskStatus: freshTask?.status ?? taskStatus ?? "todo",
     statusChanged,
     ...participation,
   };
 }
 
 export async function syncTaskAssignments(db, taskId, assigneeIds = [], options = {}) {
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) throw new Error("Task not found");
-  const task = taskSnap.data();
+  const task = await getTaskPg(taskId);
+  if (!task) throw new Error("Task not found");
   const projectId = task.project_id ?? null;
   const expectedSeconds = estimateAssignmentSeconds(task);
   const now = new Date();
@@ -395,34 +395,26 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
     await validateAssigneeWorkLimits(db, { ...task, id: taskId }, ids, { taskId });
   }
 
-  const existingSnap = await db.collection("task_assignments").where("task_id", "==", taskId).limit(50).get();
-  const existingByUser = new Map(existingSnap.docs.map((d) => [d.data().user_id, d]));
+  const existingRows = await getTaskAssignmentsPg(taskId);
+  const existingByUser = new Map(existingRows.map((row) => [row.user_id, row]));
 
   for (const userId of ids) {
     const existing = existingByUser.get(userId);
     if (existing) {
-      await existing.ref.update({
+      await updateAssignmentPg(existing.id, {
         expected_seconds: expectedSeconds,
         project_id: projectId,
         required: true,
-        updated_at: now,
       });
       existingByUser.delete(userId);
     } else {
-      const id = crypto.randomUUID();
-      await db.collection("task_assignments").doc(id).set({
-        id,
+      await upsertAssignmentPg({
         task_id: taskId,
         user_id: userId,
         project_id: projectId,
         status: task.status ?? "todo",
         expected_seconds: expectedSeconds,
         required: true,
-        review_state: null,
-        reviewed_by: null,
-        reviewed_at: null,
-        review_notes: "",
-        entered_review_at: null,
         created_at: now,
         updated_at: now,
       });
@@ -430,8 +422,8 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
   }
 
   if (options.removeUnlisted) {
-    for (const [, doc] of existingByUser) {
-      await doc.ref.delete();
+    for (const [, row] of existingByUser) {
+      await deleteAssignmentPg(row.id);
     }
   }
 
@@ -439,10 +431,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
     const primary = ids[0];
     const currentPrimary = task.assigned_to ?? task.assignedTo ?? null;
     if (primary && primary !== currentPrimary) {
-      await db.collection("tasks").doc(taskId).update({
-        assigned_to: primary,
-        updated_at: now,
-      });
+      await updateTaskPg(taskId, { assigned_to: primary });
     }
   }
 
@@ -452,17 +441,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
 
 /** Task IDs assigned to any of these members. */
 export async function getTaskIdsAssignedToMembers(db, userIds) {
-  const taskIds = new Set();
-  const unique = [...new Set(userIds.filter(Boolean))];
-  for (let i = 0; i < unique.length; i += 30) {
-    const chunk = unique.slice(i, i + 30);
-    const snap = await db.collection("task_assignments").where("user_id", "in", chunk).limit(200).get();
-    for (const doc of snap.docs) {
-      const taskId = doc.data()?.task_id;
-      if (typeof taskId === "string" && taskId) taskIds.add(taskId);
-    }
-  }
-  return taskIds;
+  return getTaskIdsAssignedToMembersPg(userIds);
 }
 
 /** Attach assignee_ids + primary assigned_to on task rows. */
@@ -472,17 +451,13 @@ export async function enrichTasksWithAssignees(db, rows) {
   const taskIds = rows.map((row) => (typeof row.id === "string" ? row.id : "")).filter(Boolean);
   const assignmentsByTask = new Map();
 
-  for (let i = 0; i < taskIds.length; i += 30) {
-    const chunk = taskIds.slice(i, i + 30);
-    const snap = await db.collection("task_assignments").where("task_id", "in", chunk).limit(500).get();
-    for (const doc of snap.docs) {
-      const data = doc.data() || {};
-      const taskId = typeof data.task_id === "string" ? data.task_id : "";
-      const userId = typeof data.user_id === "string" ? data.user_id : "";
-      if (!taskId || !userId || data.required === false) continue;
-      if (!assignmentsByTask.has(taskId)) assignmentsByTask.set(taskId, []);
-      assignmentsByTask.get(taskId).push(userId);
-    }
+  const assignmentRows = await getAssignmentsForTasksPg(taskIds);
+  for (const data of assignmentRows) {
+    const taskId = typeof data.task_id === "string" ? data.task_id : "";
+    const userId = typeof data.user_id === "string" ? data.user_id : "";
+    if (!taskId || !userId || data.required === false) continue;
+    if (!assignmentsByTask.has(taskId)) assignmentsByTask.set(taskId, []);
+    assignmentsByTask.get(taskId).push(userId);
   }
 
   return rows.map((row) => {
@@ -503,47 +478,34 @@ export async function enrichTasksWithAssignees(db, rows) {
 }
 
 export async function ensureAssignmentForUser(db, taskId, userId) {
-  const existing = await findAssignmentDoc(db, taskId, userId);
+  const existing = await findAssignmentPg(taskId, userId);
   if (existing) return normalizeAssignment(existing);
 
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) throw new Error("Task not found");
-  const task = taskSnap.data();
-  const now = new Date();
-  const id = crypto.randomUUID();
-  const row = {
-    id,
+  const task = await getTaskPg(taskId);
+  if (!task) throw new Error("Task not found");
+  const row = await upsertAssignmentPg({
     task_id: taskId,
     user_id: userId,
     project_id: task.project_id ?? null,
     status: "todo",
     expected_seconds: estimateAssignmentSeconds(task),
     required: true,
-    review_state: null,
-    reviewed_by: null,
-    reviewed_at: null,
-    review_notes: "",
-    entered_review_at: null,
-    created_at: now,
-    updated_at: now,
-  };
-  await db.collection("task_assignments").doc(id).set(row);
-  return normalizeAssignment({ id, data: () => row });
+  });
+  return normalizeAssignment(row);
 }
 
 export async function migrateTaskAssignments(db, limit = 200) {
-  const snap = await db.collection("tasks").limit(limit).get();
+  const tasks = await listTasksPg({ limit });
   let created = 0;
-  for (const doc of snap.docs) {
-    const task = doc.data();
+  for (const task of tasks) {
     const assignee = task.assigned_to ?? task.assignedTo;
     if (!assignee) continue;
-    const existing = await findAssignmentDoc(db, doc.id, assignee);
+    const existing = await findAssignmentPg(task.id, assignee);
     if (existing) continue;
-    await ensureAssignmentForUser(db, doc.id, assignee);
-    const assignment = await findAssignmentDoc(db, doc.id, assignee);
+    await ensureAssignmentForUser(db, task.id, assignee);
+    const assignment = await findAssignmentPg(task.id, assignee);
     if (assignment) {
-      await assignment.ref.update({
+      await updateAssignmentPg(assignment.id, {
         status: task.status ?? "todo",
         expected_seconds: estimateAssignmentSeconds(task),
       });
@@ -554,45 +516,34 @@ export async function migrateTaskAssignments(db, limit = 200) {
 }
 
 export async function updateAssignmentStatus(db, assignmentId, nextStatus, updatedBy, options = {}) {
-  const ref = db.collection("task_assignments").doc(assignmentId);
-  const snap = await ref.get();
-  if (!snap.exists) return null;
-  const previousStatus = snap.data()?.status ?? "todo";
-  if (previousStatus === nextStatus) return { previousStatus, nextStatus, assignment: normalizeAssignment(snap) };
+  const existing = await getAssignmentByIdPg(assignmentId);
+  if (!existing) return null;
+  const previousStatus = existing.status ?? "todo";
+  if (previousStatus === nextStatus) return { previousStatus, nextStatus, assignment: normalizeAssignment(existing) };
 
-  const now = new Date();
-  const patch = {
-    status: nextStatus,
-    updated_at: now,
-  };
-  if (nextStatus === "in_review" && !snap.data()?.entered_review_at) {
-    patch.entered_review_at = now;
+  const patch = { status: nextStatus };
+  if (nextStatus === "in_review" && !existing.entered_review_at) {
+    patch.entered_review_at = new Date();
   }
   if (options.reviewState !== undefined) patch.review_state = options.reviewState;
   if (options.reviewedBy !== undefined) patch.reviewed_by = options.reviewedBy;
   if (options.reviewedAt !== undefined) patch.reviewed_at = options.reviewedAt;
   if (options.reviewNotes !== undefined) patch.review_notes = options.reviewNotes;
 
-  await ref.update(patch);
-  const updated = await ref.get();
+  const updated = await updateAssignmentPg(assignmentId, patch);
   return { previousStatus, nextStatus, assignment: normalizeAssignment(updated) };
 }
 
 export async function recomputeTaskStatus(db, taskId) {
-  const taskRef = db.collection("tasks").doc(taskId);
-  const taskSnap = await taskRef.get();
-  if (!taskSnap.exists) return null;
+  const task = await getTaskPg(taskId);
+  if (!task) return null;
 
-  const assignmentsSnap = await db
-    .collection("task_assignments")
-    .where("task_id", "==", taskId)
-    .limit(50)
-    .get();
+  const assignmentRows = await getTaskAssignmentsPg(taskId);
 
-  const assignments = assignmentsSnap.docs
-    .map((d) => normalizeAssignment(d))
+  const assignments = assignmentRows
+    .map((row) => normalizeAssignment(row))
     .filter((a) => a.required !== false);
-  if (assignments.length === 0) return taskSnap.data()?.status ?? "todo";
+  if (assignments.length === 0) return task.status ?? "todo";
 
   const statuses = assignments.map((a) => a.status);
   let nextStatus = "todo";
@@ -611,12 +562,10 @@ export async function recomputeTaskStatus(db, taskId) {
     nextStatus = statuses[0] ?? "todo";
   }
 
-  const previousStatus = taskSnap.data()?.status ?? "todo";
+  const previousStatus = task.status ?? "todo";
   const participation = computeParticipationStats(assignments);
-  const now = new Date();
   const patch = {
     status: nextStatus,
-    updated_at: now,
     completed: nextStatus === "done",
     total_assignees: participation.totalAssignees,
     started_assignees: participation.startedAssignees,
@@ -626,11 +575,10 @@ export async function recomputeTaskStatus(db, taskId) {
   };
 
   const unchangedStatus = previousStatus === nextStatus;
-  const existing = taskSnap.data() ?? {};
   const participationUnchanged =
-    existing.total_assignees === participation.totalAssignees &&
-    existing.started_assignees === participation.startedAssignees &&
-    existing.all_assignees_started === participation.allAssigneesStarted;
+    task.total_assignees === participation.totalAssignees &&
+    task.started_assignees === participation.startedAssignees &&
+    task.all_assignees_started === participation.allAssigneesStarted;
 
   if (unchangedStatus && participationUnchanged) {
     try {
@@ -642,7 +590,7 @@ export async function recomputeTaskStatus(db, taskId) {
     return nextStatus;
   }
 
-  await taskRef.update(patch);
+  await updateTaskPg(taskId, patch);
   try {
     const { aggregateTaskProgress } = await import("./task-time-tracking.js");
     await aggregateTaskProgress(db, taskId);
@@ -684,8 +632,7 @@ async function enrichAssignmentRow(db, assignment, trackingByKey, caches) {
 
   async function loadTask(taskId) {
     if (taskCache.has(taskId)) return taskCache.get(taskId);
-    const snap = await db.collection("tasks").doc(taskId).get();
-    const data = snap.exists ? snap.data() : null;
+    const data = await getTaskPg(taskId);
     taskCache.set(taskId, data);
     return data;
   }
@@ -762,18 +709,16 @@ export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {
     throw new Error("Only review center roles can access the review queue");
   }
 
-  const assignmentsSnap = await db.collection("task_assignments").limit(500).get();
-  const trackingSnap = await db.collectionGroup("time_tracking").limit(500).get();
+  const assignmentRows = await listAllAssignmentsPg();
+  const trackingRows = await getAllTrackingRowsPg();
 
   const trackingByKey = new Map();
-  for (const doc of trackingSnap.docs) {
-    const d = doc.data();
-    const taskId = d.task_id ?? doc.ref.parent?.parent?.id ?? "";
-    trackingByKey.set(`${taskId}:${d.user_id}`, {
-      activeSeconds: typeof d.active_seconds === "number" ? d.active_seconds : 0,
-      idleSeconds: typeof d.idle_seconds === "number" ? d.idle_seconds : 0,
-      lastActivityAt: toIso(d.last_activity_at),
-      startedAt: toIso(d.started_at),
+  for (const row of trackingRows) {
+    trackingByKey.set(`${row.task_id}:${row.member_id}`, {
+      activeSeconds: typeof row.active_seconds === "number" ? row.active_seconds : 0,
+      idleSeconds: typeof row.idle_seconds === "number" ? row.idle_seconds : 0,
+      lastActivityAt: toIso(row.last_activity_at),
+      startedAt: toIso(row.last_started_at),
     });
   }
 
@@ -786,11 +731,11 @@ export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {
   const needsReview = [];
   const priorityMonitor = [];
 
-  for (const doc of assignmentsSnap.docs) {
-    const assignment = normalizeAssignment(doc);
+  for (const row of assignmentRows) {
+    const assignment = normalizeAssignment(row);
     const task = caches.taskCache.has(assignment.taskId)
       ? caches.taskCache.get(assignment.taskId)
-      : (await db.collection("tasks").doc(assignment.taskId).get()).data();
+      : await getTaskPg(assignment.taskId);
     caches.taskCache.set(assignment.taskId, task);
     if (!task) continue;
 
@@ -853,14 +798,12 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
     throw new Error("Only management roles can review assignments");
   }
 
-  const assignmentRef = db.collection("task_assignments").doc(assignmentId);
-  const assignmentSnap = await assignmentRef.get();
-  if (!assignmentSnap.exists) throw new Error("Assignment not found");
+  const assignmentRow = await getAssignmentByIdPg(assignmentId);
+  if (!assignmentRow) throw new Error("Assignment not found");
 
-  const assignment = normalizeAssignment(assignmentSnap);
-  const taskSnap = await db.collection("tasks").doc(assignment.taskId).get();
-  if (!taskSnap.exists) throw new Error("Task not found");
-  const task = taskSnap.data();
+  const assignment = normalizeAssignment(assignmentRow);
+  const task = await getTaskPg(assignment.taskId);
+  if (!task) throw new Error("Task not found");
 
   const visible = await isAssignmentVisible(db, reviewerId, reviewerRole, assignment, task);
   if (!visible) throw new Error("Assignment is outside your authorized scope");
@@ -885,17 +828,11 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
       nextStatus: "done",
       actorName: reviewerName || "Management",
     });
-    const trackingDoc = await taskChildCollectionRef(db, assignment.taskId, "task-time-tracking")
-      .where("user_id", "==", assignment.userId)
-      .limit(1)
-      .get();
-    if (!trackingDoc.empty) {
-      await trackingDoc.docs[0].ref.update({ review_notes: notes ?? "", updated_at: now });
-    }
-    const freshTask = await db.collection("tasks").doc(assignment.taskId).get();
+    await updateTrackingFieldsPg(assignment.taskId, assignment.userId, { review_notes: notes ?? "" });
+    const freshTask = await getTaskPg(assignment.taskId);
     return {
       assignmentStatus: "done",
-      taskStatus: freshTask.data()?.status ?? "done",
+      taskStatus: freshTask?.status ?? "done",
       assignment: result?.assignment,
     };
   }
@@ -915,20 +852,11 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
       nextStatus: "in_progress",
       actorName: reviewerName || "Management",
     });
-    const trackingDoc = await taskChildCollectionRef(db, assignment.taskId, "task-time-tracking")
-      .where("user_id", "==", assignment.userId)
-      .limit(1)
-      .get();
-    if (!trackingDoc.empty) {
-      await trackingDoc.docs[0].ref.update({
-        review_notes: notes ?? "",
-        updated_at: now,
-      });
-    }
-    const freshTask = await db.collection("tasks").doc(assignment.taskId).get();
+    await updateTrackingFieldsPg(assignment.taskId, assignment.userId, { review_notes: notes ?? "" });
+    const freshTask = await getTaskPg(assignment.taskId);
     return {
       assignmentStatus: "in_progress",
-      taskStatus: freshTask.data()?.status ?? "in_progress",
+      taskStatus: freshTask?.status ?? "in_progress",
       assignment: result?.assignment,
     };
   }
@@ -936,4 +864,4 @@ export async function reviewAssignment(db, { assignmentId, reviewerId, reviewerN
   throw new Error("decision must be approve or reject");
 }
 
-export { normalizeAssignment, findAssignmentDoc, notifyAssignmentStatusChange };
+export { normalizeAssignment, notifyAssignmentStatusChange };

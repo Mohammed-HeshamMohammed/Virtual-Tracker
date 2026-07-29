@@ -1,6 +1,6 @@
 import { applyVisibilityFilter } from "../schema/visibility.js";
-import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { enrichTasksWithAssignees, getTaskIdsAssignedToMembers } from "./task-assignments.js";
+import { getTaskPg, getTasksByIdsPg, listTasksPg } from "../../lib/postgres/tasks-postgres.service.js";
 
 function str(row, ...keys) {
   for (const key of keys) {
@@ -30,14 +30,16 @@ function matchesTaskFilters(row, url) {
   return true;
 }
 
-/** List tasks by primary assignee + task_assignments rows. */
+/** List tasks by primary assignee (Postgres `tasks.assigned_to`) + task_assignments
+ * rows (still Firestore - task_assignments itself isn't migrated yet, see
+ * implementation.md Phase 2). Tasks found only via the assignment lookup are
+ * still fetched from Postgres, since the task rows themselves have moved. */
 export async function listTasksForAssignee(req, db, url, assigneeId) {
   const rows = [];
   const seen = new Set();
 
-  const primarySnap = await db.collection("tasks").where("assigned_to", "==", assigneeId).limit(200).get();
-  for (const doc of primarySnap.docs) {
-    const row = normalizeDoc({ id: doc.id, ...doc.data() });
+  const primaryRows = await listTasksPg({ assignedTo: assigneeId, limit: 200 });
+  for (const row of primaryRows) {
     if (!matchesTaskFilters(row, url)) continue;
     rows.push(row);
     seen.add(row.id);
@@ -46,10 +48,8 @@ export async function listTasksForAssignee(req, db, url, assigneeId) {
   const assignmentTaskIds = await getTaskIdsAssignedToMembers(db, [assigneeId]);
   const missingIds = [...assignmentTaskIds].filter((id) => !seen.has(id));
   if (missingIds.length > 0) {
-    const extraDocs = await db.getAll(...missingIds.map((id) => db.collection("tasks").doc(id)));
-    for (const doc of extraDocs) {
-      if (!doc.exists) continue;
-      const row = normalizeDoc({ id: doc.id, ...doc.data() });
+    const extraRows = await getTasksByIdsPg(missingIds);
+    for (const row of extraRows) {
       if (!matchesTaskFilters(row, url)) continue;
       rows.push(row);
       seen.add(row.id);
@@ -68,17 +68,7 @@ export async function listTasksForAssignee(req, db, url, assigneeId) {
 export async function enrichTaskIds(db, taskIds) {
   const unique = [...new Set(taskIds.filter(Boolean))];
   if (!unique.length) return [];
-
-  const rows = [];
-  for (let i = 0; i < unique.length; i += 30) {
-    const chunk = unique.slice(i, i + 30);
-    const docs = await db.getAll(...chunk.map((id) => db.collection("tasks").doc(id)));
-    for (const doc of docs) {
-      if (!doc.exists) continue;
-      rows.push(normalizeDoc({ id: doc.id, ...doc.data() }));
-    }
-  }
-
+  const rows = await getTasksByIdsPg(unique);
   return enrichTasksWithAssignees(db, rows);
 }
 
@@ -88,13 +78,12 @@ export async function enrichTaskIds(db, taskIds) {
  * @param {string} taskId
  */
 export async function getEnrichedTaskById(req, db, taskId) {
-  const doc = await db.collection("tasks").doc(taskId).get();
-  if (!doc.exists) return null;
+  const row = await getTaskPg(taskId);
+  if (!row) return null;
 
-  let row = normalizeDoc({ id: doc.id, ...doc.data() });
   const [visible] = await applyVisibilityFilter(req, db, "tasks", [row]);
   if (!visible) return null;
 
-  [row] = await enrichTasksWithAssignees(db, [visible]);
-  return row;
+  const [enriched] = await enrichTasksWithAssignees(db, [visible]);
+  return enriched;
 }

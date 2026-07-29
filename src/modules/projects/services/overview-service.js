@@ -42,12 +42,12 @@ function calculateHealth(status, tasksForProject) {
  */
 export async function getOverviewCore(db, options = {}) {
   const allowed = options.allowedProjectIds ?? null;
-  const [projectRows, budgetRows, memberRows, limitRows, tasksSnap] = await Promise.all([
+  const [projectRows, budgetRows, memberRows, limitRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name FROM projects LIMIT 200"),
     pgQuery("SELECT project_id, cost, type, based_on, include_non_billable_time FROM project_budgets LIMIT 200"),
     pgQuery("SELECT project_id, member_id FROM project_members LIMIT 2000"),
     pgQuery("SELECT project_id, cost FROM project_member_limits LIMIT 200"),
-    db.collection("tasks").select("project_id", "projectId", "status").limit(500).get(),
+    pgQuery("SELECT project_id, status FROM tasks LIMIT 500"),
   ]);
 
   const budgetByProject = new Map();
@@ -73,8 +73,7 @@ export async function getOverviewCore(db, options = {}) {
   const tasksByProject = new Map();
   let tasksDone = 0;
   let tasksTotal = 0;
-  for (const doc of tasksSnap.docs) {
-    const row = doc.data() || {};
+  for (const row of taskRows) {
     const pid = str(row, "project_id", "projectId");
     const status = str(row, "status") || "todo";
     if (!pid) continue;
@@ -155,8 +154,8 @@ export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
 
-  const [tasksSnap, projectRows, clientsSnap, budgetsSnap, clientProjectRows, membersSnap] = await Promise.all([
-    db.collection("tasks").select("project_id", "projectId", "status", "title", "priority", "assigned_to", "assignedTo").limit(taskLimit).get(),
+  const [taskRows, projectRows, clientsSnap, budgetsSnap, clientProjectRows, membersSnap] = await Promise.all([
+    pgQuery("SELECT id, project_id, status, title, priority, assigned_to FROM tasks LIMIT $1", [taskLimit]),
     pgQuery("SELECT id, name FROM projects LIMIT 200"),
     db.collection("clients").select("status", "name", "email_addresses", "email").limit(100).get(),
     db.collection("client_budgets").select("client_id", "clientId", "cost").limit(100).get(),
@@ -183,13 +182,12 @@ export async function getOverviewPanels(db, options = {}) {
   }
 
   const tasksByProject = new Map();
-  const tasks = tasksSnap.docs.flatMap((doc) => {
-    const row = doc.data() || {};
+  const tasks = taskRows.flatMap((row) => {
     const projectId = str(row, "project_id", "projectId");
     if (allowed !== null && projectId && !allowed.has(projectId)) return [];
     const status = str(row, "status") || "todo";
     const item = {
-      id: doc.id,
+      id: row.id,
       pid: projectId,
       t: str(row, "title") || "Untitled",
       st: status,

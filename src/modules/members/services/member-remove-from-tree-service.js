@@ -4,6 +4,7 @@ import { removeMemberHierarchyRelationships } from "../../member-relationships/s
 import { syncMemberHierarchyStatus } from "../../hierarchy/hierarchy-sync.js";
 import { MEMBER_SCOPED_DELETE_COLLECTIONS } from "./member-entity-bootstrap.js";
 import { alignMemberRoleTables, syncMemberPrimaryRole } from "./relation-sync.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 const ASSIGNMENT_COLLECTIONS = ["team_members", "project_members"];
 
@@ -35,25 +36,11 @@ async function deleteRowsByMemberId(db, collection, memberId) {
  * @param {string} actorMemberId
  */
 async function unassignMemberFromTasks(db, memberId, actorMemberId) {
-  let cleared = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const snap = await db.collection("tasks").where("assigned_to", "==", memberId).limit(200).get();
-    if (snap.empty) break;
-    const batch = db.batch();
-    const now = new Date();
-    for (const doc of snap.docs) {
-      batch.update(doc.ref, {
-        assigned_to: null,
-        updated_at: now,
-        updated_by: actorMemberId,
-      });
-    }
-    await batch.commit();
-    cleared += snap.size;
-    if (snap.size < 200) break;
-  }
-  return cleared;
+  const rows = await pgQuery(
+    "UPDATE tasks SET assigned_to = NULL, updated_by = $2, updated_at = now() WHERE assigned_to = $1 RETURNING id",
+    [memberId, actorMemberId],
+  );
+  return rows.length;
 }
 
 /**

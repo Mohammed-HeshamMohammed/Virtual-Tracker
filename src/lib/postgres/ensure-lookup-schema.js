@@ -550,6 +550,17 @@ GROUP BY task_id`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_assigned_status ON tasks (assigned_to, status)`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks (project_id, status)`,
+  // Participation counters recomputed by task-assignments.js's recomputeTaskStatus()
+  // whenever an assignment's status changes - Firestore-only ad-hoc fields (never in
+  // the schema catalog, schemaless writes), carried forward here so callers reading
+  // them from a Postgres task row (enrichAssignmentRow etc.) keep working.
+  `ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS completed BOOLEAN NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS total_assignees INT,
+    ADD COLUMN IF NOT EXISTS started_assignees INT,
+    ADD COLUMN IF NOT EXISTS not_started_assignees INT,
+    ADD COLUMN IF NOT EXISTS participation_percent INT,
+    ADD COLUMN IF NOT EXISTS all_assignees_started BOOLEAN NOT NULL DEFAULT false`,
   `CREATE TABLE IF NOT EXISTS task_assignments (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id            UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -578,6 +589,23 @@ GROUP BY task_id`,
     ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id),
     ADD COLUMN IF NOT EXISTS session_id VARCHAR(128),
     ADD COLUMN IF NOT EXISTS review_notes TEXT`,
+  // task_member_progress/timer_sessions.task_id had no FK at all until now -
+  // couldn't reference tasks(id) when these tables were first created (tasks
+  // didn't exist yet), and the one-time migrate-tasks-to-postgres.mjs --add-fk
+  // step only ran once, manually, not on every boot. Added here, after tasks
+  // exists in this array, with ON DELETE CASCADE so deleting a task actually
+  // cleans up its progress/session rows instead of orphaning them the way
+  // deleteTaskPg alone would (task_assignments already had this via its own
+  // table-level FK - these two didn't). Idempotent: safe to run on every boot.
+  `DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tmp_task') THEN
+    ALTER TABLE task_member_progress ADD CONSTRAINT fk_tmp_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_ts_task') THEN
+    ALTER TABLE timer_sessions ADD CONSTRAINT fk_ts_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
