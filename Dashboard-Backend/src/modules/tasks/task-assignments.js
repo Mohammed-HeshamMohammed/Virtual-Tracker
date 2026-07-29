@@ -752,18 +752,18 @@ export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {
       if (p !== filters.priority.toLowerCase()) continue;
     }
 
-    const row = await enrichAssignmentRow(db, assignment, trackingByKey, caches);
-    if (!row) continue;
+    const enrichedRow = await enrichAssignmentRow(db, assignment, trackingByKey, caches);
+    if (!enrichedRow) continue;
 
     if (assignment.status === "in_review") {
       if (!filters.status || filters.status === "in_review") {
-        needsReview.push(row);
+        needsReview.push(enrichedRow);
       }
     }
 
     const priority = String(task.priority ?? "").toLowerCase();
     if (HIGH_PRIORITIES.has(priority) && assignment.status !== "in_review") {
-      priorityMonitor.push(row);
+      priorityMonitor.push(enrichedRow);
     }
   }
 
