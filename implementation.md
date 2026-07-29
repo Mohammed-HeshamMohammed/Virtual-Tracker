@@ -202,21 +202,51 @@ Field lists below are taken directly from the authoritative Firestore schema dec
 ### Data Migration Plan (concrete steps)
 
 1. ✅ **Additive schema first — IMPLEMENTED.** `CREATE TABLE tasks`, `CREATE TABLE task_assignments`, and the `task_member_progress` extension added to `Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js`'s `MEMBER_DATA_DDL` array (this codebase's actual migration mechanism — confirmed there's no separate migration-file system; `ensure-lookup-schema.js` is applied idempotently on every server boot, same pattern the already-shipped `projects` migration used). Placed after the `projects`-domain block since both new tables FK into `projects(id)`. `node --check` confirms valid syntax; **not yet verified against a live Postgres instance** — that requires actually running `Dashboard-Backend` against the target database, which wasn't available in this session. Nothing reads from these tables yet — pure schema stand-up, zero behavior change, safe to have shipped independently of the rest of this plan.
-2. ✅ **Backfill script — WRITTEN, NOT YET RUN.** `Dashboard-Backend/scripts/migrate-tasks-to-postgres.mjs`, mirroring `migrate-projects-to-postgres.mjs`'s established conventions exactly (same `uuidOrNull`/`pgId`-with-deterministic-hash-fallback/`toDate`/`str`/`num`/`bool` helpers, same `--dry-run` and `--add-fk` flags, same upsert-by-id idempotency so it's safe to re-run while verifying). Covers `tasks`, `task_assignments`, and `time_tracking` (via `collectionGroup`, deliberately uncapped — not the same buggy `.limit(500)` pattern flagged in Phase 3) backfilled into the existing `task_member_progress` table with `user_id → member_id` mapping. Rows missing a resolvable FK (`project_id`/`task_id`) are logged and skipped rather than silently dropped or invented. Also recomputes `tasks.total_active_seconds`/`total_idle_seconds` from the freshly-backfilled `task_member_progress` rows instead of trusting a possibly-stale Firestore total (resolves the "is this stored or computed" open question from the Target Schema note above — decided: computed, from source data, not copied). `node --check` passes. **Not run against real data** — no Postgres/Firestore credentials available in this session, and running it is a real decision for whoever owns the target environment, not something to do silently.
-3. **Dry-run parity check before any cutover.** For every task, compare:
-   - `SUM(active_seconds)` / `SUM(idle_seconds)` across Postgres `task_member_progress` rows vs. the same sum across Firestore `time_tracking` docs for that task.
-   - Row counts: Firestore `time_tracking` doc count vs. Postgres `task_member_progress` row count per task; same for `task_assignments`.
-   - Any mismatch blocks cutover until explained (either a real backfill bug, or a task that changed between the read and the diff — re-run the diff, don't just accept it).
-4. **Cutover, feature-flagged.** Reuse the existing `TASK_MEMBER_PROGRESS_PG_DUAL_WRITE`-style flag pattern (`Dashboard-Backend/src/config/env.js:159` — confirmed this exact flag exists, defaults `false`): add a new flag (e.g. `TASK_DATA_SOURCE=postgres`) that switches backend *reads* to the new Postgres tables, while *writes* still go to both Firestore and Postgres — the dual-write code path already exists for `task_member_progress` behind that flag (verify it's actually turned on in this deployment before relying on it, since the default is off), and needs extending to cover the newly-added `tasks`/`task_assignments` columns for the cutover window.
-4.5. **Run the real desktop agent against the migrated backend — see the Tauri-App-Extension section above for exactly which fields to check.** Not optional, not covered by step 3's DB-level parity check: `task-time-tracking.js`'s response fields are hand-mapped to camelCase, not auto-converted, and `Tauri-App-Extension`'s Rust client fails silently (defaults, no error) on a missing/renamed key. Do this before step 5's soak period starts, not after.
-5. **Soak period.** Run with reads on Postgres, writes on both, for a defined window (suggest at least one full billing/reporting cycle so aggregate reports get exercised against the new path) while periodically re-running the parity check from step 3 against live data, not just the initial backfill snapshot.
-6. **Full cutover.** Once soak period shows no drift: stop writing to Firestore for task data, remove the Firestore-touching code from the 16 files listed above, delete the dual-write flag and the now-unused Firestore backfill script.
-7. **Firebase Auth and any non-task Firestore usage stay untouched** — this migration is scoped strictly to the source-of-truth matrix in [Task-Time-process-and-calculations.md §1.1](Task-Time-process-and-calculations.md).
+2. ✅ **Backfill script — WRITTEN AND RUN, clean.** `Dashboard-Backend/scripts/migrate-tasks-to-postgres.mjs`, mirroring `migrate-projects-to-postgres.mjs`'s established conventions exactly (same `uuidOrNull`/`pgId`-with-deterministic-hash-fallback/`toDate`/`str`/`num`/`bool` helpers, same `--dry-run` and `--add-fk` flags, same upsert-by-id idempotency so it's safe to re-run while verifying). Run against the real Coolify-hosted environment:
+   ```
+   tasks: 6 rows (0 skipped)
+   task_assignments: 15 rows (0 skipped)
+   task_member_progress (from time_tracking): 5 rows (0 skipped)
+   Recomputed totals for 4 tasks from task_member_progress.
+   --add-fk: fk_tmp_task and fk_ts_task both added with zero orphans.
+   ```
+   Zero skips and the `--add-fk` step succeeding with no orphaned rows is real signal, not just "no errors" — the FK constraints only apply cleanly if every `task_id` referenced by the backfilled rows actually resolved to a `tasks` row. Backfill is verified correct.
+
+**Real data volume turns out to be tiny — 6 tasks total.** This resolves the open question flagged earlier ("consider the direct-cutover alternative, worth checking the real row counts"): yes, tasks data volume is exactly as low as projects' was. Revising steps 3+ below to match the already-proven direct-cutover strategy instead of the heavier dual-write/soak-period design — that design was written before knowing the real scale, and running a multi-week soak period with drift-checking cron for 6 tasks is solving a problem this deployment doesn't have.
+
+3. **Cutover in one change, not feature-flagged.** Repoint all 18 files' *reads and writes* to Postgres directly — no `TASK_DATA_SOURCE` flag, no dual-write window. Keep the Firestore `tasks`/`task_assignments`/`time_tracking` collections **read-only and untouched** for a retention period (pick a window — a few days is plenty at this scale) as the actual rollback mechanism, same pattern the `projects` migration used.
+4. **Verify immediately after cutover, not on a schedule:**
+   - Row-for-row count check: Firestore doc counts (6/15/5, recorded above) vs. what the app now reads from Postgres for the same entities — trivial at this size, no sampling needed, check all of it.
+   - **Run the real desktop agent against the migrated backend — see the Tauri-App-Extension section above for exactly which fields to check.** Not optional: `task-time-tracking.js`'s response fields are hand-mapped to camelCase, not auto-converted, and `Tauri-App-Extension`'s Rust client fails silently (defaults, no error) on a missing/renamed key. A count-level check above would not catch a renamed JSON key — this would.
+   - Exercise the web dashboard's task views (list, detail, time-tracking panel) against the same 6 tasks, confirm nothing regressed.
+5. **Legacy Firestore cleanup** (its own concrete checklist below — this is not "delete some code," it's a specific list) — once the retention window passes with no rollback needed.
+6. **Firebase Auth and any non-task Firestore usage stay untouched** — this migration is scoped strictly to the source-of-truth matrix in [Task-Time-process-and-calculations.md §1.1](Task-Time-process-and-calculations.md).
+
+### Legacy Firestore cleanup (step 5, expanded)
+
+Mirrors the already-shipped `projects` migration's own "Phase 2: Firestore Cleanup" exactly — same four categories, applied to the tasks domain. Do this only after the retention window in step 3 has passed with no rollback needed; before that, the Firestore collections are the actual rollback mechanism and must stay untouched.
+
+1. **Remove the Firestore code paths from all 18 files** (the list under "Scope" above) — not just stop calling them, delete the dead code. For each file, that means the `db.collection("tasks")`/`db.collection("task_assignments")`/`db.collection("tasks").doc(id).collection("time_tracking")`/`collectionGroup("time_tracking")` calls and everything built around them (Firestore-doc-shape mapping, `.data()` extraction, Firestore transaction wrappers). Two of the 18 need extra care, since they were found via indirection rather than a literal `.collection()` call:
+   - `schema-crud.service.js`'s `validateForeignKeys()` — the `task_id: "tasks"` entry in `foreignKeyCollectionByField` (routes through `schema/catalog/index.js:36`) needs removing or repointing at the Postgres `tasks` table's own existence check, not just deleting a `.collection("tasks")` line that doesn't exist in this file.
+   - `schema/visibility.js` — `"tasks"` in `filterableCollections` and the `project_id`/`assigned_to`/`created_by` filter branch (lines 126-141) need removing once `/api/tasks` no longer reads Firestore at all.
+2. **Remove the now-dead Firestore composite indexes** from `Dashboard-Backend/firestore.indexes.json` — confirmed exactly which ones exist today:
+   ```
+   task_assignments: (task_id ASC, user_id ASC)
+   tasks: (assigned_to ASC, status ASC)
+   task_time_tracking: (task_id ASC, user_id ASC)
+   time_tracking: (user_id ASC)
+   ```
+3. **Delete the Firestore collections** (`tasks`, `task_assignments`, and every task's `time_tracking` subcollection) — or archive to GCS first if a permanent record is wanted beyond the retention window, same option the `projects` cleanup left open. Given the real scale found in step 2 (6 tasks, 15 assignments, 5 progress docs), archiving is cheap enough there's little reason not to.
+4. **Update documentation that currently asserts Firestore is the source of truth for this domain** — confirmed exact locations, not guessed:
+   - `Dashboard-Backend/NONSQL-TableNames.md:52-92` — the "Clients, Projects & Tasks (Source of Truth: NoSQL)" section lists `tasks`/`task_assignments` as Firestore-sourced (lines 64-65), plus all 5 task subcollections (lines 88-92). Remove `tasks`/`task_assignments`/`time_tracking` from this list; **leave `comments`/`subtasks`/`attachments`/`hours` in place** — those 4 subcollections were explicitly out of scope for this migration (see the Target Schema note above) and genuinely still live in Firestore.
+   - `Dashboard-Backend/SQL-RT-TableNames.md` — currently has no `tasks`/`task_assignments`/`task_member_progress` section at all (only references `task_id` as a foreign column on `time_entries`). Add one, matching the format already used for the `projects` domain tables there.
+   - `DatabaseScheme.md` and `entity-diagram.md` — same update the `projects` migration's own cleanup step made; extend it to show `tasks`/`task_assignments` as Postgres tables with real FKs now, not Firestore collections.
+5. **The backfill script itself** (`migrate-tasks-to-postgres.mjs`) can stay in `scripts/` as a historical record, same as `migrate-projects-to-postgres.mjs` — it's harmless once the source Firestore collections it reads from are gone (it'll just find nothing to migrate on a future run), and having the pattern on file is useful precedent for the next domain migration.
 
 ### Rollback plan
 
-- Until step 6, Firestore remains fully written (dual-write) and is the instant rollback target — flip the `TASK_DATA_SOURCE` flag back to Firestore reads, no data loss, no code revert needed.
-- After step 6 (Firestore paths removed), rollback requires re-adding the Firestore write paths from version control and re-running a fresh backfill in the reverse direction — treat step 6 as the actual point of no easy return, not the flag flip in step 4.
+- Until step 5, Firestore collections remain fully intact and untouched (read-only fallback) — rollback means repointing reads back to Firestore, no data loss, no backfill re-run needed, since nothing there was ever modified.
+- After step 5 (Firestore-touching code removed), rollback requires re-adding those code paths from version control — treat step 5 as the actual point of no easy return, not the cutover in step 3.
 
 ### Risks / open questions for this phase specifically
 
