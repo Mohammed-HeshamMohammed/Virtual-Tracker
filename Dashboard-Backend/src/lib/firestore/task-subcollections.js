@@ -1,10 +1,12 @@
-/** Task child entity keys mapped to Firestore subcollection names under tasks/{taskId}/. */
+/** Task child entity keys mapped to Firestore subcollection names under tasks/{taskId}/.
+ * time_tracking removed (implementation.md legacy cleanup) - that subcollection
+ * has been dead since Phase 2 (task_member_progress in Postgres is the real
+ * store); this registry only covers what's still genuinely Firestore-resident. */
 export const TASK_CHILD_SUBCOLLECTIONS = Object.freeze({
   "task-comments": "comments",
   "task-subtasks": "subtasks",
   "task-attachments": "attachments",
   "task-hours": "hours",
-  "task-time-tracking": "time_tracking",
 });
 
 /** URL path segments (under /api/tasks/:taskId/) mapped to schema entity keys. */
@@ -13,7 +15,6 @@ export const TASK_CHILD_URL_SEGMENTS = Object.freeze({
   subtasks: "task-subtasks",
   attachments: "task-attachments",
   hours: "task-hours",
-  time_tracking: "task-time-tracking",
 });
 
 export const TASK_CHILD_SUBCOLLECTION_NAMES = Object.freeze([
@@ -21,7 +22,6 @@ export const TASK_CHILD_SUBCOLLECTION_NAMES = Object.freeze([
   "subtasks",
   "attachments",
   "hours",
-  "time_tracking",
 ]);
 
 /**
@@ -63,8 +63,8 @@ export function taskChildDocRef(db, taskId, entityKey, docId) {
 
 /**
  * Deletes the Firestore child subcollections (comments/subtasks/attachments/
- * hours/time_tracking - still Firestore-resident, out of scope for the
- * Postgres migration) and the vestigial Firestore `tasks` doc mirror.
+ * hours - still Firestore-resident, out of scope for the Postgres migration)
+ * and the vestigial Firestore `tasks` doc mirror.
  * task_assignments is NOT touched here anymore - it's fully Postgres now
  * (task-assignments-postgres.service.js), and its `task_id` FK is
  * `ON DELETE CASCADE`, so deleting the Postgres `tasks` row (deleteTaskPg,

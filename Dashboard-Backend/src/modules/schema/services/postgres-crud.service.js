@@ -26,11 +26,20 @@ import {
   listTasksPg,
   updateTaskPg,
 } from "../../../lib/postgres/tasks-postgres.service.js";
+import {
+  deleteAssignmentPg,
+  getAssignmentByIdPg,
+  getTaskAssignmentsPg,
+  listAllAssignmentsPg,
+  updateAssignmentPg,
+  upsertAssignmentPg,
+} from "../../../lib/postgres/task-assignments-postgres.service.js";
 
 export const POSTGRES_ENTITY_KEYS = new Set([
   "time-entries",
   "timesheets",
   "tasks",
+  "task-assignments",
   ...LOOKUP_POSTGRES_ENTITY_KEYS,
   ...MEMBER_DATA_POSTGRES_ENTITY_KEYS,
 ]);
@@ -119,6 +128,13 @@ export async function listPostgresRows(entityKey, url) {
       assignedTo: url.searchParams.get("assigned_to") ?? url.searchParams.get("assignedTo") ?? undefined,
     });
   }
+  if (entityKey === "task-assignments") {
+    const taskId = url.searchParams.get("task_id") ?? url.searchParams.get("taskId");
+    if (taskId) return getTaskAssignmentsPg(taskId);
+    const memberId = url.searchParams.get("member_id") ?? url.searchParams.get("memberId");
+    const rows = await listAllAssignmentsPg();
+    return memberId ? rows.filter((row) => row.member_id === memberId) : rows;
+  }
   if (entityKey === "time-entries") {
     const conditions = [];
     const params = [];
@@ -168,6 +184,9 @@ export async function getPostgresRow(entityKey, id) {
   if (entityKey === "tasks") {
     return getTaskPg(id);
   }
+  if (entityKey === "task-assignments") {
+    return getAssignmentByIdPg(id);
+  }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   const columns = entityKey === "time-entries" ? TIME_ENTRY_COLUMNS : TIMESHEET_COLUMNS;
   const rows = await query(`SELECT ${columns.join(", ")} FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
@@ -187,6 +206,9 @@ export async function createPostgresRow(entityKey, payload) {
   }
   if (entityKey === "tasks") {
     return createTaskPg(payload);
+  }
+  if (entityKey === "task-assignments") {
+    return upsertAssignmentPg(payload);
   }
   if (entityKey === "time-entries") {
     // This is the only writer time_entries has - every row created here comes from the
@@ -261,6 +283,9 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
   if (entityKey === "tasks") {
     return updateTaskPg(id, payload);
   }
+  if (entityKey === "task-assignments") {
+    return updateAssignmentPg(id, payload);
+  }
   if (entityKey === "time-entries") {
     const merged = { ...existing, ...payload, id };
     const rows = await query(
@@ -330,6 +355,9 @@ export async function deletePostgresRow(entityKey, id) {
   }
   if (entityKey === "tasks") {
     return deleteTaskPg(id);
+  }
+  if (entityKey === "task-assignments") {
+    return deleteAssignmentPg(id);
   }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);

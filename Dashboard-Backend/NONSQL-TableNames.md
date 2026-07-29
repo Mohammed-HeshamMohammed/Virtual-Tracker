@@ -61,13 +61,13 @@ Quick-reference of every collection stored in **Firestore** and path stored in t
 | `project_members`        | UUID v4    | Member role permissions defined per-project.                                    |
 | `project_budgets`        | UUID v4    | Active cost limitations mapped to projects.                                     |
 | `project_member_limits`  | UUID v4    | Individual member budget caps enforced per-project.                             |
-| `tasks`                  | UUID v4    | Project items assigned to members.                                              |
-| `task_assignments`       | UUID v4    | Links assignees to tasks with expected durations.                               |
 | `team_projects`          | UUID v4    | Maps project visibility permissions to team groups.                             |
+
+`tasks` and `task_assignments` moved to PostgreSQL (implementation.md Phase 2) — see SQL-RT-TableNames.md. Not stored in Firestore anymore.
 
 ### 6. High-Frequency Logs & Activity
 
-The entire activity domain (`activity_sessions`, `activity_screenshots`, `activity_app_logs`, `activity_url_logs`, `activity_alert_log`) moved to PostgreSQL — no per-event Firestore write anymore, and the corresponding generic schema-CRUD entities were removed so nothing can write to Firestore for these through that path either. See SQL-RT-TableNames.md. Screenshot rows older than 7 days get cold-archived to GCS as a per-member ZIP and deleted; see `scripts/archive-screenshots.mjs`.
+The entire activity domain (`activity_sessions`, `activity_screenshots`, `activity_app_logs`, `activity_url_logs`, `activity_alert_log`) moved to PostgreSQL — no per-event Firestore write anymore, and the corresponding generic schema-CRUD entities were removed so nothing can write to Firestore for these through that path either. See SQL-RT-TableNames.md. Screenshots older than 7 days get their image data archived to GCS individually (`screenshot_url` set, `image_data` cleared); app/url logs and fully-archived screenshot rows older than 90 days are deleted outright — see `scripts/archive-screenshots.mjs` (run manually or on a schedule; both windows are configurable via flags).
 
 ### 7. System (Source of Truth: NoSQL)
 
@@ -89,7 +89,8 @@ These sub-collections are stored nested under `tasks/{taskId}/`:
 | `tasks/{taskId}/subtasks`             | `task-subtasks`      | Core checklists nested in tasks.                                |
 | `tasks/{taskId}/attachments`          | `task-attachments`   | Blob attachment links saved on GCS buckets.                     |
 | `tasks/{taskId}/hours`                | `task-hours`         | Submissions capturing hours spent on a task.                    |
-| `tasks/{taskId}/time_tracking`        | `task-time-tracking` | Real-time tracking timer heartbeats active on desktop clients.  |
+
+`tasks/{taskId}/time_tracking` (`task-time-tracking`) moved to PostgreSQL `task_member_progress` (implementation.md Phase 2) — see SQL-RT-TableNames.md. Not stored in Firestore anymore.
 
 ---
 

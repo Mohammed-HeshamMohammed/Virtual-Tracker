@@ -12,6 +12,17 @@ export function getPostgresPool() {
   if (!url) return null;
   if (!pool) {
     pool = new pg.Pool({ connectionString: url });
+    // 4.13: every `::date` cast (day-boundary filters for screenshots/app-logs/
+    // url-logs/rollups) resolved in whatever the server's default session
+    // timezone happened to be - never set explicitly, so implicit and
+    // undocumented rather than genuinely wrong. Pinning it to UTC on every new
+    // physical connection makes day-boundary math deterministic. This does not
+    // solve per-member local-day attribution (no member timezone is stored
+    // anywhere in this schema) - that needs a real member.timezone field and
+    // is a separate, larger product gap, not something to invent here.
+    pool.on("connect", (client) => {
+      client.query("SET TIME ZONE 'UTC'").catch(() => {});
+    });
   }
   return pool;
 }

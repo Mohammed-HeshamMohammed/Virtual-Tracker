@@ -155,8 +155,6 @@ export function buildEnv(source = process.env) {
     }),
 
     features: Object.freeze({
-      /** Dual-write per-member timer rows to Postgres (Firestore remains source of truth until cutover). */
-      taskMemberProgressPgDualWrite: readBool(source, "TASK_MEMBER_PROGRESS_PG_DUAL_WRITE", false),
       /** Store activity screenshots/apps/urls in Postgres; feed reads prefer Postgres when enabled. */
       activityEventsPgEnabled: readBool(source, "ACTIVITY_EVENTS_PG_ENABLED", false),
     }),

@@ -370,10 +370,15 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
+  // Bound to the sparkline's own 6-day window instead of a plain recency LIMIT -
+  // a flat top-N cap silently starved older sparkline days once a single recent
+  // day alone produced more than `limit` rows (skewing activitySparkline/topApps,
+  // not just truncating a list). Date-range-bound reads have no reason to cap low.
+  const sparkStartDay = getLastNDays(6)[0].dateKey;
   const base = await loadDashboardBase(db);
   const [screenshotRows, appRows, sessionIndex] = await Promise.all([
-    fetchPgScreenshots(allMemberIds, null, 200),
-    fetchPgAppLogs(allMemberIds, null, 400),
+    fetchPgScreenshots(allMemberIds, null, 5000, { sinceDay: sparkStartDay }),
+    fetchPgAppLogs(allMemberIds, null, 5000, { sinceDay: sparkStartDay }),
     buildOpenSessionIndex(),
   ]);
 

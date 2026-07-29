@@ -154,7 +154,7 @@ function normalizeAssignment(doc) {
   return {
     id,
     taskId: d.task_id,
-    userId: d.user_id,
+    userId: d.member_id,
     projectId: d.project_id ?? null,
     status: d.status ?? "todo",
     expectedSeconds: typeof d.expected_seconds === "number" ? d.expected_seconds : null,
@@ -396,7 +396,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
   }
 
   const existingRows = await getTaskAssignmentsPg(taskId);
-  const existingByUser = new Map(existingRows.map((row) => [row.user_id, row]));
+  const existingByUser = new Map(existingRows.map((row) => [row.member_id, row]));
 
   for (const userId of ids) {
     const existing = existingByUser.get(userId);
@@ -410,7 +410,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
     } else {
       await upsertAssignmentPg({
         task_id: taskId,
-        user_id: userId,
+        member_id: userId,
         project_id: projectId,
         status: task.status ?? "todo",
         expected_seconds: expectedSeconds,
@@ -454,7 +454,7 @@ export async function enrichTasksWithAssignees(db, rows) {
   const assignmentRows = await getAssignmentsForTasksPg(taskIds);
   for (const data of assignmentRows) {
     const taskId = typeof data.task_id === "string" ? data.task_id : "";
-    const userId = typeof data.user_id === "string" ? data.user_id : "";
+    const userId = typeof data.member_id === "string" ? data.member_id : "";
     if (!taskId || !userId || data.required === false) continue;
     if (!assignmentsByTask.has(taskId)) assignmentsByTask.set(taskId, []);
     assignmentsByTask.get(taskId).push(userId);
@@ -485,7 +485,7 @@ export async function ensureAssignmentForUser(db, taskId, userId) {
   if (!task) throw new Error("Task not found");
   const row = await upsertAssignmentPg({
     task_id: taskId,
-    user_id: userId,
+    member_id: userId,
     project_id: task.project_id ?? null,
     status: "todo",
     expected_seconds: estimateAssignmentSeconds(task),

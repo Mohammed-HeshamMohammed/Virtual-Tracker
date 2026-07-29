@@ -272,7 +272,6 @@ END$$`,
   active_seconds         BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
   idle_seconds           BIGINT NOT NULL DEFAULT 0 CHECK (idle_seconds >= 0),
   progress_percentage    NUMERIC(5,2) NOT NULL DEFAULT 0 CHECK (progress_percentage >= 0),
-  accumulated_work_time  BIGINT NOT NULL DEFAULT 0 CHECK (accumulated_work_time >= 0),
   last_started_at        TIMESTAMPTZ,
   last_activity_at       TIMESTAMPTZ,
   created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -281,19 +280,6 @@ END$$`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_tmp_task_id ON task_member_progress (task_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tmp_member_id ON task_member_progress (member_id)`,
-  `CREATE TABLE IF NOT EXISTS timer_sessions (
-  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  task_id               UUID NOT NULL,
-  member_id             UUID NOT NULL,
-  started_at            TIMESTAMPTZ NOT NULL,
-  ended_at              TIMESTAMPTZ,
-  active_seconds        BIGINT,
-  idle_seconds          BIGINT,
-  source                TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'desktop_agent')),
-  activity_session_id   VARCHAR(128)
-)`,
-  `CREATE INDEX IF NOT EXISTS idx_ts_task_member ON timer_sessions (task_id, member_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_ts_open ON timer_sessions (member_id, task_id) WHERE ended_at IS NULL`,
   `CREATE OR REPLACE VIEW task_progress_aggregate AS
 SELECT
   task_id,
@@ -564,7 +550,7 @@ GROUP BY task_id`,
   `CREATE TABLE IF NOT EXISTS task_assignments (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id            UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-  user_id            UUID NOT NULL,
+  member_id          UUID NOT NULL,
   project_id         UUID NOT NULL REFERENCES projects(id),
   status             VARCHAR(20) NOT NULL DEFAULT 'todo',
   expected_seconds   INT,
@@ -576,9 +562,23 @@ GROUP BY task_id`,
   entered_review_at  TIMESTAMPTZ,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (task_id, user_id)
+  UNIQUE (task_id, member_id)
 )`,
-  `CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (user_id)`,
+  // 4.4: every other table (task_member_progress, activity_sessions,
+  // project_members) already calls this column member_id - task_assignments
+  // was the one outlier still carrying Firestore's user_id naming. Renamed
+  // rather than left inconsistent now that more tables/joins are piling up
+  // on top of this domain. Idempotent: no-op once already renamed.
+  `DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'task_assignments' AND column_name = 'user_id'
+  ) THEN
+    ALTER TABLE task_assignments RENAME COLUMN user_id TO member_id;
+  END IF;
+END $$`,
+  `CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_task_assignments_project ON task_assignments (project_id)`,
   // task_member_progress already exists (added earlier for the activity-data
   // migration) - extend it to cover the remaining Firestore time_tracking
@@ -602,10 +602,103 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tmp_task') THEN
     ALTER TABLE task_member_progress ADD CONSTRAINT fk_tmp_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_ts_task') THEN
-    ALTER TABLE timer_sessions ADD CONSTRAINT fk_ts_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
+END $$`,
+  // ─── Phase 4 schema hardening (implementation.md) - cheap/safe items ───
+  // 4.12: these 3 columns already have a UNIQUE constraint, which Postgres backs
+  // with its own index - the separate explicit index below is a second index
+  // maintained on every write for zero query benefit. Free to drop.
+  "DROP INDEX IF EXISTS idx_roles_name",
+  "DROP INDEX IF EXISTS idx_time_settings_member",
+  "DROP INDEX IF EXISTS idx_employment_member",
+  // 4.15: workedTodayOnTaskSeconds filters activity_sessions by task_id
+  // (activity-events-postgres.service.js) but only member_id-based indexes
+  // existed on this table.
+  "CREATE INDEX IF NOT EXISTS idx_act_sess_task ON activity_sessions (task_id) WHERE task_id IS NOT NULL",
+  // 4.5: task_status enum was declared but wired to zero columns (grepped the
+  // full backend), and its values don't match real status strings in use
+  // (`to_do`/`completed` vs the real `todo`/`done`/`cancelled`/`archived`) -
+  // a stale, mismatched, unused type is worse than no type. tasks.status
+  // stays a plain VARCHAR, which is what every reader already assumes.
+  "DROP TYPE IF EXISTS task_status",
+  // 4.14: has_image is hardcoded to the literal `true` on every insert
+  // (activity-events-postgres.service.js's insertActivityScreenshot) and the
+  // one route that creates a row (activity/routes.js) only ever reaches that
+  // insert when real image data is present (`if (!imageData) continue;`) -
+  // there is no path that has ever produced or could produce `false`. Dead
+  // column, not future-proofing; dropped rather than carried forward.
+  "ALTER TABLE activity_screenshots DROP COLUMN IF EXISTS has_image",
+  // 4.1: UUIDv7 is time-sortable (same 128-bit external shape, no API-facing
+  // change) unlike gen_random_uuid()'s fully random insertion order, which
+  // causes btree page splits/index bloat on high-write tables - a real cost
+  // on a 2-vCPU box. Only switches the DEFAULT for future inserts; existing
+  // ids are untouched. No-op when uuidv7() isn't available (pre-PG17 without
+  // the pg_uuidv7 extension) rather than failing the whole boot sequence.
+  `DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'uuidv7') THEN
+    ALTER TABLE task_assignments ALTER COLUMN id SET DEFAULT uuidv7();
+    ALTER TABLE task_member_progress ALTER COLUMN id SET DEFAULT uuidv7();
   END IF;
 END $$`,
+  // 4.6: sumPgMemberActiveSeconds summed a session's ENTIRE active_seconds
+  // whenever started_at fell in the requested day/week range - a session
+  // started at 23:50 and still open past midnight got all its seconds
+  // attributed to the day it started, none to the next. These two rollups
+  // are incremented by a delta (this sync's active_seconds minus the
+  // session's previous active_seconds) attributed to the calendar day the
+  // sync actually ran on, sidestepping the midnight-split problem entirely.
+  `CREATE TABLE IF NOT EXISTS daily_member_active_seconds (
+  member_id      UUID NOT NULL,
+  day            DATE NOT NULL,
+  active_seconds BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, day)
+)`,
+  `CREATE TABLE IF NOT EXISTS daily_member_task_active_seconds (
+  member_id      UUID NOT NULL,
+  task_id        UUID NOT NULL,
+  day            DATE NOT NULL,
+  active_seconds BIGINT NOT NULL DEFAULT 0 CHECK (active_seconds >= 0),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, task_id, day)
+)`,
+  // 4.2/4.3: timer_sessions only had one writer - syncMemberProgressToPostgres,
+  // the pre-Phase-2 dual-write mirror gated behind TASK_MEMBER_PROGRESS_PG_DUAL_WRITE
+  // (defaults false, never turned on in this deployment). Since task_member_progress
+  // has been the real primary store since Phase 2, that whole mirror (and its
+  // GREATEST-ratcheted accumulated_work_time column, never read by anything -
+  // active_seconds is already correctly monotonic from the tracker itself) was
+  // dead weight, not a table worth "collapsing" with activity_sessions - removed
+  // outright instead, along with the mirror functions in
+  // task-member-progress.service.js and the now-unused dual-write flag.
+  "DROP TABLE IF EXISTS timer_sessions",
+  "ALTER TABLE task_member_progress DROP COLUMN IF EXISTS accumulated_work_time",
+  // 4.8: task_progress_aggregate (the view) and every reader of
+  // tasks.total_active_seconds/total_idle_seconds recompute SUM(active_seconds)
+  // across all members on every read - read cadence (dashboard/task-list
+  // polling) far exceeds write cadence (one sync per SESSION_SYNC_INTERVAL_SEC
+  // = 20s per active tracker). Trigger-maintained totals are cheaper than
+  // recomputing per read, and don't depend on aggregateTaskProgress() always
+  // remembering to call updateTaskPg - the same class of bug this plan
+  // already found once (the pre-fbab994 quit-path gap) and shouldn't
+  // reintroduce at the database layer. Redundant-but-harmless alongside the
+  // existing app-level update in aggregateTaskProgress() - both converge to
+  // the same SUM(), this just guarantees it even if that call site is ever
+  // missed.
+  `CREATE OR REPLACE FUNCTION recompute_task_totals() RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE tasks SET
+    total_active_seconds = (SELECT COALESCE(SUM(active_seconds), 0) FROM task_member_progress WHERE task_id = COALESCE(NEW.task_id, OLD.task_id)),
+    total_idle_seconds   = (SELECT COALESCE(SUM(idle_seconds), 0)   FROM task_member_progress WHERE task_id = COALESCE(NEW.task_id, OLD.task_id)),
+    updated_at = now()
+  WHERE id = COALESCE(NEW.task_id, OLD.task_id);
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql`,
+  `DROP TRIGGER IF EXISTS trg_recompute_task_totals ON task_member_progress`,
+  `CREATE TRIGGER trg_recompute_task_totals
+  AFTER INSERT OR UPDATE OR DELETE ON task_member_progress
+  FOR EACH ROW EXECUTE FUNCTION recompute_task_totals()`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.

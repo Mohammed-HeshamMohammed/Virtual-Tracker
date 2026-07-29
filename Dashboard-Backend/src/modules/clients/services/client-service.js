@@ -12,6 +12,7 @@ import {
   syncClientBudgetAutomationState,
 } from "./client-budget-notify.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
+import { fetchAllDocs } from "../../../lib/firestore/paginate-all.js";
 import {
   BUDGET_BASE_OPTIONS,
   BUDGET_RESET_OPTIONS,
@@ -368,26 +369,26 @@ export async function syncClientProjects(db, clientId, projectIds, actorId) {
 }
 
 export async function listClientsEnriched(db) {
-  const [clientsSnap, budgetsSnap, invoicingSnap, clientProjectRows] = await Promise.all([
-    db.collection("clients")
-      .select(
-        "status",
-        "name",
-        "street_address",
-        "streetAddress",
-        "city",
-        "state",
-        "zip",
-        "country",
-        "phone_number",
-        "phoneNumber",
-        "email_addresses",
-        "emailAddresses",
-        "member_id",
-        "memberId"
-      )
-      .limit(500)
-      .get(),
+  const [clientsDocs, budgetsSnap, invoicingSnap, clientProjectRows] = await Promise.all([
+    fetchAllDocs(
+      db.collection("clients")
+        .select(
+          "status",
+          "name",
+          "street_address",
+          "streetAddress",
+          "city",
+          "state",
+          "zip",
+          "country",
+          "phone_number",
+          "phoneNumber",
+          "email_addresses",
+          "emailAddresses",
+          "member_id",
+          "memberId"
+        )
+    ),
     db.collection("client_budgets")
       .select(
         "client_id",
@@ -434,7 +435,7 @@ export async function listClientsEnriched(db) {
       )
       .limit(1000)
       .get(),
-    pgQuery("SELECT client_id, project_id FROM client_projects LIMIT 2000"),
+    pgQuery("SELECT client_id, project_id FROM client_projects"),
   ]);
 
   const budgetByClient = new Map();
@@ -460,7 +461,7 @@ export async function listClientsEnriched(db) {
     projectsByClient.get(cid).push(pid);
   }
 
-  return clientsSnap.docs.map((doc) =>
+  return clientsDocs.map((doc) =>
     mapClientResponse(
       doc,
       budgetByClient.get(doc.id) ?? null,

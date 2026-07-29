@@ -1,4 +1,5 @@
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
+import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 import {
   classifyHierarchyPlacement,
   HIERARCHY_STATUS,
@@ -17,15 +18,13 @@ import {
 
 /** Read-only hierarchy violation scan (no writes). */
 export async function auditHierarchyViolations(db, options = {}) {
-  const limit = typeof options.limit === "number" ? options.limit : 2000;
-
-  const [membersSnap, relsSnap] = await Promise.all([
-    db.collection("members").limit(limit).get(),
-    db.collection("member_relationships").limit(limit).get(),
+  const [membersDocs, relsDocs] = await Promise.all([
+    fetchAllDocs(db.collection("members")),
+    fetchAllDocs(db.collection("member_relationships")),
   ]);
 
   const childToParent = new Map();
-  for (const doc of relsSnap.docs) {
+  for (const doc of relsDocs) {
     const data = doc.data();
     if (typeof data.child_member_id === "string" && typeof data.parent_member_id === "string") {
       childToParent.set(data.child_member_id, data.parent_member_id);
@@ -37,7 +36,7 @@ export async function auditHierarchyViolations(db, options = {}) {
   /** @type {Array<{ member_id: string; role_name: string; hierarchy_status: string; parent_member_id: string | null }>} */
   const summary = [];
 
-  for (const doc of membersSnap.docs) {
+  for (const doc of membersDocs) {
     const data = doc.data() || {};
     const memberId = doc.id;
     const roleName = await resolveMemberRoleName(db, memberId);
@@ -86,7 +85,7 @@ export async function auditHierarchyViolations(db, options = {}) {
 
   return {
     audited_at: new Date().toISOString(),
-    member_count: membersSnap.size,
+    member_count: membersDocs.length,
     violation_count: violations.length,
     violations,
     orphan_employees: violations.filter((v) => v.violation_type === "orphan_employee"),

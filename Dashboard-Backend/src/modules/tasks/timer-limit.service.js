@@ -6,18 +6,16 @@ import {
   memberUsesShiftsForLimits,
 } from "./task-workload-validation.js";
 import { getRollingWeekDays, startOfDay } from "../dashboard/dashboard-utils.js";
-import { sumPgMemberActiveSeconds } from "../../lib/postgres/activity-events-postgres.service.js";
+import {
+  sumDailyMemberActiveSeconds,
+  sumDailyMemberTaskActiveSeconds,
+} from "../../lib/postgres/activity-events-postgres.service.js";
 
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {{ fromMs: number, toMs: number, taskId?: string }} range
- */
-async function sumMemberActiveSeconds(db, memberId, { fromMs, toMs, taskId }) {
-  return sumPgMemberActiveSeconds(memberId, { fromMs, toMs, taskId });
+function dayKey(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
 /**
@@ -67,18 +65,15 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
 
   const now = new Date();
   const todayStart = startOfDay(now).getTime();
-  const todayEnd = todayStart + 86_400_000 - 1;
   const weekDays = getRollingWeekDays();
-  const weekStart = weekDays[0]?.startMs ?? todayStart;
-  const weekEnd = weekDays[weekDays.length - 1]?.endMs ?? todayEnd;
+  const weekStartDay = dayKey(weekDays[0]?.startMs ?? todayStart);
+  const todayDay = dayKey(todayStart);
   const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
 
   const [workedTodaySeconds, workedTodayOnTaskSeconds, workedWeekSeconds] = await Promise.all([
-    sumMemberActiveSeconds(db, memberId, { fromMs: todayStart, toMs: todayEnd }),
-    taskId
-      ? sumMemberActiveSeconds(db, memberId, { fromMs: todayStart, toMs: todayEnd, taskId })
-      : Promise.resolve(0),
-    sumMemberActiveSeconds(db, memberId, { fromMs: weekStart, toMs: weekEnd }),
+    sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay }),
+    taskId ? sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay) : Promise.resolve(0),
+    sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay }),
   ]);
 
   const remainders = [];

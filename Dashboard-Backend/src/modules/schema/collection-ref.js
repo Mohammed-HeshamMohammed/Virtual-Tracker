@@ -10,7 +10,7 @@ import {
  * @returns {{ taskId: string, entityKey: string, childId: string | null } | null}
  */
 export function parseTaskChildPath(pathname) {
-  const match = /^\/api(?:\/v1)?\/tasks\/([^/]+)\/(comments|subtasks|attachments|hours|time_tracking)(?:\/([^/]+))?$/.exec(
+  const match = /^\/api(?:\/v1)?\/tasks\/([^/]+)\/(comments|subtasks|attachments|hours)(?:\/([^/]+))?$/.exec(
     pathname,
   );
   if (!match) return null;
@@ -20,7 +20,6 @@ export function parseTaskChildPath(pathname) {
     subtasks: "task-subtasks",
     attachments: "task-attachments",
     hours: "task-hours",
-    time_tracking: "task-time-tracking",
   };
   return {
     taskId: match[1],

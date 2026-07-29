@@ -5,6 +5,7 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
+import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 
 function asBool(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
@@ -84,15 +85,15 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   if ((pn === "/api/member-onboarding" || pn === "/api/v1/member-onboarding") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [onboardingSnap, membersSnap, invitesSnap] = await Promise.all([
-        db.collection("member_onboarding").orderBy("updated_at", "desc").limit(400).get(),
-        db.collection("members").orderBy("date_added", "desc").limit(400).get(),
-        db.collection("invites").orderBy("sent_at", "desc").limit(400).get(),
+      const [onboardingDocs, membersDocs, invitesDocs] = await Promise.all([
+        fetchAllDocs(db.collection("member_onboarding").orderBy("updated_at", "desc")),
+        fetchAllDocs(db.collection("members").orderBy("date_added", "desc")),
+        fetchAllDocs(db.collection("invites").orderBy("sent_at", "desc")),
       ]);
 
       const memberById = new Map();
       const ownerMemberIds = new Set();
-      for (const doc of membersSnap.docs) {
+      for (const doc of membersDocs) {
         const d = doc.data() || {};
         const email = typeof d.work_email === "string" ? d.work_email : typeof d.email === "string" ? d.email : "";
         memberById.set(doc.id, email);
@@ -100,17 +101,17 @@ export async function routeMemberOnboarding(req, res, url, origin) {
       }
 
       const inviteById = new Map();
-      for (const doc of invitesSnap.docs) {
+      for (const doc of invitesDocs) {
         const d = doc.data() || {};
         const email = typeof d.email === "string" ? d.email : "";
         inviteById.set(doc.id, email);
       }
 
-      const rows = onboardingSnap.docs.map((doc) => normalizeOnboardingDoc(doc.id, doc.data() || {}));
+      const rows = onboardingDocs.map((doc) => normalizeOnboardingDoc(doc.id, doc.data() || {}));
       const byMemberId = new Map(rows.filter((r) => r.memberId).map((r) => [r.memberId, r]));
       const byInviteId = new Map(rows.filter((r) => r.inviteId).map((r) => [r.inviteId, r]));
 
-      for (const member of membersSnap.docs) {
+      for (const member of membersDocs) {
         if (ownerMemberIds.has(member.id)) continue;
         if (byMemberId.has(member.id)) continue;
         rows.push({
@@ -127,7 +128,7 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         });
       }
 
-      for (const invite of invitesSnap.docs) {
+      for (const invite of invitesDocs) {
         const d = invite.data() || {};
         const status = typeof d.status === "string" ? d.status : "";
         if (status === "completed" || status === "accepted") continue;

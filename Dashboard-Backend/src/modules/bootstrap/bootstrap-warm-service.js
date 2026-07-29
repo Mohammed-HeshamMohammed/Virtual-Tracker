@@ -16,11 +16,13 @@ const LIST_LIMIT = 200;
 // instead, then get normalizeDoc()'d the same way so downstream field-name
 // lookups (row.project_id ?? row.projectId) keep working either way.
 /**
+ * Postgres full-table read - unlike Firestore there's no per-doc read cost, so no
+ * arbitrary row ceiling here; these tables are small (projects/tasks/members-of-a-
+ * project scale), not per-request-paginated lists.
  * @param {string} table
- * @param {number} limit
  */
-async function fetchPgCollectionList(table, limit) {
-  const rows = await pgQuery(`SELECT * FROM ${table} LIMIT $1`, [limit]);
+async function fetchPgCollectionList(table) {
+  const rows = await pgQuery(`SELECT * FROM ${table}`);
   return rows.map((row) => normalizeDoc(row));
 }
 
@@ -93,14 +95,14 @@ export async function getBootstrapWarmPayload(db, viewer) {
     tasksRaw,
   ] = await Promise.all([
     getVisibleMemberIds(db, viewer.memberId, roleName),
-    fetchPgCollectionList("projects", LIST_LIMIT),
-    fetchPgCollectionList("project_budgets", LIST_LIMIT),
-    fetchPgCollectionList("project_members", LIST_LIMIT),
-    fetchPgCollectionList("team_projects", LIST_LIMIT),
-    fetchPgCollectionList("project_member_limits", LIST_LIMIT),
+    fetchPgCollectionList("projects"),
+    fetchPgCollectionList("project_budgets"),
+    fetchPgCollectionList("project_members"),
+    fetchPgCollectionList("team_projects"),
+    fetchPgCollectionList("project_member_limits"),
     fetchCollectionList(db, "teams"),
     fetchCollectionList(db, "team_members"),
-    fetchCollectionList(db, "tasks"),
+    fetchPgCollectionList("tasks"),
   ]);
 
   const projects = projectsRaw.filter((row) => projectAllowed(allowedProjects, row.id));

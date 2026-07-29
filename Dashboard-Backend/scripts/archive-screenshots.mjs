@@ -1,100 +1,120 @@
 #!/usr/bin/env node
 /**
- * Cold-archive old activity_screenshots rows out of Postgres.
+ * Activity data retention (implementation.md Phase 4.7).
  *
- * Keeps the last RETENTION_DAYS of screenshots hot in Postgres (bytea). Anything
- * older gets bundled per member into one ZIP (one entry per screenshot, metadata
- * encoded in the entry filename), uploaded to GCS, and the source rows are
- * deleted - so Postgres storage stays bounded instead of growing forever.
+ * activity_screenshots stores image_data as inline Postgres BYTEA on every
+ * insert (activity-events-postgres.service.js's insertActivityScreenshot) -
+ * the routes.js capture path's own comment already says "the archive job
+ * moves rows out to GCS once they age out", but that job was never written.
+ * This is it: run manually or wire into a periodic job (Coolify's own
+ * scheduled-task feature, not an in-process scheduler this backend doesn't
+ * have) - not auto-run on every boot like ensure-lookup-schema.js.
  *
- * Self-guards via system_meta so it's safe to schedule this on any outer cron
- * cadence (e.g. daily) - it only does real work once every ARCHIVE_INTERVAL_DAYS.
+ * Two independent steps:
+ *   1. Archive: screenshots older than --archive-days (default 7) that still
+ *      have image_data get uploaded to GCS, then image_data is cleared and
+ *      screenshot_url is set to the GCS object path - reclaims Postgres/disk
+ *      space without losing the screenshot itself.
+ *   2. Retention: activity_app_logs/activity_url_logs rows older than
+ *      --retention-days (default 90), and fully-archived screenshot rows
+ *      (image_data already NULL) older than --retention-days, are deleted
+ *      outright. These day counts are illustrative, not a compliance
+ *      recommendation - override via flags if your retention policy differs.
+ *
+ * Usage:
+ *   npm run archive:screenshots -- --dry-run
+ *   npm run archive:screenshots
+ *   npm run archive:screenshots -- --archive-days=7 --retention-days=90
  */
-import archiver from "archiver";
 import { query, isPostgresConfigured } from "../src/lib/postgres/client.js";
 import { uploadToGCS } from "../src/lib/gcs/upload.js";
 
-const RETENTION_DAYS = 7;
-const ARCHIVE_INTERVAL_DAYS = 21;
-const META_KEY = "screenshot_archive";
+const dryRun = process.argv.includes("--dry-run");
 
-async function shouldRun() {
-  const rows = await query(`SELECT updated_at FROM system_meta WHERE doc_key = $1`, [META_KEY]);
-  const last = rows[0]?.updated_at;
-  if (!last) return true;
-  const daysSince = (Date.now() - new Date(last).getTime()) / 86_400_000;
-  return daysSince >= ARCHIVE_INTERVAL_DAYS;
+function flagValue(name, fallback) {
+  const arg = process.argv.find((a) => a.startsWith(`--${name}=`));
+  if (!arg) return fallback;
+  const value = Number(arg.split("=")[1]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-async function markRun(summary) {
-  await query(
-    `INSERT INTO system_meta (doc_key, payload, updated_at)
-     VALUES ($1, $2, now())
-     ON CONFLICT (doc_key) DO UPDATE SET payload = $2, updated_at = now()`,
-    [META_KEY, JSON.stringify(summary)],
+const archiveDays = flagValue("archive-days", 7);
+const retentionDays = flagValue("retention-days", 90);
+
+async function archiveOldScreenshots() {
+  const rows = await query(
+    `SELECT id, member_id, image_data, captured_at
+     FROM activity_screenshots
+     WHERE image_data IS NOT NULL AND captured_at < now() - ($1 || ' days')::interval
+     ORDER BY captured_at ASC
+     LIMIT 500`,
+    [archiveDays],
   );
-}
 
-/** @param {Array<{id: string, task_id: string|null, activity_level: number, captured_at: Date, image_data: Buffer}>} rows */
-function zipMemberScreenshots(rows) {
-  return new Promise((resolve, reject) => {
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    const chunks = [];
-    archive.on("data", (chunk) => chunks.push(chunk));
-    archive.on("end", () => resolve(Buffer.concat(chunks)));
-    archive.on("error", reject);
-    for (const row of rows) {
-      const capturedIso = new Date(row.captured_at).toISOString().replace(/[:.]/g, "-");
-      const name = `${capturedIso}__task-${row.task_id || "none"}__act${row.activity_level}__${row.id}.webp`;
-      archive.append(row.image_data, { name });
+  let archived = 0;
+  let failed = 0;
+  for (const row of rows) {
+    const objectPath = `activity-screenshots/${row.member_id}/${row.id}.webp`;
+    if (dryRun) {
+      console.log(`[dry-run] would archive ${row.id} -> ${objectPath}`);
+      archived++;
+      continue;
     }
-    archive.finalize();
-  });
+    try {
+      await uploadToGCS(row.image_data, objectPath, "image/webp", false);
+      await query(
+        `UPDATE activity_screenshots SET screenshot_url = $2, image_data = NULL WHERE id = $1`,
+        [row.id, objectPath],
+      );
+      archived++;
+    } catch (err) {
+      // Leave image_data in place on failure - a screenshot that fails to
+      // archive stays fully intact in Postgres rather than being half-lost.
+      failed++;
+      console.warn(`[activity-retention] archive failed for ${row.id}:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return { scanned: rows.length, archived, failed };
 }
 
-async function run() {
-  if (!isPostgresConfigured()) {
-    console.error("POSTGRES_URL is not configured");
+async function deleteExpiredRows() {
+  const targets = [
+    { table: "activity_app_logs", column: "started_at" },
+    { table: "activity_url_logs", column: "visited_at" },
+    // Only fully-archived screenshot rows (image_data already cleared) - a
+    // row still holding image_data was never archived and stays regardless
+    // of age, since deleting it would be actual data loss, not cleanup.
+    { table: "activity_screenshots", column: "captured_at", extraWhere: "image_data IS NULL" },
+  ];
+
+  const results = [];
+  for (const { table, column, extraWhere } of targets) {
+    const where = [`${column} < now() - ($1 || ' days')::interval`, extraWhere].filter(Boolean).join(" AND ");
+    if (dryRun) {
+      const [{ count }] = await query(`SELECT COUNT(*)::int AS count FROM ${table} WHERE ${where}`, [retentionDays]);
+      results.push({ table, wouldDelete: count });
+      continue;
+    }
+    const deleted = await query(`DELETE FROM ${table} WHERE ${where} RETURNING id`, [retentionDays]);
+    results.push({ table, deleted: deleted.length });
+  }
+  return results;
+}
+
+async function main() {
+  isPostgresConfigured();
+  console.log(`activity-retention: archive-days=${archiveDays} retention-days=${retentionDays} dry-run=${dryRun}`);
+
+  const archiveResult = await archiveOldScreenshots();
+  console.log("Archive:", archiveResult);
+
+  const retentionResult = await deleteExpiredRows();
+  console.log("Retention:", retentionResult);
+}
+
+main()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("activity-retention failed:", err);
     process.exit(1);
-  }
-  if (!(await shouldRun())) {
-    console.log(`Skipping - last archive run was under ${ARCHIVE_INTERVAL_DAYS} days ago.`);
-    return;
-  }
-
-  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000);
-  const memberRows = await query(
-    `SELECT DISTINCT member_id FROM activity_screenshots WHERE captured_at < $1 AND image_data IS NOT NULL`,
-    [cutoff],
-  );
-
-  let membersArchived = 0;
-  let screenshotsArchived = 0;
-
-  for (const { member_id: memberId } of memberRows) {
-    const rows = await query(
-      `SELECT id, task_id, activity_level, captured_at, image_data
-       FROM activity_screenshots
-       WHERE member_id = $1 AND captured_at < $2 AND image_data IS NOT NULL
-       ORDER BY captured_at ASC`,
-      [memberId, cutoff],
-    );
-    if (rows.length === 0) continue;
-
-    const zipBuffer = await zipMemberScreenshots(rows);
-    const objectPath = `activity-screenshots-archive/${memberId}/${cutoff.toISOString().slice(0, 10)}.zip`;
-    await uploadToGCS(zipBuffer, objectPath, "application/zip", false);
-
-    const ids = rows.map((r) => r.id);
-    await query(`DELETE FROM activity_screenshots WHERE id = ANY($1::uuid[])`, [ids]);
-
-    membersArchived++;
-    screenshotsArchived += rows.length;
-    console.log(`Archived ${rows.length} screenshots for member ${memberId} -> ${objectPath}`);
-  }
-
-  await markRun({ ranAt: new Date().toISOString(), membersArchived, screenshotsArchived });
-  console.log(`Archive complete. Members: ${membersArchived}, screenshots: ${screenshotsArchived}.`);
-}
-
-await run();
+  });

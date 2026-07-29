@@ -518,6 +518,8 @@ erDiagram
 
 High-volume structural mapping of tasks, assignments, logged time aggregates, and project budgets.
 
+> **Note**: `tasks`, `task_assignments`, and `task_time_tracking` (6.5, 6.9, 6.11) have moved to PostgreSQL (implementation.md Phase 2) - see `SQL-RT-TableNames.md`. The diagram and remaining subsections below still describe this domain as Firestore-only; that predates the migration and hasn't been redrawn.
+
 ```mermaid
 erDiagram
   PROJECTS ||--o{ PROJECT_MEMBERS : has
@@ -602,32 +604,8 @@ erDiagram
   * `created_by`: `uuid`
   * `updated_by`: `uuid`
 
-#### 6.5 `tasks`
-* **Firestore Collection**: `tasks`
-* **Description**: Work tasks within projects.
-* **Fields**:
-  * `id`: `uuid` (Primary Key)
-  * `project_id`: `uuid` (Required, Foreign Key referencing `projects_VirtualTacker`)
-  * `team_id`: `uuid` (Foreign Key referencing `teams`)
-  * `title`: `string` (Required)
-  * `description`: `text`
-  * `status`: `string` (Required, must be `todo`, `in_progress`, `in_review`, `blocked`, or `done`)
-  * `priority`: `string` (Must be `low`, `medium`, `high`, or `urgent`)
-  * `order_index`: `int` (Required, sorting index)
-  * `duration_hours_per_day`: `float`
-  * `duration_days`: `int`
-  * `working_days`: `int`
-  * `overtime_hours_per_day`: `float`
-  * `assigned_to`: `uuid` (Foreign Key referencing `members`)
-  * `start_date`: `timestamp`
-  * `due_date`: `timestamp`
-  * `review_state`: `string` (Must be `approved` or `rejected`)
-  * `reviewed_by`: `uuid`
-  * `reviewed_at`: `timestamp`
-  * `created_at`: `timestamp`
-  * `updated_at`: `timestamp`
-  * `created_by`: `uuid`
-  * `updated_by`: `uuid`
+#### 6.5 `tasks` — moved to PostgreSQL
+* **Moved off Firestore** (implementation.md Phase 2). See `SQL-RT-TableNames.md` for the current schema - this Firestore collection no longer receives writes.
 
 #### 6.6 `task_subtasks`
 * **Firestore Collection**: `task_subtasks`
@@ -664,24 +642,8 @@ erDiagram
   * `uploaded_at`: `timestamp`
   * `uploaded_by`: `uuid`
 
-#### 6.9 `task_assignments`
-* **Firestore Collection**: `task_assignments`
-* **Description**: Links individual assignees to tasks with expected hours and manager reviews.
-* **Fields**:
-  * `id`: `uuid` (Primary Key)
-  * `task_id`: `uuid` (Required, Foreign Key referencing `tasks`)
-  * `user_id`: `uuid` (Required, Foreign Key referencing `members`, mapped as `user_id` for backward-compatibility)
-  * `project_id`: `uuid` (Foreign Key referencing `projects_VirtualTacker`)
-  * `status`: `string` (Required: `todo`, `in_progress`, `in_review`, `blocked`, `done`)
-  * `expected_seconds`: `int`
-  * `required`: `boolean`
-  * `review_state`: `string` (Must be `approved` or `rejected`)
-  * `reviewed_by`: `uuid`
-  * `reviewed_at`: `timestamp`
-  * `review_notes`: `text`
-  * `entered_review_at`: `timestamp`
-  * `created_at`: `timestamp`
-  * `updated_at`: `timestamp`
+#### 6.9 `task_assignments` — moved to PostgreSQL
+* **Moved off Firestore** (implementation.md Phase 2). See `SQL-RT-TableNames.md` for the current schema - note the person-reference column is `member_id` there (renamed from this collection's `user_id`, Phase 4.4, to match every other Postgres table's convention).
 
 #### 6.10 `task_hours`
 * **Firestore Collection**: `task_hours`
@@ -698,22 +660,8 @@ erDiagram
   * `created_by`: `uuid`
   * `updated_by`: `uuid`
 
-#### 6.11 `task_time_tracking`
-* **Firestore Collection**: `task_time_tracking`
-* **Description**: Real-time timer log indicating active timer sessions per user/task.
-* **Fields**:
-  * `id`: `uuid` (Primary Key)
-  * `task_id`: `uuid` (Foreign Key referencing `tasks`)
-  * `user_id`: `uuid` (Foreign Key referencing `members`)
-  * `project_id`: `uuid` (Foreign Key referencing `projects_VirtualTacker`)
-  * `active_seconds`: `int`
-  * `idle_seconds`: `int`
-  * `started_at`: `timestamp`
-  * `last_activity_at`: `timestamp`
-  * `session_id`: `string`
-  * `review_notes`: `text`
-  * `created_at`: `timestamp`
-  * `updated_at`: `timestamp`
+#### 6.11 `task_time_tracking` — moved to PostgreSQL
+* **Moved off Firestore** (implementation.md Phase 2), into the `task_member_progress` table (extended rather than given a separate table - see `SQL-RT-TableNames.md`). No live Firestore subcollection remains under `tasks/{taskId}/time_tracking`.
 
 #### 6.12 `team_projects`
 * **Firestore Collection**: `team_projects`

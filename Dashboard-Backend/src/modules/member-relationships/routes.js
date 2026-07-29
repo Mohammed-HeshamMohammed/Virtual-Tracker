@@ -5,6 +5,7 @@ import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
 import { readJsonBody } from "../../http/read-json-body.js";
+import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 import {
   recordMemberRelationship,
   getMemberAncestors,
@@ -165,17 +166,17 @@ export async function routeMemberRelationships(req, res, url, origin) {
         await maybeRepairOrphansOnTreeLoad(db, authz.memberId);
       }
 
-      let [membersSnap, relSnap, rolesSnap] = await Promise.all([
-        db.collection("members").limit(1200).get(),
-        db.collection("member_relationships").limit(2400).get(),
+      let [membersDocs, relDocs, rolesSnap] = await Promise.all([
+        fetchAllDocs(db.collection("members")),
+        fetchAllDocs(db.collection("member_relationships")),
         db.collection("roles").limit(100).get(),
       ]);
 
-      const relationshipRows = relSnap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+      const relationshipRows = relDocs.map((doc) => ({ id: doc.id, ...doc.data() }));
       if (planRelationshipRepairs(relationshipRows).remove.length > 0) {
         const repair = await repairMemberRelationshipIntegrity(db);
         if (repair.repaired) {
-          relSnap = await db.collection("member_relationships").limit(2400).get();
+          relDocs = await fetchAllDocs(db.collection("member_relationships"));
         }
       }
 
@@ -187,9 +188,9 @@ export async function routeMemberRelationships(req, res, url, origin) {
       );
 
       const includeFirebaseUid = normalizeRole(authz.roleName) === "owner";
-      const memberDataById = new Map(membersSnap.docs.map((doc) => [doc.id, doc.data() || {}]));
+      const memberDataById = new Map(membersDocs.map((doc) => [doc.id, doc.data() || {}]));
 
-      let nodes = membersSnap.docs.map((doc) => {
+      let nodes = membersDocs.map((doc) => {
         const d = doc.data() || {};
         const first = typeof d.first_name === "string" ? d.first_name : "";
         const last = typeof d.last_name === "string" ? d.last_name : "";
@@ -207,7 +208,7 @@ export async function routeMemberRelationships(req, res, url, origin) {
         };
       });
 
-      let edges = relSnap.docs.map((doc) => {
+      let edges = relDocs.map((doc) => {
         const d = doc.data() || {};
         return {
           id: doc.id,
@@ -272,7 +273,7 @@ export async function routeMemberRelationships(req, res, url, origin) {
         edges = filterTeamScopeEdges(branchRootId, edges);
       }
 
-      const avatarByMemberId = await resolveAvatarUrlsForMembers(db, membersSnap);
+      const avatarByMemberId = await resolveAvatarUrlsForMembers(db, { docs: membersDocs });
       nodes = nodes.map((node) => {
         const avatarUrl = avatarByMemberId.get(node.id);
         return avatarUrl ? { ...node, avatar_url: avatarUrl } : node;

@@ -61,9 +61,9 @@ export async function insertActivityScreenshot(row) {
   try {
     await pgQuery(
       `INSERT INTO activity_screenshots (
-         id, member_id, session_id, task_id, task_title, screenshot_url, image_data, has_image,
+         id, member_id, session_id, task_id, task_title, screenshot_url, image_data,
          app_name, page_title, activity_level, captured_at, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8, $9, $10, $11, $12)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        ON CONFLICT (id) DO NOTHING`,
       [
         row.id,
@@ -177,7 +177,7 @@ export async function insertActivityUrlLog(row) {
  * @param {string} dayFilter
  * @param {number} limit
  */
-export async function fetchPgScreenshots(memberIds, dayFilter, limit) {
+export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
 
@@ -190,10 +190,17 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit) {
   if (dayFilter) {
     params.push(dayFilter);
     where += ` AND captured_at::date = $${params.length}::date`;
+  } else if (options.sinceDay) {
+    // Range bound (e.g. a multi-day sparkline window) instead of an exact-day
+    // match - callers needing "last N days" must pass this, not rely on a
+    // plain recency LIMIT, which silently starves older days once a single
+    // recent day alone exceeds `limit` rows.
+    params.push(options.sinceDay);
+    where += ` AND captured_at::date >= $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, task_id, task_title, screenshot_url, has_image,
+    `SELECT id, member_id, session_id, task_id, task_title, screenshot_url,
             app_name, page_title, activity_level, captured_at, source
      FROM activity_screenshots
      ${where}
@@ -205,7 +212,7 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit) {
 }
 
 /** @param {string[] | null | undefined} memberIds @param {string} dayFilter @param {number} limit */
-export async function fetchPgAppLogs(memberIds, dayFilter, limit) {
+export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
 
@@ -218,6 +225,9 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit) {
   if (dayFilter) {
     params.push(dayFilter);
     where += ` AND l.started_at::date = $${params.length}::date`;
+  } else if (options.sinceDay) {
+    params.push(options.sinceDay);
+    where += ` AND l.started_at::date >= $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(
@@ -266,7 +276,7 @@ export async function fetchPgScreenshotById(screenshotId) {
   const id = parseProgressUuid(screenshotId);
   if (!id) return null;
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, screenshot_url, image_data, has_image, app_name, page_title, captured_at
+    `SELECT id, member_id, session_id, screenshot_url, image_data, app_name, page_title, captured_at
      FROM activity_screenshots WHERE id = $1 LIMIT 1`,
     [id],
   );
@@ -362,26 +372,82 @@ export async function updatePgSession(sessionId, patch) {
   if (patch.idleSeconds !== undefined) add("idle_seconds", patch.idleSeconds);
   add("updated_at", patch.updatedAt ?? new Date());
   if (sets.length === 0) return;
+
+  // Delta-attribute to daily rollups BEFORE applying the update, using the
+  // session's pre-update member/task/active_seconds - read-before-write so
+  // call sites don't need to carry the previous value themselves.
+  if (patch.activeSeconds !== undefined) {
+    const prevResult = await pgQuery(
+      `SELECT member_id, task_id, active_seconds FROM activity_sessions WHERE id = $1`,
+      [sessionId],
+    );
+    const prev = prevResult?.rows?.[0];
+    if (prev) {
+      const delta = Math.floor(patch.activeSeconds) - Math.floor(Number(prev.active_seconds ?? 0));
+      if (delta > 0) {
+        await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta);
+      }
+    }
+  }
+
   await pgQuery(`UPDATE activity_sessions SET ${sets.join(", ")} WHERE id = $1`, params);
 }
 
 /**
- * Sum of active_seconds for a member's sessions started within [fromMs, toMs], optionally for one task.
  * @param {string} memberId
- * @param {{ fromMs: number, toMs: number, taskId?: string|null }} range
+ * @param {string | null} taskId
+ * @param {number} deltaSeconds
  */
-export async function sumPgMemberActiveSeconds(memberId, { fromMs, toMs, taskId }) {
+async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds) {
+  await pgQuery(
+    `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
+     VALUES ($1, CURRENT_DATE, $2)
+     ON CONFLICT (member_id, day)
+     DO UPDATE SET active_seconds = daily_member_active_seconds.active_seconds + EXCLUDED.active_seconds, updated_at = now()`,
+    [memberId, deltaSeconds],
+  );
+  if (taskId) {
+    await pgQuery(
+      `INSERT INTO daily_member_task_active_seconds (member_id, task_id, day, active_seconds)
+       VALUES ($1, $2, CURRENT_DATE, $3)
+       ON CONFLICT (member_id, task_id, day)
+       DO UPDATE SET active_seconds = daily_member_task_active_seconds.active_seconds + EXCLUDED.active_seconds, updated_at = now()`,
+      [memberId, taskId, deltaSeconds],
+    );
+  }
+}
+
+/**
+ * Sum of the daily rollup across [fromDay, toDay] (inclusive, 'YYYY-MM-DD') - each
+ * day's row already reflects only the seconds actually worked on that calendar
+ * day (see recordDailyActiveSecondsDelta), so this has no midnight-crossing bug.
+ * @param {string} memberId
+ * @param {{ fromDay: string, toDay: string }} range
+ */
+export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   if (!id) return 0;
-  const params = [id, new Date(fromMs), new Date(toMs)];
-  let where = "member_id = $1 AND started_at >= $2 AND started_at <= $3";
-  if (taskId) {
-    params.push(taskId);
-    where += ` AND task_id = $${params.length}`;
-  }
   const result = await pgQuery(
-    `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM activity_sessions WHERE ${where}`,
-    params,
+    `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM daily_member_active_seconds
+     WHERE member_id = $1 AND day >= $2::date AND day <= $3::date`,
+    [id, fromDay, toDay],
+  );
+  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
+}
+
+/**
+ * @param {string} memberId
+ * @param {string} taskId
+ * @param {string} day 'YYYY-MM-DD'
+ */
+export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
+  const id = parseProgressUuid(memberId);
+  const tId = taskId ? parseProgressUuid(taskId) : null;
+  if (!id || !tId) return 0;
+  const result = await pgQuery(
+    `SELECT COALESCE(active_seconds, 0) AS total FROM daily_member_task_active_seconds
+     WHERE member_id = $1 AND task_id = $2 AND day = $3::date`,
+    [id, tId, day],
   );
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
