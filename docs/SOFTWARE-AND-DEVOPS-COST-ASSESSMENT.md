@@ -18,16 +18,19 @@ deciding what to pay, what to hold back, and what the system will cost to run.
 
 ## Executive summary
 
-| Question | Answer |
-|---|---:|
-| How much engineering is in this repo? | **~1,700 hours** (~10.5 person-months) |
-| How complete is the software? | **~71%** of a shippable product |
-| What is the delivered work fairly worth? | **$36,000 – $58,000** |
-| What will it cost to finish? | **$21,000 – $38,000** (655–960 hrs) |
-| Is it deployed and running? | **Yes** — full stack live on a Hostinger KVM 2, measured at 15% CPU / 20% RAM |
-| Remaining DevOps work | **34–54 hrs → $1,300 – $2,200** |
-| Hosting & third-party, year one | **$1,700 – $4,900** |
-| Ongoing maintenance | **$480 – $720 / month** |
+| Question | International market | **Egyptian market (§6)** |
+|---|---:|---:|
+| How much engineering is in this repo? | **~1,738 hours** (~10.7 person-months) | same |
+| How complete is the software? | **~71%** of a shippable product | same |
+| What is the delivered work fairly worth? | $36,000 – $58,000 | **EGP 700,000 – 1,200,000** |
+| What will it cost to finish? | $21,000 – $38,000 (655–960 hrs) | **EGP 330,000 – 670,000** |
+| Is it deployed and running? | **Yes** — full stack live on a Hostinger KVM 2, measured at 15% CPU / 20% RAM | same |
+| Remaining DevOps work | 34–54 hrs → $1,300 – $2,200 | **EGP 20,000 – 38,000** |
+| Hosting & third-party, year one | $1,700 – $4,900 | **EGP 86,000 – 247,000** |
+| Ongoing maintenance | $480 – $720 / month | **EGP 4,800 – 8,400 / month** |
+
+*Rate: 50.5 EGP/USD (July 2026). Labour reprices to the local market; **infrastructure does
+not** — every server and service line is USD-denominated. See §6.4.*
 
 **Two findings dominate everything else.**
 
@@ -453,10 +456,208 @@ down from my earlier estimate now that KVM 2 is confirmed and no managed databas
 
 ---
 
+## Part 6 — Egyptian market pricing (EGP)
+
+Everything above is restated here at Egyptian market rates. This is the section to use if both
+parties are in Egypt and settling in pounds.
+
+### 6.1 Basis
+
+**Exchange rate.** July 2026 traded between **48.71 and 51.50 EGP/USD**, averaging **50.07**,
+with the latest quote around **50.70**. This document uses **50.5 EGP/USD** throughout. The
+pound moved 5.7% within a single month — §6.5 explains why that matters more than it looks.
+
+**Egyptian rate benchmarks, 2026:**
+
+| Benchmark | Rate |
+|---|---|
+| Local freelance, all levels | EGP 150 – 800/hr |
+| Junior local freelance | EGP 150 – 250/hr |
+| Mid-level local freelance | EGP 250 – 450/hr |
+| **Senior local freelance** | **EGP 450 – 800/hr** |
+| Egyptian senior on international platforms | $22 – 48/hr → **EGP 1,110 – 2,425/hr** |
+| Egyptian agency, blended team rate (PM + design + dev + QA) | $20 – 35/hr → **EGP 1,010 – 1,770/hr** |
+| Specialist agency, senior talent | $35 – 70/hr → **EGP 1,770 – 3,535/hr** |
+| Senior developer salary, local company | EGP 35,000 – 70,000/month |
+| Senior developer salary, multinational | EGP 60,000 – 105,000/month |
+
+A salaried senior at EGP 50,000/month costs roughly **EGP 310/hr**. A freelancer needs 2–3× that
+to cover no benefits, no job security, gaps between contracts, own equipment and tax — which is
+exactly how the EGP 450–800 senior freelance band is derived. It is not a markup; it is the
+same person's cost with the employer's subsidy removed.
+
+### 6.2 Value of the delivered work, in EGP
+
+1,738 hours × 71% complete = **1,234 effective delivered hours.**
+
+| Rate basis | EGP/hr | Gross | × 71% complete | **Fair value** |
+|---|---:|---:|---:|---:|
+| Senior local freelance (low) | 450 | 782,100 | | **EGP 555,000** |
+| Senior local freelance (mid) | 550 | 955,900 | | **EGP 679,000** |
+| Senior local freelance (upper) | 700 | 1,216,600 | | **EGP 864,000** |
+| Senior local freelance (top of band) | 800 | 1,390,400 | | **EGP 987,000** |
+| Egyptian agency blended (low) | 1,010 | 1,755,400 | | **EGP 1,246,000** |
+
+**Recommended fair valuation, Egyptian market: EGP 700,000 – 1,200,000.**
+
+The band sits at the **upper end of senior local freelance, edging into agency territory**, and
+that is deliberate. This is not typical local freelance work: 3,805 lines of Rust in a
+cross-platform desktop agent, a dual-database architecture mid-migration, recursive hierarchy
+permissions, and a declarative schema engine sit well above the CRUD-app work that the EGP
+450–550 band usually describes.
+
+**Three anchors for sanity:**
+
+| Comparison | EGP |
+|---|---:|
+| Typical Egyptian **MVP app** build, agency | 150,000 – 400,000 |
+| **This system** (144,255 LOC, 7 services, desktop agent) | **700,000 – 1,200,000** |
+| Same scope commissioned fresh from a Cairo software house | ~2,000,000 – 4,000,000 |
+| Same work bought internationally (the USD band in §2.2) | 1,818,000 – 2,929,000 |
+
+This is roughly **three to five times an MVP-tier project** — which is correct, because it is
+not an MVP. And note the last row: **the identical work sold to an international client is worth
+about 2.5× the Egyptian domestic price.** That gap is a market fact, not a negotiating position,
+and both parties should price with their eyes open about it. For the client it means the local
+figure is genuinely good value. It also means retention is a real consideration — a developer
+who can bill EGP 1,110–2,425/hr abroad has an obvious alternative to EGP 700/hr at home.
+
+### 6.3 Remaining work, in EGP
+
+At EGP 500–700/hr for senior local freelance:
+
+| Item | Hours | EGP |
+|---|---:|---:|
+| Reproducibility, CI and backups (§3.2) | 34 – 54 | **20,000 – 38,000** |
+| Test suite | 160 – 240 | 80,000 – 168,000 |
+| Wire Reports to backend | 100 – 140 | 50,000 – 98,000 |
+| Wire Financials | 80 – 120 | 40,000 – 84,000 |
+| Complete Postgres cutover | 80 – 120 | 40,000 – 84,000 |
+| Timesheets + approvals | 60 – 80 | 30,000 – 56,000 |
+| Wire Settings | 50 – 70 | 25,000 – 49,000 |
+| Security review & hardening | 40 – 60 | 20,000 – 42,000 |
+| Observability | 30 – 45 | 15,000 – 31,500 |
+| Activity-log retention policy (§3.5) | 4 – 8 | **2,000 – 5,600** |
+| **Total to reach 100%** | **655 – 960** | **EGP 330,000 – 670,000** |
+
+**Maintenance retainer:** 8–12 hrs/month at EGP 600–700 = **EGP 4,800 – 8,400/month**
+(EGP 57,600 – 100,800/year).
+
+### 6.4 Hosting in EGP — and why it does not behave like the rest
+
+| Item | USD | **EGP** |
+|---|---:|---:|
+| Hostinger KVM 2, promotional | $8.99/mo | **454/mo** |
+| Hostinger KVM 2, renewal | ~$23/mo | **~1,162/mo** |
+| Total infrastructure, current scale | $13 – 48/mo | **656 – 2,424/mo** |
+| Total infrastructure, at 50–100 users | $112 – 379/mo | **5,656 – 19,140/mo** |
+| **Year-one infrastructure, all-in** | **$1,700 – 4,900** | **EGP 86,000 – 247,000** |
+| EV code-signing certificate | $297 – 507/yr | **15,000 – 25,600/yr** |
+| HSM token (one-time) | $90 – 250 | **4,500 – 12,600** |
+
+**Every line in this table is USD-denominated and paid by international card.** Hostinger,
+Firebase, Google Cloud Storage, Resend, the domain registrar, and the code-signing CA all bill
+in dollars. None of them reprice when the pound moves. That makes infrastructure structurally
+different from labour: **the developer's rate is an EGP cost, the servers are a USD cost.**
+
+**FX sensitivity on year-one infrastructure** (mid-case $3,300):
+
+| Scenario | Rate | Year-1 infra |
+|---|---:|---:|
+| Today | 50.5 | EGP 166,650 |
+| Pound weakens 10% | 55.6 | EGP 183,300 |
+| Pound weakens 20% | 60.6 | EGP 200,000 |
+| Pound weakens 30% | 65.7 | EGP 216,600 |
+
+Usage identical in every row. The bill rises purely on currency. Given that the pound moved 5.7%
+in July 2026 alone, budgeting these lines at today's rate and not revisiting them is a mistake.
+
+**The hedge is available and it is also the cheapest option.** Hostinger's promotional pricing
+requires a 24–48 month prepayment in USD — which is normally a drawback, but here it does two
+useful things at once:
+
+| Approach | 48-month cost |
+|---|---:|
+| Prepay 48 months at $8.99/mo | $432 → **EGP 21,800 locked today** |
+| Pay monthly at renewal rate $23/mo | $1,104 → **EGP 55,800 at today's rate, more if the pound slides** |
+
+Prepaying saves about **60% in dollar terms and fixes the EGP cost at today's rate for four
+years.** For an Egyptian buyer this is close to a free hedge on the single largest fixed
+infrastructure line. Do the same on the domain (multi-year registration) where possible.
+
+The costs that *cannot* be hedged this way — Firebase and GCS — are usage-based, and §3.5 is
+therefore doing double duty: the activity-log retention policy and the screenshot lifecycle rule
+control your only FX-exposed variable spend. **EGP 2,000–5,600 of work to cap a bill that would
+otherwise compound in a depreciating currency** is the best-value item in this entire document.
+
+### 6.5 Tax and settlement
+
+Two items to confirm with an accountant rather than take from this document:
+
+- **VAT.** Egypt's standard VAT rate is 14%. If the developer is VAT-registered, professional
+  services are typically within scope — on a EGP 1,000,000 engagement that is EGP 140,000 the
+  client should have budgeted, not discovered at invoice. Establish the developer's registration
+  status and whether quoted figures are VAT-inclusive **before** agreeing a number.
+- **E-invoicing.** Egypt operates a mandatory electronic invoicing system for registered
+  businesses. If the client needs a compliant tax invoice to expense this, the developer's
+  registration status determines whether that is possible at all.
+
+Also practical: Egyptian cards frequently carry international transaction limits that can block
+or throttle USD subscription payments. Confirm the payment card can sustain the recurring
+charges — and especially a one-off 48-month prepayment — before relying on the hedge in §6.4.
+
+### 6.6 Year-one total, in EGP
+
+50 tracked users, KVM 2 on prepaid promotional pricing, EV code signing, standard maintenance.
+
+| Line | One-time (EGP) | Year-1 recurring (EGP) |
+|---|---:|---:|
+| Delivered software (71% complete), fair value | **700,000 – 1,200,000** | — |
+| Reproducibility, CI and backup work (§3.2) | 20,000 – 38,000 | — |
+| Completing the remaining 29% | 330,000 – 670,000 | — |
+| Hostinger KVM 2 (prepaid promotional) | — | 5,450 |
+| Domain, backups, monitoring | — | 8,600 – 20,200 |
+| Resend | — | 12,100 |
+| Firebase Blaze + GCS | — | 45,450 – 186,850 |
+| EV code-signing certificate | — | 15,000 – 25,600 |
+| HSM token | 4,500 – 12,600 | — |
+| Maintenance retainer (standard) | — | 57,600 – 100,800 |
+| **Totals** | **EGP 1,054,500 – 1,920,600** | **EGP 144,200 – 351,000** |
+
+**Infrastructure and third-party services alone — no labour of any kind — run
+EGP 86,000 – 247,000 in year one, and every pound of it is exposed to the dollar.**
+
+### 6.7 What changes when you price in EGP
+
+1. **The software gets cheaper; the servers do not.** Labour reprices to the local market —
+   roughly 40% of the international figure. Infrastructure does not reprice at all. In USD terms
+   hosting was a rounding error against development cost; in EGP terms, year-one infrastructure
+   at EGP 86,000–247,000 is **12–20% of the entire delivered software value.** It deserves
+   proportionally more of your attention than it would in a dollar budget.
+
+2. **Prepay the VPS and the domain.** ~60% dollar saving and a four-year FX lock, in one
+   decision. Confirm the card limit first.
+
+3. **Do the retention work early (EGP 2,000–5,600).** Firebase and GCS are the only
+   infrastructure lines that both grow with usage *and* float with the dollar. Capping them is
+   the highest-leverage small spend available.
+
+4. **Settle the VAT question before agreeing a number**, not after. On this size of engagement
+   it is a EGP 100,000+ swing.
+
+5. **Understand the retention risk without over-reacting to it.** EGP 700,000–1,200,000 is a
+   fair domestic price and the client should not pay more than the local market. But the same
+   work sells internationally for ~2.5×, so if this system needs years of ongoing development,
+   a maintenance retainer at a competitive local rate is cheaper than the disruption of finding
+   someone new to learn 144,255 lines. The EGP 4,800–8,400/month retainer is the cheap
+   insurance line in this document, not the expensive one.
+
+---
+
 ## Sources
 
 Pricing verified July 2026. Production resource figures supplied by the client from the live
-Hostinger deployment.
+Hostinger deployment. Exchange rate 50.5 EGP/USD.
 
 - [Hostinger VPS pricing — plans and real renewal costs](https://hostadvice.com/hosting-company/hostinger-reviews/vps-pricing/)
 - [Hostinger VPS 2026 — KVM plans, specs and value](https://desking.app/review/hostinger-vps)
