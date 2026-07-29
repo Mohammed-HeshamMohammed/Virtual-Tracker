@@ -5,6 +5,7 @@ import { isPostgresConfigured, query as pgQuery } from "../../lib/postgres/clien
 import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-data-store.js";
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { fetchPgSessionsForDashboard } from "../../lib/postgres/activity-events-postgres.service.js";
+import { listTasksPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
 /** Postgres rows -> the same {id, data} shape serializeDoc() produces for
@@ -68,27 +69,11 @@ async function fetchFreshBase(db) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
-  const [projectRows, budgetRows, projectMemberRows, tasksSnap] = await Promise.all([
+  const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
     pgQuery("SELECT id, project_id, cost, type FROM project_budgets LIMIT 300"),
     pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
-    db
-      .collection("tasks")
-      .select(
-        "project_id",
-        "projectId",
-        "status",
-        "title",
-        "priority",
-        "assigned_to",
-        "assignedTo",
-        "updated_at",
-        "updatedAt",
-        "created_at",
-        "createdAt",
-      )
-      .limit(800)
-      .get(),
+    listTasksPg({ limit: 800 }),
   ]);
 
   const pgRows = await fetchTimeEntriesSinceDate(weekStartKey);
@@ -121,7 +106,7 @@ async function fetchFreshBase(db) {
     projects: pgRowsToSerialized(projectRows),
     budgets: pgRowsToSerialized(budgetRows),
     projectMembers: pgRowsToSerialized(projectMemberRows),
-    tasks: tasksSnap.docs.map(serializeDoc),
+    tasks: pgRowsToSerialized(taskRows),
     timeEntries,
     sessions,
     projectCount: projectRows.length,

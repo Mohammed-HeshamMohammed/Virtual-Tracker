@@ -33,6 +33,8 @@ import {
   getEnrichedTaskById,
   listTasksForAssignee,
 } from "./task-assignee-api.js";
+import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { getInReviewAssignmentsForTaskPg, hasAssignmentPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -258,13 +260,8 @@ export async function routeTasks(req, res, url, db, origin) {
             ? task.assignedTo
             : "";
       if (primaryAssignee !== access.viewer.memberId) {
-        const assignSnap = await db
-          .collection("task_assignments")
-          .where("task_id", "==", taskId)
-          .where("user_id", "==", access.viewer.memberId)
-          .limit(1)
-          .get();
-        if (assignSnap.empty) {
+        const isAssigned = await hasAssignmentPg(taskId, access.viewer.memberId);
+        if (!isAssigned) {
           sendJson(res, origin, 403, {
             success: false,
             error: "Only assigned members can start this task.",
@@ -758,18 +755,13 @@ export async function routeTasks(req, res, url, db, origin) {
         (typeof memberData.name === "string" ? memberData.name : "") ||
         "Unknown";
 
-      const inReviewSnap = await db
-        .collection("task_assignments")
-        .where("task_id", "==", taskId)
-        .where("status", "==", "in_review")
-        .limit(50)
-        .get();
+      const inReviewRows = await getInReviewAssignmentsForTaskPg(taskId);
 
       const mappedDecision = decision === "approved" ? "approve" : "reject";
-      if (!inReviewSnap.empty) {
-        for (const doc of inReviewSnap.docs) {
+      if (inReviewRows.length > 0) {
+        for (const row of inReviewRows) {
           await reviewAssignment(db, {
-            assignmentId: doc.id,
+            assignmentId: row.id,
             reviewerId: reviewer.memberId,
             reviewerName,
             decision: mappedDecision,
@@ -777,20 +769,17 @@ export async function routeTasks(req, res, url, db, origin) {
           });
         }
       } else {
-        const taskRef = db.collection("tasks").doc(taskId);
-        const now = new Date().toISOString();
-        await taskRef.update({
+        await updateTaskPg(taskId, {
           review_state: decision,
           reviewed_by: reviewer.memberId,
-          reviewed_at: now,
-          updated_at: now,
+          reviewed_at: new Date(),
           updated_by: reviewer.memberId,
           ...(decision === "approved" ? { status: "done", completed: true } : { status: "in_progress", completed: false }),
         });
       }
 
-      const updatedDoc = await db.collection("tasks").doc(taskId).get();
-      sendJson(res, origin, 200, { success: true, data: { id: updatedDoc.id, ...updatedDoc.data() } });
+      const updatedTask = await getTaskPg(taskId);
+      sendJson(res, origin, 200, { success: true, data: updatedTask });
     } catch (e) {
       logSafeError("[tasks/review]", e);
       sendJson(res, origin, 500, {

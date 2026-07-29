@@ -39,6 +39,7 @@ import { createTeamInitialRoster, parseTeamRosterInput, syncTeamRoster, validate
 import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-budget-notify.js";
 import { syncProjectBudgetFromClients } from "../projects/services/project-budget-from-clients.js";
 import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
+import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import {
   parseTaskChildPath,
   resolveEntityCollectionRef,
@@ -433,16 +434,13 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         ? await getViewerProjectIds(db, viewer.memberId, viewer.roleName)
         : [];
       const allowedSet = toAllowedProjectSet(allowedProjects);
-      const batch = db.batch();
       const touched = [];
       for (const row of updates.slice(0, 200)) {
         const id = typeof row?.id === "string" ? row.id : "";
         const orderIndex = row?.order_index ?? row?.orderIndex;
         if (!id || typeof orderIndex !== "number" || !Number.isFinite(orderIndex)) continue;
-        const ref = db.collection("tasks").doc(id);
-        const snap = await ref.get();
-        if (!snap.exists) continue;
-        const taskData = snap.data() || {};
+        const taskData = await getTaskPg(id);
+        if (!taskData) continue;
         const projectId = String(taskData.project_id ?? taskData.projectId ?? "").trim();
         if (allowedSet !== null && projectId && !allowedSet.has(projectId)) {
           sendJson(res, origin, 403, {
@@ -451,17 +449,14 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           });
           return true;
         }
-        batch.update(ref, { order_index: Math.trunc(orderIndex), updated_at: new Date() });
+        await updateTaskPg(id, { order_index: Math.trunc(orderIndex) });
         touched.push(id);
       }
       if (!touched.length) {
         sendJson(res, origin, 400, { success: false, error: "No valid task updates" });
         return true;
       }
-      await batch.commit();
-      const refs = touched.map((id) => db.collection("tasks").doc(id));
-      const snaps = await db.getAll(...refs);
-      const data = snaps.map((snap) => normalizeDoc({ id: snap.id, ...snap.data() }));
+      const data = await getTasksByIdsPg(touched);
       sendJson(res, origin, 200, { success: true, data });
     } catch (error) {
       sendJson(res, origin, 400, {
@@ -554,6 +549,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
           return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
         }
+        if (parsed.key === "tasks" && !requireManagementRole(getAuthContext(req))) {
+          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
+        }
         const existing = await getPostgresRow(parsed.key, parsed.id);
         if (!existing) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
@@ -562,6 +560,13 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         }
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        if (parsed.key === "tasks") {
+          // task_assignments/comments/subtasks/attachments/hours are still Firestore-
+          // resident (not migrated yet - see implementation.md Phase 2), so a task
+          // delete has to clean those up too, not just the new Postgres tasks row,
+          // or they're orphaned with a task_id that no longer resolves anywhere.
+          await deleteTaskWithChildren(db, parsed.id);
+        }
         await deletePostgresRow(parsed.key, parsed.id);
         sendJson(res, origin, 200, { success: true, data: { id: parsed.id, deleted: true } });
         return true;
@@ -1018,19 +1023,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: { id: projectId, deleted: true } });
         return true;
       }
-      if (parsed.key === "tasks") {
-        const taskId = parsed.id;
-        const taskDoc = await db.collection("tasks").doc(taskId).get();
-        if (!taskDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const visible = await assertRowVisible(req, db, "tasks", { id: taskDoc.id, ...taskDoc.data() });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        if (!requireManagementRole(getAuthContext(req))) {
-          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-        }
-        await deleteTaskWithChildren(db, taskId);
-        sendJson(res, origin, 200, { success: true, data: { id: taskId, deleted: true } });
-        return true;
-      }
+      // Task deletion now handled above, inside the shouldRouteEntityToPostgres(tasks)
+      // branch - deleteTaskWithChildren() moved there since tasks are Postgres-resident
+      // now and this generic Firestore fallback path is no longer reached for "tasks".
       if (parsed.key === "invites") {
         await deleteInviteProjects(db, parsed.id);
       }

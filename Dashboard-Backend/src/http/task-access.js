@@ -3,6 +3,8 @@ import { sendJson } from "./response.js";
 import { getViewerProjectIds } from "./project-access.js";
 import { canEditTeam } from "./team-edit-access.js";
 import { isManagementRole, isReviewCenterRole } from "../modules/tasks/task-assignments.js";
+import { getTaskPg } from "../lib/postgres/tasks-postgres.service.js";
+import { hasAssignmentPg } from "../lib/postgres/task-assignments-postgres.service.js";
 
 function str(row, ...keys) {
   for (const key of keys) {
@@ -19,10 +21,9 @@ function str(row, ...keys) {
  * @param {string} taskId
  */
 export async function canAccessTask(db, viewerMemberId, viewerRole, taskId) {
-  const taskSnap = await db.collection("tasks").doc(taskId).get();
-  if (!taskSnap.exists) return { allowed: false, status: 404, task: null };
+  const task = await getTaskPg(taskId);
+  if (!task) return { allowed: false, status: 404, task: null };
 
-  const task = { id: taskSnap.id, ...taskSnap.data() };
   if (isManagementRole(viewerRole)) return { allowed: true, status: 200, task };
 
   const assigneeId = str(task, "assigned_to", "assignedTo");
@@ -31,13 +32,7 @@ export async function canAccessTask(db, viewerMemberId, viewerRole, taskId) {
     return { allowed: true, status: 200, task };
   }
 
-  const assignSnap = await db
-    .collection("task_assignments")
-    .where("task_id", "==", taskId)
-    .where("user_id", "==", viewerMemberId)
-    .limit(1)
-    .get();
-  if (!assignSnap.empty) return { allowed: true, status: 200, task };
+  if (await hasAssignmentPg(taskId, viewerMemberId)) return { allowed: true, status: 200, task };
 
   const projectId = str(task, "project_id", "projectId");
   if (projectId) {

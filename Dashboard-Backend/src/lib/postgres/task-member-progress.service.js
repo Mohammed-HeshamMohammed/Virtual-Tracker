@@ -1,5 +1,5 @@
 import { getEnv } from "../../config/env.js";
-import { getPostgresPool } from "./client.js";
+import { getPostgresPool, query } from "./client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const UUID_RE =
@@ -215,4 +215,118 @@ function normalizeProgressRow(row) {
     lastActivityAt: row.last_activity_at instanceof Date ? row.last_activity_at.toISOString() : row.last_activity_at ?? null,
     updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at ?? null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Primary read/write path (Phase 2 of implementation.md - time_tracking is now
+// Postgres-primary, not just the dual-write mirror above). The functions
+// above stay as-is (still flag-gated, still write timer_sessions segments as
+// a side effect worth keeping) - these are what task-time-tracking.js and
+// task-assignments.js actually call now for the live task_member_progress row.
+// ---------------------------------------------------------------------------
+
+const TRACKING_COLUMNS = [
+  "id",
+  "task_id",
+  "member_id",
+  "project_id",
+  "active_seconds",
+  "idle_seconds",
+  "progress_percentage",
+  "accumulated_work_time",
+  "last_started_at",
+  "last_activity_at",
+  "session_id",
+  "review_notes",
+  "created_at",
+  "updated_at",
+];
+
+function normalizeTrackingRow(row) {
+  if (!row) return row;
+  const out = { ...row };
+  for (const [key, value] of Object.entries(out)) {
+    if (value instanceof Date) out[key] = value.toISOString();
+  }
+  return out;
+}
+
+/** @param {string} taskId @param {string} memberId */
+export async function getTrackingRowPg(taskId, memberId) {
+  const rows = await query(
+    `SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress WHERE task_id = $1 AND member_id = $2 LIMIT 1`,
+    [taskId, memberId],
+  );
+  return rows[0] ? normalizeTrackingRow(rows[0]) : null;
+}
+
+/** @param {string} taskId */
+export async function getTaskTrackingRowsPg(taskId) {
+  const rows = await query(`SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress WHERE task_id = $1`, [taskId]);
+  return rows.map(normalizeTrackingRow);
+}
+
+/** Full scan for the review-queue sweep - replaces collectionGroup("time_tracking")
+ * with a real .limit(500) cap that silently dropped rows past it (implementation.md
+ * Phase 3, Action Item 4 territory, same bug class as task_assignments had). */
+export async function getAllTrackingRowsPg(limit = 5000) {
+  const rows = await query(`SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress ORDER BY updated_at DESC LIMIT $1`, [limit]);
+  return rows.map(normalizeTrackingRow);
+}
+
+/** Upsert by (task_id, member_id) - the live counter write syncTaskTimeTracking
+ * makes on every start/idle/resume/stop/sync action. */
+export async function upsertTrackingRowPg(payload) {
+  const rows = await query(
+    `INSERT INTO task_member_progress (
+       task_id, member_id, project_id, active_seconds, idle_seconds, progress_percentage,
+       accumulated_work_time, last_started_at, last_activity_at, session_id, review_notes
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (task_id, member_id) DO UPDATE SET
+       project_id = EXCLUDED.project_id,
+       active_seconds = EXCLUDED.active_seconds,
+       idle_seconds = EXCLUDED.idle_seconds,
+       progress_percentage = EXCLUDED.progress_percentage,
+       accumulated_work_time = GREATEST(task_member_progress.accumulated_work_time, EXCLUDED.active_seconds),
+       last_started_at = COALESCE(task_member_progress.last_started_at, EXCLUDED.last_started_at),
+       last_activity_at = EXCLUDED.last_activity_at,
+       session_id = COALESCE(EXCLUDED.session_id, task_member_progress.session_id),
+       updated_at = now()
+     RETURNING ${TRACKING_COLUMNS.join(", ")}`,
+    [
+      payload.task_id,
+      payload.member_id,
+      payload.project_id ?? null,
+      payload.active_seconds ?? 0,
+      payload.idle_seconds ?? 0,
+      payload.progress_percentage ?? 0,
+      payload.active_seconds ?? 0,
+      payload.last_started_at ?? null,
+      payload.last_activity_at ?? new Date(),
+      payload.session_id ?? null,
+      payload.review_notes ?? "",
+    ],
+  );
+  return normalizeTrackingRow(rows[0]);
+}
+
+/** Just the review_notes + progress_percentage fields - what
+ * aggregateTaskProgress and reviewAssignment need to patch without
+ * re-sending the full counter state. */
+export async function updateTrackingFieldsPg(taskId, memberId, patch) {
+  const columns = { progress_percentage: "progress_percentage", review_notes: "review_notes" };
+  const sets = [];
+  const params = [taskId, memberId];
+  for (const [key, column] of Object.entries(columns)) {
+    if (!(key in patch)) continue;
+    params.push(patch[key]);
+    sets.push(`${column} = $${params.length}`);
+  }
+  if (sets.length === 0) return getTrackingRowPg(taskId, memberId);
+  sets.push("updated_at = now()");
+  const rows = await query(
+    `UPDATE task_member_progress SET ${sets.join(", ")} WHERE task_id = $1 AND member_id = $2 RETURNING ${TRACKING_COLUMNS.join(", ")}`,
+    params,
+  );
+  return rows[0] ? normalizeTrackingRow(rows[0]) : null;
 }

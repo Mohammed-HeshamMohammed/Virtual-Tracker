@@ -29,6 +29,7 @@ import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
 import { computeTimerAllowance, TIMER_LIMIT_REACHED_MESSAGE } from "../tasks/timer-limit.service.js";
+import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
   createPgSession,
@@ -274,9 +275,8 @@ export async function routeActivity(req, res, url, origin) {
       if (action === "start" || action === "resume") {
         const effectiveTaskId = taskId || open?.task_id || null;
         if (effectiveTaskId) {
-          const taskSnap = await db.collection("tasks").doc(effectiveTaskId).get();
-          if (taskSnap.exists) {
-            const task = { ...taskSnap.data(), id: effectiveTaskId };
+          const task = await getTaskPg(effectiveTaskId);
+          if (task) {
             const allowance = await computeTimerAllowance(db, member.memberId, task, {
               currentCumulativeActiveSeconds: Math.max(0, Math.floor(activeSeconds ?? 0)),
             });
@@ -442,11 +442,9 @@ export async function routeActivity(req, res, url, origin) {
       const sessionTaskId = typeof sessionData.task_id === "string" ? sessionData.task_id : null;
       let sessionTaskTitle = null;
       if (sessionTaskId) {
-        const taskSnap = await db.collection("tasks").doc(sessionTaskId).get();
-        if (taskSnap.exists) {
-          const title = taskSnap.data()?.title;
-          sessionTaskTitle = typeof title === "string" && title.trim() ? title.trim() : null;
-        }
+        const sessionTask = await getTaskPg(sessionTaskId);
+        const title = sessionTask?.title;
+        sessionTaskTitle = typeof title === "string" && title.trim() ? title.trim() : null;
       }
 
       const source = typeof body.source === "string" ? body.source : "web";
