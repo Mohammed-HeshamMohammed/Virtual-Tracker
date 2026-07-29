@@ -32,6 +32,12 @@ deciding what to pay, what to hold back, and what the system will cost to run.
 *Rate: 50.5 EGP/USD (July 2026). Labour reprices to the local market; **infrastructure does
 not** — every server and service line is USD-denominated. See §6.4.*
 
+**Adjusted for AI-assisted development (§7):** effort **~1,108 hrs**, delivered work
+**EGP 550,000 – 850,000**, cost to finish **EGP 255,000 – 437,000**, retainer
+**EGP 3,600 – 6,300/month**. Completeness, infrastructure cost, and every §3 finding are
+unchanged — and the CI/test work becomes *more* important, not less. **§7 supersedes §6 where
+they differ.**
+
 **Two findings dominate everything else.**
 
 1. **The server is not the problem, and never will be.** The entire stack — including
@@ -654,10 +660,178 @@ EGP 86,000 – 247,000 in year one, and every pound of it is exposed to the doll
 
 ---
 
+## Part 7 — Adjusting for AI-assisted development
+
+The client has confirmed that much of this system was built with AI assistance. That genuinely
+changes the effort figure. It changes the price by **less than the hours suggest**, and it moves
+one number in the *opposite* direction.
+
+### 7.1 First, an honest correction to my own baseline
+
+The 1,738-hour estimate in §2.1 works out to **83 LOC/hour**. I flagged that as "fast" and
+attributed it to structural repetition in a feature-sliced codebase. That was **already an
+AI-inflected number** — I just credited the wrong cause. A conventional hand-written estimate at
+30–50 LOC/hour would have produced 2,900–4,800 hours, and I did not use it.
+
+So the adjustment below is not a fresh discount stacked on a full-price estimate. It is
+finishing a correction I had half-made.
+
+### 7.2 AI does not accelerate everything equally
+
+A flat multiplier would be wrong. The acceleration is very uneven, and where it is weakest is
+exactly where this codebase's remaining value sits.
+
+| Work package | Original | Factor | AI-assisted | Why |
+|---|---:|---:|---:|---|
+| Documentation & planning | 45 | **0.30** | 14 | 11,909 lines of markdown — the single largest multiplier |
+| Dashboard-Web — 4 gated UI-only modules | 120 | **0.35** | 42 | Pure component generation from a design system; no wiring, no edge cases |
+| Landing-Web | 70 | 0.45 | 32 | Highly templated marketing site |
+| Landing-Backend | 20 | 0.50 | 10 | |
+| Notify-backend | 55 | 0.55 | 30 | Template and builder code is generation-friendly |
+| Dashboard-Web — 9 API-wired modules | 430 | 0.60 | 258 | Scaffolding is fast; integration and edge cases are not |
+| Auth-Backend | 45 | 0.65 | 29 | |
+| Dashboard-Web — shared infrastructure | 130 | 0.70 | 91 | 1,260-line auth context, table framework — real design work |
+| Dashboard-Backend — API, RBAC, hierarchy | 340 | 0.70 | 238 | Routes generate fast; permission logic is judgment |
+| Data architecture + migrations | 80 | **0.80** | 64 | Schema is fast; cutover strategy is judgment |
+| Tauri agent (Rust + React) | 170 | **0.80** | 136 | OS-level APIs, real-hardware debugging, thin training data |
+| DevOps incl. the live deployment | 75 | **0.85** | 64 | Environment-specific trial and error on a real server |
+| **Total (+10% PM)** | **1,738** | **0.64** | **~1,108** | **36% reduction** |
+
+**Effective delivered hours: 1,234 → 787.** Implied rate: 83 → **130 LOC/hour**.
+
+Read the factor column as a map of where the value actually is. Documentation and gated UI —
+the parts AI does best — collapse by 65–70%. The Rust agent, the data-migration strategy, and
+the deployment barely move. **The hardest, least-automatable work is the work that survived the
+adjustment**, and it is disproportionately what a buyer is paying for.
+
+### 7.3 The evidence is visible in the codebase — including in the gaps
+
+This is not speculation from the client's statement. The repository has the characteristic
+signature throughout:
+
+| Signal | Observation |
+|---|---|
+| Documentation-to-code ratio | 11,909 lines of markdown for a solo build — unusually high |
+| Architectural consistency | 14 feature modules following an identical structure |
+| Abandoned-work markers | Only **10** TODO/FIXME across 144,255 lines. Hand-written code of this size leaves far more |
+| File sizes | 1,632-line compat router, 1,298-line `App.tsx`, 1,260-line auth context — large, cohesive, generated-in-one-pass shapes |
+| **Test coverage** | **1 test file across 144,255 LOC. Zero Rust tests** |
+| **Completion profile** | ~17,200 LOC of polished UI with **no backend at all** behind Reports, Financials and Settings |
+
+The last two rows matter most, and they are the same finding twice. **Generation is cheap;
+integration and verification are not.** That is precisely why this codebase is 71% complete in
+the shape it is — the UI exists everywhere, the wiring exists in nine modules out of thirteen,
+and the tests essentially do not exist. The 29% that is missing is, almost exactly, the 29% that
+AI does not do for you.
+
+### 7.4 What this does to the price
+
+Three defensible models. They differ by what the client believes they are buying.
+
+| Model | Basis | EGP |
+|---|---|---:|
+| **1. Time & materials, unchanged rate** | 787 eff. hrs × EGP 600 | **472,000** |
+| **2. Time & materials, AI-premium rate** | 787 eff. hrs × EGP 850 | **669,000** |
+| **3. Value-based — the asset is the asset** | Unchanged from §6.2 | **700,000 – 1,200,000** |
+
+**Recommended: EGP 550,000 – 850,000** — roughly a **20–30% reduction** from the EGP 700,000–1,200,000
+in §6.2, against a 36% reduction in hours.
+
+Why the price should not fall as far as the hours:
+
+- **Model 1 is the naive read and it is bad for both parties.** It prices keystrokes, not
+  outcomes. Taken seriously it means a developer who works faster earns less for the same
+  delivered system — which is an incentive to be slow. No client actually wants to buy on those
+  terms.
+- **Rate should rise as hours fall.** Delivering 130 LOC/hour of coherent, consistently
+  architected code is a skill, not a free lunch. Directing AI well — knowing what to accept,
+  what to reject, and what it got subtly wrong — is what separates this codebase from the
+  generated slop it could have been. The EGP 850/hr in Model 2 reflects that, and it is why
+  Models 1 and 2 differ by 40% on identical hours.
+- **The asset did not shrink.** The client receives the same 144,255 lines, the same running
+  system at 15% CPU, the same desktop agent. Its capability is unchanged by how it was typed.
+
+### 7.5 The number that moves the *other* way
+
+**The cost to finish does not fall proportionally, and its priority rises.**
+
+AI helps with the remaining work too — call it a 0.65 factor, giving **426–624 hours** instead of
+655–960, or **EGP 255,000 – 437,000** instead of EGP 330,000–670,000. Cheaper in absolute terms.
+
+But the **need** for that work is now higher, not lower:
+
+1. **Untested generated code is the specific risk profile of AI-assisted development.** AI
+   produces code that reads correctly and is occasionally, subtly wrong — an inverted condition,
+   a wrong boundary, a plausible-looking branch that never executes. Human review catches less
+   of this than people expect, because the code *looks* right. Tests are the only reliable
+   defence, and there is one test file.
+2. **Combined with auto-deploy on every commit (§1.4, finding #1), this is the sharpest risk in
+   the document.** Generated code, unverified, straight to production. The CI work in §3.2
+   (EGP 20,000–38,000) was already the highest-value small spend here; on an AI-built codebase
+   it is not optional.
+3. **Handover risk is different, not necessarily worse.** A developer knows code they directed
+   less intimately than code they hand-wrote. Against that: the codebase's consistency and its
+   11,909 lines of documentation make it *easier* for a newcomer to pick up than a typical solo
+   hand-rolled system. On balance these roughly cancel — but it does mean the maintenance
+   retainer should not be assumed to carry irreplaceable knowledge.
+
+**Net effect on the retainer:** AI cuts routine maintenance too — 8–12 hrs/month becomes roughly
+**6–9 hrs/month, EGP 3,600 – 6,300/month**. And the §6.7 retention concern softens: a codebase
+built with AI can be maintained with AI, by someone other than its author. That is a genuine
+reduction in the client's dependency risk.
+
+### 7.6 What does not change at all
+
+- **Completeness stays at 71%.** How the code was written has no bearing on whether Reports has
+  a backend. It does not.
+- **All infrastructure costs are identical.** EGP 86,000–247,000 in year one, still fully
+  USD-denominated (§6.4). AI changes labour and nothing else. As a share of a now-smaller
+  software price, infrastructure gets *more* significant, not less — at the recommended
+  valuation it is now **16–30%** of the delivered software value, up from 12–20%.
+- **Every §3 finding stands.** The reproducibility gap, the missing retention policy, the
+  `/monitor` exposure, the unfinished Postgres migration, the disk projection.
+
+### 7.7 Revised Egyptian summary, AI-adjusted
+
+| Line | §6 figure | **AI-adjusted** |
+|---|---:|---:|
+| Effort | 1,738 hrs | **~1,108 hrs** |
+| Completeness | 71% | 71% *(unchanged)* |
+| Delivered work, fair value | EGP 700,000 – 1,200,000 | **EGP 550,000 – 850,000** |
+| Reproducibility + CI (§3.2) | EGP 20,000 – 38,000 | **EGP 20,000 – 38,000** *(unchanged — priority up)* |
+| Cost to finish | EGP 330,000 – 670,000 | **EGP 255,000 – 437,000** |
+| Maintenance retainer | EGP 4,800 – 8,400/mo | **EGP 3,600 – 6,300/mo** |
+| Year-one infrastructure | EGP 86,000 – 247,000 | EGP 86,000 – 247,000 *(unchanged)* |
+| **All-in, finished product** | EGP 1,050,000 – 1,908,000 | **EGP 825,000 – 1,325,000** |
+
+### 7.8 How to actually settle this
+
+If the two parties disagree on where in EGP 550,000–850,000 to land, the honest tiebreaker is
+not "how was it built" — it is **who carries the risk of the untested 29%.**
+
+- **Settle at the lower end (~EGP 550,000)** if the client also funds the CI and test work
+  (§3.2 plus the test suite) as a separate, committed next phase. The client is then buying a
+  known-incomplete asset at a discount and paying to de-risk it themselves.
+- **Settle at the upper end (~EGP 850,000)** if the developer includes the CI pipeline, the
+  activity-log retention policy, and the reproducibility work in the delivered price. The
+  client is then buying something closer to finished.
+
+The second structure is better value for the client at almost any price inside the band, because
+those three items total 60–100 hours and remove the three findings most likely to cause a real
+incident. Paying EGP 300,000 more for work that would otherwise cost EGP 40,000–70,000 would be
+poor value — but paying at the top of the band *with those items included* is not that. It is
+buying the difference between a system that runs and a system that can be recovered, verified,
+and handed on.
+
+---
+
 ## Sources
 
 Pricing verified July 2026. Production resource figures supplied by the client from the live
-Hostinger deployment. Exchange rate 50.5 EGP/USD.
+Hostinger deployment. Exchange rate 50.5 EGP/USD. AI-acceleration factors in §7.2 are reasoned
+per work package from the observable characteristics of the codebase, not taken from a published
+benchmark — they are the most judgment-dependent figures in this document and should be treated
+as such.
 
 - [Hostinger VPS pricing — plans and real renewal costs](https://hostadvice.com/hosting-company/hostinger-reviews/vps-pricing/)
 - [Hostinger VPS 2026 — KVM plans, specs and value](https://desking.app/review/hostinger-vps)
