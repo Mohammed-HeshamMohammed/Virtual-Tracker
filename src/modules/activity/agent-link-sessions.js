@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { query } from "../../lib/postgres/client.js";
+import { newDeviceId, registerAgentDevice } from "./agent-devices.service.js";
 
 const TTL_MS = 15 * 60 * 1000;
 const MAX_INVALID_EXCHANGE_ATTEMPTS = 8;
@@ -106,11 +107,32 @@ export async function exchangeAgentLinkSession(linkToken, agentSecret) {
     return { ok: false, error: "Missing linked credentials" };
   }
 
+  // Promote the (already agent-only) link secret into a long-lived device
+  // credential, so this machine can re-authenticate on its own later instead
+  // of needing another browser link. Best-effort: linking must still succeed
+  // if this fails, the agent just loses in-app recovery until it re-links.
+  let deviceId = "";
+  try {
+    const device = await registerAgentDevice({
+      memberId: session.memberId,
+      deviceId: newDeviceId(),
+      agentSecret: session.agentSecret,
+      agentSource: "tauri",
+    });
+    deviceId = device?.device_id ?? "";
+  } catch (err) {
+    console.warn("[agent-link] device registration failed:", err?.message ?? err);
+  }
+
   const result = {
     idToken: session.idToken,
     refreshToken: session.refreshToken || "",
     memberId: session.memberId,
     agentSource: session.agentSource,
+    deviceId,
+    // Echoed back so the agent can persist it as its device credential; it is
+    // the same value the agent already generated-and-held since link/init.
+    agentSecret: session.agentSecret,
   };
   await deleteSession(linkToken);
   return { ok: true, data: result };

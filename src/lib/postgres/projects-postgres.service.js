@@ -4,8 +4,7 @@
 //
 // Wired into every real read/write path (routes, dashboard loader, overview,
 // activity-scope, task-assignments, team-roster, client-service, bootstrap).
-// Requires the one-time backfill (scripts/migrate-projects-to-postgres.mjs)
-// to have run before deploy - see that script and the proposal doc.
+// Schema is applied at boot by lib/postgres/ensure-lookup-schema.js.
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
@@ -28,14 +27,15 @@ function dateOrNull(value) {
 
 /** @param {{ name: string, status?: string, billable?: boolean, disableActivity?: boolean,
  *   allowProjectTracking?: boolean, disableIdleTime?: boolean, clientId?: string|null,
- *   managersNotes?: string, usersNotes?: string, viewersNotes?: string, createdBy?: string }} data */
+ *   managersNotes?: string, usersNotes?: string, viewersNotes?: string,
+ *   type?: "normal"|"calling", createdBy?: string }} data */
 export async function createProjectPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
-       client_id, managers_notes, users_notes, viewers_notes, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
+       client_id, managers_notes, users_notes, viewers_notes, type, created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
      RETURNING *`,
     [
       id,
@@ -49,6 +49,7 @@ export async function createProjectPg(data) {
       data.managersNotes ?? null,
       data.usersNotes ?? null,
       data.viewersNotes ?? null,
+      data.type ?? "normal",
       uuidOrNull(data.createdBy),
     ],
   );

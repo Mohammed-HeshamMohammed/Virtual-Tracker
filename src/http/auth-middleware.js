@@ -23,6 +23,11 @@ const PUBLIC_API_ROUTES = [
   { method: "GET", pattern: /^\/api\/public\/member-transfer-requests\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/activity\/agent\/link\/init$/ },
   { method: "POST", pattern: /^\/api\/activity\/agent\/link\/exchange$/ },
+  // Device-credential re-auth. Unauthenticated by necessity - the caller has
+  // no usable token, which is the entire reason it is calling. The device
+  // secret is the credential, and the handler re-runs the member status and
+  // ban checks a normal sign-in would.
+  { method: "POST", pattern: /^\/api\/activity\/agent\/reauth$/ },
 ];
 
 /**

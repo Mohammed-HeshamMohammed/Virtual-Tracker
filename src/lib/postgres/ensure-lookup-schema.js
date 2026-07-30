@@ -357,6 +357,7 @@ GROUP BY task_id`,
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id      UUID NOT NULL,
   task_id        UUID,
+  project_id     UUID,
   status         VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'idle', 'stopped')),
   started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   ended_at       TIMESTAMPTZ,
@@ -367,6 +368,9 @@ GROUP BY task_id`,
 )`,
   // Pre-existing databases created before `source` existed on this table.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
+  // Calling-project sessions have no task to derive a project from.
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS project_id UUID`,
+  `CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC)`,
@@ -381,11 +385,10 @@ GROUP BY task_id`,
   // ─── Projects domain (migrated from Firestore - see PROPOSAL-Projects-Migration-to-PostgreSQL.md) ───
   // Column set pulled from the live Firestore field catalog
   // (src/modules/schema/catalog/{projects,clients,teams}/index.js), not invented.
-  // The FK from time_entries.project_id is deliberately NOT added here - it must
-  // only go on after the one-time backfill script (scripts/migrate-projects-to-postgres.js)
-  // has run and confirmed no orphaned project_id values, otherwise this statement
-  // would fail on every boot before that script has ever run and block everything
-  // listed after it in this array (this loop stops at the first failing statement).
+  // The FK from time_entries.project_id is deliberately NOT added here - it
+  // would fail on any database still holding orphaned project_id values and
+  // block everything listed after it in this array (this loop stops at the
+  // first failing statement).
   `CREATE TABLE IF NOT EXISTS projects (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name                    VARCHAR(200) NOT NULL,
@@ -398,6 +401,7 @@ GROUP BY task_id`,
   managers_notes          TEXT,
   users_notes             TEXT,
   viewers_notes           TEXT,
+  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by              UUID,
@@ -405,6 +409,8 @@ GROUP BY task_id`,
   archived_by             UUID,
   archived_at             TIMESTAMPTZ
 )`,
+  // Pre-existing databases created before project types existed.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'normal'`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,
@@ -500,6 +506,22 @@ GROUP BY task_id`,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ
 )`,
+  // Long-lived per-machine agent credential. Lets a linked desktop agent
+  // re-authenticate in-app after its (borrowed) Firebase refresh token dies,
+  // instead of sending the user back through a browser link. Secret is stored
+  // hashed only - see agent-devices.service.js.
+  `CREATE TABLE IF NOT EXISTS agent_devices (
+  device_id       UUID PRIMARY KEY,
+  member_id       UUID NOT NULL,
+  secret_hash     TEXT NOT NULL,
+  agent_source    VARCHAR(20) NOT NULL DEFAULT 'tauri',
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
+  last_seen_at    TIMESTAMPTZ,
+  revoked_at      TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_devices_member ON agent_devices (member_id) WHERE revoked_at IS NULL`,
   // ─── Tasks domain (Phase 2 of implementation.md - Firestore -> Postgres) ───
   // Schema-stand-up only: additive, nothing reads from these tables yet, zero
   // behavior change. Column set pulled from the live Firestore field catalog
@@ -591,8 +613,7 @@ END $$`,
     ADD COLUMN IF NOT EXISTS review_notes TEXT`,
   // task_member_progress/timer_sessions.task_id had no FK at all until now -
   // couldn't reference tasks(id) when these tables were first created (tasks
-  // didn't exist yet), and the one-time migrate-tasks-to-postgres.mjs --add-fk
-  // step only ran once, manually, not on every boot. Added here, after tasks
+  // didn't exist yet). Added here, after tasks
   // exists in this array, with ON DELETE CASCADE so deleting a task actually
   // cleans up its progress/session rows instead of orphaning them the way
   // deleteTaskPg alone would (task_assignments already had this via its own

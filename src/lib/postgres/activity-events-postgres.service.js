@@ -300,7 +300,7 @@ export async function fetchLatestPgScreenshot(memberId, sessionId) {
 // activity_sessions
 // ---------------------------------------------------------------------------
 
-const SESSION_COLUMNS = "id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at";
+const SESSION_COLUMNS = "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at";
 
 /** Most recently started open (ended_at IS NULL) session for a member. */
 export async function findOpenPgSession(memberId) {
@@ -324,23 +324,25 @@ export async function getPgSessionById(sessionId) {
 }
 
 /**
- * @param {{ id: string, memberId: string, taskId?: string|null, status: string,
- *   startedAt: Date, endedAt?: Date|null, activeSeconds?: number, idleSeconds?: number,
- *   source?: string, updatedAt: Date }} row
+ * @param {{ id: string, memberId: string, taskId?: string|null, projectId?: string|null,
+ *   status: string, startedAt: Date, endedAt?: Date|null, activeSeconds?: number,
+ *   idleSeconds?: number, source?: string, updatedAt: Date }} row
  */
 export async function createPgSession(row) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return null;
   const taskId = row.taskId ? parseProgressUuid(row.taskId) : null;
+  const projectId = row.projectId ? parseProgressUuid(row.projectId) : null;
   const result = await pgQuery(
-    `INSERT INTO activity_sessions (id, member_id, task_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO activity_sessions (id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (id) DO NOTHING
      RETURNING ${SESSION_COLUMNS}`,
     [
       row.id,
       memberId,
       taskId,
+      projectId,
       row.status,
       row.startedAt,
       row.endedAt ?? null,
@@ -356,7 +358,7 @@ export async function createPgSession(row) {
 /**
  * Partial update - only the provided fields change.
  * @param {string} sessionId
- * @param {{ status?: string, endedAt?: Date|null, taskId?: string|null, activeSeconds?: number, idleSeconds?: number, updatedAt: Date }} patch
+ * @param {{ status?: string, endedAt?: Date|null, taskId?: string|null, projectId?: string|null, activeSeconds?: number, idleSeconds?: number, updatedAt: Date }} patch
  */
 export async function updatePgSession(sessionId, patch) {
   const sets = [];
@@ -368,6 +370,7 @@ export async function updatePgSession(sessionId, patch) {
   if (patch.status !== undefined) add("status", patch.status);
   if (patch.endedAt !== undefined) add("ended_at", patch.endedAt);
   if (patch.taskId !== undefined) add("task_id", patch.taskId ? parseProgressUuid(patch.taskId) : null);
+  if (patch.projectId !== undefined) add("project_id", patch.projectId ? parseProgressUuid(patch.projectId) : null);
   if (patch.activeSeconds !== undefined) add("active_seconds", patch.activeSeconds);
   if (patch.idleSeconds !== undefined) add("idle_seconds", patch.idleSeconds);
   add("updated_at", patch.updatedAt ?? new Date());
@@ -384,7 +387,11 @@ export async function updatePgSession(sessionId, patch) {
     const prev = prevResult?.rows?.[0];
     if (prev) {
       const delta = Math.floor(patch.activeSeconds) - Math.floor(Number(prev.active_seconds ?? 0));
-      if (delta > 0) {
+      // Negative deltas are real: the desktop agent rewinds a session's active
+      // seconds when it auto-stops for idling, and the rollups have to give
+      // that time back too or the daily totals keep hours the session itself
+      // no longer claims.
+      if (delta !== 0) {
         await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta);
       }
     }
@@ -394,25 +401,41 @@ export async function updatePgSession(sessionId, patch) {
 }
 
 /**
+ * Applies a signed delta to the daily rollups.
+ *
+ * Negative deltas come from the desktop agent rewinding a session after an
+ * idle auto-stop. Two things they must never do: leave a row negative, or wrap.
+ * Hence GREATEST(0, ...) on both the insert and the update - and note the
+ * delta is applied against CURRENT_DATE, so a rewind that spans midnight takes
+ * the time off today rather than off the day it was earned. Clamping keeps
+ * that honest (today floors at zero) rather than pushing a row negative.
+ *
  * @param {string} memberId
  * @param {string | null} taskId
- * @param {number} deltaSeconds
+ * @param {number} deltaSeconds signed; negative reverses previously counted time
  */
 async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds) {
+  const delta = Math.trunc(Number(deltaSeconds) || 0);
+  if (delta === 0) return;
+
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
-     VALUES ($1, CURRENT_DATE, $2)
+     VALUES ($1, CURRENT_DATE, GREATEST(0, $2::bigint))
      ON CONFLICT (member_id, day)
-     DO UPDATE SET active_seconds = daily_member_active_seconds.active_seconds + EXCLUDED.active_seconds, updated_at = now()`,
-    [memberId, deltaSeconds],
+     DO UPDATE SET
+       active_seconds = GREATEST(0, daily_member_active_seconds.active_seconds + $2::bigint),
+       updated_at = now()`,
+    [memberId, delta],
   );
   if (taskId) {
     await pgQuery(
       `INSERT INTO daily_member_task_active_seconds (member_id, task_id, day, active_seconds)
-       VALUES ($1, $2, CURRENT_DATE, $3)
+       VALUES ($1, $2, CURRENT_DATE, GREATEST(0, $3::bigint))
        ON CONFLICT (member_id, task_id, day)
-       DO UPDATE SET active_seconds = daily_member_task_active_seconds.active_seconds + EXCLUDED.active_seconds, updated_at = now()`,
-      [memberId, taskId, deltaSeconds],
+       DO UPDATE SET
+         active_seconds = GREATEST(0, daily_member_task_active_seconds.active_seconds + $3::bigint),
+         updated_at = now()`,
+      [memberId, taskId, delta],
     );
   }
 }

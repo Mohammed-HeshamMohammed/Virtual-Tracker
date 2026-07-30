@@ -147,13 +147,14 @@ function buildViewPayload({
       const mset = membersByDay.get(todayKey) ?? new Set();
       mset.add(session.memberId);
       membersByDay.set(todayKey, mset);
-      if (session.task_id) {
-        const task = tasks.find((t) => t.id === session.task_id);
-        if (task?.projectId) {
-          const pset = projectsByDay.get(todayKey) ?? new Set();
-          pset.add(task.projectId);
-          projectsByDay.set(todayKey, pset);
-        }
+      // project_id direct for task-less (calling project) sessions; via the
+      // task for normal ones, which is all sessions predating that column.
+      const sessionProjectId =
+        session.project_id ?? tasks.find((t) => t.id === session.task_id)?.projectId ?? null;
+      if (sessionProjectId) {
+        const pset = projectsByDay.get(todayKey) ?? new Set();
+        pset.add(sessionProjectId);
+        projectsByDay.set(todayKey, pset);
       }
     }
   }
@@ -227,9 +228,10 @@ function buildViewPayload({
     const status = trackingToStatus(trackingStatus);
     const session = sessionIndex.get(memberId) ?? null;
     let project = "";
-    if (status === "Working" && session?.task_id) {
-      const task = tasks.find((t) => t.id === session.task_id);
-      project = projectNameById.get(task?.projectId) || "";
+    if (status === "Working" && session) {
+      const projectId =
+        session.project_id ?? tasks.find((t) => t.id === session.task_id)?.projectId ?? null;
+      project = projectNameById.get(projectId) || "";
     }
     const activeSec = session ? num(session, "active_seconds", "activeSeconds") : 0;
     onlineMembers.push({

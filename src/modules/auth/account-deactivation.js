@@ -1,4 +1,5 @@
 import { isDeactivationApprovalRole, deactivationGovernanceForRole } from "../../http/role-hierarchy.js";
+import { revokeAgentDevicesForMember } from "../activity/agent-devices.service.js";
 import { deleteMemberProfileData } from "../members/services/member-profile.service.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 
@@ -184,6 +185,9 @@ export async function deleteViewerSelfAccount(auth, db, uid, memberId, roleName)
   }
 
   const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
+  // Before the member row goes, kill any desktop-agent device credentials tied
+  // to it - they must not outlive the account.
+  await revokeAgentDevicesForMember(memberId).catch(() => {});
   await deleteMemberProfileData(db, memberId);
   await db.collection("members").doc(memberId).delete();
   await db.collection(MEMBER_AUTH_INDEX).doc(uid).delete().catch(() => {});

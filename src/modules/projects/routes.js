@@ -61,6 +61,18 @@ function memberLabel(data) {
   return memberDisplayLabel(data);
 }
 
+export const PROJECT_TYPES = ["normal", "calling"];
+
+/** Throws on an unrecognized value; message becomes the 400 response. */
+function normalizeProjectType(value) {
+  if (value === undefined || value === null || value === "") return "normal";
+  const type = String(value).trim().toLowerCase();
+  if (!PROJECT_TYPES.includes(type)) {
+    throw new Error(`type must be one of: ${PROJECT_TYPES.join(", ")}`);
+  }
+  return type;
+}
+
 function normalizeProjectRole(role) {
   const value = String(role || "")
     .trim()
@@ -276,6 +288,7 @@ export async function routeProjects(req, res, url, db, origin) {
         success: true,
         data: {
           name: String(project.name || ""),
+          type: String(project.type || "normal"),
           billable: Boolean(project.billable),
           disableActivity: Boolean(project.disable_activity ?? project.disableActivity),
           allowProjectTracking: Boolean(
@@ -504,6 +517,7 @@ export async function routeProjects(req, res, url, db, origin) {
         managersNotes: body.managers_notes ?? body.managersNotes,
         usersNotes: body.users_notes ?? body.usersNotes,
         viewersNotes: body.viewers_notes ?? body.viewersNotes,
+        type: normalizeProjectType(body.type),
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       sendJson(res, origin, 200, { success: true, data: project });
@@ -540,6 +554,19 @@ export async function routeProjects(req, res, url, db, origin) {
         if (!viewer) return true;
         const body = await readJsonBody(req);
         validateProjectDomainBody("projects", body, true);
+        // Type decides whether the project tracks time via tasks at all -
+        // flipping it on a project that already has task history (or calling
+        // sessions) would orphan that data, so it is create-time only.
+        if (body.type !== undefined) {
+          const existing = await getProjectPg(projectId);
+          if (existing && normalizeProjectType(body.type) !== String(existing.type || "normal")) {
+            sendJson(res, origin, 400, {
+              success: false,
+              error: "Project type cannot be changed after creation.",
+            });
+            return true;
+          }
+        }
         const patch = {
           name: body.name,
           status: body.status,

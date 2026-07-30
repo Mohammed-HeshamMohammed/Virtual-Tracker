@@ -18,6 +18,92 @@ function dayKey(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
+/** Today's day key, and the first day of the rolling week, in 'YYYY-MM-DD'. */
+function currentDayRange() {
+  const todayStart = startOfDay(new Date()).getTime();
+  return {
+    todayDay: dayKey(todayStart),
+    weekStartDay: dayKey(getRollingWeekDays()[0]?.startMs ?? todayStart),
+  };
+}
+
+/**
+ * The member's own daily/weekly hour cap - entirely task-independent. Shared
+ * by the task-anchored allowance below and by task-less (calling project)
+ * timers, so there is one implementation of "personal hour cap", not two that
+ * can drift.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} memberId
+ */
+async function loadMemberCapContext(db, memberId) {
+  if (await memberUsesShiftsForLimits(db, memberId)) {
+    return {
+      usesShifts: true,
+      dailyLimitHours: 0,
+      memberDailyLimitSeconds: 0,
+      memberWeeklyLimitSeconds: 0,
+      workedTodaySeconds: 0,
+      workedWeekSeconds: 0,
+    };
+  }
+
+  const [weeklyLimitHours, dailyLimitHours] = await Promise.all([
+    getMemberLimitHours(db, memberId, "weekly"),
+    getMemberLimitHours(db, memberId, "daily"),
+  ]);
+
+  const { todayDay, weekStartDay } = currentDayRange();
+  const [workedTodaySeconds, workedWeekSeconds] = await Promise.all([
+    sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay }),
+    sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay }),
+  ]);
+
+  return {
+    usesShifts: false,
+    dailyLimitHours,
+    memberDailyLimitSeconds: dailyLimitHours > 0 ? Math.floor(dailyLimitHours * 3600) : 0,
+    memberWeeklyLimitSeconds: weeklyLimitHours > 0 ? Math.floor(weeklyLimitHours * 3600) : 0,
+    workedTodaySeconds,
+    workedWeekSeconds,
+  };
+}
+
+/**
+ * Remaining active seconds for a member with no task in play (calling
+ * projects). Only the member's own daily/weekly caps apply - there is no task
+ * estimate or per-task daily cap to enforce, which is the whole point of the
+ * "calling" project type.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} memberId
+ * @param {{ currentCumulativeActiveSeconds?: number }} [options]
+ */
+export async function computeMemberTimerAllowance(db, memberId, options = {}) {
+  const currentCumulativeActiveSeconds = Math.max(
+    0,
+    Math.floor(Number(options.currentCumulativeActiveSeconds ?? 0)),
+  );
+  const ctx = await loadMemberCapContext(db, memberId);
+
+  const remainders = [];
+  if (ctx.memberDailyLimitSeconds > 0) {
+    remainders.push(Math.max(0, ctx.memberDailyLimitSeconds - ctx.workedTodaySeconds));
+  }
+  if (ctx.memberWeeklyLimitSeconds > 0 && ctx.dailyLimitHours <= 0) {
+    remainders.push(Math.max(0, ctx.memberWeeklyLimitSeconds - ctx.workedWeekSeconds));
+  }
+
+  return buildAllowanceResult({
+    allowedRemainingSeconds: remainders.length > 0 ? Math.min(...remainders) : null,
+    currentCumulativeActiveSeconds,
+    taskDailyCapSeconds: 0,
+    memberDailyLimitSeconds: ctx.memberDailyLimitSeconds,
+    memberWeeklyLimitSeconds: ctx.memberWeeklyLimitSeconds,
+    workedTodaySeconds: ctx.workedTodaySeconds,
+    workedTodayOnTaskSeconds: 0,
+    workedWeekSeconds: ctx.workedWeekSeconds,
+  });
+}
+
 /**
  * Remaining active seconds for a member on a task (daily caps, limits, time already logged).
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -34,8 +120,15 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const taskDailyHours = computeTaskDailyHours(task);
   const taskDailyCapSeconds = taskDailyHours > 0 ? Math.floor(taskDailyHours * 3600) : 0;
   const totalTaskSeconds = estimateAssignmentSeconds(task);
+  const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
+  const { todayDay } = currentDayRange();
 
-  if (await memberUsesShiftsForLimits(db, memberId)) {
+  const [ctx, workedTodayOnTaskSeconds] = await Promise.all([
+    loadMemberCapContext(db, memberId),
+    taskId ? sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay) : Promise.resolve(0),
+  ]);
+
+  if (ctx.usesShifts) {
     const totalRemain =
       totalTaskSeconds != null && totalTaskSeconds > 0
         ? Math.max(0, totalTaskSeconds - currentCumulativeActiveSeconds)
@@ -52,29 +145,12 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
     });
   }
 
-  const [weeklyLimitHours, dailyLimitHours] = await Promise.all([
-    getMemberLimitHours(db, memberId, "weekly"),
-    getMemberLimitHours(db, memberId, "daily"),
-  ]);
+  const { dailyLimitHours, memberDailyLimitSeconds, memberWeeklyLimitSeconds } = ctx;
+  const { workedTodaySeconds, workedWeekSeconds } = ctx;
 
   const effectiveDailyCapHours = computeEffectiveDailyCap(taskDailyHours, dailyLimitHours);
   const effectiveDailyCapSeconds =
     effectiveDailyCapHours > 0 ? Math.floor(effectiveDailyCapHours * 3600) : 0;
-  const memberDailyLimitSeconds = dailyLimitHours > 0 ? Math.floor(dailyLimitHours * 3600) : 0;
-  const memberWeeklyLimitSeconds = weeklyLimitHours > 0 ? Math.floor(weeklyLimitHours * 3600) : 0;
-
-  const now = new Date();
-  const todayStart = startOfDay(now).getTime();
-  const weekDays = getRollingWeekDays();
-  const weekStartDay = dayKey(weekDays[0]?.startMs ?? todayStart);
-  const todayDay = dayKey(todayStart);
-  const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
-
-  const [workedTodaySeconds, workedTodayOnTaskSeconds, workedWeekSeconds] = await Promise.all([
-    sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay }),
-    taskId ? sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay) : Promise.resolve(0),
-    sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay }),
-  ]);
 
   const remainders = [];
 
