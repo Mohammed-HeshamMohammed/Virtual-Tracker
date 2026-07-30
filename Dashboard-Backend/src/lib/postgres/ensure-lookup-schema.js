@@ -402,6 +402,7 @@ GROUP BY task_id`,
   users_notes             TEXT,
   viewers_notes           TEXT,
   type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
+  end_date                DATE,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by              UUID,
@@ -411,6 +412,10 @@ GROUP BY task_id`,
 )`,
   // Pre-existing databases created before project types existed.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'normal'`,
+  // Optional, informational only (item 5 of the budget fixes plan) - not
+  // required, nothing archives on it. Deliberately no start_date: created_at
+  // already answers "when did this project start".
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,
@@ -449,6 +454,17 @@ GROUP BY task_id`,
   updated_by                  UUID
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_pb_project ON project_budgets (project_id)`,
+  // Dedupe state for the notify-at-threshold check (item 4 of the budget
+  // fixes plan) - one row per project, tracking which reset period a
+  // notification has already gone out for. Postgres-resident (not Firestore
+  // like client_automation_state) since project_budgets already is.
+  `CREATE TABLE IF NOT EXISTS project_budget_notify_state (
+  project_id            UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  notified_period_key   VARCHAR(40),
+  notify_at_pct         NUMERIC(5, 2),
+  last_usage_pct        NUMERIC(6, 2),
+  last_sent_at          TIMESTAMPTZ
+)`,
   // Real shape mirrors project_budgets, NOT a bare daily/weekly integer pair - matches
   // the live Firestore doc. Note: the only current reader (overview-service.js) treats
   // `cost` as a max-member headcount, not a budget amount - see proposal doc "Related
@@ -473,6 +489,82 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_pml_project ON project_member_limits (project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pml_member ON project_member_limits (member_id)`,
+  // ─── Clients domain (migrated from Firestore, Phase 7+ of the budget fixes
+  // plan - see project-budget-fixes-plan.md). Column set pulled from the live
+  // Firestore field catalog (schema/catalog/clients/index.js), not invented.
+  // No backfill: existing Firestore rows are not carried over, these start empty.
+  `CREATE TABLE IF NOT EXISTS clients (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id       UUID,
+  name            VARCHAR(200) NOT NULL,
+  street_address  TEXT NOT NULL DEFAULT '',
+  city            VARCHAR(120) NOT NULL DEFAULT '',
+  state           VARCHAR(120) NOT NULL DEFAULT '',
+  zip             VARCHAR(20)  NOT NULL DEFAULT '',
+  country         VARCHAR(120) NOT NULL DEFAULT '',
+  phone_number    VARCHAR(40)  NOT NULL DEFAULT '',
+  email_addresses TEXT NOT NULL DEFAULT '',
+  status          VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'archived')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      UUID,
+  updated_by      UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_clients_member ON clients (member_id)`,
+  // Client budget vocabulary (hourly|fixed|retainer|none, per_person|per_project|
+  // total) is deliberately separate from project_budgets' own (Cost based|Hours
+  // based) - these are two different budget shapes, not one redesigned to match
+  // the other during this migration.
+  `CREATE TABLE IF NOT EXISTS client_budgets (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  type            VARCHAR(20) NOT NULL CHECK (type IN ('hourly', 'fixed', 'retainer', 'none')),
+  based_on        VARCHAR(20) NOT NULL DEFAULT 'per_project'
+                    CHECK (based_on IN ('per_person', 'per_project', 'total')),
+  cost            NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  notify_at_pct   NUMERIC(5, 2),
+  resets          VARCHAR(20) NOT NULL DEFAULT 'never'
+                    CHECK (resets IN ('monthly', 'quarterly', 'yearly', 'never')),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      UUID,
+  updated_by      UUID
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_cb_client ON client_budgets (client_id)`,
+  `CREATE TABLE IF NOT EXISTS client_invoicing (
+  id                            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  client_id                     UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  custom_for_client             BOOLEAN NOT NULL DEFAULT false,
+  notes                         TEXT NOT NULL DEFAULT '',
+  net_terms_days                INT NOT NULL DEFAULT 30,
+  tax_rate                      NUMERIC(5, 2) NOT NULL DEFAULT 0,
+  auto_invoicing                BOOLEAN NOT NULL DEFAULT false,
+  auto_invoice_amount_based_on  VARCHAR(20) NOT NULL DEFAULT 'hourly',
+  auto_fixed_amount             NUMERIC(12, 2) NOT NULL DEFAULT 0,
+  auto_invoice_frequency        VARCHAR(20) NOT NULL DEFAULT 'monthly',
+  auto_invoice_delay_days       INT NOT NULL DEFAULT 0,
+  auto_invoice_reminder_days    INT NOT NULL DEFAULT 7,
+  auto_invoice_line_items       VARCHAR(60) NOT NULL DEFAULT 'detailed_project_user_date',
+  include_non_billable_time     BOOLEAN NOT NULL DEFAULT false,
+  include_expenses              BOOLEAN NOT NULL DEFAULT false,
+  created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by                    UUID,
+  updated_by                    UUID
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_client ON client_invoicing (client_id)`,
+  // Threshold + period-key dedupe state for client budget notifications -
+  // replaces the Firestore client_automation_state collection.
+  `CREATE TABLE IF NOT EXISTS client_automation_state (
+  client_id       UUID PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+  budget_policy   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  notify_at_pct   NUMERIC(5, 2),
+  notified_period_key VARCHAR(40),
+  last_usage_pct  NUMERIC(6, 2),
+  last_sent_at    TIMESTAMPTZ,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
   `CREATE TABLE IF NOT EXISTS client_projects (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id     UUID NOT NULL,
@@ -483,6 +575,15 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_cp_client ON client_projects (client_id)`,
   `CREATE INDEX IF NOT EXISTS idx_cp_project ON client_projects (project_id)`,
+  // client_projects.client_id had no FK until the clients table existed above -
+  // added here, after clients exists in this array, same idempotent pattern as
+  // fk_tmp_task below.
+  `DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cp_client') THEN
+    ALTER TABLE client_projects ADD CONSTRAINT fk_cp_client FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
   `CREATE TABLE IF NOT EXISTS team_projects (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   team_id       UUID NOT NULL,

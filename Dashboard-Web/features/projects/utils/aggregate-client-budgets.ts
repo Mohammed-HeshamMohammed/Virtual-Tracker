@@ -3,7 +3,7 @@ import type { ClientBudget } from "@/features/clients/api/client-api"
 export type ClientBudgetSnapshot = ClientBudget | null | undefined
 
 export type AggregatedProjectBudgetFields = {
-  hasBudget: boolean
+  budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
   budgetTotal: string
@@ -60,7 +60,7 @@ export function aggregateClientBudgetsForProject(
   if (totalCost <= 0) return null
 
   return {
-    hasBudget: true,
+    budgetStopTimers: true,
     budgetType: mapClientBudgetTypeToProject(primary.type),
     budgetBasedOn: "Bill rate",
     budgetTotal: String(Math.round(totalCost * 100) / 100),

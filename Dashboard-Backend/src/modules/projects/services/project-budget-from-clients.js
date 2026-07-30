@@ -4,6 +4,7 @@ import {
   listProjectMembersPg,
   upsertProjectBudgetPg,
 } from "../../../lib/postgres/projects-postgres.service.js";
+import { getClientBudgetPg } from "../../../lib/postgres/clients-postgres.service.js";
 
 function mapClientTypeToProjectType(type) {
   if (type === "hourly") return "Hours based";
@@ -18,16 +19,14 @@ function mapResetsToProject(resets) {
   return "Never";
 }
 
-async function readClientBudget(db, clientId) {
-  const snap = await db.collection("client_budgets").where("client_id", "==", clientId).limit(1).get();
-  const doc = snap.docs[0];
-  if (!doc) return null;
-  const row = doc.data() || {};
+async function readClientBudget(_db, clientId) {
+  const row = await getClientBudgetPg(clientId);
+  if (!row) return null;
   return normalizeBudget({
     type: row.type,
-    basedOn: row.based_on ?? row.basedOn,
+    basedOn: row.based_on,
     cost: row.cost,
-    notifyAt: row.notify_at_pct ?? row.notifyAt,
+    notifyAt: row.notify_at_pct,
     resets: row.resets,
   });
 }

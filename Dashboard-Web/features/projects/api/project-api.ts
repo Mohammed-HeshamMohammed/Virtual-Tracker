@@ -17,6 +17,7 @@ function toProject(input: Record<string, unknown>): Project {
       input.allow_project_tracking ?? input.allowProjectTracking ?? true,
     ),
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
+    endDate: String(input.end_date ?? input.endDate ?? ""),
     managersNotes: String(input.managers_notes ?? input.managersNotes ?? ""),
     usersNotes: String(input.users_notes ?? input.usersNotes ?? ""),
     viewersNotes: String(input.viewers_notes ?? input.viewersNotes ?? ""),
@@ -40,6 +41,7 @@ function toProjectPayload(
   if (input.disableActivity !== undefined) out.disable_activity = input.disableActivity
   if (input.allowProjectTracking !== undefined) out.allow_project_tracking = input.allowProjectTracking
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
+  if (input.endDate !== undefined) out.end_date = input.endDate || undefined
   if (input.clientId !== undefined) out.client_id = input.clientId || null
   if (input.managersNotes !== undefined) out.managers_notes = input.managersNotes
   if (input.usersNotes !== undefined) out.users_notes = input.usersNotes
@@ -76,6 +78,7 @@ export interface Project {
   disableActivity: boolean
   allowProjectTracking: boolean
   disableIdleTime: boolean
+  endDate: string
   managersNotes: string
   usersNotes: string
   viewersNotes: string
@@ -104,6 +107,7 @@ export interface CreateProjectInput {
   disableActivity?: boolean
   allowProjectTracking?: boolean
   disableIdleTime?: boolean
+  endDate?: string
   clientId?: string
   managersNotes?: string
   usersNotes?: string
@@ -118,6 +122,7 @@ export interface UpdateProjectInput {
   disableActivity?: boolean
   allowProjectTracking?: boolean
   disableIdleTime?: boolean
+  endDate?: string
   clientId?: string
   managersNotes?: string
   usersNotes?: string
@@ -129,7 +134,7 @@ export interface UpdateProjectInput {
 
 export async function getProjects(options: RequestOptions & { fields?: string[] } = {}): Promise<Project[]> {
   const params = new URLSearchParams()
-  const fields = options.fields ?? ["id", "name", "type", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "disableIdleTime", "disable_idle_time", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
+  const fields = options.fields ?? ["id", "name", "type", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "disableIdleTime", "disable_idle_time", "endDate", "end_date", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
   if (fields.length) params.set("fields", fields.join(","))
 
   const query = params.toString() ? `?${params.toString()}` : ""

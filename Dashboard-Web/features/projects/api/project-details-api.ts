@@ -26,13 +26,17 @@ export interface CreateProjectFormPayload {
   disableActivity: boolean
   allowProjectTracking: boolean
   disableIdleTime: boolean
+  /** Optional, informational only - see item 5 of the budget fixes plan. */
+  endDate: string
   clientIds: string[]
   teamIds: string[]
   managerIds: string[]
   userIds: string[]
   viewerIds: string[]
   memberLimitMemberIds: string[]
-  hasBudget: boolean
+  /** Whether timers stop once the budget cap is reached - not "does this
+   * project have a budget" (every project always does, see item 6). */
+  budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
   budgetTotal: string
@@ -201,34 +205,7 @@ async function getProjectBudgets(projectId?: string, options: RequestOptions & {
     { ...options, retries: 1 },
   )
   if (!res.ok) throw extractApiError(res.status, "Failed to fetch project budgets", json)
-  return (json?.data ?? []).map((row) => ({
-    id: String(row.id ?? ""),
-    projectId: String(row.project_id ?? row.projectId ?? ""),
-    type: String(row.type ?? ""),
-    basedOn: String(row.based_on ?? row.basedOn ?? ""),
-    cost: Number(row.cost ?? 0),
-    notifyProjectMembers: Boolean(row.notify_project_members ?? row.notifyProjectMembers),
-    notifyAtPct:
-      row.notify_at_pct != null
-        ? Number(row.notify_at_pct)
-        : row.notifyAtPct != null
-          ? Number(row.notifyAtPct)
-          : null,
-    whoToNotify: String(row.who_to_notify ?? row.whoToNotify ?? ""),
-    stopTimersWhenReached: Boolean(row.stop_timers_when_reached ?? row.stopTimersWhenReached),
-    stopTimersAtPct:
-      row.stop_timers_at_pct != null
-        ? Number(row.stop_timers_at_pct)
-        : row.stopTimersAtPct != null
-          ? Number(row.stopTimersAtPct)
-          : null,
-    resets: String(row.resets ?? "Never"),
-    startDate: String(row.start_date ?? row.startDate ?? ""),
-    includeNonBillableTime: Boolean(
-      row.include_non_billable_time ?? row.includeNonBillableTime ?? true,
-    ),
-    spent: Number(row.spent ?? 0),
-  }))
+  return (json?.data ?? []).map(mapBudgetRow)
 }
 
 async function updateProjectBudget(
@@ -258,6 +235,35 @@ async function updateProjectBudget(
   if (!json.success) throw new Error(json.error || "Failed to update project budget")
 }
 
+function mapBudgetRow(row: Record<string, unknown>): ProjectBudgetRow {
+  return {
+    id: String(row.id ?? ""),
+    projectId: String(row.project_id ?? row.projectId ?? ""),
+    type: String(row.type ?? ""),
+    basedOn: String(row.based_on ?? row.basedOn ?? ""),
+    cost: Number(row.cost ?? 0),
+    notifyProjectMembers: Boolean(row.notify_project_members ?? row.notifyProjectMembers),
+    notifyAtPct:
+      row.notify_at_pct != null
+        ? Number(row.notify_at_pct)
+        : row.notifyAtPct != null
+          ? Number(row.notifyAtPct)
+          : null,
+    whoToNotify: String(row.who_to_notify ?? row.whoToNotify ?? ""),
+    stopTimersWhenReached: Boolean(row.stop_timers_when_reached ?? row.stopTimersWhenReached),
+    stopTimersAtPct:
+      row.stop_timers_at_pct != null
+        ? Number(row.stop_timers_at_pct)
+        : row.stopTimersAtPct != null
+          ? Number(row.stopTimersAtPct)
+          : null,
+    resets: String(row.resets ?? "Never"),
+    startDate: String(row.start_date ?? row.startDate ?? ""),
+    includeNonBillableTime: Boolean(row.include_non_billable_time ?? row.includeNonBillableTime ?? true),
+    spent: Number(row.spent ?? 0),
+  }
+}
+
 async function createProjectBudget(
   data: Omit<ProjectBudgetRow, "id"> & { createdBy?: string },
 ): Promise<ProjectBudgetRow> {
@@ -283,8 +289,10 @@ async function createProjectBudget(
   const json = (await res.json()) as ApiEnvelope<Record<string, unknown>>
   if (!res.ok) throw extractApiError(res.status, "Failed to create project budget", json)
   if (!json.success) throw new Error(json.error || "Failed to create project budget")
-  const rows = await getProjectBudgets(data.projectId)
-  return rows.find((r) => r.projectId === data.projectId) ?? rows[0]!
+  // The POST response already IS the created row - no need for the follow-up
+  // GET /api/project-budgets this used to do just to hand back a value the
+  // create path never even read.
+  return mapBudgetRow(json.data ?? {})
 }
 
 async function getProjectMemberLimits(projectId?: string, options: RequestOptions & { fields?: string[] } = {}): Promise<ProjectMemberLimitRow[]> {
@@ -447,9 +455,13 @@ function buildBudgetFields(payload: CreateProjectFormPayload) {
     basedOn: payload.budgetBasedOn,
     cost: parseOptionalNumber(payload.budgetTotal) ?? 0,
     notifyProjectMembers: payload.budgetNotifyMembers,
+    // Dependent fields are already cleared to "" by the modal when their
+    // owning switch is toggled off (see project-modal.tsx), so an empty
+    // string here already means "send null" via parseOptionalNumber - no
+    // second gate needed on this side.
     notifyAtPct: parseOptionalNumber(payload.budgetNotifyAt),
     whoToNotify: payload.budgetWhoToNotify,
-    stopTimersWhenReached: payload.hasBudget,
+    stopTimersWhenReached: payload.budgetStopTimers,
     stopTimersAtPct: parseOptionalNumber(payload.budgetStopTimersAt),
     resets: payload.budgetResets || "Never",
     startDate: payload.budgetStartDate,
@@ -557,6 +569,104 @@ async function syncProjectMembers(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Create-only fast paths (item 3 of the budget fixes plan)
+//
+// syncClientLinks / syncProjectMembers / syncTeamLinks above exist to diff
+// against links that might already exist - correct for editing a project,
+// pure overhead for a project created milliseconds ago that has none. Each
+// of these skips the read-then-diff and just posts what's desired, so the
+// create flow trades ~13 sequential round-trips for a handful of ones that
+// all run in parallel (see createProjectWithDetails below). The edit path
+// keeps using the sync* functions unchanged.
+// ---------------------------------------------------------------------------
+
+async function linkClientsFast(
+  projectId: string,
+  clientIds: string[],
+  actorMemberId?: string,
+): Promise<void> {
+  const desired = filterValidUuids(clientIds)
+  await Promise.all(desired.map((clientId) => linkClientToProject(clientId, projectId, actorMemberId)))
+}
+
+async function linkTeamsFast(
+  projectId: string,
+  teamIds: string[],
+  actorMemberId?: string,
+): Promise<void> {
+  const desired = [...new Set(teamIds.map((id) => id.trim()).filter((id) => isValidUuid(id)))]
+  await Promise.all(
+    desired.map((teamId) => {
+      const body: Record<string, unknown> = { team_id: teamId, project_id: projectId }
+      if (actorMemberId && isValidUuid(actorMemberId)) body.assigned_by = actorMemberId
+      return apiFetch(apiPath("/api/team-projects"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(async (res) => {
+        if (!res.ok) {
+          const json = await res.json().catch(() => null)
+          throw extractApiError(res.status, "Failed to link team to project", json)
+        }
+      })
+    }),
+  )
+}
+
+async function addProjectMembersFast(
+  projectId: string,
+  payload: CreateProjectFormPayload,
+  actorMemberId?: string,
+): Promise<void> {
+  const raw: { memberId: string; role: string }[] = [
+    ...payload.managerIds.map((memberId) => ({ memberId: memberId.trim(), role: "manager" })),
+    ...payload.userIds.map((memberId) => ({ memberId: memberId.trim(), role: "user" })),
+    ...payload.viewerIds.map((memberId) => ({ memberId: memberId.trim(), role: "viewer" })),
+  ].filter((link) => isValidUuid(link.memberId))
+  const seen = new Set<string>()
+  const desired = raw.filter((link) => {
+    const key = `${link.memberId}:${link.role}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  await Promise.all(desired.map((link) => addProjectMember(projectId, link.memberId, link.role, actorMemberId)))
+}
+
+async function createProjectMemberLimitsFast(
+  projectId: string,
+  payload: CreateProjectFormPayload,
+  actorMemberId?: string,
+): Promise<void> {
+  if (
+    payload.memberLimitMemberIds.length === 0 ||
+    !payload.memberLimitType.trim() ||
+    !payload.memberLimitBasedOn.trim()
+  ) {
+    return
+  }
+  const limitCost = parseOptionalNumber(String(payload.budgetSpent)) ?? 0
+  await Promise.all(
+    filterValidUuids(payload.memberLimitMemberIds).map((memberId) =>
+      createProjectMemberLimit({
+        projectId,
+        memberId,
+        type: payload.memberLimitType,
+        basedOn: payload.memberLimitBasedOn,
+        cost: limitCost,
+        resets: payload.memberLimitResets || "Never",
+        startDate: payload.memberLimitStartDate,
+        notifyAtPct: parseOptionalNumber(payload.memberLimitNotifyAt),
+        notifyProjectMembers: payload.memberLimitNotifyMembers,
+        ...(actorMemberId ? { createdBy: actorMemberId } : {}),
+      }).catch((err) => {
+        console.warn("project-member-limits failed", err)
+      }),
+    ),
+  )
+}
+
 /** Updates project + budget, member links, and team links. */
 export async function updateProjectWithDetails(
   projectId: string,
@@ -577,6 +687,7 @@ export async function updateProjectWithDetails(
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
     disableIdleTime: payload.disableIdleTime,
+    endDate: payload.endDate,
     clientId: primaryClientId || "",
     ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
   })
@@ -626,51 +737,31 @@ export async function createProjectWithDetails(
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
     disableIdleTime: payload.disableIdleTime,
+    endDate: payload.endDate,
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),
   }
 
   const created = await createProject(projectInput)
 
-  await syncClientLinks(created.id, clientIds, actorMemberId)
-
-  if (shouldPersistBudget(payload)) {
-    await createProjectBudget({
-      projectId: created.id,
-      ...buildBudgetFields(payload),
-      ...(actorMemberId ? { createdBy: actorMemberId } : {}),
-    })
-  }
-
+  // Every one of these is independent once the project id exists - no
+  // ordering dependency between budget, client links, member links, team
+  // links, and member limits, so they run concurrently instead of as a
+  // 13-round-trip serial chain (item 3 of the budget fixes plan).
   const memberPayload = ensureActorInMembers(payload, actorMemberId)
-  await syncProjectMembers(created.id, memberPayload, actorMemberId)
-  await syncTeamLinks(created.id, payload.teamIds, actorMemberId)
-
-  if (
-    payload.memberLimitMemberIds.length > 0 &&
-    payload.memberLimitType.trim() &&
-    payload.memberLimitBasedOn.trim()
-  ) {
-    const limitCost = parseOptionalNumber(String(payload.budgetSpent)) ?? 0
-    for (const memberId of filterValidUuids(payload.memberLimitMemberIds)) {
-      try {
-        await createProjectMemberLimit({
+  await Promise.all([
+    shouldPersistBudget(payload)
+      ? createProjectBudget({
           projectId: created.id,
-          memberId,
-          type: payload.memberLimitType,
-          basedOn: payload.memberLimitBasedOn,
-          cost: limitCost,
-          resets: payload.memberLimitResets || "Never",
-          startDate: payload.memberLimitStartDate,
-          notifyAtPct: parseOptionalNumber(payload.memberLimitNotifyAt),
-          notifyProjectMembers: payload.memberLimitNotifyMembers,
+          ...buildBudgetFields(payload),
           ...(actorMemberId ? { createdBy: actorMemberId } : {}),
         })
-      } catch (err) {
-        console.warn("project-member-limits failed", err)
-      }
-    }
-  }
+      : Promise.resolve(),
+    linkClientsFast(created.id, clientIds, actorMemberId),
+    addProjectMembersFast(created.id, memberPayload, actorMemberId),
+    linkTeamsFast(created.id, payload.teamIds, actorMemberId),
+    createProjectMemberLimitsFast(created.id, payload, actorMemberId),
+  ])
 
   return created
 }

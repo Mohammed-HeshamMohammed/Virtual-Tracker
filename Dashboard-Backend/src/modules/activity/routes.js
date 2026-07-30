@@ -42,7 +42,8 @@ import {
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
 import { isProjectMemberForTimer } from "../../http/project-access.js";
-import { getProjectPg } from "../../lib/postgres/projects-postgres.service.js";
+import { getProjectPg, getProjectBudgetPg, computeProjectSpentPg } from "../../lib/postgres/projects-postgres.service.js";
+import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
@@ -363,6 +364,35 @@ export async function routeActivity(req, res, url, origin) {
               data: { timerAllowance: allowance },
             });
             return true;
+          }
+        }
+
+        // Project budget gate (item 4 of the budget fixes plan) - applies to
+        // both branches above alike, since sessionProjectId is resolved by
+        // this point whether it came from the task or (calling projects)
+        // straight from the request body. `stop_timers_when_reached` was
+        // being persisted since the project was created but nothing ever
+        // read it back to actually stop anything - this is that read.
+        if (sessionProjectId) {
+          const budget = await getProjectBudgetPg(sessionProjectId);
+          if (budget) {
+            const spent = await computeProjectSpentPg(db, sessionProjectId, budget);
+            const cap = Number(budget.cost ?? 0);
+            const usagePct = cap > 0 ? (spent / cap) * 100 : 0;
+            if (
+              budget.stop_timers_when_reached &&
+              budget.stop_timers_at_pct != null &&
+              usagePct >= Number(budget.stop_timers_at_pct)
+            ) {
+              sendJson(res, origin, 403, {
+                success: false,
+                error: "This project's budget has been reached - timers are stopped for this project.",
+              });
+              return true;
+            }
+            // Notify is best-effort and never blocks the timer - a failed
+            // notification is not a reason to stop someone from working.
+            maybeNotifyProjectBudget(db, sessionProjectId, budget, spent).catch(() => null);
           }
         }
       }

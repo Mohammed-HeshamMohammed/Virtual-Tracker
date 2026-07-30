@@ -1,5 +1,5 @@
 {
   "launchAtLogin": true,
-  "startHidden": false,
+  "startHidden": true,
   "autoSignIn": false
 }

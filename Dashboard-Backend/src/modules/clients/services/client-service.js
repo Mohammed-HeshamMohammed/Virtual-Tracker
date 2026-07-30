@@ -1,4 +1,3 @@
-import { FieldValue } from "firebase-admin/firestore";
 import {
   getProjectPg,
   linkClientProjectPg,
@@ -6,13 +5,21 @@ import {
   unlinkClientProjectPg,
 } from "../../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
-import { generateUUID, now } from "../../schema/catalog/index.js";
+import {
+  getClientPg,
+  createClientPg,
+  updateClientPg,
+  getClientBudgetPg,
+  upsertClientBudgetPg,
+  deleteClientBudgetPg,
+  getClientInvoicingPg,
+  upsertClientInvoicingPg,
+} from "../../../lib/postgres/clients-postgres.service.js";
 import {
   evaluateAndNotifyClientBudget,
   syncClientBudgetAutomationState,
 } from "./client-budget-notify.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
-import { fetchAllDocs } from "../../../lib/firestore/paginate-all.js";
 import {
   BUDGET_BASE_OPTIONS,
   BUDGET_RESET_OPTIONS,
@@ -256,103 +263,27 @@ async function assertProjectsExist(db, projectIds) {
   }
 }
 
-async function resolveClientBudgetId(db, clientId, budgetId) {
-  if (budgetId && isUuid(budgetId)) return budgetId;
-  const snap = await db.collection("client_budgets").where("client_id", "==", clientId).limit(1).get();
-  return snap.docs[0]?.id ?? null;
-}
-
-async function resolveClientInvoicingId(db, clientId, invoicingId) {
-  if (invoicingId && isUuid(invoicingId)) return invoicingId;
-  const snap = await db.collection("client_invoicing").where("client_id", "==", clientId).limit(1).get();
-  return snap.docs[0]?.id ?? null;
-}
-
-export async function upsertClientBudget(db, clientId, budget, budgetId, actorId) {
-  const resolvedId = await resolveClientBudgetId(db, clientId, budgetId);
-
+// budgetId param kept for call-site compatibility (edit path used to pass the
+// loaded budget's id) but is no longer needed - client_budgets has a unique
+// index on client_id, so ON CONFLICT (client_id) replaces the Firestore-era
+// "resolve the existing doc id, then branch on create vs update" dance.
+export async function upsertClientBudget(db, clientId, budget, _budgetId, actorId) {
   if (!budget || budget.type === "none") {
-    if (resolvedId) {
-      await db.collection("client_budgets").doc(resolvedId).delete();
-    }
+    await deleteClientBudgetPg(clientId);
     await syncClientBudgetAutomationState(db, clientId, null);
     return null;
   }
 
-  const payload = {
-    client_id: clientId,
-    type: budget.type,
-    based_on: budget.basedOn,
-    cost: budget.cost,
-    notify_at_pct: budget.notifyAt,
-    resets: budget.resets,
-    updated_at: now(),
-  };
-  if (actorId) payload.updated_by = actorId;
-
-  if (resolvedId) {
-    await db.collection("client_budgets").doc(resolvedId).set(
-      {
-        ...payload,
-        start_date: FieldValue.delete(),
-        startDate: FieldValue.delete(),
-      },
-      { merge: true },
-    );
-    const saved = await db.collection("client_budgets").doc(resolvedId).get();
-    await syncClientBudgetAutomationState(db, clientId, budget);
-    await evaluateAndNotifyClientBudget(db, clientId).catch(() => null);
-    return saved;
-  }
-
-  const id = generateUUID();
-  await db.collection("client_budgets").doc(id).set({
-    ...payload,
-    id,
-    created_at: now(),
-    ...(actorId ? { created_by: actorId } : {}),
-  });
-  const created = await db.collection("client_budgets").doc(id).get();
+  const saved = await upsertClientBudgetPg(clientId, budget, actorId);
   await syncClientBudgetAutomationState(db, clientId, budget);
   await evaluateAndNotifyClientBudget(db, clientId).catch(() => null);
-  return created;
+  return saved;
 }
 
-export async function upsertClientInvoicing(db, clientId, invoicing, invoicingId, actorId) {
-  const resolvedId = await resolveClientInvoicingId(db, clientId, invoicingId);
-
-  const payload = {
-    client_id: clientId,
-    custom_for_client: invoicing.custom,
-    notes: invoicing.notes,
-    net_terms_days: invoicing.netTerms,
-    tax_rate: invoicing.taxRate,
-    auto_invoicing: invoicing.autoInvoicing,
-    auto_invoice_amount_based_on: invoicing.autoAmountBasis,
-    auto_fixed_amount: invoicing.autoFixedAmount,
-    auto_invoice_frequency: invoicing.autoFrequency,
-    auto_invoice_delay_days: invoicing.autoDelaySending,
-    auto_invoice_reminder_days: invoicing.autoReminderDays,
-    auto_invoice_line_items: invoicing.autoLineItems,
-    include_non_billable_time: invoicing.autoIncludeNonBillable,
-    include_expenses: invoicing.autoIncludeExpenses,
-    updated_at: now(),
-  };
-  if (actorId) payload.updated_by = actorId;
-
-  if (resolvedId) {
-    await db.collection("client_invoicing").doc(resolvedId).set(payload, { merge: true });
-    return db.collection("client_invoicing").doc(resolvedId).get();
-  }
-
-  const id = generateUUID();
-  await db.collection("client_invoicing").doc(id).set({
-    ...payload,
-    id,
-    created_at: now(),
-    ...(actorId ? { created_by: actorId } : {}),
-  });
-  return db.collection("client_invoicing").doc(id).get();
+// invoicingId param kept for call-site compatibility, unused for the same
+// reason as upsertClientBudget's _budgetId above.
+export async function upsertClientInvoicing(db, clientId, invoicing, _invoicingId, actorId) {
+  return upsertClientInvoicingPg(clientId, invoicing, actorId);
 }
 
 export async function syncClientProjects(db, clientId, projectIds, actorId) {
@@ -369,87 +300,23 @@ export async function syncClientProjects(db, clientId, projectIds, actorId) {
 }
 
 export async function listClientsEnriched(db) {
-  const [clientsDocs, budgetsSnap, invoicingSnap, clientProjectRows] = await Promise.all([
-    fetchAllDocs(
-      db.collection("clients")
-        .select(
-          "status",
-          "name",
-          "street_address",
-          "streetAddress",
-          "city",
-          "state",
-          "zip",
-          "country",
-          "phone_number",
-          "phoneNumber",
-          "email_addresses",
-          "emailAddresses",
-          "member_id",
-          "memberId"
-        )
-    ),
-    db.collection("client_budgets")
-      .select(
-        "client_id",
-        "clientId",
-        "type",
-        "based_on",
-        "basedOn",
-        "cost",
-        "notify_at_pct",
-        "notifyAtPct",
-        "resets",
-      )
-      .limit(1000)
-      .get(),
-    db.collection("client_invoicing")
-      .select(
-        "client_id",
-        "clientId",
-        "custom_for_client",
-        "customForClient",
-        "notes",
-        "net_terms_days",
-        "netTermsDays",
-        "tax_rate",
-        "taxRate",
-        "auto_invoicing",
-        "autoInvoicing",
-        "auto_invoice_amount_based_on",
-        "autoInvoiceAmountBasedOn",
-        "auto_fixed_amount",
-        "autoFixedAmount",
-        "auto_invoice_frequency",
-        "autoInvoiceFrequency",
-        "auto_invoice_delay_days",
-        "autoInvoiceDelayDays",
-        "auto_invoice_reminder_days",
-        "autoInvoiceReminderDays",
-        "auto_invoice_line_items",
-        "autoInvoiceLineItems",
-        "include_non_billable_time",
-        "includeNonBillableTime",
-        "include_expenses",
-        "includeExpenses"
-      )
-      .limit(1000)
-      .get(),
+  const [clientRows, budgetRows, invoicingRows, clientProjectRows] = await Promise.all([
+    pgQuery("SELECT * FROM clients ORDER BY created_at"),
+    pgQuery("SELECT * FROM client_budgets"),
+    pgQuery("SELECT * FROM client_invoicing"),
     pgQuery("SELECT client_id, project_id FROM client_projects"),
   ]);
 
   const budgetByClient = new Map();
-  for (const doc of budgetsSnap.docs) {
-    const row = doc.data() || {};
-    const cid = String(row.client_id ?? row.clientId ?? "").trim();
-    if (cid && !budgetByClient.has(cid)) budgetByClient.set(cid, doc);
+  for (const row of budgetRows) {
+    const cid = String(row.client_id ?? "").trim();
+    if (cid && !budgetByClient.has(cid)) budgetByClient.set(cid, row);
   }
 
   const invoicingByClient = new Map();
-  for (const doc of invoicingSnap.docs) {
-    const row = doc.data() || {};
-    const cid = String(row.client_id ?? row.clientId ?? "").trim();
-    if (cid && !invoicingByClient.has(cid)) invoicingByClient.set(cid, doc);
+  for (const row of invoicingRows) {
+    const cid = String(row.client_id ?? "").trim();
+    if (cid && !invoicingByClient.has(cid)) invoicingByClient.set(cid, row);
   }
 
   const projectsByClient = new Map();
@@ -461,32 +328,27 @@ export async function listClientsEnriched(db) {
     projectsByClient.get(cid).push(pid);
   }
 
-  return clientsDocs.map((doc) =>
+  return clientRows.map((row) =>
     mapClientResponse(
-      doc,
-      budgetByClient.get(doc.id) ?? null,
-      invoicingByClient.get(doc.id) ?? null,
-      projectsByClient.get(doc.id) ?? [],
+      row,
+      budgetByClient.get(row.id) ?? null,
+      invoicingByClient.get(row.id) ?? null,
+      projectsByClient.get(row.id) ?? [],
     ),
   );
 }
 
 export async function getClientEditState(db, clientId) {
-  const clientDoc = await db.collection("clients").doc(clientId).get();
-  if (!clientDoc.exists) throw new Error("Client not found");
+  const client = await getClientPg(clientId);
+  if (!client) throw new Error("Client not found");
 
-  const [budgetsSnap, invoicingSnap, projectIds] = await Promise.all([
-    db.collection("client_budgets").where("client_id", "==", clientId).limit(1).get(),
-    db.collection("client_invoicing").where("client_id", "==", clientId).limit(1).get(),
+  const [budget, invoicing, projectIds] = await Promise.all([
+    getClientBudgetPg(clientId),
+    getClientInvoicingPg(clientId),
     loadProjectIdsForClient(db, clientId),
   ]);
 
-  return mapClientResponse(
-    clientDoc,
-    budgetsSnap.docs[0] ?? null,
-    invoicingSnap.docs[0] ?? null,
-    projectIds,
-  );
+  return mapClientResponse(client, budget, invoicing, projectIds);
 }
 
 export async function createClientWithDetails(db, body, actorId) {
@@ -497,35 +359,25 @@ export async function createClientWithDetails(db, body, actorId) {
   await assertMemberExists(db, parsed.clientMember);
   await assertProjectsExist(db, parsed.projects);
 
-  const clientId = generateUUID();
-  const clientPayload = {
-    id: clientId,
+  const client = await createClientPg({
     name: parsed.name,
     status: "active",
-    street_address: parsed.address,
+    streetAddress: parsed.address,
     city: parsed.city,
     state: parsed.state,
     zip: parsed.zip,
     country: parsed.country,
-    phone_number: parsed.phone,
-    email_addresses: parsed.email,
-    created_at: now(),
-    updated_at: now(),
-  };
-  if (parsed.clientMember) clientPayload.member_id = parsed.clientMember;
-  if (actorId) {
-    clientPayload.created_by = actorId;
-    clientPayload.updated_by = actorId;
-  }
+    phoneNumber: parsed.phone,
+    emailAddresses: parsed.email,
+    memberId: parsed.clientMember || null,
+    actorId,
+  });
 
-  await db.collection("clients").doc(clientId).set(clientPayload);
+  const budgetDoc = await upsertClientBudget(db, client.id, parsed.budget, null, actorId);
+  const invoicingDoc = await upsertClientInvoicing(db, client.id, parsed.invoicing, null, actorId);
+  await syncClientProjects(db, client.id, parsed.projects, actorId);
 
-  const budgetDoc = await upsertClientBudget(db, clientId, parsed.budget, null, actorId);
-  const invoicingDoc = await upsertClientInvoicing(db, clientId, parsed.invoicing, null, actorId);
-  await syncClientProjects(db, clientId, parsed.projects, actorId);
-
-  const clientDoc = await db.collection("clients").doc(clientId).get();
-  return mapClientResponse(clientDoc, budgetDoc, invoicingDoc, parsed.projects);
+  return mapClientResponse(client, budgetDoc, invoicingDoc, parsed.projects);
 }
 
 export async function updateClientWithDetails(db, clientId, body, actorId) {
@@ -536,53 +388,39 @@ export async function updateClientWithDetails(db, clientId, body, actorId) {
   await assertMemberExists(db, parsed.clientMember);
   await assertProjectsExist(db, parsed.projects);
 
-  const clientRef = db.collection("clients").doc(clientId);
-  const clientDoc = await clientRef.get();
-  if (!clientDoc.exists) throw new Error("Client not found");
+  const existing = await getClientPg(clientId);
+  if (!existing) throw new Error("Client not found");
 
-  const coreUpdate = {
-    street_address: parsed.address,
+  const patch = {
+    streetAddress: parsed.address,
     city: parsed.city,
     state: parsed.state,
     zip: parsed.zip,
     country: parsed.country,
-    phone_number: parsed.phone,
-    email_addresses: parsed.email,
-    updated_at: now(),
+    phoneNumber: parsed.phone,
+    emailAddresses: parsed.email,
+    // Explicitly null when no member is linked - clears the column rather
+    // than leaving the previous value in place (Firestore's FieldValue.delete()
+    // did the equivalent for the doc-field version of this).
+    memberId: parsed.clientMember || null,
   };
-  if (parsed.name) coreUpdate.name = parsed.name;
-  if (parsed.status) coreUpdate.status = String(parsed.status).toLowerCase();
-  if (parsed.clientMember) {
-    coreUpdate.member_id = parsed.clientMember;
-  } else {
-    coreUpdate.member_id = FieldValue.delete();
-  }
-  if (actorId) coreUpdate.updated_by = actorId;
+  if (parsed.name) patch.name = parsed.name
+  if (parsed.status) patch.status = String(parsed.status).toLowerCase();
+  if (actorId) patch.updatedBy = actorId;
 
-  await clientRef.set(coreUpdate, { merge: true });
+  const updated = await updateClientPg(clientId, patch);
 
-  const budgetId =
-    parsed.budgetId && isUuid(parsed.budgetId)
-      ? parsed.budgetId
-      : await resolveClientBudgetId(db, clientId, null);
-  const invoicingId =
-    parsed.invoicingId && isUuid(parsed.invoicingId)
-      ? parsed.invoicingId
-      : await resolveClientInvoicingId(db, clientId, null);
-
-  const budgetDoc = await upsertClientBudget(db, clientId, parsed.budget, budgetId, actorId);
-  const invoicingDoc = await upsertClientInvoicing(db, clientId, parsed.invoicing, invoicingId, actorId);
+  const budgetDoc = await upsertClientBudget(db, clientId, parsed.budget, null, actorId);
+  const invoicingDoc = await upsertClientInvoicing(db, clientId, parsed.invoicing, null, actorId);
   await syncClientProjects(db, clientId, parsed.projects, actorId);
 
-  const updated = await clientRef.get();
   const projectIds = await loadProjectIdsForClient(db, clientId);
   return mapClientResponse(updated, budgetDoc, invoicingDoc, projectIds);
 }
 
 /** Resolves invoicing settings for billing (custom overrides when enabled). */
 export async function resolveClientInvoicingSettings(db, clientId) {
-  const snap = await db.collection("client_invoicing").where("client_id", "==", clientId).limit(1).get();
-  const row = snap.docs[0];
+  const row = await getClientInvoicingPg(clientId);
   if (!row) return { source: "global", settings: defaultInvoicing() };
   const mapped = mapInvoicingRow(row);
   return {

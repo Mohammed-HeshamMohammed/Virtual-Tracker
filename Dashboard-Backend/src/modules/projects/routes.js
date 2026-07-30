@@ -28,7 +28,7 @@ import {
   getProjectBudgetPg,
   getAllProjectBudgetsPg,
   upsertProjectBudgetPg,
-  computeProjectSpentPg,
+  computeProjectSpentForAllPg,
   listProjectMemberLimitsPg,
   getAllProjectMemberLimitsPg,
   upsertProjectMemberLimitPg,
@@ -295,6 +295,7 @@ export async function routeProjects(req, res, url, db, origin) {
             project.allow_project_tracking ?? project.allowProjectTracking ?? true,
           ),
           disableIdleTime: Boolean(project.disable_idle_time ?? project.disableIdleTime),
+          endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           clientIds,
           teamIds,
           managerIds,
@@ -304,7 +305,7 @@ export async function routeProjects(req, res, url, db, origin) {
             limit && (limit.member_id || limit.memberId)
               ? [String(limit.member_id || limit.memberId)]
               : [],
-          hasBudget: budget
+          budgetStopTimers: budget
             ? Boolean(budget.stop_timers_when_reached ?? budget.stopTimersWhenReached ?? true)
             : true,
           budgetId: budget ? String(budget.id) : undefined,
@@ -518,6 +519,7 @@ export async function routeProjects(req, res, url, db, origin) {
         usersNotes: body.users_notes ?? body.usersNotes,
         viewersNotes: body.viewers_notes ?? body.viewersNotes,
         type: normalizeProjectType(body.type),
+        endDate: body.end_date ?? body.endDate,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       sendJson(res, origin, 200, { success: true, data: project });
@@ -578,6 +580,7 @@ export async function routeProjects(req, res, url, db, origin) {
           managersNotes: body.managers_notes ?? body.managersNotes,
           usersNotes: body.users_notes ?? body.usersNotes,
           viewersNotes: body.viewers_notes ?? body.viewersNotes,
+          endDate: body.end_date ?? body.endDate,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {
@@ -682,10 +685,19 @@ export async function routeProjects(req, res, url, db, origin) {
       const projectId = url.searchParams.get("project_id");
       const rows = projectId ? [await getProjectBudgetPg(projectId)].filter(Boolean) : await scopedRows(await getAllProjectBudgetsPg());
       // Real spent, not a stored/fabricated value - see computeProjectSpentPg.
-      // Always computed (test-data scale, cost of a per-row query is fine here).
-      const data = await Promise.all(
-        rows.map(async (row) => ({ ...row, spent: await computeProjectSpentPg(db, row.project_id, row) })),
+      // Batched (computeProjectSpentForAllPg), not one query per row - this
+      // endpoint returns every project's budget in one call on the projects
+      // list page, so "per row" here used to mean "per project in the org".
+      const spentByProject = await computeProjectSpentForAllPg(
+        db,
+        rows.map((row) => ({
+          id: row.project_id,
+          type: row.type,
+          based_on: row.based_on,
+          include_non_billable_time: row.include_non_billable_time,
+        })),
       );
+      const data = rows.map((row) => ({ ...row, spent: spentByProject.get(row.project_id) ?? 0 }));
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[project-budgets GET]", e);
@@ -701,6 +713,24 @@ export async function routeProjects(req, res, url, db, origin) {
       const projectId = String(body.project_id ?? body.projectId ?? "").trim();
       if (!projectId) {
         sendJson(res, origin, 400, { success: false, error: "project_id is required" });
+        return true;
+      }
+      // Every project requires a real budget (item 6 of the budget fixes plan) -
+      // the client-side validator enforces this too, but the server is the real
+      // gate, since `upsertProjectBudgetPg` otherwise defaults a missing cost to 0.
+      if (!(Number(body.cost) > 0)) {
+        sendJson(res, origin, 400, { success: false, error: "cost must be greater than 0" });
+        return true;
+      }
+      // Calling projects have no tasks and no per-task bill/pay-rate anchor -
+      // only Hours based is coherent (item 2 of the budget fixes plan). The
+      // UI already forces this; this is the real gate.
+      const project = await getProjectPg(projectId);
+      if (project && String(project.type || "normal") === "calling" && String(body.type) !== "Hours based") {
+        sendJson(res, origin, 400, {
+          success: false,
+          error: "Calling projects only support Hours based budgets.",
+        });
         return true;
       }
       const viewer = await assertProjectDomainWrite(projectId, null);
@@ -746,6 +776,20 @@ export async function routeProjects(req, res, url, db, origin) {
       const body = await readJsonBody(req);
       validateProjectDomainBody("project-budgets", body, true);
       const current = await getProjectBudgetPg(existing.project_id);
+      const effectiveCost = Number(body.cost ?? current?.cost);
+      if (!(effectiveCost > 0)) {
+        sendJson(res, origin, 400, { success: false, error: "cost must be greater than 0" });
+        return true;
+      }
+      const effectiveType = String(body.type ?? current?.type);
+      const project = await getProjectPg(existing.project_id);
+      if (project && String(project.type || "normal") === "calling" && effectiveType !== "Hours based") {
+        sendJson(res, origin, 400, {
+          success: false,
+          error: "Calling projects only support Hours based budgets.",
+        });
+        return true;
+      }
       const row = await upsertProjectBudgetPg(
         existing.project_id,
         {

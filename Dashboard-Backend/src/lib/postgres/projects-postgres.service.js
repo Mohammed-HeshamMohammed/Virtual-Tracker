@@ -9,6 +9,7 @@
 import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getSingleByMemberId } from "./member-data-store.js";
+import { getClientBudgetPg } from "./clients-postgres.service.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -28,14 +29,14 @@ function dateOrNull(value) {
 /** @param {{ name: string, status?: string, billable?: boolean, disableActivity?: boolean,
  *   allowProjectTracking?: boolean, disableIdleTime?: boolean, clientId?: string|null,
  *   managersNotes?: string, usersNotes?: string, viewersNotes?: string,
- *   type?: "normal"|"calling", createdBy?: string }} data */
+ *   type?: "normal"|"calling", endDate?: string|null, createdBy?: string }} data */
 export async function createProjectPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
-       client_id, managers_notes, users_notes, viewers_notes, type, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+       client_id, managers_notes, users_notes, viewers_notes, type, end_date, created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
      RETURNING *`,
     [
       id,
@@ -50,6 +51,7 @@ export async function createProjectPg(data) {
       data.usersNotes ?? null,
       data.viewersNotes ?? null,
       data.type ?? "normal",
+      dateOrNull(data.endDate),
       uuidOrNull(data.createdBy),
     ],
   );
@@ -74,13 +76,14 @@ export async function updateProjectPg(id, patch) {
     managersNotes: "managers_notes",
     usersNotes: "users_notes",
     viewersNotes: "viewers_notes",
+    endDate: "end_date",
     updatedBy: "updated_by",
   };
   const sets = [];
   const params = [id];
   for (const [key, column] of Object.entries(columns)) {
     if (!(key in patch)) continue;
-    params.push(key === "clientId" ? uuidOrNull(patch[key]) : patch[key]);
+    params.push(key === "clientId" ? uuidOrNull(patch[key]) : key === "endDate" ? dateOrNull(patch[key]) : patch[key]);
     sets.push(`${column} = $${params.length}`);
   }
   if (sets.length === 0) return getProjectPg(id);
@@ -317,27 +320,61 @@ export async function listProjectIdsForTeamPg(teamId) {
 // ---------------------------------------------------------------------------
 
 /**
- * Tracked seconds for a project within a date range, from the real time_entries
- * table - this IS a correct "hours spent" number for an Hours-based budget.
+ * Tracked seconds for a project within a date range, from BOTH real time
+ * sources: live timer sessions (activity_sessions) and manually filed
+ * timesheet rows (time_entries). These are two different sources of truth,
+ * not two representations of the same fact, so UNION ALL rather than a join -
+ * a normal-project task timer and a calling-project task-less timer both land
+ * in activity_sessions (project_id is populated for both, see the ALTER TABLE
+ * comment on that column), while manual entries only ever land in
+ * time_entries. Before this, only time_entries was read here, so project
+ * spend never moved even while timers ran (see proposal doc "Related Bug" #1).
+ *
+ * Legacy caveat, accepted rather than backfilled: activity_sessions rows
+ * written before its project_id column existed are NULL there and are not
+ * counted here. No backfill in this codebase - test environment, existing
+ * rows are disposable.
+ *
+ * activity_sessions has no billable flag - sessions are always treated as
+ * billable (matches how the timer is used); includeNonBillable only filters
+ * the time_entries leg.
  * @param {string} projectId
  * @param {{ fromDate?: string|null, toDate?: string|null, includeNonBillable?: boolean }} [options]
  */
 export async function getProjectTrackedSecondsPg(projectId, options = {}) {
-  const params = [projectId];
-  let where = "project_id = $1 AND status != 'rejected'";
+  // One shared params array - every placeholder below is numbered against
+  // this array's final length, not against each subquery in isolation, since
+  // both WHERE clauses land in the same query string.
+  const params = [projectId, projectId];
+  let sessionWhere = "project_id = $1";
+  let entryWhere = "project_id = $2 AND status != 'rejected'";
+
   if (options.fromDate) {
     params.push(options.fromDate);
-    where += ` AND date >= $${params.length}`;
+    sessionWhere += ` AND started_at::date >= $${params.length}`;
+    params.push(options.fromDate);
+    entryWhere += ` AND date >= $${params.length}`;
   }
   if (options.toDate) {
     params.push(options.toDate);
-    where += ` AND date <= $${params.length}`;
+    sessionWhere += ` AND started_at::date <= $${params.length}`;
+    params.push(options.toDate);
+    entryWhere += ` AND date <= $${params.length}`;
   }
   if (options.includeNonBillable === false) {
-    where += " AND billable = true";
+    entryWhere += " AND billable = true";
   }
-  const rows = await query(`SELECT COALESCE(SUM(duration), 0) AS total FROM time_entries WHERE ${where}`, params);
-  return Math.max(0, Math.floor(Number(rows[0]?.total ?? 0)));
+
+  const rows = await query(
+    `SELECT COALESCE(SUM(secs), 0) AS total_seconds
+     FROM (
+       SELECT active_seconds AS secs FROM activity_sessions WHERE ${sessionWhere}
+       UNION ALL
+       SELECT duration AS secs FROM time_entries WHERE ${entryWhere}
+     ) tracked`,
+    params,
+  );
+  return Math.max(0, Math.floor(Number(rows[0]?.total_seconds ?? 0)));
 }
 
 /**
@@ -363,9 +400,19 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   const billableClause = options.includeNonBillable === false ? "AND billable = true" : "";
 
   if (basedOn.includes("pay")) {
+    // Same two-source union as getProjectTrackedSecondsPg, but grouped by
+    // member instead of summed flat - each member's own pay rate applies only
+    // to the hours *that member* logged. activity_sessions has member_id too,
+    // so calling-project timers (which have no time_entries row at all) are
+    // covered here as well.
     const rows = await query(
-      `SELECT member_id, COALESCE(SUM(duration), 0) AS secs FROM time_entries
-       WHERE project_id = $1 AND status != 'rejected' ${billableClause}
+      `SELECT member_id, SUM(secs) AS secs FROM (
+         SELECT member_id, active_seconds AS secs FROM activity_sessions
+         WHERE project_id = $1
+         UNION ALL
+         SELECT member_id, duration AS secs FROM time_entries
+         WHERE project_id = $1 AND status != 'rejected' ${billableClause}
+       ) tracked
        GROUP BY member_id`,
       [projectId],
     );
@@ -382,16 +429,14 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
 
   const clientIds = await listClientIdsForProjectPg(projectId);
   if (!clientIds.length) return 0;
-  const clientSnap = await db.collection("client_budgets").where("client_id", "==", clientIds[0]).limit(1).get();
-  const rate = Number(clientSnap.docs[0]?.data()?.cost ?? 0);
+  const clientBudget = await getClientBudgetPg(clientIds[0]);
+  const rate = Number(clientBudget?.cost ?? 0);
   if (rate <= 0) return 0;
 
-  const hoursRows = await query(
-    `SELECT COALESCE(SUM(duration), 0) AS secs FROM time_entries
-     WHERE project_id = $1 AND status != 'rejected' ${billableClause}`,
-    [projectId],
-  );
-  const hours = Math.max(0, Number(hoursRows[0]?.secs ?? 0)) / 3600;
+  const seconds = await getProjectTrackedSecondsPg(projectId, {
+    includeNonBillable: options.includeNonBillable,
+  });
+  const hours = seconds / 3600;
   return Math.round(hours * rate * 100) / 100;
 }
 
@@ -415,4 +460,142 @@ export async function computeProjectSpentPg(db, projectId, budgetRow) {
     basedOn: budgetRow.based_on,
     includeNonBillable,
   });
+}
+
+/**
+ * Batched replacement for calling computeProjectSpentPg in a loop (the N+1
+ * overview-service.js and the /api/project-budgets GET route both had - one
+ * query per project, plus one Firestore read per member per project for
+ * cost-based/pay-rate budgets). This does one grouped SQL pass for every
+ * Hours-based project, one grouped SQL pass for every Cost-based project's
+ * tracked seconds, and fetches each *distinct* member/client rate exactly
+ * once via Promise.all, no matter how many projects reference it.
+ *
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ id: string, type?: string, based_on?: string, include_non_billable_time?: boolean }[]} budgetRows
+ *   One row per project that has a budget (skip projects with none - they're 0 spend, not worth a query).
+ * @returns {Promise<Map<string, number>>} project_id -> spent, in the budget's own unit (hours or cost)
+ */
+export async function computeProjectSpentForAllPg(db, budgetRows) {
+  const result = new Map();
+  if (!budgetRows.length) return result;
+
+  const hoursRows = budgetRows.filter((r) => String(r.type) === "Hours based");
+  const costRows = budgetRows.filter((r) => String(r.type) !== "Hours based");
+  const payRateCostRows = costRows.filter((r) => String(r.based_on || "").toLowerCase().includes("pay"));
+  const billRateCostRows = costRows.filter((r) => !String(r.based_on || "").toLowerCase().includes("pay"));
+
+  // One grouped query for every Hours-based project's seconds. Per-project
+  // includeNonBillable flags ride along as a joined VALUES list rather than
+  // branching into one query per distinct flag value.
+  async function trackedSecondsByProject(rows) {
+    if (!rows.length) return new Map();
+    const ids = rows.map((r) => r.id);
+    const includeFlags = rows.map((r) => r.include_non_billable_time !== false);
+    const dbRows = await query(
+      `WITH proj_flags AS (
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[]) AS t(project_id, include_non_billable)
+       )
+       SELECT project_id, SUM(secs) AS total_seconds FROM (
+         SELECT s.project_id, s.active_seconds AS secs
+         FROM activity_sessions s
+         JOIN proj_flags f ON f.project_id = s.project_id
+         UNION ALL
+         SELECT te.project_id, te.duration AS secs
+         FROM time_entries te
+         JOIN proj_flags f ON f.project_id = te.project_id
+         WHERE te.status != 'rejected'
+           AND (f.include_non_billable OR te.billable = true)
+       ) tracked
+       GROUP BY project_id`,
+      [ids, includeFlags],
+    );
+    return new Map(dbRows.map((r) => [r.project_id, Math.max(0, Number(r.total_seconds ?? 0))]));
+  }
+
+  const hoursSeconds = await trackedSecondsByProject(hoursRows);
+  for (const row of hoursRows) {
+    result.set(row.id, Math.round(((hoursSeconds.get(row.id) ?? 0) / 3600) * 100) / 100);
+  }
+
+  // Cost-based / pay rate: seconds grouped by (project, member), then one
+  // Firestore read per *distinct* member across every project, in parallel -
+  // not one read per member per project.
+  if (payRateCostRows.length) {
+    const ids = payRateCostRows.map((r) => r.id);
+    const includeFlags = payRateCostRows.map((r) => r.include_non_billable_time !== false);
+    const memberRows = await query(
+      `WITH proj_flags AS (
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[]) AS t(project_id, include_non_billable)
+       )
+       SELECT project_id, member_id, SUM(secs) AS secs FROM (
+         SELECT s.project_id, s.member_id, s.active_seconds AS secs
+         FROM activity_sessions s
+         JOIN proj_flags f ON f.project_id = s.project_id
+         UNION ALL
+         SELECT te.project_id, te.member_id, te.duration AS secs
+         FROM time_entries te
+         JOIN proj_flags f ON f.project_id = te.project_id
+         WHERE te.status != 'rejected'
+           AND (f.include_non_billable OR te.billable = true)
+       ) tracked
+       GROUP BY project_id, member_id`,
+      [ids, includeFlags],
+    );
+    const distinctMemberIds = [...new Set(memberRows.map((r) => r.member_id))];
+    const rateEntries = await Promise.all(
+      distinctMemberIds.map(async (memberId) => {
+        const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
+        return [memberId, Number(payRate?.rate ?? 0)];
+      }),
+    );
+    const rateByMember = new Map(rateEntries);
+    const totalsByProject = new Map();
+    for (const row of memberRows) {
+      const rate = rateByMember.get(row.member_id) ?? 0;
+      if (rate <= 0) continue;
+      const hours = Math.max(0, Number(row.secs ?? 0)) / 3600;
+      totalsByProject.set(row.project_id, (totalsByProject.get(row.project_id) ?? 0) + hours * rate);
+    }
+    for (const row of payRateCostRows) {
+      result.set(row.id, Math.round((totalsByProject.get(row.id) ?? 0) * 100) / 100);
+    }
+  }
+
+  // Cost-based / bill rate (default): each project's own rate comes from its
+  // first linked client's hourly budget cost - one query for the client
+  // links, one query for every distinct client's rate, not one Firestore
+  // read per project (client_budgets is Postgres-resident since Phase 8 of
+  // the Clients migration, so this is a single SQL round-trip, not a batch
+  // of individual reads).
+  if (billRateCostRows.length) {
+    const ids = billRateCostRows.map((r) => r.id);
+    const clientLinkRows = await query(
+      "SELECT DISTINCT ON (project_id) project_id, client_id FROM client_projects WHERE project_id = ANY($1::uuid[]) ORDER BY project_id, assigned_at",
+      [ids],
+    );
+    const clientIdByProject = new Map(clientLinkRows.map((r) => [r.project_id, r.client_id]));
+    const distinctClientIds = [...new Set(clientIdByProject.values())];
+    const clientBudgetRows = distinctClientIds.length
+      ? await query("SELECT client_id, cost FROM client_budgets WHERE client_id = ANY($1::uuid[])", [distinctClientIds])
+      : [];
+    const rateByClient = new Map(clientBudgetRows.map((r) => [r.client_id, Number(r.cost ?? 0)]));
+    const rowsWithRate = billRateCostRows.filter((r) => {
+      const clientId = clientIdByProject.get(r.id);
+      return clientId && (rateByClient.get(clientId) ?? 0) > 0;
+    });
+    const secondsByProject = await trackedSecondsByProject(rowsWithRate);
+    for (const row of billRateCostRows) {
+      const clientId = clientIdByProject.get(row.id);
+      const rate = clientId ? rateByClient.get(clientId) ?? 0 : 0;
+      if (rate <= 0) {
+        result.set(row.id, 0);
+        continue;
+      }
+      const hours = (secondsByProject.get(row.id) ?? 0) / 3600;
+      result.set(row.id, Math.round(hours * rate * 100) / 100);
+    }
+  }
+
+  return result;
 }
