@@ -32,11 +32,16 @@ deciding what to pay, what to hold back, and what the system will cost to run.
 *Rate: 50.5 EGP/USD (July 2026). Labour reprices to the local market; **infrastructure does
 not** — every server and service line is USD-denominated. See §6.4.*
 
-**Adjusted for AI-assisted development (§7):** effort **~1,108 hrs**, delivered work
-**EGP 550,000 – 850,000**, cost to finish **EGP 255,000 – 437,000**, retainer
-**EGP 3,600 – 6,300/month**. Completeness, infrastructure cost, and every §3 finding are
-unchanged — and the CI/test work becomes *more* important, not less. **§7 supersedes §6 where
-they differ.**
+**Adjusted for AI-assisted development (§7):** effort ~1,108 hrs, delivered work
+EGP 550,000 – 850,000, retainer EGP 3,600 – 6,300/month. Completeness, infrastructure cost, and
+every §3 finding unchanged — and the CI/test work becomes *more* important, not less.
+
+**Current figures — re-measured against `main` (`9ea2a0b`), §8, which supersedes everything
+above:** effort **~1,173 hrs**, completeness **73%**, delivered work
+**EGP 600,000 – 900,000**, cost to finish **EGP 240,000 – 410,000**, all-in finished product
+**EGP 860,000 – 1,350,000**. Testing has started (2 JS test files, first 5 Rust tests);
+7 more tables migrated; agent hardened by +1,140 lines. **Every Part 3 infrastructure finding
+remains open.**
 
 **Two findings dominate everything else.**
 
@@ -825,13 +830,141 @@ and handed on.
 
 ---
 
+## Part 8 — Re-assessment against current `main` (9ea2a0b)
+
+Parts 1–7 were measured at `b3ba413`. Four commits have landed since. **This section supersedes
+all earlier figures.**
+
+```
+847e6da  feat(dashboard-backend): complete implementation.md Phase 3/3.5/4 + legacy Firestore cleanup
+8fb4d06  bug Fix
+9e66796  feat: calling projects, in-app agent recovery, idle escalation
+9ea2a0b  major Fixes
+```
+
+141 files changed, **+6,200 / −3,732**; on code files alone, **+3,759 / −1,472**.
+
+### 8.1 What genuinely improved
+
+| Metric | At `b3ba413` | **At `main`** | Change |
+|---|---:|---:|---|
+| Total source LOC | 144,255 | **145,160** | +905 net, ~5,200 lines churned |
+| **JS/TS test files** | 1 | **2** | +1 |
+| **Rust unit tests** | **0** | **5** | first Rust tests in the repo |
+| PostgreSQL tables | 30 | **37** | +7 migrated |
+| Firestore collections referenced | 24 | **21** | −3 retired |
+| Dashboard-Backend LOC | 39,778 | **39,208** | **−570** (legacy cleanup) |
+| Tauri agent LOC | 6,663 | **7,803** | **+1,140** |
+
+**The four things worth crediting:**
+
+1. **Testing has actually started.** `test/timer-allowance.test.js` is not a token test — it
+   guards a specific refactor (member daily/weekly caps shared between task timers and the new
+   task-less "calling project" timers) and its header states the exact regression it exists to
+   catch. That is how a useful test is written. Five Rust unit tests landed in
+   `agent/tracker.rs`, where previously there were none.
+2. **The Postgres migration moved.** 30 → 37 tables, 24 → 21 Firestore collections, and
+   Dashboard-Backend *shrank by 570 lines* — deleting legacy paths rather than accumulating them.
+   Net-negative diffs on a live system are a good sign.
+3. **The desktop agent got materially more robust.** +1,140 lines across `controller.rs`,
+   `tracker.rs`, token handling, and the link/session API: in-app recovery and idle escalation.
+   This is the lowest-AI-acceleration work in the codebase (§7.2, factor 0.80) and it is where
+   real reliability lives for a monitoring agent.
+4. **Documentation was reorganised** into `docs/` by service, with plans sorted into
+   `finished/`, `unfinished/`, and `not-started/`. Housekeeping, but it makes the project
+   legible to someone who did not build it — which directly lowers handover cost.
+
+### 8.2 What did not change
+
+Every infrastructure and process finding from Part 3 is **still open**, verified against `main`:
+
+| Finding | Status on `main` |
+|---|---|
+| No `postgres` or `redis` service in Compose | **Unchanged** — `grep -ciE "postgres\|redis" docker-compose.yml` → 0 |
+| `Notify-backend` has no Dockerfile, absent from Compose | **Unchanged** |
+| `.env.example` documents 15 of **49** schema variables | **Unchanged** |
+| `/monitor` publicly routed through Caddy | **Unchanged** |
+| No CI for build, lint or test — only `release.yml` | **Unchanged** |
+| No retention or purge on `activity_app_logs` / `activity_url_logs` | **Unchanged** |
+| `modules/compat/routes.js` dual-read bridge | **Unchanged — still 1,632 lines** |
+| Reports / Financials / Settings still gated, 0 / 0 / 1 API-wired files | **Unchanged** |
+
+**This is the pattern worth naming.** Four commits of solid feature and reliability work, and
+**zero commits against the structural findings.** The product is getting better while the
+foundation underneath it stays exactly as fragile — and there is now ~5,200 more lines of
+changed code that reached production through an auto-deploy pipeline with no CI gate and two
+test files.
+
+The Postgres migration illustrates the same thing from the other side: seven more tables
+migrated is real progress, but the 1,632-line compat layer is untouched, so the *carrying cost*
+of the migration has not fallen at all. Migration debt is only repaid at the cutover, not
+gradually.
+
+### 8.3 Revised figures
+
+| Line | §7 (`b3ba413`) | **§8 (`main`)** |
+|---|---:|---:|
+| Total source LOC | 144,255 | **145,160** |
+| Effort | ~1,108 hrs | **~1,173 hrs** *(+65 for the four commits)* |
+| Completeness | 71% | **73%** |
+| Effective delivered hours | 783 | **853** |
+| Implied rate | 130 LOC/hr | 124 LOC/hr |
+| **Delivered work, fair value** | EGP 550,000 – 850,000 | **EGP 600,000 – 900,000** |
+| Cost to finish | EGP 255,000 – 437,000 | **EGP 240,000 – 410,000** |
+| Reproducibility + CI (§3.2) | EGP 20,000 – 38,000 | **EGP 20,000 – 38,000** *(unchanged, still open)* |
+| Maintenance retainer | EGP 3,600 – 6,300/mo | EGP 3,600 – 6,300/mo |
+| Year-one infrastructure | EGP 86,000 – 247,000 | EGP 86,000 – 247,000 |
+| **All-in, finished product** | EGP 825,000 – 1,325,000 | **EGP 860,000 – 1,350,000** |
+
+Completion by area — only four rows moved:
+
+| Area | Weight | `b3ba413` | **`main`** |
+|---|---:|---:|---:|
+| Tasks & time tracking | 15% | 80% | **85%** |
+| Activity capture & agent | 15% | 75% | **82%** |
+| Projects & clients | 12% | 85% | **87%** |
+| All other areas | 58% | — | unchanged |
+| **Weighted total** | 100% | 70.7% | **72.7%** |
+
+The delivered value rose about **EGP 50,000** — roughly 65 hours of work at the assessed rate,
+which is what four commits of this size should be worth. The valuation moved *because work was
+delivered*, not because the assessment was revised.
+
+### 8.4 What this changes about the advice
+
+**Unchanged and now more urgent:** the CI pipeline. §3.2 priced it at EGP 20,000–38,000 and
+called it the highest-value small spend in the document. Two commits since are titled "bug Fix"
+and "major Fixes" — which is exactly the traffic a test gate is for. Every commit in this batch
+reached production unverified.
+
+**One recommendation can now be softened.** §7.5 argued the test suite was critical partly
+because *none existed*. Testing has started, in the right places, with clear intent. The
+remaining test work is now closer to **95–145 hours** than 104–156, and more importantly it has
+a pattern to follow rather than starting cold.
+
+**One should be raised.** The activity-log retention policy (§3.5, EGP 2,000–5,600) is now
+overdue rather than merely advisable. The agent got better at staying connected and recovering
+in-app — which means **more tracking sessions, more rows, and faster disk growth** against a
+projection that already showed ~2.5 years at 50 users. Improving capture reliability without
+adding retention brings that date forward.
+
+**A note on estimating from here.** The +65 hour figure for these four commits is derived from
+churn volume (~5,200 lines changed at a modification rate of ~80 LOC/hour, slower than
+greenfield because editing live code carries debugging and regression cost that new code does
+not). It is the least precise number in this document. The completion percentages and the
+verified-unchanged findings in §8.2 are the parts to rely on.
+
+---
+
 ## Sources
 
-Pricing verified July 2026. Production resource figures supplied by the client from the live
-Hostinger deployment. Exchange rate 50.5 EGP/USD. AI-acceleration factors in §7.2 are reasoned
-per work package from the observable characteristics of the codebase, not taken from a published
-benchmark — they are the most judgment-dependent figures in this document and should be treated
-as such.
+Pricing verified July 2026. Code measured at `main` (`9ea2a0b`), 29 July 2026; Parts 1–7 were
+measured at `b3ba413` and are superseded by Part 8 where they differ. Production resource figures
+supplied by the client from the live Hostinger deployment. Exchange rate 50.5 EGP/USD.
+
+AI-acceleration factors in §7.2, and the +65 hour estimate in §8.3, are reasoned from the
+observable characteristics of the codebase rather than taken from a published benchmark. They
+are the most judgment-dependent figures here and should be treated as such.
 
 - [Hostinger VPS pricing — plans and real renewal costs](https://hostadvice.com/hosting-company/hostinger-reviews/vps-pricing/)
 - [Hostinger VPS 2026 — KVM plans, specs and value](https://desking.app/review/hostinger-vps)
