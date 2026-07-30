@@ -1,4 +1,4 @@
-import { firstValidationError, parseNonNegativeNumber, parsePercentage } from "@/shared/validation"
+import { firstValidationError, parseNonNegativeNumber, parsePercentage, parsePositiveNumber } from "@/shared/validation"
 
 export function validateProjectNames(names: string[]): string | null {
   if (names.length === 0) return "Enter at least one project name."
@@ -13,9 +13,13 @@ export type ProjectBudgetFieldErrors = {
   memberLimitNotifyAt?: string | null
 }
 
-export function validateBudgetTotalValue(value: string, hasBudget: boolean): string | null {
-  if (!hasBudget || !value.trim()) return null
-  return parseNonNegativeNumber(value) === null ? "Budget total must be a valid number." : null
+// A budget is required for every project, of every type - see item 6 of the
+// budget fixes plan. This is deliberately unconditional: it used to be gated
+// on the stop-timer switch (then called `hasBudget`), which meant a project
+// created without ever opening the BUDGET tab silently saved cost = 0.
+export function validateBudgetTotalValue(value: string): string | null {
+  if (!value.trim()) return "Enter a budget greater than zero."
+  return parsePositiveNumber(value) === null ? "Enter a budget greater than zero." : null
 }
 
 export function validateBudgetNotifyAtValue(value: string): string | null {
@@ -45,7 +49,6 @@ export function validateMemberLimitNotifyAtValue(value: string): string | null {
 }
 
 export function getProjectBudgetFieldErrors(form: {
-  hasBudget: boolean
   budgetTotal: string
   budgetNotifyAt: string
   budgetStopTimersAt: string
@@ -53,7 +56,7 @@ export function getProjectBudgetFieldErrors(form: {
   memberLimitNotifyAt: string
 }): ProjectBudgetFieldErrors {
   return {
-    budgetTotal: validateBudgetTotalValue(form.budgetTotal, form.hasBudget),
+    budgetTotal: validateBudgetTotalValue(form.budgetTotal),
     budgetNotifyAt: validateBudgetNotifyAtValue(form.budgetNotifyAt),
     budgetStopTimersAt: validateBudgetStopTimersAtValue(form.budgetStopTimersAt),
     memberLimit: validateMemberLimitValue(form.memberLimit),
@@ -62,7 +65,6 @@ export function getProjectBudgetFieldErrors(form: {
 }
 
 export function validateProjectBudgetFields(form: {
-  hasBudget: boolean
   budgetTotal: string
   budgetNotifyAt: string
   budgetStopTimersAt: string

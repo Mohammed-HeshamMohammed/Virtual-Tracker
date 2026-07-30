@@ -93,9 +93,10 @@ export function useProjectMutations({
         { budgetId: editingBudgetId },
       )
     } else {
-      for (const payload of payloads) {
-        await createProjectWithDetails(payload, actor)
-      }
+      // Each name creates a fully independent project - no ordering
+      // dependency between them, so a multi-name paste creates them
+      // concurrently instead of one full create chain per name, serially.
+      await Promise.all(payloads.map((payload) => createProjectWithDetails(payload, actor)))
     }
     await refetchProjects({ forceRefetch: true })
   }

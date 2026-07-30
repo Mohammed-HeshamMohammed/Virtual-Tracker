@@ -55,13 +55,17 @@ interface AddProjectFormState {
   disableActivity: boolean
   allowProjectTracking: boolean
   disableIdleTime: boolean
+  endDate: string
   clientIds: string[]
   teams: string[]
   managers: string[]
   users: string[]
   viewers: string[]
   memberLimit: string
-  hasBudget: boolean
+  // Whether timers stop once the budget cap is reached - NOT "does this
+  // project have a budget" (every project always does, see item 6). Was
+  // named `hasBudget` before, which conflated the two.
+  budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
   budgetResets: string
@@ -122,13 +126,14 @@ function createDefaultAddForm(): AddProjectFormState {
     disableActivity: false,
     allowProjectTracking: true,
     disableIdleTime: false,
+    endDate: "",
     clientIds: [],
     teams: [],
     managers: [],
     users: [],
     viewers: [],
     memberLimit: "",
-    hasBudget: true,
+    budgetStopTimers: true,
     budgetType: "Cost based",
     budgetBasedOn: "Bill rate",
     budgetResets: "Never",
@@ -209,13 +214,14 @@ function formStateToPayload(
     disableActivity: addForm.disableActivity,
     allowProjectTracking: addForm.allowProjectTracking,
     disableIdleTime: addForm.disableIdleTime,
+    endDate: addForm.endDate,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
     managerIds,
     userIds,
     viewerIds: addForm.viewers,
     memberLimitMemberIds,
-    hasBudget: addForm.hasBudget,
+    budgetStopTimers: addForm.budgetStopTimers,
     budgetType: addForm.budgetType,
     budgetBasedOn: addForm.budgetBasedOn,
     budgetTotal: addForm.budgetTotal,
@@ -399,6 +405,7 @@ export function ProjectModal({
           disableActivity: payload.disableActivity,
           allowProjectTracking: payload.allowProjectTracking,
           disableIdleTime: payload.disableIdleTime,
+          endDate: payload.endDate || "",
           clientIds: payload.clientIds,
           teams: payload.teamIds,
           managers: payload.managerIds,
@@ -406,7 +413,7 @@ export function ProjectModal({
           viewers: payload.viewerIds,
           memberLimit: payload.memberLimitMembers ?? "",
           memberLimitMembers: payload.memberLimitMemberIds,
-          hasBudget: payload.hasBudget,
+          budgetStopTimers: payload.budgetStopTimers,
           budgetType: payload.budgetType || "Cost based",
           budgetBasedOn: payload.budgetBasedOn || "Bill rate",
           budgetResets: payload.budgetResets,
@@ -492,7 +499,7 @@ export function ProjectModal({
     const next = {
       ...prev,
       clientIds,
-      hasBudget: aggregated.hasBudget,
+      budgetStopTimers: aggregated.budgetStopTimers,
       budgetType: aggregated.budgetType,
       budgetBasedOn: aggregated.budgetBasedOn,
       budgetTotal: aggregated.budgetTotal,
@@ -591,9 +598,18 @@ export function ProjectModal({
     e.preventDefault()
     const projectNames = parseProjectNamesFromInput(addForm.projectNames)
     const namesError = validateProjectNames(projectNames)
+    const budgetErrors = getProjectBudgetFieldErrors(addForm)
     const budgetError = validateProjectBudgetFields(addForm)
     if (budgetError) {
-      setBudgetFieldErrors(getProjectBudgetFieldErrors(addForm))
+      setBudgetFieldErrors(budgetErrors)
+      // A budget is required for every project (item 6) - if the failure is
+      // on the BUDGET tab and the user is looking at a different tab, jump
+      // them there. Otherwise the error text above renders on a tab nobody's
+      // looking at.
+      if (addProjectTab !== "budget") {
+        setAddProjectTab("budget")
+        setBudgetLimitsTab("project-budget")
+      }
     }
     const validationError = namesError ?? budgetError
     if (validationError) {
@@ -686,7 +702,14 @@ export function ProjectModal({
             >
               <ProjectTypePicker
                 onSelect={(type) => {
-                  setAddForm((p) => ({ ...p, type }))
+                  setAddForm((p) => ({
+                    ...p,
+                    type,
+                    // Calling projects have no tasks and no per-task bill/pay-rate
+                    // anchor, so a Cost based budget has nothing coherent to
+                    // multiply (item 2 of the budget fixes plan) - force Hours based.
+                    ...(type === "calling" ? { budgetType: "Hours based", budgetBasedOn: "" } : {}),
+                  }))
                   setAddProjectStep("form")
                 }}
               />
@@ -748,6 +771,14 @@ export function ProjectModal({
                     ) : null}
                   </>
                 )}
+              </FormField>
+
+              <FormField label="End date" hint="Optional - purely informational, nothing archives on it">
+                <DatePickerField
+                  value={addForm.endDate}
+                  onChange={(date) => setAddForm((p) => ({ ...p, endDate: date }))}
+                  placeholder="Select date"
+                />
               </FormField>
 
               <div className={cn("space-y-3 rounded-xl border p-3", formTheme.card)}>
@@ -885,17 +916,31 @@ export function ProjectModal({
                     </p>
                   ) : null}
                   <div className={FORM_GRID}>
-                    <FormField label="Type" required className={addForm.budgetType === "Hours based" ? "sm:col-span-2" : undefined}>
-                      <ProjectModalSelect
-                        value={addForm.budgetType}
-                        onChange={(value) => setAddForm((p) => ({
-                          ...p,
-                          budgetType: value,
-                          budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
-                        }))}
-                        placeholder="Select a type"
-                        options={["Cost based", "Hours based"]}
-                      />
+                    <FormField label="Type" required className="sm:col-span-2">
+                      {addForm.type === "calling" ? (
+                        // Calling projects have no tasks and no per-task bill/pay-rate
+                        // anchor to multiply a Cost based budget against - Hours based
+                        // is the only coherent option, so this isn't a choice here.
+                        <div
+                          className={cn(
+                            "flex h-9 items-center rounded-lg border px-3 text-sm",
+                            formTheme.isDark ? "border-[#2e3447] text-[#dce1fb]" : "border-slate-200 text-slate-600",
+                          )}
+                        >
+                          Hours based
+                        </div>
+                      ) : (
+                        <ProjectModalSelect
+                          value={addForm.budgetType}
+                          onChange={(value) => setAddForm((p) => ({
+                            ...p,
+                            budgetType: value,
+                            budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
+                          }))}
+                          placeholder="Select a type"
+                          options={["Cost based", "Hours based"]}
+                        />
+                      )}
                     </FormField>
                     {addForm.budgetType !== "Hours based" ? (
                       <FormField label="Based on" required>
@@ -947,7 +992,15 @@ export function ProjectModal({
 
                   <SettingToggleRow
                     checked={addForm.budgetNotifyMembers}
-                    onChange={(next) => setAddForm((p) => ({ ...p, budgetNotifyMembers: next }))}
+                    onChange={(next) =>
+                      setAddForm((p) => ({
+                        ...p,
+                        budgetNotifyMembers: next,
+                        // Off means off - clear the dependent fields so a
+                        // stale value isn't silently what gets submitted.
+                        ...(next ? {} : { budgetNotifyAt: "", budgetWhoToNotify: "" }),
+                      }))
+                    }
                     label={
                       <>
                         Notify project members
@@ -956,12 +1009,53 @@ export function ProjectModal({
                     }
                   />
 
-                  <div className={FORM_GRID}>
-                    <FormField label="Notify at" error={budgetFieldErrors.budgetNotifyAt}>
-                      <div className="relative" aria-label="Interactive control">
+                  {addForm.budgetNotifyMembers ? (
+                    <div className={FORM_GRID}>
+                      <FormField label="Notify at" error={budgetFieldErrors.budgetNotifyAt}>
+                        <div className="relative" aria-label="Interactive control">
+                          <input
+                            value={addForm.budgetNotifyAt}
+                            onChange={(e) => updateAddForm({ budgetNotifyAt: e.target.value })}
+                            className={cn(formTheme.control, "pr-20")}
+                          />
+                          <span
+                            className={cn(
+                              "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
+                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                            )}
+                          >
+                            {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
+                          </span>
+                        </div>
+                      </FormField>
+                      <FormField label="Who to notify">
+                        <ProjectModalSelect
+                          value={addForm.budgetWhoToNotify}
+                          onChange={(value) => setAddForm((p) => ({ ...p, budgetWhoToNotify: value }))}
+                          placeholder="Select"
+                          options={["Org management", "All members"]}
+                        />
+                      </FormField>
+                    </div>
+                  ) : null}
+
+                  <SettingToggleRow
+                    checked={addForm.budgetStopTimers}
+                    onChange={(next) =>
+                      updateAddForm({
+                        budgetStopTimers: next,
+                        ...(next ? {} : { budgetStopTimersAt: "" }),
+                      })
+                    }
+                    label={addForm.budgetType === "Hours based" ? "Stop timers when hours limit is reached" : "Stop timers when budget is reached"}
+                  />
+
+                  {addForm.budgetStopTimers ? (
+                    <FormField label="Stop timers at" className="max-w-xs" error={budgetFieldErrors.budgetStopTimersAt}>
+                      <div className="relative">
                         <input
-                          value={addForm.budgetNotifyAt}
-                          onChange={(e) => updateAddForm({ budgetNotifyAt: e.target.value })}
+                          value={addForm.budgetStopTimersAt}
+                          onChange={(e) => updateAddForm({ budgetStopTimersAt: e.target.value })}
                           className={cn(formTheme.control, "pr-20")}
                         />
                         <span
@@ -974,39 +1068,7 @@ export function ProjectModal({
                         </span>
                       </div>
                     </FormField>
-                    <FormField label="Who to notify">
-                      <ProjectModalSelect
-                        value={addForm.budgetWhoToNotify}
-                        onChange={(value) => setAddForm((p) => ({ ...p, budgetWhoToNotify: value }))}
-                        placeholder="Select"
-                        options={["Org management", "All members"]}
-                      />
-                    </FormField>
-                  </div>
-
-                  <SettingToggleRow
-                    checked={addForm.hasBudget}
-                    onChange={(next) => updateAddForm({ hasBudget: next })}
-                    label={addForm.budgetType === "Hours based" ? "Stop timers when hours limit is reached" : "Stop timers when budget is reached"}
-                  />
-
-                  <FormField label="Stop timers at" className="max-w-xs" error={budgetFieldErrors.budgetStopTimersAt}>
-                    <div className="relative">
-                      <input
-                        value={addForm.budgetStopTimersAt}
-                        onChange={(e) => updateAddForm({ budgetStopTimersAt: e.target.value })}
-                        className={cn(formTheme.control, "pr-20")}
-                      />
-                      <span
-                        className={cn(
-                          "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
-                          formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                        )}
-                      >
-                        {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
-                      </span>
-                    </div>
-                  </FormField>
+                  ) : null}
 
                   <div className={FORM_GRID}>
                     <FormField label="Resets" required>
@@ -1203,7 +1265,13 @@ export function ProjectModal({
             {addProjectStep === "form" ? (
               <button
                 type="submit"
-                disabled={isSubmitting || modalContentLoading || formConfigPending}
+                disabled={
+                  isSubmitting ||
+                  modalContentLoading ||
+                  formConfigPending ||
+                  !addForm.projectNames.trim() ||
+                  !addForm.budgetTotal.trim()
+                }
                 className={cn(
                   "rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                   formTheme.accent.primarySolid,
