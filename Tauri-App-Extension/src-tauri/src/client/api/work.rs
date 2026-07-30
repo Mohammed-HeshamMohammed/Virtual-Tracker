@@ -67,7 +67,16 @@ impl ApiClient {
                 .and_then(|v| v.as_str())
                 .unwrap_or("Untitled project")
                 .to_string();
-            projects.push(crate::types::ProjectInfo { id, name });
+            let project_type = item
+                .get("type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("normal")
+                .to_string();
+            projects.push(crate::types::ProjectInfo {
+                id,
+                name,
+                project_type,
+            });
         }
         projects.sort_by_key(|p| p.name.to_lowercase());
         Ok(projects)

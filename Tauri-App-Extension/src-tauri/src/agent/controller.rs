@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -7,15 +8,17 @@ use parking_lot::Mutex;
 use crate::agent::tracker::{ActivityTracker, StatusCallback};
 use crate::auth::link_flow::{AgentLinkFlow, OnError, OnTokens};
 use crate::auth::server::AuthServer;
-use crate::auth::tokens::TokenStore;
+use crate::auth::tokens::{StoredCredentials, TokenStore};
 use crate::capture::activity::ActivityMeter;
 use crate::client::api::ApiClient;
 use crate::client::firebase::jwt_payload;
 use crate::config::Settings;
-use crate::constants::{APP_VERSION, MIN_TOKEN_LENGTH};
+use crate::client::firebase::RefreshOutcome;
+use crate::constants::{APP_VERSION, CONNECTION_FAILURE_GRACE, MIN_TOKEN_LENGTH};
 use crate::prefs::{AppSettingsView, UserPreferences};
 use crate::types::{
-    ActionResult, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
+    ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
+    SignInResult,
 };
 use crate::util::{open_url_in_launcher_or_browser, server_label};
 
@@ -29,6 +32,10 @@ pub struct AgentController {
     status: Arc<Mutex<String>>,
     status_listeners: Arc<Mutex<Vec<StatusCallback>>>,
     activity: Arc<ActivityMeter>,
+    /// Consecutive failed connection checks. One blip must not throw a
+    /// full-screen recovery view at the user, so the UI only switches after
+    /// this passes CONNECTION_FAILURE_GRACE.
+    connection_failures: Arc<AtomicU32>,
 }
 
 impl AgentController {
@@ -60,6 +67,7 @@ impl AgentController {
             status,
             status_listeners,
             activity,
+            connection_failures: Arc::new(AtomicU32::new(0)),
         })
     }
 
@@ -91,6 +99,7 @@ impl AgentController {
                 let _ = self.api.lock().post_session_action(
                     "stop",
                     task_id.as_deref(),
+                    None,
                     active_seconds,
                     idle_seconds,
                 );
@@ -120,23 +129,54 @@ impl AgentController {
     }
 
     fn restore_session(self: &Arc<Self>) {
-        let (id_token, refresh) = self.store.load();
-        if id_token.len() >= MIN_TOKEN_LENGTH {
-            self.apply_tokens(id_token, refresh);
+        let stored = self.store.load();
+        if !stored.device_id.is_empty() && !stored.agent_secret.is_empty() {
+            self.api
+                .lock()
+                .set_device_credential(&stored.device_id, &stored.agent_secret);
+        }
+        if stored.id_token.len() >= MIN_TOKEN_LENGTH {
+            self.apply_tokens(stored.id_token, stored.refresh_token);
         }
     }
 
     fn apply_tokens(self: &Arc<Self>, id_token: String, refresh_token: String) {
-        self.store.save(&id_token, &refresh_token);
         {
             let mut api = self.api.lock();
             api.set_tokens(&id_token, &refresh_token);
+            // Claim a device credential if we don't already hold one. This is
+            // what covers the browser's loopback handoff (which never hits
+            // link/exchange) and agents linked before this existed - they
+            // pick one up on their next launch instead of staying stranded.
+            if !api.has_device_credential() {
+                api.refresh_token_if_needed();
+                api.ensure_device_registered();
+            }
+            // Captured during link exchange or the call above; read it back
+            // off the client rather than threading it through every callback.
+            let device_id = api.device_id.clone().unwrap_or_default();
+            let agent_secret = api.agent_secret.clone().unwrap_or_default();
+            self.store.save(&StoredCredentials {
+                id_token: id_token.clone(),
+                refresh_token: refresh_token.clone(),
+                device_id: device_id.clone(),
+                agent_secret: agent_secret.clone(),
+            });
             let store_path = self.settings.store_path.clone();
             api.on_tokens_refreshed = Some(Box::new(move |id, refresh| {
-                TokenStore::new(store_path.clone()).save(&id, &refresh);
+                // Preserve the device credential across token rotations - a
+                // plain overwrite here would silently drop it and take in-app
+                // recovery with it.
+                TokenStore::new(store_path.clone()).save(&StoredCredentials {
+                    id_token: id,
+                    refresh_token: refresh,
+                    device_id: device_id.clone(),
+                    agent_secret: agent_secret.clone(),
+                });
             }));
             api.register_agent();
         }
+        self.connection_failures.store(0, Ordering::SeqCst);
         self.on_status_changed("Signed in — waiting for timer".into());
         self.start_tracker();
         log::info!("Account linked");
@@ -176,7 +216,15 @@ impl AgentController {
         self.link_flow.stop();
         self.flush_and_stop_tracker("re-link");
         self.store.clear();
-        self.api.lock().set_tokens("", "");
+        {
+            let mut api = self.api.lock();
+            api.set_tokens("", "");
+            // Drop the device credential too - after an explicit sign-out or
+            // re-link, this machine must not be able to quietly mint itself a
+            // new session.
+            api.set_device_credential("", "");
+        }
+        self.connection_failures.store(0, Ordering::SeqCst);
         self.on_status_changed("Linking account...".into());
 
         let controller = Arc::clone(self);
@@ -212,7 +260,15 @@ impl AgentController {
         self.link_flow.stop();
         self.flush_and_stop_tracker("sign-out");
         self.store.clear();
-        self.api.lock().set_tokens("", "");
+        {
+            let mut api = self.api.lock();
+            api.set_tokens("", "");
+            // Drop the device credential too - after an explicit sign-out or
+            // re-link, this machine must not be able to quietly mint itself a
+            // new session.
+            api.set_device_credential("", "");
+        }
+        self.connection_failures.store(0, Ordering::SeqCst);
         self.on_status_changed("Not signed in".into());
     }
 
@@ -305,6 +361,120 @@ impl AgentController {
         }
     }
 
+    /// Whether the agent can actually talk to the backend right now, as
+    /// opposed to merely holding a token. Checked on the UI's existing poll.
+    ///
+    /// The debounce matters: a single failed check is a blip, not a broken
+    /// session, and flipping the whole window on one bad request reads as the
+    /// app being broken.
+    pub fn get_connection_state(&self) -> ConnectionState {
+        let (has_token, has_device) = {
+            let api = self.api.lock();
+            (api.is_authenticated(), api.has_device_credential())
+        };
+        if !has_token {
+            self.connection_failures.store(0, Ordering::SeqCst);
+            return ConnectionState::SignedOut;
+        }
+
+        let healthy = self.api.lock().refresh_token_if_needed();
+        if healthy {
+            self.connection_failures.store(0, Ordering::SeqCst);
+            return ConnectionState::Connected;
+        }
+
+        let failures = self.connection_failures.fetch_add(1, Ordering::SeqCst) + 1;
+        if failures < CONNECTION_FAILURE_GRACE {
+            // Still inside the grace window - report healthy so the UI does
+            // not flicker on a single dropped request.
+            return ConnectionState::Connected;
+        }
+
+        // Out of grace. With a device credential we can still recover in-app;
+        // without one the only route left is a browser re-link.
+        if has_device {
+            ConnectionState::Disconnected
+        } else {
+            ConnectionState::SignedOut
+        }
+    }
+
+    /// The "Welcome back" action: get this machine talking to the backend
+    /// again without sending the user to a browser.
+    pub fn reconnect(self: &Arc<Self>) -> ReconnectResult {
+        // 1. Plain refresh first - covers expiry and transient outages.
+        if self.api.lock().refresh_token_if_needed() {
+            return self.finish_reconnect();
+        }
+
+        let outcome = self.api.lock().last_refresh;
+        if outcome == RefreshOutcome::Unreachable {
+            return ReconnectResult {
+                success: false,
+                needs_relink: false,
+                error: Some(
+                    "Still can't reach the server. Check your connection and try again.".into(),
+                ),
+            };
+        }
+
+        // 2. The refresh token is permanently dead - fall back to this
+        //    machine's own credential rather than a browser round trip.
+        match self.api.lock().reauth_with_device() {
+            Ok(()) => {}
+            Err(terminal) => {
+                return ReconnectResult {
+                    success: false,
+                    needs_relink: terminal,
+                    error: Some(if terminal {
+                        "This device is no longer linked to your account.".into()
+                    } else {
+                        "Still can't reach the server. Check your connection and try again.".into()
+                    }),
+                };
+            }
+        }
+
+        // Persist the newly minted tokens and restart tracking cleanly.
+        let (id_token, refresh_token) = {
+            let api = self.api.lock();
+            (
+                api.id_token.clone().unwrap_or_default(),
+                api.refresh_token.clone().unwrap_or_default(),
+            )
+        };
+        if id_token.is_empty() {
+            return ReconnectResult {
+                success: false,
+                needs_relink: true,
+                error: Some("Could not restore your session.".into()),
+            };
+        }
+        self.apply_tokens(id_token, refresh_token);
+        self.finish_reconnect()
+    }
+
+    fn finish_reconnect(self: &Arc<Self>) -> ReconnectResult {
+        self.connection_failures.store(0, Ordering::SeqCst);
+        if !self.api.lock().health_ok() {
+            return ReconnectResult {
+                success: false,
+                needs_relink: false,
+                error: Some("Signed in, but the server is not responding yet.".into()),
+            };
+        }
+        self.api.lock().register_agent();
+        if self.tracker.lock().is_none() {
+            self.start_tracker();
+        }
+        self.on_status_changed_local("Signed in — waiting for timer".into());
+        ReconnectResult {
+            success: true,
+            needs_relink: false,
+            error: None,
+        }
+    }
+
     pub fn get_link_status(&self) -> LinkStatus {
         let connected = self.api.lock().health_ok();
         LinkStatus {
@@ -323,7 +493,16 @@ impl AgentController {
     }
 
     pub fn get_session(&self) -> SessionInfo {
-        self.api.lock().current_session_info()
+        let mut session = self.api.lock().current_session_info();
+        // Idle state lives in the tracker, not the server - attach it to the
+        // poll the UI already runs rather than adding a second one.
+        session.idle_stage = self
+            .tracker
+            .lock()
+            .as_ref()
+            .map(|t| t.idle_stage())
+            .unwrap_or(0);
+        session
     }
 
     pub fn get_task_time_tracking(&self, task_id: &str) -> Option<crate::types::TaskTimeTracking> {
@@ -358,9 +537,44 @@ impl AgentController {
         match self.api.lock().post_session_action(
             "start",
             Some(task_id.trim()),
+            None,
             active_baseline,
             idle_baseline,
         ) {
+            Ok(session) => {
+                self.on_status_changed_local("Task session active".into());
+                ActionResult {
+                    success: true,
+                    error: None,
+                    session: Some(session),
+                }
+            }
+            Err(error) => ActionResult {
+                success: false,
+                error: Some(error),
+                session: None,
+            },
+        }
+    }
+
+    /// Timer for a "calling" project, which has no tasks at all. Kept separate
+    /// from start_task_session rather than folded into it: there is no task
+    /// estimate to seed a baseline from, and the backend gates the two on
+    /// different things (task assignment vs. project membership).
+    pub fn start_project_session(&self, project_id: &str) -> ActionResult {
+        let project_id = project_id.trim();
+        if project_id.is_empty() {
+            return ActionResult {
+                success: false,
+                error: Some("Select a project first".into()),
+                session: None,
+            };
+        }
+        match self
+            .api
+            .lock()
+            .post_session_action("start", None, Some(project_id), 0, 0)
+        {
             Ok(session) => {
                 self.on_status_changed_local("Task session active".into());
                 ActionResult {
@@ -387,7 +601,7 @@ impl AgentController {
         match self
             .api
             .lock()
-            .post_session_action("stop", task_id.as_deref(), active_seconds, idle_seconds)
+            .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds)
         {
             Ok(session) => {
                 self.on_status_changed_local("Signed in — waiting for timer".into());

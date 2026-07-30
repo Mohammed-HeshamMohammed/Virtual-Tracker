@@ -46,6 +46,8 @@ type AgentTask = {
 type ProjectInfo = {
   id: string;
   name: string;
+  // "calling" projects have no tasks — the timer runs against the project.
+  projectType: "normal" | "calling";
 };
 
 type SessionInfo = {
@@ -53,8 +55,19 @@ type SessionInfo = {
   status: string;
   taskId?: string | null;
   taskTitle?: string | null;
+  projectId?: string | null;
+  /** 0 working, 1 idle 5m, 2 idle 10m, 3 stopped for idling. */
+  idleStage?: number;
   activeSeconds?: number;
   idleSeconds?: number;
+};
+
+type ConnectionState = "connected" | "disconnected" | "signedOut";
+
+type ReconnectResult = {
+  success: boolean;
+  needsRelink: boolean;
+  error?: string;
 };
 
 type ActionResult = {
@@ -488,6 +501,78 @@ function ProfilePanel({
   );
 }
 
+/**
+ * Shown when the agent still knows who you are but can no longer talk to the
+ * backend. Name and avatar come from the cached token claims, so this renders
+ * fully offline. The button recovers in-app - it does not send you to a
+ * browser unless the device itself has been unlinked.
+ */
+function WelcomeBackPanel({
+  profile,
+  message,
+  busy,
+  needsRelink,
+  onReconnect,
+  onRelink,
+  onSignOut,
+}: {
+  profile: ProfileInfo | null;
+  message: string | null;
+  busy: boolean;
+  needsRelink: boolean;
+  onReconnect: () => void;
+  onRelink: () => void;
+  onSignOut: () => void;
+}) {
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  const name = profile?.name || "Welcome back";
+
+  return (
+    <main className="agent-tray view-home">
+      <TitleBar title="Virtual Tracker" onClose={() => void invoke("close_window")} />
+      <div className="reconnect-body">
+        <div className="reconnect-card">
+          <div className="avatar-wrap reconnect-avatar">
+            {profile?.avatarUrl && !avatarBroken ? (
+              <img
+                className="avatar-img"
+                src={profile.avatarUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                draggable={false}
+                onError={() => setAvatarBroken(true)}
+              />
+            ) : (
+              <div className="avatar-fallback">{initialsFromName(name)}</div>
+            )}
+          </div>
+
+          <h1 className="reconnect-name">{name}</h1>
+          <p className="reconnect-text">
+            {message ??
+              (needsRelink
+                ? "This device is no longer linked to your account."
+                : "Your session went idle. Reconnect to pick up where you left off.")}
+          </p>
+
+          <button
+            className="btn btn-primary reconnect-btn"
+            type="button"
+            disabled={busy}
+            onClick={needsRelink ? onRelink : onReconnect}
+          >
+            {busy ? "Reconnecting…" : needsRelink ? "Link this device again" : "Welcome back"}
+          </button>
+
+          <button className="btn btn-tertiary" type="button" disabled={busy} onClick={onSignOut}>
+            Log out instead
+          </button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 type DropdownOption = { id: string; label: string };
 
 function Dropdown({
@@ -670,6 +755,14 @@ function MainApp() {
   const [avatarError, setAvatarError] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [refreshingData, setRefreshingData] = useState(false);
+  const [connection, setConnection] = useState<ConnectionState>("connected");
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
+  const [needsRelink, setNeedsRelink] = useState(false);
+  // Distinguishes "you have no projects" from "we couldn't load them" - they
+  // used to render identically, which is what made a dead session look like an
+  // empty account.
+  const [projectsFailed, setProjectsFailed] = useState(false);
   const [bars, setBars] = useState<number[]>(() =>
     Array.from({ length: 9 }, () => 20),
   );
@@ -699,13 +792,15 @@ function MainApp() {
     (link?.status || "").toLowerCase().includes("active");
 
   const refresh = useCallback(async () => {
-    const [nextProfile, nextLink, nextSession] = await Promise.all([
+    const [nextProfile, nextLink, nextSession, nextConnection] = await Promise.all([
       invoke<ProfileInfo>("get_profile"),
       invoke<LinkStatus>("get_link_status"),
       invoke<SessionInfo>("get_session").catch(() => null),
+      invoke<ConnectionState>("get_connection_state").catch<ConnectionState>(() => "connected"),
     ]);
     setProfile(nextProfile);
     setLink(nextLink);
+    setConnection(nextConnection);
     if (nextSession) {
       setSession(nextSession);
       if (nextSession.taskId) {
@@ -724,16 +819,23 @@ function MainApp() {
     try {
       const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
+      setProjectsFailed(false);
       setSelectedProjectId((current) =>
         current && next.some((p) => p.id === current) ? current : "",
       );
     } catch {
       setProjects([]);
+      setProjectsFailed(true);
     }
   }, [signedIn]);
 
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
+  const isCallingProject = selectedProject?.projectType === "calling";
+  // Only a picked, task-based project has tasks to choose from.
+  const showTaskPicker = Boolean(selectedProjectId) && !isCallingProject;
+
   const refreshTasks = useCallback(async () => {
-    if (!signedIn || !selectedProjectId) {
+    if (!signedIn || !selectedProjectId || isCallingProject) {
       setTasks([]);
       setSelectedTaskId("");
       return;
@@ -750,7 +852,7 @@ function MainApp() {
     } catch {
       setTasks([]);
     }
-  }, [signedIn, selectedProjectId]);
+  }, [signedIn, selectedProjectId, isCallingProject]);
 
   const handleManualRefresh = async () => {
     if (refreshingData) return;
@@ -874,6 +976,29 @@ function MainApp() {
     }
   };
 
+  const handleReconnect = async () => {
+    setReconnecting(true);
+    setReconnectMessage(null);
+    try {
+      const result = await invoke<ReconnectResult>("reconnect");
+      if (result.success) {
+        setNeedsRelink(false);
+        setConnection("connected");
+        toast.success("Reconnected");
+        await refresh();
+        await refreshProjects();
+        await refreshTasks();
+      } else {
+        setNeedsRelink(result.needsRelink);
+        setReconnectMessage(result.error ?? "Could not reconnect.");
+      }
+    } catch {
+      setReconnectMessage("Could not reconnect. Try again in a moment.");
+    } finally {
+      setReconnecting(false);
+    }
+  };
+
   const handleSignOut = async () => {
     setSigningOut(true);
     setActionError(null);
@@ -889,6 +1014,10 @@ function MainApp() {
   };
 
   const handleStart = async () => {
+    if (isCallingProject) {
+      await startCallingSession();
+      return;
+    }
     if (!selectedTaskId) {
       const msg = "Select a task to start tracking";
       setActionError(msg);
@@ -906,6 +1035,33 @@ function MainApp() {
     try {
       const result = await invoke<ActionResult>("start_task_session", {
         taskId: selectedTaskId,
+      });
+      if (!result.success) {
+        const msg = result.error || "Could not start session";
+        setActionError(msg);
+        toast.error(msg);
+      } else if (result.session) {
+        setSession(result.session);
+        toast.success("Tracking session started");
+      }
+      await refresh();
+    } catch {
+      const msg = "Could not start session";
+      setActionError(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Calling projects have no task to pick, so the timer runs against the
+  // project itself. The backend enforces the member's own hour cap there.
+  const startCallingSession = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await invoke<ActionResult>("start_project_session", {
+        projectId: selectedProjectId,
       });
       if (!result.success) {
         const msg = result.error || "Could not start session";
@@ -948,11 +1104,16 @@ function MainApp() {
     }
   };
 
+  const idleStage = session?.idleStage ?? 0;
   const tone = statusTone(link?.status || "", signedIn);
   const displayName = loadingProfile ? "Loading…" : profile?.name || "Not signed in";
   const firstName =
     signedIn && profile?.name ? profile.name.trim().split(/\s+/)[0] : displayName;
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
+  // Calling sessions have no task title to show, so the project names the run.
+  const trackingLabel = isCallingProject
+    ? selectedProject?.name ?? ""
+    : selectedTask?.title ?? "";
 
   const remainingLabel = !taskTracking
     ? "—"
@@ -972,6 +1133,23 @@ function MainApp() {
 
   if (view === "settings") {
     return <SettingsPanel onBack={() => setView("home")} />;
+  }
+
+  // Recovery takes over the window only when idle. Mid-timer it stays a
+  // banner - yanking away a running clock reads as lost work, and the tracker
+  // keeps counting locally and flushes once the connection returns.
+  if (connection === "disconnected" && !tracking && view === "home") {
+    return (
+      <WelcomeBackPanel
+        profile={profile}
+        message={reconnectMessage}
+        busy={reconnecting}
+        needsRelink={needsRelink}
+        onReconnect={() => void handleReconnect()}
+        onRelink={() => void handleSignIn()}
+        onSignOut={() => void handleSignOut()}
+      />
+    );
   }
 
   if (view === "profile") {
@@ -1027,8 +1205,16 @@ function MainApp() {
                 <span className="hero-kicker">Desktop Agent</span>
                 <h1 className="hero-name">{firstName}</h1>
               </div>
-              <span className={`pill pill-${loadingProfile ? "idle" : tone}`}>
-                {loadingProfile ? "Loading" : statusLabel(link?.status || "", signedIn)}
+              <span
+                className={`pill pill-${
+                  loadingProfile ? "idle" : connection === "disconnected" ? "warn" : tone
+                }`}
+              >
+                {loadingProfile
+                  ? "Loading"
+                  : connection === "disconnected"
+                    ? "Offline"
+                    : statusLabel(link?.status || "", signedIn)}
               </span>
             </div>
 
@@ -1046,9 +1232,11 @@ function MainApp() {
                 {loadingProfile
                   ? "Checking your session…"
                   : tracking
-                    ? `Tracking${selectedTask ? ` · ${selectedTask.title}` : ""}`
+                    ? `Tracking${trackingLabel ? ` · ${trackingLabel}` : ""}`
                     : signedIn
-                      ? "Select a task and start when you’re ready"
+                      ? isCallingProject
+                        ? "Start when you’re ready"
+                        : "Select a task and start when you’re ready"
                       : "Sign in to link this PC to your account"}
               </p>
             </div>
@@ -1079,35 +1267,46 @@ function MainApp() {
             </nav>
           ) : (
             <>
-              <section className="task-card side-panel-swap">
-                <label className="task-label" htmlFor="project-select">
-                  Project
-                </label>
-                <Dropdown
-                  id="project-select"
-                  value={selectedProjectId}
-                  options={projects.map((project) => ({ id: project.id, label: project.name }))}
-                  placeholder="Select a project"
-                  emptyLabel="No projects"
-                  disabled={busy || tracking}
-                  onChange={setSelectedProjectId}
-                />
-              </section>
+              {/* Centred as a pair, so the project card visibly rides upward as
+                  the task card grows in - and sits centred on its own for a
+                  calling project, which never gets one. */}
+              <div className="selector-stack side-panel-swap">
+                <section className="task-card">
+                  <label className="task-label" htmlFor="project-select">
+                    Project
+                  </label>
+                  <Dropdown
+                    id="project-select"
+                    value={selectedProjectId}
+                    options={projects.map((project) => ({ id: project.id, label: project.name }))}
+                    placeholder="Select a project"
+                    emptyLabel={projectsFailed ? "Couldn't load projects" : "No projects"}
+                    disabled={busy || tracking}
+                    onChange={setSelectedProjectId}
+                  />
+                </section>
 
-              <section className="task-card side-panel-swap" style={{ animationDelay: "0.03s" }}>
-                <label className="task-label" htmlFor="task-select">
-                  Your tasks
-                </label>
-                <Dropdown
-                  id="task-select"
-                  value={selectedTaskId}
-                  options={tasks.map((task) => ({ id: task.id, label: task.title }))}
-                  placeholder="Select a task"
-                  emptyLabel={!selectedProjectId ? "Select a project first" : "No assigned tasks"}
-                  disabled={busy || tracking || !selectedProjectId}
-                  onChange={setSelectedTaskId}
-                />
-              </section>
+                <div
+                  className={`task-slot${showTaskPicker ? " open" : ""}`}
+                  aria-hidden={!showTaskPicker}
+                  inert={!showTaskPicker}
+                >
+                  <section className="task-card">
+                    <label className="task-label" htmlFor="task-select">
+                      Your tasks
+                    </label>
+                    <Dropdown
+                      id="task-select"
+                      value={selectedTaskId}
+                      options={tasks.map((task) => ({ id: task.id, label: task.title }))}
+                      placeholder="Select a task"
+                      emptyLabel="No assigned tasks"
+                      disabled={busy || tracking}
+                      onChange={setSelectedTaskId}
+                    />
+                  </section>
+                </div>
+              </div>
 
               <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
                 {tracking ? (
@@ -1123,7 +1322,11 @@ function MainApp() {
                   <button
                     className="btn btn-primary"
                     type="button"
-                    disabled={busy || !selectedTaskId || Boolean(taskTracking?.limitReached)}
+                    disabled={
+                      busy ||
+                      (isCallingProject ? !selectedProjectId : !selectedTaskId) ||
+                      Boolean(taskTracking?.limitReached)
+                    }
                     title={taskTracking?.limitReached ? taskTracking.allowanceMessage || "Maximum allowed work time reached." : undefined}
                     onClick={() => void handleStart()}
                   >
@@ -1148,6 +1351,15 @@ function MainApp() {
             </>
           )}
 
+          {connection === "disconnected" ? (
+            <div className="reconnect-banner">
+              <span>Connection lost — time is still being counted locally.</span>
+              <button type="button" disabled={reconnecting} onClick={() => void handleReconnect()}>
+                {reconnecting ? "Reconnecting…" : "Reconnect"}
+              </button>
+            </div>
+          ) : null}
+
           {actionError ? <p className="inline-error">{actionError}</p> : null}
 
           <button
@@ -1170,7 +1382,7 @@ function MainApp() {
           <div className="page-header">
             <div className="page-header-titles">
               <span className="page-eyebrow">Today</span>
-              <h2 className="page-title">{selectedTask ? selectedTask.title : "Time Tracking"}</h2>
+              <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
             </div>
             <button
               className="page-refresh-btn"
@@ -1189,13 +1401,16 @@ function MainApp() {
             </button>
           </div>
 
-          {signedIn && selectedTaskId ? (
+          {signedIn && (selectedTaskId || (isCallingProject && selectedProjectId)) ? (
             <>
               <div className="page-clock page-content-swap">
                 <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
                 <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
               </div>
 
+              {/* Task estimates, progress and budget are what performance is
+                  measured from - a calling project has none of it by design. */}
+              {isCallingProject ? null : (
               <div className="stat-grid page-content-swap" style={{ animationDelay: "0.04s" }}>
                 <div className="stat-card">
                   <span className="stat-card-label">Today, this task</span>
@@ -1227,6 +1442,7 @@ function MainApp() {
                   <span className="stat-card-sub">across the whole task, incl. overtime used</span>
                 </div>
               </div>
+              )}
 
               {taskTracking?.progressPercent != null ? (
                 <div className="page-progress">
@@ -1241,6 +1457,16 @@ function MainApp() {
                     />
                   </div>
                 </div>
+              ) : null}
+
+              {idleStage > 0 ? (
+                <p className={`page-idle-banner stage-${idleStage}`}>
+                  {idleStage >= 3
+                    ? "Timer stopped after 15 minutes idle. The idle time was removed from your hours."
+                    : idleStage === 2
+                      ? "Still no activity — the timer stops in 5 minutes and this idle time will be removed."
+                      : "No activity detected — this time won't be counted."}
+                </p>
               ) : null}
 
               {taskTracking?.limitReached ? (

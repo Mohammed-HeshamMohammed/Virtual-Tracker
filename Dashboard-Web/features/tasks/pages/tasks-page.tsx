@@ -249,10 +249,13 @@ export function TasksPage() {
   }, [selectedProjectId])
 
   const projectList = useMemo(() => {
+    // "calling" projects have no tasks by design - keeping them out of the
+    // picker gates this whole page (board, list, add task, wizard) at once.
+    const taskProjects = rawProjectList.filter((p: any) => p.type !== "calling")
     const privilegedRoles = new Set(["owner", "superadmin", "admin"])
-    if (privilegedRoles.has(normalizedRole)) return rawProjectList
-    if (!currentMemberId) return rawProjectList
-    return rawProjectList.filter((p: any) =>
+    if (privilegedRoles.has(normalizedRole)) return taskProjects
+    if (!currentMemberId) return taskProjects
+    return taskProjects.filter((p: any) =>
       p.members.some((m: Member) => m.id === currentMemberId)
     )
   }, [rawProjectList, normalizedRole, currentMemberId])

@@ -167,7 +167,7 @@ export async function fetchProjectsList(): Promise<any[]> {
   if (cached && cached.length > 0) return cached
 
   const [rows, links, allMembers] = await Promise.all([
-    getProjects({ fields: ["id", "name", "status"] }),
+    getProjects({ fields: ["id", "name", "status", "type"] }),
     getProjectMembers(undefined, { fields: ["id", "project_id", "member_id", "project_role"] }),
     getMembers({ fields: ["id", "first_name", "last_name", "name", "avatar", "avatar_url", "avatar_color"] }),
   ])
@@ -200,6 +200,7 @@ export async function fetchProjectsList(): Promise<any[]> {
       return {
         id: projectId,
         name: String(row.name ?? `Project ${i + 1}`),
+        type: row.type ?? "normal",
         color: TASK_PROJECT_COLORS[i % TASK_PROJECT_COLORS.length]!,
         members,
       }

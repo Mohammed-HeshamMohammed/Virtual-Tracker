@@ -19,6 +19,14 @@ import {
   resolveActivityFeedScope,
 } from "./activity-scope.js";
 import { maybeAlertLowActivity, maybeAlertMissingScreenshot } from "./activity-alerts.js";
+import {
+  newDeviceId,
+  registerAgentDevice,
+  revokeAgentDevice,
+  revokeAgentDevicesForMember,
+  verifyAgentDevice,
+} from "./agent-devices.service.js";
+import { assertMemberNotBanned } from "../members/services/member-ban-service.js";
 import { isBrowserAppName, normalizeAppName } from "./app-name.js";
 import {
   completeAgentLinkSession,
@@ -28,7 +36,13 @@ import {
 import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
-import { computeTimerAllowance, TIMER_LIMIT_REACHED_MESSAGE } from "../tasks/timer-limit.service.js";
+import {
+  computeMemberTimerAllowance,
+  computeTimerAllowance,
+  TIMER_LIMIT_REACHED_MESSAGE,
+} from "../tasks/timer-limit.service.js";
+import { isProjectMemberForTimer } from "../../http/project-access.js";
+import { getProjectPg } from "../../lib/postgres/projects-postgres.service.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
@@ -140,6 +154,7 @@ function normalizeSession(id, data) {
     activeSeconds: typeof data.active_seconds === "number" ? data.active_seconds : 0,
     idleSeconds: typeof data.idle_seconds === "number" ? data.idle_seconds : 0,
     taskId: data.task_id ?? null,
+    projectId: data.project_id ?? null,
     updatedAt: toIso(data.updated_at),
     screenshotsEnabled: isActivityScreenshotsEnabled(),
   };
@@ -233,6 +248,8 @@ export async function routeActivity(req, res, url, origin) {
     const activeSeconds = typeof body.activeSeconds === "number" ? Math.max(0, Math.floor(body.activeSeconds)) : undefined;
     const idleSeconds = typeof body.idleSeconds === "number" ? Math.max(0, Math.floor(body.idleSeconds)) : undefined;
     const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId.trim() : null;
+    const bodyProjectId =
+      typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : null;
     if (!idToken) {
       sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
       return true;
@@ -268,17 +285,25 @@ export async function routeActivity(req, res, url, origin) {
       const now = new Date();
       let open = await findOpenSession(member.memberId);
 
+      // Which project this session belongs to. Task-based sessions derive it
+      // from the task; "calling" projects have no task, so the client sends it
+      // and it is the only link between the session and the project it bills.
+      let sessionProjectId = bodyProjectId || open?.project_id || null;
+
       // Daily/weekly/task-total caps were computed but never actually gated
       // starting a session here — enforceTimerAllowanceOnSync's rejection was
       // only thrown from the best-effort task-tracking sync below, by which
       // point the session was already created and marked active. Check first.
       if (action === "start" || action === "resume") {
         const effectiveTaskId = taskId || open?.task_id || null;
+        const cumulativeActiveSeconds = Math.max(0, Math.floor(activeSeconds ?? 0));
+
         if (effectiveTaskId) {
           const task = await getTaskPg(effectiveTaskId);
           if (task) {
+            sessionProjectId = task.project_id ?? sessionProjectId;
             const allowance = await computeTimerAllowance(db, member.memberId, task, {
-              currentCumulativeActiveSeconds: Math.max(0, Math.floor(activeSeconds ?? 0)),
+              currentCumulativeActiveSeconds: cumulativeActiveSeconds,
             });
             if (allowance.limitReached) {
               sendJson(res, origin, 403, {
@@ -288,6 +313,56 @@ export async function routeActivity(req, res, url, origin) {
               });
               return true;
             }
+          }
+        } else {
+          // Task-less timer. Only "calling" projects work this way, and only
+          // for their own members - the project-membership check here is the
+          // equivalent of the task-assignment check a normal timer gets via
+          // canAccessTask below.
+          if (!sessionProjectId) {
+            sendJson(res, origin, 400, {
+              success: false,
+              error: "taskId or projectId is required to start a timer",
+            });
+            return true;
+          }
+          const project = await getProjectPg(sessionProjectId);
+          if (!project) {
+            sendJson(res, origin, 404, { success: false, error: "Project not found" });
+            return true;
+          }
+          if (String(project.type || "normal") !== "calling") {
+            sendJson(res, origin, 400, {
+              success: false,
+              error: "This project tracks time against tasks - select a task to start the timer.",
+            });
+            return true;
+          }
+          const viewer = getAuthContext(req);
+          const canTime = await isProjectMemberForTimer(
+            db,
+            { memberId: member.memberId, roleName: viewer?.roleName ?? "" },
+            sessionProjectId,
+          );
+          if (!canTime) {
+            sendJson(res, origin, 403, {
+              success: false,
+              error: "You are not assigned to this project.",
+            });
+            return true;
+          }
+          // No task estimate to enforce (that is the point of a calling
+          // project) - the member's own daily/weekly hour cap still applies.
+          const allowance = await computeMemberTimerAllowance(db, member.memberId, {
+            currentCumulativeActiveSeconds: cumulativeActiveSeconds,
+          });
+          if (allowance.limitReached) {
+            sendJson(res, origin, 403, {
+              success: false,
+              error: allowance.message || TIMER_LIMIT_REACHED_MESSAGE,
+              data: { timerAllowance: allowance },
+            });
+            return true;
           }
         }
       }
@@ -299,6 +374,7 @@ export async function routeActivity(req, res, url, origin) {
             id,
             memberId: member.memberId,
             taskId,
+            projectId: sessionProjectId,
             status: "active",
             startedAt: now,
             endedAt: null,
@@ -312,6 +388,7 @@ export async function routeActivity(req, res, url, origin) {
             status: "active",
             updatedAt: now,
             ...(taskId ? { taskId } : {}),
+            ...(sessionProjectId ? { projectId: sessionProjectId } : {}),
             ...(activeSeconds !== undefined ? { activeSeconds } : {}),
             ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
@@ -323,6 +400,7 @@ export async function routeActivity(req, res, url, origin) {
             status: "idle",
             updatedAt: now,
             ...(taskId ? { taskId } : {}),
+            ...(sessionProjectId ? { projectId: sessionProjectId } : {}),
             ...(activeSeconds !== undefined ? { activeSeconds } : {}),
             ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
@@ -334,6 +412,7 @@ export async function routeActivity(req, res, url, origin) {
             status: "active",
             updatedAt: now,
             ...(taskId ? { taskId } : {}),
+            ...(sessionProjectId ? { projectId: sessionProjectId } : {}),
             ...(activeSeconds !== undefined ? { activeSeconds } : {}),
             ...(idleSeconds !== undefined ? { idleSeconds } : {}),
           });
@@ -344,6 +423,7 @@ export async function routeActivity(req, res, url, origin) {
             id,
             memberId: member.memberId,
             taskId,
+            projectId: sessionProjectId,
             status: "active",
             startedAt: now,
             endedAt: null,
@@ -368,6 +448,7 @@ export async function routeActivity(req, res, url, origin) {
         await updatePgSession(open.id, {
           updatedAt: now,
           ...(taskId ? { taskId } : {}),
+          ...(sessionProjectId ? { projectId: sessionProjectId } : {}),
           ...(activeSeconds !== undefined ? { activeSeconds } : {}),
           ...(idleSeconds !== undefined ? { idleSeconds } : {}),
         });
@@ -1064,6 +1145,138 @@ export async function routeActivity(req, res, url, origin) {
       });
     }
     sendJson(res, origin, 200, { success: true, data: exchanged.data });
+    return true;
+  }
+
+  // Issues a device credential to an already-authenticated agent.
+  //
+  // The link/exchange response carries one on the happy path, but the browser
+  // can also hand tokens straight to the agent over loopback, which skips the
+  // exchange entirely - and agents linked before device credentials existed
+  // have none at all. Both self-heal by calling this once they have a token.
+  if (pn === "/api/activity/agent/device/register" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      body = {};
+    }
+    const idToken = readIdToken(req, url, body);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      // Server-generated so the agent never picks its own secret.
+      const deviceId = newDeviceId();
+      const agentSecret = crypto.randomBytes(32).toString("base64url");
+      const device = await registerAgentDevice({
+        memberId: member.memberId,
+        deviceId,
+        agentSecret,
+        agentSource: "tauri",
+      });
+      if (!device) {
+        sendJson(res, origin, 500, { success: false, error: "Could not register this device." });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: { deviceId, agentSecret } });
+    } catch (e) {
+      logSafeError("[activity/agent/device/register]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not register this device." });
+    }
+    return true;
+  }
+
+  // Lets an already-linked machine mint fresh credentials from its own device
+  // secret, so a dead refresh token is recoverable in-app instead of forcing
+  // the user back through a browser link (agent-reconnect-plan.md §4.2a).
+  //
+  // Deliberately re-runs every gate a normal sign-in runs - ban, member
+  // existence, account status. A device credential must never outlive the
+  // access of the account it belongs to.
+  if (pn === "/api/activity/agent/reauth" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
+      return true;
+    }
+    const deviceId = typeof body?.deviceId === "string" ? body.deviceId.trim() : "";
+    const agentSecret = typeof body?.agentSecret === "string" ? body.agentSecret.trim() : "";
+    if (!deviceId || !agentSecret) {
+      sendJson(res, origin, 400, { success: false, error: "deviceId and agentSecret are required" });
+      return true;
+    }
+
+    const auth = getAuthAdmin();
+    if (!auth) {
+      sendJson(res, origin, 503, { success: false, error: "Authentication service is not configured." });
+      return true;
+    }
+
+    try {
+      const verified = await verifyAgentDevice(deviceId, agentSecret);
+      if (!verified.ok) {
+        // 401 (not 403): the agent should treat this as "re-link required".
+        sendJson(res, origin, 401, { success: false, error: "This device is no longer linked." });
+        return true;
+      }
+
+      const memberSnap = await db.collection("members").doc(verified.memberId).get();
+      if (!memberSnap.exists) {
+        await revokeAgentDevice(deviceId);
+        sendJson(res, origin, 401, { success: false, error: "This device is no longer linked." });
+        return true;
+      }
+      const memberRow = memberSnap.data() || {};
+
+      const status = String(memberRow.status || "active").toLowerCase();
+      if (status === "archived" || status === "inactive" || status === "suspended") {
+        await revokeAgentDevicesForMember(verified.memberId);
+        sendJson(res, origin, 403, { success: false, error: "This account is no longer active." });
+        return true;
+      }
+
+      const firebaseUid = String(memberRow.firebase_uid || memberRow.firebaseUid || "").trim();
+      const email = String(memberRow.work_email || memberRow.email || "").trim().toLowerCase();
+
+      const banCheck = await assertMemberNotBanned(db, {
+        email,
+        memberId: verified.memberId,
+        firebaseUid,
+      });
+      if (!banCheck.ok) {
+        await revokeAgentDevicesForMember(verified.memberId);
+        sendJson(res, origin, banCheck.status ?? 403, { success: false, error: banCheck.error });
+        return true;
+      }
+
+      if (!firebaseUid) {
+        sendJson(res, origin, 409, {
+          success: false,
+          error: "This account has no sign-in identity. Re-link the agent.",
+        });
+        return true;
+      }
+
+      // A custom token is exchanged by the agent for a real id/refresh pair.
+      // Minting it here is what keeps recovery inside the app.
+      const customToken = await auth.createCustomToken(firebaseUid);
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { customToken, memberId: verified.memberId },
+      });
+    } catch (e) {
+      logSafeError("[activity/agent/reauth]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not re-authenticate this device." });
+    }
     return true;
   }
 

@@ -28,7 +28,22 @@ pub const ACTIVITY_MIN_SCORE: u32 = 5;
 /// active time.
 pub const IDLE_THRESHOLD_SEC: u64 = 60;
 
+// ─── Idle escalation ────────────────────────────────────────────────────────
+// Three stages. The first two only warn; the third stops the timer and
+// reverses the active time credited since the user actually stopped working,
+// so an unattended machine cannot bank hours nobody worked.
+/// First warning flag.
+pub const IDLE_FLAG_WARN_SEC: u64 = 5 * 60;
+/// Second, louder warning flag.
+pub const IDLE_FLAG_ALERT_SEC: u64 = 10 * 60;
+/// Timer stops and the idle stretch is reversed.
+pub const IDLE_FLAG_STOP_SEC: u64 = 15 * 60;
+
 pub const TOKEN_REFRESH_BUFFER_MS: i64 = 120_000;
+
+/// Consecutive failed connection checks before the agent shows its recovery
+/// screen. Two, so a single dropped request never takes over the window.
+pub const CONNECTION_FAILURE_GRACE: u32 = 2;
 pub const MIN_TOKEN_LENGTH: usize = 20;
 
 pub const HTTP_TIMEOUT_SEC: u64 = 15;

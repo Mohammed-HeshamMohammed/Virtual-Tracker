@@ -19,6 +19,7 @@ import { useCachedList } from "@/features/members/hooks"
 import { ProjectsSkeleton } from "@/features/projects/components/skeletons/projects-skeleton"
 import { ProjectsTab } from "@/features/projects/components/tables/projects-tab"
 import type { ProjectListItem as Project } from "@/features/projects/models/list"
+import type { ProjectType } from "@/features/projects/api/project-api"
 
 // Custom hooks, components & modal
 import { useProjectColumns } from "@/features/projects/hooks/use-project-columns"
@@ -33,6 +34,7 @@ function mapApiProject(
     id: string
     name: string
     status: string
+    type?: ProjectType
   },
   idx: number,
   ctx: EnrichedProjectListContext,
@@ -42,16 +44,20 @@ function mapApiProject(
   const teams = ctx.teamNamesByProject.get(id) ?? []
   const members = ctx.memberCountByProject.get(id) ?? 0
   const memberLimit = ctx.memberLimitByProject.get(id) ?? null
+  const type = p.type === "calling" ? "calling" : "normal"
 
   return {
     id,
     name: p.name || `Project ${idx + 1}`,
+    type,
     color: PROJECT_COLOR_POOL[idx % PROJECT_COLOR_POOL.length]!,
     status: p.status === "archived" ? "archived" : "active",
     teams,
     members,
     memberLimit,
-    todos: { done: 0, total: 0 },
+    // Real counts from the server-side aggregate. Calling projects have no
+    // tasks at all, so they get null rather than a misleading 0/0.
+    todos: type === "calling" ? null : ctx.taskCountsByProject.get(id) ?? { done: 0, total: 0 },
     // spent is now real - computed server-side from tracked time x rate
     // (see computeProjectSpentPg in Dashboard-Backend), not fabricated.
     budget: budgetRow

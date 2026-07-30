@@ -94,6 +94,7 @@ async function fetchFreshBase(db) {
     data: {
       member_id: row.member_id,
       task_id: row.task_id,
+      project_id: row.project_id,
       started_at: row.started_at,
       active_seconds: row.active_seconds,
       idle_seconds: row.idle_seconds,

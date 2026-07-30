@@ -23,7 +23,8 @@ use crate::config::Settings;
 use crate::constants::APP_VERSION;
 use crate::prefs::UserPreferences;
 use crate::types::{
-    ActionResult, AgentTask, LinkStatus, ProfileInfo, SessionInfo, SignInResult,
+    ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
+    SignInResult,
 };
 
 struct AppState {
@@ -144,6 +145,21 @@ fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> Act
 }
 
 #[tauri::command]
+fn get_connection_state(state: tauri::State<'_, AppState>) -> ConnectionState {
+    state.controller.get_connection_state()
+}
+
+#[tauri::command]
+fn reconnect(state: tauri::State<'_, AppState>) -> ReconnectResult {
+    state.controller.reconnect()
+}
+
+#[tauri::command]
+fn start_project_session(state: tauri::State<'_, AppState>, project_id: String) -> ActionResult {
+    state.controller.start_project_session(&project_id)
+}
+
+#[tauri::command]
 fn stop_session(state: tauri::State<'_, AppState>) -> ActionResult {
     state.controller.stop_session()
 }
@@ -254,6 +270,9 @@ pub fn run() {
             get_member_limits,
             get_member_profile,
             start_task_session,
+            start_project_session,
+            get_connection_state,
+            reconnect,
             stop_session,
         ])
         .setup(move |app| {

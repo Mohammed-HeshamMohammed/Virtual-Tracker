@@ -15,6 +15,7 @@ export const projectSchemas = [
       managers_notes: "text",
       users_notes: "text",
       viewers_notes: "text",
+      type: "string",
       status: "string",
       created_at: "timestamp",
       created_by: "uuid",

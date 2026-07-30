@@ -11,8 +11,8 @@ use crate::capture::window::get_foreground_window;
 use crate::client::api::ApiClient;
 use crate::config::Settings;
 use crate::constants::{
-    APP_LOG_INTERVAL_SEC, FIRST_SCREENSHOT_DELAY_SEC, IDLE_THRESHOLD_SEC, SESSION_POLL_SEC,
-    SESSION_SYNC_INTERVAL_SEC,
+    APP_LOG_INTERVAL_SEC, FIRST_SCREENSHOT_DELAY_SEC, IDLE_FLAG_ALERT_SEC, IDLE_FLAG_STOP_SEC,
+    IDLE_FLAG_WARN_SEC, IDLE_THRESHOLD_SEC, SESSION_POLL_SEC, SESSION_SYNC_INTERVAL_SEC,
 };
 use crate::queue::EventQueue;
 
@@ -36,6 +36,20 @@ pub struct ActivityTracker {
     /// Read by the controller on stop/quit so the final flush carries the real
     /// numbers instead of hardcoded 0s.
     task_progress: Arc<Mutex<(Option<String>, u64, u64)>>,
+    /// Current idle escalation stage, readable by the UI.
+    /// 0 = working, 1 = warned, 2 = alerted, 3 = stopped for idling.
+    idle_stage: Arc<Mutex<u8>>,
+}
+
+/// Cumulative active seconds at the last moment there was real input, plus the
+/// escalation stage already announced. When the timer is stopped for idling,
+/// the active total is rewound to `active_at_last_input` - i.e. everything
+/// credited since the user actually stopped touching the machine is reversed,
+/// which is the whole point of the flags.
+#[derive(Default)]
+struct IdleWatch {
+    stage: u8,
+    active_at_last_input: u64,
 }
 
 impl ActivityTracker {
@@ -59,7 +73,12 @@ impl ActivityTracker {
             stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
+            idle_stage: Arc::new(Mutex::new(0)),
         }
+    }
+
+    pub fn idle_stage(&self) -> u8 {
+        *self.idle_stage.lock()
     }
 
     /// Caller (`AgentController::start_tracker`) always stops any prior tracker
@@ -113,6 +132,7 @@ impl ActivityTracker {
         let mut idle_baseline: u64 = 0;
         let mut idle_elapsed: u64 = 0;
         let mut next_sync_at = Instant::now();
+        let mut idle_watch = IdleWatch::default();
 
         while !self.stop.load(Ordering::SeqCst) {
             if let Err(err) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -128,6 +148,7 @@ impl ActivityTracker {
                     &mut idle_baseline,
                     &mut idle_elapsed,
                     &mut next_sync_at,
+                    &mut idle_watch,
                 );
             })) {
                 log::warn!("Tracker tick failed: {err:?}");
@@ -160,6 +181,7 @@ impl ActivityTracker {
         idle_baseline: &mut u64,
         idle_elapsed: &mut u64,
         next_sync_at: &mut Instant,
+        idle_watch: &mut IdleWatch,
     ) {
         self.maybe_flush_queue(next_flush_at);
 
@@ -251,16 +273,60 @@ impl ActivityTracker {
             } else {
                 self.api.lock().fetch_task_time_tracking(&session_task_id)
             };
-            *active_baseline = tracking.as_ref().map(|t| t.active_seconds).unwrap_or(0);
-            *idle_baseline = tracking.as_ref().map(|t| t.idle_seconds).unwrap_or(0);
+            // Task-less (calling project) sessions have no per-task totals to
+            // re-baseline from, so the session's own accumulated seconds are
+            // the cumulative figure - without this a resume would restart the
+            // count at 0 and push a lower total than already recorded.
+            let session_seconds = |key: &str| {
+                session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
+            };
+            *active_baseline = tracking
+                .as_ref()
+                .map(|t| t.active_seconds)
+                .unwrap_or_else(|| session_seconds("activeSeconds"));
+            *idle_baseline = tracking
+                .as_ref()
+                .map(|t| t.idle_seconds)
+                .unwrap_or_else(|| session_seconds("idleSeconds"));
             *next_sync_at = Instant::now();
         }
 
         *was_active = true;
-        self.emit_status("Task session active");
 
         let now = Instant::now();
         self.tick_progress(task_id, active_baseline, active_elapsed, idle_baseline, idle_elapsed);
+
+        // Calling-project sessions have no task, so they sync on project id
+        // instead - gating purely on task id would leave their time unrecorded.
+        let session_project_id = session
+            .get("projectId")
+            .or_else(|| session.get("project_id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        if self.tick_idle_escalation(
+            idle_watch,
+            task_id,
+            &session_project_id,
+            active_baseline,
+            active_elapsed,
+            idle_baseline,
+            idle_elapsed,
+        ) {
+            // Timer was stopped for idling; this session is over.
+            *was_active = false;
+            *current_session = String::new();
+            *self.session_id.lock() = None;
+            self.reset_task_progress(
+                task_id,
+                active_baseline,
+                active_elapsed,
+                idle_baseline,
+                idle_elapsed,
+            );
+            return;
+        }
 
         if now >= *next_screenshot_at {
             self.upload_screenshot(&session_id, &window);
@@ -273,17 +339,94 @@ impl ActivityTracker {
             *last_app_log_at = now;
         }
 
-        if !task_id.is_empty() && now >= *next_sync_at {
+        if (!task_id.is_empty() || !session_project_id.is_empty()) && now >= *next_sync_at {
             let active_total = *active_baseline + *active_elapsed;
             let idle_total = *idle_baseline + *idle_elapsed;
             let _ = self.api.lock().post_session_action(
                 "sync",
-                Some(task_id.as_str()),
+                Some(task_id.as_str()).filter(|id| !id.is_empty()),
+                Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
                 active_total,
                 idle_total,
             );
             *next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
         }
+    }
+
+    /// Three-stage idle escalation. Returns true when the timer was stopped.
+    ///
+    /// Stages fire at 5 / 10 / 15 minutes without input. The first two only
+    /// warn. The third stops the timer and rewinds the active total to what it
+    /// was at the last real input - so the entire idle stretch, including the
+    /// minute that `tick_progress` credited before its own threshold kicked
+    /// in, is reversed rather than banked.
+    #[allow(clippy::too_many_arguments)]
+    fn tick_idle_escalation(
+        &self,
+        watch: &mut IdleWatch,
+        task_id: &str,
+        project_id: &str,
+        active_baseline: &u64,
+        active_elapsed: &u64,
+        idle_baseline: &u64,
+        idle_elapsed: &u64,
+    ) -> bool {
+        let idle_for = self.activity.idle_seconds();
+        let active_total = active_baseline.saturating_add(*active_elapsed);
+
+        // Real input: clear any warning and remember this as the last honest
+        // point the clock can be rewound to.
+        if idle_for < IDLE_THRESHOLD_SEC {
+            if watch.stage != 0 {
+                watch.stage = 0;
+                *self.idle_stage.lock() = 0;
+                self.emit_status("Task session active");
+            }
+            watch.active_at_last_input = active_total;
+            return false;
+        }
+
+        if idle_for >= IDLE_FLAG_STOP_SEC {
+            // Never let the rewind push the total up, and never below zero -
+            // clamping both ways because a mis-ordered snapshot would
+            // otherwise mint or destroy hours.
+            let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
+            let idle_total = idle_baseline.saturating_add(*idle_elapsed);
+
+            log::info!(
+                "Idle {}s - stopping timer and reversing {}s of active time (from {}s to {}s)",
+                idle_for,
+                reversed,
+                active_total,
+                rewound
+            );
+
+            self.set_task_progress(task_id, rewound, idle_total);
+            let _ = self.api.lock().post_session_action(
+                "stop",
+                Some(task_id).filter(|id| !id.is_empty()),
+                Some(project_id).filter(|id| !id.is_empty()),
+                rewound,
+                idle_total,
+            );
+
+            watch.stage = 3;
+            *self.idle_stage.lock() = 3;
+            watch.active_at_last_input = 0;
+            self.emit_status("Timer stopped — idle too long, idle time removed");
+            return true;
+        }
+
+        if idle_for >= IDLE_FLAG_ALERT_SEC && watch.stage < 2 {
+            watch.stage = 2;
+            *self.idle_stage.lock() = 2;
+            self.emit_status("Still idle — timer will stop soon and this idle time will be removed");
+        } else if idle_for >= IDLE_FLAG_WARN_SEC && watch.stage < 1 {
+            watch.stage = 1;
+            *self.idle_stage.lock() = 1;
+            self.emit_status("Idle — no activity detected");
+        }
+        false
     }
 
     /// Counts this tick's SESSION_POLL_SEC as idle rather than active if
@@ -332,6 +475,18 @@ impl ActivityTracker {
         *idle_baseline = 0;
         *idle_elapsed = 0;
         *self.task_progress.lock() = (None, 0, 0);
+        *self.idle_stage.lock() = 0;
+    }
+
+    /// The rewind arithmetic on its own, so it can be tested without a live
+    /// session. Returns (new_active_total, seconds_reversed).
+    ///
+    /// Clamped in both directions on purpose: a snapshot ahead of the current
+    /// total would otherwise *invent* hours, and an unsigned subtraction that
+    /// went negative would wrap to an enormous number.
+    fn rewind_active(active_total: u64, active_at_last_input: u64) -> (u64, u64) {
+        let rewound = active_at_last_input.min(active_total);
+        (rewound, active_total.saturating_sub(rewound))
     }
 
     fn upload_screenshot(
@@ -383,5 +538,51 @@ impl ActivityTracker {
         } else {
             log::warn!("App/URL upload failed for session {session_id}, queued for retry");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ActivityTracker;
+
+    // Guards the money-adjacent bit of idle escalation: when the timer auto-
+    // stops, exactly the time worked after the user stopped touching the
+    // machine must come off - no more, no less, and never a wrapped u64.
+
+    #[test]
+    fn reverses_only_the_time_credited_since_the_user_went_idle() {
+        // 3600s on the clock, 3540s of it earned before input stopped.
+        let (rewound, reversed) = ActivityTracker::rewind_active(3600, 3540);
+        assert_eq!(rewound, 3540);
+        assert_eq!(reversed, 60);
+    }
+
+    #[test]
+    fn idling_from_the_very_start_reverses_everything() {
+        let (rewound, reversed) = ActivityTracker::rewind_active(45, 0);
+        assert_eq!(rewound, 0);
+        assert_eq!(reversed, 45);
+    }
+
+    #[test]
+    fn a_snapshot_ahead_of_the_clock_cannot_invent_time() {
+        // Would go negative if subtracted naively; must clamp, not wrap.
+        let (rewound, reversed) = ActivityTracker::rewind_active(100, 500);
+        assert_eq!(rewound, 100, "must never rewind upward");
+        assert_eq!(reversed, 0);
+    }
+
+    #[test]
+    fn nothing_to_reverse_when_input_was_current() {
+        let (rewound, reversed) = ActivityTracker::rewind_active(2400, 2400);
+        assert_eq!(rewound, 2400);
+        assert_eq!(reversed, 0);
+    }
+
+    #[test]
+    fn zero_clock_stays_zero() {
+        let (rewound, reversed) = ActivityTracker::rewind_active(0, 0);
+        assert_eq!(rewound, 0);
+        assert_eq!(reversed, 0);
     }
 }

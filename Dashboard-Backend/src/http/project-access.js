@@ -82,6 +82,29 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
 }
 
 /**
+ * May start a project-scoped (task-less) timer on this project. Calling
+ * projects have no task assignment to gate on, so project membership in any
+ * role is the equivalent check - plus org admins, who can already start a
+ * timer on any task in any project.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string; roleName: string }} viewer
+ * @param {string} projectId
+ * @returns {Promise<boolean>}
+ */
+export async function isProjectMemberForTimer(db, viewer, projectId) {
+  const pid = typeof projectId === "string" ? projectId.trim() : "";
+  if (!viewer?.memberId || !pid) return false;
+
+  if (ORG_PROJECT_TASK_ADMIN_ROLES.has(normalizeRole(viewer.roleName))) return true;
+
+  const rows = await query(
+    "SELECT 1 FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 1",
+    [pid, viewer.memberId],
+  );
+  return rows.length > 0;
+}
+
+/**
  * Can write project rows (includes projects viewer created but isn't a member of yet).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{ memberId: string; roleName: string }} viewer

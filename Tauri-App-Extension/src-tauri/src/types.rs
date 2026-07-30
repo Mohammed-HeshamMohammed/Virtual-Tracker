@@ -71,11 +71,35 @@ pub struct AgentTask {
     pub project_id: String,
 }
 
+/// Whether the agent can actually reach the backend, as distinct from merely
+/// holding a token. `Disconnected` is the state that shows the recovery view.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectionState {
+    Connected,
+    Disconnected,
+    SignedOut,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReconnectResult {
+    pub success: bool,
+    /// True only when recovery genuinely needs a browser link again.
+    pub needs_relink: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
+    /// "normal" (work is tracked against tasks) or "calling" (no tasks - the
+    /// timer runs against the project itself).
+    #[serde(default)]
+    pub project_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +109,11 @@ pub struct SessionInfo {
     pub status: String,
     pub task_id: Option<String>,
     pub task_title: Option<String>,
+    pub project_id: Option<String>,
+    /// Idle escalation stage: 0 working, 1 warned (5m), 2 alerted (10m),
+    /// 3 stopped for idling (15m, idle time reversed).
+    #[serde(default)]
+    pub idle_stage: u8,
     #[serde(default)]
     pub active_seconds: u64,
     #[serde(default)]

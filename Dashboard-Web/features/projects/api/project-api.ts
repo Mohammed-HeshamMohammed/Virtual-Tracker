@@ -8,6 +8,7 @@ function toProject(input: Record<string, unknown>): Project {
   return {
     id: String(input.id ?? ""),
     name: String(input.name ?? ""),
+    type: (String(input.type ?? "normal").toLowerCase() as ProjectType) || "normal",
     clientId: String(input.clientId ?? input.client_id ?? ""),
     status: (String(input.status ?? "active").toLowerCase() as Project["status"]) || "active",
     billable: Boolean(input.billable),
@@ -33,6 +34,7 @@ function toProjectPayload(
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   if ("name" in input && input.name !== undefined) out.name = input.name
+  if ((input as CreateProjectInput).type !== undefined) out.type = (input as CreateProjectInput).type
   if (input.status !== undefined) out.status = input.status
   if (input.billable !== undefined) out.billable = input.billable
   if (input.disableActivity !== undefined) out.disable_activity = input.disableActivity
@@ -57,9 +59,17 @@ function toProjectPayload(
   return out
 }
 
+/**
+ * "calling" projects track time straight against the project with no task -
+ * tasks are what performance is calculated from, and calling work has none.
+ * Set at creation only; the backend rejects changing it afterwards.
+ */
+export type ProjectType = "normal" | "calling"
+
 export interface Project {
   id: string
   name: string
+  type: ProjectType
   clientId: string
   status: "active" | "archived" | "completed"
   billable: boolean
@@ -88,6 +98,7 @@ export interface ProjectMember {
 
 export interface CreateProjectInput {
   name: string
+  type?: ProjectType
   status?: string
   billable?: boolean
   disableActivity?: boolean
@@ -118,7 +129,7 @@ export interface UpdateProjectInput {
 
 export async function getProjects(options: RequestOptions & { fields?: string[] } = {}): Promise<Project[]> {
   const params = new URLSearchParams()
-  const fields = options.fields ?? ["id", "name", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "disableIdleTime", "disable_idle_time", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
+  const fields = options.fields ?? ["id", "name", "type", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "disableIdleTime", "disable_idle_time", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
   if (fields.length) params.set("fields", fields.join(","))
 
   const query = params.toString() ? `?${params.toString()}` : ""

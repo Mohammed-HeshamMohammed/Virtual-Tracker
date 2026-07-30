@@ -427,6 +427,7 @@ CREATE TABLE IF NOT EXISTS activity_sessions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id      UUID NOT NULL,
   task_id        UUID,
+  project_id     UUID,
   status         VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'idle', 'stopped')),
   started_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   ended_at       TIMESTAMPTZ,
@@ -440,6 +441,7 @@ CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id);
 CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_act_sess_task ON activity_sessions (task_id) WHERE task_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL;
 
 -- Daily rollups (implementation.md Phase 4.6) - fixes the midnight-crossing bug
 -- where summing a session's active_seconds by started_at attributed a session
@@ -485,6 +487,7 @@ CREATE TABLE IF NOT EXISTS projects (
   managers_notes          TEXT,
   users_notes             TEXT,
   viewers_notes           TEXT,
+  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by              UUID,

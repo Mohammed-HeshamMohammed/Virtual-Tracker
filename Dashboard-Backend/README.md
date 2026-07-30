@@ -230,11 +230,13 @@ npm run assign-owner -- --email=admin@example.com
 # Manually verify a user's email address in Firebase Auth
 npm run verify-user-email -- --email=user@example.com
 
-# Run schema migrations
-npm run migrate:profile-images
-npm run migrate:clean-presence
-npm run migrate:client-budget-start-date
+# Archive old screenshots
+npm run archive:screenshots
 ```
+
+The Postgres schema is applied automatically on boot by
+`src/lib/postgres/ensure-lookup-schema.js` — there are no migration scripts to
+run by hand.
 
 ---
 

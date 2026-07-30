@@ -728,6 +728,54 @@ body {
   gap: 8px;
 }
 
+/* Project + task pickers, centred as a group in the space above the actions.
+   Centring is what makes the project card ride upward when the task card
+   opens, instead of the task card just appearing underneath it. */
+.selector-stack {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* Never centre content out of reach on a short window - overflow spills
+     downward into the panel's scroll area instead of clipping off the top. */
+  justify-content: safe center;
+  gap: 20px;
+  flex: 1;
+  min-height: 0;
+}
+
+/* grid-template-rows 0fr -> 1fr is the one way to transition to a content-sized
+   height in CSS, so the task picker expands smoothly rather than popping in. */
+.task-slot {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.2s ease;
+}
+
+.task-slot > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+.task-slot.open {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  /* Fade after the row has started opening, so it reads as "grows, then
+     reveals" rather than both at once. */
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.22s ease 0.08s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-slot,
+  .task-slot.open {
+    transition: none;
+  }
+}
+
 .task-label {
   font-size: 10px;
   font-weight: 700;
@@ -1003,6 +1051,114 @@ body {
 .side-panel-swap,
 .page-content-swap {
   animation: fade-slide-up 0.25s ease both;
+}
+
+/* ─── Session recovery ("Welcome back") ─────────────────────────────────── */
+
+.reconnect-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: fade-slide-up 0.25s ease both;
+}
+
+.reconnect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  max-width: 320px;
+  width: 100%;
+}
+
+.reconnect-avatar {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 4px;
+}
+
+.reconnect-avatar .avatar-img,
+.reconnect-avatar .avatar-fallback {
+  width: 88px;
+  height: 88px;
+  font-size: 30px;
+}
+
+.reconnect-name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-surface);
+}
+
+.reconnect-text {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+}
+
+.reconnect-btn {
+  width: 100%;
+}
+
+/* Same disconnect, but shown without stealing the window while a timer runs. */
+.reconnect-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(232, 168, 73, 0.12);
+  border: 1px solid rgba(232, 168, 73, 0.35);
+  color: #e8a849;
+}
+
+.reconnect-banner button {
+  flex-shrink: 0;
+  border: none;
+  background: rgba(232, 168, 73, 0.2);
+  color: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.reconnect-banner button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Idle escalation notice - louder as it approaches the auto-stop. */
+.page-idle-banner {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  background: rgba(232, 168, 73, 0.1);
+  border: 1px solid rgba(232, 168, 73, 0.3);
+  color: #e8a849;
+}
+
+.page-idle-banner.stage-2 {
+  background: rgba(232, 130, 73, 0.14);
+  border-color: rgba(232, 130, 73, 0.4);
+  color: #f0904f;
+}
+
+.page-idle-banner.stage-3 {
+  background: rgba(226, 84, 84, 0.14);
+  border-color: rgba(226, 84, 84, 0.4);
+  color: #f07070;
 }
 
 /* Toast Component Styles */

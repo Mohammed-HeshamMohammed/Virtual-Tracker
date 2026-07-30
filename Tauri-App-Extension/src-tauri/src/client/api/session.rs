@@ -33,6 +33,7 @@ impl ApiClient {
         &mut self,
         action: &str,
         task_id: Option<&str>,
+        project_id: Option<&str>,
         active_seconds: u64,
         idle_seconds: u64,
     ) -> Result<crate::types::SessionInfo, String> {
@@ -50,6 +51,11 @@ impl ApiClient {
         });
         if let Some(tid) = task_id {
             payload["taskId"] = json!(tid);
+        }
+        // Calling projects have no task, so this is the only thing tying the
+        // session to the project it belongs to.
+        if let Some(pid) = project_id {
+            payload["projectId"] = json!(pid);
         }
         let res = self
             .client
@@ -81,6 +87,8 @@ impl ApiClient {
                 status: "stopped".into(),
                 task_id: None,
                 task_title: None,
+                project_id: None,
+                idle_stage: 0,
                 active_seconds: 0,
                 idle_seconds: 0,
             },
@@ -104,6 +112,13 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
         task_title: None,
+        // Filled in by the controller from the live tracker - the server has
+        // no view of local idle state.
+        idle_stage: 0,
+        project_id: data
+            .and_then(|d| d.get("projectId").or_else(|| d.get("project_id")))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
         active_seconds: data
             .and_then(|d| d.get("activeSeconds"))
             .and_then(|v| v.as_u64())

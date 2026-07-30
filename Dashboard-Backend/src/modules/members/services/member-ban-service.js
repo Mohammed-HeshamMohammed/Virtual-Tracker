@@ -11,6 +11,7 @@ import {
   patchMemberBanRecord,
   recordBanIpAndMaybeDeviceBan,
 } from "../../../lib/postgres/member-data-store.js";
+import { revokeAgentDevicesForMember } from "../../activity/agent-devices.service.js";
 import { normalizeMemberEmail } from "./eligibility.js";
 import { sendMemberBanEmail } from "./ban-email.js";
 
@@ -132,6 +133,15 @@ export async function banMember(db, input) {
     } catch (err) {
       logSafeWarn("[member-ban] Failed to disable Firebase user:", err);
     }
+  }
+
+  // Kill the desktop agent's device credentials too - otherwise a banned
+  // member's already-linked machine could keep minting fresh tokens for
+  // itself via /agent/reauth and go on tracking.
+  try {
+    await revokeAgentDevicesForMember(memberId);
+  } catch (err) {
+    logSafeWarn("[member-ban] Failed to revoke agent devices:", err);
   }
 
   const now = new Date();

@@ -10,6 +10,21 @@ use crate::auth::dpapi;
 struct StorePayload {
     id_token: String,
     refresh_token: String,
+    // Device credential; defaulted so stores written before it existed still
+    // load instead of being discarded as unreadable.
+    #[serde(default)]
+    device_id: String,
+    #[serde(default)]
+    agent_secret: String,
+}
+
+/// Everything the agent persists between launches.
+#[derive(Debug, Default, Clone)]
+pub struct StoredCredentials {
+    pub id_token: String,
+    pub refresh_token: String,
+    pub device_id: String,
+    pub agent_secret: String,
 }
 
 pub struct TokenStore {
@@ -21,36 +36,43 @@ impl TokenStore {
         Self { path }
     }
 
-    pub fn load(&self) -> (String, String) {
+    pub fn load(&self) -> StoredCredentials {
         if !self.path.exists() {
-            return (String::new(), String::new());
+            return StoredCredentials::default();
         }
         let bytes = match fs::read(&self.path) {
             Ok(b) => b,
             Err(err) => {
                 log::warn!("Could not read token store: {err}");
-                return (String::new(), String::new());
+                return StoredCredentials::default();
             }
         };
         // Current format is DPAPI-encrypted; fall back to reading it as plain
         // JSON for stores written before encryption-at-rest was added.
         let json_bytes = dpapi::unprotect(&bytes).unwrap_or(bytes);
         match serde_json::from_slice::<StorePayload>(&json_bytes) {
-            Ok(data) => (data.id_token, data.refresh_token),
+            Ok(data) => StoredCredentials {
+                id_token: data.id_token,
+                refresh_token: data.refresh_token,
+                device_id: data.device_id,
+                agent_secret: data.agent_secret,
+            },
             Err(err) => {
                 log::warn!("Could not read token store: {err}");
-                (String::new(), String::new())
+                StoredCredentials::default()
             }
         }
     }
 
-    pub fn save(&self, id_token: &str, refresh_token: &str) {
+    pub fn save(&self, credentials: &StoredCredentials) {
         if let Some(parent) = self.path.parent() {
             let _ = fs::create_dir_all(parent);
         }
         let payload = StorePayload {
-            id_token: id_token.to_string(),
-            refresh_token: refresh_token.to_string(),
+            id_token: credentials.id_token.clone(),
+            refresh_token: credentials.refresh_token.clone(),
+            device_id: credentials.device_id.clone(),
+            agent_secret: credentials.agent_secret.clone(),
         };
         let Ok(json) = serde_json::to_vec(&payload) else {
             return;

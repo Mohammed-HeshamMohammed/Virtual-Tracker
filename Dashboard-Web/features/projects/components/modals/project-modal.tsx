@@ -4,7 +4,7 @@
 "use client"
 
 import { useEffect, useMemo, useState as useComponentState, type FormEvent, type ReactNode } from "react"
-import { motion } from "framer-motion"
+import { AnimatePresence, motion } from "framer-motion"
 import { X, Info } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
@@ -16,6 +16,8 @@ import {
   type ProjectFormTab,
   type ProjectTeamOption,
 } from "@/infrastructure/api"
+import type { ProjectType } from "@/features/projects/api/project-api"
+import { ProjectTypePicker } from "@/features/projects/components/modals/project-type-picker"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers } from "@/features/teams/api/team-api"
 import {
@@ -48,6 +50,7 @@ const MODAL_BODY_CLASS = cn("min-h-0 flex-1 px-5 py-5", FORM_SCROLL_HIDDEN)
 
 interface AddProjectFormState {
   projectNames: string
+  type: ProjectType
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
@@ -114,6 +117,7 @@ type BudgetLimitsTab = "project-budget" | "member-limits"
 function createDefaultAddForm(): AddProjectFormState {
   return {
     projectNames: "",
+    type: "normal",
     billable: true,
     disableActivity: false,
     allowProjectTracking: true,
@@ -200,6 +204,7 @@ function formStateToPayload(
 
   return {
     name,
+    type: addForm.type,
     billable: addForm.billable,
     disableActivity: addForm.disableActivity,
     allowProjectTracking: addForm.allowProjectTracking,
@@ -252,6 +257,10 @@ export function ProjectModal({
   const [budgetFieldErrors, setBudgetFieldErrors] = useComponentState<ProjectBudgetFieldErrors>({})
   const [editingBudgetId, setEditingBudgetId] = useComponentState<string | undefined>(undefined)
   const [addProjectTab, setAddProjectTab] = useComponentState<AddProjectTab>("general")
+  // Type is create-time only, so editing an existing project skips the picker.
+  const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
+    isEditMode ? "form" : "type",
+  )
   const [budgetLimitsTab, setBudgetLimitsTab] = useComponentState<BudgetLimitsTab>("project-budget")
 
   const [formConfig, setFormConfig] = useComponentState<ProjectFormConfig | null>(null)
@@ -385,6 +394,7 @@ export function ProjectModal({
         setEditingBudgetId(budgetId)
         setAddForm({
           projectNames: payload.name,
+          type: payload.type ?? "normal",
           billable: payload.billable,
           disableActivity: payload.disableActivity,
           allowProjectTracking: payload.allowProjectTracking,
@@ -625,7 +635,9 @@ export function ProjectModal({
             <p className={cn("mt-0.5 text-sm", formTheme.modal.subtitle)}>
               {isEditMode
                 ? "Update project settings, members, and budget"
-                : "Add one or more projects — enter each name on a new line"}
+                : addProjectStep === "type"
+                  ? "Choose how this project tracks time — this can't be changed later"
+                  : "Add one or more projects — enter each name on a new line"}
             </p>
           </div>
           <button
@@ -640,7 +652,13 @@ export function ProjectModal({
           </button>
         </div>
 
-        <div className={cn("flex shrink-0 gap-1 overflow-x-auto border-b px-5", formTheme.modal.headerBorder)}>
+        <div
+          className={cn(
+            "flex shrink-0 gap-1 overflow-x-auto border-b px-5",
+            formTheme.modal.headerBorder,
+            addProjectStep === "type" && "hidden",
+          )}
+        >
           {addProjectTabs.map((item) => (
             <button
               key={item.key}
@@ -657,6 +675,29 @@ export function ProjectModal({
         </div>
 
         <div className={MODAL_BODY_CLASS}>
+          <AnimatePresence mode="wait" initial={false}>
+          {addProjectStep === "type" ? (
+            <motion.div
+              key="type-step"
+              initial={{ opacity: 0, x: -24 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -24 }}
+              transition={{ duration: 0.18 }}
+            >
+              <ProjectTypePicker
+                onSelect={(type) => {
+                  setAddForm((p) => ({ ...p, type }))
+                  setAddProjectStep("form")
+                }}
+              />
+            </motion.div>
+          ) : (
+          <motion.div
+            key="form-step"
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.18 }}
+          >
           {modalContentLoading ? (
             <ProjectModalSkeleton
               isDark={formTheme.isDark}
@@ -1110,6 +1151,9 @@ export function ProjectModal({
               ) : null}
             </>
           )}
+          </motion.div>
+          )}
+          </AnimatePresence>
         </div>
 
         {submitError ? (
@@ -1132,15 +1176,17 @@ export function ProjectModal({
           )}
         >
           <div className="flex gap-1">
-            {addProjectTabs.map((item) => (
-              <div
-                key={item.key}
-                className={cn(
-                  "h-1.5 w-1.5 rounded-full transition-colors",
-                  addProjectTab === item.key ? formTheme.accent.dot : formTheme.footer.dotInactive,
-                )}
-              />
-            ))}
+            {addProjectStep === "form"
+              ? addProjectTabs.map((item) => (
+                  <div
+                    key={item.key}
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full transition-colors",
+                      addProjectTab === item.key ? formTheme.accent.dot : formTheme.footer.dotInactive,
+                    )}
+                  />
+                ))
+              : null}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1154,16 +1200,18 @@ export function ProjectModal({
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || modalContentLoading || formConfigPending}
-              className={cn(
-                "rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
-                formTheme.accent.primarySolid,
-              )}
-            >
-              {isSubmitting ? "Saving…" : isEditMode ? "Save changes" : "Save"}
-            </button>
+            {addProjectStep === "form" ? (
+              <button
+                type="submit"
+                disabled={isSubmitting || modalContentLoading || formConfigPending}
+                className={cn(
+                  "rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                  formTheme.accent.primarySolid,
+                )}
+              >
+                {isSubmitting ? "Saving…" : isEditMode ? "Save changes" : "Save"}
+              </button>
+            ) : null}
           </div>
         </div>
       </form>
