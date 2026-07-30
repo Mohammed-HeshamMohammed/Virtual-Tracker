@@ -109,8 +109,9 @@ export function ProjectsTab({
             bVal = b.members
             break
           case "todos":
-            aVal = a.todos.total === 0 ? 0 : a.todos.done / a.todos.total
-            bVal = b.todos.total === 0 ? 0 : b.todos.done / b.todos.total
+            // Calling projects (todos null) sort below 0% rather than as "done".
+            aVal = !a.todos || a.todos.total === 0 ? -1 : a.todos.done / a.todos.total
+            bVal = !b.todos || b.todos.total === 0 ? -1 : b.todos.done / b.todos.total
             break
           case "budget":
             aVal = a.budget?.spent ?? 0
@@ -211,7 +212,16 @@ export function ProjectsTab({
       case "todos":
         return (
           <td key="todos" className={cellClass} style={cellStyle}>
-            <TodoProgress done={project.todos.done} total={project.todos.total} isDark={isDark} />
+            {project.todos ? (
+              <TodoProgress done={project.todos.done} total={project.todos.total} isDark={isDark} />
+            ) : (
+              <span
+                className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-400")}
+                title="Calling projects don't use tasks"
+              >
+                —
+              </span>
+            )}
           </td>
         )
       case "budget":

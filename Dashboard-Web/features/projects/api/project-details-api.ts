@@ -3,6 +3,7 @@ import { extractApiError, apiFetch, fetchJsonWithRetry, type ApiEnvelope, type R
 import { apiPath } from "@/infrastructure/api/path"
 import { resolveCurrentMemberId } from "@/features/members/services/current-member"
 import { getClients } from "@/features/clients/api/client-api"
+import { getProjectOverviewCore } from "@/features/projects/api/project-overview-api"
 import { filterValidUuids, isValidUuid } from "@/shared/utils/uuid"
 import {
   addProjectMember,
@@ -13,12 +14,14 @@ import {
   updateProject,
   type CreateProjectInput,
   type Project as ApiProject,
+  type ProjectType,
 } from "@/features/projects/api/project-api"
 
 
 /** Payload mirroring the Desktop add-project form (all tabs). */
 export interface CreateProjectFormPayload {
   name: string
+  type: ProjectType
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
@@ -472,6 +475,7 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
       : []
   return {
     ...data,
+    type: data.type === "calling" ? "calling" : "normal",
     clientIds: filterValidUuids(rawClientIds.map((id) => String(id))),
     teamIds: (data.teamIds ?? []).filter((id) => id.trim().length > 0),
     managerIds: data.managerIds ?? [],
@@ -616,6 +620,7 @@ export async function createProjectWithDetails(
 
   const projectInput: CreateProjectInput = {
     name: payload.name,
+    type: payload.type,
     status: "active",
     billable: payload.billable,
     disableActivity: payload.disableActivity,
@@ -676,14 +681,18 @@ export interface EnrichedProjectListContext {
   memberLimitByProject: Map<string, number>
   teamNamesByProject: Map<string, string[]>
   memberIdsByProject: Map<string, string[]>
+  taskCountsByProject: Map<string, { done: number; total: number }>
 }
 
 async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
-  const [budgets, members, teamLinks, limits] = await Promise.all([
+  const [budgets, members, teamLinks, limits, overview] = await Promise.all([
     getProjectBudgets(undefined, { fields: ["id", "project_id", "cost", "type", "based_on"] }).catch(() => [] as ProjectBudgetRow[]),
     getProjectMemberRows({ fields: ["id", "project_id", "member_id"] }).catch(() => [] as ProjectMemberRow[]),
     getTeamProjectLinks().catch(() => [] as TeamProjectLink[]),
     getProjectMemberLimits(undefined, { fields: ["id", "project_id", "cost"] }).catch(() => [] as ProjectMemberLimitRow[]),
+    // Task counts come from the overview endpoint's SQL aggregate rather than
+    // pulling every task row down to count client-side.
+    getProjectOverviewCore().catch(() => null),
   ])
 
   const budgetsByProject = new Map<string, ProjectBudgetRow>()
@@ -713,7 +722,19 @@ async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
     if (limit.cost > 0) memberLimitByProject.set(limit.projectId, limit.cost)
   }
 
-  return { budgetsByProject, memberCountByProject, memberLimitByProject, teamNamesByProject, memberIdsByProject }
+  const taskCountsByProject = new Map<string, { done: number; total: number }>()
+  for (const row of overview?.projects ?? []) {
+    taskCountsByProject.set(row.id, { done: row.p?.d ?? 0, total: row.p?.t ?? 0 })
+  }
+
+  return {
+    budgetsByProject,
+    memberCountByProject,
+    memberLimitByProject,
+    teamNamesByProject,
+    memberIdsByProject,
+    taskCountsByProject,
+  }
 }
 
 export async function fetchEnrichedProjects(): Promise<{
@@ -721,7 +742,7 @@ export async function fetchEnrichedProjects(): Promise<{
   context: EnrichedProjectListContext
 }> {
   const [projects, context] = await Promise.all([
-    getProjects({ fields: ["id", "name", "status"] }),
+    getProjects({ fields: ["id", "name", "status", "type"] }),
     loadProjectListContext(),
   ])
   return { projects, context }
