@@ -21,6 +21,7 @@ import {
   resolveClientInvoicingSettings,
   updateClientWithDetails,
 } from "./services/client-service.js";
+import { getClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 
@@ -70,19 +71,14 @@ export async function routeClients(req, res, url, db, origin) {
   if (pn === "/api/clients/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [membersDocs, projectRows, clientsDocs] = await Promise.all([
+      const [membersDocs, projectRows, clientRows] = await Promise.all([
         fetchAllDocs(db.collection("members")),
         pgQuery("SELECT id, name, status FROM projects"),
-        fetchAllDocs(db.collection("clients")),
+        pgQuery("SELECT member_id FROM clients"),
       ]);
 
       const linkedMemberIds = new Set(
-        clientsDocs
-          .map((doc) => {
-            const row = doc.data() || {};
-            return String(row.member_id ?? row.memberId ?? "").trim();
-          })
-          .filter(Boolean),
+        clientRows.map((row) => String(row.member_id ?? "").trim()).filter(Boolean),
       );
 
       const rawMembers = membersDocs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
@@ -166,12 +162,12 @@ export async function routeClients(req, res, url, db, origin) {
   if (invoicingMatch && req.method === "GET") {
     const clientId = invoicingMatch[1];
     try {
-      const clientDoc = await db.collection("clients").doc(clientId).get();
-      if (!clientDoc.exists) {
+      const client = await getClientPg(clientId);
+      if (!client) {
         sendJson(res, origin, 404, { success: false, error: "Client not found" });
         return true;
       }
-      const row = { id: clientDoc.id, ...clientDoc.data(), client_member: clientDoc.data()?.member_id ?? "" };
+      const row = { ...client, client_member: client.member_id ?? "" };
       const visible = await applyVisibilityFilter(req, db, "clients", [row]);
       if (!visible.length) {
         sendJson(res, origin, 404, { success: false, error: "Not found" });
@@ -193,12 +189,12 @@ export async function routeClients(req, res, url, db, origin) {
   if (editStateMatch && req.method === "GET") {
     const clientId = editStateMatch[1];
     try {
-      const clientDoc = await db.collection("clients").doc(clientId).get();
-      if (!clientDoc.exists) {
+      const client = await getClientPg(clientId);
+      if (!client) {
         sendJson(res, origin, 404, { success: false, error: "Client not found" });
         return true;
       }
-      const row = { id: clientDoc.id, ...clientDoc.data(), client_member: clientDoc.data()?.member_id ?? "" };
+      const row = { ...client, client_member: client.member_id ?? "" };
       const visible = await applyVisibilityFilter(req, db, "clients", [row]);
       if (!visible.length) {
         sendJson(res, origin, 404, { success: false, error: "Not found" });
@@ -248,6 +244,39 @@ export async function routeClients(req, res, url, db, origin) {
       sendJson(res, origin, status, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to update client",
+      });
+    }
+    return true;
+  }
+
+  // Own DELETE handler, matching how projects/routes.js has its own rather
+  // than falling through to schema/routes.js's generic entity-catalog path -
+  // that generic path required a Firestore-collection catalog entry to reach
+  // it at all, which the Clients migration (Phase 9) removes.
+  const clientIdMatch = /^\/api\/clients\/([^/]+)$/.exec(pn);
+  if (clientIdMatch && req.method === "DELETE") {
+    if (!assertManagementRole(req, res, origin)) return true;
+    const clientId = clientIdMatch[1];
+    try {
+      const client = await getClientPg(clientId);
+      if (!client) {
+        sendJson(res, origin, 404, { success: false, error: "Not found" });
+        return true;
+      }
+      const visible = await applyVisibilityFilter(req, db, "clients", [client]);
+      if (!visible.length) {
+        sendJson(res, origin, 404, { success: false, error: "Not found" });
+        return true;
+      }
+      // client_budgets/client_invoicing/client_projects all cascade via
+      // their FKs to clients(id).
+      await deleteClientPg(clientId);
+      sendJson(res, origin, 200, { success: true, data: { id: clientId, deleted: true } });
+    } catch (e) {
+      logSafeError("[clients/:id DELETE]", e);
+      sendJson(res, origin, 400, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to delete client",
       });
     }
     return true;

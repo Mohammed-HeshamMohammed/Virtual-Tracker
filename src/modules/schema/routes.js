@@ -976,26 +976,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: { id: teamId, deleted: true } });
         return true;
       }
-      if (parsed.key === "clients") {
-        const clientId = parsed.id;
-        const clientDoc = await db.collection(entity.collection).doc(clientId).get();
-        if (!clientDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const visible = await assertRowVisible(req, db, "clients", { id: clientDoc.id, ...clientDoc.data() });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const batch = db.batch();
-        const [budgetsSnap, invoicingSnap, clientProjectsSnap] = await Promise.all([
-          db.collection("client_budgets").where("client_id", "==", clientId).get(),
-          db.collection("client_invoicing").where("client_id", "==", clientId).get(),
-          db.collection("client_projects").where("client_id", "==", clientId).get(),
-        ]);
-        for (const doc of budgetsSnap.docs) batch.delete(doc.ref);
-        for (const doc of invoicingSnap.docs) batch.delete(doc.ref);
-        for (const doc of clientProjectsSnap.docs) batch.delete(doc.ref);
-        batch.delete(db.collection(entity.collection).doc(clientId));
-        await batch.commit();
-        sendJson(res, origin, 200, { success: true, data: { id: clientId, deleted: true } });
-        return true;
-      }
       if (parsed.key === "projects") {
         const projectId = parsed.id;
         const projectDoc = await db.collection(entity.collection).doc(projectId).get();

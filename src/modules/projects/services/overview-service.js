@@ -1,7 +1,7 @@
 // Project overview aggregates — minimal fields, server-side joins.
 
 import { query as pgQuery } from "../../../lib/postgres/client.js";
-import { computeProjectSpentPg } from "../../../lib/postgres/projects-postgres.service.js";
+import { computeProjectSpentForAllPg } from "../../../lib/postgres/projects-postgres.service.js";
 
 function toIso(value) {
   if (!value) return "";
@@ -22,6 +22,11 @@ function num(row, ...keys) {
   for (const key of keys) {
     const v = row[key];
     if (typeof v === "number" && Number.isFinite(v)) return v;
+    // node-postgres returns NUMERIC columns (budget cost, member_limit_cost)
+    // as strings, not JS numbers - no setTypeParser is registered anywhere in
+    // this backend. Without this, every numeric-string field here silently
+    // read back as 0.
+    if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
   }
   return 0;
 }
@@ -89,6 +94,19 @@ export async function getOverviewCore(db, options = {}) {
     pgQuery("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'done')::int AS done FROM tasks"),
   ]);
 
+  // One batched spend computation for every project with a budget, instead
+  // of one query (and for cost-based budgets, one Firestore read per member)
+  // per project inside the loop below.
+  const budgetRowsForSpend = projectRows
+    .filter((row) => num(row, "budget_total") > 0)
+    .map((row) => ({
+      id: row.id,
+      type: row.budget_type,
+      based_on: row.based_on,
+      include_non_billable_time: row.include_non_billable_time,
+    }));
+  const spentByProject = await computeProjectSpentForAllPg(db, budgetRowsForSpend);
+
   const projects = [];
   let budgetSpentSum = 0;
   let budgetTotalSum = 0;
@@ -106,12 +124,9 @@ export async function getOverviewCore(db, options = {}) {
     const health = calculateHealth(status, total, done);
 
     const budgetTotal = num(row, "budget_total");
-    const budgetRow =
-      budgetTotal > 0
-        ? { type: row.budget_type, based_on: row.based_on, include_non_billable_time: row.include_non_billable_time }
-        : null;
-    const spent = budgetRow ? await computeProjectSpentPg(db, id, budgetRow) : 0;
-    const budgetType = budgetRow && String(budgetRow.type) === "Hours based" ? "hours" : "cost";
+    const hasBudget = budgetTotal > 0;
+    const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
+    const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
 
     const members = Number(row.member_count ?? 0);
     const memberLimit = row.member_limit_cost != null ? Number(row.member_limit_cost) : null;
@@ -161,11 +176,11 @@ export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
 
-  const [taskRows, projectRows, clientsSnap, budgetsSnap, clientProjectRows, membersSnap] = await Promise.all([
+  const [taskRows, projectRows, clientRows, budgetRows, clientProjectRows, membersSnap] = await Promise.all([
     pgQuery("SELECT id, project_id, status, title, priority, assigned_to FROM tasks LIMIT $1", [taskLimit]),
     pgQuery("SELECT id, name FROM projects"),
-    db.collection("clients").select("status", "name", "email_addresses", "email").limit(100).get(),
-    db.collection("client_budgets").select("client_id", "clientId", "cost").limit(100).get(),
+    pgQuery("SELECT id, status, name, email_addresses FROM clients LIMIT 100"),
+    pgQuery("SELECT client_id, cost FROM client_budgets LIMIT 100"),
     pgQuery("SELECT client_id, project_id FROM client_projects"),
     db.collection("members").select("first_name", "firstName", "last_name", "lastName", "name").limit(200).get(),
   ]);
@@ -231,8 +246,7 @@ export async function getOverviewPanels(db, options = {}) {
   }
 
   const budgetByClient = new Map();
-  for (const doc of budgetsSnap.docs) {
-    const row = doc.data() || {};
+  for (const row of budgetRows) {
     const cid = str(row, "client_id", "clientId");
     if (cid && !budgetByClient.has(cid)) {
       budgetByClient.set(cid, num(row, "cost"));
@@ -248,17 +262,16 @@ export async function getOverviewPanels(db, options = {}) {
     projectsByClient.get(cid).push(pid);
   }
 
-  const clients = clientsSnap.docs
-    .map((doc) => {
-      const row = doc.data() || {};
+  const clients = clientRows
+    .map((row) => {
       const status = (str(row, "status") || "active").toLowerCase();
-      const linkedProjectIds = projectsByClient.get(doc.id) ?? [];
+      const linkedProjectIds = projectsByClient.get(row.id) ?? [];
       const scopedProjectIds =
         allowed === null ? linkedProjectIds : linkedProjectIds.filter((pid) => allowed.has(pid));
-      const budgetTotal = budgetByClient.get(doc.id) ?? 0;
+      const budgetTotal = budgetByClient.get(row.id) ?? 0;
       const used = budgetTotal > 0 ? Math.round(budgetTotal * 0.6) : 0;
       return {
-        id: doc.id,
+        id: row.id,
         n: str(row, "name") || "Client",
         st: status,
         em: str(row, "email_addresses", "email") || "",

@@ -1,67 +1,15 @@
+// "clients", "client-budgets", and "client-invoicing" were removed from this
+// array in Phase 9 of the Clients migration (see project-budget-fixes-plan.md).
+// All three domains are Postgres-resident now (clients-postgres.service.js)
+// with their own dedicated routes in clients/routes.js - the generic
+// Firestore-catalog path in schema/routes.js (gated on `schemaByKey.get(key)`
+// being truthy) is unreachable for them by design, not an oversight.
+//
+// "client-projects" is left in place: it already routes through the
+// Postgres-resident client_projects table via projects/routes.js and
+// schema/routes.js's own special-cased branches - untouched here since
+// nothing about it was Firestore-backed to begin with.
 export const clientSchemas = [
-  {
-    key: "clients",
-    collection: "clients",
-    fields: {
-      id: "uuid",
-      member_id: "uuid",
-      name: "string",
-      street_address: "string",
-      city: "string",
-      state: "string",
-      zip: "string",
-      country: "string",
-      phone_number: "string",
-      email_addresses: "text",
-      status: "string",
-      created_by: "uuid",
-      updated_by: "uuid",
-      created_at: "timestamp",
-      updated_at: "timestamp",
-    },
-  },
-  {
-    key: "client-budgets",
-    collection: "client_budgets",
-    fields: {
-      id: "uuid",
-      client_id: "uuid",
-      type: "string",
-      based_on: "string",
-      cost: "decimal",
-      notify_at_pct: "decimal",
-      resets: "string",
-      created_by: "uuid",
-      updated_by: "uuid",
-      created_at: "timestamp",
-      updated_at: "timestamp",
-    },
-  },
-  {
-    key: "client-invoicing",
-    collection: "client_invoicing",
-    fields: {
-      id: "uuid",
-      client_id: "uuid",
-      custom_for_client: "boolean",
-      notes: "text",
-      net_terms_days: "int",
-      tax_rate: "decimal",
-      auto_invoicing: "boolean",
-      auto_invoice_amount_based_on: "string",
-      auto_fixed_amount: "decimal",
-      auto_invoice_frequency: "string",
-      auto_invoice_delay_days: "int",
-      auto_invoice_reminder_days: "int",
-      auto_invoice_line_items: "string",
-      include_non_billable_time: "boolean",
-      include_expenses: "boolean",
-      created_by: "uuid",
-      updated_by: "uuid",
-      created_at: "timestamp",
-      updated_at: "timestamp",
-    },
-  },
   {
     key: "client-projects",
     collection: "client_projects",

@@ -8,8 +8,13 @@ import {
 } from "./budget-logic.js";
 import { resolveClientBudgetUsage } from "./client-budget-usage.js";
 import { listClientIdsForProjectPg, listProjectIdsForClientPg, listProjectMembersPg } from "../../../lib/postgres/projects-postgres.service.js";
+import {
+  getClientPg,
+  getClientBudgetPg,
+  getClientAutomationStatePg,
+  upsertClientAutomationStatePg,
+} from "../../../lib/postgres/clients-postgres.service.js";
 
-const AUTOMATION_COLLECTION = "client_automation_state";
 const NOTIFY_TYPE = "client_budget_threshold";
 const MANAGEMENT_ROLES = new Set([
   "owner",
@@ -46,32 +51,20 @@ function formatMoney(amount) {
 }
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/firestore").Firestore} db unused, kept for call-site compatibility
  * @param {string} clientId
  * @param {ReturnType<typeof normalizeBudget>|null} budget
  */
-export async function syncClientBudgetAutomationState(db, clientId, budget) {
+export async function syncClientBudgetAutomationState(_db, clientId, budget) {
   const normalized = normalizeBudget(budget);
-  const ref = db.collection(AUTOMATION_COLLECTION).doc(clientId);
-  const existing = await ref.get();
-  const prevNotify = existing.exists ? existing.data()?.budget_notify ?? {} : {};
-
-  const payload = {
-    client_id: clientId,
-    budget_policy: buildBudgetPolicy(normalized),
-    budget_notify: {
-      ...prevNotify,
-      notify_at_pct: normalized?.notifyAt ?? 0,
-      updated_at: new Date(),
-    },
-    updated_at: new Date(),
-  };
-
-  if (!normalized) {
-    payload.budget_policy = buildBudgetPolicy(null);
-  }
-
-  await ref.set(payload, { merge: true });
+  // notified_period_key/last_usage_pct/last_sent_at are deliberately not
+  // passed here - upsertClientAutomationStatePg's COALESCE leaves them at
+  // whatever markBudgetNotificationSent below last set, this call only
+  // touches the policy snapshot and threshold.
+  await upsertClientAutomationStatePg(clientId, {
+    budgetPolicy: buildBudgetPolicy(normalized),
+    notifyAtPct: normalized?.notifyAt ?? 0,
+  });
 }
 
 async function loadManagementMemberIds(db) {
@@ -119,35 +112,26 @@ export async function resolveClientBudgetNotifyRecipients(db, clientId, clientRo
 function shouldSendBudgetNotification(state, periodKey, notifyAtPct, usagePct) {
   if (notifyAtPct <= 0 || notifyAtPct > 100) return false;
   if (usagePct < notifyAtPct) return false;
-
-  const prev = state?.budget_notify ?? {};
-  if (prev.notified_period_key === periodKey) return false;
+  if (state?.notified_period_key === periodKey) return false;
   return true;
 }
 
-async function markBudgetNotificationSent(db, clientId, periodKey, notifyAtPct, usagePct) {
-  await db.collection(AUTOMATION_COLLECTION).doc(clientId).set(
-    {
-      client_id: clientId,
-      budget_notify: {
-        notified_period_key: periodKey,
-        notify_at_pct: notifyAtPct,
-        last_usage_pct: usagePct,
-        last_sent_at: new Date(),
-      },
-      updated_at: new Date(),
-    },
-    { merge: true },
-  );
+async function markBudgetNotificationSent(clientId, periodKey, notifyAtPct, usagePct) {
+  await upsertClientAutomationStatePg(clientId, {
+    notifiedPeriodKey: periodKey,
+    notifyAtPct,
+    lastUsagePct: usagePct,
+    lastSentAt: new Date(),
+  });
 }
 
 /** Notify when client budget crosses threshold. */
 export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) {
-  const clientDoc = await db.collection("clients").doc(clientId).get();
-  if (!clientDoc.exists) return { skipped: "client_not_found" };
+  const client = await getClientPg(clientId);
+  if (!client) return { skipped: "client_not_found" };
 
-  const budgetsSnap = await db.collection("client_budgets").where("client_id", "==", clientId).limit(1).get();
-  const budget = readBudgetFromDoc(budgetsSnap.docs[0] ?? null);
+  const budgetRow = await getClientBudgetPg(clientId);
+  const budget = readBudgetFromDoc(budgetRow);
   if (!budget || budget.notifyAt <= 0) return { skipped: "no_budget_policy" };
 
   const asOf = options.asOf ?? new Date();
@@ -162,15 +146,14 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
   if (!evaluation.shouldNotify) return { skipped: "below_threshold", evaluation };
 
   const periodKey = getBudgetPeriodKey(budget, asOf);
-  const stateSnap = await db.collection(AUTOMATION_COLLECTION).doc(clientId).get();
-  const state = stateSnap.exists ? stateSnap.data() : null;
+  const state = await getClientAutomationStatePg(clientId);
 
   if (!shouldSendBudgetNotification(state, periodKey, budget.notifyAt, evaluation.usagePct)) {
     return { skipped: "already_notified", evaluation };
   }
 
-  const clientName = String(clientDoc.data()?.name ?? "Client").trim() || "Client";
-  const recipients = await resolveClientBudgetNotifyRecipients(db, clientId, clientDoc.data());
+  const clientName = String(client.name ?? "Client").trim() || "Client";
+  const recipients = await resolveClientBudgetNotifyRecipients(db, clientId, client);
   if (recipients.length === 0) return { skipped: "no_recipients", evaluation };
 
   const title = "Client budget threshold reached";
@@ -186,7 +169,7 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
     });
   }
 
-  await markBudgetNotificationSent(db, clientId, periodKey, budget.notifyAt, evaluation.usagePct);
+  await markBudgetNotificationSent(clientId, periodKey, budget.notifyAt, evaluation.usagePct);
   return { sent: recipients.length, evaluation };
 }
 
