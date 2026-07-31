@@ -1,7 +1,10 @@
 // Project overview aggregates — minimal fields, server-side joins.
 
 import { query as pgQuery } from "../../../lib/postgres/client.js";
-import { computeProjectSpentForAllPg } from "../../../lib/postgres/projects-postgres.service.js";
+import {
+  computeProjectSpentForAllPg,
+  computeProjectBudgetTargetForAllPg,
+} from "../../../lib/postgres/projects-postgres.service.js";
 
 function toIso(value) {
   if (!value) return "";
@@ -69,6 +72,7 @@ SELECT
   pb.cost AS budget_total,
   pb.type AS budget_type,
   pb.based_on,
+  pb.scope AS budget_scope,
   pb.include_non_billable_time,
   mla.member_limit_cost
 FROM projects p
@@ -107,6 +111,20 @@ export async function getOverviewCore(db, options = {}) {
     }));
   const spentByProject = await computeProjectSpentForAllPg(db, budgetRowsForSpend);
 
+  // scope='per_person' rows store hours-per-member in `cost`, not a total -
+  // the real total scales with current headcount (and, for cost-based, each
+  // member's own rate). Batched the same way as spend above, not per-project.
+  const budgetRowsForTarget = projectRows
+    .filter((row) => num(row, "budget_total") > 0 && row.budget_scope === "per_person")
+    .map((row) => ({
+      id: row.id,
+      type: row.budget_type,
+      based_on: row.based_on,
+      scope: row.budget_scope,
+      cost: num(row, "budget_total"),
+    }));
+  const targetByProject = await computeProjectBudgetTargetForAllPg(db, budgetRowsForTarget);
+
   const projects = [];
   let budgetSpentSum = 0;
   let budgetTotalSum = 0;
@@ -123,8 +141,10 @@ export async function getOverviewCore(db, options = {}) {
     const done = Number(row.tasks_done ?? 0);
     const health = calculateHealth(status, total, done);
 
-    const budgetTotal = num(row, "budget_total");
-    const hasBudget = budgetTotal > 0;
+    const rawBudgetTotal = num(row, "budget_total");
+    const hasBudget = rawBudgetTotal > 0;
+    const budgetTotal =
+      hasBudget && row.budget_scope === "per_person" ? targetByProject.get(id) ?? 0 : rawBudgetTotal;
     const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
     const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
 

@@ -434,11 +434,18 @@ GROUP BY task_id`,
   // type/based_on/resets etc. exist in the live Firestore doc today but were never
   // read by overview-service.js - that omission is the root cause of the budget-type
   // display bug (see proposal doc "Related Bug" section). Carrying them forward here.
+  //
+  // scope: 'per_project' (default) = cost is a flat total, today's only prior
+  // behavior. 'per_person' = cost is hours-per-member; the live total scales
+  // with current headcount (Hours based: cost * member count; Cost based:
+  // cost hours * each member's own rate, summed) instead of a fixed number
+  // typed once.
   `CREATE TABLE IF NOT EXISTS project_budgets (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id                  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   type                        VARCHAR(20) NOT NULL DEFAULT 'Cost based' CHECK (type IN ('Cost based', 'Hours based')),
   based_on                    VARCHAR(20),
+  scope                       VARCHAR(20) NOT NULL DEFAULT 'per_project' CHECK (scope IN ('per_project', 'per_person')),
   cost                        NUMERIC(12, 2) NOT NULL DEFAULT 0,
   notify_project_members      BOOLEAN NOT NULL DEFAULT false,
   notify_at_pct               NUMERIC(5, 2),
@@ -454,6 +461,8 @@ GROUP BY task_id`,
   updated_by                  UUID
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_pb_project ON project_budgets (project_id)`,
+  // Pre-existing databases created before the per-person budget scope existed.
+  `ALTER TABLE project_budgets ADD COLUMN IF NOT EXISTS scope VARCHAR(20) NOT NULL DEFAULT 'per_project'`,
   // Dedupe state for the notify-at-threshold check (item 4 of the budget
   // fixes plan) - one row per project, tracking which reset period a
   // notification has already gone out for. Postgres-resident (not Firestore

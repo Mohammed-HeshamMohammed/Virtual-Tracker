@@ -29,6 +29,7 @@ import {
   getAllProjectBudgetsPg,
   upsertProjectBudgetPg,
   computeProjectSpentForAllPg,
+  computeProjectBudgetTargetForAllPg,
   listProjectMemberLimitsPg,
   getAllProjectMemberLimitsPg,
   upsertProjectMemberLimitPg,
@@ -44,6 +45,7 @@ import {
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { schemaByKey } from "../schema/catalog/index.js";
 import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schema-crud.service.js";
+import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/project-budget-capacity.js";
 
 /** Field-type coercion + unknown-field rejection, reusing the same catalog
  * validation the old generic Firestore path used (schema/catalog/projects) -
@@ -55,6 +57,35 @@ function validateProjectDomainBody(entityKey, body, isUpdate) {
   if (!entity) return;
   if (isUpdate) buildUpdatePayload(entity, body);
   else buildCreatePayload(entity, body);
+}
+
+/**
+ * Real gate for the End Date x per-person-budget feasibility check: a
+ * scope='per_person' budget's `cost` is hours every member must independently
+ * log, throttled by each member's own daily/weekly cap (Members page) - the
+ * project can't finish before the slowest-capped member could possibly reach
+ * that many hours. No-op (returns true) when there's no end date to check
+ * against, or the budget isn't per_person, or nothing constrains it.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ id: string, created_at: string|Date, end_date: string|Date|null }} project
+ * @param {string} scope
+ * @param {number} hoursPerPerson
+ * @returns {Promise<string|null>} null if feasible, else an error message
+ */
+async function checkBudgetEndDateFeasible(db, project, scope, hoursPerPerson) {
+  if (scope !== "per_person" || !project?.end_date) return null;
+  const { minDays } = await computeMinimumProjectDaysPg(db, project.id, Number(hoursPerPerson));
+  if (minDays <= 0) return null;
+  const minEndDate = computeMinimumEndDate(project.created_at, minDays);
+  const chosenEndDate = new Date(project.end_date);
+  if (chosenEndDate < minEndDate) {
+    const dayWord = minDays === 1 ? "day" : "days";
+    return (
+      `End date is too early: at least one member's daily/weekly hour limit needs ${minDays} ${dayWord} ` +
+      `to reach ${hoursPerPerson} hours per person. Earliest feasible end date is ${minEndDate.toISOString().slice(0, 10)}.`
+    );
+  }
+  return null;
 }
 
 function memberLabel(data) {
@@ -311,6 +342,7 @@ export async function routeProjects(req, res, url, db, origin) {
           budgetId: budget ? String(budget.id) : undefined,
           budgetType: budget ? String(budget.type || "") : "",
           budgetBasedOn: budget ? String(budget.based_on || budget.basedOn || "") : "",
+          budgetScope: budget && budget.scope === "per_person" ? "per_person" : "per_project",
           budgetTotal: budget ? String(budget.cost ?? 0) : "5000",
           budgetResets: budget ? String(budget.resets || "Never") : "Never",
           budgetNotifyAt:
@@ -569,6 +601,25 @@ export async function routeProjects(req, res, url, db, origin) {
             return true;
           }
         }
+        const nextEndDate = body.end_date ?? body.endDate;
+        if (nextEndDate !== undefined) {
+          const [existingProject, existingBudget] = await Promise.all([
+            getProjectPg(projectId),
+            getProjectBudgetPg(projectId),
+          ]);
+          if (existingProject && existingBudget?.scope === "per_person" && Number(existingBudget.cost) > 0) {
+            const endDateError = await checkBudgetEndDateFeasible(
+              db,
+              { id: projectId, created_at: existingProject.created_at, end_date: nextEndDate },
+              existingBudget.scope,
+              existingBudget.cost,
+            );
+            if (endDateError) {
+              sendJson(res, origin, 400, { success: false, error: endDateError });
+              return true;
+            }
+          }
+        }
         const patch = {
           name: body.name,
           status: body.status,
@@ -697,7 +748,23 @@ export async function routeProjects(req, res, url, db, origin) {
           include_non_billable_time: row.include_non_billable_time,
         })),
       );
-      const data = rows.map((row) => ({ ...row, spent: spentByProject.get(row.project_id) ?? 0 }));
+      // scope='per_person' rows store hours-per-member in `cost`, not a total -
+      // this is the live total, same batching as spent above.
+      const targetByProject = await computeProjectBudgetTargetForAllPg(
+        db,
+        rows.map((row) => ({
+          id: row.project_id,
+          type: row.type,
+          based_on: row.based_on,
+          scope: row.scope,
+          cost: row.cost,
+        })),
+      );
+      const data = rows.map((row) => ({
+        ...row,
+        spent: spentByProject.get(row.project_id) ?? 0,
+        target: row.scope === "per_person" ? targetByProject.get(row.project_id) ?? 0 : Number(row.cost),
+      }));
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[project-budgets GET]", e);
@@ -733,6 +800,12 @@ export async function routeProjects(req, res, url, db, origin) {
         });
         return true;
       }
+      const scope = body.scope === "per_person" ? "per_person" : "per_project";
+      const endDateError = await checkBudgetEndDateFeasible(db, project, scope, body.cost);
+      if (endDateError) {
+        sendJson(res, origin, 400, { success: false, error: endDateError });
+        return true;
+      }
       const viewer = await assertProjectDomainWrite(projectId, null);
       if (!viewer) return true;
       const row = await upsertProjectBudgetPg(
@@ -740,6 +813,7 @@ export async function routeProjects(req, res, url, db, origin) {
         {
           type: body.type,
           basedOn: body.based_on ?? body.basedOn,
+          scope,
           cost: body.cost,
           notifyProjectMembers: body.notify_project_members ?? body.notifyProjectMembers,
           notifyAtPct: body.notify_at_pct ?? body.notifyAtPct,
@@ -790,11 +864,18 @@ export async function routeProjects(req, res, url, db, origin) {
         });
         return true;
       }
+      const effectiveScope = body.scope === "per_person" ? "per_person" : body.scope ? "per_project" : current?.scope ?? "per_project";
+      const endDateError = await checkBudgetEndDateFeasible(db, project, effectiveScope, effectiveCost);
+      if (endDateError) {
+        sendJson(res, origin, 400, { success: false, error: endDateError });
+        return true;
+      }
       const row = await upsertProjectBudgetPg(
         existing.project_id,
         {
           type: body.type ?? current?.type,
           basedOn: body.based_on ?? body.basedOn ?? current?.based_on,
+          scope: effectiveScope,
           cost: body.cost ?? current?.cost,
           notifyProjectMembers: body.notify_project_members ?? body.notifyProjectMembers ?? current?.notify_project_members,
           notifyAtPct: body.notify_at_pct ?? body.notifyAtPct ?? current?.notify_at_pct,
