@@ -165,6 +165,26 @@ function toSelectOptions(items: string[], placeholder = "Select") {
   return [{ value: "", label: placeholder }, ...items.map((item) => ({ value: item, label: item }))]
 }
 
+/** Budget hours are stored as a single decimal-hours string (`budgetTotal`,
+ * unchanged on the wire) - these two just let the input show/take hours AND
+ * minutes instead of forcing e.g. "8.5" for 8h30m. */
+function decimalHoursToParts(value: string): { hours: string; minutes: string } {
+  const trimmed = value.trim()
+  if (!trimmed) return { hours: "", minutes: "" }
+  const total = Number(trimmed)
+  if (!Number.isFinite(total) || total < 0) return { hours: "", minutes: "" }
+  const totalMinutes = Math.round(total * 60)
+  return { hours: String(Math.floor(totalMinutes / 60)), minutes: String(totalMinutes % 60) }
+}
+
+function partsToDecimalHours(hoursRaw: string, minutesRaw: string): string {
+  const hours = Math.max(0, Number(hoursRaw) || 0)
+  const minutes = Math.max(0, Math.min(59, Number(minutesRaw) || 0))
+  const total = hours + minutes / 60
+  if (total <= 0) return ""
+  return String(Math.round(total * 100) / 100)
+}
+
 function ProjectModalSelect({
   value,
   onChange,
@@ -989,8 +1009,55 @@ export function ProjectModal({
                           className="sm:col-span-2"
                           error={budgetFieldErrors.budgetTotal}
                         >
-                          <div className="relative">
-                            {!isHoursInput ? (
+                          {isHoursInput ? (
+                            (() => {
+                              const { hours, minutes } = decimalHoursToParts(addForm.budgetTotal)
+                              return (
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={hours}
+                                      onChange={(e) =>
+                                        updateAddForm({ budgetTotal: partsToDecimalHours(e.target.value, minutes) })
+                                      }
+                                      className={cn(formTheme.control, "pr-7")}
+                                    />
+                                    <span
+                                      className={cn(
+                                        "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                                        formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                      )}
+                                    >
+                                      h
+                                    </span>
+                                  </div>
+                                  <div className="relative flex-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={59}
+                                      value={minutes}
+                                      onChange={(e) =>
+                                        updateAddForm({ budgetTotal: partsToDecimalHours(hours, e.target.value) })
+                                      }
+                                      className={cn(formTheme.control, "pr-7")}
+                                    />
+                                    <span
+                                      className={cn(
+                                        "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                                        formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                      )}
+                                    >
+                                      m
+                                    </span>
+                                  </div>
+                                </div>
+                              )
+                            })()
+                          ) : (
+                            <div className="relative">
                               <span
                                 className={cn(
                                   "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
@@ -999,25 +1066,15 @@ export function ProjectModal({
                               >
                                 $
                               </span>
-                            ) : null}
-                            <input
-                              type="number"
-                              min={0}
-                              value={addForm.budgetTotal}
-                              onChange={(e) => updateAddForm({ budgetTotal: e.target.value })}
-                              className={cn(formTheme.control, !isHoursInput ? "pl-7" : "", isHoursInput ? "pr-7" : "")}
-                            />
-                            {isHoursInput ? (
-                              <span
-                                className={cn(
-                                  "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
-                                  formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                                )}
-                              >
-                                h
-                              </span>
-                            ) : null}
-                          </div>
+                              <input
+                                type="number"
+                                min={0}
+                                value={addForm.budgetTotal}
+                                onChange={(e) => updateAddForm({ budgetTotal: e.target.value })}
+                                className={cn(formTheme.control, "pl-7")}
+                              />
+                            </div>
+                          )}
                         </FormField>
                       )
                     })()}
