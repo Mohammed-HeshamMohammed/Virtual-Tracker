@@ -1,9 +1,27 @@
 # Desktop Agent — UX & Stability Fix Plan
 
 **Scope:** `Tauri-App-Extension` (agent), with the one backend read it needs in `Dashboard-Backend`.
-**Status:** Proposed
-**Date:** 2026-07-30
+**Status:** **Implemented 2026-07-31** — items 1–5 and 7 are in the working tree (`cargo test` 7/7,
+`npm test` 29/29, `tsc` and `vite build` clean). Item 6 is a GitHub dismissal only the repo owner can
+click; the expiry condition it depends on is now pinned in
+[release.yml](.github/workflows/release.yml). Manual repros listed under *Checks to leave behind*
+still need running on a real machine.
+**Date:** 2026-07-30 · **Re-verified against `main`:** 2026-07-31 (after `fa3622c`, `9d0809a`, `750d9d5`)
 **Backends checked:** `Auth-Backend` (no change needed), `Dashboard-Backend` (one endpoint extended).
+
+### What the 2026-07-31 re-check changed
+
+Items **2, 3, 4, 5, 6** are unchanged — every file, symbol and behaviour they name still exists as
+described (line numbers drift by ≤5). The per-person project-budget work of 2026-07-31 touched only
+`Dashboard-Backend` + `Dashboard-Web`, so it changes **item 1 only**:
+
+- Project budgets now **do** stop timers (`stop_timers_when_reached` is read at session start, for
+  calling projects too) — the old "notify flags only" line in item 1's table was already stale when
+  written.
+- `project_budgets.scope` exists: `per_person` means `cost` is **hours per member**, not a total.
+- That new scope was not applied at either enforcement reader — the new **item 7**, a prerequisite for
+  item 1's UI honesty (a member could be blocked by a budget that read 1/N of its real size). **Now
+  fixed in the working tree, not yet committed.**
 
 Five reported items, each with root cause, the smallest fix that actually holds, and what is
 deliberately *not* built. Ordered by risk, not by the order they were reported: **item 3 first** —
@@ -100,8 +118,8 @@ Three different things, and they are not interchangeable:
 | **Member limits** | `limits` collection, read by `getMemberLimitHours(db, memberId, "daily"\|"weekly")` | This person's own daily/weekly hour cap. `0` = **no cap**. | Yes — `computeMemberTimerAllowance` ([timer-limit.service.js:80](Dashboard-Backend/src/modules/tasks/timer-limit.service.js:80)) |
 | **Shifts** | `memberUsesShiftsForLimits` | Member is scheduled by shift, so daily/weekly caps do not apply. | Yes (bypasses caps) |
 | **Task estimate** | `estimateAssignmentSeconds(task)` + per-task daily hours | Whole-task budget, incl. overtime. Calling projects have none. | Yes, task path only |
-| **Project hourly budget** | `project_budgets` (`type = 'Hours based'`, `cost` = hours) | **Team-wide** budget for the whole project. | Notify / stop-timers flags only |
-| **Per-member project limit** | `project_member_limits` | Would be the per-person project cap — but the only reader treats `cost` as a **headcount**, per the schema comment at [ensure-lookup-schema.js:451](Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:451). | **No** |
+| **Project hourly budget** | `project_budgets` (`type = 'Hours based'`, `cost` = hours). `scope = 'per_project'` → `cost` is the flat total; `scope = 'per_person'` → `cost` is **hours per member** and the real total is `cost × headcount` ([projects-postgres.service.js:620](Dashboard-Backend/src/lib/postgres/projects-postgres.service.js:620)) | **Team-wide** budget for the whole project. | **Yes** — since `9ea2a0b`, `stop_timers_when_reached` + `stop_timers_at_pct` 403 the session start for *both* the task and the calling-project branch ([routes.js:376](Dashboard-Backend/src/modules/activity/routes.js:376)). But it compares against raw `cost` — wrong for `per_person`, see item 7 |
+| **Per-member project limit** | `project_member_limits` | Would be the per-person project cap — but the only reader treats `cost` as a **headcount**, per the schema comment at [ensure-lookup-schema.js:477](Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:477). Note this is *not* what `project_budgets.scope = 'per_person'` uses — that reads `project_members` headcount, not this table. | **No** |
 
 **Recommendation:** derive the displayed cap from **member limits**, not from the hourly budget. The
 project hourly budget is a team pool — showing it as "your allowed hours" would tell a member they have
@@ -112,10 +130,22 @@ what actually blocks the start button for a calling project
 If project budget context is still wanted, it is a **separate, clearly-labelled card** ("Project budget:
 X h of Y h used"), not the personal number — and it is phase 2, not this change.
 
+**Still true after the per-person budget work**, with one addition. `scope = 'per_person'` makes an
+hours budget look like a personal cap, but it is not one: it is not per-member enforced, it is not
+consumed per member, and blowing past it stops the timer for *everyone* on the project. Showing it as
+"your allowed hours" would be wrong in a new way. Member limits stay the source of the personal card.
+
+What the per-person work *does* change: a start can now be refused with "This project's budget has
+been reached — timers are stopped for this project." **No agent work needed for that** — the 403
+body's `error` is already propagated verbatim
+([session.rs:71](Tauri-App-Extension/src-tauri/src/client/api/session.rs:71)) into `ActionResult.error`
+and rendered as the inline error + toast ([App.tsx:1066](Tauri-App-Extension/src/App.tsx:1066)). It is
+only *wrong* while item 7 is unfixed, because the threshold it trips on is too small.
+
 ### Fix
 
 **Backend — extend the existing endpoint, do not add a new one.** `GET /api/activity/limits`
-([routes.js:211](Dashboard-Backend/src/modules/activity/routes.js:211)) already resolves the member and
+([routes.js:212](Dashboard-Backend/src/modules/activity/routes.js:212)) already resolves the member and
 returns `{ dailyHours, weeklyHours, usesShifts }`. Add the allowance the calling-project start path
 already computes:
 
@@ -126,7 +156,9 @@ sendJson(res, origin, 200, {
   data: { dailyHours, weeklyHours, usesShifts, timerAllowance: allowance },
 });
 ```
-`computeMemberTimerAllowance` is already imported in that file. It returns `allowedRemainingSeconds`
+`computeMemberTimerAllowance` is already imported in that file; its third `options` argument is
+optional ([timer-limit.service.js:80](Dashboard-Backend/src/modules/tasks/timer-limit.service.js:80)),
+so the two-argument call above is correct. It returns `allowedRemainingSeconds`
 (`null` = no cap), `limitReached`, `workedTodaySeconds`, `workedWeekSeconds`,
 `memberDailyLimitSeconds`, `memberWeeklyLimitSeconds`.
 
@@ -273,6 +305,63 @@ silently re-auth from this machine.)
 
 ---
 
+## 7. `per_person` budgets stop timers at 1/N of their real size
+
+*Added 2026-07-31. Regression from `fa3622c`; `Dashboard-Backend` only, no agent change.*
+**Status: fixed.** Both readers below call `computeProjectBudgetTargetPg`, and
+`maybeNotifyProjectBudget` takes the computed `cap` as a parameter instead of re-deriving it. Covered
+by [project-budget-target.test.js](Dashboard-Backend/test/project-budget-target.test.js).
+
+### Root cause
+
+`fa3622c` added `project_budgets.scope`. On a `per_person` row, `cost` is **hours per member** and the
+real project total is `cost × headcount` — computed by `computeProjectBudgetTargetPg` /
+`computeProjectBudgetTargetForAllPg`
+([projects-postgres.service.js:700](Dashboard-Backend/src/lib/postgres/projects-postgres.service.js:700)).
+
+Only `overview-service.js` was taught this. The two places that *act* on a budget read raw `cost`:
+
+| Reader | Was | Effect on a `per_person` budget |
+|---|---|---|
+| Timer stop gate ([routes.js:385](Dashboard-Backend/src/modules/activity/routes.js:385)) | `const cap = Number(budget.cost ?? 0)` | Timers stop once the **whole team** has burned one member's allotment. 5 members, 40 h each → everyone blocked at 40 h, not 200 h |
+| Budget notify ([project-budget-notify.js:101](Dashboard-Backend/src/modules/projects/services/project-budget-notify.js:101)) | same expression, computed internally | "80% of budget" fires at 16% of the real target |
+
+Timer stop was the visible one: the member saw "This project's budget has been reached" while the
+dashboard Budget column (which *does* scale) said 20% used, and nothing reconciled the two.
+
+Nothing else needed touching: `overview-service.js` and the `/api/project-budgets` GET
+([routes.js:766](Dashboard-Backend/src/modules/projects/routes.js:766)) were already scope-aware, and
+[routes.js:346](Dashboard-Backend/src/modules/projects/routes.js:346) is a form default that *should*
+echo raw `cost`.
+
+### Fix (applied)
+
+The wrapper already existed and short-circuits to `cost` for `per_project`, so the non-scoped path is
+byte-identical:
+
+```js
+import { computeProjectBudgetTargetPg } from "../../lib/postgres/projects-postgres.service.js";
+const cap = await computeProjectBudgetTargetPg(db, sessionProjectId, budget);
+```
+
+The gate computes `cap` once and passes it into `maybeNotifyProjectBudget(db, projectId, budget,
+spent, cap)` — one read serving both, matching how `spent` was already shared.
+
+### Deliberately not built
+
+- No per-member enforcement of a `per_person` budget. The column means "the total scales with
+  headcount", not "each member is individually capped" — inventing per-member enforcement here would
+  be a product decision, not a bug fix.
+- No backfill or migration. `scope` defaults to `per_project`, where the two expressions agree.
+
+### Check left behind
+
+[project-budget-target.test.js](Dashboard-Backend/test/project-budget-target.test.js) — `per_project`
+passes `cost` through untouched, `per_person × 3` members scales to 3×, an empty project is 0 (not the
+per-person figure), pay-rate budgets sum each member's own rate, and a missing budget row is 0.
+
+---
+
 ## Sequencing
 
 | Order | Item | Why here | Rough size |
@@ -281,10 +370,12 @@ silently re-auth from this machine.)
 | 2 | **2** — close to tray (+ the `serde(default)` fix) | Prerequisite: the per-field defaults protect items 2 and 4 from wiping saved prefs | S |
 | 3 | **5** — stale-session Welcome Back + switch account | Highest user-visible correctness win | S–M |
 | 4 | **4** — auto sign-in default | One line, but must land **after** 5 so it does not fight the new panel | XS |
-| 5 | **1** — allowed hours (backend + agent + UI) | Only item needing a backend deploy | M |
+| 5 | **7** — `per_person` budget cap at the two enforcement readers | **Code already written (uncommitted)** — only the unit test is left | XS |
+| 6 | **1** — allowed hours (backend + agent + UI) | Only agent item needing a backend deploy; ships in the same deploy as 7 | M |
 
-Items 1–4 ship as one agent release. Item 1 needs `Dashboard-Backend` deployed first (the agent
-tolerates the missing field via `serde(default)`, so the order is safe either way).
+Items **3, 2, 5, 4** (all agent-side) ship as one agent release. Items **7** and **1**'s backend half
+go out in one `Dashboard-Backend` deploy; the agent tolerates 1's missing field via `serde(default)`,
+so deploy order is safe either way.
 
 ## Checks to leave behind
 
@@ -294,6 +385,26 @@ tolerates the missing field via `serde(default)`, so the order is safe either wa
 - Manual: game/sleep repro from item 3, step 3.
 - Manual: revoke the session server-side → relaunch agent → Welcome Back with "Not you?" appears, and
   the switch lands on the web page's account chooser.
+- Unit: `per_person` budget cap, per item 7.
+
+## Implementation notes (2026-07-31) — where the build differs from the plan
+
+- **Item 1 UI:** one shared "Your hours today" card group (`Today, all work` · `Daily cap` ·
+  `Remaining today`) renders for *both* project types, instead of a calling-only group plus a separate
+  pair on the task path. Same information, one code path, and the task cards keep their own row below
+  it under a labelled heading.
+- **Item 1 polling:** member limits moved from a one-shot fetch on the profile view to a guarded 5s
+  poll on home *and* profile — "Remaining today" has to count down while the clock runs. The
+  People-page record stays a one-shot fetch; it cannot change while the app is open.
+- **Item 4 gate:** `maybe_auto_sign_in` now tests `has_stored_identity()` — a cached id token **or** a
+  device credential — rather than live authentication, so a stale session gets the Welcome Back panel
+  instead of a browser thrown over it. `AgentController::is_authenticated` had no callers left
+  afterwards and was deleted.
+- **Item 3 scope:** `open_web_app` and `get_profile` stayed synchronous — the first spawns the OS
+  browser, the second decodes cached JWT claims; neither does HTTP.
+- **Item 6 note:** `tauri.conf.json` is strict JSON and cannot carry a comment, so the
+  "re-open this if a Linux target appears" warning lives next to `runs-on: windows-latest` in
+  [release.yml](.github/workflows/release.yml) instead.
 
 ---
 

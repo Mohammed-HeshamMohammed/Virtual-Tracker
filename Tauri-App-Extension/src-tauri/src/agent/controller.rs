@@ -41,7 +41,10 @@ pub struct AgentController {
 impl AgentController {
     pub fn new(settings: Settings) -> Arc<Self> {
         let store = TokenStore::new(settings.store_path.clone());
-        let api = Arc::new(Mutex::new(ApiClient::new(settings.api_url.clone())));
+        let api = Arc::new(Mutex::new(ApiClient::new(
+            settings.api_url.clone(),
+            settings.auth_url.clone(),
+        )));
         let link_flow = Arc::new(AgentLinkFlow::new(
             Arc::clone(&api),
             settings.web_url.clone(),
@@ -115,10 +118,6 @@ impl AgentController {
 
     pub fn is_link_pending(&self) -> bool {
         self.link_flow.pending_link_token().is_some()
-    }
-
-    pub fn is_authenticated(&self) -> bool {
-        self.api.lock().is_authenticated()
     }
 
     fn on_status_changed(self: &Arc<Self>, text: String) {
@@ -250,6 +249,71 @@ impl AgentController {
                         .into(),
                 ),
             }
+        }
+    }
+
+    /// Email + password sign-in, entirely in-app. Same three steps the browser
+    /// takes, in the same order, so the two cannot disagree about who may use
+    /// this account:
+    ///   1. which providers this email actually has (Auth-Backend),
+    ///   2. Identity Toolkit password sign-in,
+    ///   3. `/api/auth/session-bootstrap`, which owns the member record and
+    ///      every reason to refuse (disabled, banned, unverified, must change
+    ///      password).
+    ///
+    /// The password is borrowed for the duration of step 2 and never stored.
+    pub fn sign_in_with_password(self: &Arc<Self>, email: &str, password: &str) -> SignInResult {
+        let email = email.trim();
+        if email.is_empty() || password.is_empty() {
+            return SignInResult::failed("Enter your email and password.");
+        }
+
+        // A Google/Apple-only account can never succeed here, and Firebase
+        // would answer with a generic credential failure. Say the useful thing
+        // instead. A lookup failure is not fatal - fall through and let the
+        // sign-in itself decide.
+        if let Some(methods) = self.api.lock().sign_in_methods(email) {
+            if !methods.is_empty() && !methods.iter().any(|m| m == "password") {
+                return SignInResult::failed(
+                    "This account doesn't use a password. Use Link account to sign in with your provider.",
+                );
+            }
+        }
+
+        let tokens = self.api.lock().sign_in_with_password(email, password);
+        let (id_token, refresh_token) = match tokens {
+            Ok(pair) => pair,
+            Err(err) => return SignInResult::failed(err.message()),
+        };
+
+        // Persist + claim the device credential before the gate below, so a
+        // refusal has something concrete to clear and a success needs no
+        // second write.
+        self.apply_tokens(id_token, refresh_token);
+
+        // Bound to a `let` on purpose: a temporary lock guard inside a `match`
+        // scrutinee lives until the end of the match, and `sign_out()` below
+        // takes the same (non-reentrant) lock.
+        let bootstrap = self.api.lock().session_bootstrap();
+        match bootstrap {
+            Ok(()) => {}
+            Err(Some(message)) => {
+                // The server rejected this account outright; holding tokens for
+                // it would leave the agent looking signed in and doing nothing.
+                self.sign_out();
+                return SignInResult::failed(&message);
+            }
+            Err(None) => {
+                // Network problem, not a verdict. Keep the session - the normal
+                // connection-recovery path handles this.
+                log::warn!("Signed in, but could not confirm authorization yet");
+            }
+        }
+
+        self.on_status_changed("Signed in — waiting for timer".into());
+        SignInResult {
+            success: true,
+            error: None,
         }
     }
 
@@ -626,9 +690,27 @@ impl AgentController {
         }
     }
 
+    /// Whether closing the window should hide it instead of quitting.
+    /// Read from disk each time - the preference can change while running and
+    /// this is one small file read, not a hot path.
+    pub fn close_to_tray(&self) -> bool {
+        self.settings.preferences_store().load().close_to_tray
+    }
+
+    /// True when nothing at all is stored for this machine - no cached token,
+    /// no device credential. Deliberately *not* "is currently authenticated":
+    /// a stale or rejected token still identifies a user, and that user gets
+    /// the Welcome Back / switch-account panel instead of a browser window
+    /// thrown over the top of it.
+    fn has_stored_identity(&self) -> bool {
+        let stored = self.store.load();
+        stored.id_token.len() >= MIN_TOKEN_LENGTH
+            || (!stored.device_id.is_empty() && !stored.agent_secret.is_empty())
+    }
+
     pub fn maybe_auto_sign_in(self: &Arc<Self>) {
         let prefs = self.settings.preferences_store().load();
-        if !prefs.auto_sign_in || self.is_authenticated() {
+        if !prefs.auto_sign_in || self.has_stored_identity() {
             return;
         }
         let controller = Arc::clone(self);
@@ -636,7 +718,7 @@ impl AgentController {
             .name("vt-auto-signin".into())
             .spawn(move || {
                 thread::sleep(Duration::from_secs(2));
-                if !controller.is_authenticated() && !controller.is_link_pending() {
+                if !controller.has_stored_identity() && !controller.is_link_pending() {
                     let _ = controller.open_sign_in();
                 }
             })

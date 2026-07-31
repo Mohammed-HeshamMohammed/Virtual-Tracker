@@ -87,20 +87,22 @@ async function resolveRecipients(db, projectId, whoToNotify) {
 
 /**
  * Called from the timer start/resume path (activity/routes.js) right after
- * computing spend for the stop-timer gate - same spend read, two uses.
- * Never throws into the caller; timer start/stop must not fail because a
- * notification failed to send.
+ * computing spend AND the live cap for the stop-timer gate - same two reads,
+ * shared here instead of recomputed. Never throws into the caller; timer
+ * start/stop must not fail because a notification failed to send.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} projectId
  * @param {Record<string, unknown>} budget project_budgets row
  * @param {number} spent
+ * @param {number} cap live budget total - for scope='per_person' this is
+ *   NOT `budget.cost` (that's hours-per-member), it's the caller's already-
+ *   computed computeProjectBudgetTargetPg result.
  */
-export async function maybeNotifyProjectBudget(db, projectId, budget, spent) {
+export async function maybeNotifyProjectBudget(db, projectId, budget, spent, cap) {
   if (!budget?.notify_project_members) return { skipped: "notify_disabled" };
   const notifyAtPct = Number(budget.notify_at_pct);
   if (!(notifyAtPct > 0) || notifyAtPct > 100) return { skipped: "no_threshold" };
 
-  const cap = Number(budget.cost ?? 0);
   const usagePct = cap > 0 ? Math.round((spent / cap) * 10000) / 100 : 0;
   if (usagePct < notifyAtPct) return { skipped: "below_threshold" };
 

@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
 
-use crate::client::firebase::{FirebaseTokenService, RefreshOutcome};
+use crate::client::firebase::{FirebaseTokenService, PasswordSignInError, RefreshOutcome};
 use crate::constants::{HTTP_TIMEOUT_SEC, TOKEN_REFRESH_BUFFER_MS};
 
 pub struct ApiClient {
@@ -30,7 +30,11 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(api_url: String) -> Self {
+    /// `auth_url` is Auth-Backend and is deliberately *not* `api_url`: the
+    /// dashboard API answers every `/api/auth/*` authn route with 404
+    /// "handled by Auth-Backend", so pointing token refresh at it left the
+    /// agent with no Firebase API key and therefore no way to renew a session.
+    pub fn new(api_url: String, auth_url: String) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .build()
@@ -41,7 +45,7 @@ impl ApiClient {
                 log::error!("Failed to build HTTP client: {err}");
                 panic!("Failed to build HTTP client: {err}");
             });
-        let firebase = FirebaseTokenService::new(api_url.clone(), client.clone());
+        let firebase = FirebaseTokenService::new(auth_url, client.clone());
         Self {
             api_url,
             client,
@@ -184,6 +188,70 @@ impl ApiClient {
             }
             None => Err(false),
         }
+    }
+
+    /// Signs in with email + password, then leaves the tokens on this client.
+    /// Callers still have to persist them (`apply_tokens`) - this only owns the
+    /// network round-trip.
+    pub fn sign_in_with_password(
+        &mut self,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, String), PasswordSignInError> {
+        self.firebase.sign_in_with_password(email, password)
+    }
+
+    pub fn sign_in_methods(&self, email: &str) -> Option<Vec<String>> {
+        self.firebase.sign_in_methods(email)
+    }
+
+    /// The same authorization gate a browser session passes
+    /// (`POST /api/auth/session-bootstrap`): it creates or aligns the member
+    /// record and refuses disabled, banned, unverified or must-change-password
+    /// accounts. Running it after an in-app sign-in is what stops the agent
+    /// accepting a user the dashboard would reject, and what keeps a freshly
+    /// registered account from ending up with tokens but no member row.
+    ///
+    /// `Err(Some(msg))` is a real refusal with the server's own wording;
+    /// `Err(None)` is a network problem, which must not be treated as a
+    /// rejection.
+    pub fn session_bootstrap(&mut self) -> Result<(), Option<String>> {
+        let Some(auth) = self.auth_headers() else {
+            return Err(Some("Not signed in".into()));
+        };
+        let url = format!("{}/api/auth/session-bootstrap", self.api_url);
+        let res = self
+            .client
+            .post(url)
+            .header("Authorization", auth)
+            .header("Content-Type", "application/json")
+            .json(&serde_json::json!({}))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send();
+        let res = match res {
+            Ok(r) => r,
+            Err(err) => {
+                log::warn!("Session bootstrap network error: {err}");
+                return Err(None);
+            }
+        };
+        let status = res.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        // 5xx is the platform having a bad moment, not a verdict on this user.
+        if status.is_server_error() {
+            log::warn!("Session bootstrap unavailable ({})", status.as_u16());
+            return Err(None);
+        }
+        let body: serde_json::Value = res.json().unwrap_or(serde_json::Value::Null);
+        let message = body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("This account cannot use the desktop agent yet.")
+            .to_string();
+        log::warn!("Session bootstrap refused ({})", status.as_u16());
+        Err(Some(message))
     }
 
     pub fn health_ok(&self) -> bool {

@@ -248,10 +248,31 @@ impl ApiClient {
         }
         let body: Value = res.json().ok()?;
         let data = body.get("data")?;
+        // timerAllowance is what actually gates the start button server-side.
+        // Absent on older backends - every field below then keeps its zero
+        // value and the UI shows the plain caps, no allowance line.
+        let allowance = data.get("timerAllowance");
+        let allowance_num = |key: &str| -> i64 {
+            allowance
+                .and_then(|a| a.get(key))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0)
+        };
         Some(crate::types::MemberLimits {
             daily_hours: data.get("dailyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
             weekly_hours: data.get("weeklyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
             uses_shifts: data.get("usesShifts").and_then(|v| v.as_bool()).unwrap_or(false),
+            worked_today_seconds: allowance_num("workedTodaySeconds"),
+            worked_week_seconds: allowance_num("workedWeekSeconds"),
+            // Explicit null means "no cap", which is not the same as 0 left -
+            // only a real number becomes Some(..).
+            allowed_remaining_seconds: allowance
+                .and_then(|a| a.get("allowedRemainingSeconds"))
+                .and_then(|v| v.as_i64()),
+            limit_reached: allowance
+                .and_then(|a| a.get("limitReached"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
         })
     }
 

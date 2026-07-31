@@ -31,14 +31,32 @@ struct AppState {
     controller: Arc<AgentController>,
 }
 
-#[tauri::command]
+// Commands that touch the network are declared `#[tauri::command(async)]`.
+// A plain `#[tauri::command]` on a non-async fn runs on the main thread, so a
+// single blocking HTTP call (15s timeout, 30s for event POSTs, and both can
+// queue behind the same ApiClient mutex the tracker holds) freezes the window
+// - which is what "Not responding" after a fullscreen game or a sleep/wake
+// actually was. Only the commands below that genuinely stay on the main thread
+// (window operations) or touch no network are left synchronous.
+#[tauri::command(async)]
 fn sign_in(state: tauri::State<'_, AppState>) -> SignInResult {
     state.controller.open_sign_in()
 }
 
+/// In-app email/password sign-in, no browser round-trip. The password is
+/// passed straight through to the sign-in call and is never persisted.
+#[tauri::command(async)]
+fn sign_in_with_password(
+    state: tauri::State<'_, AppState>,
+    email: String,
+    password: String,
+) -> SignInResult {
+    state.controller.sign_in_with_password(&email, &password)
+}
+
 /// Distinct from sign_in/"Re-link account": ends the session and clears
 /// tokens, but does not start a new browser link flow afterward.
-#[tauri::command]
+#[tauri::command(async)]
 fn sign_out(state: tauri::State<'_, AppState>) {
     state.controller.sign_out();
 }
@@ -53,10 +71,20 @@ fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
 
-/// The titlebar close button quits the whole app, same as the tray's Quit item -
-/// not a hide-to-tray anymore.
+/// With "Keep running in tray" on (the default), the titlebar close button
+/// only hides the window - tracking keeps running and the tray's Quit item is
+/// the real exit. With it off, closing quits, same as before.
+/// Stays synchronous: window operations must run on the main thread.
 #[tauri::command]
-fn close_window(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<(), String> {
+fn close_window(
+    app: AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+    if state.controller.close_to_tray() {
+        window.hide().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
     state.controller.stop();
     app.exit(0);
     Ok(())
@@ -77,7 +105,7 @@ fn get_profile(state: tauri::State<'_, AppState>) -> ProfileInfo {
     state.controller.get_profile()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_link_status(state: tauri::State<'_, AppState>) -> LinkStatus {
     state.controller.get_link_status()
 }
@@ -87,7 +115,7 @@ fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSetti
     state.controller.get_app_settings()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
     state.controller.open_log_file()
 }
@@ -103,12 +131,12 @@ fn save_preferences(
     Ok(state.controller.get_app_settings())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<crate::types::ProjectInfo>, String> {
     state.controller.list_projects()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn list_tasks(
     state: tauri::State<'_, AppState>,
     project_id: Option<String>,
@@ -116,12 +144,12 @@ fn list_tasks(
     state.controller.list_tasks(project_id.as_deref())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_session(state: tauri::State<'_, AppState>) -> SessionInfo {
     state.controller.get_session()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_task_time_tracking(
     state: tauri::State<'_, AppState>,
     task_id: String,
@@ -129,37 +157,37 @@ fn get_task_time_tracking(
     state.controller.get_task_time_tracking(&task_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_member_limits(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberLimits> {
     state.controller.get_member_limits()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_member_profile(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberProfile> {
     state.controller.get_member_profile()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> ActionResult {
     state.controller.start_task_session(&task_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn get_connection_state(state: tauri::State<'_, AppState>) -> ConnectionState {
     state.controller.get_connection_state()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn reconnect(state: tauri::State<'_, AppState>) -> ReconnectResult {
     state.controller.reconnect()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn start_project_session(state: tauri::State<'_, AppState>, project_id: String) -> ActionResult {
     state.controller.start_project_session(&project_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn stop_session(state: tauri::State<'_, AppState>) -> ActionResult {
     state.controller.stop_session()
 }
@@ -252,6 +280,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             sign_in,
+            sign_in_with_password,
             sign_out,
             open_web_app,
             minimize_current,
@@ -339,7 +368,13 @@ pub fn run() {
                 let close_controller = Arc::clone(&controller);
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
+                        // Always prevent the default close - either path below
+                        // handles the window itself.
                         api.prevent_close();
+                        if close_controller.close_to_tray() {
+                            let _ = win.hide();
+                            return;
+                        }
                         close_controller.stop();
                         win.app_handle().exit(0);
                     }

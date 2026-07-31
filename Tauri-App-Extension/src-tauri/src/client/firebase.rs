@@ -19,16 +19,62 @@ pub enum RefreshOutcome {
     Rejected,
 }
 
+/// Why an email/password sign-in failed, in the agent's own vocabulary.
+/// `NeedsBrowser` is the important one: a second factor or a provider we can't
+/// drive from a native form, where the honest answer is to hand the user to
+/// the browser link flow rather than fail with a Firebase error code.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PasswordSignInError {
+    BadCredentials,
+    Disabled,
+    RateLimited,
+    NeedsBrowser,
+    Unreachable,
+}
+
+impl PasswordSignInError {
+    pub fn message(&self) -> &'static str {
+        match self {
+            Self::BadCredentials => "Email or password is incorrect.",
+            Self::Disabled => "This account has been disabled. Contact your administrator.",
+            Self::RateLimited => {
+                "Too many attempts. Wait a few minutes, or use Link account instead."
+            }
+            Self::NeedsBrowser => {
+                "This account needs an extra verification step. Use Link account to continue in your browser."
+            }
+            Self::Unreachable => "Could not reach the sign-in service. Check your connection.",
+        }
+    }
+
+    /// Maps Identity Toolkit's `error.message` code. Anything unrecognised is
+    /// treated as bad credentials rather than surfacing a raw Google string -
+    /// every code this endpoint returns for a *failed* password sign-in is
+    /// some flavour of "that login didn't work".
+    pub fn from_firebase_code(code: &str) -> Self {
+        // Codes arrive as "INVALID_PASSWORD" or "TOO_MANY_ATTEMPTS_TRY_LATER : <detail>".
+        let code = code.split(':').next().unwrap_or(code).trim();
+        match code {
+            "USER_DISABLED" => Self::Disabled,
+            "TOO_MANY_ATTEMPTS_TRY_LATER" => Self::RateLimited,
+            "MFA_REQUIRED" | "SECOND_FACTOR_REQUIRED" => Self::NeedsBrowser,
+            _ => Self::BadCredentials,
+        }
+    }
+}
+
 pub struct FirebaseTokenService {
-    api_url: String,
+    auth_url: String,
     client: Client,
     api_key: Option<String>,
 }
 
 impl FirebaseTokenService {
-    pub fn new(api_url: String, client: Client) -> Self {
+    /// `auth_url` is Auth-Backend, the only service that serves the Firebase
+    /// web config - the dashboard API 404s it on purpose.
+    pub fn new(auth_url: String, client: Client) -> Self {
         Self {
-            api_url,
+            auth_url,
             client,
             api_key: None,
         }
@@ -38,7 +84,7 @@ impl FirebaseTokenService {
         if let Some(key) = &self.api_key {
             return Some(key.clone());
         }
-        let url = format!("{}/api/auth/firebase-config", self.api_url);
+        let url = format!("{}/api/auth/firebase-config", self.auth_url);
         match self
             .client
             .get(&url)
@@ -164,6 +210,93 @@ impl FirebaseTokenService {
     }
 }
 
+impl FirebaseTokenService {
+    /// Email/password sign-in, the same Identity Toolkit call the web app makes
+    /// through the Firebase SDK. The password is used once here and never
+    /// stored, logged or echoed back.
+    pub fn sign_in_with_password(
+        &mut self,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, String), PasswordSignInError> {
+        let Some(api_key) = self.firebase_api_key() else {
+            return Err(PasswordSignInError::Unreachable);
+        };
+        let url = format!(
+            "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={api_key}"
+        );
+        let res = self
+            .client
+            .post(url)
+            .json(&serde_json::json!({
+                "email": email,
+                "password": password,
+                "returnSecureToken": true,
+            }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|err| {
+                log::warn!("Password sign-in network error: {err}");
+                PasswordSignInError::Unreachable
+            })?;
+
+        let status = res.status();
+        let data: Value = res.json().map_err(|_| PasswordSignInError::Unreachable)?;
+
+        if !status.is_success() {
+            let code = data
+                .pointer("/error/message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            log::warn!("Password sign-in rejected ({})", status.as_u16());
+            return Err(PasswordSignInError::from_firebase_code(code));
+        }
+
+        // A successful response carrying an MFA challenge instead of tokens -
+        // the second factor cannot be answered from this form.
+        if data.get("mfaPendingCredential").is_some() {
+            return Err(PasswordSignInError::NeedsBrowser);
+        }
+
+        let id_token = data
+            .get("idToken")
+            .and_then(|v| v.as_str())
+            .ok_or(PasswordSignInError::Unreachable)?
+            .to_string();
+        let refresh = data
+            .get("refreshToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok((id_token, refresh))
+    }
+
+    /// Which providers exist for an email, straight from Auth-Backend. Lets the
+    /// form say "this account signs in with Google" instead of letting Firebase
+    /// answer a password attempt with a generic failure.
+    pub fn sign_in_methods(&self, email: &str) -> Option<Vec<String>> {
+        let url = format!("{}/api/auth/resolve-sign-in-methods", self.auth_url);
+        let res = self
+            .client
+            .post(url)
+            .json(&serde_json::json!({ "email": email }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        let body: Value = res.json().ok()?;
+        Some(
+            body.get("methods")?
+                .as_array()?
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect(),
+        )
+    }
+}
+
 pub fn jwt_payload(id_token: &str) -> Value {
     let parts: Vec<&str> = id_token.split('.').collect();
     if parts.len() < 2 {
@@ -176,5 +309,62 @@ pub fn jwt_payload(id_token: &str) -> Value {
     match decoded {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| Value::Object(Default::default())),
         Err(_) => Value::Object(Default::default()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PasswordSignInError;
+
+    #[test]
+    fn wrong_password_and_unknown_email_read_the_same() {
+        // Deliberate: telling the two apart is an account-enumeration oracle,
+        // and Firebase itself now collapses them into INVALID_LOGIN_CREDENTIALS.
+        for code in ["INVALID_PASSWORD", "EMAIL_NOT_FOUND", "INVALID_LOGIN_CREDENTIALS"] {
+            assert_eq!(
+                PasswordSignInError::from_firebase_code(code),
+                PasswordSignInError::BadCredentials
+            );
+        }
+    }
+
+    #[test]
+    fn disabled_and_rate_limited_are_distinct_from_bad_credentials() {
+        assert_eq!(
+            PasswordSignInError::from_firebase_code("USER_DISABLED"),
+            PasswordSignInError::Disabled
+        );
+        assert_eq!(
+            PasswordSignInError::from_firebase_code("TOO_MANY_ATTEMPTS_TRY_LATER"),
+            PasswordSignInError::RateLimited
+        );
+    }
+
+    #[test]
+    fn codes_carrying_a_detail_suffix_still_match() {
+        assert_eq!(
+            PasswordSignInError::from_firebase_code(
+                "TOO_MANY_ATTEMPTS_TRY_LATER : Access to this account has been temporarily disabled."
+            ),
+            PasswordSignInError::RateLimited
+        );
+    }
+
+    #[test]
+    fn second_factor_sends_the_user_to_the_browser() {
+        assert_eq!(
+            PasswordSignInError::from_firebase_code("MFA_REQUIRED"),
+            PasswordSignInError::NeedsBrowser
+        );
+        assert!(PasswordSignInError::NeedsBrowser
+            .message()
+            .contains("Link account"));
+    }
+
+    #[test]
+    fn unrecognised_codes_never_leak_the_raw_firebase_string() {
+        let err = PasswordSignInError::from_firebase_code("SOME_NEW_GOOGLE_CODE");
+        assert_eq!(err, PasswordSignInError::BadCredentials);
+        assert!(!err.message().contains("SOME_NEW_GOOGLE_CODE"));
     }
 }

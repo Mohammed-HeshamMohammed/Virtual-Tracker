@@ -7,6 +7,12 @@ on:
 
 jobs:
   release:
+    # Windows-only by design (bundle.targets is nsis/msi). Adding a Linux
+    # runner or a deb/appimage target pulls in the gtk/webkit2gtk/glib webview
+    # backend - which re-opens the dismissed RUSTSEC glib advisory (Dependabot
+    # #43), dismissed on the grounds that we never compile that code. Re-check
+    # it before adding one; tauri.conf.json is strict JSON and cannot hold this
+    # note itself.
     runs-on: windows-latest
     permissions:
       contents: write

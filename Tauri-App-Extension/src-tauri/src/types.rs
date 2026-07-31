@@ -61,6 +61,15 @@ pub struct SignInResult {
     pub error: Option<String>,
 }
 
+impl SignInResult {
+    pub fn failed(error: &str) -> Self {
+        Self {
+            success: false,
+            error: Some(error.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentTask {
@@ -177,6 +186,18 @@ pub struct MemberLimits {
     /// memberUsesShiftsForLimits on the backend).
     #[serde(default)]
     pub uses_shifts: bool,
+    /// Active seconds already logged today, across every task and project.
+    #[serde(default)]
+    pub worked_today_seconds: i64,
+    /// Active seconds logged so far this rolling week.
+    #[serde(default)]
+    pub worked_week_seconds: i64,
+    /// Seconds left before the binding cap stops the timer. `None` means no
+    /// cap applies at all - not "zero left".
+    #[serde(default)]
+    pub allowed_remaining_seconds: Option<i64>,
+    #[serde(default)]
+    pub limit_reached: bool,
 }
 
 /// The viewer's own People-page member record (GET /api/members/current) -

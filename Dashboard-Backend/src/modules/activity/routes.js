@@ -42,7 +42,12 @@ import {
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
 import { isProjectMemberForTimer } from "../../http/project-access.js";
-import { getProjectPg, getProjectBudgetPg, computeProjectSpentPg } from "../../lib/postgres/projects-postgres.service.js";
+import {
+  getProjectPg,
+  getProjectBudgetPg,
+  computeProjectSpentPg,
+  computeProjectBudgetTargetPg,
+} from "../../lib/postgres/projects-postgres.service.js";
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
@@ -221,14 +226,18 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const [dailyHours, weeklyHours, usesShifts] = await Promise.all([
+      // timerAllowance is the same computation the calling-project start path
+      // gates on below, so what the agent displays as "remaining today" and
+      // what actually blocks the start button can never disagree.
+      const [dailyHours, weeklyHours, usesShifts, timerAllowance] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
         memberUsesShiftsForLimits(db, member.memberId),
+        computeMemberTimerAllowance(db, member.memberId),
       ]);
       sendJson(res, origin, 200, {
         success: true,
-        data: { dailyHours, weeklyHours, usesShifts },
+        data: { dailyHours, weeklyHours, usesShifts, timerAllowance },
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
@@ -377,7 +386,12 @@ export async function routeActivity(req, res, url, origin) {
           const budget = await getProjectBudgetPg(sessionProjectId);
           if (budget) {
             const spent = await computeProjectSpentPg(db, sessionProjectId, budget);
-            const cap = Number(budget.cost ?? 0);
+            // scope='per_person' rows store hours-per-member in `cost`, not
+            // the real cap - computeProjectBudgetTargetPg is the live total
+            // (cost x headcount, x rate for Cost based). Using raw `cost`
+            // here would stop timers at the per-person figure instead of the
+            // real team-wide budget.
+            const cap = await computeProjectBudgetTargetPg(db, sessionProjectId, budget);
             const usagePct = cap > 0 ? (spent / cap) * 100 : 0;
             if (
               budget.stop_timers_when_reached &&
@@ -392,7 +406,7 @@ export async function routeActivity(req, res, url, origin) {
             }
             // Notify is best-effort and never blocks the timer - a failed
             // notification is not a reason to stop someone from working.
-            maybeNotifyProjectBudget(db, sessionProjectId, budget, spent).catch(() => null);
+            maybeNotifyProjectBudget(db, sessionProjectId, budget, spent, cap).catch(() => null);
           }
         }
       }

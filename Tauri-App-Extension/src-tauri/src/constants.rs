@@ -8,6 +8,12 @@ pub const AGENT_NAME: &str = "tauri";
 pub const PROD_WEB_URL: &str = "https://app.myvirtualtracker.com";
 /// Production dashboard / activity API.
 pub const PROD_API_URL: &str = "https://appapi.myvirtualtracker.com";
+/// Auth-Backend. A separate service from the dashboard API, which deliberately
+/// 404s every `/api/auth/*` authn route ("This route is handled by
+/// Auth-Backend"). Asking the dashboard API for the Firebase web config - as
+/// this agent used to - therefore yielded no API key, which silently disabled
+/// token refresh *and* device re-auth.
+pub const PROD_AUTH_URL: &str = "https://auth.myvirtualtracker.com";
 
 pub const SESSION_POLL_SEC: u64 = 5;
 pub const APP_LOG_INTERVAL_SEC: u64 = 15;

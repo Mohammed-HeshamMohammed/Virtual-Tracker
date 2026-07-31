@@ -29,6 +29,7 @@ type UserPreferences = {
   launchAtLogin: boolean;
   startHidden: boolean;
   autoSignIn: boolean;
+  closeToTray: boolean;
 };
 
 type AppSettingsView = {
@@ -97,6 +98,11 @@ type MemberLimits = {
   dailyHours: number;
   weeklyHours: number;
   usesShifts: boolean;
+  workedTodaySeconds: number;
+  workedWeekSeconds: number;
+  /** null = no cap applies. Not the same as 0 seconds left. */
+  allowedRemainingSeconds: number | null;
+  limitReached: boolean;
 };
 
 // The viewer's own People-page member record - richer than what's in the
@@ -357,6 +363,21 @@ function SettingsPanel({ onBack }: { onBack: () => void }) {
               onChange={(e) => void toggle("autoSignIn", e.target.checked)}
             />
           </label>
+          <label className="settings-toggle">
+            <div>
+              <strong>Keep running in tray</strong>
+              <span>Closing the window hides it instead of quitting</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={Boolean(prefs?.closeToTray)}
+              disabled={saving || !prefs}
+              onChange={(e) => void toggle("closeToTray", e.target.checked)}
+            />
+          </label>
+          {prefs?.closeToTray ? (
+            <p className="settings-hint">Tracking keeps running. Use Quit in the tray to stop.</p>
+          ) : null}
         </section>
 
         {message ? (
@@ -512,20 +533,24 @@ function WelcomeBackPanel({
   message,
   busy,
   needsRelink,
+  staleSession,
   onReconnect,
   onRelink,
-  onSignOut,
+  onSwitchAccount,
 }: {
   profile: ProfileInfo | null;
   message: string | null;
   busy: boolean;
   needsRelink: boolean;
+  /** Signed out server-side but still showing a cached identity. */
+  staleSession: boolean;
   onReconnect: () => void;
   onRelink: () => void;
-  onSignOut: () => void;
+  onSwitchAccount: () => void;
 }) {
   const [avatarBroken, setAvatarBroken] = useState(false);
   const name = profile?.name || "Welcome back";
+  const firstName = profile?.name?.trim().split(/\s+/)[0] || "";
 
   return (
     <main className="agent-tray view-home">
@@ -552,7 +577,9 @@ function WelcomeBackPanel({
             {message ??
               (needsRelink
                 ? "This device is no longer linked to your account."
-                : "Your session went idle. Reconnect to pick up where you left off.")}
+                : staleSession
+                  ? "We couldn't verify this session. Continue, or sign in as someone else."
+                  : "Your session went idle. Reconnect to pick up where you left off.")}
           </p>
 
           <button
@@ -561,11 +588,20 @@ function WelcomeBackPanel({
             disabled={busy}
             onClick={needsRelink ? onRelink : onReconnect}
           >
-            {busy ? "Reconnecting…" : needsRelink ? "Link this device again" : "Welcome back"}
+            {busy
+              ? "Reconnecting…"
+              : needsRelink
+                ? "Link this device again"
+                : firstName
+                  ? `Continue as ${firstName}`
+                  : "Welcome back"}
           </button>
 
-          <button className="btn btn-tertiary" type="button" disabled={busy} onClick={onSignOut}>
-            Log out instead
+          {/* Replaces the old "Log out instead" button: signing out only to
+              sign back in as someone else was two steps and read as a dead
+              end. A link, not a third stacked button - it is the rarer path. */}
+          <button className="link-btn" type="button" disabled={busy} onClick={onSwitchAccount}>
+            Not you? Switch account →
           </button>
         </div>
       </div>
@@ -759,6 +795,8 @@ function MainApp() {
   const [reconnecting, setReconnecting] = useState(false);
   const [reconnectMessage, setReconnectMessage] = useState<string | null>(null);
   const [needsRelink, setNeedsRelink] = useState(false);
+  const [signInEmail, setSignInEmail] = useState("");
+  const [signInPassword, setSignInPassword] = useState("");
   // Distinguishes "you have no projects" from "we couldn't load them" - they
   // used to render identically, which is what made a dead session look like an
   // empty account.
@@ -787,6 +825,11 @@ function MainApp() {
   }, []);
 
   const signedIn = Boolean(profile?.signedIn);
+  // get_profile builds identity from the cached id token's claims, so an
+  // expired/revoked/wrong-user token still reports signedIn. Paired with a
+  // signedOut connection state that means: we still show a user, the server
+  // no longer accepts them.
+  const staleSession = connection === "signedOut" && signedIn;
   const tracking =
     (session?.status || "").toLowerCase() === "active" ||
     (link?.status || "").toLowerCase().includes("active");
@@ -867,26 +910,56 @@ function MainApp() {
     }
   };
 
+  // Every poll below is guarded by an in-flight ref. Without it, a slow or
+  // stalled backend (sleep, fullscreen game, dead network) lets each 5s tick
+  // queue another four invocations that all fire at once on unblock - a 30s
+  // stall used to enqueue roughly two dozen.
+  const refreshInFlight = useRef(false);
+  const trackingInFlight = useRef(false);
+  const limitsInFlight = useRef(false);
+
+  const refreshGuarded = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
+    try {
+      await refresh();
+    } finally {
+      refreshInFlight.current = false;
+    }
+  }, [refresh]);
+
   useEffect(() => {
     void invoke<string>("get_version")
       .then(setVersion)
       .catch(() => undefined);
-    void refresh()
+    void refreshGuarded()
       .catch(console.error)
       .finally(() => setLoadingProfile(false));
 
     const onStatus = () => {
-      void refresh().catch(console.error);
+      void refreshGuarded().catch(console.error);
+    };
+    // Coming back from the tray, from sleep, or from a fullscreen game: check
+    // the session immediately instead of letting the next click be the thing
+    // that discovers the token aged out. The in-flight guard makes this free
+    // when a poll is already running.
+    const onWake = () => {
+      if (document.visibilityState === "hidden") return;
+      void refreshGuarded().catch(console.error);
     };
     window.addEventListener("vt-status", onStatus);
+    window.addEventListener("focus", onWake);
+    document.addEventListener("visibilitychange", onWake);
     const timer = window.setInterval(() => {
-      void refresh().catch(console.error);
+      void refreshGuarded().catch(console.error);
     }, 5000);
     return () => {
       window.removeEventListener("vt-status", onStatus);
+      window.removeEventListener("focus", onWake);
+      document.removeEventListener("visibilitychange", onWake);
       window.clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refreshGuarded]);
 
   useEffect(() => {
     void refreshProjects().catch(console.error);
@@ -901,6 +974,8 @@ function MainApp() {
       setTaskTracking(null);
       return;
     }
+    if (trackingInFlight.current) return;
+    trackingInFlight.current = true;
     try {
       const next = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
         taskId: selectedTaskId,
@@ -908,6 +983,8 @@ function MainApp() {
       setTaskTracking(next);
     } catch {
       setTaskTracking(null);
+    } finally {
+      trackingInFlight.current = false;
     }
   }, [selectedTaskId]);
 
@@ -917,13 +994,33 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [refreshTaskTracking]);
 
-  // Limits and the People-page member record rarely change - fetch once when
-  // the profile view opens rather than polling them alongside task tracking.
+  // The personal daily/weekly cap, which is the *only* thing that limits a
+  // calling-project timer. Polled on the home view too (not just the profile
+  // view, as before) because "Remaining today" has to keep counting down
+  // while the clock runs.
+  const refreshMemberLimits = useCallback(async () => {
+    if (!signedIn || limitsInFlight.current) return;
+    limitsInFlight.current = true;
+    try {
+      setMemberLimits(await invoke<MemberLimits>("get_member_limits"));
+    } catch {
+      setMemberLimits(null);
+    } finally {
+      limitsInFlight.current = false;
+    }
+  }, [signedIn]);
+
+  useEffect(() => {
+    if (view !== "home" && view !== "profile") return;
+    void refreshMemberLimits();
+    const timer = window.setInterval(() => void refreshMemberLimits(), 5000);
+    return () => window.clearInterval(timer);
+  }, [view, refreshMemberLimits]);
+
+  // The People-page member record never changes while the app is open - one
+  // fetch when the profile view opens, no polling.
   useEffect(() => {
     if (view !== "profile" || !signedIn) return;
-    invoke<MemberLimits>("get_member_limits")
-      .then(setMemberLimits)
-      .catch(() => setMemberLimits(null));
     invoke<MemberProfile>("get_member_profile")
       .then(setMemberProfile)
       .catch(() => setMemberProfile(null));
@@ -955,6 +1052,37 @@ function MainApp() {
     }, 800);
     return () => window.clearInterval(barTimer);
   }, [tracking]);
+
+  // In-app sign-in. The password lives in component state only for as long as
+  // the form is on screen and is cleared the moment the call returns - it is
+  // never written anywhere, and the Rust side does not persist it either.
+  const handlePasswordSignIn = async () => {
+    if (busy) return;
+    setActionError(null);
+    setBusy(true);
+    try {
+      const result = await invoke<SignInResult>("sign_in_with_password", {
+        email: signInEmail,
+        password: signInPassword,
+      });
+      if (result.success) {
+        setSignInPassword("");
+        toast.success("Signed in");
+        await refresh();
+        await refreshProjects();
+      } else {
+        const msg = result.error || "Could not sign in";
+        setActionError(msg);
+        toast.error(msg);
+      }
+    } catch {
+      const msg = "Could not sign in. Check your connection and try again.";
+      setActionError(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleSignIn = async () => {
     setActionError(null);
@@ -1011,6 +1139,23 @@ function MainApp() {
     } finally {
       setSigningOut(false);
     }
+  };
+
+  // Clears this machine's tokens *and* device credential, then falls back to
+  // the signed-out home view - which is now the in-app sign-in form, so
+  // switching user no longer requires a browser trip at all. The form's own
+  // "Link account in browser" button covers the provider accounts it can't
+  // handle.
+  const handleSwitchAccount = async () => {
+    setReconnectMessage(null);
+    setSignInEmail("");
+    setSignInPassword("");
+    try {
+      await invoke("sign_out");
+    } catch {
+      // Best-effort: the refresh below reflects whatever state we ended in.
+    }
+    await refresh();
   };
 
   const handleStart = async () => {
@@ -1123,6 +1268,59 @@ function MainApp() {
         ? "No cap"
         : `${fmtHours(taskTracking.allowedRemainingSeconds)} left`;
 
+  // The member's own cap, straight from /api/activity/limits. Task projects
+  // fold this into "Remaining" above, which hides *which* cap is binding;
+  // calling projects had no cap information on screen at all.
+  const dailyCapLabel = !memberLimits
+    ? "—"
+    : memberLimits.usesShifts
+      ? "By shifts"
+      : memberLimits.dailyHours > 0
+        ? fmtLimitHours(memberLimits.dailyHours)
+        : memberLimits.weeklyHours > 0
+          ? `${fmtLimitHours(memberLimits.weeklyHours)}/wk`
+          : "No hour limit";
+  const capSubLabel = !memberLimits
+    ? ""
+    : memberLimits.usesShifts
+      ? "Scheduled by shifts — no daily cap"
+      : memberLimits.dailyHours > 0
+        ? "your daily limit"
+        : memberLimits.weeklyHours > 0
+          ? "weekly limit — no daily cap"
+          : "no cap set on your account";
+  const remainingTodayLabel = !memberLimits
+    ? "—"
+    : memberLimits.usesShifts || memberLimits.allowedRemainingSeconds == null
+      ? "No cap"
+      : memberLimits.limitReached
+        ? "Limit reached"
+        : `${fmtHours(memberLimits.allowedRemainingSeconds)} left`;
+  const workedTodayLabel = memberLimits ? fmtHours(memberLimits.workedTodaySeconds) : "—";
+
+  // Rendered under both project types: on its own for a calling project (which
+  // has no task stats at all), and alongside the task cards otherwise.
+  const hoursTodayCards = (
+    <div className="stat-grid cols-3 page-content-swap" style={{ animationDelay: "0.04s" }}>
+      <div className="stat-card">
+        <span className="stat-card-label">Today, all work</span>
+        <span className="stat-card-value">{workedTodayLabel}</span>
+        <span className="stat-card-sub">across every project</span>
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">Daily cap</span>
+        <span className="stat-card-value">{dailyCapLabel}</span>
+        {capSubLabel ? <span className="stat-card-sub">{capSubLabel}</span> : null}
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">Remaining today</span>
+        <span className={`stat-card-value${memberLimits?.limitReached ? " warn" : ""}`}>
+          {remainingTodayLabel}
+        </span>
+      </div>
+    </div>
+  );
+
   // Whole-task budget remaining, independent of whichever daily/weekly cap
   // "Remaining" above is currently bound by. activeSeconds here is the
   // cumulative total worked on this task across every day, so this decreases
@@ -1138,16 +1336,22 @@ function MainApp() {
   // Recovery takes over the window only when idle. Mid-timer it stays a
   // banner - yanking away a running clock reads as lost work, and the tracker
   // keeps counting locally and flushes once the connection returns.
-  if (connection === "disconnected" && !tracking && view === "home") {
+  //
+  // "signedOut with a cached profile" is the stale-session case: the refresh
+  // token was rejected and there is no device credential, so get_profile still
+  // renders the old user from JWT claims while every real call 401s. Without
+  // this branch the home view looked normal and nothing offered a way out.
+  if ((connection === "disconnected" || staleSession) && !tracking && view === "home") {
     return (
       <WelcomeBackPanel
         profile={profile}
         message={reconnectMessage}
-        busy={reconnecting}
-        needsRelink={needsRelink}
+        busy={reconnecting || busy}
+        needsRelink={needsRelink || staleSession}
+        staleSession={staleSession}
         onReconnect={() => void handleReconnect()}
         onRelink={() => void handleSignIn()}
-        onSignOut={() => void handleSignOut()}
+        onSwitchAccount={() => void handleSwitchAccount()}
       />
     );
   }
@@ -1248,23 +1452,75 @@ function MainApp() {
               <span className="skeleton-bar" />
             </div>
           ) : !signedIn ? (
-            <nav className="actions side-panel-swap">
+            /* Sign in here, in the app. The browser link flow stays as a peer
+               option below it - it is still the only path for Google/Apple
+               accounts and for anything needing a second factor. */
+            <form
+              className="signin-form side-panel-swap"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void handlePasswordSignIn();
+              }}
+            >
+              <label className="task-label" htmlFor="signin-email">
+                Email
+              </label>
+              <input
+                id="signin-email"
+                className="text-input"
+                type="email"
+                autoComplete="username"
+                spellCheck={false}
+                value={signInEmail}
+                disabled={busy}
+                onChange={(e) => setSignInEmail(e.target.value)}
+              />
+
+              <label className="task-label" htmlFor="signin-password">
+                Password
+              </label>
+              <input
+                id="signin-password"
+                className="text-input"
+                type="password"
+                autoComplete="current-password"
+                value={signInPassword}
+                disabled={busy}
+                onChange={(e) => setSignInPassword(e.target.value)}
+              />
+
+              <button className="btn btn-primary" type="submit" disabled={busy}>
+                {busy ? "Signing in…" : "Sign in"}
+              </button>
+
               <button
-                className="btn btn-primary"
+                className="btn btn-secondary"
                 type="button"
                 disabled={busy}
                 onClick={() => void handleSignIn()}
               >
-                {profile?.linkPending ? "Open link page" : "Sign in"}
+                {profile?.linkPending ? "Open link page" : "Link account in browser"}
               </button>
-              <button
-                className="btn btn-secondary"
-                type="button"
-                onClick={() => void invoke("open_web_app")}
-              >
-                Open dashboard
-              </button>
-            </nav>
+
+              <div className="signin-links">
+                {/* Both live on the web app's single auth page, which switches
+                    modes internally - no separate routes to point at. */}
+                <button
+                  className="link-btn"
+                  type="button"
+                  onClick={() => void invoke("open_web_app")}
+                >
+                  Create account
+                </button>
+                <button
+                  className="link-btn"
+                  type="button"
+                  onClick={() => void invoke("open_web_app")}
+                >
+                  Forgot password?
+                </button>
+              </div>
+            </form>
           ) : (
             <>
               {/* Centred as a pair, so the project card visibly rides upward as
@@ -1408,10 +1664,15 @@ function MainApp() {
                 <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
               </div>
 
+              {/* Your own hours - the only cap a calling project has, and the
+                  one the task cards below fold invisibly into "Remaining". */}
+              <h3 className="stat-group-label">Your hours today</h3>
+              {hoursTodayCards}
+
               {/* Task estimates, progress and budget are what performance is
                   measured from - a calling project has none of it by design. */}
               {isCallingProject ? null : (
-              <div className="stat-grid page-content-swap" style={{ animationDelay: "0.04s" }}>
+              <div className="stat-grid page-content-swap" style={{ animationDelay: "0.08s" }}>
                 <div className="stat-card">
                   <span className="stat-card-label">Today, this task</span>
                   <span className="stat-card-value">{fmtHours(taskTracking?.workedTodayOnTaskSeconds)}</span>

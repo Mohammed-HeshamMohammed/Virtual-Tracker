@@ -2,13 +2,15 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::constants::{PROD_API_URL, PROD_WEB_URL};
+use crate::constants::{PROD_API_URL, PROD_AUTH_URL, PROD_WEB_URL};
 use crate::prefs::PreferencesStore;
 
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub api_url: String,
     pub web_url: String,
+    /// Auth-Backend, not the dashboard API - see PROD_AUTH_URL.
+    pub auth_url: String,
     pub auth_port: u16,
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
@@ -53,6 +55,7 @@ impl Settings {
                 .unwrap_or_else(|_| default_web.into())
                 .trim_end_matches('/')
                 .to_string(),
+            auth_url: resolve_auth_url(),
             auth_port: env::var("VT_AUTH_PORT")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -68,6 +71,60 @@ impl Settings {
 
     pub fn preferences_store(&self) -> PreferencesStore {
         PreferencesStore::new(self.prefs_path.clone())
+    }
+}
+
+/// `VT_AUTH_URL` exists for pointing a dev build at a local Auth-Backend
+/// (`http://127.0.0.1:5712`). A release build only honours it over HTTPS -
+/// email, password and tokens go to this host, so a plaintext override in a
+/// shipped build is not a configuration choice, it is an attack.
+fn resolve_auth_url() -> String {
+    pick_auth_url(
+        &env::var("VT_AUTH_URL").unwrap_or_default(),
+        cfg!(debug_assertions),
+    )
+}
+
+/// Split out from the environment read so the rule itself is testable.
+fn pick_auth_url(configured: &str, debug_build: bool) -> String {
+    let configured = configured.trim().trim_end_matches('/');
+    if configured.is_empty() {
+        return PROD_AUTH_URL.to_string();
+    }
+    if !debug_build && !configured.starts_with("https://") {
+        log::warn!("Ignoring non-HTTPS VT_AUTH_URL in a release build");
+        return PROD_AUTH_URL.to_string();
+    }
+    configured.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pick_auth_url, PROD_AUTH_URL};
+
+    #[test]
+    fn no_override_uses_production_auth_backend() {
+        assert_eq!(pick_auth_url("", false), PROD_AUTH_URL);
+        assert_eq!(pick_auth_url("   ", true), PROD_AUTH_URL);
+    }
+
+    #[test]
+    fn dev_builds_may_point_at_a_local_auth_backend() {
+        assert_eq!(
+            pick_auth_url("http://127.0.0.1:5712/", true),
+            "http://127.0.0.1:5712"
+        );
+    }
+
+    #[test]
+    fn release_builds_refuse_a_plaintext_override() {
+        // Credentials and tokens go to this host - a shipped build must not be
+        // talked into sending them over HTTP by an environment variable.
+        assert_eq!(pick_auth_url("http://evil.example", false), PROD_AUTH_URL);
+        assert_eq!(
+            pick_auth_url("https://staging-auth.example", false),
+            "https://staging-auth.example"
+        );
     }
 }
 
