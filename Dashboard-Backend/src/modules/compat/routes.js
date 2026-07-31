@@ -1062,7 +1062,9 @@ export async function routeCompatibility(req, res, url, db, origin) {
           actorUid: viewer?.uid ?? "",
           reloadSections,
         });
-        void upsertMemberFormSnapshot(db, id, body, updatedBy);
+        void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
+          logSafeWarn("[members] form snapshot upsert:", e);
+        });
         const member = await buildLightSectionMemberResponse(db, id, viewer, singleSection);
         const profileViewer = getAuthContext(req);
         const safeForm = redactProfileFormCompensation({ ...form, role: member?.role ?? form.role }, profileViewer, id);
@@ -1086,7 +1088,9 @@ export async function routeCompatibility(req, res, url, db, origin) {
         skipRoleSync: hasRoleChange,
         reloadSections,
       });
-      void upsertMemberFormSnapshot(db, id, body, updatedBy);
+      void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
+        logSafeWarn("[members] form snapshot upsert:", e);
+      });
       const doc = await db.collection("members").doc(id).get();
       let [member] = await mapMembersWithProfilePhotos(db, [doc]);
       [member] = await enrichMembersWithRoleNames(db, [member]);

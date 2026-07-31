@@ -308,7 +308,11 @@ export async function recordMemberRelationship(db, {
     }
   };
   if (deferTreeCache) {
-    void refreshTreeCache();
+    // invalidateTreeCache sits outside refreshTreeCache's inner try, so this
+    // needs its own catch.
+    void refreshTreeCache().catch((err) => {
+      logSafeWarn("[member-relationships] deferred tree cache refresh:", err);
+    });
   } else {
     await invalidateTreeCache(db, parentMemberId);
     await invalidateTreeCache(db, childMemberId);

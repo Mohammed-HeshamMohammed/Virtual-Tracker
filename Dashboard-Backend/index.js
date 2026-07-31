@@ -36,9 +36,27 @@ function registerServerErrorHandler(server, port) {
       process.exit(1);
     }
     logError(err, "server");
-    throw err;
+    process.exit(1);
   });
 }
+
+// Last-resort process guards. Rejections from fire-and-forget work (schedulers,
+// void-called services) have no request scope to catch them; without these Node
+// would kill the process on a single Firestore blip.
+process.on("unhandledRejection", (reason) => {
+  logError(reason instanceof Error ? reason : new Error(String(reason)), "unhandledRejection");
+});
+process.on("uncaughtException", (err) => {
+  logError(err, "uncaughtException");
+  // State is unknown after an uncaught throw: stop taking traffic and let the
+  // supervisor restart us.
+  if (activeServer) {
+    activeServer.close(() => process.exit(1));
+    setTimeout(() => process.exit(1), 5000).unref();
+    return;
+  }
+  process.exit(1);
+});
 
 // Graceful shutdown
 process.on("SIGTERM", () => {
