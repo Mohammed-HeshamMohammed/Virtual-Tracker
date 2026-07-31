@@ -1,7 +1,7 @@
 //components/activity/screenshots.tsx
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import {
   getCachedScreenshotImage,
@@ -35,6 +35,8 @@ import {
   Focus,
   AlertTriangle,
   Target,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 
@@ -453,6 +455,35 @@ export function ActivityScreenshots() {
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(displayScreenshots, SCREENSHOTS_PER_PAGE)
 
+  // Arrow-key navigation walks the full filtered/sorted list, not just the
+  // current page, so paging doesn't interrupt stepping through screenshots.
+  const selectedIndex = selectedScreenshot
+    ? displayScreenshots.findIndex((s) => s.id === selectedScreenshot.id)
+    : -1
+
+  const navigateScreenshot = useCallback(
+    (direction: 1 | -1) => {
+      if (selectedIndex === -1) return
+      const nextIndex = selectedIndex + direction
+      if (nextIndex < 0 || nextIndex >= displayScreenshots.length) return
+      setSelectedScreenshot(displayScreenshots[nextIndex])
+    },
+    [selectedIndex, displayScreenshots],
+  )
+
+  useEffect(() => {
+    if (!selectedScreenshot) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "ArrowLeft") {
+        navigateScreenshot(-1)
+      } else if (event.key === "ArrowRight") {
+        navigateScreenshot(1)
+      }
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [selectedScreenshot, navigateScreenshot])
+
   const hasDayData = allScreenshots.length > 0
   const isAllDays = day.dayMode === "all"
   const showCaptureBanner = !loading && !!disabledReason && hasDayData
@@ -717,6 +748,26 @@ export function ActivityScreenshots() {
                     <Monitor className="w-24 h-24 text-slate-300 dark:text-slate-700" />
                   </div>
                 )}
+                {selectedIndex > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => navigateScreenshot(-1)}
+                    aria-label="Previous screenshot"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                ) : null}
+                {selectedIndex !== -1 && selectedIndex < displayScreenshots.length - 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => navigateScreenshot(1)}
+                    aria-label="Next screenshot"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                ) : null}
               </div>
               <div className="p-4 bg-slate-50 dark:bg-slate-800/60 flex items-center justify-between">
                 <div className="flex items-center gap-6">
