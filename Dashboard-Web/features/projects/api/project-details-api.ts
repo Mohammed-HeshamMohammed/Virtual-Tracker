@@ -39,6 +39,9 @@ export interface CreateProjectFormPayload {
   budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
+  /** 'per_project' (flat total, the only prior behavior) or 'per_person'
+   * (budgetTotal is hours-per-member; the real total scales with headcount). */
+  budgetScope: string
   budgetTotal: string
   budgetResets: string
   budgetNotifyAt: string
@@ -62,6 +65,7 @@ export interface ProjectBudgetRow {
   projectId: string
   type: string
   basedOn: string
+  scope: string
   cost: number
   notifyProjectMembers: boolean
   notifyAtPct: number | null
@@ -74,6 +78,11 @@ export interface ProjectBudgetRow {
   /** Real value computed server-side from tracked time x rate - not stored, not
    * fabricated, and not something to send back on create/update (read-only). */
   spent?: number
+  /** The real budget total to display: for scope='per_person' rows `cost` is
+   * hours-per-member, not a total - this is `cost` scaled live by current
+   * headcount (and rate, for Cost based). For scope='per_project' this just
+   * equals `cost`. Read-only, never sent back on create/update. */
+  target?: number
 }
 
 export interface ProjectMemberLimitRow {
@@ -215,6 +224,7 @@ async function updateProjectBudget(
   const body: Record<string, unknown> = {}
   if (data.type !== undefined) body.type = data.type
   if (data.basedOn !== undefined) body.based_on = data.basedOn
+  if (data.scope !== undefined) body.scope = data.scope
   if (data.cost !== undefined) body.cost = data.cost
   if (data.notifyProjectMembers !== undefined) body.notify_project_members = data.notifyProjectMembers
   if (data.notifyAtPct !== undefined) body.notify_at_pct = data.notifyAtPct
@@ -241,6 +251,7 @@ function mapBudgetRow(row: Record<string, unknown>): ProjectBudgetRow {
     projectId: String(row.project_id ?? row.projectId ?? ""),
     type: String(row.type ?? ""),
     basedOn: String(row.based_on ?? row.basedOn ?? ""),
+    scope: row.scope === "per_person" ? "per_person" : "per_project",
     cost: Number(row.cost ?? 0),
     notifyProjectMembers: Boolean(row.notify_project_members ?? row.notifyProjectMembers),
     notifyAtPct:
@@ -261,6 +272,7 @@ function mapBudgetRow(row: Record<string, unknown>): ProjectBudgetRow {
     startDate: String(row.start_date ?? row.startDate ?? ""),
     includeNonBillableTime: Boolean(row.include_non_billable_time ?? row.includeNonBillableTime ?? true),
     spent: Number(row.spent ?? 0),
+    target: row.target != null ? Number(row.target) : Number(row.cost ?? 0),
   }
 }
 
@@ -274,6 +286,7 @@ async function createProjectBudget(
       project_id: data.projectId,
       type: data.type,
       based_on: data.basedOn,
+      scope: data.scope,
       cost: data.cost,
       notify_project_members: data.notifyProjectMembers,
       notify_at_pct: data.notifyAtPct,
@@ -453,6 +466,7 @@ function buildBudgetFields(payload: CreateProjectFormPayload) {
   return {
     type: payload.budgetType,
     basedOn: payload.budgetBasedOn,
+    scope: payload.budgetScope === "per_person" ? "per_person" : "per_project",
     cost: parseOptionalNumber(payload.budgetTotal) ?? 0,
     notifyProjectMembers: payload.budgetNotifyMembers,
     // Dependent fields are already cleared to "" by the modal when their
