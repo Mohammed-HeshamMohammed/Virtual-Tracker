@@ -68,6 +68,10 @@ interface AddProjectFormState {
   budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
+  // 'per_project': budgetTotal is a flat total (the only behavior before this
+  // field existed). 'per_person': budgetTotal is hours-per-member - the real
+  // total scales with current headcount, so it's read-only/derived, not typed.
+  budgetScope: string
   budgetResets: string
   budgetNotifyAt: string
   budgetWhoToNotify: string
@@ -136,6 +140,7 @@ function createDefaultAddForm(): AddProjectFormState {
     budgetStopTimers: true,
     budgetType: "Cost based",
     budgetBasedOn: "Bill rate",
+    budgetScope: "per_project",
     budgetResets: "Never",
     budgetNotifyAt: "",
     budgetWhoToNotify: "",
@@ -224,6 +229,7 @@ function formStateToPayload(
     budgetStopTimers: addForm.budgetStopTimers,
     budgetType: addForm.budgetType,
     budgetBasedOn: addForm.budgetBasedOn,
+    budgetScope: addForm.budgetScope,
     budgetTotal: addForm.budgetTotal,
     budgetResets: addForm.budgetResets,
     budgetNotifyAt: addForm.budgetNotifyAt,
@@ -416,6 +422,7 @@ export function ProjectModal({
           budgetStopTimers: payload.budgetStopTimers,
           budgetType: payload.budgetType || "Cost based",
           budgetBasedOn: payload.budgetBasedOn || "Bill rate",
+          budgetScope: payload.budgetScope === "per_person" ? "per_person" : "per_project",
           budgetResets: payload.budgetResets,
           budgetNotifyAt: payload.budgetNotifyAt,
           budgetWhoToNotify: payload.budgetWhoToNotify,
@@ -942,6 +949,16 @@ export function ProjectModal({
                         />
                       )}
                     </FormField>
+                    <FormField label="Scope" required>
+                      <SelectField
+                        value={addForm.budgetScope}
+                        onChange={(value) => setAddForm((p) => ({ ...p, budgetScope: value }))}
+                        options={[
+                          { value: "per_project", label: "Whole project" },
+                          { value: "per_person", label: "Per person" },
+                        ]}
+                      />
+                    </FormField>
                     {addForm.budgetType !== "Hours based" ? (
                       <FormField label="Based on" required>
                         <ProjectModalSelect
@@ -952,43 +969,67 @@ export function ProjectModal({
                         />
                       </FormField>
                     ) : null}
-                    <FormField
-                      label={addForm.budgetType === "Hours based" ? "Hours" : "Cost"}
-                      required
-                      className="sm:col-span-2"
-                      error={budgetFieldErrors.budgetTotal}
-                    >
-                      <div className="relative">
-                        {addForm.budgetType !== "Hours based" ? (
-                          <span
-                            className={cn(
-                              "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
-                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                            )}
-                          >
-                            $
-                          </span>
-                        ) : null}
-                        <input
-                          type="number"
-                          min={0}
-                          value={addForm.budgetTotal}
-                          onChange={(e) => updateAddForm({ budgetTotal: e.target.value })}
-                          className={cn(formTheme.control, addForm.budgetType !== "Hours based" ? "pl-7" : "", addForm.budgetType === "Hours based" ? "pr-7" : "")}
-                        />
-                        {addForm.budgetType === "Hours based" ? (
-                          <span
-                            className={cn(
-                              "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
-                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                            )}
-                          >
-                            h
-                          </span>
-                        ) : null}
-                      </div>
-                    </FormField>
+                    {(() => {
+                      // A per_person scope always takes hours-per-member as
+                      // its input, regardless of budget type - Cost based
+                      // multiplies those hours by each member's own rate at
+                      // read time (see computeProjectBudgetTargetForAllPg),
+                      // it isn't a dollar figure typed here.
+                      const isHoursInput = addForm.budgetType === "Hours based" || addForm.budgetScope === "per_person"
+                      const label =
+                        addForm.budgetScope === "per_person"
+                          ? "Hours per person"
+                          : addForm.budgetType === "Hours based"
+                            ? "Hours"
+                            : "Cost"
+                      return (
+                        <FormField
+                          label={label}
+                          required
+                          className="sm:col-span-2"
+                          error={budgetFieldErrors.budgetTotal}
+                        >
+                          <div className="relative">
+                            {!isHoursInput ? (
+                              <span
+                                className={cn(
+                                  "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
+                                  formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                )}
+                              >
+                                $
+                              </span>
+                            ) : null}
+                            <input
+                              type="number"
+                              min={0}
+                              value={addForm.budgetTotal}
+                              onChange={(e) => updateAddForm({ budgetTotal: e.target.value })}
+                              className={cn(formTheme.control, !isHoursInput ? "pl-7" : "", isHoursInput ? "pr-7" : "")}
+                            />
+                            {isHoursInput ? (
+                              <span
+                                className={cn(
+                                  "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                                  formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                )}
+                              >
+                                h
+                              </span>
+                            ) : null}
+                          </div>
+                        </FormField>
+                      )
+                    })()}
                   </div>
+                  {addForm.budgetScope === "per_person" ? (
+                    <p className={cn("text-xs leading-relaxed", formTheme.mutedText)}>
+                      Total scales with headcount: every current project member is expected to log this
+                      many hours, so the real budget total is this number x member count (and x each
+                      member&apos;s own rate, for Cost based). The End Date can&apos;t be set earlier than
+                      what members&apos; own daily/weekly hour limits make possible.
+                    </p>
+                  ) : null}
 
                   <SettingToggleRow
                     checked={addForm.budgetNotifyMembers}

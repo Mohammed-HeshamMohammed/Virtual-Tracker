@@ -181,12 +181,12 @@ export async function upsertProjectBudgetPg(projectId, data, actorId) {
   const id = existing?.id ?? crypto.randomUUID();
   const rows = await query(
     `INSERT INTO project_budgets (
-       id, project_id, type, based_on, cost, notify_project_members, notify_at_pct, who_to_notify,
+       id, project_id, type, based_on, scope, cost, notify_project_members, notify_at_pct, who_to_notify,
        stop_timers_when_reached, stop_timers_at_pct, resets, start_date, include_non_billable_time,
        created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
      ON CONFLICT (project_id) DO UPDATE SET
-       type = EXCLUDED.type, based_on = EXCLUDED.based_on, cost = EXCLUDED.cost,
+       type = EXCLUDED.type, based_on = EXCLUDED.based_on, scope = EXCLUDED.scope, cost = EXCLUDED.cost,
        notify_project_members = EXCLUDED.notify_project_members, notify_at_pct = EXCLUDED.notify_at_pct,
        who_to_notify = EXCLUDED.who_to_notify, stop_timers_when_reached = EXCLUDED.stop_timers_when_reached,
        stop_timers_at_pct = EXCLUDED.stop_timers_at_pct, resets = EXCLUDED.resets,
@@ -198,6 +198,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId) {
       projectId,
       data.type ?? "Cost based",
       data.basedOn ?? null,
+      data.scope === "per_person" ? "per_person" : "per_project",
       data.cost ?? 0,
       data.notifyProjectMembers ?? false,
       data.notifyAtPct ?? null,
@@ -598,4 +599,109 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
   }
 
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// per_person budget target - "cost" on a scope='per_person' row is hours-per-
+// member, not a total (see ensure-lookup-schema.js's project_budgets comment
+// and project-budget-capacity.js). scope='per_project' rows need no
+// computation here at all - their `cost` already is the total, unchanged.
+// ---------------------------------------------------------------------------
+
+/**
+ * Batched live total for every scope='per_person' row in `budgetRows` -
+ * mirrors computeProjectSpentForAllPg's shape/batching, but sums against
+ * EVERY current project member (not just the ones who have logged time,
+ * since the point of a per-person target is "what if everyone hits it").
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ id: string, type?: string, based_on?: string, scope?: string, cost?: number }[]} budgetRows
+ * @returns {Promise<Map<string, number>>} project_id -> live total, in the budget's own unit (hours or cost)
+ */
+export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
+  const result = new Map();
+  const perPersonRows = budgetRows.filter((r) => r.scope === "per_person" && Number(r.cost) > 0);
+  if (!perPersonRows.length) return result;
+
+  const ids = perPersonRows.map((r) => r.id);
+  const memberRows = await query(
+    "SELECT project_id, member_id FROM project_members WHERE project_id = ANY($1::uuid[])",
+    [ids],
+  );
+  const membersByProject = new Map();
+  for (const row of memberRows) {
+    if (!membersByProject.has(row.project_id)) membersByProject.set(row.project_id, []);
+    membersByProject.get(row.project_id).push(row.member_id);
+  }
+
+  const hoursRows = perPersonRows.filter((r) => String(r.type) === "Hours based");
+  for (const row of hoursRows) {
+    const memberCount = membersByProject.get(row.id)?.length ?? 0;
+    result.set(row.id, Math.round(Number(row.cost) * memberCount * 100) / 100);
+  }
+
+  const costRows = perPersonRows.filter((r) => String(r.type) !== "Hours based");
+  const payRateRows = costRows.filter((r) => String(r.based_on || "").toLowerCase().includes("pay"));
+  const billRateRows = costRows.filter((r) => !String(r.based_on || "").toLowerCase().includes("pay"));
+
+  // Pay rate: each member's own rate x the shared per-person hours target,
+  // summed across every current member - one Firestore read per distinct
+  // member across every project, not one per member per project.
+  if (payRateRows.length) {
+    const distinctMemberIds = [...new Set(payRateRows.flatMap((r) => membersByProject.get(r.id) ?? []))];
+    const rateEntries = await Promise.all(
+      distinctMemberIds.map(async (memberId) => {
+        const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
+        return [memberId, Number(payRate?.rate ?? 0)];
+      }),
+    );
+    const rateByMember = new Map(rateEntries);
+    for (const row of payRateRows) {
+      const memberIds = membersByProject.get(row.id) ?? [];
+      let total = 0;
+      for (const memberId of memberIds) {
+        total += Number(row.cost) * (rateByMember.get(memberId) ?? 0);
+      }
+      result.set(row.id, Math.round(total * 100) / 100);
+    }
+  }
+
+  // Bill rate: one project-wide rate (first linked client's hourly cost) x
+  // per-person hours x current headcount.
+  if (billRateRows.length) {
+    const ids2 = billRateRows.map((r) => r.id);
+    const clientLinkRows = await query(
+      "SELECT DISTINCT ON (project_id) project_id, client_id FROM client_projects WHERE project_id = ANY($1::uuid[]) ORDER BY project_id, assigned_at",
+      [ids2],
+    );
+    const clientIdByProject = new Map(clientLinkRows.map((r) => [r.project_id, r.client_id]));
+    const distinctClientIds = [...new Set(clientIdByProject.values())];
+    const clientBudgetRows = distinctClientIds.length
+      ? await query("SELECT client_id, cost FROM client_budgets WHERE client_id = ANY($1::uuid[])", [distinctClientIds])
+      : [];
+    const rateByClient = new Map(clientBudgetRows.map((r) => [r.client_id, Number(r.cost ?? 0)]));
+    for (const row of billRateRows) {
+      const clientId = clientIdByProject.get(row.id);
+      const rate = clientId ? rateByClient.get(clientId) ?? 0 : 0;
+      const memberCount = membersByProject.get(row.id)?.length ?? 0;
+      result.set(row.id, Math.round(Number(row.cost) * memberCount * rate * 100) / 100);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Single-project convenience wrapper around computeProjectBudgetTargetForAllPg
+ * - for scope='per_project' rows this is just `cost`, unchanged.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} projectId
+ * @param {{ type?: string, based_on?: string, scope?: string, cost?: number } | null} budgetRow
+ */
+export async function computeProjectBudgetTargetPg(db, projectId, budgetRow) {
+  if (!budgetRow) return 0;
+  if (budgetRow.scope !== "per_person") return Number(budgetRow.cost ?? 0);
+  const map = await computeProjectBudgetTargetForAllPg(db, [
+    { id: projectId, type: budgetRow.type, based_on: budgetRow.based_on, scope: budgetRow.scope, cost: budgetRow.cost },
+  ]);
+  return map.get(projectId) ?? 0;
 }
