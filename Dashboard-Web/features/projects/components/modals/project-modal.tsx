@@ -5,7 +5,7 @@
 
 import { useEffect, useMemo, useState as useComponentState, type FormEvent, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { X, Info } from "lucide-react"
+import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   fetchProjectForEdit,
@@ -27,6 +27,7 @@ import {
   useClientFormTheme,
 } from "@/shared/ui/forms/form-styles"
 import { DatePickerField } from "@/shared/ui/forms/date-picker-field"
+import { ExpandCollapse, SegmentedControl } from "@/shared/ui/motion/expand-collapse"
 import { FormField } from "@/shared/ui/forms/form-field"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SelectField } from "@/shared/ui/forms/select-field"
@@ -168,6 +169,16 @@ function toSelectOptions(items: string[], placeholder = "Select") {
 /** Budget hours are stored as a single decimal-hours string (`budgetTotal`,
  * unchanged on the wire) - these two just let the input show/take hours AND
  * minutes instead of forcing e.g. "8.5" for 8h30m. */
+function formatHoursLabel(totalHours: number): string {
+  if (!(totalHours > 0)) return "0h"
+  const totalMinutes = Math.round(totalHours * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (h > 0 && m > 0) return `${h}h ${m}m`
+  if (h > 0) return `${h}h`
+  return `${m}m`
+}
+
 function decimalHoursToParts(value: string): { hours: string; minutes: string } {
   const trimmed = value.trim()
   if (!trimmed) return { hours: "", minutes: "" }
@@ -215,6 +226,58 @@ function SettingToggleRow({
       <Toggle checked={checked} onChange={() => onChange(!checked)} />
     </div>
   )
+}
+
+/** Icon + title + one-line description, with a divider above every section
+ * but the first - the same "labeled section" rhythm the client modal uses
+ * for e.g. its "Auto invoicing" block, applied here so the Budget tab reads
+ * as a sequence of distinct decisions instead of one flat field list. */
+function BudgetSection({
+  icon,
+  title,
+  sub,
+  first,
+  children,
+}: {
+  icon: ReactNode
+  title: string
+  sub: string
+  first?: boolean
+  children: ReactNode
+}) {
+  const theme = useClientFormTheme()
+  return (
+    <div className={cn("flex flex-col gap-3", !first && "border-t pt-4", theme.modal.headerBorder)}>
+      <div className="flex items-start gap-2.5">
+        <span
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px]",
+            theme.isDark ? "bg-[#4be277]/10 text-[#4be277]" : "bg-blue-50 text-blue-600",
+          )}
+        >
+          {icon}
+        </span>
+        <div className="min-w-0">
+          <p className={cn("text-[13px] font-bold", theme.modal.title)}>{title}</p>
+          <p className={cn("mt-0.5 text-xs leading-relaxed", theme.mutedText)}>{sub}</p>
+        </div>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+/** Class hooks for SegmentedControl matching this file's own tokens - reuses
+ * the sub-tab pill's track color and the theme's solid-accent pill, rather
+ * than inventing a third set of segmented-control colors. */
+function useSegmentedClasses() {
+  const theme = useClientFormTheme()
+  return {
+    trackClassName: theme.isDark ? "bg-[#191f31]" : "bg-slate-100",
+    pillClassName: theme.accent.primarySolid,
+    buttonClassName: (active: boolean) =>
+      active ? (theme.isDark ? "text-[#0c1324]" : "text-white") : theme.mutedText,
+  }
 }
 
 function formStateToPayload(
@@ -283,6 +346,7 @@ export function ProjectModal({
   onSave,
 }: ProjectModalProps) {
   const formTheme = useClientFormTheme()
+  const segmented = useSegmentedClasses()
   const isEditMode = projectId !== null
 
   const [addForm, setAddForm] = useComponentState<AddProjectFormState>(createDefaultAddForm)
@@ -800,13 +864,22 @@ export function ProjectModal({
                 )}
               </FormField>
 
-              <FormField label="End date" hint="Optional - purely informational, nothing archives on it">
-                <DatePickerField
-                  value={addForm.endDate}
-                  onChange={(date) => setAddForm((p) => ({ ...p, endDate: date }))}
-                  placeholder="Select date"
-                />
-              </FormField>
+              <div className={FORM_GRID}>
+                <FormField label="End date" hint="Optional - purely informational, nothing archives on it">
+                  <DatePickerField
+                    value={addForm.endDate}
+                    onChange={(date) => setAddForm((p) => ({ ...p, endDate: date }))}
+                    placeholder="Select date"
+                  />
+                </FormField>
+                <FormField label="Budget start date" hint="When the budget's own tracking period begins">
+                  <DatePickerField
+                    value={addForm.budgetStartDate}
+                    onChange={(date) => setAddForm((p) => ({ ...p, budgetStartDate: date }))}
+                    placeholder="Select date"
+                  />
+                </FormField>
+              </div>
 
               <div className={cn("space-y-3 rounded-xl border p-3", formTheme.card)}>
                 <SettingToggleRow
@@ -942,45 +1015,60 @@ export function ProjectModal({
                       clients; each client is notified at their own budget threshold on their share.
                     </p>
                   ) : null}
-                  <div className={FORM_GRID}>
-                    <FormField label="Type" required className="sm:col-span-2">
-                      {addForm.type === "calling" ? (
-                        // Calling projects have no tasks and no per-task bill/pay-rate
-                        // anchor to multiply a Cost based budget against - Hours based
-                        // is the only coherent option, so this isn't a choice here.
-                        <div
-                          className={cn(
-                            "flex h-9 items-center rounded-lg border px-3 text-sm",
-                            formTheme.isDark ? "border-[#2e3447] text-[#dce1fb]" : "border-slate-200 text-slate-600",
-                          )}
-                        >
-                          Hours based
-                        </div>
-                      ) : (
-                        <ProjectModalSelect
-                          value={addForm.budgetType}
-                          onChange={(value) => setAddForm((p) => ({
-                            ...p,
-                            budgetType: value,
-                            budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
-                          }))}
-                          placeholder="Select a type"
-                          options={["Cost based", "Hours based"]}
+
+                  <BudgetSection
+                    first
+                    icon={<Wallet className="h-3.5 w-3.5" />}
+                    title="Amount"
+                    sub="How this project's budget is measured and who it applies to."
+                  >
+                    <div className={FORM_GRID}>
+                      <FormField label="Type" required className="sm:col-span-2">
+                        {addForm.type === "calling" ? (
+                          // Calling projects have no tasks and no per-task bill/pay-rate
+                          // anchor to multiply a Cost based budget against - Hours based
+                          // is the only coherent option, so this isn't a choice here.
+                          <div
+                            className={cn(
+                              "flex h-9 items-center rounded-lg border px-3 text-sm",
+                              formTheme.isDark ? "border-[#2e3447] text-[#dce1fb]" : "border-slate-200 text-slate-600",
+                            )}
+                          >
+                            Hours based
+                          </div>
+                        ) : (
+                          <SegmentedControl
+                            value={addForm.budgetType}
+                            onChange={(value) =>
+                              setAddForm((p) => ({
+                                ...p,
+                                budgetType: value,
+                                budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
+                              }))
+                            }
+                            options={[
+                              { id: "Cost based", label: "Cost based" },
+                              { id: "Hours based", label: "Hours based" },
+                            ]}
+                            {...segmented}
+                          />
+                        )}
+                      </FormField>
+                      <FormField label="Scope" required className="sm:col-span-2">
+                        <SegmentedControl
+                          value={addForm.budgetScope}
+                          onChange={(value) => setAddForm((p) => ({ ...p, budgetScope: value }))}
+                          options={[
+                            { id: "per_project", label: "Whole project" },
+                            { id: "per_person", label: "Per person", icon: <Users className="h-3.5 w-3.5" /> },
+                          ]}
+                          {...segmented}
                         />
-                      )}
-                    </FormField>
-                    <FormField label="Scope" required>
-                      <SelectField
-                        value={addForm.budgetScope}
-                        onChange={(value) => setAddForm((p) => ({ ...p, budgetScope: value }))}
-                        options={[
-                          { value: "per_project", label: "Whole project" },
-                          { value: "per_person", label: "Per person" },
-                        ]}
-                      />
-                    </FormField>
-                    {addForm.budgetType !== "Hours based" ? (
-                      <FormField label="Based on" required>
+                      </FormField>
+                    </div>
+
+                    <ExpandCollapse show={addForm.budgetType !== "Hours based"}>
+                      <FormField label="Based on" required className="pt-1">
                         <ProjectModalSelect
                           value={addForm.budgetBasedOn}
                           onChange={(value) => setAddForm((p) => ({ ...p, budgetBasedOn: value }))}
@@ -988,7 +1076,8 @@ export function ProjectModal({
                           options={["Bill rate", "Pay rate"]}
                         />
                       </FormField>
-                    ) : null}
+                    </ExpandCollapse>
+
                     {(() => {
                       // A per_person scope always takes hours-per-member as
                       // its input, regardless of budget type - Cost based
@@ -1006,7 +1095,7 @@ export function ProjectModal({
                         <FormField
                           label={label}
                           required
-                          className="sm:col-span-2"
+                          className="sm:max-w-xs"
                           error={budgetFieldErrors.budgetTotal}
                         >
                           {isHoursInput ? (
@@ -1078,118 +1167,159 @@ export function ProjectModal({
                         </FormField>
                       )
                     })()}
-                  </div>
-                  {addForm.budgetScope === "per_person" ? (
-                    <p className={cn("text-xs leading-relaxed", formTheme.mutedText)}>
-                      Total scales with headcount: every current project member is expected to log this
-                      many hours, so the real budget total is this number x member count (and x each
-                      member&apos;s own rate, for Cost based). The End Date can&apos;t be set earlier than
-                      what members&apos; own daily/weekly hour limits make possible.
-                    </p>
-                  ) : null}
 
-                  <SettingToggleRow
-                    checked={addForm.budgetNotifyMembers}
-                    onChange={(next) =>
-                      setAddForm((p) => ({
-                        ...p,
-                        budgetNotifyMembers: next,
-                        // Off means off - clear the dependent fields so a
-                        // stale value isn't silently what gets submitted.
-                        ...(next ? {} : { budgetNotifyAt: "", budgetWhoToNotify: "" }),
-                      }))
-                    }
-                    label={
-                      <>
-                        Notify project members
-                        <Info className={cn("h-3.5 w-3.5", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
-                      </>
-                    }
-                  />
-
-                  {addForm.budgetNotifyMembers ? (
-                    <div className={FORM_GRID}>
-                      <FormField label="Notify at" error={budgetFieldErrors.budgetNotifyAt}>
-                        <div className="relative" aria-label="Interactive control">
-                          <input
-                            value={addForm.budgetNotifyAt}
-                            onChange={(e) => updateAddForm({ budgetNotifyAt: e.target.value })}
-                            className={cn(formTheme.control, "pr-20")}
-                          />
-                          <span
+                    <ExpandCollapse show={addForm.budgetScope === "per_person"}>
+                      {(() => {
+                        const memberCount = new Set(
+                          [...addForm.managers, ...addForm.users, ...addForm.viewers].filter(Boolean),
+                        ).size
+                        const perPerson = Number(addForm.budgetTotal) || 0
+                        return (
+                          <div
                             className={cn(
-                              "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
-                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                              "flex items-center gap-3 rounded-xl border p-3.5",
+                              formTheme.isDark
+                                ? "border-[#4be277]/20 bg-[#4be277]/10"
+                                : "border-blue-100 bg-blue-50",
                             )}
                           >
-                            {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
-                          </span>
+                            <span
+                              className={cn(
+                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]",
+                                formTheme.accent.primarySolid,
+                              )}
+                            >
+                              <Users className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className={cn("text-lg font-extrabold leading-none", formTheme.modal.title)}>
+                                {memberCount > 0 ? formatHoursLabel(perPerson * memberCount) : formatHoursLabel(perPerson)}
+                                <span className={cn("ml-1.5 text-xs font-semibold", formTheme.mutedText)}>
+                                  total budget
+                                </span>
+                              </p>
+                              <p className={cn("mt-1 text-xs", formTheme.mutedText)}>
+                                {memberCount > 0
+                                  ? `${memberCount} member${memberCount === 1 ? "" : "s"} × ${formatHoursLabel(perPerson)} each`
+                                  : `Add members to see the combined total — ${formatHoursLabel(perPerson)} each so far`}
+                                {addForm.budgetType !== "Hours based" ? " · converted to cost at each member's rate" : ""}
+                              </p>
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </ExpandCollapse>
+                  </BudgetSection>
+
+                  <BudgetSection
+                    icon={<Bell className="h-3.5 w-3.5" />}
+                    title="Notifications"
+                    sub="Warn the team before the budget runs out."
+                  >
+                    <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                      <SettingToggleRow
+                        checked={addForm.budgetNotifyMembers}
+                        onChange={(next) =>
+                          setAddForm((p) => ({
+                            ...p,
+                            budgetNotifyMembers: next,
+                            // Off means off - clear the dependent fields so a
+                            // stale value isn't silently what gets submitted.
+                            ...(next ? {} : { budgetNotifyAt: "", budgetWhoToNotify: "" }),
+                          }))
+                        }
+                        label="Notify project members"
+                      />
+                      <ExpandCollapse show={addForm.budgetNotifyMembers}>
+                        <div className={cn(FORM_GRID, "pt-1")}>
+                          <FormField label="Notify at" error={budgetFieldErrors.budgetNotifyAt}>
+                            <div className="relative" aria-label="Interactive control">
+                              <input
+                                value={addForm.budgetNotifyAt}
+                                onChange={(e) => updateAddForm({ budgetNotifyAt: e.target.value })}
+                                className={cn(formTheme.control, "pr-20")}
+                              />
+                              <span
+                                className={cn(
+                                  "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
+                                  formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                )}
+                              >
+                                {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
+                              </span>
+                            </div>
+                          </FormField>
+                          <FormField label="Who to notify">
+                            <ProjectModalSelect
+                              value={addForm.budgetWhoToNotify}
+                              onChange={(value) => setAddForm((p) => ({ ...p, budgetWhoToNotify: value }))}
+                              placeholder="Select"
+                              options={["Org management", "All members"]}
+                            />
+                          </FormField>
                         </div>
-                      </FormField>
-                      <FormField label="Who to notify">
-                        <ProjectModalSelect
-                          value={addForm.budgetWhoToNotify}
-                          onChange={(value) => setAddForm((p) => ({ ...p, budgetWhoToNotify: value }))}
-                          placeholder="Select"
-                          options={["Org management", "All members"]}
-                        />
-                      </FormField>
+                      </ExpandCollapse>
                     </div>
-                  ) : null}
+                  </BudgetSection>
 
-                  <SettingToggleRow
-                    checked={addForm.budgetStopTimers}
-                    onChange={(next) =>
-                      updateAddForm({
-                        budgetStopTimers: next,
-                        ...(next ? {} : { budgetStopTimersAt: "" }),
-                      })
-                    }
-                    label={addForm.budgetType === "Hours based" ? "Stop timers when hours limit is reached" : "Stop timers when budget is reached"}
-                  />
+                  <BudgetSection
+                    icon={<TimerOff className="h-3.5 w-3.5" />}
+                    title="Timer enforcement"
+                    sub="Stop tracking automatically once the cap is hit."
+                  >
+                    <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                      <SettingToggleRow
+                        checked={addForm.budgetStopTimers}
+                        onChange={(next) =>
+                          updateAddForm({
+                            budgetStopTimers: next,
+                            ...(next ? {} : { budgetStopTimersAt: "" }),
+                          })
+                        }
+                        label={addForm.budgetType === "Hours based" ? "Stop timers when hours limit is reached" : "Stop timers when budget is reached"}
+                      />
+                      <ExpandCollapse show={addForm.budgetStopTimers}>
+                        <div className="pt-1">
+                          <FormField label="Stop timers at" className="max-w-xs" error={budgetFieldErrors.budgetStopTimersAt}>
+                            <div className="relative">
+                              <input
+                                value={addForm.budgetStopTimersAt}
+                                onChange={(e) => updateAddForm({ budgetStopTimersAt: e.target.value })}
+                                className={cn(formTheme.control, "pr-20")}
+                              />
+                              <span
+                                className={cn(
+                                  "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
+                                  formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                )}
+                              >
+                                {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
+                              </span>
+                            </div>
+                          </FormField>
+                        </div>
+                      </ExpandCollapse>
+                    </div>
+                  </BudgetSection>
 
-                  {addForm.budgetStopTimers ? (
-                    <FormField label="Stop timers at" className="max-w-xs" error={budgetFieldErrors.budgetStopTimersAt}>
-                      <div className="relative">
-                        <input
-                          value={addForm.budgetStopTimersAt}
-                          onChange={(e) => updateAddForm({ budgetStopTimersAt: e.target.value })}
-                          className={cn(formTheme.control, "pr-20")}
-                        />
-                        <span
-                          className={cn(
-                            "absolute right-3 top-1/2 -translate-y-1/2 text-xs",
-                            formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                          )}
-                        >
-                          {addForm.budgetType === "Hours based" ? "% hours" : "% budget"}
-                        </span>
-                      </div>
-                    </FormField>
-                  ) : null}
-
-                  <div className={FORM_GRID}>
-                    <FormField label="Resets" required>
+                  <BudgetSection
+                    icon={<RotateCw className="h-3.5 w-3.5" />}
+                    title="Reset period"
+                    sub="When the budget total starts counting over from zero."
+                  >
+                    <FormField label="Resets" required className="max-w-xs">
                       <ProjectModalSelect
                         value={addForm.budgetResets}
                         onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
                         options={["Never", "Weekly", "Monthly"]}
                       />
                     </FormField>
-                    <FormField label="Start date">
-                      <DatePickerField
-                        value={addForm.budgetStartDate}
-                        onChange={(date) => setAddForm((p) => ({ ...p, budgetStartDate: date }))}
-                        placeholder="Select date"
-                      />
-                    </FormField>
-                  </div>
-
-                  <SettingToggleRow
-                    checked={addForm.budgetIncludeNonBillable}
-                    onChange={(next) => setAddForm((p) => ({ ...p, budgetIncludeNonBillable: next }))}
-                    label="Include non-billable time"
-                  />
+                    <SettingToggleRow
+                      checked={addForm.budgetIncludeNonBillable}
+                      onChange={(next) => setAddForm((p) => ({ ...p, budgetIncludeNonBillable: next }))}
+                      label="Include non-billable time"
+                    />
+                  </BudgetSection>
                 </div>
               ) : PROJECT_MEMBER_LIMITS_ENABLED ? (
                 <div className={FORM_STACK}>
