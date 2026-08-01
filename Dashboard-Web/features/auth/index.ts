@@ -25,6 +25,7 @@ export {
   isClientOrViewerRole,
   canUseBatchMemberActions,
   canManageMemberBans,
+  canMigrateMembers,
   extractRoleFromRecord,
   defaultNavItemForRole,
   isEmployeeL2OrHigherRole,

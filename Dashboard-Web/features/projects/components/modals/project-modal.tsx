@@ -641,6 +641,21 @@ export function ProjectModal({
     })
   }
 
+  /** Quick-add-client popover finished — reload the client list (same call the modal already
+   * makes on mount) and select the new client in the form, same as picking it from the dropdown. */
+  function handleClientAdded(clientId: string) {
+    getProjectFormConfig()
+      .then((config) => {
+        setFormConfig(config)
+        if (!addForm.clientIds.includes(clientId)) {
+          handleProjectFormChange("clientIds", [...addForm.clientIds, clientId])
+        }
+      })
+      .catch((err: unknown) => {
+        setFormConfigError(err instanceof Error ? err.message : "Failed to reload client list")
+      })
+  }
+
   useEffect(() => {
     if (!formConfig || addForm.clientIds.length === 0) {
       setBudgetFromClientsCount(0)
@@ -925,6 +940,7 @@ export function ProjectModal({
                   tab="general"
                   values={addForm}
                   onChange={handleProjectFormChange}
+                  onClientAdded={handleClientAdded}
                   clientOptions={formConfig.options.clients}
                   memberOptions={formConfig.options.members}
                   availableTeams={teamPickerOptions}
@@ -943,6 +959,7 @@ export function ProjectModal({
                       tab="members"
                       values={addForm}
                       onChange={handleProjectFormChange}
+                      onClientAdded={handleClientAdded}
                       clientOptions={formConfig.options.clients}
                       memberOptions={formConfig.options.members}
                       availableTeams={teamPickerOptions}
@@ -954,6 +971,7 @@ export function ProjectModal({
                       tab="teams"
                       values={addForm}
                       onChange={handleProjectFormChange}
+                      onClientAdded={handleClientAdded}
                       clientOptions={formConfig.options.clients}
                       memberOptions={formConfig.options.members}
                       availableTeams={teamPickerOptions}
@@ -1359,6 +1377,7 @@ export function ProjectModal({
                       budgetSubTab="member-limits"
                       values={addForm}
                       onChange={handleProjectFormChange}
+                      onClientAdded={handleClientAdded}
                       clientOptions={formConfig.options.clients}
                       memberOptions={formConfig.options.members}
                       availableTeams={teamPickerOptions}
