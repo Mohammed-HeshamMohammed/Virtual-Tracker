@@ -363,10 +363,11 @@ export async function routeAuthIdentity(req, res, url, origin) {
       return true;
     }
     try {
-      rejectUnknownFields(body, ["firstName", "lastName", "email", "phone"]);
+      rejectUnknownFields(body, ["firstName", "lastName", "email", "phone", "timezone"]);
       assertMaxLength(body.firstName, 120, "firstName");
       assertMaxLength(body.lastName, 120, "lastName");
       assertMaxLength(body.email, 320, "email");
+      assertMaxLength(body.timezone, 64, "timezone");
       const decoded = await auth.verifyIdToken(idToken);
       const profile = await patchProfileSettings(auth, db, decoded.uid, body);
       sendJson(res, origin, 200, { success: true, profile });

@@ -18,6 +18,7 @@ import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstra
 import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
 import { scheduleAbandonedSessionSweep } from "./src/modules/activity/abandoned-session-sweep.service.js";
+import { scheduleReportDeliveries } from "./src/modules/reports/report-schedule-runner.js";
 
 let activeServer = null;
 
@@ -92,6 +93,7 @@ export async function startServer(port = getEnv().server.port) {
     scheduleOrganizationMaintenance(db, "server-startup");
     scheduleTeamWeeklyReports(db);
     scheduleAbandonedSessionSweep();
+    scheduleReportDeliveries(db);
   }
 
   server.listen(port, () => {
