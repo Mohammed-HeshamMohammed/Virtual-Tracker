@@ -94,6 +94,10 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   const membersListEnabled = Boolean(sessionReady && isLoggedIn && !profile?.mustChangePassword)
   const [activeTab, setActiveTab] = useComponentState<"members" | "invites">("members")
   const [showAdd, setShowAdd] = useComponentState(false)
+  // Bumped on every open so AddMembersModal gets a fresh `key` — otherwise AnimatePresence can
+  // hand back the still-exiting instance instead of remounting, leaving stale state (isClosing
+  // stuck true -> pointer-events-none never clears -> modal looks unresponsive).
+  const addMembersInstanceRef = useRef(0)
   const [showRecruit, setShowRecruit] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
   const [memberFilters, setMemberFilters] = useComponentState<MemberListFilters>(EMPTY_MEMBER_FILTERS)
@@ -635,7 +639,10 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 </button>
               )}
               <button
-                onClick={() => setShowAdd(true)}
+                onClick={() => {
+                  addMembersInstanceRef.current += 1
+                  setShowAdd(true)
+                }}
                 className="flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-600/20 transition-all hover:scale-[1.02] hover:shadow-emerald-600/30 active:scale-95 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400" type="button"
               >
                 <UserPlus className="h-4 w-4" />
@@ -857,7 +864,7 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       <AnimatePresence>
         {showAdd && (
           <AddMembersModal
-            key="add-members"
+            key={`add-members-${addMembersInstanceRef.current}`}
             onClose={() => setShowAdd(false)}
             onAdd={handleAddMembers}
             onShareLink={handleCreateShareLink}

@@ -58,7 +58,7 @@ export function MigrateForm({
         />
       </div>
 
-      <div className="max-h-72 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
+      <div className="max-h-72 overflow-y-auto scrollbar-hide rounded-lg border border-slate-200 dark:border-slate-700">
         {isLoading && users.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-slate-400 dark:text-slate-500">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -77,7 +77,7 @@ export function MigrateForm({
               <label
                 key={u.uid}
                 className={cn(
-                  "flex cursor-pointer items-center gap-3 border-b border-slate-100 dark:border-slate-800 px-3 py-2.5 last:border-b-0 transition-colors",
+                  "flex cursor-pointer items-center gap-3 border-b border-slate-100 dark:border-slate-800 px-3 py-3 last:border-b-0 transition-colors",
                   checked ? "bg-blue-50/60 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/40",
                 )}
               >
@@ -94,7 +94,7 @@ export function MigrateForm({
                   color={memberAvatarColor(u.uid, false)}
                   imageUrl={u.avatarUrl}
                   alt={displayName}
-                  size="sm"
+                  size="lg"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">{displayName}</div>
