@@ -26,6 +26,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
 
   "timesheets-view": "timesheets",
   "timesheets-approvals": "timesheets",
+  "timesheets-time-activity": "timesheets",
 
   "reports-project-budgets": "reports",
   "reports-timesheet-approvals": "reports",

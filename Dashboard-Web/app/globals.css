@@ -370,3 +370,21 @@ tr[style*="height"] > td {
     transition-delay: 0s !important;
   }
 }
+
+/* Report "Print / PDF" export: wrap the printable content of a report page in
+   .report-print-area so window.print() (browser's Save-as-PDF) shows only the
+   report, not the sidebar/topbar/dialogs. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .report-print-area,
+  .report-print-area * {
+    visibility: visible;
+  }
+  .report-print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+  }
+}

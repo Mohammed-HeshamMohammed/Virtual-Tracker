@@ -1,4 +1,4 @@
-export { ReportEmptyState, StandardReportLayout } from "@/features/reports/components/app";
+export { ReportEmptyState, StandardReportLayout, TimeAndActivityReport } from "@/features/reports/components/app";
 export { useStandardReportLayout } from "@/features/reports/components/app/standard-report-layout";
 export { ProjectBudgetsReport } from "@/features/reports/components/project-budgets/project-budgets-report";
 export { SHIFT_STYLE_HUB_REPORTS, REPORTS_POPULAR, REPORTS_SECTIONS } from "@/features/reports/components/shared/constants";

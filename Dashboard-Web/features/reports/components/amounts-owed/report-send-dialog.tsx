@@ -12,18 +12,29 @@ import {
 import { ReportFileTypeSelect, ReportModalFieldLabel } from "@/features/reports/components/amounts-owed/report-dialog-shared"
 import { validateEmailList, validateRequiredText } from "@/shared/validation"
 
+export interface ReportSendInput {
+  emails: string[]
+  subject: string
+  message: string
+  fileType: string
+}
+
 export function ReportSendDialog({
   open,
   onOpenChange,
+  onSend,
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
+  /** When provided, called on Send instead of just closing the dialog (real delivery). */
+  onSend?: (input: ReportSendInput) => Promise<void> | void
 }) {
   const [emails, setEmails] = useComponentState("")
   const [subject, setSubject] = useComponentState(AMOUNTS_OWED_SEND_SUBJECT_DEFAULT)
   const [message, setMessage] = useComponentState(REPORT_EMAIL_DEFAULT_MESSAGE)
   const [fileType, setFileType] = useComponentState("PDF")
   const [submitError, setSubmitError] = useComponentState<string | null>(null)
+  const [sending, setSending] = useComponentState(false)
 
   const [prevOpen, setPrevOpen] = useComponentState(open)
 
@@ -35,10 +46,11 @@ export function ReportSendDialog({
       setMessage(REPORT_EMAIL_DEFAULT_MESSAGE)
       setFileType("PDF")
       setSubmitError(null)
+      setSending(false)
     }
   }
 
-  function handleSend() {
+  async function handleSend() {
     const validationError =
       validateEmailList(emails) ?? validateRequiredText(subject.trim(), "Subject")
     if (validationError) {
@@ -46,7 +58,22 @@ export function ReportSendDialog({
       return
     }
     setSubmitError(null)
-    onOpenChange(false)
+
+    if (!onSend) {
+      onOpenChange(false)
+      return
+    }
+
+    const emailList = emails.split(",").map((e) => e.trim()).filter(Boolean)
+    setSending(true)
+    try {
+      await onSend({ emails: emailList, subject: subject.trim(), message, fileType })
+      onOpenChange(false)
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Failed to send report.")
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -109,8 +136,9 @@ export function ReportSendDialog({
             type="button"
             className="bg-sky-400 text-white hover:bg-sky-500"
             onClick={handleSend}
+            disabled={sending}
           >
-            Send
+            {sending ? "Sending…" : "Send"}
           </Button>
         </DialogFooter>
       </DialogContent>

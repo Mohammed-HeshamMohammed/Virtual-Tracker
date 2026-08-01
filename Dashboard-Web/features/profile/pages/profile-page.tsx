@@ -12,7 +12,24 @@ import { validateEmailField, validatePersonName, validatePhoneField } from "@/sh
 import { SidebarSection } from "@/features/profile/components/sidebar-section"
 import { AccountForm } from "@/features/profile/components/account-form"
 import { ChangePasswordDialog } from "@/features/profile/components/change-password-dialog"
+import { TIME_ZONES } from "@/features/settings/components/shared/constants"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
+
+/** "(GMT-08:00) America/Los_Angeles" -> "America/Los_Angeles" */
+function ianaIdFromTimeZoneLabel(label: string): string {
+  const idx = label.indexOf(") ")
+  return idx === -1 ? label : label.slice(idx + 2)
+}
+
+/** Browser-only — must not run during SSR (would bake in the server's zone, not the visitor's). */
+function detectBrowserTimezone(): string {
+  if (typeof window === "undefined") return ""
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone
+  } catch {
+    return ""
+  }
+}
 
 function getInitials(name: string | null): string {
   if (!name) return "U"
@@ -56,12 +73,14 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
       email: accountEmail,
       phone: sharedPhone.phone,
       phoneVerified: sharedPhone.phoneVerified,
+      timezone: typeof profile?.timezone === "string" ? profile.timezone : "",
     }
   }, [
     profile?.firstName,
     profile?.lastName,
     profile?.phone,
     profile?.phoneVerified,
+    profile?.timezone,
     profile?.uid,
     displayName,
     accountEmail,
@@ -74,6 +93,7 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
   const [lastName, setLastName] = useComponentState(() => baseline.lastName)
   const [email, setEmail] = useComponentState(() => baseline.email)
   const [phone, setPhone] = useComponentState(() => baseline.phone)
+  const [timezone, setTimezone] = useComponentState(() => baseline.timezone)
   const [phoneVerificationToken, setPhoneVerificationToken] = useComponentState<string | null>(null)
   const [saveStatus, setSaveStatus] = useComponentState<"idle" | "saved">("idle")
   const [saveBusy, setSaveBusy] = useComponentState(false)
@@ -102,8 +122,9 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
       lastName !== baseline.lastName ||
       email.trim().toLowerCase() !== baseline.email.trim().toLowerCase() ||
       phoneChanged ||
-      phoneSavePending,
-    [firstName, lastName, email, baseline, phoneChanged, phoneSavePending],
+      phoneSavePending ||
+      timezone !== baseline.timezone,
+    [firstName, lastName, email, baseline, phoneChanged, phoneSavePending, timezone],
   )
 
   useEffect(() => {
@@ -112,7 +133,16 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
     setEmail(baseline.email)
     setPhone(baseline.phone)
     setPhoneVerificationToken(null)
-  }, [baseline.firstName, baseline.lastName, baseline.email, baseline.phone, baseline.phoneVerified])
+    setTimezone(baseline.timezone)
+  }, [baseline.firstName, baseline.lastName, baseline.email, baseline.phone, baseline.phoneVerified, baseline.timezone])
+
+  // Pre-fill the browser's detected zone once, only if nothing's saved yet — client-only,
+  // runs after mount so it never affects SSR output (server doesn't know the visitor's zone).
+  useEffect(() => {
+    if (baseline.timezone) return
+    const detected = detectBrowserTimezone()
+    if (detected) setTimezone(detected)
+  }, [baseline.timezone])
 
   const resetForm = useCallback(() => {
     setFirstName(baseline.firstName)
@@ -120,6 +150,7 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
     setEmail(baseline.email)
     setPhone(baseline.phone)
     setPhoneVerificationToken(null)
+    setTimezone(baseline.timezone || detectBrowserTimezone())
     setSaveStatus("idle")
     setSaveMessage(null)
   }, [baseline])
@@ -171,6 +202,7 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
         email?: string
         phone?: string
         phoneVerificationToken?: string
+        timezone?: string
       } = {
         firstName,
         lastName,
@@ -185,6 +217,9 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
         if (tokenForSave) {
           payload.phoneVerificationToken = tokenForSave
         }
+      }
+      if (timezone !== baseline.timezone) {
+        payload.timezone = timezone
       }
       await patchProfileSettingsWithBackend(user, payload)
       await refreshProfile()
@@ -279,6 +314,40 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
             payRateDisplay={payRateDisplay}
             isDark={isDark}
           />
+
+          <div className="mt-4 max-w-sm">
+            <label
+              htmlFor="profile-timezone"
+              className={cn("mb-1.5 block text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}
+            >
+              Time zone
+            </label>
+            <select
+              id="profile-timezone"
+              value={timezone}
+              onChange={(e) => setTimezone(e.target.value)}
+              className={cn(
+                "w-full rounded-lg border px-3 py-2 text-sm",
+                isDark ? "border-white/10 bg-[#191f31] text-[#dce1fb]" : "border-slate-200 bg-white text-slate-700",
+              )}
+            >
+              {!timezone && <option value="">Select a time zone</option>}
+              {timezone && !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === timezone) && (
+                <option value={timezone}>{timezone}</option>
+              )}
+              {TIME_ZONES.map((label) => {
+                const value = ianaIdFromTimeZoneLabel(label)
+                return (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                )
+              })}
+            </select>
+            <p className={cn("mt-1.5 text-xs", isDark ? "text-white/40" : "text-slate-400")}>
+              Used to show your reports and activity on your own calendar day.
+            </p>
+          </div>
 
           <div className="mt-4 flex justify-end sm:hidden">
             <button
