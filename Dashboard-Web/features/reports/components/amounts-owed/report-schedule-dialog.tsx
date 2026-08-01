@@ -124,15 +124,15 @@ export function ReportScheduleDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton
-        className="flex max-h-[min(92vh,760px)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-lg border-slate-200 p-0 sm:max-w-2xl"
+        className="flex max-h-[min(92vh,760px)] w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden rounded-lg border-slate-200 dark:border-slate-700 p-0 sm:max-w-2xl"
       >
-        <DialogHeader className="space-y-0 border-b border-slate-100 px-6 pt-6 pr-14 pb-4 text-left">
-          <DialogTitle className="text-base font-semibold text-slate-900">Schedule report</DialogTitle>
+        <DialogHeader className="space-y-0 border-b border-slate-100 dark:border-slate-800 px-6 pt-6 pr-14 pb-4 text-left">
+          <DialogTitle className="text-base font-semibold text-slate-900 dark:text-slate-100">Schedule report</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5 scrollbar-hide">
           {submitError ? (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{submitError}</p>
+            <p className="rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-700 dark:text-red-400">{submitError}</p>
           ) : null}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5">
@@ -141,7 +141,7 @@ export function ReportScheduleDialog({
                 <TooltipTrigger asChild>
                   <button
                     type="button"
-                    className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="rounded-full p-0.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300"
                     aria-label="About data filters"
                   >
                     <Info className="h-3.5 w-3.5" />
@@ -153,13 +153,13 @@ export function ReportScheduleDialog({
               </Tooltip>
             </div>
             {hasFiltersApplied ? (
-              <p className="text-sm text-slate-600">Current report filters will apply to this schedule.</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">Current report filters will apply to this schedule.</p>
             ) : (
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-slate-600 dark:text-slate-300">
                 No filters applied. To add filters view{" "}
                 <button
                   type="button"
-                  className="font-medium text-blue-600 underline-offset-2 hover:underline"
+                  className="font-medium text-blue-600 dark:text-blue-400 underline-offset-2 hover:underline"
                   onClick={handleOpenFiltersLink}
                 >
                   filters
@@ -171,11 +171,11 @@ export function ReportScheduleDialog({
 
           <div className="space-y-1.5">
             <ReportModalFieldLabel required>Email addresses</ReportModalFieldLabel>
-            <p className="text-xs text-slate-500">Separate email addresses with commas</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">Separate email addresses with commas</p>
             <Input
               value={emails}
               onChange={(e) => setEmails(e.target.value)}
-              className="border-slate-200 bg-white shadow-xs"
+              className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"
               autoComplete="email"
             />
           </div>
@@ -185,7 +185,7 @@ export function ReportScheduleDialog({
             <Input
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="border-slate-200 bg-white shadow-xs"
+              className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"
             />
           </div>
 
@@ -195,7 +195,7 @@ export function ReportScheduleDialog({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Enter a message"
-              className="min-h-[100px] resize-y border-slate-200 bg-white shadow-xs"
+              className="min-h-[100px] resize-y border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"
             />
           </div>
 
@@ -210,7 +210,7 @@ export function ReportScheduleDialog({
               <Input
                 value={scheduleName}
                 onChange={(e) => setScheduleName(e.target.value)}
-                className="border-slate-200 bg-white shadow-xs"
+                className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xs"
               />
             </div>
             <div className="space-y-1.5">
@@ -240,7 +240,7 @@ export function ReportScheduleDialog({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      className="rounded-full p-0.5 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-600 dark:hover:text-slate-300"
                       aria-label="About delivery time"
                     >
                       <Info className="h-3.5 w-3.5" />
@@ -262,16 +262,16 @@ export function ReportScheduleDialog({
           </div>
         </div>
 
-        <DialogFooter className="gap-2 border-t border-slate-100 px-6 py-4 sm:justify-end">
-          <Button type="button" variant="outline" className="border-slate-200 bg-white" onClick={() => onOpenChange(false)}>
+        <DialogFooter className="gap-2 border-t border-slate-100 dark:border-slate-800 px-6 py-4 sm:justify-end">
+          <Button type="button" variant="outline" className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" variant="secondary" className="bg-slate-100 text-slate-700 hover:bg-slate-200">
+          <Button type="button" variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
             Send preview
           </Button>
           <Button
             type="button"
-            className="bg-sky-400 text-white hover:bg-sky-500"
+            className="bg-sky-400 dark:bg-sky-500 text-white hover:bg-sky-500 dark:hover:bg-sky-600"
             onClick={handleSave}
             disabled={saving}
           >

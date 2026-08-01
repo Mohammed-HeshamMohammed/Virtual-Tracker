@@ -914,12 +914,12 @@ export async function fetchMigratableUsers(
   return { users: Array.isArray(json.users) ? json.users : [], nextPageToken: json.nextPageToken ?? null }
 }
 
-/** Adopt existing Firebase Auth users (already signed in elsewhere, e.g. the mobile app) into Virtual Tracker. */
-export async function migrateAuthUsers(uids: string[], role: MemberRole): Promise<MigrateResultRow[]> {
+/** Adopt existing Firebase Auth users (already signed in elsewhere, e.g. the mobile app) into Virtual Tracker — each with its own role. */
+export async function migrateAuthUsers(migrations: { uid: string; role: MemberRole }[]): Promise<MigrateResultRow[]> {
   const res = await apiFetch(apiPath("/api/members/migrate"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uids, role }),
+    body: JSON.stringify({ migrations }),
   })
   const json = (await res.json()) as { success?: boolean; error?: string; results?: MigrateResultRow[] }
   if (!res.ok || json.success !== true) {

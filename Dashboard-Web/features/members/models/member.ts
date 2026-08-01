@@ -93,13 +93,17 @@ export type AccountFormRow = { name: string; email: string; payRate: string }
 /** Local fields for create-account modal. */
 export type AccountFormFields = { firstName: string; lastName: string; email: string; payRate: string }
 
-/** Firebase Auth user not yet linked to a `members` row (Migrate tab candidate). */
+/** Firebase Auth user not yet linked to a `members` row (Migrate tab candidate). Joined with their mobile-app Firestore profile. */
 export type MigratableAuthUser = {
   uid: string
   email: string
   displayName: string
   phoneNumber: string
   creationTime: string | null
+  /** Mobile-app profile photo (Firestore `users/{uid}.avatarUrl`), when present. */
+  avatarUrl?: string
+  /** Suggested app role, mapped server-side from the mobile-app `users/{uid}.role` value. Undefined when unmapped. */
+  suggestedRole?: MemberRole
 }
 
 export type MigrateResultRow = { uid: string; success: boolean; memberId?: string; error?: string }
@@ -118,8 +122,7 @@ export type AddMembersSubmission =
     }
   | {
       mode: "migrate"
-      uids: string[]
-      role: MemberRole
+      migrations: { uid: string; role: MemberRole }[]
     }
 
 export type AddMembersResult =

@@ -40,15 +40,15 @@ export function ReportCombobox({
           aria-controls={open ? listboxId : undefined}
           aria-label={ariaLabel}
           className={cn(
-            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-3 text-left text-sm text-slate-800 shadow-xs outline-none transition-[box-shadow,border-color]",
-            "hover:border-slate-300 focus-visible:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500/30",
-            open && "border-blue-500 ring-2 ring-blue-500/30",
+            "flex h-9 w-full items-center justify-between gap-2 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-left text-sm text-slate-800 dark:text-slate-200 shadow-xs outline-none transition-[box-shadow,border-color]",
+            "hover:border-slate-300 dark:hover:border-slate-600 focus-visible:border-blue-500 dark:focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500/30",
+            open && "border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/30",
             className
           )}
         >
-          <span className={cn("truncate", !value && "text-slate-400")}>{value || placeholder}</span>
+          <span className={cn("truncate", !value && "text-slate-400 dark:text-slate-500")}>{value || placeholder}</span>
           <ChevronDown
-            className={cn("h-4 w-4 shrink-0 text-slate-500 transition-transform duration-200", open && "rotate-180")}
+            className={cn("h-4 w-4 shrink-0 text-slate-500 dark:text-slate-400 transition-transform duration-200", open && "rotate-180")}
           />
         </button>
       </PopoverTrigger>
@@ -58,7 +58,7 @@ export function ReportCombobox({
         sideOffset={4}
       >
         <Command>
-          <CommandInput placeholder="Search…" className="h-9 border-slate-100" />
+          <CommandInput placeholder="Search…" className="h-9 border-slate-100 dark:border-slate-800" />
           <CommandList id={listboxId} className="max-h-[240px] scrollbar-hide">
             <CommandEmpty>{emptyText}</CommandEmpty>
             <CommandGroup>
@@ -73,7 +73,7 @@ export function ReportCombobox({
                   className={cn(
                     "cursor-pointer",
                     value === opt &&
-                      "bg-blue-500 text-white data-[selected=true]:bg-blue-500 data-[selected=true]:text-white"
+                      "bg-blue-500 dark:bg-blue-600 text-white data-[selected=true]:bg-blue-500 dark:data-[selected=true]:bg-blue-600 data-[selected=true]:text-white"
                   )}
                 >
                   {opt}

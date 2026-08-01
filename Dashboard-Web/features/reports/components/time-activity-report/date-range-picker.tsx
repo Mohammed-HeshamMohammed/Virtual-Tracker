@@ -76,18 +76,18 @@ export function ReportDateRangePicker({
       exit={{ opacity: 0, y: -8, scale: 0.97 }}
       transition={{ duration: 0.15 }}
       className={cn(
-        "absolute top-full z-55 mt-1 flex overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-2xl",
+        "absolute top-full z-55 mt-1 flex overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-2xl",
         anchorEnd ? "right-0 left-auto" : "left-0"
       )}
       style={{ minWidth: 700 }}
     >
-      <div className="flex min-w-[130px] flex-col gap-1 border-r border-slate-100 p-4">
+      <div className="flex min-w-[130px] flex-col gap-1 border-r border-slate-100 dark:border-slate-800 p-4">
         {DATE_RANGE_PRESETS.map((p) => (
           <button
             key={p}
             type="button"
             onClick={() => applyPreset(p)}
-            className="whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm text-slate-600 transition-colors hover:bg-slate-100"
+            className="whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm text-slate-600 dark:text-slate-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             {p}
           </button>
@@ -119,11 +119,11 @@ export function ReportDateRangePicker({
             onHover={setHovered}
           />
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-2">
+        <div className="flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-800 pt-2">
           <button
             type="button"
             onClick={onDismiss}
-            className="rounded-lg px-4 py-1.5 text-sm text-slate-600 transition-colors hover:bg-slate-100"
+            className="rounded-lg px-4 py-1.5 text-sm text-slate-600 dark:text-slate-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Cancel
           </button>
@@ -136,7 +136,7 @@ export function ReportDateRangePicker({
                 onApply(formatRange())
               }
             }}
-            className="rounded-lg bg-blue-500 px-4 py-1.5 text-sm text-white transition-colors hover:bg-blue-600"
+            className="rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
           >
             Apply
           </button>

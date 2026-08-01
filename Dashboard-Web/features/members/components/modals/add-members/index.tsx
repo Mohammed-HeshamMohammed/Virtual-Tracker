@@ -43,7 +43,7 @@ export function formatAddMembersPending(payload: AddMembersSubmission): { title:
     }
   }
   if (payload.mode === "migrate") {
-    const count = payload.uids.length
+    const count = payload.migrations.length
     return {
       title: "Add members",
       message: `Migrating ${count} member${count === 1 ? "" : "s"}…`,
@@ -156,12 +156,11 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   const [accountRole, setAccountRole] = useComponentState<MemberRole>(defaultRole)
   const [sendWelcomeEmail, setSendWelcomeEmail] = useComponentState(true)
 
-  // Migrate existing Firebase Auth users state
+  // Migrate existing Firebase Auth users state — role is auto-suggested per person, not picked from a shared dropdown.
   const [migratableUsers, setMigratableUsers] = useComponentState<MigratableAuthUser[]>([])
   const [migrateNextPageToken, setMigrateNextPageToken] = useComponentState<string | null>(null)
   const [migrateSelectedUids, setMigrateSelectedUids] = useComponentState<Set<string>>(new Set())
   const [migrateFilterText, setMigrateFilterText] = useComponentState("")
-  const [migrateRole, setMigrateRole] = useComponentState<MemberRole>(defaultRole)
   const [migrateLoading, setMigrateLoading] = useComponentState(false)
   const [migrateLoadedOnce, setMigrateLoadedOnce] = useComponentState(false)
 
@@ -179,10 +178,14 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     if (!assignableRoles.includes(accountRole)) {
       setAccountRole(defaultRole)
     }
-    if (!assignableRoles.includes(migrateRole)) {
-      setMigrateRole(defaultRole)
-    }
-  }, [assignableRoles, defaultRole, inviteRole, accountRole, migrateRole])
+  }, [assignableRoles, defaultRole, inviteRole, accountRole])
+
+  /** Suggested role clamped to what the viewer may actually assign; falls back to the lowest assignable role. */
+  const resolveMigrateRole = useCallback(
+    (user: MigratableAuthUser): MemberRole =>
+      user.suggestedRole && assignableRoles.includes(user.suggestedRole) ? user.suggestedRole : defaultRole,
+    [assignableRoles, defaultRole],
+  )
 
   useEffect(() => {
     if (mode !== "migrate" || migrateLoadedOnce) return
@@ -351,13 +354,14 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     }
 
     if (mode === "migrate") {
-      const uids = [...migrateSelectedUids]
-      if (uids.length === 0) {
+      const selected = migratableUsers.filter((u) => migrateSelectedUids.has(u.uid))
+      if (selected.length === 0) {
         setToast({ message: "Select at least one account to migrate.", title: "Add members", tone: "error" })
         return
       }
       setIsSubmitting(true)
-      const payload: AddMembersSubmission = { mode: "migrate", uids, role: migrateRole }
+      const migrations = selected.map((u) => ({ uid: u.uid, role: resolveMigrateRole(u) }))
+      const payload: AddMembersSubmission = { mode: "migrate", migrations }
       onPending?.(payload)
       handleClose()
       void onAdd(payload)
@@ -543,9 +547,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   onToggle={toggleMigrateUid}
                   filterText={migrateFilterText}
                   onFilterChange={setMigrateFilterText}
-                  role={migrateRole}
-                  roleOptions={assignableRoles}
-                  onRoleChange={setMigrateRole}
+                  resolveRole={resolveMigrateRole}
                   isLoading={migrateLoading}
                   hasMore={Boolean(migrateNextPageToken)}
                   onLoadMore={loadMoreMigratable}

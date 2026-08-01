@@ -94,9 +94,9 @@ export function ReportTimeActivityChart({
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-50 px-6 py-3">
-        <h3 className="shrink-0 text-base font-semibold text-slate-800">Chart</h3>
+    <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-800 px-6 py-3">
+        <h3 className="shrink-0 text-base font-semibold text-slate-800 dark:text-slate-100">Chart</h3>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
           <span className="sr-only">Choose metrics to show on the chart</span>
           {METRIC_OPTIONS.map((opt) => {
@@ -109,7 +109,7 @@ export function ReportTimeActivityChart({
                 onClick={() => onToggleMetric(m)}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-                  on ? CHART_METRIC_PILL_ON[m] : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                  on ? CHART_METRIC_PILL_ON[m] : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
                 )}
               >
                 {opt.label}
@@ -118,20 +118,20 @@ export function ReportTimeActivityChart({
           })}
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-50/80 px-6 py-2">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-50/80 dark:border-slate-800/80 px-6 py-2">
         {activeMetrics.map((m) => (
           <div key={m} className="flex items-center gap-1.5">
             <div className="h-0.5 w-5 rounded-full" style={{ backgroundColor: CHART_SERIES_STYLES[m].stroke }} />
-            <span className="text-xs text-slate-500">{METRIC_OPTIONS.find((o) => o.value === m)?.label}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{METRIC_OPTIONS.find((o) => o.value === m)?.label}</span>
           </div>
         ))}
         {multi && (
-          <span className="text-[10px] text-slate-400">(Y axis: 0–100% of each series&apos; range)</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">(Y axis: 0–100% of each series&apos; range)</span>
         )}
       </div>
       <div className="px-6 pb-6 pt-1">
         {days.length === 0 ? (
-          <div className="flex h-[240px] items-center justify-center text-sm text-slate-400">No data for this filter</div>
+          <div className="flex h-[240px] items-center justify-center text-sm text-slate-400 dark:text-slate-500">No data for this filter</div>
         ) : (
           <div
             className="relative w-full"
@@ -247,7 +247,7 @@ export function ReportTimeActivityChart({
             >
               {days.map((d, i) => (
                 <IconTooltip key={d.date} text={d.dateLabel} placement="top">
-                  <span className="min-w-0 flex-1 truncate text-center text-[9px] leading-tight text-slate-400">
+                  <span className="min-w-0 flex-1 truncate text-center text-[9px] leading-tight text-slate-400 dark:text-slate-500">
                     {days.length > 12 && i % 2 === 1 ? "" : d.dateLabel.replace(", 2026", "")}
                   </span>
                 </IconTooltip>
