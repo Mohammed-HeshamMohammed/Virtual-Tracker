@@ -18,6 +18,7 @@ import { sanitizePersonNameInput } from "@/shared/validation/person-name"
 import { NotifyToastHost } from "@/shared/ui/layout"
 import type { NotifyAlertTone } from "@/shared/ui/alert-notify"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
+import { canMigrateMembers } from "@/features/auth"
 import { useAuth } from "@/shared/providers/app"
 import { resolveInviteUrl } from "@/features/members/api/member-api"
 
@@ -130,6 +131,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   const { memberRole } = useAuth()
   const assignableRoles = useMemo(() => listAssignableRoles(memberRole), [memberRole])
   const defaultRole = assignableRoles[assignableRoles.length - 1] ?? "Viewer"
+  const canMigrate = canMigrateMembers(memberRole ?? "")
 
   const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate">("invites")
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
@@ -186,7 +188,10 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     if (!assignableRoles.includes(accountRole)) {
       setAccountRole(defaultRole)
     }
-  }, [assignableRoles, defaultRole, inviteRole, accountRole])
+    if (mode === "migrate" && !canMigrate) {
+      setMode("invites")
+    }
+  }, [assignableRoles, defaultRole, inviteRole, accountRole, mode, canMigrate])
 
   /** Suggested role clamped to what the viewer may actually assign; falls back to the lowest assignable role. */
   const resolveMigrateRole = useCallback(
@@ -474,7 +479,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
               [
                 { id: "invites" as const, label: "Send invites" },
                 { id: "accounts" as const, label: "Create account" },
-                { id: "migrate" as const, label: "Migrate" },
+                ...(canMigrate ? [{ id: "migrate" as const, label: "Migrate" }] : []),
               ] as const
             ).map((tab) => {
               const active = mode === tab.id

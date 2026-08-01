@@ -102,6 +102,12 @@ export function canManageMemberBans(role: string): boolean {
   return key === "owner" || key === "superadmin" || key === "admin"
 }
 
+/** Owner, Super Admin, and Admin may migrate existing mobile-app (Firebase Auth) users into Virtual Tracker — mirrors Backend `canMigrateMembers` in member-migration-policy.js. Narrower than `canManageMembers` (which also allows Manager/Super Manager). */
+export function canMigrateMembers(role: string): boolean {
+  const key = normalizeMemberRole(role)
+  return key === "owner" || key === "superadmin" || key === "admin"
+}
+
 /** Batch edit/remove — same management roles as row actions (Manager+). Scope enforced per target. */
 export function canUseBatchMemberActions(role: string): boolean {
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? 0

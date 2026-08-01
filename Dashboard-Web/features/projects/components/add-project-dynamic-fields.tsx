@@ -8,6 +8,7 @@ import { FORM_STACK, useClientFormTheme } from "@/shared/ui/forms/form-styles"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { FormField } from "@/shared/ui/forms/form-field"
 import { MultiSelectField } from "@/shared/ui/forms/multi-select-field"
+import { QuickAddClientPopover } from "@/features/projects/components/quick-add-client-popover"
 
 export type AddProjectRelationFields = {
   clientIds: string[]
@@ -29,6 +30,8 @@ type AddProjectDynamicFieldsProps = {
   availableTeams: Team[]
   teamsLoading: boolean
   teamsLoadError: string | null
+  /** Called with the new client's id right after a quick-add succeeds (see quick-add-client-popover.tsx). */
+  onClientAdded?: (clientId: string) => void
 }
 
 function memberOptionsToSelect(options: ProjectFormOption[]) {
@@ -54,6 +57,7 @@ export function AddProjectDynamicFields({
   availableTeams,
   teamsLoading,
   teamsLoadError,
+  onClientAdded,
 }: AddProjectDynamicFieldsProps) {
   const theme = useClientFormTheme()
   const visible = fields.filter((f) => {
@@ -84,11 +88,7 @@ export function AddProjectDynamicFields({
             <FormField
               key={field.key}
               label={field.label}
-              hint={
-                clientSelectOptions.length === 0
-                  ? "No clients yet — add one from the Clients page first"
-                  : undefined
-              }
+              hint={clientSelectOptions.length === 0 ? "No clients yet" : undefined}
             >
               <MultiSelectField
                 placeholder={
@@ -101,6 +101,11 @@ export function AddProjectDynamicFields({
                 onChange={(next) => onChange("clientIds", next)}
                 visibleOptionRows={3}
               />
+              <div className="mt-1.5">
+                <QuickAddClientPopover
+                  onAdded={(clientId) => onClientAdded?.(clientId)}
+                />
+              </div>
             </FormField>
           )
         }
