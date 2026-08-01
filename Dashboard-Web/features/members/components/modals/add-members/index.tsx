@@ -142,6 +142,14 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     onClose()
   }, [onClose])
 
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") handleClose()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [handleClose])
+
   // Send invites state
   const [inviteRows, setInviteRows] = useComponentState<InviteFormRow[]>([{ email: "", payRate: "" }])
   const [inviteRole, setInviteRole] = useComponentState<MemberRole>(defaultRole)
