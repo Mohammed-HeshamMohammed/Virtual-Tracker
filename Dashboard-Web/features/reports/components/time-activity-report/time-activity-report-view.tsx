@@ -79,9 +79,9 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
   } = useTimeAndActivityReport({ days, memberRows })
 
   const statCards = [
-    { icon: <Clock className="h-5 w-5 text-blue-500" />, label: "Total time", value: totals.time },
-    { icon: <TrendingUp className="h-5 w-5 text-blue-500" />, label: "Average activity", value: `${totals.activity}%` },
-    { icon: <CreditCard className="h-5 w-5 text-blue-500" />, label: "Total spent", value: totals.spent },
+    { icon: <Clock className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total time", value: totals.time },
+    { icon: <TrendingUp className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Average activity", value: `${totals.activity}%` },
+    { icon: <CreditCard className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total spent", value: totals.spent },
   ]
 
   return (
@@ -89,7 +89,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
       <div ref={reportColumnRef} className="report-print-area relative mx-auto max-w-[1400px] space-y-6 px-6 py-6">
         <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
           <div className="flex min-w-40 flex-col gap-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Members</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</div>
             <ReportSimpleDropdown
               value={memberFilter}
               onChange={setMemberFilter}
@@ -100,17 +100,17 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
           </div>
 
           <div className="relative flex flex-col gap-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Date range</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Date range</div>
             <button
               type="button"
               onClick={() => setShowDatePicker((v) => !v)}
               className={cn(
-                "flex items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50",
-                showDatePicker ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200"
+                "flex items-center gap-2 rounded-lg border bg-white dark:bg-slate-900 px-4 py-2 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800",
+                showDatePicker ? "border-blue-400 dark:border-blue-500 ring-1 ring-blue-400 dark:ring-blue-500" : "border-slate-200 dark:border-slate-700"
               )}
             >
               {dateLabel}
-              <Calendar className="h-4 w-4 text-blue-500" />
+              <Calendar className="h-4 w-4 text-blue-500 dark:text-blue-400" />
             </button>
             <AnimatePresence>
               {showDatePicker && (
@@ -129,11 +129,11 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
 
           <div className="flex flex-col gap-1 pb-2">
             <div className="select-none text-[10px] font-semibold uppercase tracking-wider text-transparent">.</div>
-            <span className="text-sm font-semibold text-slate-700">MDT</span>
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">MDT</span>
           </div>
 
           <div className="flex min-w-40 flex-col gap-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Data grouped by</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Data grouped by</div>
             <ReportSimpleDropdown
               value={groupBy}
               onChange={(v) => setGroupBy(v as TimeActivityGroupBy)}
@@ -149,7 +149,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 <button
                   type="button"
                   aria-label="Export"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
                 >
                   <Download className="h-4 w-4" />
                 </button>
@@ -166,7 +166,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 type="button"
                 aria-label="Send"
                 onClick={() => setSendOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
               >
                 <Play className="h-4 w-4" />
               </button>
@@ -176,7 +176,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 type="button"
                 aria-label="Schedule"
                 onClick={() => setScheduleOpen(true)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
               >
                 <Clock className="h-4 w-4" />
               </button>
@@ -184,14 +184,14 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
             <button
               type="button"
               onClick={() => setShowFilters(true)}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-blue-500 transition-colors hover:bg-blue-50"
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
             >
               <Filter className="h-3.5 w-3.5" />
               Filter
             </button>
             <button
               type="button"
-              className="flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600"
+              className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
             >
               <Save className="h-3.5 w-3.5" />
               Save
@@ -199,7 +199,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
           </div>
         </div>
 
-        <div className="border-t border-slate-200" />
+        <div className="border-t border-slate-200 dark:border-slate-700" />
 
         <div className="grid grid-cols-3 gap-4">
           {statCards.map((card, i) => (
@@ -208,12 +208,12 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.06 }}
-              className="flex items-center gap-4 rounded-xl border border-slate-100 bg-white px-5 py-4 shadow-sm"
+              className="flex items-center gap-4 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-4 shadow-sm"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50">{card.icon}</div>
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 dark:bg-blue-950/60">{card.icon}</div>
               <div>
-                <div className="text-sm text-slate-500">{card.label}</div>
-                <div className="mt-0.5 text-2xl font-bold text-slate-800">{card.value}</div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">{card.label}</div>
+                <div className="mt-0.5 text-2xl font-bold text-slate-800 dark:text-slate-100">{card.value}</div>
               </div>
             </motion.div>
           ))}
@@ -221,14 +221,14 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
 
         <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} />
 
-        <div className="relative overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+        <div className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
           <AnimatePresence>
             {showColumnPicker && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="absolute inset-0 z-25 rounded-xl bg-slate-900/10"
+                className="absolute inset-0 z-25 rounded-xl bg-slate-900/10 dark:bg-black/30"
                 onClick={() => setShowColumnPicker(false)}
               />
             )}
@@ -240,7 +240,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                   type="button"
                   onClick={() => setShowColumnPicker((v) => !v)}
                   aria-label="Choose columns"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
                   <Table2 className="h-4 w-4" />
                 </button>
@@ -261,7 +261,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-100">
+                <tr className="border-b border-slate-100 dark:border-slate-800">
                   <ReportSortableTh
                     colKey="date"
                     label="Date"
@@ -296,17 +296,17 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                   return (
                     <Fragment key={day.date}>
                       <tr
-                        className="cursor-pointer border-b border-slate-50 transition-colors hover:bg-slate-50/60"
+                        className="cursor-pointer border-b border-slate-50 dark:border-slate-800 transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/60"
                         onClick={() => toggleRow(day.date)}
                       >
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-2">
                             {isExpanded ? (
-                              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
                             ) : (
-                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
                             )}
-                            <span className="whitespace-nowrap text-sm text-slate-700">
+                            <span className="whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">
                               {day.dateLabel} ({day.memberCount})
                             </span>
                           </div>
@@ -314,7 +314,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                         {visibleMetricColumns.map((col) => {
                           const on = enabledPeriodCols.has(col.key)
                           return (
-                            <td key={col.key} className={cn("px-4 py-3.5", !on && "text-slate-300")}>
+                            <td key={col.key} className={cn("px-4 py-3.5", !on && "text-slate-300 dark:text-slate-700")}>
                               {on ? <ReportPeriodMetricCell day={day} colKey={col.key} /> : <span className="text-sm">—</span>}
                             </td>
                           )
@@ -329,18 +329,18 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                               animate={{ opacity: 1 }}
                               exit={{ opacity: 0 }}
                               transition={{ delay: mi * 0.03 }}
-                              className="border-b border-slate-50 bg-slate-50/40 transition-colors hover:bg-slate-100/50"
+                              className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
                             >
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-2.5 pl-6">
                                   <ReportMemberAvatar initials={member.avatar} />
-                                  <span className="text-sm text-slate-700">{member.name}</span>
+                                  <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
                                 </div>
                               </td>
                               {visibleMetricColumns.map((col) => {
                                 const on = enabledMemberCols.has(col.key)
                                 return (
-                                  <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300")}>
+                                  <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
                                     {on ? (
                                       <ReportMemberMetricCell member={member} colKey={col.key} />
                                     ) : (
@@ -359,20 +359,20 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-50 px-5 py-3">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center justify-between border-t border-slate-50 dark:border-slate-800 px-5 py-3">
+            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               Showing {sortedDisplayRows.length} rows
               <div className="relative">
-                <select className="appearance-none rounded-lg border border-slate-200 bg-white py-1 pl-2 pr-6 text-sm text-slate-600 focus:outline-none">
+                <select className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none">
                   <option>50</option>
                   <option>100</option>
                   <option>250</option>
                 </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400" />
+                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               </div>
               per page
             </div>
-            <button className="flex h-7 w-7 items-center justify-center rounded bg-blue-500 text-sm font-medium text-white" type="button">
+            <button className="flex h-7 w-7 items-center justify-center rounded bg-blue-500 dark:bg-blue-600 text-sm font-medium text-white" type="button">
               1
             </button>
           </div>

@@ -51,14 +51,14 @@ export function ReportFiltersPanel({
       style={panelStyle ?? undefined}
       className={
         panelStyle
-          ? "fixed z-110 flex min-h-0 max-w-full flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-slate-900/5"
-          : "fixed right-3 top-3 z-110 flex max-h-[min(34rem,calc(100vh-4rem))] w-[min(400px,calc(100%-1.5rem))] min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl ring-1 ring-slate-900/5"
+          ? "fixed z-110 flex min-h-0 max-w-full flex-col overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-700/90 bg-white dark:bg-slate-900 shadow-2xl ring-1 ring-slate-900/5 dark:ring-white/5"
+          : "fixed right-3 top-3 z-110 flex max-h-[min(34rem,calc(100vh-4rem))] w-[min(400px,calc(100%-1.5rem))] min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200/90 dark:border-slate-700/90 bg-white dark:bg-slate-900 shadow-2xl ring-1 ring-slate-900/5 dark:ring-white/5"
       }
     >
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
-        <h2 className="text-lg font-bold text-slate-800">Filters</h2>
-        <button type="button" onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100">
-          <X className="h-5 w-5 text-slate-400" />
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-100 dark:border-slate-800 px-5 py-4">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Filters</h2>
+        <button type="button" onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
+          <X className="h-5 w-5 text-slate-400 dark:text-slate-500" />
         </button>
       </div>
 
@@ -66,13 +66,13 @@ export function ReportFiltersPanel({
         <div className="space-y-5">
           {FILTERS_PANEL_SECTIONS.map(({ label, options }) => (
             <div key={label}>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</div>
               <ReportFilterDropdown label={options[0]!} options={options} />
             </div>
           ))}
 
           <div>
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">TRACKED TIME</div>
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">TRACKED TIME</div>
             <ReportFilterDropdown label="Members with tracked time" options={TRACKED_TIME_OPTIONS} />
           </div>
         </div>
@@ -80,11 +80,11 @@ export function ReportFiltersPanel({
 
       <div className="shrink-0 px-5 py-3">
         <div className="mb-2 flex items-center justify-between gap-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Custom filters</span>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Custom filters</span>
           <button
             type="button"
             onClick={addCustomFilter}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-blue-600 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
           >
             <Plus className="h-3.5 w-3.5" />
             Add
@@ -92,21 +92,21 @@ export function ReportFiltersPanel({
         </div>
         <div className="space-y-2">
           {customFilters.length === 0 && (
-            <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50/80 px-2 py-2 text-center text-[11px] leading-snug text-slate-500">
-              No custom filters. Tap <span className="font-semibold text-slate-600">Add</span> for field / operator /
+            <p className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-800/60 px-2 py-2 text-center text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+              No custom filters. Tap <span className="font-semibold text-slate-600 dark:text-slate-300">Add</span> for field / operator /
               value.
             </p>
           )}
           {customFilters.map((row, idx) => (
-            <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50/50 p-2.5">
+            <div key={row.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 p-2.5">
               <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500">Filter {idx + 1}</span>
+                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Filter {idx + 1}</span>
                 <IconTooltip text="Remove filter" placement="top">
                   <button
                     type="button"
                     onClick={() => removeCustomFilter(row.id)}
                     aria-label="Remove filter"
-                    className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600"
+                    className="rounded-md p-1 text-slate-400 dark:text-slate-500 transition-colors hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-600 dark:hover:text-slate-300"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -116,7 +116,7 @@ export function ReportFiltersPanel({
                 <select
                   value={row.field}
                   onChange={(e) => updateCustomFilter(row.id, { field: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500"
                 >
                   {CUSTOM_FILTER_FIELDS.map((f) => (
                     <option key={f} value={f}>
@@ -127,7 +127,7 @@ export function ReportFiltersPanel({
                 <select
                   value={row.operator}
                   onChange={(e) => updateCustomFilter(row.id, { operator: e.target.value })}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500"
                 >
                   {CUSTOM_FILTER_OPERATORS.map((o) => (
                     <option key={o} value={o}>
@@ -140,7 +140,7 @@ export function ReportFiltersPanel({
                   value={row.value}
                   onChange={(e) => updateCustomFilter(row.id, { value: e.target.value })}
                   placeholder="Value"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 placeholder:text-slate-400 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400" aria-label="Interactive control"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500" aria-label="Interactive control"
                 />
               </div>
             </div>
@@ -163,12 +163,12 @@ export function ReportFiltersPanel({
             }}
             className={cn(
               "flex h-4 w-4 cursor-pointer items-center justify-center rounded border-2 transition-colors",
-              includeArchived ? "border-blue-500 bg-blue-500" : "border-slate-300"
+              includeArchived ? "border-blue-500 dark:border-blue-500 bg-blue-500 dark:bg-blue-500" : "border-slate-300 dark:border-slate-600"
             )}
           >
             {includeArchived && <Check className="h-3 w-3 text-white" />}
           </div>
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
             Include archived projects
           </span>
         </label>
@@ -177,14 +177,14 @@ export function ReportFiltersPanel({
       <div className="shrink-0 space-y-3 px-5 py-4">
         <button
           type="button"
-          className="w-full rounded-xl bg-blue-400 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500"
+          className="w-full rounded-xl bg-blue-400 dark:bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 dark:hover:bg-blue-600"
         >
           Apply filters
         </button>
         <button
           type="button"
           onClick={onClose}
-          className="w-full py-2 text-center text-sm text-slate-500 transition-colors hover:text-slate-700"
+          className="w-full py-2 text-center text-sm text-slate-500 dark:text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-slate-200"
         >
           Clear filters
         </button>

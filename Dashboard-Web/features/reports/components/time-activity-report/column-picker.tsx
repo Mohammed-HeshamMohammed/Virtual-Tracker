@@ -46,10 +46,10 @@ export function ReportColumnPicker({
           <button
             key={k}
             onClick={() => onToggle(k)}
-            className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50" type="button"
+            className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800" type="button"
           >
             {lbl}
-            {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500" />}
+            {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500 dark:text-slate-400" />}
           </button>
         )
       }
@@ -59,10 +59,10 @@ export function ReportColumnPicker({
         <button
           key={k}
           onClick={() => onToggle(k)}
-          className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50" type="button"
+          className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800" type="button"
         >
           {label}
-          {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500" />}
+          {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500 dark:text-slate-400" />}
         </button>
       )
     })
@@ -74,9 +74,9 @@ export function ReportColumnPicker({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.95, y: -4 }}
       transition={{ duration: 0.14 }}
-      className="absolute right-0 top-10 z-30 max-h-[520px] w-64 overflow-hidden rounded-xl border border-slate-100 bg-white shadow-xl"
+      className="absolute right-0 top-10 z-30 max-h-[520px] w-64 overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl"
     >
-      <div className="flex gap-1 border-b border-slate-100 p-1.5">
+      <div className="flex gap-1 border-b border-slate-100 dark:border-slate-800 p-1.5">
         <button
           type="button"
           onClick={(e) => {
@@ -85,7 +85,7 @@ export function ReportColumnPicker({
           }}
           className={cn(
             "flex-1 rounded-lg py-2 text-xs font-semibold transition-colors",
-            scope === "period" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:bg-slate-50"
+            scope === "period" ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
           )}
         >
           Period
@@ -98,7 +98,7 @@ export function ReportColumnPicker({
           }}
           className={cn(
             "flex-1 rounded-lg py-2 text-xs font-semibold transition-colors",
-            scope === "member" ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:bg-slate-50"
+            scope === "member" ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
           )}
         >
           Member rows
@@ -113,8 +113,8 @@ export function ReportColumnPicker({
                 onMouseEnter={() => section.expandable && setFlyout(section.group!)}
                 onMouseLeave={() => setFlyout(null)}
               >
-                <button className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50" type="button">
-                  <ChevronLeft className="h-3.5 w-3.5 text-slate-400" />
+                <button className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800" type="button">
+                  <ChevronLeft className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" />
                   {section.group}
                 </button>
                 <AnimatePresence>
@@ -124,18 +124,18 @@ export function ReportColumnPicker({
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.1 }}
-                      className="absolute right-full top-0 z-40 mr-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-slate-100 bg-white py-1 shadow-xl"
+                      className="absolute right-full top-0 z-40 mr-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-xl"
                       onMouseEnter={() => setFlyout(section.group!)}
                       onMouseLeave={() => setFlyout(null)}
                     >
-                      <div className="flex items-center gap-2 border-b border-slate-50 px-4 py-2.5">
-                        <ChevronLeft className="h-4 w-4 text-slate-500" />
-                        <span className="text-sm font-semibold text-slate-700">{section.group}</span>
+                      <div className="flex items-center gap-2 border-b border-slate-50 dark:border-slate-800 px-4 py-2.5">
+                        <ChevronLeft className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{section.group}</span>
                       </div>
                       {section.subItems.map((sub, subi) => (
                         <div key={subi}>
                           {sub.sub && (
-                            <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            <div className="px-4 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                               {sub.sub}
                             </div>
                           )}
@@ -145,10 +145,10 @@ export function ReportColumnPicker({
                               <button
                                 key={item}
                                 onClick={() => onToggle(k)}
-                                className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-50" type="button"
+                                className="flex w-full items-center justify-between px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800" type="button"
                               >
                                 {item}
-                                {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500" />}
+                                {enabledCols.has(k) && <Check className="h-4 w-4 text-slate-500 dark:text-slate-400" />}
                               </button>
                             )
                           })}

@@ -1,6 +1,6 @@
 "use client"
 
-import type { AddMembersResult, AddMembersSubmission, Invite, InvitePatchBody, Member, MemberPatchBody } from "@/features/members/models/member"
+import type { AddMembersResult, AddMembersSubmission, Invite, InvitePatchBody, Member, MemberPatchBody, MemberRole } from "@/features/members/models/member"
 import {
   createInvitesBulk,
   createOpenInviteLink,
@@ -103,7 +103,7 @@ export function useMemberMutations({
     }
 
     if (payload.mode === "migrate") {
-      const results = await migrateAuthUsers(payload.uids, payload.role)
+      const results = await migrateAuthUsers(payload.migrations)
       if (results.some((r) => r.success)) {
         const refreshed = await refreshMembersFromApi()
         setMembers(refreshed)
@@ -321,7 +321,7 @@ export function useMemberMutations({
     setMembers(refreshed)
   }
 
-  async function handleCreateShareLink(payload: { role: AddMembersSubmission["role"] }) {
+  async function handleCreateShareLink(payload: { role: MemberRole }) {
     if (!canManageMembers) {
       return Promise.reject(new Error("Permission denied"))
     }

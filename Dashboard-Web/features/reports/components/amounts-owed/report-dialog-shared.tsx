@@ -12,7 +12,7 @@ export function ReportModalFieldLabel({
   required?: boolean
 }) {
   return (
-    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
       {children}
       {required ? <span>*</span> : null}
     </div>
@@ -28,7 +28,7 @@ export function ReportFileTypeSelect({
 }) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-auto min-h-9 w-full border-slate-200 bg-white py-2 text-left shadow-xs">
+      <SelectTrigger className="h-auto min-h-9 w-full border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 text-left shadow-xs">
         <SelectValue placeholder="PDF" />
       </SelectTrigger>
       <SelectContent className="z-100 max-h-72 overflow-y-auto scrollbar-hide">

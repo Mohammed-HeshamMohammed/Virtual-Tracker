@@ -26,11 +26,11 @@ export function ReportSimpleDropdown({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50"
+        className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
       >
-        {accentBar && <span className="h-5 w-0.5 shrink-0 rounded-full bg-blue-400" />}
+        {accentBar && <span className="h-5 w-0.5 shrink-0 rounded-full bg-blue-400 dark:bg-blue-500" />}
         <span className="truncate">{label}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
       </button>
       <AnimatePresence>
         {open && (
@@ -42,7 +42,7 @@ export function ReportSimpleDropdown({
               exit={{ opacity: 0, scale: 0.95, y: -4 }}
               transition={{ duration: 0.12 }}
               className={cn(
-                "absolute left-0 top-full z-45 mt-1 rounded-xl border border-slate-100 bg-white py-1 shadow-lg",
+                "absolute left-0 top-full z-45 mt-1 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-lg",
                 width
               )}
             >
@@ -53,10 +53,10 @@ export function ReportSimpleDropdown({
                     onChange(opt.value)
                     setOpen(false)
                   }}
-                  className="flex w-full items-center justify-between px-3 py-2 text-sm text-slate-600 hover:bg-slate-50" type="button"
+                  className="flex w-full items-center justify-between px-3 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800" type="button"
                 >
                   {opt.label}
-                  {opt.value === value && <Check className="h-3.5 w-3.5 text-blue-500" />}
+                  {opt.value === value && <Check className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400" />}
                 </button>
               ))}
             </motion.div>
