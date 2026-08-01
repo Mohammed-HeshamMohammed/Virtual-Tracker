@@ -1,3 +1,4 @@
+import { FieldPath } from "firebase-admin/firestore";
 import { getDb, getAuthAdmin } from "../../../config/firebase.js";
 import { requireAuthContext } from "../../../http/auth-context.js";
 import { assertMigrationManagementRole } from "../../../http/member-migration-policy.js";
@@ -12,22 +13,84 @@ import { promotePendingMemberCore } from "./member-invites.routes.js";
 
 const PENDING_AUTH = "pending_auth_members";
 const MEMBER_AUTH_INDEX = "member_auth_index";
+const MOBILE_USERS_COLLECTION = "users";
 const MAX_MIGRATE_BATCH = 100;
 const MIGRATABLE_PAGE_SIZE = 1000;
+/** Firestore `in` queries on document id are capped at 30 values per request. */
+const FIRESTORE_IN_CHUNK_SIZE = 30;
+
+/** Mobile-app `users/{uid}.role` (lowercased, spaces/underscores collapsed) → app role label. */
+const MOBILE_ROLE_MAP = {
+  agent: "Employee L1",
+  candidate: "Employee L0",
+  manager: "Manager",
+  supermanager: "Super Manager",
+  client: "Client",
+};
+
+function normalizeMobileRoleKey(role) {
+  return String(role || "").trim().toLowerCase().replace(/[\s_]+/g, "");
+}
+
+/** @returns {string|undefined} Suggested app role label, or undefined when the mobile role has no mapping. */
+function mapMobileRoleToMemberRole(rawRole) {
+  return MOBILE_ROLE_MAP[normalizeMobileRoleKey(rawRole)];
+}
 
 function normalizePathname(pathname) {
   return pathname.replace(/^\/api\/v1\//, "/api/");
 }
 
-/** @param {import("firebase-admin/auth").UserRecord} u */
-function toMigratableRow(u) {
-  return {
+function chunk(arr, size) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/**
+ * Batch-read mobile-app profile docs (`users/{uid}`) for the given uids.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string[]} uids
+ * @returns {Promise<Map<string, { avatarUrl: string, role: string, isActive: boolean }>>}
+ */
+async function fetchMobileProfiles(db, uids) {
+  const profiles = new Map();
+  if (uids.length === 0) return profiles;
+  const groups = chunk(uids, FIRESTORE_IN_CHUNK_SIZE);
+  const snapshots = await Promise.all(
+    groups.map((group) =>
+      db.collection(MOBILE_USERS_COLLECTION).where(FieldPath.documentId(), "in", group).get(),
+    ),
+  );
+  for (const snap of snapshots) {
+    for (const doc of snap.docs) {
+      const data = doc.data() || {};
+      profiles.set(doc.id, {
+        avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
+        role: typeof data.role === "string" ? data.role : "",
+        isActive: data.isActive !== false,
+      });
+    }
+  }
+  return profiles;
+}
+
+/**
+ * @param {import("firebase-admin/auth").UserRecord} u
+ * @param {{ avatarUrl: string, role: string } | undefined} profile
+ */
+function toMigratableRow(u, profile) {
+  const row = {
     uid: u.uid,
     email: u.email || "",
     displayName: u.displayName || "",
     phoneNumber: u.phoneNumber || "",
     creationTime: u.metadata?.creationTime || null,
   };
+  if (profile?.avatarUrl) row.avatarUrl = profile.avatarUrl;
+  const suggestedRole = profile ? mapMobileRoleToMemberRole(profile.role) : undefined;
+  if (suggestedRole) row.suggestedRole = suggestedRole;
+  return row;
 }
 
 /**
@@ -77,7 +140,13 @@ export async function routeMemberMigration(req, res, url, origin) {
           sendJson(res, origin, 200, { success: true, users: [], nextPageToken: null });
           return true;
         }
-        sendJson(res, origin, 200, { success: true, users: [toMigratableRow(u)], nextPageToken: null });
+        // Eligible only if they actually have a mobile-app profile (proves they signed in there) and aren't deactivated there.
+        const profile = (await fetchMobileProfiles(db, [u.uid])).get(u.uid);
+        if (!profile || !profile.isActive) {
+          sendJson(res, origin, 200, { success: true, users: [], nextPageToken: null });
+          return true;
+        }
+        sendJson(res, origin, 200, { success: true, users: [toMigratableRow(u, profile)], nextPageToken: null });
         return true;
       }
 
@@ -85,7 +154,17 @@ export async function routeMemberMigration(req, res, url, origin) {
       const page = await auth.listUsers(MIGRATABLE_PAGE_SIZE, pageToken);
       const candidates = page.users.filter((u) => !u.disabled);
       const linkedFlags = await Promise.all(candidates.map((u) => isUidAlreadyLinked(db, u.uid)));
-      const users = candidates.filter((_, i) => !linkedFlags[i]).map(toMigratableRow);
+      const unlinked = candidates.filter((_, i) => !linkedFlags[i]);
+
+      // Only people with a mobile-app profile doc are real migration candidates — an Auth
+      // account with no `users/{uid}` doc means they never actually signed into the mobile app.
+      const profiles = await fetchMobileProfiles(db, unlinked.map((u) => u.uid));
+      const users = unlinked
+        .filter((u) => {
+          const profile = profiles.get(u.uid);
+          return Boolean(profile) && profile.isActive;
+        })
+        .map((u) => toMigratableRow(u, profiles.get(u.uid)));
 
       sendJson(res, origin, 200, { success: true, users, nextPageToken: page.pageToken || null });
     } catch (e) {
@@ -107,35 +186,53 @@ export async function routeMemberMigration(req, res, url, origin) {
     let body;
     try {
       body = await readJsonBody(req);
-      rejectUnknownFields(body, ["uids", "role"]);
+      rejectUnknownFields(body, ["migrations"]);
     } catch (e) {
       sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
       return true;
     }
 
-    const uids = Array.isArray(body.uids)
-      ? [...new Set(body.uids.filter((u) => typeof u === "string" && u.trim()))].slice(0, MAX_MIGRATE_BATCH)
+    const seenUids = new Set();
+    const migrations = Array.isArray(body.migrations)
+      ? body.migrations
+          .filter(
+            (m) =>
+              m &&
+              typeof m.uid === "string" &&
+              m.uid.trim() &&
+              typeof m.role === "string" &&
+              m.role.trim(),
+          )
+          .map((m) => ({ uid: m.uid.trim(), roleName: m.role.trim() }))
+          .filter((m) => {
+            if (seenUids.has(m.uid)) return false;
+            seenUids.add(m.uid);
+            return true;
+          })
+          .slice(0, MAX_MIGRATE_BATCH)
       : [];
-    const roleName = typeof body.role === "string" ? body.role.trim() : "";
-    if (uids.length === 0) {
-      sendJson(res, origin, 400, { success: false, error: "uids must be a non-empty array." });
-      return true;
-    }
-    if (!roleName) {
-      sendJson(res, origin, 400, { success: false, error: "role is required." });
+    if (migrations.length === 0) {
+      sendJson(res, origin, 400, { success: false, error: "migrations must be a non-empty array of { uid, role }." });
       return true;
     }
 
-    const roleErr = await validateRoleAssignment(db, viewer.roleName, { roleName });
-    if (roleErr) {
-      sendJson(res, origin, 403, { success: false, error: roleErr });
-      return true;
+    const uniqueRoleNames = [...new Set(migrations.map((m) => m.roleName))];
+    for (const roleName of uniqueRoleNames) {
+      const roleErr = await validateRoleAssignment(db, viewer.roleName, { roleName });
+      if (roleErr) {
+        sendJson(res, origin, 403, { success: false, error: roleErr });
+        return true;
+      }
     }
 
-    const role_id = await resolveRoleIdByName(db, roleName);
+    const roleIdByName = new Map();
+    for (const roleName of uniqueRoleNames) {
+      roleIdByName.set(roleName, await resolveRoleIdByName(db, roleName));
+    }
+
     const results = [];
 
-    for (const uid of uids) {
+    for (const { uid, roleName } of migrations) {
       try {
         const userRecord = await auth.getUser(uid);
 
@@ -154,7 +251,7 @@ export async function routeMemberMigration(req, res, url, origin) {
         await db.collection(PENDING_AUTH).doc(uid).set({
           email,
           display_name: userRecord.displayName || "",
-          role_id,
+          role_id: roleIdByName.get(roleName),
           pay_rate: 0,
           created_by_uid: viewer.uid,
           created_at: new Date(),
