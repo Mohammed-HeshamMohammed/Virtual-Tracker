@@ -44,6 +44,8 @@ export type AuthProfileSnapshot = {
   /** App-managed contact phone (User_profiles.phone). */
   phone?: string | null
   phoneVerified?: boolean
+  /** IANA zone id, e.g. "America/Los_Angeles" — mirrored onto the member doc for reports. */
+  timezone?: string | null
 }
 
 export function parseAuthProfileSnapshot(raw: unknown): AuthProfileSnapshot | undefined {
@@ -104,6 +106,8 @@ function parseProfile(raw: unknown): AuthProfileSnapshot | undefined {
       : undefined
   const phone = "phone" in o && (typeof o.phone === "string" || o.phone === null) ? (o.phone as string | null) : undefined
   const phoneVerified = "phoneVerified" in o && typeof o.phoneVerified === "boolean" ? o.phoneVerified : undefined
+  const timezone =
+    "timezone" in o && (typeof o.timezone === "string" || o.timezone === null) ? (o.timezone as string | null) : undefined
 
   return {
     uid: o.uid,
@@ -129,6 +133,7 @@ function parseProfile(raw: unknown): AuthProfileSnapshot | undefined {
     ...(profileImageUpdatedAt !== undefined ? { profileImageUpdatedAt } : {}),
     ...(phone !== undefined ? { phone } : {}),
     ...(phoneVerified !== undefined ? { phoneVerified } : {}),
+    ...(timezone !== undefined ? { timezone } : {}),
   }
 }
 

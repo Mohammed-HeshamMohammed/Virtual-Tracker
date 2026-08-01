@@ -430,7 +430,7 @@ export function StandardReportLayout({
             </div>
           </div>
 
-          <div className="pt-4">{children}</div>
+          <div className="report-print-area pt-4">{children}</div>
         </div>
 
         <ReportSendDialog open={sendOpen} onOpenChange={setSendOpen} />

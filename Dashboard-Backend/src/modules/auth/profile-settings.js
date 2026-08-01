@@ -69,6 +69,24 @@ export async function syncMemberPhoneForUid(db, uid, phone, options = {}) {
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} uid
+ * @param {string} timezone IANA zone id, e.g. "America/Los_Angeles"
+ */
+export async function syncMemberTimezoneForUid(db, uid, timezone) {
+  const snap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
+  if (snap.empty) return;
+  await snap.docs[0].ref.set(
+    {
+      timezone,
+      updated_at: new Date(),
+      updated_by: uid,
+    },
+    { merge: true },
+  );
+}
+
+/**
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} uid
  * @param {string} phone
  * @param {{ phoneVerified?: boolean }} [options]
  */
@@ -135,6 +153,14 @@ export async function patchProfileSettings(auth, db, uid, body) {
     patch.phoneVerified = false;
   }
 
+  if ("timezone" in body) {
+    const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
+    if (timezone && !Intl.supportedValuesOf("timeZone").includes(timezone)) {
+      throw new Error("Not a recognized timezone.");
+    }
+    patch.timezone = timezone || null;
+  }
+
   let authEmailPatch = null;
   if ("email" in body) {
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -184,6 +210,10 @@ export async function patchProfileSettings(auth, db, uid, body) {
   if ("phone" in body) {
     const phone = await assertValidPhone(body.phone, { required: false, label: "Phone number" });
     await syncMemberPhoneForUid(db, uid, phone, { phoneVerified: false });
+  }
+
+  if ("timezone" in body && typeof body.timezone === "string" && body.timezone.trim()) {
+    await syncMemberTimezoneForUid(db, uid, body.timezone.trim());
   }
 
   if (authEmailPatch) {

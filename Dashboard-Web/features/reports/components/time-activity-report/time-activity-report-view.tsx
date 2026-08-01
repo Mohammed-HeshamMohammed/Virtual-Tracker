@@ -2,7 +2,7 @@
 /* eslint-disable react-doctor/no-giant-component */
 "use client"
 
-import { Fragment } from "react"
+import { Fragment, useState as useComponentState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import {
@@ -21,6 +21,11 @@ import {
 import { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 import { cn } from "@/shared/utils/utils"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
+import { downloadTimeActivityCsv } from "@/features/reports/utils/time-and-activity/csv-export"
+import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
+import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
+import { sendTimeAndActivityReport, scheduleTimeAndActivityReport } from "@/features/reports/api/time-and-activity-api"
 import type { TimeActivityGroupBy, TimeActivityReportViewProps } from "@/features/reports/models/time-and-activity"
 import { ReportColumnPicker } from "@/features/reports/components/time-activity-report/column-picker"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
@@ -32,7 +37,9 @@ import { ReportTimeActivityChart } from "@/features/reports/components/time-acti
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 
-export function TimeActivityReportView({ days, memberRows }: TimeActivityReportViewProps) {
+export function TimeActivityReportView({ days, memberRows, onRangeApply, range }: TimeActivityReportViewProps) {
+  const [sendOpen, setSendOpen] = useComponentState(false)
+  const [scheduleOpen, setScheduleOpen] = useComponentState(false)
   const {
     chartMetrics,
     toggleChartMetric,
@@ -79,7 +86,7 @@ export function TimeActivityReportView({ days, memberRows }: TimeActivityReportV
 
   return (
     <div className="relative isolate">
-      <div ref={reportColumnRef} className="relative mx-auto max-w-[1400px] space-y-6 px-6 py-6">
+      <div ref={reportColumnRef} className="report-print-area relative mx-auto max-w-[1400px] space-y-6 px-6 py-6">
         <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
           <div className="flex min-w-40 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Members</div>
@@ -113,6 +120,7 @@ export function TimeActivityReportView({ days, memberRows }: TimeActivityReportV
                     setDateLabel(lbl)
                     setShowDatePicker(false)
                   }}
+                  onApplyRange={onRangeApply}
                   onDismiss={() => setShowDatePicker(false)}
                 />
               )}
@@ -136,21 +144,43 @@ export function TimeActivityReportView({ days, memberRows }: TimeActivityReportV
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
-            {[
-              { icon: <Download className="h-4 w-4" />, title: "Export" },
-              { icon: <Play className="h-4 w-4" />, title: "Share" },
-              { icon: <Clock className="h-4 w-4" />, title: "Schedule" },
-            ].map((btn) => (
-              <IconTooltip key={btn.title} text={btn.title} placement="bottom">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  aria-label={btn.title}
+                  aria-label="Export"
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
                 >
-                  {btn.icon}
+                  <Download className="h-4 w-4" />
                 </button>
-              </IconTooltip>
-            ))}
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(sortedDisplayRows, "time-and-activity")}>
+                  To CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.print()}>Print / PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <IconTooltip text="Send" placement="bottom">
+              <button
+                type="button"
+                aria-label="Send"
+                onClick={() => setSendOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
+              >
+                <Play className="h-4 w-4" />
+              </button>
+            </IconTooltip>
+            <IconTooltip text="Schedule" placement="bottom">
+              <button
+                type="button"
+                aria-label="Schedule"
+                onClick={() => setScheduleOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50"
+              >
+                <Clock className="h-4 w-4" />
+              </button>
+            </IconTooltip>
             <button
               type="button"
               onClick={() => setShowFilters(true)}
@@ -370,6 +400,41 @@ export function TimeActivityReportView({ days, memberRows }: TimeActivityReportV
           </AnimatePresence>,
           document.body
         )}
+
+      <ReportSendDialog
+        open={sendOpen}
+        onOpenChange={setSendOpen}
+        onSend={async ({ emails, subject, message, fileType }) => {
+          if (!range) throw new Error("No date range loaded yet.")
+          const result = await sendTimeAndActivityReport({
+            from: range.from,
+            to: range.to,
+            emails,
+            subject,
+            message,
+            fileType: fileType.toLowerCase() === "csv" ? "csv" : "pdf",
+          })
+          if (!result || result.sent === 0) throw new Error("Failed to send report.")
+        }}
+      />
+
+      <ReportScheduleDialog
+        open={scheduleOpen}
+        onOpenChange={setScheduleOpen}
+        onSave={async ({ emails, subject, message, fileType, scheduleName, dateRange: dateRangeKind, frequency, deliveryTime }) => {
+          const result = await scheduleTimeAndActivityReport({
+            emails,
+            subject,
+            message,
+            fileType: fileType.toLowerCase() === "csv" ? "csv" : "pdf",
+            scheduleName,
+            dateRangeKind,
+            frequency,
+            deliveryTime,
+          })
+          if (!result) throw new Error("Failed to save schedule.")
+        }}
+      />
     </div>
   )
 }

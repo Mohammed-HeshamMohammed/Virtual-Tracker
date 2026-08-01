@@ -605,3 +605,54 @@ export async function sendTeamWeeklyReportEmail(input) {
 
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[team-weekly-report]" });
 }
+
+// ── Report delivery (Send / Schedule on a report page) ─────────────────────────
+
+/**
+ * @param {{
+ *   email: string,
+ *   subject?: string,
+ *   message?: string,
+ *   reportName?: string,
+ *   attachment?: { filename: string, contentBase64: string, contentType: string },
+ * }} input
+ */
+export async function sendReportDeliveryEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  if (!email) return { sent: false, channel: "skipped" };
+
+  const reportName = typeof input.reportName === "string" && input.reportName.trim() ? input.reportName.trim() : "Report";
+  const subject = typeof input.subject === "string" && input.subject.trim() ? input.subject.trim() : reportName;
+  const message = typeof input.message === "string" ? input.message.trim() : "";
+
+  const text = [message, "", `Attached: ${input.attachment?.filename ?? reportName}`].filter(Boolean).join("\n");
+
+  const html = buildAuthBrandedEmailHtml({
+    title: reportName,
+    subtitle: "Shared from your dashboard",
+    badge: "Report",
+    badgeVariant: "report",
+    preheader: message || `${reportName} is attached.`,
+    bodyHtml: `
+      ${message ? `<p style="margin:0 0 14px;">${escapeHtml(message).replace(/\n/g, "<br/>")}</p>` : ""}
+      ${calloutHtml(
+        "info",
+        "Attachment",
+        `<p style="margin:0;">${escapeHtml(input.attachment?.filename ?? reportName)} is attached to this email.</p>`,
+      )}
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail(), { showAutoNotice: false }),
+  });
+
+  const attachments = input.attachment
+    ? [
+        {
+          filename: input.attachment.filename,
+          content: Buffer.from(input.attachment.contentBase64, "base64"),
+          contentType: input.attachment.contentType,
+        },
+      ]
+    : undefined;
+
+  return sendTransactionalEmail({ to: email, subject, text, html, attachments, logPrefix: "[report-delivery]" });
+}

@@ -830,6 +830,28 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_recompute_task_totals
   AFTER INSERT OR UPDATE OR DELETE ON task_member_progress
   FOR EACH ROW EXECUTE FUNCTION recompute_task_totals()`,
+  // Recurring "Schedule" delivery for reports (currently just time-and-activity) -
+  // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
+  // polls this on the same interval-timer pattern team-weekly-report.service.js
+  // already uses, no job-queue dependency needed for one feature.
+  `CREATE TABLE IF NOT EXISTS report_schedules (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  report_type     VARCHAR(64) NOT NULL DEFAULT 'time-and-activity',
+  name            TEXT,
+  member_id       UUID,
+  emails          TEXT[] NOT NULL,
+  subject         TEXT,
+  message         TEXT,
+  file_type       VARCHAR(8) NOT NULL DEFAULT 'pdf' CHECK (file_type IN ('csv', 'pdf')),
+  date_range_kind VARCHAR(32) NOT NULL DEFAULT 'The last 7 days',
+  frequency       VARCHAR(16) NOT NULL DEFAULT 'Weekly' CHECK (frequency IN ('Daily', 'Weekly', 'Bi-weekly', 'Monthly')),
+  delivery_time   TIME NOT NULL DEFAULT '08:30',
+  created_by      UUID NOT NULL,
+  last_sent_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_report_schedules_due ON report_schedules (frequency, last_sent_at)`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.

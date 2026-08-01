@@ -19,11 +19,23 @@ import { validateEmailList, validateRequiredText } from "@/shared/validation"
 
 const DEFAULT_DELIVERY_TIME = "8:30 am"
 
+export interface ReportScheduleInput {
+  emails: string[]
+  subject: string
+  message: string
+  fileType: string
+  scheduleName: string
+  dateRange: string
+  frequency: string
+  deliveryTime: string
+}
+
 export function ReportScheduleDialog({
   open,
   onOpenChange,
   hasFiltersApplied = false,
   onRequestOpenFilters,
+  onSave,
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
@@ -31,6 +43,8 @@ export function ReportScheduleDialog({
   hasFiltersApplied?: boolean
   /** Opens the report filters panel (e.g. close this dialog and open filters). */
   onRequestOpenFilters?: () => void
+  /** When provided, called on Save instead of just closing the dialog (real persistence). */
+  onSave?: (input: ReportScheduleInput) => Promise<void> | void
 }) {
   const deliveryTimeOptions = useMemo(() => buildDeliveryTimeOptions(), [])
 
@@ -43,6 +57,7 @@ export function ReportScheduleDialog({
   const [frequency, setFrequency] = useComponentState("")
   const [deliveryTime, setDeliveryTime] = useComponentState(DEFAULT_DELIVERY_TIME)
   const [submitError, setSubmitError] = useComponentState<string | null>(null)
+  const [saving, setSaving] = useComponentState(false)
 
   const [prevOpen, setPrevOpen] = useComponentState(open)
 
@@ -58,10 +73,11 @@ export function ReportScheduleDialog({
       setFrequency("")
       setDeliveryTime(DEFAULT_DELIVERY_TIME)
       setSubmitError(null)
+      setSaving(false)
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     const validationError =
       validateEmailList(emails) ??
       validateRequiredText(scheduleName.trim(), "Schedule name") ??
@@ -72,7 +88,31 @@ export function ReportScheduleDialog({
       return
     }
     setSubmitError(null)
-    onOpenChange(false)
+
+    if (!onSave) {
+      onOpenChange(false)
+      return
+    }
+
+    const emailList = emails.split(",").map((e) => e.trim()).filter(Boolean)
+    setSaving(true)
+    try {
+      await onSave({
+        emails: emailList,
+        subject: subject.trim(),
+        message,
+        fileType,
+        scheduleName: scheduleName.trim(),
+        dateRange: dateRange.trim(),
+        frequency: frequency.trim(),
+        deliveryTime,
+      })
+      onOpenChange(false)
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Failed to save schedule.")
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleOpenFiltersLink() {
@@ -233,8 +273,9 @@ export function ReportScheduleDialog({
             type="button"
             className="bg-sky-400 text-white hover:bg-sky-500"
             onClick={handleSave}
+            disabled={saving}
           >
-            Save
+            {saving ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

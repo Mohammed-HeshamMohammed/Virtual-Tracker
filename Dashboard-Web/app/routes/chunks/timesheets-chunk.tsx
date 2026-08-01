@@ -2,7 +2,7 @@
 
 import { PeopleTeamScopeProvider } from "@/features/members/context/people-team-scope-context"
 import { TimesheetsViewEdit } from "@/features/timesheets"
-import { ReportEmptyState, StandardReportLayout } from "@/features/reports"
+import { ReportEmptyState, StandardReportLayout, TimeAndActivityReport } from "@/features/reports"
 import type { PageChunkProps } from "@/app/routes/types"
 
 export default function TimesheetsChunk({ pageId, onNavigate }: PageChunkProps) {
@@ -18,6 +18,8 @@ export default function TimesheetsChunk({ pageId, onNavigate }: PageChunkProps) 
           <ReportEmptyState />
         </StandardReportLayout>
       )
+    case "timesheets-time-activity":
+      return <TimeAndActivityReport />
     case "timesheets-view":
     default:
       return (

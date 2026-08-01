@@ -1,4 +1,5 @@
 export * from "@/features/reports/utils/time-and-activity/chart-utils"
+export * from "@/features/reports/utils/time-and-activity/csv-export"
 export * from "@/features/reports/utils/time-and-activity/custom-filter-row"
 export * from "@/features/reports/utils/time-and-activity/date-range"
 export * from "@/features/reports/utils/time-and-activity/member-filter-options"

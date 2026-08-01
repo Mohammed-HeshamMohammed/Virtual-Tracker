@@ -73,4 +73,9 @@ export interface TimeActivityReportData {
   memberRows: Record<string, TimeActivityMemberSubRow[]>
 }
 
-export type TimeActivityReportViewProps = TimeActivityReportData
+export type TimeActivityReportViewProps = TimeActivityReportData & {
+  /** Real Date objects from the date-range picker, for callers that need to refetch. */
+  onRangeApply?: (start: Date, end: Date) => void
+  /** 'YYYY-MM-DD' bounds of the data currently loaded — what Send/Schedule act on. */
+  range?: { from: string; to: string }
+}

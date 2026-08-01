@@ -115,5 +115,9 @@ export function profileAppFieldsFromDoc(row) {
   if ("phoneVerified" in row && typeof row.phoneVerified === "boolean") {
     out.phoneVerified = row.phoneVerified;
   }
+  if ("timezone" in row) {
+    const v = row.timezone;
+    out.timezone = v === null ? null : typeof v === "string" ? v : null;
+  }
   return out;
 }
