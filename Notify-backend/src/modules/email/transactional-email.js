@@ -43,7 +43,7 @@ export async function verifySmtpDelivery() {
   }
 }
 
-/** Send via SMTP; console fallback when unconfigured. @param {{ to: string; subject: string; text: string; html: string; logPrefix?: string }} input @returns {Promise<{ sent: boolean; channel: string; error?: string }>} */
+/** Send via SMTP; console fallback when unconfigured. @param {{ to: string; subject: string; text: string; html: string; logPrefix?: string; attachments?: Array<{ filename: string; content: Buffer | string; contentType?: string }> }} input @returns {Promise<{ sent: boolean; channel: string; error?: string }>} */
 export async function sendTransactionalEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!to) return { sent: false, channel: "skipped" };
@@ -60,6 +60,7 @@ export async function sendTransactionalEmail(input) {
         subject: input.subject,
         text: input.text,
         html: input.html,
+        attachments: input.attachments,
       });
       return { sent: true, channel: "smtp" };
     } catch (err) {

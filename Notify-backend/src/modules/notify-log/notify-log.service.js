@@ -12,6 +12,7 @@ const EMAIL_COOLDOWNS = {
   "transfer-invite": "10 minutes",
   "member-ban": "1 hour",
   "team-weekly-report": "6 hours",
+  "report-delivery": "1 minute",
 };
 
 const DEFAULT_EMAIL_COOLDOWN = "5 minutes";

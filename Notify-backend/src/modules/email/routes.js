@@ -13,6 +13,7 @@ import {
   sendMemberBanEmail,
   sendTeamWeeklyReportEmail,
   sendContactInquiryEmail,
+  sendReportDeliveryEmail,
 } from "./email-builders.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
@@ -27,6 +28,7 @@ const ALLOWED_TEMPLATES = new Set([
   "member-ban",
   "team-weekly-report",
   "contact-inquiry",
+  "report-delivery",
 ]);
 
 /**
@@ -180,6 +182,15 @@ async function dispatchEmailTemplate(template, body) {
         teamName: body.teamName,
         memberCount: body.memberCount,
         appUrl: body.appUrl,
+      });
+
+    case "report-delivery":
+      return sendReportDeliveryEmail({
+        email: body.email,
+        subject: body.subject,
+        message: body.message,
+        reportName: body.reportName,
+        attachment: body.attachment,
       });
 
     case "contact-inquiry":
