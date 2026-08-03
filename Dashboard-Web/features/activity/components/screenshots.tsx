@@ -56,6 +56,23 @@ export interface Screenshot {
   memberId?: string
 }
 
+/** Format a capturedAt ISO string (or fallback to pre-formatted time) in the user's local timezone. */
+function localTime(screenshot: Screenshot): string {
+  const raw = screenshot.capturedAt
+  if (!raw) return screenshot.time
+  const d = new Date(raw)
+  if (!Number.isFinite(d.getTime())) return screenshot.time
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
+}
+
+function localDate(screenshot: Screenshot): string {
+  const raw = screenshot.capturedAt
+  if (!raw) return screenshot.timestamp
+  const d = new Date(raw)
+  if (!Number.isFinite(d.getTime())) return screenshot.timestamp
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+}
+
 const CORE_APPS = ["VS Code", "IntelliJ IDEA", "Xcode", "Terminal", "Postman"]
 const PRODUCTIVE_APPS = ["Figma", "Adobe XD", "Chrome DevTools"]
 const SUSPICIOUS_APPS = ["Chrome", "Firefox", "Safari", "YouTube", "Netflix"]
@@ -570,7 +587,7 @@ export function ActivityScreenshots() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{screenshot.member}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{screenshot.time}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{localTime(screenshot)}</p>
                   </div>
                 </div>
                 <div className="flex items-center justify-between gap-2">
@@ -634,7 +651,7 @@ export function ActivityScreenshots() {
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{screenshot.member}</span>
                     </div>
                   </td>
-                  <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.time}</span></td>
+                  <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{localTime(screenshot)}</span></td>
                   <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.project}</span></td>
                   <td className="px-5 py-4"><span className="text-sm text-slate-600 dark:text-slate-300">{screenshot.activeApp}</span></td>
                   <td className="px-5 py-4">
@@ -725,7 +742,7 @@ export function ActivityScreenshots() {
                   </div>
                   <div>
                     <p className="font-semibold text-slate-800 dark:text-slate-100">{selectedScreenshot.member}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{selectedScreenshot.timestamp} at {selectedScreenshot.time}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{localDate(selectedScreenshot)} at {localTime(selectedScreenshot)}</p>
                   </div>
                 </div>
                 <button onClick={() => setSelectedScreenshot(null)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
