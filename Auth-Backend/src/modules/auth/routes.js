@@ -5,6 +5,7 @@ import { assertMaxLength, rejectUnknownFields } from "../../http/validate-body.j
 import { sendJson } from "../../http/response.js";
 import { validatePassword, getPublicPasswordPolicyResponse } from "../../config/password-policy/index.js";
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
+import { routeGoogleOAuth } from "./google-oauth.js";
 
 /** Cache-Control overrides for public auth config endpoints. */
 const CACHE_FIREBASE_CONFIG = "public, max-age=3600";
@@ -166,6 +167,10 @@ export async function routeAuth(req, res, url, origin) {
       sendJson(res, origin, 500, { success: false, error: msg });
     }
     return true;
+  }
+
+  if (url.pathname === "/api/auth/google/start" || url.pathname === "/api/auth/google/callback") {
+    return routeGoogleOAuth(req, res, url);
   }
 
   return false;

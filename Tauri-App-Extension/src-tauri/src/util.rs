@@ -96,3 +96,67 @@ pub fn is_allowed_link_hint(hint: &str) -> bool {
         "provider=google" | "provider=apple" | "mode=signup" | "mode=forgot-password"
     )
 }
+
+/// Where to send the browser for a given (already-validated) sign-in hint.
+///
+/// `provider=google` skips our own web login page entirely and opens
+/// Auth-Backend's `/api/auth/google/start`, which 302s straight to Google's
+/// account chooser - a genuine one-hop instead of a visible flash of our own
+/// site before Firebase's client SDK (running on that page) redirects away.
+/// Every other hint (`provider=apple`, `mode=signup`, `mode=forgot-password`,
+/// or none) still targets the web login page, which reads the hint itself to
+/// jump to the right pane/provider.
+pub fn build_link_sign_in_url(
+    web_url: &str,
+    auth_url: &str,
+    encoded_link_token: &str,
+    valid_hint: Option<&str>,
+) -> String {
+    if valid_hint == Some("provider=google") {
+        return format!("{auth_url}/api/auth/google/start?link={encoded_link_token}");
+    }
+    let mut url = format!("{web_url}/?link={encoded_link_token}");
+    if let Some(h) = valid_hint {
+        url.push('&');
+        url.push_str(h);
+    }
+    url
+}
+
+#[cfg(test)]
+mod link_sign_in_url_tests {
+    use super::build_link_sign_in_url;
+
+    #[test]
+    fn google_hint_targets_auth_backend_directly() {
+        let url = build_link_sign_in_url(
+            "https://app.example.com",
+            "https://auth.example.com",
+            "tok123",
+            Some("provider=google"),
+        );
+        assert_eq!(url, "https://auth.example.com/api/auth/google/start?link=tok123");
+    }
+
+    #[test]
+    fn apple_hint_still_targets_the_web_login_page() {
+        let url = build_link_sign_in_url(
+            "https://app.example.com",
+            "https://auth.example.com",
+            "tok123",
+            Some("provider=apple"),
+        );
+        assert_eq!(url, "https://app.example.com/?link=tok123&provider=apple");
+    }
+
+    #[test]
+    fn no_hint_targets_the_plain_web_login_page() {
+        let url = build_link_sign_in_url(
+            "https://app.example.com",
+            "https://auth.example.com",
+            "tok123",
+            None,
+        );
+        assert_eq!(url, "https://app.example.com/?link=tok123");
+    }
+}

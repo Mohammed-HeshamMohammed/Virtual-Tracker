@@ -84,6 +84,20 @@ export function buildEnv(source = process.env) {
     urls: Object.freeze({
       frontendOrigin: readString(source, "FRONTEND_ORIGIN", "http://localhost:3000"),
       appPublicUrl: readString(source, "APP_PUBLIC_URL", ""),
+      /** Dashboard-Backend base URL — used only to complete a desktop-agent
+       * link session server-to-server after a Google OAuth callback (see
+       * modules/auth/google-oauth.js). Not needed for any other route. */
+      dashboardApiUrl: readString(source, "DASHBOARD_API_URL", ""),
+    }),
+
+    /** Desktop-agent "sign in with Google" authorization-code flow (see
+     * modules/auth/google-oauth.js). All empty by default — /api/auth/google/start
+     * responds with agentLinkError=not_configured until these are set. */
+    googleOAuth: Object.freeze({
+      clientId: readString(source, "GOOGLE_OAUTH_CLIENT_ID"),
+      clientSecret: readString(source, "GOOGLE_OAUTH_CLIENT_SECRET"),
+      redirectUri: readString(source, "GOOGLE_OAUTH_REDIRECT_URI"),
+      stateSecret: readString(source, "GOOGLE_OAUTH_STATE_SECRET"),
     }),
 
     firebase: Object.freeze({

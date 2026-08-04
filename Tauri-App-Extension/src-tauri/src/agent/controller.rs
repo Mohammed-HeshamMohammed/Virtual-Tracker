@@ -20,7 +20,7 @@ use crate::types::{
     ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
     SignInResult,
 };
-use crate::util::{is_allowed_link_hint, open_url_in_launcher_or_browser, server_label};
+use crate::util::{build_link_sign_in_url, is_allowed_link_hint, open_url_in_launcher_or_browser, server_label};
 
 pub struct AgentController {
     pub settings: Settings,
@@ -52,6 +52,7 @@ impl AgentController {
         let link_flow = Arc::new(AgentLinkFlow::new(
             Arc::clone(&api),
             settings.web_url.clone(),
+            settings.auth_url.clone(),
         ));
         let auth_server = AuthServer::new(
             settings.auth_port,
@@ -227,14 +228,16 @@ impl AgentController {
         if let Some(pending_token) = self.link_flow.pending_link_token() {
             self.resume_link_poll();
             let encoded = urlencoding::encode(&pending_token);
-            let mut sign_in_url = format!("{}/?link={encoded}", self.settings.web_url);
             let valid_hint = hint.filter(|h| is_allowed_link_hint(h));
-            if let Some(h) = valid_hint {
-                sign_in_url.push('&');
-                sign_in_url.push_str(h);
-            } else if hint.is_some() {
+            if hint.is_some() && valid_hint.is_none() {
                 log::warn!("Ignored unrecognized sign-in hint");
             }
+            let sign_in_url = build_link_sign_in_url(
+                &self.settings.web_url,
+                &self.settings.auth_url,
+                &encoded,
+                valid_hint,
+            );
             open_url_in_launcher_or_browser(&sign_in_url, Some(&pending_token), valid_hint);
             self.on_status_changed("Linking account...".into());
             return SignInResult {

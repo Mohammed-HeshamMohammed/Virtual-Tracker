@@ -288,7 +288,11 @@ mod tests {
 
     #[test]
     fn credentials_link_route_rejects_a_non_json_content_type() {
-        let link_flow = Arc::new(AgentLinkFlow::new(test_api(), "http://127.0.0.1:1".into()));
+        let link_flow = Arc::new(AgentLinkFlow::new(
+            test_api(),
+            "http://127.0.0.1:1".into(),
+            "http://127.0.0.1:1".into(),
+        ));
         let base = spawn_test_server(link_flow);
 
         let res = reqwest::blocking::Client::new()

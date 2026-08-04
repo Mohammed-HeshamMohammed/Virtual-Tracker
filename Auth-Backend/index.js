@@ -87,6 +87,8 @@ export function startServer(port = getEnv().server.port) {
       "/api/auth/validate-password",
       "/api/auth/verify",
       "/api/auth/resolve-sign-in-methods",
+      "/api/auth/google/start",
+      "/api/auth/google/callback",
     ];
 
     logStartup({

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 use crate::client::api::ApiClient;
-use crate::util::{is_allowed_link_hint, open_url_in_launcher_or_browser};
+use crate::util::{build_link_sign_in_url, is_allowed_link_hint, open_url_in_launcher_or_browser};
 
 pub type OnTokens = Arc<dyn Fn(String, String) + Send + Sync>;
 pub type OnError = Arc<dyn Fn(String) + Send + Sync>;
@@ -20,6 +20,10 @@ struct PendingSession {
 pub struct AgentLinkFlow {
     api: Arc<Mutex<ApiClient>>,
     web_url: String,
+    /// Auth-Backend base URL - only the `provider=google` hint targets this
+    /// directly (see `util::build_link_sign_in_url`); every other hint still
+    /// goes to `web_url`.
+    auth_url: String,
     pending: Arc<Mutex<Option<PendingSession>>>,
     poll_generation: Arc<AtomicU64>,
     on_tokens: Arc<Mutex<Option<OnTokens>>>,
@@ -27,10 +31,11 @@ pub struct AgentLinkFlow {
 }
 
 impl AgentLinkFlow {
-    pub fn new(api: Arc<Mutex<ApiClient>>, web_url: String) -> Self {
+    pub fn new(api: Arc<Mutex<ApiClient>>, web_url: String, auth_url: String) -> Self {
         Self {
             api,
             web_url,
+            auth_url,
             pending: Arc::new(Mutex::new(None)),
             poll_generation: Arc::new(AtomicU64::new(0)),
             on_tokens: Arc::new(Mutex::new(None)),
@@ -52,7 +57,7 @@ impl AgentLinkFlow {
         agent_secret: &str,
         on_tokens: OnTokens,
     ) -> Self {
-        let flow = Self::new(api, web_url);
+        let flow = Self::new(api, web_url, "http://127.0.0.1:1".into());
         *flow.pending.lock() = Some(PendingSession {
             link_token: link_token.to_string(),
             agent_secret: agent_secret.to_string(),
@@ -106,14 +111,11 @@ impl AgentLinkFlow {
         };
         *self.pending.lock() = Some(pending.clone());
         let encoded = urlencoding::encode(&link_token);
-        let mut sign_in_url = format!("{}/?link={encoded}", self.web_url);
         let valid_hint = hint.filter(|h| is_allowed_link_hint(h));
-        if let Some(h) = valid_hint {
-            sign_in_url.push('&');
-            sign_in_url.push_str(h);
-        } else if hint.is_some() {
+        if hint.is_some() && valid_hint.is_none() {
             log::warn!("Ignored unrecognized sign-in hint");
         }
+        let sign_in_url = build_link_sign_in_url(&self.web_url, &self.auth_url, &encoded, valid_hint);
         open_url_in_launcher_or_browser(&sign_in_url, Some(&link_token), valid_hint);
         // Truncated, not the full URL - it carries the live link token in
         // its query string, and this log is user-openable from Settings.
