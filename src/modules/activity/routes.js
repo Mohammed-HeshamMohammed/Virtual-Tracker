@@ -8,6 +8,15 @@ import {
   isWebActivityCaptureEnabled,
 } from "../../config/activity.js";
 import { getEnv } from "../../config/env.js";
+import {
+  getCaptureExclusions,
+  getCaptureMinimizationSettings,
+  matchesExclusion,
+} from "../compliance/capture-minimization.js";
+import { recordScreenshotAccess } from "../compliance/data-retention.js";
+import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
+import { computeDHash } from "./perceptual-hash.js";
+import { getSessionIntegritySummary, getMemberIntegrityFlags, contestIntegrityFlag } from "./integrity-score.js";
 import { getAuthAdmin, getDb } from "../../config/firebase.js";
 import { getAuthContext } from "../../http/auth-context.js";
 import { readIdToken } from "../../http/auth-token.js";
@@ -75,6 +84,23 @@ function toIso(value) {
     if (Number.isFinite(ms)) return new Date(ms).toISOString();
   }
   return null;
+}
+
+/**
+ * ACT-4: pulls the raw ActivityMeter counters off a screenshot/app event, if
+ * the agent sent them (flattened onto the same object by serde on the Rust
+ * side - see ActivitySignal in types.rs). A web-sourced event, or an agent
+ * older than ACT-4, carries none of this; the Postgres layer defaults every
+ * field to 0 in that case, so passing it through unconditionally is safe.
+ */
+function readActivitySignal(ev) {
+  return {
+    keystrokeCount: ev.keystrokeCount,
+    distinctKeyCount: ev.distinctKeyCount,
+    mouseDistancePx: ev.mouseDistancePx,
+    injectedEventCount: ev.injectedEventCount,
+    activeSecondsInWindow: ev.activeSecondsInWindow,
+  };
 }
 
 function parseDomain(url) {
@@ -148,6 +174,25 @@ async function findOpenSession(memberId) {
     return null;
   }
   return open;
+}
+
+/**
+ * TC-7: true if `err` is a violation of the activity_sessions_one_open_per_member
+ * partial unique index (ensure-lookup-schema.js). findOpenSession() above is
+ * only a pre-check - two "start"/"resume" requests that both see no open
+ * session and both reach createPgSession race on this index, and the loser
+ * gets this. Postgres error 23505 = unique_violation; the constraint name is
+ * checked too so an unrelated 23505 (extremely unlikely id collision on
+ * gen_random_uuid, but not this index) doesn't get mis-attributed.
+ * @param {unknown} err
+ */
+export function isOneOpenSessionConflict(err) {
+  return (
+    err instanceof Object &&
+    /** @type {{ code?: string, constraint?: string }} */ (err).code === "23505" &&
+    /** @type {{ code?: string, constraint?: string }} */ (err).constraint ===
+      "activity_sessions_one_open_per_member"
+  );
 }
 
 function normalizeSession(id, data) {
@@ -414,19 +459,30 @@ export async function routeActivity(req, res, url, origin) {
       if (action === "start") {
         if (!open) {
           const id = crypto.randomUUID();
-          open = await createPgSession({
-            id,
-            memberId: member.memberId,
-            taskId,
-            projectId: sessionProjectId,
-            status: "active",
-            startedAt: now,
-            endedAt: null,
-            activeSeconds: activeSeconds ?? 0,
-            idleSeconds: idleSeconds ?? 0,
-            source: origin ? "web" : "agent",
-            updatedAt: now,
-          });
+          try {
+            open = await createPgSession({
+              id,
+              memberId: member.memberId,
+              taskId,
+              projectId: sessionProjectId,
+              status: "active",
+              startedAt: now,
+              endedAt: null,
+              activeSeconds: activeSeconds ?? 0,
+              idleSeconds: idleSeconds ?? 0,
+              source: origin ? "web" : "agent",
+              updatedAt: now,
+            });
+          } catch (createErr) {
+            if (isOneOpenSessionConflict(createErr)) {
+              sendJson(res, origin, 409, {
+                success: false,
+                error: "You already have a timer running on another device.",
+              });
+              return true;
+            }
+            throw createErr;
+          }
         } else if (open.status !== "active") {
           await updatePgSession(open.id, {
             status: "active",
@@ -463,29 +519,47 @@ export async function routeActivity(req, res, url, origin) {
           open.status = "active";
         } else {
           const id = crypto.randomUUID();
-          open = await createPgSession({
-            id,
-            memberId: member.memberId,
-            taskId,
-            projectId: sessionProjectId,
-            status: "active",
-            startedAt: now,
-            endedAt: null,
-            activeSeconds: activeSeconds ?? 0,
-            idleSeconds: idleSeconds ?? 0,
-            source: origin ? "web" : "agent",
-            updatedAt: now,
-          });
+          try {
+            open = await createPgSession({
+              id,
+              memberId: member.memberId,
+              taskId,
+              projectId: sessionProjectId,
+              status: "active",
+              startedAt: now,
+              endedAt: null,
+              activeSeconds: activeSeconds ?? 0,
+              idleSeconds: idleSeconds ?? 0,
+              source: origin ? "web" : "agent",
+              updatedAt: now,
+            });
+          } catch (createErr) {
+            if (isOneOpenSessionConflict(createErr)) {
+              sendJson(res, origin, 409, {
+                success: false,
+                error: "You already have a timer running on another device.",
+              });
+              return true;
+            }
+            throw createErr;
+          }
         }
       } else if (action === "stop") {
         if (open) {
-          await updatePgSession(open.id, {
-            status: "stopped",
-            endedAt: now,
-            updatedAt: now,
-            ...(activeSeconds !== undefined ? { activeSeconds } : {}),
-            ...(idleSeconds !== undefined ? { idleSeconds } : {}),
-          });
+          // Only "stop" may lower active_seconds - this is the desktop
+          // agent's idle-escalation rewind reversing time credited after the
+          // user actually stopped touching the machine (TC-4).
+          await updatePgSession(
+            open.id,
+            {
+              status: "stopped",
+              endedAt: now,
+              updatedAt: now,
+              ...(activeSeconds !== undefined ? { activeSeconds } : {}),
+              ...(idleSeconds !== undefined ? { idleSeconds } : {}),
+            },
+            { allowDecrease: true },
+          );
           open = null;
         }
       } else if (action === "sync" && open) {
@@ -499,6 +573,11 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       const syncTaskId = taskId || open?.task_id || null;
+      // TC-5: surfaced on the wire so a caller can act on the cap being hit
+      // (e.g. stop the timer instead of quietly having its number truncated
+      // while the clock keeps running). Additive - a client that ignores it
+      // sees no behavior change.
+      let timerCapped = false;
       if (syncTaskId && activeSeconds !== undefined && idleSeconds !== undefined) {
         const viewer = getAuthContext(req);
         const taskAccess = await canAccessTask(
@@ -512,7 +591,7 @@ export async function routeActivity(req, res, url, origin) {
           return true;
         }
         try {
-          await syncTaskTimeTracking(db, {
+          const syncResult = await syncTaskTimeTracking(db, {
             taskId: syncTaskId,
             userId: member.memberId,
             userName: member.name,
@@ -521,6 +600,7 @@ export async function routeActivity(req, res, url, origin) {
             idleSeconds,
             sessionId: open?.id ?? null,
           });
+          timerCapped = syncResult?.timerCapped === true;
         } catch (syncErr) {
           logSafeError("[activity/session task sync]", syncErr);
         }
@@ -528,7 +608,7 @@ export async function routeActivity(req, res, url, origin) {
 
       sendJson(res, origin, 200, {
         success: true,
-        data: open ? normalizeSession(open.id, open) : null,
+        data: open ? { ...normalizeSession(open.id, open), timerCapped } : null,
       });
     } catch (e) {
       logSafeError("[activity/session POST]", e);
@@ -585,6 +665,14 @@ export async function routeActivity(req, res, url, origin) {
       let count = 0;
       const screenshotWrites = [];
 
+      // CF-0.3: fetched once per batch (up to 50 events), not once per event -
+      // both are cheap, tiny tables, but there is no reason to round-trip
+      // Postgres 50 times for config that cannot change mid-request.
+      const [minimizationSettings, exclusions] = await Promise.all([
+        getCaptureMinimizationSettings(),
+        getCaptureExclusions(),
+      ]);
+
       for (const ev of events.slice(0, 50)) {
         if (!ev || typeof ev !== "object") continue;
         const type = typeof ev.type === "string" ? ev.type : "";
@@ -593,6 +681,10 @@ export async function routeActivity(req, res, url, origin) {
         if (type === "screenshot") {
           if (source === "agent" && !isDesktopAgentEventIngestEnabled()) continue;
           if (source !== "agent" && !isWebActivityCaptureEnabled()) continue;
+          const appName = typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser";
+          // CF-0.3: an excluded app produces no screenshot at all - not a
+          // blurred one. Checked before any image processing, not after.
+          if (matchesExclusion(exclusions, "app", appName)) continue;
           const imageData =
             typeof ev.imageData === "string"
               ? ev.imageData
@@ -615,11 +707,30 @@ export async function routeActivity(req, res, url, origin) {
               try {
                 const raw = imageData.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
                 const buffer = Buffer.from(raw, "base64");
-                const webp = await sharp(buffer)
-                  .resize({ width: 1280, height: 720, fit: "inside", withoutEnlargement: true })
-                  .webp({ quality: 75 })
-                  .toBuffer();
+                let pipeline = sharp(buffer).resize({
+                  width: 1280,
+                  height: 720,
+                  fit: "inside",
+                  withoutEnlargement: true,
+                });
+                if (minimizationSettings.screenshotBlurDefault) {
+                  // CF-0.3 blur-by-default posture. Radius chosen to obscure
+                  // legible text/detail, not merely soften the image.
+                  pipeline = pipeline.blur(18);
+                }
+                const webp = await pipeline.webp({ quality: 75 }).toBuffer();
                 const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
+                // AC-2: hashed from the pre-blur, original-resolution buffer, not the
+                // stored (possibly CF-0.3-blurred) webp - blur would flatten every
+                // capture toward the same hash and defeat the staleness comparison
+                // this exists for. A hash failure (corrupt/unusual image data) must
+                // not drop the screenshot itself, so it's caught independently.
+                let perceptualHash = null;
+                try {
+                  perceptualHash = await computeDHash(buffer);
+                } catch (hashErr) {
+                  logSafeWarn("[activity events] perceptual hash failed", hashErr);
+                }
                 // Stored as bytea in Postgres (image_data) - no per-screenshot GCS upload or
                 // Firestore write. The archive job moves rows out to GCS once they age out.
                 await insertActivityScreenshot({
@@ -629,7 +740,7 @@ export async function routeActivity(req, res, url, origin) {
                   taskId: sessionTaskId,
                   taskTitle: sessionTaskTitle,
                   imageData: webp,
-                  appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser",
+                  appName,
                   pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
                   activityLevel:
                     typeof ev.activityLevel === "number"
@@ -637,6 +748,8 @@ export async function routeActivity(req, res, url, origin) {
                       : 50,
                   capturedAt,
                   source,
+                  signal: readActivitySignal(ev),
+                  perceptualHash,
                 });
                 count++;
               } catch (err) {
@@ -649,22 +762,36 @@ export async function routeActivity(req, res, url, origin) {
           continue;
         }
         if (type === "app") {
+          const appName = typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Unknown";
+          // CF-0.3: same exclusion the screenshot path checks - an excluded
+          // app is excluded from app/window logging too, not just screenshots.
+          if (matchesExclusion(exclusions, "app", appName)) continue;
           const appRow = {
             id,
             memberId: member.memberId,
             sessionId,
             taskId: sessionTaskId,
             taskTitle: sessionTaskTitle,
-            appName: typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Unknown",
+            appName,
             pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
             startedAt: now,
             durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
             source: typeof body.source === "string" ? body.source : "web",
+            signal: readActivitySignal(ev),
           };
           await insertActivityAppLog(appRow);
           count++;
         } else if (type === "url") {
-          const urlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
+          const rawUrlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
+          const domain = parseDomain(rawUrlStr);
+          // CF-0.3: a domain on the exclusion list (banking, health, personal
+          // email) is skipped entirely - no URL row, no partial capture.
+          if (matchesExclusion(exclusions, "domain", domain)) continue;
+          // CF-0.3 domain-only mode: store "github.com", not the full path +
+          // query string, which can carry personal data (search terms,
+          // account IDs, tokens). The domain column already existed for
+          // reporting; this is what makes it the *only* thing stored too.
+          const urlStr = minimizationSettings.urlDomainOnly ? domain || "" : rawUrlStr;
           const urlRow = {
             id,
             memberId: member.memberId,
@@ -672,7 +799,7 @@ export async function routeActivity(req, res, url, origin) {
             taskId: sessionTaskId,
             taskTitle: sessionTaskTitle,
             url: urlStr,
-            domain: parseDomain(urlStr),
+            domain,
             pageTitle: typeof ev.pageTitle === "string" ? ev.pageTitle.slice(0, 300) : "",
             visitedAt: now,
             durationSeconds: typeof ev.durationSeconds === "number" ? ev.durationSeconds : 30,
@@ -772,6 +899,16 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
         return true;
       }
+
+      // CF-0.5: "log every access" to raw screenshot data - only reached once
+      // the authorization check above has already succeeded; this makes no
+      // access decision of its own. Fire-and-forget so a logging hiccup
+      // never blocks the read itself.
+      void recordScreenshotAccess({
+        screenshotId: resolvedId,
+        screenshotOwner: ownerId,
+        readerMemberId: member.memberId,
+      }).catch((err) => logSafeWarn("[activity/screenshot access log]", err));
 
       // Bytea rows (the common case now) are served straight from Postgres as a data
       // URL, gated by the auth + ownership checks above instead of a signed link.
@@ -1224,6 +1361,8 @@ export async function routeActivity(req, res, url, origin) {
         deviceId,
         agentSecret,
         agentSource: "tauri",
+        vmDetected: typeof body.vmDetected === "boolean" ? body.vmDetected : undefined,
+        vmSignals: Array.isArray(body.vmSignals) ? body.vmSignals.filter((s) => typeof s === "string") : undefined,
       });
       if (!device) {
         sendJson(res, origin, 500, { success: false, error: "Could not register this device." });
@@ -1356,6 +1495,148 @@ export async function routeActivity(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { memberId: member.memberId } });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
+    }
+    return true;
+  }
+
+  // ACT-3: scoring calibration the agent polls periodically. Read is open to
+  // any authenticated caller (it's just tuning numbers, not sensitive);
+  // write is management-only.
+  if (pn === "/api/activity/scoring-settings" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      sendJson(res, origin, 200, { success: true, data: await getActivityScoringSettings() });
+    } catch (e) {
+      logSafeError("[activity/scoring-settings GET]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load scoring settings." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/scoring-settings" && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
+      return true;
+    }
+    const idToken = readIdToken(req, url, body);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const viewer = getAuthContext(req);
+      const updated = await setActivityScoringSettings(
+        {
+          saturationEvents: body.saturationEvents,
+          windowMs: body.windowMs,
+          screenshotMinDelaySec: body.screenshotMinDelaySec,
+          screenshotMaxDelaySec: body.screenshotMaxDelaySec,
+          idleThresholdSec: body.idleThresholdSec,
+          idleWarnSec: body.idleWarnSec,
+          idleAlertSec: body.idleAlertSec,
+          idleStopSec: body.idleStopSec,
+        },
+        { memberId: viewer?.memberId, roleName: viewer?.roleName ?? "" },
+      );
+      sendJson(res, origin, 200, { success: true, data: updated });
+    } catch (e) {
+      const status = e && e.code === "FORBIDDEN" ? 403 : e && String(e.code || "").startsWith("INVALID_") ? 400 : 500;
+      if (status === 500) logSafeError("[activity/scoring-settings POST]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to update scoring settings.",
+      });
+    }
+    return true;
+  }
+
+  if (pn.startsWith("/api/activity/integrity/session/") && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    const sessionId = pn.slice("/api/activity/integrity/session/".length).split("/")[0];
+    if (!sessionId) {
+      sendJson(res, origin, 400, { success: false, error: "Session id is required" });
+      return true;
+    }
+    try {
+      const viewer = getAuthContext(req);
+      const sessionRow = await getPgSessionById(sessionId);
+      if (!sessionRow) {
+        sendJson(res, origin, 404, { success: false, error: "Session not found" });
+        return true;
+      }
+      const scope = await resolveActivityFeedScope(db, viewer.memberId, { memberId: String(sessionRow.member_id ?? "") });
+      if (scope.forbidden) {
+        sendJson(res, origin, 403, { success: false, error: "Not allowed to view this session's integrity summary" });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: await getSessionIntegritySummary(sessionId) });
+    } catch (e) {
+      logSafeError("[activity/integrity/session GET]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load integrity summary." });
+    }
+    return true;
+  }
+
+  // AC-4: "an employee can view ... their own flags" - defaults to the caller's
+  // own, same self-or-management gate as getMemberIntegrityFlags enforces.
+  if (pn === "/api/activity/integrity/flags" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const viewer = getAuthContext(req);
+      const targetMemberId = url.searchParams.get("memberId") || viewer.memberId;
+      const flags = await getMemberIntegrityFlags(targetMemberId, {
+        memberId: viewer.memberId,
+        roleName: viewer.roleName ?? "",
+      });
+      sendJson(res, origin, 200, { success: true, data: flags });
+    } catch (e) {
+      const status = e && e.code === "FORBIDDEN" ? 403 : 500;
+      if (status === 500) logSafeError("[activity/integrity/flags GET]", e);
+      sendJson(res, origin, status, { success: false, error: e instanceof Error ? e.message : "Failed to load flags." });
+    }
+    return true;
+  }
+
+  if (pn.startsWith("/api/activity/integrity/flags/") && pn.endsWith("/contest") && req.method === "POST") {
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
+      return true;
+    }
+    const idToken = readIdToken(req, url, body);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    const flagId = pn.slice("/api/activity/integrity/flags/".length).replace(/\/contest$/, "");
+    try {
+      const viewer = getAuthContext(req);
+      const updated = await contestIntegrityFlag(flagId, body.note, {
+        memberId: viewer.memberId,
+        roleName: viewer.roleName ?? "",
+      });
+      sendJson(res, origin, 200, { success: true, data: updated });
+    } catch (e) {
+      const status = e && e.code === "FORBIDDEN" ? 403 : e && e.code === "NOT_FOUND" ? 404 : 500;
+      if (status === 500) logSafeError("[activity/integrity/flags contest POST]", e);
+      sendJson(res, origin, status, { success: false, error: e instanceof Error ? e.message : "Failed to contest flag." });
     }
     return true;
   }

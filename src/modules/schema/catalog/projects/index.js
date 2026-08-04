@@ -47,6 +47,7 @@ export const projectSchemas = [
       project_id: "uuid",
       type: "string",
       based_on: "string",
+      scope: "string",
       cost: "decimal",
       notify_project_members: "boolean",
       notify_at_pct: "decimal",

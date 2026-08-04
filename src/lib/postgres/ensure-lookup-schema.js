@@ -2,6 +2,7 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getPostgresPool, isPostgresConfigured } from "./client.js";
 import { markPostgresLookupReady, resetPostgresLookupReadyCache } from "./lookup-availability.js";
 import { markPostgresMemberDataReady, resetPostgresMemberDataReadyCache } from "./member-data-availability.js";
+import { isActivityScreenshotsEnabled } from "../../config/activity.js";
 
 const LOOKUP_DDL = [
   "CREATE EXTENSION IF NOT EXISTS pgcrypto",
@@ -310,6 +311,20 @@ GROUP BY task_id`,
   // Already-existing (pre-bytea) tables: widen and add the new column in place.
   `ALTER TABLE activity_screenshots ALTER COLUMN screenshot_url DROP NOT NULL`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS image_data BYTEA`,
+  // ACT-4: the raw counters ActivityMeter::score() itself is built from, sent
+  // alongside activity_level so the server can recompute or re-weight a score
+  // later without an agent release.
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS keystroke_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS distinct_key_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS mouse_distance_px INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS injected_event_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS active_seconds_in_window INTEGER NOT NULL DEFAULT 0`,
+  // AC-2: 64-bit dHash (16 hex chars) of the screenshot's on-screen content,
+  // computed server-side at ingest. Lets the integrity sweep compare
+  // consecutive captures for near-identical content (background-playback
+  // fraud: activity reads high while the screen never actually changes)
+  // without re-decoding stored images.
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS perceptual_hash VARCHAR(16)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC)`,
@@ -333,6 +348,15 @@ GROUP BY task_id`,
   duration_seconds INTEGER NOT NULL DEFAULT 30 CHECK (duration_seconds >= 0),
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
+  // ACT-4: same raw-signal columns as activity_screenshots. Merged app-log
+  // rows (see insertActivityAppLog's extend-in-place path) accumulate these
+  // alongside duration_seconds rather than overwriting, so a long-open
+  // app/tab still carries its full session's signal, not just its first tick.
+  `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS keystroke_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS distinct_key_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS mouse_distance_px INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS injected_event_count INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS active_seconds_in_window INTEGER NOT NULL DEFAULT 0`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_member_started ON activity_app_logs (member_id, started_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_started ON activity_app_logs (started_at DESC)`,
   // Used to find the still-open row for the same app+tab in a session, to extend
@@ -353,6 +377,31 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC)`,
+  // AC-2: output of the integrity sweep job (screenshot staleness / category
+  // conflict correlation) - a durable, per-session record so a manager (and,
+  // per AC-4, the employee themselves) can see and contest what was flagged,
+  // unlike the ephemeral /monitor metrics OBS-2/OBS-3 use. One row per
+  // session+flag_type: the sweep runs every few minutes and must not spam a
+  // duplicate flag for a condition it already recorded.
+  `CREATE TABLE IF NOT EXISTS activity_integrity_flags (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id      UUID NOT NULL,
+  session_id     VARCHAR(128) NOT NULL,
+  flag_type      VARCHAR(32) NOT NULL CHECK (flag_type IN ('screenshot_staleness', 'category_conflict')),
+  detail         TEXT NOT NULL DEFAULT '',
+  detected_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  contested      BOOLEAN NOT NULL DEFAULT false,
+  contested_at   TIMESTAMPTZ,
+  contested_note TEXT,
+  UNIQUE (session_id, flag_type)
+)`,
+  // AC-1: widened after 'injected_input' joined the sweep alongside AC-2's
+  // original two flag types. Drop-then-recreate under the same (Postgres's
+  // own default-generated) name is idempotent - a no-op once already
+  // widened, safe to run on every boot, matching this file's convention.
+  `ALTER TABLE activity_integrity_flags DROP CONSTRAINT IF EXISTS activity_integrity_flags_flag_type_check`,
+  `ALTER TABLE activity_integrity_flags ADD CONSTRAINT activity_integrity_flags_flag_type_check CHECK (flag_type IN ('screenshot_staleness', 'category_conflict', 'injected_input'))`,
+  `CREATE INDEX IF NOT EXISTS idx_act_integrity_member_detected ON activity_integrity_flags (member_id, detected_at DESC)`,
   `CREATE TABLE IF NOT EXISTS activity_sessions (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id      UUID NOT NULL,
@@ -374,6 +423,297 @@ GROUP BY task_id`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC)`,
+  // TC-7: guarantee at most one open session per member. Runs every boot -
+  // idempotent by construction, matches zero rows once no duplicates exist -
+  // so it stays safe to leave in this list permanently. MUST run before the
+  // unique index below: that index creation fails outright (aborting this
+  // whole DDL loop, i.e. a boot failure - see ensurePostgresLookupSchema's
+  // single try/catch around the whole list) if any member still has more
+  // than one open row when it runs. Keeps the most-recently-started session
+  // per member and closes the rest, preserving whatever active/idle seconds
+  // they last synced rather than discarding them.
+  `UPDATE activity_sessions
+     SET status = 'stopped', ended_at = now(), updated_at = now()
+     WHERE ended_at IS NULL
+       AND id NOT IN (
+         SELECT DISTINCT ON (member_id) id
+         FROM activity_sessions
+         WHERE ended_at IS NULL
+         ORDER BY member_id, started_at DESC
+       )`,
+  // TC-7: the actual guarantee. A concurrent "start"/"resume" that races past
+  // the application-level findOpenSession() check (both requests see no open
+  // session, both attempt to create one) is caught here instead of silently
+  // opening a second session that then goes unsynced/unstoppable - see the
+  // 23505 handling in routes.js around createPgSession.
+  `CREATE UNIQUE INDEX IF NOT EXISTS activity_sessions_one_open_per_member
+     ON activity_sessions (member_id) WHERE ended_at IS NULL`,
+  // ─── CF-1: monitoring consent/config registry ───────────────────────────
+  // Single-tenant deployment (no organizations/tenant table exists anywhere
+  // in this schema - every other config table here, e.g. time_settings,
+  // limits, employment, is a per-member singleton, not per-org). So this is
+  // one global row per capability for the whole deployment, not the
+  // org_id-scoped table the original design doc sketched for a hypothetical
+  // multi-tenant product. Default-deny per capability (CF-0.1): a capability
+  // with no row, or enabled = false, is never captured - the seeding step in
+  // ensurePostgresLookupSchema (below the DDL loop) sets the initial value to
+  // match whatever the pre-existing env-var gate already had it at, once,
+  // ON CONFLICT DO NOTHING - so shipping this does not silently disable
+  // screenshot capture that's already live. Every change after that goes
+  // through setMonitoringCapability() and is admin-gated + audited.
+  `CREATE TABLE IF NOT EXISTS monitoring_capabilities (
+  capability            VARCHAR(40) PRIMARY KEY CHECK (capability IN (
+                           'screenshots', 'app_tracking', 'url_capture',
+                           'activity_metering', 'dns_logging', 'integrity_signals'
+                        )),
+  enabled               BOOLEAN NOT NULL DEFAULT false,
+  jurisdiction_profile  VARCHAR(30) NOT NULL DEFAULT 'strictest' CHECK (jurisdiction_profile IN (
+                           'eu_uk', 'us_one_party_consent', 'us_two_party_consent', 'strictest'
+                        )),
+  lawful_basis          VARCHAR(30) CHECK (lawful_basis IN ('legitimate_interest', 'consent', 'contract')),
+  enabled_by            UUID,
+  enabled_at            TIMESTAMPTZ,
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  // Append-only by convention: application code (monitoring-policy.js) never
+  // issues UPDATE/DELETE against this table, only INSERT - this is the
+  // "immutable audit record" CF-0.1 requires (who enabled what, when, under
+  // which lawful basis). Note this is an application-layer guarantee, not a
+  // DB-role-enforced one (no REVOKE UPDATE/DELETE on the connection role) -
+  // real tamper-resistance would need that at the infra layer.
+  `CREATE TABLE IF NOT EXISTS monitoring_policy_audit (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  capability       VARCHAR(40) NOT NULL,
+  previous_enabled BOOLEAN,
+  new_enabled      BOOLEAN NOT NULL,
+  lawful_basis     VARCHAR(30),
+  actor_member_id  UUID,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_monitoring_policy_audit_capability ON monitoring_policy_audit (capability, created_at DESC)`,
+  // Per-member because disclosure/consent is inherently per-person (CF-0.2) -
+  // a new hire needs their own first-run notice moment, unlike the global
+  // capability toggles above. notice_version lets a policy-text change force
+  // re-disclosure: bump it and every member's consented_at is stale again
+  // until they re-acknowledge (enforced in monitoring-policy.js, not here).
+  `CREATE TABLE IF NOT EXISTS member_monitoring_consent (
+  member_id      UUID PRIMARY KEY,
+  disclosed_at   TIMESTAMPTZ,
+  consented_at   TIMESTAMPTZ,
+  notice_version VARCHAR(40),
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  // ─── CF-3: data minimization ─────────────────────────────────────────────
+  // Global list (single-tenant, same reasoning as monitoring_capabilities):
+  // an app or URL domain that must never be captured at all - not blurred,
+  // not logged, not screenshotted - enforced at ingest in routes.js, the one
+  // place every capture path (agent and web) already converges. Case-folded
+  // uniqueness so "Chrome" and "chrome" aren't two different exclusions.
+  `CREATE TABLE IF NOT EXISTS capture_exclusions (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_type   VARCHAR(10) NOT NULL CHECK (match_type IN ('app', 'domain')),
+  pattern      VARCHAR(255) NOT NULL,
+  note         TEXT,
+  created_by   UUID,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_exclusions_unique ON capture_exclusions (match_type, lower(pattern))`,
+  // Singleton row (id is always 1) - one deployment, one minimization
+  // posture, same "no org concept exists" reasoning as everywhere else in
+  // this phase. url_domain_only strips path/query at ingest (CF-0.3: "store
+  // github.com, not the full path with query params that may carry personal
+  // data"). screenshot_blur_default applies a blur pass in the existing
+  // sharp() pipeline before a screenshot is ever written to disk/DB.
+  `CREATE TABLE IF NOT EXISTS capture_minimization_settings (
+  id                      SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  url_domain_only         BOOLEAN NOT NULL DEFAULT false,
+  screenshot_blur_default BOOLEAN NOT NULL DEFAULT false,
+  updated_by              UUID,
+  updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `INSERT INTO capture_minimization_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+  // ─── CF-5: retention limits & data-subject rights ───────────────────────
+  // One row per monitoring data type, admin-tunable without a redeploy -
+  // generalises the existing manual archive-screenshots.mjs script (which
+  // only ever covered screenshots/app_logs/url_logs via CLI flags, defaults
+  // explicitly called "illustrative, not a compliance recommendation") into
+  // an enforced ceiling for all four member data stores, sessions included.
+  // Screenshots get the shortest default (highest privacy risk, has images);
+  // sessions get the longest (billing/audit relevance) - but every type has
+  // a finite default. CF-0.5: "Indefinite retention... fails GDPR storage
+  // limitation" - there is deliberately no "never delete" option here.
+  `CREATE TABLE IF NOT EXISTS data_retention_settings (
+  data_type      VARCHAR(20) PRIMARY KEY CHECK (data_type IN ('screenshots', 'app_logs', 'url_logs', 'sessions')),
+  retention_days INT NOT NULL DEFAULT 90 CHECK (retention_days > 0),
+  updated_by     UUID,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `INSERT INTO data_retention_settings (data_type, retention_days) VALUES
+     ('screenshots', 90), ('app_logs', 180), ('url_logs', 180), ('sessions', 730)
+   ON CONFLICT (data_type) DO NOTHING`,
+  // CF-0.5: "log every access" to raw screenshot data. Append-only, same
+  // convention as monitoring_policy_audit - no update/delete function exists
+  // for this table in the codebase.
+  `CREATE TABLE IF NOT EXISTS screenshot_access_log (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  screenshot_id    UUID NOT NULL,
+  screenshot_owner UUID NOT NULL,
+  reader_member_id UUID NOT NULL,
+  accessed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_screenshot_access_log_owner ON screenshot_access_log (screenshot_owner, accessed_at DESC)`,
+  // ─── ACT-3: server-tunable activity scoring constants ───────────────────
+  // Singleton row, same pattern as capture_minimization_settings (CF-3) -
+  // "ACTIVITY_SATURATION_EVENTS = 120 is a hardcoded guess baked into the
+  // binary... a data-entry role and a designer have very different '100%
+  // looks like' baselines." Defaults match the values the Rust constants
+  // used before this existed, so shipping this is a no-op until an admin
+  // actually tunes it.
+  `CREATE TABLE IF NOT EXISTS activity_scoring_settings (
+  id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  saturation_events INT NOT NULL DEFAULT 120 CHECK (saturation_events > 0),
+  window_ms         INT NOT NULL DEFAULT 60000 CHECK (window_ms > 0),
+  updated_by        UUID,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `INSERT INTO activity_scoring_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+  // ACT-3: widened beyond pure scoring to every agent constant the plan
+  // names as "server-tunable" (screenshot cadence, idle thresholds) - one
+  // singleton row and one Rust refresh cycle, not a second table with its
+  // own fetch/cache machinery duplicating this one for no benefit. Defaults
+  // match the Rust constants they override exactly, so this is a no-op
+  // until an admin actually tunes something.
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_min_delay_sec INT NOT NULL DEFAULT 90 CHECK (screenshot_min_delay_sec > 0)`,
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_max_delay_sec INT NOT NULL DEFAULT 210 CHECK (screenshot_max_delay_sec > 0)`,
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_threshold_sec INT NOT NULL DEFAULT 60 CHECK (idle_threshold_sec > 0)`,
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_warn_sec INT NOT NULL DEFAULT 300 CHECK (idle_warn_sec > 0)`,
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_alert_sec INT NOT NULL DEFAULT 600 CHECK (idle_alert_sec > 0)`,
+  `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_stop_sec INT NOT NULL DEFAULT 900 CHECK (idle_stop_sec > 0)`,
+  // ─── CLS-1: app/domain classification + unified display-name mapping ────
+  // One row per (match_type, pattern) - single-tenant, same reasoning as
+  // monitoring_capabilities/capture_exclusions (no org concept exists in this
+  // schema, so there is one classification map for the deployment, not a
+  // layered org-overrides-default lookup). is_global_default distinguishes a
+  // shipped seed row from one an admin has touched, for UI/audit purposes
+  // only - functionally there is always exactly one authoritative row per
+  // pattern, an admin edit UPDATEs it in place rather than shadowing it.
+  //
+  // display_name doubles this table as the fix for F5/CQ-4: "window.rs's
+  // BROWSER_EXES/overrides() and the frontend's display-names.ts are two
+  // independent sources of truth that will drift" - confirmed drifted
+  // already (Rust has devenv.exe/powershell.exe/cmd.exe/winword.exe/etc that
+  // the frontend doesn't; the frontend has chrome.exe/msedge.exe/etc mapped
+  // that Rust resolves a different way). One server-delivered table, both
+  // consume it (MAC-3, once wired).
+  //
+  // role_override is JSONB keyed by role name -> category, e.g.
+  // {"designer": "productive"} - "a designer on Behance is productive, a
+  // data-entry clerk on Behance is distracting" without hardcoding a value
+  // judgement per role into application code.
+  `CREATE TABLE IF NOT EXISTS activity_categories (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  match_type         VARCHAR(10) NOT NULL CHECK (match_type IN ('app', 'domain')),
+  pattern            VARCHAR(255) NOT NULL,
+  category           VARCHAR(20) NOT NULL DEFAULT 'unclassified' CHECK (category IN (
+                        'productive', 'neutral', 'distracting', 'unclassified'
+                     )),
+  display_name       VARCHAR(120),
+  role_override      JSONB NOT NULL DEFAULT '{}'::jsonb,
+  is_global_default   BOOLEAN NOT NULL DEFAULT false,
+  created_by         UUID,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_categories_unique ON activity_categories (match_type, lower(pattern))`,
+  `CREATE INDEX IF NOT EXISTS idx_activity_categories_category ON activity_categories (category)`,
+  // Global default map. ON CONFLICT DO NOTHING - an admin's prior edit to
+  // any of these (e.g. reclassifying youtube.com as productive for a video-
+  // editing team) is never overwritten by a later boot re-running this list.
+  `INSERT INTO activity_categories (match_type, pattern, category, display_name, is_global_default) VALUES
+     ('app', 'code.exe', 'productive', 'VS Code', true),
+     ('app', 'cursor.exe', 'productive', 'Cursor', true),
+     ('app', 'devenv.exe', 'productive', 'Visual Studio', true),
+     ('app', 'pycharm64.exe', 'productive', 'PyCharm', true),
+     ('app', 'idea64.exe', 'productive', 'IntelliJ IDEA', true),
+     ('app', 'winword.exe', 'productive', 'Microsoft Word', true),
+     ('app', 'excel.exe', 'productive', 'Microsoft Excel', true),
+     ('app', 'powerpnt.exe', 'productive', 'PowerPoint', true),
+     ('app', 'outlook.exe', 'productive', 'Outlook', true),
+     ('app', 'windowsterminal.exe', 'productive', 'Windows Terminal', true),
+     ('app', 'wt.exe', 'productive', 'Windows Terminal', true),
+     ('app', 'powershell.exe', 'productive', 'PowerShell', true),
+     ('app', 'cmd.exe', 'productive', 'Command Prompt', true),
+     ('app', 'python.exe', 'productive', 'Python', true),
+     ('app', 'pythonw.exe', 'productive', 'Python', true),
+     ('app', 'explorer.exe', 'neutral', 'File Explorer', true),
+     ('app', 'slack.exe', 'neutral', 'Slack', true),
+     ('app', 'discord.exe', 'neutral', 'Discord', true),
+     ('app', 'teams.exe', 'neutral', 'Microsoft Teams', true),
+     ('app', 'zoom.exe', 'neutral', 'Zoom', true),
+     ('app', 'spotify.exe', 'distracting', 'Spotify', true),
+     ('app', 'steam.exe', 'distracting', 'Steam', true),
+     ('app', 'discord_ptb.exe', 'distracting', 'Discord PTB', true),
+     ('app', 'chrome.exe', 'unclassified', 'Google Chrome', true),
+     ('app', 'msedge.exe', 'unclassified', 'Microsoft Edge', true),
+     ('app', 'firefox.exe', 'unclassified', 'Mozilla Firefox', true),
+     ('app', 'brave.exe', 'unclassified', 'Brave', true),
+     ('app', 'opera.exe', 'unclassified', 'Opera', true),
+     ('app', 'operagx.exe', 'unclassified', 'Opera GX', true),
+     ('app', 'vivaldi.exe', 'unclassified', 'Vivaldi', true),
+     ('app', 'chromium.exe', 'unclassified', 'Chromium', true),
+     ('app', 'iexplore.exe', 'unclassified', 'Internet Explorer', true),
+     ('app', 'zen.exe', 'unclassified', 'Zen', true),
+     ('app', 'waterfox.exe', 'unclassified', 'Waterfox', true),
+     -- MAC-3: macOS has no .exe suffix - xcap::Window::app_name() reports
+     -- the bare display name directly ("Google Chrome", not "chrome.exe").
+     -- Same logical apps, a second pattern form so a lookup keyed by
+     -- whatever the platform naturally reports still hits one canonical
+     -- category/display_name pair - this is what "one server-delivered
+     -- list, not two independently-drifting ones" actually requires once a
+     -- second platform is in play.
+     ('app', 'Visual Studio Code', 'productive', 'VS Code', true),
+     ('app', 'Cursor', 'productive', 'Cursor', true),
+     ('app', 'Xcode', 'productive', 'Xcode', true),
+     ('app', 'Terminal', 'productive', 'Terminal', true),
+     ('app', 'iTerm2', 'productive', 'iTerm', true),
+     ('app', 'Microsoft Word', 'productive', 'Microsoft Word', true),
+     ('app', 'Microsoft Excel', 'productive', 'Microsoft Excel', true),
+     ('app', 'Microsoft PowerPoint', 'productive', 'PowerPoint', true),
+     ('app', 'Finder', 'neutral', 'Finder', true),
+     ('app', 'Slack', 'neutral', 'Slack', true),
+     ('app', 'Discord', 'neutral', 'Discord', true),
+     ('app', 'Microsoft Teams', 'neutral', 'Microsoft Teams', true),
+     ('app', 'zoom.us', 'neutral', 'Zoom', true),
+     ('app', 'Spotify', 'distracting', 'Spotify', true),
+     ('app', 'Steam', 'distracting', 'Steam', true),
+     ('app', 'Safari', 'unclassified', 'Safari', true),
+     ('app', 'Google Chrome', 'unclassified', 'Google Chrome', true),
+     ('app', 'Microsoft Edge', 'unclassified', 'Microsoft Edge', true),
+     ('app', 'Firefox', 'unclassified', 'Mozilla Firefox', true),
+     ('app', 'Brave Browser', 'unclassified', 'Brave', true),
+     ('app', 'Opera', 'unclassified', 'Opera', true),
+     ('app', 'Vivaldi', 'unclassified', 'Vivaldi', true),
+     ('app', 'Arc', 'unclassified', 'Arc', true),
+     ('domain', 'github.com', 'productive', NULL, true),
+     ('domain', 'gitlab.com', 'productive', NULL, true),
+     ('domain', 'stackoverflow.com', 'productive', NULL, true),
+     ('domain', 'docs.google.com', 'productive', NULL, true),
+     ('domain', 'notion.so', 'productive', NULL, true),
+     ('domain', 'atlassian.net', 'productive', NULL, true),
+     ('domain', 'mail.google.com', 'neutral', NULL, true),
+     ('domain', 'outlook.office.com', 'neutral', NULL, true),
+     ('domain', 'slack.com', 'neutral', NULL, true),
+     ('domain', 'calendar.google.com', 'neutral', NULL, true),
+     ('domain', 'youtube.com', 'distracting', NULL, true),
+     ('domain', 'netflix.com', 'distracting', NULL, true),
+     ('domain', 'twitch.tv', 'distracting', NULL, true),
+     ('domain', 'facebook.com', 'distracting', NULL, true),
+     ('domain', 'instagram.com', 'distracting', NULL, true),
+     ('domain', 'twitter.com', 'distracting', NULL, true),
+     ('domain', 'x.com', 'distracting', NULL, true),
+     ('domain', 'tiktok.com', 'distracting', NULL, true),
+     ('domain', 'reddit.com', 'distracting', NULL, true)
+   ON CONFLICT (match_type, lower(pattern)) DO NOTHING`,
   `CREATE TABLE IF NOT EXISTS activity_alert_log (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   subject_member_id UUID NOT NULL,
@@ -632,6 +972,25 @@ END $$`,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_agent_devices_member ON agent_devices (member_id) WHERE revoked_at IS NULL`,
+  // CF-6: "device ownership (company/BYOD) is recorded and auditable."
+  // Added to the existing per-device row rather than a new table - this is
+  // already the one row per linked machine. Defaults to 'unspecified' (not
+  // 'company') so a device that's never been classified doesn't silently
+  // read as company-owned.
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership VARCHAR(20) NOT NULL DEFAULT 'unspecified' CHECK (ownership IN ('company', 'personal', 'unspecified'))`,
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership_set_by UUID`,
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership_set_at TIMESTAMPTZ`,
+  // AC-3: reported once at link/reauth time by the agent itself (CPUID
+  // hypervisor bit, vendor string, VM MAC OUI, driver artifacts on Windows;
+  // sysctl kern.hv_vmm_present on macOS). Deliberately device-level, not
+  // folded into a per-session score - activity_sessions carries no device_id
+  // to correlate against, and the plan is explicit that this signal "has
+  // real false positives" and must stay a reviewable flag, never an
+  // automatic verdict, so it is surfaced next to device ownership for a
+  // manager to weigh in context rather than subtracted from anything.
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_detected BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_signals TEXT`,
+  `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_detected_at TIMESTAMPTZ`,
   // ─── Tasks domain (Phase 2 of implementation.md - Firestore -> Postgres) ───
   // Schema-stand-up only: additive, nothing reads from these tables yet, zero
   // behavior change. Column set pulled from the live Firestore field catalog
@@ -872,6 +1231,28 @@ export async function ensurePostgresLookupSchema() {
     for (const statement of [...LOOKUP_DDL, ...MEMBER_DATA_DDL]) {
       await client.query(statement);
     }
+
+    // CF-1: seed the 'screenshots' capability's initial enabled state from
+    // the pre-existing env-var gate (isActivityScreenshotsEnabled), exactly
+    // once, so shipping the new registry does not silently disable capture
+    // that's already live in production. ON CONFLICT DO NOTHING - any
+    // subsequent admin change via setMonitoringCapability() is permanent and
+    // this never overwrites it on a later boot. Every other capability seeds
+    // as its table default (enabled = false) via ordinary INSERT-if-absent,
+    // matching CF-0.1's true default-deny for anything not already live.
+    await client.query(
+      `INSERT INTO monitoring_capabilities (capability, enabled)
+       VALUES ('screenshots', $1)
+       ON CONFLICT (capability) DO NOTHING`,
+      [isActivityScreenshotsEnabled()],
+    );
+    for (const capability of ["app_tracking", "url_capture", "activity_metering", "dns_logging", "integrity_signals"]) {
+      await client.query(
+        `INSERT INTO monitoring_capabilities (capability) VALUES ($1) ON CONFLICT (capability) DO NOTHING`,
+        [capability],
+      );
+    }
+
     markPostgresLookupReady();
     markPostgresMemberDataReady();
     return { ok: true };

@@ -2,6 +2,7 @@ import { getPostgresPool } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
+import { recordSecurityEvent } from "../../core/metrics.js";
 
 // Allows a couple of missed 15s agent ticks (network blip, retry) before treating
 // the app/tab as ended and starting a fresh row instead of extending a stale one.
@@ -39,6 +40,25 @@ function normalizeSource(source) {
 }
 
 /**
+ * ACT-4: raw counters ActivityMeter::score() (Rust) is built from. Optional
+ * on the wire - a web-sourced event, or an agent older than ACT-4, sends
+ * none of this - so every field defaults to 0 rather than rejecting the
+ * capture over a missing signal.
+ * @typedef {{ keystrokeCount?: number, distinctKeyCount?: number, mouseDistancePx?: number, injectedEventCount?: number, activeSecondsInWindow?: number }} ActivitySignal
+ * @param {ActivitySignal | undefined} signal
+ */
+function normalizeActivitySignal(signal) {
+  const nonNegativeInt = (value) => Math.max(0, Math.floor(Number(value) || 0));
+  return {
+    keystrokeCount: nonNegativeInt(signal?.keystrokeCount),
+    distinctKeyCount: nonNegativeInt(signal?.distinctKeyCount),
+    mouseDistancePx: nonNegativeInt(signal?.mouseDistancePx),
+    injectedEventCount: nonNegativeInt(signal?.injectedEventCount),
+    activeSecondsInWindow: nonNegativeInt(signal?.activeSecondsInWindow),
+  };
+}
+
+/**
  * @param {{
  *   id: string,
  *   memberId: string,
@@ -52,18 +72,23 @@ function normalizeSource(source) {
  *   activityLevel: number,
  *   capturedAt: Date,
  *   source: string,
+ *   signal?: ActivitySignal,
+ *   perceptualHash?: string | null,
  * }} row
  */
 export async function insertActivityScreenshot(row) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return;
   const taskId = row.taskId ? parseProgressUuid(row.taskId) : null;
+  const signal = normalizeActivitySignal(row.signal);
   try {
     await pgQuery(
       `INSERT INTO activity_screenshots (
          id, member_id, session_id, task_id, task_title, screenshot_url, image_data,
-         app_name, page_title, activity_level, captured_at, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         app_name, page_title, activity_level, captured_at, source,
+         keystroke_count, distinct_key_count, mouse_distance_px, injected_event_count, active_seconds_in_window,
+         perceptual_hash
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
        ON CONFLICT (id) DO NOTHING`,
       [
         row.id,
@@ -78,6 +103,12 @@ export async function insertActivityScreenshot(row) {
         row.activityLevel,
         row.capturedAt,
         normalizeSource(row.source),
+        signal.keystrokeCount,
+        signal.distinctKeyCount,
+        signal.mouseDistancePx,
+        signal.injectedEventCount,
+        signal.activeSecondsInWindow,
+        row.perceptualHash ?? null,
       ],
     );
   } catch (err) {
@@ -111,30 +142,66 @@ export async function insertActivityAppLog(row) {
   const startedAt = row.startedAt instanceof Date ? row.startedAt : new Date();
   const durationSeconds = Math.max(0, Math.floor(Number(row.durationSeconds ?? 30)));
   const source = normalizeSource(String(row.source ?? "web"));
+  const signal = normalizeActivitySignal(/** @type {ActivitySignal | undefined} */ (row.signal));
 
   try {
     const appId = await resolveAppId(appName);
     const cutoff = new Date(startedAt.getTime() - APP_LOG_MERGE_GRACE_MS);
+    // Accumulate the signal into the still-open row alongside duration_seconds,
+    // so a long-open app/tab carries its full session's counters, not just
+    // whatever the first capture tick happened to see.
     const merged = await pgQuery(
       `UPDATE activity_app_logs
-       SET duration_seconds = duration_seconds + $1, ended_at = $2
+       SET duration_seconds = duration_seconds + $1, ended_at = $2,
+           keystroke_count = keystroke_count + $7, distinct_key_count = distinct_key_count + $8,
+           mouse_distance_px = mouse_distance_px + $9, injected_event_count = injected_event_count + $10,
+           active_seconds_in_window = active_seconds_in_window + $11
        WHERE id = (
          SELECT id FROM activity_app_logs
          WHERE session_id = $3 AND app_id = $4 AND page_title = $5 AND ended_at >= $6
          ORDER BY started_at DESC LIMIT 1
        )
        RETURNING id`,
-      [durationSeconds, startedAt, row.sessionId, appId, pageTitle, cutoff],
+      [
+        durationSeconds,
+        startedAt,
+        row.sessionId,
+        appId,
+        pageTitle,
+        cutoff,
+        signal.keystrokeCount,
+        signal.distinctKeyCount,
+        signal.mouseDistancePx,
+        signal.injectedEventCount,
+        signal.activeSecondsInWindow,
+      ],
     );
     if (merged?.rows?.length) return;
 
     await pgQuery(
       `INSERT INTO activity_app_logs (
          id, member_id, session_id, task_id, task_title, app_id, page_title,
-         started_at, ended_at, duration_seconds, source
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10)
+         started_at, ended_at, duration_seconds, source,
+         keystroke_count, distinct_key_count, mouse_distance_px, injected_event_count, active_seconds_in_window
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8, $9, $10, $11, $12, $13, $14, $15)
        ON CONFLICT (id) DO NOTHING`,
-      [row.id, memberId, row.sessionId, taskId, row.taskTitle ?? null, appId, pageTitle, startedAt, durationSeconds, source],
+      [
+        row.id,
+        memberId,
+        row.sessionId,
+        taskId,
+        row.taskTitle ?? null,
+        appId,
+        pageTitle,
+        startedAt,
+        durationSeconds,
+        source,
+        signal.keystrokeCount,
+        signal.distinctKeyCount,
+        signal.mouseDistancePx,
+        signal.injectedEventCount,
+        signal.activeSecondsInWindow,
+      ],
     );
   } catch (err) {
     logSafeWarn("[activity-events pg app]", err);
@@ -271,6 +338,86 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
   return result?.rows ?? [];
 }
 
+/**
+ * CLS-2: total seconds per app name, one member, over a day range - grouped
+ * server-side rather than fetching raw rows, since a busy member can have
+ * thousands of app-log rows in a week.
+ * @param {string} memberId @param {{ fromDay: string, toDay: string }} range
+ */
+export async function sumAppLogSecondsByAppNamePg(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds
+     FROM activity_app_logs l JOIN apps a ON a.id = l.app_id
+     WHERE l.member_id = $1 AND l.started_at::date >= $2::date AND l.started_at::date <= $3::date
+     GROUP BY a.name`,
+    [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * CLS-2: total seconds per domain, one member, over a day range.
+ * @param {string} memberId @param {{ fromDay: string, toDay: string }} range
+ */
+export async function sumUrlLogSecondsByDomainPg(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT domain, SUM(duration_seconds)::bigint AS total_seconds
+     FROM activity_url_logs
+     WHERE member_id = $1 AND visited_at::date >= $2::date AND visited_at::date <= $3::date
+       AND domain IS NOT NULL AND domain != ''
+     GROUP BY domain`,
+    [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * CLS-3: apps seen org-wide in the last `sinceDays` days with no row (or an
+ * explicit 'unclassified' row) in activity_categories, ranked by how much
+ * they've actually been used - "categorise these 12 new apps your team
+ * used" needs the high-volume ones surfaced first, not an alphabetical dump.
+ * @param {number} [sinceDays] @param {number} [limit]
+ */
+export async function findUnclassifiedAppsPg(sinceDays = 30, limit = 20) {
+  const result = await pgQuery(
+    `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds, COUNT(*)::int AS log_count
+     FROM activity_app_logs l
+     JOIN apps a ON a.id = l.app_id
+     LEFT JOIN activity_categories c ON c.match_type = 'app' AND lower(c.pattern) = lower(a.name)
+     WHERE l.started_at >= now() - ($1 || ' days')::interval
+       AND (c.id IS NULL OR c.category = 'unclassified')
+     GROUP BY a.name
+     ORDER BY total_seconds DESC
+     LIMIT $2`,
+    [sinceDays, limit],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * CLS-3: same as findUnclassifiedAppsPg, for domains.
+ * @param {number} [sinceDays] @param {number} [limit]
+ */
+export async function findUnclassifiedDomainsPg(sinceDays = 30, limit = 20) {
+  const result = await pgQuery(
+    `SELECT l.domain, SUM(l.duration_seconds)::bigint AS total_seconds, COUNT(*)::int AS log_count
+     FROM activity_url_logs l
+     LEFT JOIN activity_categories c ON c.match_type = 'domain' AND lower(c.pattern) = lower(l.domain)
+     WHERE l.visited_at >= now() - ($1 || ' days')::interval
+       AND l.domain IS NOT NULL AND l.domain != ''
+       AND (c.id IS NULL OR c.category = 'unclassified')
+     GROUP BY l.domain
+     ORDER BY total_seconds DESC
+     LIMIT $2`,
+    [sinceDays, limit],
+  );
+  return result?.rows ?? [];
+}
+
 /** @param {string} screenshotId */
 export async function fetchPgScreenshotById(screenshotId) {
   const id = parseProgressUuid(screenshotId);
@@ -357,10 +504,87 @@ export async function createPgSession(row) {
 
 /**
  * Partial update - only the provided fields change.
+ *
+ * TC-4: active_seconds/idle_seconds are clamped to never regress, with one
+ * deliberate exception. Without this, any request carrying a lower
+ * activeSeconds than what's stored - two devices racing on the same session,
+ * a slow POST landing after a later one - silently destroys recorded time.
+ *
+ * idle_seconds never legitimately decreases (nothing in the product rewinds
+ * it), so it is always clamped up. active_seconds is clamped up UNLESS
+ * `allowDecrease` is set, because the desktop agent's idle-escalation rewind
+ * (tracker.rs tick_idle_escalation, posted as action "stop") *must* be able
+ * to lower it - that rewind is the entire anti-fraud mechanism. Callers pass
+ * `allowDecrease: true` only for that "stop" action; every other action
+ * (start/resume/idle/sync) is monotonic.
+ *
  * @param {string} sessionId
  * @param {{ status?: string, endedAt?: Date|null, taskId?: string|null, projectId?: string|null, activeSeconds?: number, idleSeconds?: number, updatedAt: Date }} patch
+ * @param {{ allowDecrease?: boolean }} [options]
  */
-export async function updatePgSession(sessionId, patch) {
+export async function updatePgSession(sessionId, patch, options = {}) {
+  const allowDecrease = options.allowDecrease === true;
+  const wantsActive = patch.activeSeconds !== undefined;
+  const wantsIdle = patch.idleSeconds !== undefined;
+
+  // Single read backs both the clamp and the daily-rollup delta below - same
+  // read-before-write shape this function already used for the delta alone,
+  // now also the source of truth for "what was here before".
+  let prev = null;
+  if (wantsActive || wantsIdle) {
+    const prevResult = await pgQuery(
+      `SELECT member_id, task_id, started_at, active_seconds, idle_seconds FROM activity_sessions WHERE id = $1`,
+      [sessionId],
+    );
+    prev = prevResult?.rows?.[0] ?? null;
+  }
+
+  let effectiveActive = patch.activeSeconds;
+  let effectiveIdle = patch.idleSeconds;
+  if (prev) {
+    if (wantsActive) {
+      const incoming = Math.floor(patch.activeSeconds);
+      const stored = Math.floor(Number(prev.active_seconds ?? 0));
+      if (incoming < stored) {
+        if (allowDecrease) {
+          logSafeWarn("[activity-sessions] accepted downward active_seconds write", {
+            sessionId,
+            from: stored,
+            to: incoming,
+            reason: "idle-rewind/stop",
+          });
+          // OBS-2: "a counter on every accepted decrease... unexplained
+          // should be zero once TC-4 lands" - reuses the existing /monitor
+          // security-event feed rather than a new metrics system.
+          recordSecurityEvent({
+            event: "active_seconds_decreased",
+            detail: `session=${sessionId} from=${stored} to=${incoming} reason=stop`,
+          });
+        } else {
+          logSafeWarn("[activity-sessions] rejected downward active_seconds write, clamped", {
+            sessionId,
+            attempted: incoming,
+            keptAt: stored,
+          });
+          // A decrease attempted outside the one legitimate action (stop) -
+          // this is exactly the "unexplained" case OBS-2 says should be zero
+          // in steady state. Recorded even though it was clamped away: the
+          // attempt itself is the anomaly worth knowing about.
+          recordSecurityEvent({
+            event: "active_seconds_decrease_rejected",
+            detail: `session=${sessionId} attempted=${incoming} keptAt=${stored} reason=unexplained`,
+          });
+        }
+      }
+      effectiveActive = allowDecrease ? incoming : Math.max(incoming, stored);
+    }
+    if (wantsIdle) {
+      const incoming = Math.floor(patch.idleSeconds);
+      const stored = Math.floor(Number(prev.idle_seconds ?? 0));
+      effectiveIdle = Math.max(incoming, stored);
+    }
+  }
+
   const sets = [];
   const params = [sessionId];
   const add = (column, value) => {
@@ -371,29 +595,29 @@ export async function updatePgSession(sessionId, patch) {
   if (patch.endedAt !== undefined) add("ended_at", patch.endedAt);
   if (patch.taskId !== undefined) add("task_id", patch.taskId ? parseProgressUuid(patch.taskId) : null);
   if (patch.projectId !== undefined) add("project_id", patch.projectId ? parseProgressUuid(patch.projectId) : null);
-  if (patch.activeSeconds !== undefined) add("active_seconds", patch.activeSeconds);
-  if (patch.idleSeconds !== undefined) add("idle_seconds", patch.idleSeconds);
+  if (wantsActive) add("active_seconds", effectiveActive);
+  if (wantsIdle) add("idle_seconds", effectiveIdle);
   add("updated_at", patch.updatedAt ?? new Date());
   if (sets.length === 0) return;
 
-  // Delta-attribute to daily rollups BEFORE applying the update, using the
-  // session's pre-update member/task/active_seconds - read-before-write so
-  // call sites don't need to carry the previous value themselves.
-  if (patch.activeSeconds !== undefined) {
-    const prevResult = await pgQuery(
-      `SELECT member_id, task_id, active_seconds FROM activity_sessions WHERE id = $1`,
-      [sessionId],
-    );
-    const prev = prevResult?.rows?.[0];
-    if (prev) {
-      const delta = Math.floor(patch.activeSeconds) - Math.floor(Number(prev.active_seconds ?? 0));
-      // Negative deltas are real: the desktop agent rewinds a session's active
-      // seconds when it auto-stops for idling, and the rollups have to give
-      // that time back too or the daily totals keep hours the session itself
-      // no longer claims.
-      if (delta !== 0) {
-        await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta);
-      }
+  // Delta-attribute to daily rollups using the *effective* (clamped) active
+  // value, not the raw request - the rollup must match what was actually
+  // written, or a rejected downward write would still debit the daily total.
+  if (wantsActive && prev) {
+    const delta = Math.floor(effectiveActive) - Math.floor(Number(prev.active_seconds ?? 0));
+    // Negative deltas are real: the desktop agent rewinds a session's active
+    // seconds when it auto-stops for idling, and the rollups have to give
+    // that time back too or the daily totals keep hours the session itself
+    // no longer claims.
+    if (delta !== 0) {
+      // CQ-2: attribute to the day the session *started*, not "today" - a
+      // rewind just after midnight used to take the time off a day that had
+      // none, clamp at zero, and leave yesterday holding hours the session
+      // no longer claims. Splitting a midnight-crossing session's delta
+      // proportionally across both days is the fuller fix; attributing the
+      // whole thing to the start day is the simpler one the plan calls out
+      // as acceptable, and what's implemented here.
+      await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta, prev.started_at);
     }
   }
 
@@ -405,37 +629,46 @@ export async function updatePgSession(sessionId, patch) {
  *
  * Negative deltas come from the desktop agent rewinding a session after an
  * idle auto-stop. Two things they must never do: leave a row negative, or wrap.
- * Hence GREATEST(0, ...) on both the insert and the update - and note the
- * delta is applied against CURRENT_DATE, so a rewind that spans midnight takes
- * the time off today rather than off the day it was earned. Clamping keeps
- * that honest (today floors at zero) rather than pushing a row negative.
+ * Hence GREATEST(0, ...) on both the insert and the update.
+ *
+ * CQ-2: attributed to the day the *session started* (falling back to today
+ * if that's ever missing), not CURRENT_DATE - a rewind just after midnight
+ * used to take the time off today, which had none, clamp at zero, and leave
+ * yesterday holding hours the session no longer claims. This attributes the
+ * whole delta to the start day rather than splitting it proportionally
+ * across a midnight-crossing session - the simpler fix the plan calls out as
+ * acceptable. Clamping still keeps a rewind honest (the target day floors at
+ * zero) rather than pushing a row negative.
  *
  * @param {string} memberId
  * @param {string | null} taskId
  * @param {number} deltaSeconds signed; negative reverses previously counted time
+ * @param {Date | string | null} [attributedTo] the session's started_at; defaults to today if absent
  */
-async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds) {
+async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo) {
   const delta = Math.trunc(Number(deltaSeconds) || 0);
   if (delta === 0) return;
+  const day = attributedTo ? new Date(attributedTo) : new Date();
+  const dayStr = Number.isNaN(day.getTime()) ? new Date() : day;
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
-     VALUES ($1, CURRENT_DATE, GREATEST(0, $2::bigint))
+     VALUES ($1, $2::date, GREATEST(0, $3::bigint))
      ON CONFLICT (member_id, day)
      DO UPDATE SET
-       active_seconds = GREATEST(0, daily_member_active_seconds.active_seconds + $2::bigint),
+       active_seconds = GREATEST(0, daily_member_active_seconds.active_seconds + $3::bigint),
        updated_at = now()`,
-    [memberId, delta],
+    [memberId, dayStr, delta],
   );
   if (taskId) {
     await pgQuery(
       `INSERT INTO daily_member_task_active_seconds (member_id, task_id, day, active_seconds)
-       VALUES ($1, $2, CURRENT_DATE, GREATEST(0, $3::bigint))
+       VALUES ($1, $2, $3::date, GREATEST(0, $4::bigint))
        ON CONFLICT (member_id, task_id, day)
        DO UPDATE SET
-         active_seconds = GREATEST(0, daily_member_task_active_seconds.active_seconds + $3::bigint),
+         active_seconds = GREATEST(0, daily_member_task_active_seconds.active_seconds + $4::bigint),
          updated_at = now()`,
-      [memberId, taskId, delta],
+      [memberId, taskId, dayStr, delta],
     );
   }
 }

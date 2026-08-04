@@ -78,9 +78,26 @@ export async function getAllTrackingRowsPg(limit = 5000) {
   return rows.map(normalizeTrackingRow);
 }
 
-/** Upsert by (task_id, member_id) - the live counter write syncTaskTimeTracking
- * makes on every start/idle/resume/stop/sync action. */
-export async function upsertTrackingRowPg(payload) {
+/**
+ * Upsert by (task_id, member_id) - the live counter write syncTaskTimeTracking
+ * makes on every start/idle/resume/stop/sync action.
+ *
+ * TC-4: active_seconds is clamped to never regress (GREATEST against the
+ * existing row) unless `allowDecrease` is set - the one legitimate case is
+ * the desktop agent's idle-escalation rewind, posted as action "stop", which
+ * *must* be able to lower it (that rewind is the anti-fraud mechanism).
+ * idle_seconds is always clamped up; nothing in the product legitimately
+ * lowers it. Without this, two devices racing on the same task (each holding
+ * its own stale baseline) or a slow request landing after a later one
+ * silently destroys recorded time.
+ *
+ * @param {{ allowDecrease?: boolean }} [options]
+ */
+export async function upsertTrackingRowPg(payload, options = {}) {
+  const allowDecrease = options.allowDecrease === true;
+  const activeSet = allowDecrease
+    ? "EXCLUDED.active_seconds"
+    : "GREATEST(task_member_progress.active_seconds, EXCLUDED.active_seconds)";
   const rows = await query(
     `INSERT INTO task_member_progress (
        task_id, member_id, project_id, active_seconds, idle_seconds, progress_percentage,
@@ -88,8 +105,8 @@ export async function upsertTrackingRowPg(payload) {
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
      ON CONFLICT (task_id, member_id) DO UPDATE SET
        project_id = EXCLUDED.project_id,
-       active_seconds = EXCLUDED.active_seconds,
-       idle_seconds = EXCLUDED.idle_seconds,
+       active_seconds = ${activeSet},
+       idle_seconds = GREATEST(task_member_progress.idle_seconds, EXCLUDED.idle_seconds),
        progress_percentage = EXCLUDED.progress_percentage,
        last_started_at = COALESCE(task_member_progress.last_started_at, EXCLUDED.last_started_at),
        last_activity_at = EXCLUDED.last_activity_at,

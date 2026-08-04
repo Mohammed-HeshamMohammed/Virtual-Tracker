@@ -19,6 +19,9 @@ import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-sch
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
 import { scheduleAbandonedSessionSweep } from "./src/modules/activity/abandoned-session-sweep.service.js";
 import { scheduleReportDeliveries } from "./src/modules/reports/report-schedule-runner.js";
+import { scheduleDataRetentionSweep } from "./src/modules/compliance/data-retention-sweep.service.js";
+import { scheduleIntegritySweep } from "./src/modules/activity/integrity-sweep.service.js";
+import { scheduleCounterReconciliationSweep } from "./src/modules/activity/counter-reconciliation-sweep.service.js";
 
 let activeServer = null;
 
@@ -94,6 +97,9 @@ export async function startServer(port = getEnv().server.port) {
     scheduleTeamWeeklyReports(db);
     scheduleAbandonedSessionSweep();
     scheduleReportDeliveries(db);
+    scheduleDataRetentionSweep();
+    scheduleIntegritySweep();
+    scheduleCounterReconciliationSweep();
   }
 
   server.listen(port, () => {

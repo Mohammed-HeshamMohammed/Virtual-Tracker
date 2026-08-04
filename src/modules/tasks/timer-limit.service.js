@@ -223,6 +223,21 @@ function buildAllowanceResult(input) {
 }
 
 /**
+ * TC-5: the ceiling this checks `activeSeconds` against must be independent
+ * of `activeSeconds` itself. The `allowance` computed above passes the
+ * incoming value in as `currentCumulativeActiveSeconds`, which makes
+ * `buildAllowanceResult`'s `maxCumulativeActiveSeconds` derive from that same
+ * value (`currentCumulativeActiveSeconds + allowedRemainingSeconds`, and
+ * every remainder is `Math.max(0, ...)`) - so `activeSeconds >
+ * maxCumulativeActiveSeconds` reduces to `0 > allowedRemainingSeconds`,
+ * which is never true. `capped` was always false; a session that started
+ * under a cap could run past it indefinitely.
+ *
+ * Ask for the absolute ceiling instead, by computing the allowance as if
+ * nothing had been worked yet (`currentCumulativeActiveSeconds: 0`) - none of
+ * the other remainders in computeTimerAllowance depend on that value, so this
+ * yields the true cap, not one derived from the number being checked against it.
+ *
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {Record<string, unknown>} task
@@ -240,13 +255,15 @@ export async function enforceTimerAllowanceOnSync(db, memberId, task, activeSeco
     throw err;
   }
 
+  const ceilingAllowance = await computeTimerAllowance(db, memberId, task, {
+    currentCumulativeActiveSeconds: 0,
+  });
+  const ceiling = ceilingAllowance.maxCumulativeActiveSeconds;
+
   let cappedActive = activeSeconds;
   let capped = false;
-  if (
-    allowance.maxCumulativeActiveSeconds != null &&
-    activeSeconds > allowance.maxCumulativeActiveSeconds
-  ) {
-    cappedActive = allowance.maxCumulativeActiveSeconds;
+  if (ceiling != null && activeSeconds > ceiling) {
+    cappedActive = ceiling;
     capped = true;
   }
 

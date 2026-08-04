@@ -17,6 +17,8 @@ import { routeSchemaCrud } from "../modules/schema/routes.js";
 import { routeCompatibility } from "../modules/compat/routes.js";
 import { routePresenceEvents } from "../modules/presence/index.js";
 import { routeActivity } from "../modules/activity/routes.js";
+import { routeCompliance } from "../modules/compliance/routes.js";
+import { routeClassification } from "../modules/classification/routes.js";
 import { routeProjects } from "../modules/projects/routes.js";
 import { routeClients } from "../modules/clients/routes.js";
 import { routeMonitor } from "../modules/monitor/routes.js";
@@ -193,6 +195,8 @@ export async function handleRequest(req, res) {
     if (await routeMemberTransferRequests(req, res, url, origin)) return;
     if (await routeMemberRelationships(req, res, url, origin)) return;
     if (await routeActivity(req, res, url, origin)) return;
+    if (await routeCompliance(req, res, url, origin)) return;
+    if (await routeClassification(req, res, url, origin)) return;
     if (await routeProjects(req, res, url, db, origin)) return;
     if (await routeDashboard(req, res, url, db, origin)) return;
     if (await routeBootstrap(req, res, url, db, origin)) return;
