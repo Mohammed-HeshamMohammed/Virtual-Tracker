@@ -93,6 +93,11 @@ const envSourceSchema = z
     PRESENCE_SIGNAL_MIN_INTERVAL_MS: optionalTrimmedString,
     FIREBASE_DATABASE_URL: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
+    DASHBOARD_API_URL: optionalTrimmedString,
+    GOOGLE_OAUTH_CLIENT_ID: optionalTrimmedString,
+    GOOGLE_OAUTH_CLIENT_SECRET: optionalTrimmedString,
+    GOOGLE_OAUTH_REDIRECT_URI: optionalTrimmedString,
+    GOOGLE_OAUTH_STATE_SECRET: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();
@@ -198,6 +203,29 @@ const envSourceSchema = z
         code: z.ZodIssueCode.custom,
         path: ["FIREBASE_CLIENT_EMAIL"],
         message: "FIREBASE_CLIENT_EMAIL and FIREBASE_PRIVATE_KEY must both be set",
+      });
+    }
+
+    const googleOAuthFields = [
+      data.GOOGLE_OAUTH_CLIENT_ID,
+      data.GOOGLE_OAUTH_CLIENT_SECRET,
+      data.GOOGLE_OAUTH_REDIRECT_URI,
+      data.GOOGLE_OAUTH_STATE_SECRET,
+    ];
+    const googleOAuthPartial = googleOAuthFields.some((value) => Boolean(value)) && !googleOAuthFields.every((value) => Boolean(value));
+    if (googleOAuthPartial) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GOOGLE_OAUTH_CLIENT_ID"],
+        message:
+          "GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REDIRECT_URI, and GOOGLE_OAUTH_STATE_SECRET must all be set together",
+      });
+    }
+    if (isProduction && data.GOOGLE_OAUTH_REDIRECT_URI && !httpsUrlSchema.safeParse(data.GOOGLE_OAUTH_REDIRECT_URI).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["GOOGLE_OAUTH_REDIRECT_URI"],
+        message: "Production requires GOOGLE_OAUTH_REDIRECT_URI to be an https URL",
       });
     }
 
