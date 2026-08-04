@@ -6,6 +6,8 @@ const AUTHN_EXACT = new Set([
   "/api/auth/validate-password",
   "/api/auth/verify",
   "/api/auth/resolve-sign-in-methods",
+  "/api/auth/google/start",
+  "/api/auth/google/callback",
 ]);
 
 export function isAuthBackendApiPath(pathname: string): boolean {

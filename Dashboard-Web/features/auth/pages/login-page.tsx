@@ -112,6 +112,28 @@ const AuthPage: React.FC = () => {
     window.history.replaceState({}, document.title, next)
   }, [searchParams])
 
+  // Desktop-agent Google sign-in lands back here from Auth-Backend's
+  // /api/auth/google/callback (server-side OAuth flow — see google-oauth.js),
+  // not from this page's own sign-in form.
+  useEffect(() => {
+    const linked = searchParams.get("agentLinked")
+    const linkError = searchParams.get("agentLinkError")
+    if (linked !== "1" && !linkError) return
+    const url = new URL(window.location.href)
+    url.searchParams.delete("agentLinked")
+    url.searchParams.delete("agentLinkError")
+    window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""))
+    if (linked === "1") {
+      setRegisterSuccessNotice("Desktop agent linked. You can close this tab and return to Virtual Tracker Agent.")
+    } else {
+      setLoginFormError(
+        linkError === "cancelled"
+          ? "Google sign-in was cancelled. In the desktop agent, click Sign In and try again."
+          : "Could not link the desktop agent. In the desktop agent, click Sign In and try again.",
+      )
+    }
+  }, [searchParams])
+
   // Desktop-agent deep link (?mode=signup|forgot-password): jump straight to
   // that pane instead of always landing on plain sign-in.
   useEffect(() => {
