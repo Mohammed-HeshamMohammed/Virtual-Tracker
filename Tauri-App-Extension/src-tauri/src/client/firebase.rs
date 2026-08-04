@@ -63,6 +63,41 @@ impl PasswordSignInError {
     }
 }
 
+/// Why an in-app account-creation call failed, in the agent's own vocabulary
+/// - mirrors `PasswordSignInError`'s shape for the same reason: every code
+/// Identity Toolkit's `accounts:signUp` can return for a *failed* signup is
+/// collapsed into one of a few user-facing outcomes instead of a raw string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SignUpError {
+    EmailInUse,
+    WeakPassword,
+    InvalidEmail,
+    Unreachable,
+    Other(String),
+}
+
+impl SignUpError {
+    pub fn message(&self) -> String {
+        match self {
+            Self::EmailInUse => "This email is already in use. Try signing in instead.".into(),
+            Self::WeakPassword => "Password must be at least 6 characters.".into(),
+            Self::InvalidEmail => "Enter a valid email address.".into(),
+            Self::Unreachable => "Could not reach the sign-in service. Check your connection.".into(),
+            Self::Other(msg) => msg.clone(),
+        }
+    }
+
+    pub fn from_firebase_code(code: &str) -> Self {
+        let code = code.split(':').next().unwrap_or(code).trim();
+        match code {
+            "EMAIL_EXISTS" => Self::EmailInUse,
+            "WEAK_PASSWORD" => Self::WeakPassword,
+            "INVALID_EMAIL" | "MISSING_EMAIL" => Self::InvalidEmail,
+            _ => Self::Other("Could not create account. Try again.".into()),
+        }
+    }
+}
+
 pub struct FirebaseTokenService {
     auth_url: String,
     client: Client,
@@ -294,6 +329,136 @@ impl FirebaseTokenService {
                 .filter_map(|v| v.as_str().map(str::to_string))
                 .collect(),
         )
+    }
+
+    /// In-app account creation, the same Identity Toolkit call
+    /// `createUserWithEmailAndPassword` makes on the web. Returns fresh
+    /// tokens for the new account; the caller decides whether to keep them
+    /// (this agent signs back out and asks the user to verify + sign in
+    /// normally, matching the web form).
+    pub fn sign_up_with_password(
+        &mut self,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, String), SignUpError> {
+        let Some(api_key) = self.firebase_api_key() else {
+            return Err(SignUpError::Unreachable);
+        };
+        let url =
+            format!("https://identitytoolkit.googleapis.com/v1/accounts:signUp?key={api_key}");
+        let res = self
+            .client
+            .post(url)
+            .json(&serde_json::json!({
+                "email": email,
+                "password": password,
+                "returnSecureToken": true,
+            }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|err| {
+                log::warn!("Sign-up network error: {err}");
+                SignUpError::Unreachable
+            })?;
+
+        let status = res.status();
+        let data: Value = res.json().map_err(|_| SignUpError::Unreachable)?;
+        if !status.is_success() {
+            let code = data
+                .pointer("/error/message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            log::warn!("Sign-up rejected ({})", status.as_u16());
+            return Err(SignUpError::from_firebase_code(code));
+        }
+
+        let id_token = data
+            .get("idToken")
+            .and_then(|v| v.as_str())
+            .ok_or(SignUpError::Unreachable)?
+            .to_string();
+        let refresh = data
+            .get("refreshToken")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        Ok((id_token, refresh))
+    }
+
+    /// Identity Toolkit's out-of-band email call. `request_type` is
+    /// `"VERIFY_EMAIL"` (needs `id_token`, no `email`) or `"PASSWORD_RESET"`
+    /// (needs `email`, no auth). Returns the raw `error.message` code on
+    /// failure so callers can decide what it means for them - a
+    /// `PASSWORD_RESET` caller treats `EMAIL_NOT_FOUND` as success (see
+    /// `send_password_reset_email`), a `VERIFY_EMAIL` caller just logs it.
+    fn send_oob_code(
+        &mut self,
+        request_type: &str,
+        email: Option<&str>,
+        id_token: Option<&str>,
+    ) -> Result<(), String> {
+        let Some(api_key) = self.firebase_api_key() else {
+            return Err(String::new());
+        };
+        let url = format!(
+            "https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key={api_key}"
+        );
+        let mut body = serde_json::json!({ "requestType": request_type });
+        if let Some(e) = email {
+            body["email"] = serde_json::json!(e);
+        }
+        if let Some(t) = id_token {
+            body["idToken"] = serde_json::json!(t);
+        }
+        let res = self
+            .client
+            .post(url)
+            .json(&body)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|err| {
+                log::warn!("sendOobCode ({request_type}) network error: {err}");
+                String::new()
+            })?;
+        let status = res.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        let data: Value = res.json().unwrap_or(Value::Null);
+        Err(data
+            .pointer("/error/message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string())
+    }
+
+    /// Best-effort: a freshly created account not getting its verification
+    /// email is annoying, not fatal, and the account still exists either way.
+    pub fn send_email_verification(&mut self, id_token: &str) {
+        if let Err(code) = self.send_oob_code("VERIFY_EMAIL", None, Some(id_token)) {
+            log::warn!("Could not send verification email: {code}");
+        }
+    }
+
+    /// Enumeration-safe, same as the web's `sendFirebasePasswordResetEmail`:
+    /// an unknown email reports the same success as a real one.
+    pub fn send_password_reset_email(&mut self, email: &str) -> Result<(), String> {
+        match self.send_oob_code("PASSWORD_RESET", Some(email), None) {
+            Ok(()) => Ok(()),
+            Err(code) => {
+                let head = code.split(':').next().unwrap_or(&code).trim();
+                match head {
+                    "EMAIL_NOT_FOUND" => Ok(()),
+                    "INVALID_EMAIL" | "MISSING_EMAIL" => {
+                        Err("Enter a valid email address.".into())
+                    }
+                    "TOO_MANY_ATTEMPTS_TRY_LATER" => {
+                        Err("Too many attempts. Wait a few minutes and try again.".into())
+                    }
+                    _ => Err("Could not reach the sign-in service. Check your connection.".into()),
+                }
+            }
+        }
     }
 }
 

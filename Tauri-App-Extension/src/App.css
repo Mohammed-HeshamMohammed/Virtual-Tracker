@@ -46,13 +46,17 @@ body {
 }
 
 .titlebar {
-  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 38px;
+  background: transparent;
   display: flex;
   align-items: center;
-  height: 36px;
-  background: var(--surface-low);
-  position: relative;
-  z-index: 3;
+  justify-content: space-between;
+  z-index: 100;
+  pointer-events: none;
 }
 
 .titlebar-drag {
@@ -60,9 +64,10 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-left: 12px;
+  padding-left: 14px;
   min-width: 0;
   height: 100%;
+  pointer-events: auto;
 }
 
 .titlebar-logo-img {
@@ -71,6 +76,7 @@ body {
   object-fit: cover;
   flex-shrink: 0;
   pointer-events: none;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
 }
 
 .titlebar-label {
@@ -78,47 +84,53 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--on-surface);
+  color: rgba(222, 229, 255, 0.85);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 .titlebar-controls {
   display: flex;
   align-items: center;
   height: 100%;
-  gap: 8px;
+  gap: 4px;
+  padding-right: 6px;
+  pointer-events: auto;
 }
 
 .win-btn {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 100%;
+  width: 36px;
+  height: 26px;
+  border-radius: 6px;
   border: none;
   background: transparent;
   color: var(--on-surface-variant);
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .win-btn svg {
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
 }
 
 .win-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .win-close:hover {
-  background: rgba(255, 110, 132, 0.18);
+  background: rgba(255, 75, 100, 0.3);
   color: #ff6e84;
 }
 
 .win-btn:disabled {
-  opacity: 0.5;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
@@ -405,6 +417,57 @@ body {
 
 .btn-tertiary:hover {
   color: var(--on-surface);
+}
+
+.signin-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.signin-divider::before,
+.signin-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(109, 117, 140, 0.18);
+}
+
+.btn-social {
+  background: rgba(20, 31, 56, 0.7);
+  border: 1px solid rgba(109, 117, 140, 0.18);
+  color: var(--on-surface);
+  font-weight: 600;
+}
+
+.btn-social:hover {
+  border-color: rgba(186, 158, 255, 0.35);
+  background: rgba(31, 43, 73, 0.5);
+}
+
+.btn-apple svg {
+  color: var(--on-surface);
+}
+
+/* Logged out: the sign-in card is the whole app, not a narrow column next to
+   an empty second pane - see the `signedIn` gate around .page-area in App.tsx. */
+.app-body.app-body-auth-only {
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+}
+
+.app-body.app-body-auth-only .side-panel {
+  width: 100%;
+  max-width: 380px;
+  flex-shrink: 1;
+  background: transparent;
+  overflow-y: auto;
 }
 
 .hero-card {
@@ -1177,6 +1240,37 @@ body {
   width: 100%;
 }
 
+/* CF-2 disclosure notice - wider and left-aligned since it's real prose,
+   not a one-line status message like .reconnect-text. */
+.notice-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  text-align: left;
+  max-width: 400px;
+  width: 100%;
+}
+
+.notice-card .reconnect-name {
+  text-align: center;
+}
+
+.notice-text {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 260px;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--on-surface-variant);
+}
+
 /* Secondary escape hatch under the primary action - deliberately a link, not
    a button, so it never competes with "Continue as ...". */
 .link-btn {
@@ -1395,4 +1489,346 @@ body {
   opacity: 1;
   background: rgba(255, 255, 255, 0.12);
 }
+
+/* ==========================================
+   Full-Window Auth Split View
+   ========================================== */
+.auth-split {
+  display: flex;
+  width: 100%;
+  height: calc(100% - 36px);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.auth-brand {
+  width: 440px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 40px 36px;
+  background: linear-gradient(155deg, rgba(20, 31, 56, 0.95), rgba(9, 19, 40, 0.98)),
+              radial-gradient(circle at 0% 0%, rgba(132, 85, 239, 0.25), transparent 60%);
+  border-right: 1px solid rgba(109, 117, 140, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-brand::before {
+  content: "";
+  position: absolute;
+  top: -100px;
+  left: -100px;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(186, 158, 255, 0.15), transparent 70%);
+  filter: blur(40px);
+  pointer-events: none;
+}
+
+.auth-brand-mark {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.auth-brand-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  z-index: 1;
+}
+
+.auth-brand-copy h2 {
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1.25;
+  background: linear-gradient(135deg, #ffffff 30%, var(--primary));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.auth-brand-copy p {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+}
+
+.auth-brand-features {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.auth-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--on-surface);
+  background: rgba(25, 37, 64, 0.45);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(109, 117, 140, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.auth-feature-item strong {
+  display: block;
+  font-size: 12px;
+  color: #fff;
+}
+
+.auth-feature-item p {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  margin-top: 2px;
+  line-height: 1.3;
+}
+
+.auth-feature-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.auth-brand-viz {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 36px;
+  padding: 0 4px;
+  opacity: 0.6;
+}
+
+.auth-brand-bar {
+  flex: 1;
+  height: 20%;
+  border-radius: 3px;
+  background: linear-gradient(to top, var(--primary-dim), var(--primary));
+  animation: auth-bar-pulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes auth-bar-pulse {
+  0% { height: 15%; opacity: 0.4; }
+  50% { height: 75%; opacity: 0.9; }
+  100% { height: 35%; opacity: 0.6; }
+}
+
+.auth-form-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 40px;
+  overflow-y: auto;
+  background: rgba(9, 19, 40, 0.85);
+}
+
+.auth-form-card {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: fade-slide-up 0.3s ease both;
+}
+
+.auth-form-head h1 {
+  font-size: 26px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+.auth-form-head p {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  margin-top: 4px;
+}
+
+.input-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-wrapper .text-input {
+  padding-right: 40px;
+}
+
+.input-eye-btn {
+  position: absolute;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+  transition: color 0.15s ease;
+}
+
+.input-eye-btn:hover {
+  color: var(--on-surface);
+}
+
+.social-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.btn-icon-social {
+  flex: 1;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid rgba(109, 117, 140, 0.2);
+  background: rgba(20, 31, 56, 0.7);
+  color: var(--on-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-icon-social:hover:not(:disabled) {
+  background: rgba(31, 43, 73, 0.7);
+  border-color: rgba(186, 158, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-icon-social:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.auth-error-banner {
+  background: rgba(255, 110, 132, 0.12);
+  border: 1px solid rgba(255, 110, 132, 0.3);
+  color: #ff8598;
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.auth-success-banner {
+  background: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+  color: #6ee7b7;
+  font-size: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1.4;
+}
+
+.auth-back-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 4px;
+}
+
+.reconnect-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: radial-gradient(circle at 50% 40%, rgba(132, 85, 239, 0.12), transparent 70%);
+}
+
+.reconnect-card, .notice-card {
+  width: 100%;
+  max-width: 440px;
+  background: rgba(20, 31, 56, 0.85);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(186, 158, 255, 0.2);
+  border-radius: 20px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  animation: fade-slide-up 0.3s ease both;
+}
+
+.reconnect-avatar {
+  width: 64px;
+  height: 64px;
+  box-shadow: 0 0 24px rgba(186, 158, 255, 0.3);
+}
+
+.reconnect-name {
+  font-size: 20px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.reconnect-text {
+  font-size: 13px;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+}
+
+.reconnect-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.notice-card {
+  text-align: left;
+  max-width: 520px;
+  align-items: stretch;
+}
+
+.notice-text {
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--on-surface);
+  background: rgba(9, 19, 40, 0.6);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(109, 117, 140, 0.15);
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 

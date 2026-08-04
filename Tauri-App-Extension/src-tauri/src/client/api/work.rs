@@ -2,15 +2,12 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use super::ApiClient;
+use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 
 impl ApiClient {
     pub fn fetch_viewer_member_id(&mut self) -> Option<String> {
-        if !self.refresh_token_if_needed() {
-            return None;
-        }
-        let auth = self.auth_headers()?;
+        let auth = self.authorized()?;
         let url = format!("{}/api/activity/scope", self.api_url);
         let res = self
             .client
@@ -29,11 +26,8 @@ impl ApiClient {
     }
 
     pub fn fetch_viewer_projects(&mut self) -> Result<Vec<crate::types::ProjectInfo>, String> {
-        if !self.refresh_token_if_needed() {
-            return Err("Not signed in".into());
-        }
         let auth = self
-            .auth_headers()
+            .authorized()
             .ok_or_else(|| "Not signed in".to_string())?;
         let url = format!("{}/api/projects", self.api_url);
         let res = self
@@ -172,11 +166,8 @@ impl ApiClient {
     pub fn fetch_task_time_tracking(
         &mut self,
         task_id: &str,
-    ) -> Option<crate::types::TaskTimeTracking> {
-        if !self.refresh_token_if_needed() {
-            return None;
-        }
-        let auth = self.auth_headers()?;
+    ) -> Result<crate::types::TaskTimeTracking, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!(
             "{}/api/tasks/{}/time-tracking",
             self.api_url,
@@ -188,14 +179,14 @@ impl ApiClient {
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-            .ok()?;
+            .map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
-            return None;
+            return Err(ApiError::Network);
         }
-        let body: Value = res.json().ok()?;
-        let data = body.get("data")?;
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let data = body.get("data").ok_or(ApiError::Network)?;
         let allowance = data.get("timerAllowance");
-        Some(crate::types::TaskTimeTracking {
+        Ok(crate::types::TaskTimeTracking {
             active_seconds: data.get("activeSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
             idle_seconds: data.get("idleSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
             task_status: data
@@ -230,11 +221,8 @@ impl ApiClient {
     }
 
     /// The viewer's own daily/weekly work-hour limits, for the profile view.
-    pub fn fetch_member_limits(&mut self) -> Option<crate::types::MemberLimits> {
-        if !self.refresh_token_if_needed() {
-            return None;
-        }
-        let auth = self.auth_headers()?;
+    pub fn fetch_member_limits(&mut self) -> Result<crate::types::MemberLimits, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/activity/limits", self.api_url);
         let res = self
             .client
@@ -242,12 +230,12 @@ impl ApiClient {
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-            .ok()?;
+            .map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
-            return None;
+            return Err(ApiError::Network);
         }
-        let body: Value = res.json().ok()?;
-        let data = body.get("data")?;
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let data = body.get("data").ok_or(ApiError::Network)?;
         // timerAllowance is what actually gates the start button server-side.
         // Absent on older backends - every field below then keeps its zero
         // value and the UI shows the plain caps, no allowance line.
@@ -258,7 +246,7 @@ impl ApiClient {
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0)
         };
-        Some(crate::types::MemberLimits {
+        Ok(crate::types::MemberLimits {
             daily_hours: data.get("dailyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
             weekly_hours: data.get("weeklyHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
             uses_shifts: data.get("usesShifts").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -277,11 +265,8 @@ impl ApiClient {
     }
 
     /// The viewer's own People-page member record, for the profile view.
-    pub fn fetch_member_profile(&mut self) -> Option<crate::types::MemberProfile> {
-        if !self.refresh_token_if_needed() {
-            return None;
-        }
-        let auth = self.auth_headers()?;
+    pub fn fetch_member_profile(&mut self) -> Result<crate::types::MemberProfile, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/members/current", self.api_url);
         let res = self
             .client
@@ -289,19 +274,19 @@ impl ApiClient {
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-            .ok()?;
+            .map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
-            return None;
+            return Err(ApiError::Network);
         }
-        let body: Value = res.json().ok()?;
-        let data = body.get("data")?;
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let data = body.get("data").ok_or(ApiError::Network)?;
         let str_field = |key: &str| {
             data.get(key)
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string()
         };
-        Some(crate::types::MemberProfile {
+        Ok(crate::types::MemberProfile {
             name: str_field("name"),
             email: str_field("email"),
             avatar_url: str_field("avatarUrl"),

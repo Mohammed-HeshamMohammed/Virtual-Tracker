@@ -6,15 +6,20 @@ mod config;
 mod constants;
 mod prefs;
 mod queue;
+#[cfg(test)]
+mod test_support;
 mod types;
 mod util;
 
 use std::sync::Arc;
 
+use tauri::{AppHandle, Manager, WindowEvent};
+// tray-icon is a non-Linux-only Cargo feature (see Cargo.toml) - these types
+// don't exist in the dependency graph at all when building for Linux.
+#[cfg(not(target_os = "linux"))]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Manager, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -38,27 +43,83 @@ struct AppState {
 // - which is what "Not responding" after a fullscreen game or a sleep/wake
 // actually was. Only the commands below that genuinely stay on the main thread
 // (window operations) or touch no network are left synchronous.
-#[tauri::command(async)]
-fn sign_in(state: tauri::State<'_, AppState>) -> SignInResult {
-    state.controller.open_sign_in()
+//
+// Marking a command `async` only changes *where* it runs (Tauri dispatches it
+// via `async_runtime::spawn`, off the main thread) - it does NOT make blocking
+// calls inside it safe. A plain synchronous body run that way still executes
+// directly on a tokio worker thread, and this app's blocking `reqwest`
+// calls panic there ("Cannot drop a runtime in a context where blocking is
+// not allowed") - the same class of crash for every command below that
+// touches the network. `run_blocking` is what actually fixes it: it hands the
+// blocking body to `spawn_blocking`, tokio's dedicated pool where blocking is
+// the expected case.
+async fn run_blocking<T, F>(f: F) -> T
+where
+    T: Send + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(f)
+        .await
+        .expect("blocking command task panicked")
+}
+
+/// `hint` is an optional `key=value` query pair forwarded to the browser link
+/// page - `"provider=google"`/`"provider=apple"` for social sign-in,
+/// `"mode=signup"`/`"mode=forgot-password"` for account creation and
+/// password reset. All three still link this device, unlike the old
+/// plain-`open_web_app` buttons they replace.
+// Tauri requires an async command taking a reference input (`State`) to
+// return `Result` - these never actually fail at the Rust level (failure is
+// already a field inside the returned value), so every `Err` arm below is
+// unreachable in practice; `Ok(...)` is just satisfying that constraint.
+#[tauri::command]
+async fn sign_in(state: tauri::State<'_, AppState>, hint: Option<String>) -> Result<SignInResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.open_sign_in(hint.as_deref())).await)
 }
 
 /// In-app email/password sign-in, no browser round-trip. The password is
 /// passed straight through to the sign-in call and is never persisted.
-#[tauri::command(async)]
-fn sign_in_with_password(
+#[tauri::command]
+async fn sign_in_with_password(
     state: tauri::State<'_, AppState>,
     email: String,
     password: String,
-) -> SignInResult {
-    state.controller.sign_in_with_password(&email, &password)
+) -> Result<SignInResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.sign_in_with_password(&email, &password)).await)
+}
+
+/// In-app account creation, no browser round-trip.
+#[tauri::command]
+async fn sign_up(
+    state: tauri::State<'_, AppState>,
+    email: String,
+    password: String,
+    first_name: String,
+    last_name: String,
+    phone: String,
+) -> Result<SignInResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.sign_up(&email, &password, &first_name, &last_name, &phone)).await)
+}
+
+/// In-app "forgot password" request, no browser round-trip.
+#[tauri::command]
+async fn send_password_reset(
+    state: tauri::State<'_, AppState>,
+    email: String,
+) -> Result<SignInResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.request_password_reset(&email)).await)
 }
 
 /// Distinct from sign_in/"Re-link account": ends the session and clears
 /// tokens, but does not start a new browser link flow afterward.
-#[tauri::command(async)]
-fn sign_out(state: tauri::State<'_, AppState>) {
-    state.controller.sign_out();
+#[tauri::command]
+async fn sign_out(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.sign_out()).await)
 }
 
 #[tauri::command]
@@ -105,9 +166,10 @@ fn get_profile(state: tauri::State<'_, AppState>) -> ProfileInfo {
     state.controller.get_profile()
 }
 
-#[tauri::command(async)]
-fn get_link_status(state: tauri::State<'_, AppState>) -> LinkStatus {
-    state.controller.get_link_status()
+#[tauri::command]
+async fn get_link_status(state: tauri::State<'_, AppState>) -> Result<LinkStatus, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_link_status()).await)
 }
 
 #[tauri::command]
@@ -115,9 +177,10 @@ fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSetti
     state.controller.get_app_settings()
 }
 
-#[tauri::command(async)]
-fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    state.controller.open_log_file()
+#[tauri::command]
+async fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.open_log_file()).await
 }
 
 #[tauri::command]
@@ -131,65 +194,88 @@ fn save_preferences(
     Ok(state.controller.get_app_settings())
 }
 
-#[tauri::command(async)]
-fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<crate::types::ProjectInfo>, String> {
-    state.controller.list_projects()
+#[tauri::command]
+async fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<crate::types::ProjectInfo>, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.list_projects()).await
 }
 
-#[tauri::command(async)]
-fn list_tasks(
+#[tauri::command]
+async fn list_tasks(
     state: tauri::State<'_, AppState>,
     project_id: Option<String>,
 ) -> Result<Vec<AgentTask>, String> {
-    state.controller.list_tasks(project_id.as_deref())
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.list_tasks(project_id.as_deref())).await
 }
 
-#[tauri::command(async)]
-fn get_session(state: tauri::State<'_, AppState>) -> SessionInfo {
-    state.controller.get_session()
+#[tauri::command]
+async fn get_session(state: tauri::State<'_, AppState>) -> Result<SessionInfo, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_session()).await)
 }
 
-#[tauri::command(async)]
-fn get_task_time_tracking(
+#[tauri::command]
+async fn get_task_time_tracking(
     state: tauri::State<'_, AppState>,
     task_id: String,
-) -> Option<crate::types::TaskTimeTracking> {
-    state.controller.get_task_time_tracking(&task_id)
+) -> Result<Option<crate::types::TaskTimeTracking>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_task_time_tracking(&task_id)).await)
 }
 
-#[tauri::command(async)]
-fn get_member_limits(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberLimits> {
-    state.controller.get_member_limits()
+#[tauri::command]
+async fn get_member_limits(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MemberLimits>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_member_limits()).await)
 }
 
-#[tauri::command(async)]
-fn get_member_profile(state: tauri::State<'_, AppState>) -> Option<crate::types::MemberProfile> {
-    state.controller.get_member_profile()
+#[tauri::command]
+async fn get_member_profile(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MemberProfile>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_member_profile()).await)
 }
 
-#[tauri::command(async)]
-fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> ActionResult {
-    state.controller.start_task_session(&task_id)
+#[tauri::command]
+async fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.start_task_session(&task_id)).await)
 }
 
-#[tauri::command(async)]
-fn get_connection_state(state: tauri::State<'_, AppState>) -> ConnectionState {
-    state.controller.get_connection_state()
+#[tauri::command]
+async fn get_monitoring_notice(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MonitoringNoticeView>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_monitoring_notice()).await)
 }
 
-#[tauri::command(async)]
-fn reconnect(state: tauri::State<'_, AppState>) -> ReconnectResult {
-    state.controller.reconnect()
+#[tauri::command]
+async fn acknowledge_monitoring_notice(state: tauri::State<'_, AppState>, notice_version: String) -> Result<bool, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.acknowledge_monitoring_notice(&notice_version)).await)
 }
 
-#[tauri::command(async)]
-fn start_project_session(state: tauri::State<'_, AppState>, project_id: String) -> ActionResult {
-    state.controller.start_project_session(&project_id)
+#[tauri::command]
+async fn get_connection_state(state: tauri::State<'_, AppState>) -> Result<ConnectionState, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_connection_state()).await)
 }
 
-#[tauri::command(async)]
-fn stop_session(state: tauri::State<'_, AppState>) -> ActionResult {
-    state.controller.stop_session()
+#[tauri::command]
+async fn reconnect(state: tauri::State<'_, AppState>) -> Result<ReconnectResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.reconnect()).await)
+}
+
+#[tauri::command]
+async fn start_project_session(state: tauri::State<'_, AppState>, project_id: String) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.start_project_session(&project_id)).await)
+}
+
+#[tauri::command]
+async fn stop_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.stop_session()).await)
 }
 
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
@@ -252,6 +338,32 @@ fn init_logging() {
     let _ = builder.try_init();
 }
 
+/// Shown when the agent can't even build its HTTP client (broken local
+/// TLS/cert store) - this happens before any Tauri window exists, and
+/// release builds hide the console (`main.rs`'s `windows_subsystem`
+/// attribute), so without this the failure would be invisible outside the
+/// log file. Reuses the same wide-string WinAPI pattern
+/// `util::open_system_browser` already uses elsewhere in this codebase.
+#[cfg(windows)]
+fn show_startup_error(message: &str) {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    let text = to_wide(&format!(
+        "Virtual Tracker could not start:\n\n{message}\n\nCheck the agent log for details."
+    ));
+    let caption = to_wide("Virtual Tracker");
+    unsafe {
+        let _ = MessageBoxW(None, PCWSTR(text.as_ptr()), PCWSTR(caption.as_ptr()), MB_OK | MB_ICONERROR);
+    }
+}
+
+#[cfg(not(windows))]
+fn show_startup_error(_message: &str) {}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
@@ -260,7 +372,14 @@ pub fn run() {
     let prefs = settings.preferences_store().load();
     let start_hidden = prefs.start_hidden;
     let launch_at_login = prefs.launch_at_login;
-    let controller = AgentController::new(settings);
+    let controller = match AgentController::new(settings) {
+        Ok(controller) => controller,
+        Err(err) => {
+            log::error!("Failed to initialize agent controller: {err}");
+            show_startup_error(&err);
+            return;
+        }
+    };
 
     tauri::Builder::default()
         // Must be registered first: a second launch hits this instead of running
@@ -281,6 +400,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             sign_in,
             sign_in_with_password,
+            sign_up,
+            send_password_reset,
             sign_out,
             open_web_app,
             minimize_current,
@@ -299,6 +420,8 @@ pub fn run() {
             get_member_limits,
             get_member_profile,
             start_task_session,
+            get_monitoring_notice,
+            acknowledge_monitoring_notice,
             start_project_session,
             get_connection_state,
             reconnect,
@@ -325,43 +448,53 @@ pub fn run() {
             controller.start();
             controller.maybe_auto_sign_in();
 
-            let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-            let sign_in_i = MenuItem::with_id(app, "sign_in", "Sign in", true, None::<&str>)?;
-            let open_i =
-                MenuItem::with_id(app, "open", "Open Virtual Tracker", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &sign_in_i, &open_i, &quit_i])?;
+            // No tray icon on Linux: see the Cargo.toml comment on the `tauri`
+            // dependency for why (RUSTSEC-2024-0429, accepted risk documented
+            // in release.yml). "Keep running in tray" still works the same on
+            // Linux via the window-hide branch below - there's just no tray
+            // click to bring it back; the single-instance relaunch (see the
+            // `tauri_plugin_single_instance` registration above) is the way
+            // back in on that platform instead.
+            #[cfg(not(target_os = "linux"))]
+            {
+                let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
+                let sign_in_i = MenuItem::with_id(app, "sign_in", "Sign in", true, None::<&str>)?;
+                let open_i =
+                    MenuItem::with_id(app, "open", "Open Virtual Tracker", true, None::<&str>)?;
+                let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_i, &sign_in_i, &open_i, &quit_i])?;
 
-            let tray_controller = Arc::clone(&controller);
-            let mut tray_builder = TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("Virtual Tracker Agent")
-                .on_menu_event(move |app, event| match event.id.as_ref() {
-                    "show" => show_main_window(app),
-                    "sign_in" => {
-                        let _ = tray_controller.open_sign_in();
-                    }
-                    "open" => tray_controller.open_web_app(),
-                    "quit" => {
-                        tray_controller.stop();
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        show_main_window(tray.app_handle());
-                    }
-                });
-            if let Some(icon) = app.default_window_icon().cloned() {
-                tray_builder = tray_builder.icon(icon);
+                let tray_controller = Arc::clone(&controller);
+                let mut tray_builder = TrayIconBuilder::new()
+                    .menu(&menu)
+                    .tooltip("Virtual Tracker Agent")
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "show" => show_main_window(app),
+                        "sign_in" => {
+                            let _ = tray_controller.open_sign_in(None);
+                        }
+                        "open" => tray_controller.open_web_app(),
+                        "quit" => {
+                            tray_controller.stop();
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            show_main_window(tray.app_handle());
+                        }
+                    });
+                if let Some(icon) = app.default_window_icon().cloned() {
+                    tray_builder = tray_builder.icon(icon);
+                }
+                let _tray = tray_builder.build(app)?;
             }
-            let _tray = tray_builder.build(app)?;
 
             if let Some(window) = app.get_webview_window("main") {
                 let win = window.clone();

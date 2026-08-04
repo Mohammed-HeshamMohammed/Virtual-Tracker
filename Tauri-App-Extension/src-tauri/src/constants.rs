@@ -23,13 +23,53 @@ pub const APP_LOG_INTERVAL_SEC: u64 = 15;
 pub const SESSION_SYNC_INTERVAL_SEC: u64 = 20;
 /// Kept comfortably under 20s even with SESSION_POLL_SEC tick jitter.
 pub const FIRST_SCREENSHOT_DELAY_SEC: u64 = 5;
+/// MAC-3/CQ-4: how often the tracker re-fetches the server-delivered
+/// app-name/display-name map (CLS-1's activity_categories). Display names
+/// change rarely - this is deliberately much slower than SESSION_POLL_SEC,
+/// not a tick-rate concern. "Adding a browser requires no client release"
+/// only needs this to happen eventually, not within seconds.
+pub const DISPLAY_NAME_REFRESH_INTERVAL_SEC: u64 = 30 * 60;
+/// ACT-3: how often the tracker re-fetches server-tunable activity scoring
+/// calibration. Same rationale as DISPLAY_NAME_REFRESH_INTERVAL_SEC - a
+/// calibration change is not time-sensitive, so this is paced far slower
+/// than SESSION_POLL_SEC.
+pub const ACTIVITY_SCORING_REFRESH_INTERVAL_SEC: u64 = 30 * 60;
 
 pub const SCREENSHOT_MIN_DELAY_SEC: u64 = 90;
 pub const SCREENSHOT_MAX_DELAY_SEC: u64 = 210;
 
 pub const ACTIVITY_WINDOW_MS: u64 = 60_000;
+/// ACT-2: this is now a *weighted-points* saturation, not a raw event count -
+/// see KEYBOARD_INPUT_WEIGHT etc below. Left at the same value on purpose:
+/// ~40 real keystrokes/minute (40 * 3 = 120) is a realistic "fully active
+/// typing" baseline, similar in feel to the old 120-raw-events number it
+/// replaces, not a re-tuned target.
 pub const ACTIVITY_SATURATION_EVENTS: u64 = 120;
 pub const ACTIVITY_MIN_SCORE: u32 = 5;
+
+// ─── ACT-2: score keystroke *work*, not keystroke *count* ──────────────────
+// "Weight keyboard > mouse-click > mouse-move. Right now they're equal."
+pub const KEYBOARD_INPUT_WEIGHT: u64 = 3;
+pub const MOUSE_CLICK_WEIGHT: u64 = 2;
+pub const MOUSE_MOVE_WEIGHT: u64 = 1;
+/// "200 presses of the same key... is a macro." Keyboard's weighted
+/// contribution is scaled by (distinct keys / keystrokes), floored here so a
+/// legitimately-held navigation key (arrow keys, backspace) doesn't get
+/// credited at near-zero just for repeating.
+pub const MIN_DISTINCT_KEY_RATIO: f64 = 0.15;
+/// How many recent keydown timestamps are kept to judge cadence variance.
+pub const CADENCE_SAMPLE_SIZE: usize = 30;
+/// Below this many samples, cadence is too small a sample to judge - no
+/// penalty either way.
+pub const CADENCE_MIN_SAMPLES: usize = 10;
+/// "...or perfectly even 100ms spacing is a macro." A standard deviation of
+/// inter-keystroke intervals below this, with enough samples, reads as
+/// mechanical rather than human-irregular typing.
+pub const CADENCE_MACHINE_STDDEV_MS: f64 = 15.0;
+/// Multiplier applied to keyboard's weighted contribution when cadence looks
+/// mechanical - a penalty, not a hard zero, since this is still a scoring
+/// signal (AC-1's OS-level injected flag is the harder anti-cheat signal).
+pub const CADENCE_MACHINE_PENALTY: f64 = 0.3;
 /// No mouse/keyboard input for this long counts a tick as idle rather than
 /// active time.
 pub const IDLE_THRESHOLD_SEC: u64 = 60;
@@ -55,6 +95,12 @@ pub const MIN_TOKEN_LENGTH: usize = 20;
 pub const HTTP_TIMEOUT_SEC: u64 = 15;
 pub const EVENT_POST_TIMEOUT_SEC: u64 = 30;
 pub const URL_SCRIPT_TIMEOUT_SEC: u64 = 8;
+/// How long the tracker tick thread will wait on the background URL-capture
+/// thread before giving up on this tick's URL and moving on (Suggestion #7).
+/// Deliberately much shorter than URL_SCRIPT_TIMEOUT_SEC - the subprocess
+/// itself keeps running in the background up to that full timeout, this only
+/// bounds how long the *tick thread* blocks waiting for it.
+pub const URL_CAPTURE_TICK_BUDGET_SEC: u64 = 2;
 
 pub const MAX_SCREENSHOT_WIDTH: u32 = 1280;
 pub const JPEG_QUALITY: u8 = 72;

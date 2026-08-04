@@ -53,6 +53,26 @@ export async function getSignedUrl(objectPath, expiresInMinutes = 15) {
   return url;
 }
 
+/**
+ * CF-5: erasure has to remove archived data too, not just the hot-storage
+ * row - "Erasure removes the data from hot storage and archive." Missing
+ * ("not found") is treated as success since the end state (no object) is
+ * what erasure actually cares about, not whether this call happened to be
+ * the one that removed it.
+ * @param {string} objectPath
+ */
+export async function deleteFromGCS(objectPath) {
+  const bucket = await getStorageBucketAsync();
+  if (!bucket) {
+    throw new Error(formatStorageSetupError("Storage bucket not configured"));
+  }
+  try {
+    await bucket.file(objectPath).delete();
+  } catch (err) {
+    if (/** @type {{code?: number}} */ (err)?.code !== 404) throw err;
+  }
+}
+
 /** Public avatar URL for a GCS object path. */
 export function getPublicUrl(objectPath) {
   const bucketName = resolveGcsBucketName();

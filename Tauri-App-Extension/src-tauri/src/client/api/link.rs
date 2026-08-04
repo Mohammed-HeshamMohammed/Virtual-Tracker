@@ -3,6 +3,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::ApiClient;
+use crate::capture::vm_detect::detect_vm;
 use crate::constants::{HTTP_TIMEOUT_SEC, REGISTER_SOURCE};
 
 impl ApiClient {
@@ -38,12 +39,20 @@ impl ApiClient {
             return false;
         };
         let url = format!("{}/api/activity/agent/device/register", self.api_url);
+        // AC-3: computed once, right here at registration - not per-tick,
+        // since VM status doesn't change mid-session. A signal for a manager
+        // to weigh in context, never a verdict this call blocks on.
+        let vm = detect_vm();
         let res = self
             .client
             .post(url)
             .header("Authorization", auth)
             .header("Content-Type", "application/json")
-            .json(&json!({ "source": REGISTER_SOURCE }))
+            .json(&json!({
+                "source": REGISTER_SOURCE,
+                "vmDetected": vm.detected,
+                "vmSignals": vm.signals,
+            }))
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send();
         let Ok(res) = res else {

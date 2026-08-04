@@ -67,7 +67,11 @@ pub fn get_foreground_window() -> ForegroundWindow {
     {
         get_foreground_window_win()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        get_foreground_window_macos()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     {
         ForegroundWindow {
             app_name: "Unknown".into(),
@@ -77,6 +81,67 @@ pub fn get_foreground_window() -> ForegroundWindow {
             is_browser: false,
             browser_hint: String::new(),
         }
+    }
+}
+
+/// MAC-2: `xcap::Window` (already a dependency here for screenshot capture,
+/// `screen.rs`) does the NSWorkspace/CGWindowListCopyWindowInfo work
+/// internally on macOS - see xcap's own `src/macos/impl_window.rs`, which is
+/// exactly the approach this function would otherwise have had to hand-roll
+/// via raw Objective-C FFI. Reusing it means this integrates an
+/// already-shipped, already-compiling-on-other-platforms implementation
+/// instead of adding new, unverifiable-from-this-environment FFI code.
+///
+/// UNVERIFIED: written without any way to compile-check macOS-specific code
+/// on this machine (no C toolchain available even for `cargo check --target
+/// aarch64-apple-darwin` - Tauri's own macOS build needs `cc` for its
+/// Objective-C bridging, which isn't installed here). `xcap::Window`'s API
+/// itself is real and documented; this integration has not been built or
+/// run on real macOS hardware. Treat as a first draft to validate there.
+#[cfg(target_os = "macos")]
+fn get_foreground_window_macos() -> ForegroundWindow {
+    let unknown = || ForegroundWindow {
+        app_name: "Unknown".into(),
+        title: "Unknown".into(),
+        process_name: String::new(),
+        hwnd: 0,
+        is_browser: false,
+        browser_hint: String::new(),
+    };
+
+    let windows = match xcap::Window::all() {
+        Ok(w) => w,
+        Err(err) => {
+            log::warn!("xcap::Window::all() failed: {err}");
+            return unknown();
+        }
+    };
+    let Some(focused) = windows.into_iter().find(|w| w.is_focused()) else {
+        return unknown();
+    };
+
+    let app_name = focused.app_name().to_string();
+    let title_raw = focused.title().trim().to_string();
+    let title = if title_raw.is_empty() { "Unknown".to_string() } else { title_raw };
+    // macOS has no separate exe-vs-display-name split the way Windows does -
+    // xcap's app_name() is already the display name ("Google Chrome"), and
+    // it's also exactly what get-browser-url-macos.applescript's
+    // `tell application "<processName>"` / `tell process "<processName>"`
+    // expect as an argument (see tryBrowserByProcess/readFirefoxUrl there).
+    let process_name = app_name.clone();
+    let browser_hint = browser_hint_from_exe(&app_name.to_lowercase());
+    let is_browser = !browser_hint.is_empty();
+
+    ForegroundWindow {
+        app_name,
+        title,
+        process_name,
+        // HWND is a Windows-specific concept with no macOS equivalent; the
+        // only consumer of this field is #[cfg(windows)]-gated, so 0 here is
+        // inert, not a placeholder standing in for something unfetched.
+        hwnd: 0,
+        is_browser,
+        browser_hint,
     }
 }
 
@@ -186,7 +251,13 @@ fn resolve_display_name(process_name: &str, title: &str) -> String {
 }
 
 fn browser_hint_from_exe(exe: &str) -> String {
-    if exe.contains("chrome") {
+    // "safari" only ever matches a macOS app_name ("Safari"); harmless no-op
+    // on Windows, where no process name contains that substring. Kept in this
+    // one shared function rather than a second macOS-only copy - CQ-4's
+    // "two sources of truth" trap, avoided before it exists.
+    if exe.contains("safari") {
+        "safari".into()
+    } else if exe.contains("chrome") {
         "chrome".into()
     } else if exe.contains("msedge") || exe.contains("edge") {
         "edge".into()
@@ -299,9 +370,18 @@ pub fn read_browser_url(
             }
             return None;
         }
+        // get-browser-url-macos.applescript expects (bundleId, processName) -
+        // this agent doesn't have a bundle identifier for the focused app
+        // (xcap::Window exposes app_name/pid, not bundle id), so bundleId is
+        // passed empty. The script's own tryBrowserByBundle("") short-
+        // circuits immediately and falls through to tryBrowserByProcess(),
+        // which matches on exactly the process_name this agent does have -
+        // this was passing process_name for *both* arguments before MAC-2
+        // made is_browser true on macOS at all, which is why the mismatch
+        // was never reachable/noticed.
         let mut cmd = Command::new("osascript");
         cmd.arg(macos_script_path)
-            .arg(&window.process_name)
+            .arg("")
             .arg(&window.process_name);
         let Some(stdout) = run_command_timeout(cmd, timeout) else {
             log::warn!("URL capture: osascript failed or timed out for {}", window.process_name);
@@ -317,5 +397,40 @@ pub fn read_browser_url(
     {
         let _ = (script_path, macos_script_path, timeout, window);
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // browser_hint_from_exe is shared between the Windows path (.exe names)
+    // and MAC-2's macOS path (app_name display strings, e.g. "Google
+    // Chrome") - both compile and run on this platform since the function
+    // itself has no #[cfg], only its callers do. Guards MAC-2's "safari"
+    // addition and that it doesn't disturb the existing Windows mappings.
+
+    #[test]
+    fn recognizes_macos_app_display_names() {
+        assert_eq!(browser_hint_from_exe("safari"), "safari");
+        assert_eq!(browser_hint_from_exe("google chrome"), "chrome");
+        assert_eq!(browser_hint_from_exe("microsoft edge"), "edge");
+        assert_eq!(browser_hint_from_exe("brave browser"), "brave");
+    }
+
+    #[test]
+    fn still_recognizes_windows_exe_names_unchanged() {
+        assert_eq!(browser_hint_from_exe("chrome.exe"), "chrome");
+        assert_eq!(browser_hint_from_exe("msedge.exe"), "edge");
+        assert_eq!(browser_hint_from_exe("firefox.exe"), "firefox");
+        assert_eq!(browser_hint_from_exe("vivaldi.exe"), "vivaldi");
+    }
+
+    #[test]
+    fn a_non_browser_process_never_matches_safari_by_accident() {
+        // "safari" is a substring-only check - confirm it doesn't fire on
+        // unrelated names that happen to share letters with real browsers.
+        assert_eq!(browser_hint_from_exe("notepad.exe"), "");
+        assert_eq!(browser_hint_from_exe("slack.exe"), "");
     }
 }

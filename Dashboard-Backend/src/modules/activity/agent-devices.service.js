@@ -35,7 +35,7 @@ export function newDeviceId() {
 /**
  * Records (or re-records) a linked machine. Re-linking the same device rotates
  * its secret rather than accumulating rows.
- * @param {{ memberId: string, deviceId: string, agentSecret: string, agentSource?: string }} input
+ * @param {{ memberId: string, deviceId: string, agentSecret: string, agentSource?: string, vmDetected?: boolean, vmSignals?: string[] }} input
  */
 export async function registerAgentDevice(input) {
   const memberId = String(input.memberId || "").trim();
@@ -43,9 +43,17 @@ export async function registerAgentDevice(input) {
   const agentSecret = String(input.agentSecret || "");
   if (!memberId || !deviceId || !agentSecret) return null;
 
+  // AC-3: reported by the agent itself once at registration - never
+  // re-derived or verified server-side, since it's a device signal, not a
+  // security boundary. `null` (not sent by an older agent) leaves whatever
+  // was already stored untouched rather than resetting a real prior finding
+  // to false.
+  const vmDetected = typeof input.vmDetected === "boolean" ? input.vmDetected : null;
+  const vmSignals = Array.isArray(input.vmSignals) ? input.vmSignals.slice(0, 20).join(",").slice(0, 500) : null;
+
   const rows = await query(
-    `INSERT INTO agent_devices (member_id, device_id, secret_hash, agent_source, last_seen_at)
-     VALUES ($1, $2, $3, $4, now())
+    `INSERT INTO agent_devices (member_id, device_id, secret_hash, agent_source, last_seen_at, vm_detected, vm_signals, vm_detected_at)
+     VALUES ($1, $2, $3, $4, now(), COALESCE($5, false), $6, CASE WHEN $5 IS NOT NULL THEN now() ELSE NULL END)
      ON CONFLICT (device_id) DO UPDATE
        SET member_id = EXCLUDED.member_id,
            secret_hash = EXCLUDED.secret_hash,
@@ -53,9 +61,12 @@ export async function registerAgentDevice(input) {
            revoked_at = NULL,
            failed_attempts = 0,
            last_seen_at = now(),
-           updated_at = now()
+           updated_at = now(),
+           vm_detected = COALESCE($5, agent_devices.vm_detected),
+           vm_signals = COALESCE($6, agent_devices.vm_signals),
+           vm_detected_at = CASE WHEN $5 IS NOT NULL THEN now() ELSE agent_devices.vm_detected_at END
      RETURNING device_id, member_id`,
-    [memberId, deviceId, hashSecret(agentSecret), input.agentSource || "tauri"],
+    [memberId, deviceId, hashSecret(agentSecret), input.agentSource || "tauri", vmDetected, vmSignals],
   );
   return rows[0] ?? null;
 }
@@ -122,4 +133,53 @@ export async function revokeAgentDevicesForMember(memberId) {
     [id],
   );
   return rows.length;
+}
+
+/** CF-6: a single device row (any status), for ownership-check call sites that need to know who owns it before allowing a self-classification. @param {string} deviceId */
+export async function getAgentDevice(deviceId) {
+  const rows = await query(
+    `SELECT device_id, member_id, ownership, revoked_at FROM agent_devices WHERE device_id = $1 LIMIT 1`,
+    [String(deviceId || "").trim()],
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * CF-6/AC-3: every non-revoked device linked to a member, with its ownership
+ * classification and AC-3's VM signal - the two device-level context flags a
+ * manager weighs together (a VM flag on a company-owned box reads very
+ * differently than one on a declared-personal machine).
+ * @param {string} memberId
+ */
+export async function listAgentDevicesForMember(memberId) {
+  const id = String(memberId || "").trim();
+  if (!id) return [];
+  return query(
+    `SELECT device_id, agent_source, ownership, ownership_set_by, ownership_set_at, last_seen_at, created_at,
+            vm_detected, vm_signals, vm_detected_at
+     FROM agent_devices WHERE member_id = $1 AND revoked_at IS NULL ORDER BY created_at DESC`,
+    [id],
+  );
+}
+
+/**
+ * CF-6: classify a linked device as company-owned, personal (BYOD), or back
+ * to unspecified. `setBy` is recorded regardless of who it is (the device's
+ * own owner self-declaring, or management correcting it) - "recorded and
+ * auditable" means knowing who classified it, not just what it's set to.
+ * @param {string} deviceId @param {'company'|'personal'|'unspecified'} ownership @param {string} setBy
+ */
+export async function setAgentDeviceOwnership(deviceId, ownership, setBy) {
+  if (!["company", "personal", "unspecified"].includes(ownership)) {
+    const err = new Error(`Unknown ownership value: ${ownership}`);
+    err.code = "UNKNOWN_OWNERSHIP";
+    throw err;
+  }
+  const rows = await query(
+    `UPDATE agent_devices SET ownership = $2, ownership_set_by = $3, ownership_set_at = now(), updated_at = now()
+     WHERE device_id = $1 AND revoked_at IS NULL
+     RETURNING device_id, member_id, ownership, ownership_set_by, ownership_set_at`,
+    [String(deviceId || "").trim(), ownership, setBy ?? null],
+  );
+  return rows[0] ?? null;
 }

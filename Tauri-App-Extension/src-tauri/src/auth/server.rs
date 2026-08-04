@@ -132,6 +132,15 @@ fn handle_request(
     }
 
     if method == Method::Post && path == CREDENTIALS_LINK_PATH {
+        if !has_json_content_type(&request) {
+            let _ = respond_json(
+                request,
+                StatusCode(400),
+                &json!({"ok": false, "error": "Content-Type must be application/json"}),
+                web_url,
+            );
+            return;
+        }
         let body = read_body(&mut request);
         let link_token = body
             .get("linkToken")
@@ -175,6 +184,19 @@ fn handle_request(
         &json!({"success": false, "error": "Not found"}),
         web_url,
     );
+}
+
+/// Defense-in-depth input validation on the one state-changing route that
+/// accepts a body: a same-machine browser tab (or any other local process)
+/// could otherwise POST here with no declared Content-Type and still have it
+/// parsed as JSON regardless of what it actually claims to be. Doesn't
+/// replace the real gate (the caller still needs a valid link token), just
+/// narrows what's accepted before that check even runs.
+fn has_json_content_type(request: &Request) -> bool {
+    request.headers().iter().any(|h| {
+        h.field.equiv("Content-Type")
+            && h.value.as_str().to_ascii_lowercase().starts_with("application/json")
+    })
 }
 
 fn read_body(request: &mut Request) -> Value {
@@ -224,4 +246,79 @@ fn respond_empty(request: Request, status: StatusCode, origin: &str) -> Result<(
     headers.pop(); // drop Content-Type for empty
     let response = Response::new(status, headers, Cursor::new(Vec::new()), Some(0), None);
     request.respond(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::auth::link_flow::AgentLinkFlow;
+
+    fn test_api() -> Arc<Mutex<ApiClient>> {
+        Arc::new(Mutex::new(
+            ApiClient::new("http://127.0.0.1:1".into(), "http://127.0.0.1:1".into())
+                .expect("HTTP client builds in a test environment"),
+        ))
+    }
+
+    /// Real `tiny_http::Server` on an OS-assigned port, driving the actual
+    /// (private) `handle_request` this module ships - not a fake standing in
+    /// for it. `link_flow` is the only piece each test needs to vary; the api
+    /// client and its URLs are inert (never dialed by the routes under test).
+    fn spawn_test_server(link_flow: Arc<AgentLinkFlow>) -> String {
+        let server = Server::http("127.0.0.1:0").expect("bind test auth server");
+        let addr = server.server_addr();
+        let api = test_api();
+        std::thread::Builder::new()
+            .name("vt-test-auth-server".into())
+            .spawn(move || {
+                for request in server.incoming_requests() {
+                    handle_request(request, "http://127.0.0.1:1", "http://127.0.0.1:1", &api, &link_flow);
+                }
+            })
+            .expect("spawn test auth server thread");
+        format!("http://{addr}")
+    }
+
+    // Guards Suggestion #3 (Content-Type defense-in-depth) and, together with
+    // the acceptance test below, that the route's actual match/reject
+    // decision still works end to end after the ApiError unification
+    // (Suggestion #13) touched the ApiClient this route holds a handle to.
+
+    #[test]
+    fn credentials_link_route_rejects_a_non_json_content_type() {
+        let link_flow = Arc::new(AgentLinkFlow::new(test_api(), "http://127.0.0.1:1".into()));
+        let base = spawn_test_server(link_flow);
+
+        let res = reqwest::blocking::Client::new()
+            .post(format!("{base}{CREDENTIALS_LINK_PATH}"))
+            .header("Content-Type", "text/plain")
+            .body(r#"{"linkToken":"abc","idToken":"xyz"}"#)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .expect("request sent");
+        assert_eq!(res.status().as_u16(), 400);
+    }
+
+    #[test]
+    fn credentials_link_route_accepts_a_matching_json_link_token() {
+        let link_flow = Arc::new(AgentLinkFlow::new_with_pending(
+            test_api(),
+            "http://127.0.0.1:1".into(),
+            "test-link-token",
+            "test-agent-secret",
+            Arc::new(|_id, _refresh| {}),
+        ));
+        let base = spawn_test_server(link_flow);
+
+        let res = reqwest::blocking::Client::new()
+            .post(format!("{base}{CREDENTIALS_LINK_PATH}"))
+            .header("Content-Type", "application/json")
+            .body(r#"{"linkToken":"test-link-token","idToken":"test-id-token","refreshToken":"test-refresh"}"#)
+            .timeout(Duration::from_secs(3))
+            .send()
+            .expect("request sent");
+        assert_eq!(res.status().as_u16(), 200);
+    }
 }

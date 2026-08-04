@@ -20,7 +20,7 @@ use crate::types::{
     ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
     SignInResult,
 };
-use crate::util::{open_url_in_launcher_or_browser, server_label};
+use crate::util::{is_allowed_link_hint, open_url_in_launcher_or_browser, server_label};
 
 pub struct AgentController {
     pub settings: Settings,
@@ -39,12 +39,16 @@ pub struct AgentController {
 }
 
 impl AgentController {
-    pub fn new(settings: Settings) -> Arc<Self> {
+    /// `Err` when the HTTP client itself couldn't be built (broken local
+    /// TLS/cert store) - this runs before any window exists, so the caller is
+    /// responsible for surfacing the failure instead of this panicking, which
+    /// used to crash the app with nothing visible in a release build.
+    pub fn new(settings: Settings) -> Result<Arc<Self>, String> {
         let store = TokenStore::new(settings.store_path.clone());
         let api = Arc::new(Mutex::new(ApiClient::new(
             settings.api_url.clone(),
             settings.auth_url.clone(),
-        )));
+        )?));
         let link_flow = Arc::new(AgentLinkFlow::new(
             Arc::clone(&api),
             settings.web_url.clone(),
@@ -60,7 +64,7 @@ impl AgentController {
         let status = Arc::new(Mutex::new("Not signed in".to_string()));
         let status_listeners = Arc::new(Mutex::new(Vec::new()));
 
-        Arc::new(Self {
+        Ok(Arc::new(Self {
             settings,
             store,
             api,
@@ -71,7 +75,7 @@ impl AgentController {
             status_listeners,
             activity,
             connection_failures: Arc::new(AtomicU32::new(0)),
-        })
+        }))
     }
 
     pub fn add_status_listener(&self, listener: StatusCallback) {
@@ -120,7 +124,11 @@ impl AgentController {
         self.link_flow.pending_link_token().is_some()
     }
 
-    fn on_status_changed(self: &Arc<Self>, text: String) {
+    /// Plain `&self` (not `self: &Arc<Self>`) on purpose - it used to require
+    /// an `Arc<Self>` for no reason the body actually needed, which is why a
+    /// byte-for-byte duplicate (`on_status_changed_local`) existed just to be
+    /// callable from methods that only had `&self`. Collapsed to one.
+    fn on_status_changed(&self, text: String) {
         *self.status.lock() = text.clone();
         for listener in self.status_listeners.lock().iter() {
             listener(text.clone());
@@ -134,47 +142,59 @@ impl AgentController {
                 .lock()
                 .set_device_credential(&stored.device_id, &stored.agent_secret);
         }
-        if stored.id_token.len() >= MIN_TOKEN_LENGTH {
+        if stored.id_token.len() >= MIN_TOKEN_LENGTH && looks_like_jwt(&stored.id_token) {
             self.apply_tokens(stored.id_token, stored.refresh_token);
         }
     }
 
+    /// Re-locks `self.api` per call rather than holding one lock scope across
+    /// all of `refresh_token_if_needed`/`ensure_device_registered`/
+    /// `register_agent` - each a blocking HTTP call. `ActivityTracker::tick()`
+    /// needs this same lock every SESSION_POLL_SEC, so holding it across all
+    /// three used to stall the tracker thread for their combined worst-case
+    /// timeout on every sign-in/relink. Ordering and behavior are unchanged,
+    /// only the lock scope is narrower.
     fn apply_tokens(self: &Arc<Self>, id_token: String, refresh_token: String) {
-        {
-            let mut api = self.api.lock();
-            api.set_tokens(&id_token, &refresh_token);
-            // Claim a device credential if we don't already hold one. This is
-            // what covers the browser's loopback handoff (which never hits
-            // link/exchange) and agents linked before this existed - they
-            // pick one up on their next launch instead of staying stranded.
-            if !api.has_device_credential() {
-                api.refresh_token_if_needed();
-                api.ensure_device_registered();
-            }
-            // Captured during link exchange or the call above; read it back
-            // off the client rather than threading it through every callback.
-            let device_id = api.device_id.clone().unwrap_or_default();
-            let agent_secret = api.agent_secret.clone().unwrap_or_default();
-            self.store.save(&StoredCredentials {
-                id_token: id_token.clone(),
-                refresh_token: refresh_token.clone(),
+        self.api.lock().set_tokens(&id_token, &refresh_token);
+
+        // Claim a device credential if we don't already hold one. This is
+        // what covers the browser's loopback handoff (which never hits
+        // link/exchange) and agents linked before this existed - they pick
+        // one up on their next launch instead of staying stranded.
+        if !self.api.lock().has_device_credential() {
+            self.api.lock().refresh_token_if_needed();
+            self.api.lock().ensure_device_registered();
+        }
+
+        // Captured during link exchange or the calls above; read it back off
+        // the client rather than threading it through every callback.
+        let (device_id, agent_secret) = {
+            let api = self.api.lock();
+            (
+                api.device_id.clone().unwrap_or_default(),
+                api.agent_secret.clone().unwrap_or_default(),
+            )
+        };
+        self.store.save(&StoredCredentials {
+            id_token: id_token.clone(),
+            refresh_token: refresh_token.clone(),
+            device_id: device_id.clone(),
+            agent_secret: agent_secret.clone(),
+        });
+        let store_path = self.settings.store_path.clone();
+        self.api.lock().on_tokens_refreshed = Some(Box::new(move |id, refresh| {
+            // Preserve the device credential across token rotations - a
+            // plain overwrite here would silently drop it and take in-app
+            // recovery with it.
+            TokenStore::new(store_path.clone()).save(&StoredCredentials {
+                id_token: id,
+                refresh_token: refresh,
                 device_id: device_id.clone(),
                 agent_secret: agent_secret.clone(),
             });
-            let store_path = self.settings.store_path.clone();
-            api.on_tokens_refreshed = Some(Box::new(move |id, refresh| {
-                // Preserve the device credential across token rotations - a
-                // plain overwrite here would silently drop it and take in-app
-                // recovery with it.
-                TokenStore::new(store_path.clone()).save(&StoredCredentials {
-                    id_token: id,
-                    refresh_token: refresh,
-                    device_id: device_id.clone(),
-                    agent_secret: agent_secret.clone(),
-                });
-            }));
-            api.register_agent();
-        }
+        }));
+        self.api.lock().register_agent();
+
         self.connection_failures.store(0, Ordering::SeqCst);
         self.on_status_changed("Signed in — waiting for timer".into());
         self.start_tracker();
@@ -199,12 +219,23 @@ impl AgentController {
         *self.tracker.lock() = Some(tracker);
     }
 
-    pub fn open_sign_in(self: &Arc<Self>) -> SignInResult {
+    /// `hint` is an extra `key=value` query pair forwarded to the browser URL
+    /// (see `AgentLinkFlow::start`) - e.g. `"provider=google"` for a social
+    /// button, `"mode=signup"`/`"mode=forgot-password"` for account creation
+    /// and password reset. `None` is today's plain "Link account" behavior.
+    pub fn open_sign_in(self: &Arc<Self>, hint: Option<&str>) -> SignInResult {
         if let Some(pending_token) = self.link_flow.pending_link_token() {
             self.resume_link_poll();
             let encoded = urlencoding::encode(&pending_token);
-            let sign_in_url = format!("{}/?link={encoded}", self.settings.web_url);
-            open_url_in_launcher_or_browser(&sign_in_url, Some(&pending_token));
+            let mut sign_in_url = format!("{}/?link={encoded}", self.settings.web_url);
+            let valid_hint = hint.filter(|h| is_allowed_link_hint(h));
+            if let Some(h) = valid_hint {
+                sign_in_url.push('&');
+                sign_in_url.push_str(h);
+            } else if hint.is_some() {
+                log::warn!("Ignored unrecognized sign-in hint");
+            }
+            open_url_in_launcher_or_browser(&sign_in_url, Some(&pending_token), valid_hint);
             self.on_status_changed("Linking account...".into());
             return SignInResult {
                 success: true,
@@ -235,7 +266,7 @@ impl AgentController {
             controller_err.on_status_changed(msg);
         });
 
-        let ok = self.link_flow.start(on_tokens, Some(on_error));
+        let ok = self.link_flow.start(hint, on_tokens, Some(on_error));
         if ok {
             SignInResult {
                 success: true,
@@ -297,13 +328,13 @@ impl AgentController {
         let bootstrap = self.api.lock().session_bootstrap();
         match bootstrap {
             Ok(()) => {}
-            Err(Some(message)) => {
+            Err(crate::client::api::ApiError::Rejected(message)) => {
                 // The server rejected this account outright; holding tokens for
                 // it would leave the agent looking signed in and doing nothing.
                 self.sign_out();
                 return SignInResult::failed(&message);
             }
-            Err(None) => {
+            Err(_) => {
                 // Network problem, not a verdict. Keep the session - the normal
                 // connection-recovery path handles this.
                 log::warn!("Signed in, but could not confirm authorization yet");
@@ -314,6 +345,70 @@ impl AgentController {
         SignInResult {
             success: true,
             error: None,
+        }
+    }
+
+    /// In-app account creation, no browser round-trip. Mirrors the web
+    /// register form's flow: create the Firebase account, attach name/phone,
+    /// send a verification email, then leave it signed out - the new account
+    /// still has to verify its email and sign in normally, exactly like the
+    /// web form's "Account created ... verify your email, then sign in."
+    pub fn sign_up(
+        self: &Arc<Self>,
+        email: &str,
+        password: &str,
+        first_name: &str,
+        last_name: &str,
+        phone: &str,
+    ) -> SignInResult {
+        let email = email.trim();
+        let first_name = first_name.trim();
+        let last_name = last_name.trim();
+        let phone = phone.trim();
+        if email.is_empty() || password.is_empty() {
+            return SignInResult::failed("Enter your email and password.");
+        }
+        if first_name.is_empty() || last_name.is_empty() {
+            return SignInResult::failed("First and last name are required.");
+        }
+        if phone.is_empty() {
+            return SignInResult::failed("Phone number is required.");
+        }
+
+        let created = self.api.lock().sign_up_with_password(email, password);
+        let (id_token, _refresh) = match created {
+            Ok(pair) => pair,
+            Err(err) => return SignInResult::failed(&err.message()),
+        };
+
+        if let Err(msg) = self.api.lock().patch_profile(&id_token, first_name, last_name, phone) {
+            // Not fatal - the account exists either way, and the profile page
+            // can fill these in later. Only the sign-up itself must succeed.
+            log::warn!("Could not save profile details after sign-up: {msg}");
+        }
+        self.api.lock().send_email_verification(&id_token);
+
+        SignInResult {
+            success: true,
+            error: None,
+        }
+    }
+
+    /// In-app password reset request - sends the email directly through
+    /// Identity Toolkit, no browser link needed. Enumeration-safe: `success`
+    /// here means the request was accepted, not that the email has an
+    /// account (see `FirebaseTokenService::send_password_reset_email`).
+    pub fn request_password_reset(self: &Arc<Self>, email: &str) -> SignInResult {
+        let email = email.trim();
+        if email.is_empty() {
+            return SignInResult::failed("Enter your email address.");
+        }
+        match self.api.lock().send_password_reset(email) {
+            Ok(()) => SignInResult {
+                success: true,
+                error: None,
+            },
+            Err(msg) => SignInResult::failed(&msg),
         }
     }
 
@@ -350,7 +445,7 @@ impl AgentController {
     }
 
     pub fn open_web_app(&self) {
-        open_url_in_launcher_or_browser(&self.settings.web_url, None);
+        open_url_in_launcher_or_browser(&self.settings.web_url, None, None);
     }
 
     pub fn get_app_settings(&self) -> AppSettingsView {
@@ -486,7 +581,10 @@ impl AgentController {
         //    machine's own credential rather than a browser round trip.
         match self.api.lock().reauth_with_device() {
             Ok(()) => {}
-            Err(terminal) => {
+            Err(err) => {
+                // `is_rejected()` is the same terminal/retryable split the old
+                // `Result<(), bool>` contract carried as `Err(true)`/`Err(false)`.
+                let terminal = err.is_rejected();
                 return ReconnectResult {
                     success: false,
                     needs_relink: terminal,
@@ -531,7 +629,7 @@ impl AgentController {
         if self.tracker.lock().is_none() {
             self.start_tracker();
         }
-        self.on_status_changed_local("Signed in — waiting for timer".into());
+        self.on_status_changed("Signed in — waiting for timer".into());
         ReconnectResult {
             success: true,
             needs_relink: false,
@@ -573,15 +671,53 @@ impl AgentController {
         if task_id.trim().is_empty() {
             return None;
         }
-        self.api.lock().fetch_task_time_tracking(task_id.trim())
+        self.api.lock().fetch_task_time_tracking(task_id.trim()).ok()
     }
 
     pub fn get_member_limits(&self) -> Option<crate::types::MemberLimits> {
-        self.api.lock().fetch_member_limits()
+        self.api.lock().fetch_member_limits().ok()
     }
 
     pub fn get_member_profile(&self) -> Option<crate::types::MemberProfile> {
-        self.api.lock().fetch_member_profile()
+        self.api.lock().fetch_member_profile().ok()
+    }
+
+    /// CF-2: tracking cannot start before the current disclosure notice has
+    /// been acknowledged. Fails CLOSED on a network problem or a malformed
+    /// response - the entire point of a consent gate is that "couldn't
+    /// check" must never be silently read as "consented". `Ok(None)` from
+    /// the fetch (nothing to disclose - e.g. no capability is enabled at
+    /// all) is not blocked here; CF-1's default-deny already means nothing
+    /// gets captured in that case.
+    fn blocked_by_monitoring_notice(&self) -> Option<String> {
+        match self.api.lock().fetch_monitoring_notice() {
+            Ok(Some(notice)) if notice.requires_acknowledgement => {
+                Some("Review the monitoring notice before starting the timer.".into())
+            }
+            Ok(_) => None,
+            Err(_) => {
+                Some("Could not verify the monitoring notice — check your connection and try again.".into())
+            }
+        }
+    }
+
+    /// CF-2: the current disclosure notice for the UI to show. `None` on any
+    /// failure (network, not signed in) - the UI treats that the same as
+    /// "nothing to show yet", not as "already acknowledged".
+    pub fn get_monitoring_notice(&self) -> Option<crate::types::MonitoringNoticeView> {
+        self.api.lock().fetch_monitoring_notice().ok().flatten()
+    }
+
+    /// CF-2: records that the notice was shown AND accepted - the two-step
+    /// disclosure-then-consent model from CF-0.2, collapsed into one command
+    /// because the UI only calls this once the user has actually clicked
+    /// through the notice (there's no "shown but not yet acted on" state in
+    /// this UI to represent separately). Returns false if either write
+    /// failed, so the caller knows not to let the notice dismiss.
+    pub fn acknowledge_monitoring_notice(&self, notice_version: &str) -> bool {
+        let disclosed = self.api.lock().post_monitoring_disclosure(notice_version).is_ok();
+        let consented = self.api.lock().post_monitoring_consent(notice_version).is_ok();
+        disclosed && consented
     }
 
     pub fn start_task_session(&self, task_id: &str) -> ActionResult {
@@ -592,10 +728,13 @@ impl AgentController {
                 session: None,
             };
         }
+        if let Some(error) = self.blocked_by_monitoring_notice() {
+            return ActionResult { success: false, error: Some(error), session: None };
+        }
         // Seed with the task's known cumulative totals instead of 0s so a
         // stop/resume (or a session reused across tasks) doesn't reset the
         // clock the enforcement check on the other end evaluates against.
-        let tracking = self.api.lock().fetch_task_time_tracking(task_id.trim());
+        let tracking = self.api.lock().fetch_task_time_tracking(task_id.trim()).ok();
         let active_baseline = tracking.as_ref().map(|t| t.active_seconds).unwrap_or(0);
         let idle_baseline = tracking.as_ref().map(|t| t.idle_seconds).unwrap_or(0);
         match self.api.lock().post_session_action(
@@ -606,7 +745,7 @@ impl AgentController {
             idle_baseline,
         ) {
             Ok(session) => {
-                self.on_status_changed_local("Task session active".into());
+                self.on_status_changed("Task session active".into());
                 ActionResult {
                     success: true,
                     error: None,
@@ -634,13 +773,16 @@ impl AgentController {
                 session: None,
             };
         }
+        if let Some(error) = self.blocked_by_monitoring_notice() {
+            return ActionResult { success: false, error: Some(error), session: None };
+        }
         match self
             .api
             .lock()
             .post_session_action("start", None, Some(project_id), 0, 0)
         {
             Ok(session) => {
-                self.on_status_changed_local("Task session active".into());
+                self.on_status_changed("Task session active".into());
                 ActionResult {
                     success: true,
                     error: None,
@@ -668,7 +810,7 @@ impl AgentController {
             .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds)
         {
             Ok(session) => {
-                self.on_status_changed_local("Signed in — waiting for timer".into());
+                self.on_status_changed("Signed in — waiting for timer".into());
                 ActionResult {
                     success: true,
                     error: None,
@@ -680,13 +822,6 @@ impl AgentController {
                 error: Some(error),
                 session: None,
             },
-        }
-    }
-
-    fn on_status_changed_local(&self, text: String) {
-        *self.status.lock() = text.clone();
-        for listener in self.status_listeners.lock().iter() {
-            listener(text.clone());
         }
     }
 
@@ -704,7 +839,7 @@ impl AgentController {
     /// thrown over the top of it.
     fn has_stored_identity(&self) -> bool {
         let stored = self.store.load();
-        stored.id_token.len() >= MIN_TOKEN_LENGTH
+        (stored.id_token.len() >= MIN_TOKEN_LENGTH && looks_like_jwt(&stored.id_token))
             || (!stored.device_id.is_empty() && !stored.agent_secret.is_empty())
     }
 
@@ -719,9 +854,21 @@ impl AgentController {
             .spawn(move || {
                 thread::sleep(Duration::from_secs(2));
                 if !controller.has_stored_identity() && !controller.is_link_pending() {
-                    let _ = controller.open_sign_in();
+                    let _ = controller.open_sign_in(None);
                 }
             })
             .ok();
     }
+}
+
+/// Cheap shape check alongside MIN_TOKEN_LENGTH before treating a stored
+/// value as a plausible id token - three non-empty dot-separated segments,
+/// the same structural shape every JWT has. Not a signature check (the
+/// server already verifies that on every request); this only screens out
+/// obviously-wrong stored values (garbage, a truncated write, a non-token
+/// string that happened to clear the length bar) before bothering to use
+/// them.
+fn looks_like_jwt(token: &str) -> bool {
+    let parts: Vec<&str> = token.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty())
 }

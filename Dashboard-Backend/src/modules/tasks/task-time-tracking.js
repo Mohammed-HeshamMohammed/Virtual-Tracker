@@ -181,17 +181,22 @@ export async function syncTaskTimeTracking(db, {
   // existing value, matching the old create-vs-update branch's "set
   // started_at only if it wasn't already set" behavior without needing to
   // read-before-write here.
-  const trackingRow = await upsertTrackingRowPg({
-    task_id: taskId,
-    member_id: userId,
-    project_id: projectId,
-    active_seconds: active,
-    idle_seconds: idle,
-    progress_percentage: progressPercentFor(active, estimatedSeconds) ?? 0,
-    last_started_at: action === "start" || action === "resume" ? now : null,
-    last_activity_at: now,
-    session_id: sessionId ?? null,
-  });
+  const trackingRow = await upsertTrackingRowPg(
+    {
+      task_id: taskId,
+      member_id: userId,
+      project_id: projectId,
+      active_seconds: active,
+      idle_seconds: idle,
+      progress_percentage: progressPercentFor(active, estimatedSeconds) ?? 0,
+      last_started_at: action === "start" || action === "resume" ? now : null,
+      last_activity_at: now,
+      session_id: sessionId ?? null,
+    },
+    // Only "stop" may lower active_seconds - the desktop agent's
+    // idle-escalation rewind (TC-4).
+    { allowDecrease: action === "stop" },
+  );
 
   if (action === "start" || action === "resume") {
     if (assignmentStatus === "todo" || assignmentStatus === "blocked") {

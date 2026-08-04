@@ -2,18 +2,16 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use super::ApiClient;
+use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 
 impl ApiClient {
-    /// `Ok(None)` = reachable, genuinely no active session. `Err(())` = could not
-    /// reach the backend at all — the caller should keep tracking under the last
-    /// known session rather than treat this the same as "no session".
-    pub fn fetch_session(&mut self) -> Result<Option<Value>, ()> {
-        if !self.refresh_token_if_needed() {
-            return Err(());
-        }
-        let auth = self.auth_headers().ok_or(())?;
+    /// `Ok(None)` = reachable, genuinely no active session. `Err(_)` = could
+    /// not reach the backend, or reached it but got a bad response — the
+    /// caller should keep tracking under the last known session rather than
+    /// treat this the same as "no session".
+    pub fn fetch_session(&mut self) -> Result<Option<Value>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/activity/session", self.api_url);
         let res = self
             .client
@@ -21,11 +19,11 @@ impl ApiClient {
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-            .map_err(|_| ())?;
+            .map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
-            return Err(());
+            return Err(ApiError::Network);
         }
-        let body: Value = res.json().map_err(|_| ())?;
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
         Ok(body.get("data").cloned())
     }
 
@@ -37,11 +35,8 @@ impl ApiClient {
         active_seconds: u64,
         idle_seconds: u64,
     ) -> Result<crate::types::SessionInfo, String> {
-        if !self.refresh_token_if_needed() {
-            return Err("Not signed in".into());
-        }
         let auth = self
-            .auth_headers()
+            .authorized()
             .ok_or_else(|| "Not signed in".to_string())?;
         let url = format!("{}/api/activity/session", self.api_url);
         let mut payload = json!({

@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 
 use crate::client::api::ApiClient;
-use crate::util::open_url_in_launcher_or_browser;
+use crate::util::{is_allowed_link_hint, open_url_in_launcher_or_browser};
 
 pub type OnTokens = Arc<dyn Fn(String, String) + Send + Sync>;
 pub type OnError = Arc<dyn Fn(String) + Send + Sync>;
@@ -38,6 +38,29 @@ impl AgentLinkFlow {
         }
     }
 
+    /// Suggestion #14b: test-only constructor that seeds a pending link
+    /// session directly instead of going through `start()`, which would
+    /// otherwise make a real network call and open a real browser window
+    /// (`util::open_url_in_launcher_or_browser`) - neither acceptable side
+    /// effect belongs in a unit test. Lets `auth::server`'s route tests
+    /// exercise `apply_web_credentials`'s matching-token path deterministically.
+    #[cfg(test)]
+    pub fn new_with_pending(
+        api: Arc<Mutex<ApiClient>>,
+        web_url: String,
+        link_token: &str,
+        agent_secret: &str,
+        on_tokens: OnTokens,
+    ) -> Self {
+        let flow = Self::new(api, web_url);
+        *flow.pending.lock() = Some(PendingSession {
+            link_token: link_token.to_string(),
+            agent_secret: agent_secret.to_string(),
+        });
+        *flow.on_tokens.lock() = Some(on_tokens);
+        flow
+    }
+
     pub fn pending_link_token(&self) -> Option<String> {
         self.pending.lock().as_ref().map(|p| p.link_token.clone())
     }
@@ -54,7 +77,13 @@ impl AgentLinkFlow {
         true
     }
 
-    pub fn start(&self, on_tokens: OnTokens, on_error: Option<OnError>) -> bool {
+    /// `hint` is an extra `key=value` query pair appended to the browser URL -
+    /// e.g. `"provider=google"` or `"mode=signup"` - so the web login page can
+    /// jump straight to the right pane/provider instead of always landing on
+    /// plain email/password. Purely cosmetic on the completion mechanism: the
+    /// link token is what ties the browser tab back to this device regardless
+    /// of which hint (or none) sent the user there.
+    pub fn start(&self, hint: Option<&str>, on_tokens: OnTokens, on_error: Option<OnError>) -> bool {
         let generation = self.poll_generation.fetch_add(1, Ordering::SeqCst) + 1;
         *self.on_tokens.lock() = Some(on_tokens);
         *self.on_error.lock() = on_error;
@@ -77,9 +106,19 @@ impl AgentLinkFlow {
         };
         *self.pending.lock() = Some(pending.clone());
         let encoded = urlencoding::encode(&link_token);
-        let sign_in_url = format!("{}/?link={encoded}", self.web_url);
-        open_url_in_launcher_or_browser(&sign_in_url, Some(&link_token));
-        log::info!("Opened sign-in page: {sign_in_url}");
+        let mut sign_in_url = format!("{}/?link={encoded}", self.web_url);
+        let valid_hint = hint.filter(|h| is_allowed_link_hint(h));
+        if let Some(h) = valid_hint {
+            sign_in_url.push('&');
+            sign_in_url.push_str(h);
+        } else if hint.is_some() {
+            log::warn!("Ignored unrecognized sign-in hint");
+        }
+        open_url_in_launcher_or_browser(&sign_in_url, Some(&link_token), valid_hint);
+        // Truncated, not the full URL - it carries the live link token in
+        // its query string, and this log is user-openable from Settings.
+        let preview = link_token.chars().take(8).collect::<String>();
+        log::info!("Opened sign-in page for session {preview}…");
         self.spawn_poll(pending, generation);
         true
     }

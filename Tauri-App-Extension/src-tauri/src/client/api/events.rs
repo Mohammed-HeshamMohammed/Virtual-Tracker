@@ -11,12 +11,8 @@ impl ApiClient {
         if self.id_token.is_none() || events.is_empty() {
             return false;
         }
-        if !self.refresh_token_if_needed() {
+        let Some(auth) = self.authorized() else {
             return false;
-        }
-        let auth = match self.auth_headers() {
-            Some(a) => a,
-            None => return false,
         };
         let url = format!("{}/api/activity/events", self.api_url);
         let payload = json!({
@@ -69,12 +65,8 @@ impl ApiClient {
     }
 
     pub fn register_agent(&mut self) -> bool {
-        if !self.refresh_token_if_needed() {
+        let Some(auth) = self.authorized() else {
             return false;
-        }
-        let auth = match self.auth_headers() {
-            Some(a) => a,
-            None => return false,
         };
         let url = format!("{}/api/activity/agent/register", self.api_url);
         self.client

@@ -1,5 +1,22 @@
 use serde::{Deserialize, Serialize};
 
+/// ACT-4: the raw counters `ActivityMeter::score()` itself is built from,
+/// sent alongside the pre-computed `activity_level` so the **server** can
+/// recompute or re-weight a score later without an agent release - only
+/// `activity_level` used to cross the wire, which left the server with
+/// nothing to recompute from. `distinct_key_count` (not `distinct_keys`) and
+/// `keystroke_count` (not raw text) deliberately name these as counts, not
+/// content - see `activity_event_carries_no_keystroke_content_field` below.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivitySignal {
+    pub keystroke_count: u64,
+    pub distinct_key_count: u32,
+    pub mouse_distance_px: u64,
+    pub injected_event_count: u64,
+    pub active_seconds_in_window: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ActivityEvent {
@@ -13,6 +30,8 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "activityLevel")]
         activity_level: u32,
+        #[serde(flatten)]
+        signal: ActivitySignal,
     },
     #[serde(rename = "app")]
     App {
@@ -22,6 +41,8 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "durationSeconds")]
         duration_seconds: u64,
+        #[serde(flatten)]
+        signal: ActivitySignal,
     },
     #[serde(rename = "url")]
     Url {
@@ -129,6 +150,17 @@ pub struct SessionInfo {
     pub idle_seconds: u64,
 }
 
+/// CF-2: the disclosure notice as shown to the UI, composed server-side from
+/// the live monitoring_policy row - the agent never hardcodes or composes
+/// this text itself. `requires_acknowledgement` is what gates tracking start.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct MonitoringNoticeView {
+    pub version: String,
+    pub text: String,
+    pub requires_acknowledgement: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionResult {
     pub success: bool,
@@ -222,4 +254,32 @@ pub struct MemberProfile {
     pub phone: String,
     #[serde(default)]
     pub teams: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    // Guards CF-0.3: "No keystroke *content* logging... it must never
+    // capture the actual characters typed (that's keylogging, a
+    // categorically higher legal risk)." ActivityEvent is the wire format
+    // for everything the agent sends the backend - if a future change ever
+    // adds a field meant to carry typed text, it has to touch this enum, and
+    // this test is what catches it before it ships. Source-scan rather than
+    // reflection since Rust has no runtime field enumeration; bounded to the
+    // enum's own text so an unrelated field elsewhere named e.g. "content"
+    // (there isn't one, but hypothetically) wouldn't false-positive this.
+    #[test]
+    fn activity_event_carries_no_keystroke_content_field() {
+        let source = include_str!("types.rs");
+        let start = source.find("pub enum ActivityEvent").expect("ActivityEvent enum must exist");
+        // "\n}" rather than "\n}\n" so this doesn't depend on LF vs CRLF line endings.
+        let end = start + source[start..].find("\n}").expect("ActivityEvent enum must close") + 2;
+        let enum_source = &source[start..end];
+
+        for forbidden in ["keys", "keystrokes", "text", "characters", "content", "typed"] {
+            assert!(
+                !enum_source.contains(&format!("{forbidden}:")),
+                "ActivityEvent must never carry a '{forbidden}' field - that's keylogging, not activity metering"
+            );
+        }
+    }
 }

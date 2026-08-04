@@ -18,7 +18,14 @@ codegen-units = 1
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+# tray-icon stays off on Linux: RUSTSEC-2024-0429 (unsound glib::VariantStrIter,
+# unpatched upstream — fix landed only in glib >=0.20, which nothing in this
+# stack has moved to yet) is unavoidable on Linux regardless, since wry's own
+# webkit2gtk backend pulls the same vulnerable glib line — see release.yml for
+# the accepted-risk decision. Disabling tray-icon doesn't remove the advisory,
+# it just avoids adding one more call site (libappindicator's GVariant usage)
+# into it, for zero functional loss on the other two platforms.
+tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
@@ -37,6 +44,15 @@ dirs = "6"
 log = "0.4"
 env_logger = "0.11"
 rand = "0.8"
+# MAC-1/F1: one cross-platform credential store (Windows Credential Manager,
+# macOS Keychain, *nix Secret Service) behind a single Entry API. The `v1`
+# feature is what unlocks that API; it declares the platform-store crates as
+# its own target-gated optional deps, so only the store for the platform
+# actually being built pulls in and links - no per-target split needed here.
+keyring = { version = "4.1.6", default-features = false, features = ["v1"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -47,4 +63,6 @@ windows = { version = "0.58", features = [
   "Win32_System_Threading",
   "Win32_System_ProcessStatus",
   "Win32_Security_Cryptography",
+  # Locked/secure-desktop check before capturing a screenshot (screen.rs).
+  "Win32_System_StationsAndDesktops",
 ] }

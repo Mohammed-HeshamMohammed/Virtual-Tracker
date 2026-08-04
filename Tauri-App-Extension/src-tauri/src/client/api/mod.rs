@@ -1,16 +1,64 @@
 //! Backend HTTP client, split by domain: this file owns the struct plus auth/token
 //! plumbing shared by every call; each submodule owns one group of endpoints.
+mod classification;
+mod compliance;
 mod events;
 mod link;
+mod scoring;
 mod session;
 mod work;
 
+use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
 
-use crate::client::firebase::{FirebaseTokenService, PasswordSignInError, RefreshOutcome};
+use crate::client::firebase::{FirebaseTokenService, PasswordSignInError, RefreshOutcome, SignUpError};
 use crate::constants::{HTTP_TIMEOUT_SEC, TOKEN_REFRESH_BUFFER_MS};
+
+/// Suggestion #13: one shared error shape for `ApiClient` methods, replacing
+/// the different one-off shapes (`Result<_, ()>`, `Result<_, bool>`,
+/// `Result<(), Option<String>>`, bare `Option<T>` swallowing failure
+/// entirely) that grew independently as each endpoint was written. Every
+/// variant here matches a distinction the call sites already had to make by
+/// hand - see the doc comments each converted method carried before this
+/// existed for the exact reasoning:
+///
+/// - `Network`: the backend could not be reached at all (transport/timeout
+///   failure), or was reached but answered with a server error - neither is
+///   a verdict on the user/account, so callers must not treat it as one.
+/// - `Unauthorized`: no usable credential to send - not signed in, or the id
+///   token expired with no refresh token stored to renew it.
+/// - `Rejected(message)`: the backend was reached and explicitly refused the
+///   request, with its own wording where it provided one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApiError {
+    Network,
+    Unauthorized,
+    Rejected(String),
+}
+
+impl ApiError {
+    /// True only for a real server-side refusal - mirrors the old
+    /// `Result<(), bool>` contract on `reauth_with_device`, where `Err(true)`
+    /// meant "this device/account is finished, a browser re-link is the only
+    /// way forward" as opposed to a retryable network hiccup.
+    pub fn is_rejected(&self) -> bool {
+        matches!(self, ApiError::Rejected(_))
+    }
+}
+
+impl fmt::Display for ApiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ApiError::Network => {
+                write!(f, "Could not reach the server. Check your connection and try again.")
+            }
+            ApiError::Unauthorized => write!(f, "Not signed in"),
+            ApiError::Rejected(message) => write!(f, "{message}"),
+        }
+    }
+}
 
 pub struct ApiClient {
     api_url: String,
@@ -34,19 +82,22 @@ impl ApiClient {
     /// dashboard API answers every `/api/auth/*` authn route with 404
     /// "handled by Auth-Backend", so pointing token refresh at it left the
     /// agent with no Firebase API key and therefore no way to renew a session.
-    pub fn new(api_url: String, auth_url: String) -> Self {
+    ///
+    /// `Err` (instead of panicking) on a broken local HTTP/TLS environment -
+    /// this runs in `AgentController::new`, before any window exists, and
+    /// release builds hide the console, so a panic here used to crash the
+    /// app with no visible error at all. The caller is responsible for
+    /// surfacing this to the user.
+    pub fn new(api_url: String, auth_url: String) -> Result<Self, String> {
         let client = Client::builder()
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .build()
-            .unwrap_or_else(|err| {
-                // Unrecoverable - the app can't function without an HTTP client anyway.
-                // Log the real reqwest error first so it lands in the log file the user
-                // can already reach from Settings, instead of a bare panic message.
+            .map_err(|err| {
                 log::error!("Failed to build HTTP client: {err}");
-                panic!("Failed to build HTTP client: {err}");
-            });
+                format!("Failed to build HTTP client: {err}")
+            })?;
         let firebase = FirebaseTokenService::new(auth_url, client.clone());
-        Self {
+        Ok(Self {
             api_url,
             client,
             firebase,
@@ -56,7 +107,7 @@ impl ApiClient {
             agent_secret: None,
             last_refresh: RefreshOutcome::Ok,
             on_tokens_refreshed: None,
-        }
+        })
     }
 
     pub fn set_device_credential(&mut self, device_id: &str, agent_secret: &str) {
@@ -87,6 +138,20 @@ impl ApiClient {
 
     fn auth_headers(&self) -> Option<String> {
         self.id_token.as_ref().map(|t| format!("Bearer {t}"))
+    }
+
+    /// Shared prologue nearly every authenticated endpoint needs: refresh the
+    /// id token if it's close to expiry, then hand back the `Authorization`
+    /// header value to send with the request. `None` covers both "not signed
+    /// in" and "refresh failed" - exactly what every endpoint already did one
+    /// copy-pasted `if !refresh_token_if_needed() { ... } let auth = ...` at a
+    /// time. Each endpoint keeps its own error type/response handling from
+    /// here on; this only removes the repeated setup before it.
+    fn authorized(&mut self) -> Option<String> {
+        if !self.refresh_token_if_needed() {
+            return None;
+        }
+        self.auth_headers()
     }
 
     pub fn refresh_token_if_needed(&mut self) -> bool {
@@ -139,13 +204,15 @@ impl ApiClient {
     /// The path that keeps recovery inside the app when the borrowed Firebase
     /// refresh token is permanently dead.
     ///
-    /// `Err(true)` means the device itself is no longer linked (the backend
-    /// revoked it, or the account lost access) - only then must the user go
-    /// through a browser link again.
-    pub fn reauth_with_device(&mut self) -> Result<(), bool> {
+    /// `Err(ApiError::Rejected(_))` means the device itself is no longer
+    /// linked (the backend revoked it, or the account lost access) - only
+    /// then must the user go through a browser link again (see
+    /// `ApiError::is_rejected`, which callers use in place of the old
+    /// `Result<(), bool>`'s `Err(true)`).
+    pub fn reauth_with_device(&mut self) -> Result<(), ApiError> {
         let (Some(device_id), Some(secret)) = (self.device_id.clone(), self.agent_secret.clone())
         else {
-            return Err(true);
+            return Err(ApiError::Rejected("No device credential stored".into()));
         };
         let url = format!("{}/api/activity/agent/reauth", self.api_url);
         let res = self
@@ -162,7 +229,7 @@ impl ApiClient {
             // push the user toward a re-link over a dropped connection.
             Err(err) => {
                 log::warn!("Device reauth network error: {err}");
-                return Err(false);
+                return Err(ApiError::Network);
             }
         };
 
@@ -171,14 +238,18 @@ impl ApiClient {
             // 401/403 = this device or account is finished. 5xx = try later.
             let terminal = status.as_u16() == 401 || status.as_u16() == 403;
             log::warn!("Device reauth failed ({})", status.as_u16());
-            return Err(terminal);
+            return Err(if terminal {
+                ApiError::Rejected(format!("Device reauth failed ({})", status.as_u16()))
+            } else {
+                ApiError::Network
+            });
         }
 
-        let body: serde_json::Value = res.json().map_err(|_| false)?;
+        let body: serde_json::Value = res.json().map_err(|_| ApiError::Network)?;
         let custom_token = body
             .pointer("/data/customToken")
             .and_then(|v| v.as_str())
-            .ok_or(false)?
+            .ok_or(ApiError::Network)?
             .to_string();
 
         match self.firebase.sign_in_with_custom_token(&custom_token) {
@@ -186,7 +257,7 @@ impl ApiClient {
                 self.apply_fresh_tokens(id, refresh);
                 Ok(())
             }
-            None => Err(false),
+            None => Err(ApiError::Network),
         }
     }
 
@@ -205,6 +276,66 @@ impl ApiClient {
         self.firebase.sign_in_methods(email)
     }
 
+    /// In-app account creation. Leaves the fresh tokens on the returned pair
+    /// only - unlike `sign_in_with_password`, the caller does not persist
+    /// them onto this client (the new account still has to verify its email
+    /// and sign in normally, matching the web form).
+    pub fn sign_up_with_password(
+        &mut self,
+        email: &str,
+        password: &str,
+    ) -> Result<(String, String), SignUpError> {
+        self.firebase.sign_up_with_password(email, password)
+    }
+
+    pub fn send_email_verification(&mut self, id_token: &str) {
+        self.firebase.send_email_verification(id_token)
+    }
+
+    /// In-app password reset request - enumeration-safe, see
+    /// `FirebaseTokenService::send_password_reset_email`.
+    pub fn send_password_reset(&mut self, email: &str) -> Result<(), String> {
+        self.firebase.send_password_reset_email(email)
+    }
+
+    /// Attaches first/last name + phone to a just-created account, using the
+    /// fresh sign-up token directly rather than this client's stored session -
+    /// there isn't one yet, since sign-up deliberately doesn't sign the agent
+    /// in (see `sign_up_with_password`).
+    pub fn patch_profile(
+        &self,
+        id_token: &str,
+        first_name: &str,
+        last_name: &str,
+        phone: &str,
+    ) -> Result<(), String> {
+        let url = format!("{}/api/auth/profile", self.api_url);
+        let res = self
+            .client
+            .post(url)
+            .header("Authorization", format!("Bearer {id_token}"))
+            .json(&serde_json::json!({
+                "firstName": first_name,
+                "lastName": last_name,
+                "phone": phone,
+            }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|err| {
+                log::warn!("Profile patch network error: {err}");
+                "Could not reach the server.".to_string()
+            })?;
+        if res.status().is_success() {
+            return Ok(());
+        }
+        let body: serde_json::Value = res.json().unwrap_or(serde_json::Value::Null);
+        Err(body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Could not save your name and phone number.")
+            .to_string())
+    }
+
     /// The same authorization gate a browser session passes
     /// (`POST /api/auth/session-bootstrap`): it creates or aligns the member
     /// record and refuses disabled, banned, unverified or must-change-password
@@ -212,12 +343,12 @@ impl ApiClient {
     /// accepting a user the dashboard would reject, and what keeps a freshly
     /// registered account from ending up with tokens but no member row.
     ///
-    /// `Err(Some(msg))` is a real refusal with the server's own wording;
-    /// `Err(None)` is a network problem, which must not be treated as a
-    /// rejection.
-    pub fn session_bootstrap(&mut self) -> Result<(), Option<String>> {
+    /// `Err(ApiError::Rejected(msg))` is a real refusal with the server's own
+    /// wording; `Err(ApiError::Network)` is a network problem, which must not
+    /// be treated as a rejection.
+    pub fn session_bootstrap(&mut self) -> Result<(), ApiError> {
         let Some(auth) = self.auth_headers() else {
-            return Err(Some("Not signed in".into()));
+            return Err(ApiError::Rejected("Not signed in".into()));
         };
         let url = format!("{}/api/auth/session-bootstrap", self.api_url);
         let res = self
@@ -232,7 +363,7 @@ impl ApiClient {
             Ok(r) => r,
             Err(err) => {
                 log::warn!("Session bootstrap network error: {err}");
-                return Err(None);
+                return Err(ApiError::Network);
             }
         };
         let status = res.status();
@@ -242,7 +373,7 @@ impl ApiClient {
         // 5xx is the platform having a bad moment, not a verdict on this user.
         if status.is_server_error() {
             log::warn!("Session bootstrap unavailable ({})", status.as_u16());
-            return Err(None);
+            return Err(ApiError::Network);
         }
         let body: serde_json::Value = res.json().unwrap_or(serde_json::Value::Null);
         let message = body
@@ -251,7 +382,7 @@ impl ApiClient {
             .unwrap_or("This account cannot use the desktop agent yet.")
             .to_string();
         log::warn!("Session bootstrap refused ({})", status.as_u16());
-        Err(Some(message))
+        Err(ApiError::Rejected(message))
     }
 
     pub fn health_ok(&self) -> bool {
@@ -262,5 +393,80 @@ impl ApiClient {
             .send()
             .map(|r| r.status().is_success())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+
+    fn authed_client(api_url: String) -> ApiClient {
+        let mut api = ApiClient::new(api_url, "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        // A not-yet-expired token means `authorized()`'s refresh check passes
+        // without ever reaching the (deliberately unreachable) auth_url above.
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        api
+    }
+
+    // Suggestion #14c: the shared `authorized()` prologue (added for
+    // Suggestion #10) is what every migrated method now goes through - these
+    // guard that it still does its one job (attach the bearer header) and
+    // that callers can still tell "never reached the server" apart from "the
+    // server reached and explicitly said no", which is the whole point of
+    // introducing `ApiError` for Suggestion #13.
+
+    #[test]
+    fn authorized_prologue_attaches_the_bearer_token_as_a_header() {
+        let url = fake_server(|request| {
+            let has_bearer = request.headers().iter().any(|h| {
+                h.field.equiv("Authorization") && h.value.as_str().starts_with("Bearer header.")
+            });
+            assert!(has_bearer, "request reached the server without an Authorization header");
+            (200, r#"{"data": null}"#.to_string())
+        });
+        let mut api = authed_client(url);
+        // fetch_session is enough to exercise the prologue; its own parsing
+        // of the response body isn't what this test is about.
+        let _ = api.fetch_session();
+    }
+
+    #[test]
+    fn distinguishes_a_network_failure_from_a_real_rejection() {
+        // Case 1: nothing is listening at all - a pure network failure. Bind
+        // then immediately drop the listener so the port is guaranteed free
+        // but nothing answers, giving a fast "connection refused" instead of
+        // a slow timeout.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        drop(listener);
+        let mut unreachable_api = authed_client(format!("http://{addr}"));
+        assert_eq!(unreachable_api.session_bootstrap(), Err(ApiError::Network));
+
+        // Case 2: the server is reached and explicitly refuses, with its own
+        // message - this must surface as `Rejected`, not `Network`, since a
+        // caller (sign_in_with_password) uses exactly this distinction to
+        // decide whether to sign the user back out.
+        let url = fake_server(|_request| {
+            (403, r#"{"error": "This account has been disabled."}"#.to_string())
+        });
+        let mut rejected_api = authed_client(url);
+        assert_eq!(
+            rejected_api.session_bootstrap(),
+            Err(ApiError::Rejected("This account has been disabled.".into()))
+        );
+    }
+
+    #[test]
+    fn reauth_terminal_failure_is_reported_as_rejected() {
+        // No device credential stored at all is the same "must re-link"
+        // outcome `Err(true)` used to encode under the old `Result<(), bool>`
+        // contract - `is_rejected()` is how callers read that today.
+        let mut api = authed_client("http://127.0.0.1:1".into());
+        let err = api.reauth_with_device().expect_err("no device credential stored");
+        assert!(err.is_rejected());
     }
 }

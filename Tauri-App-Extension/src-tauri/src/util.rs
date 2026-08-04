@@ -11,12 +11,20 @@ pub fn server_label(api_url: &str) -> String {
     format!("Ext-Server: {host}")
 }
 
-pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&str>) {
+pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&str>, hint: Option<&str>) {
     let mut opened_in_launcher = false;
     if let Ok(port) = env::var("VT_LAUNCHER_PORT") {
         let mut url = format!("http://localhost:{port}/open");
         if let Some(token) = link_token {
             url.push_str(&format!("?link={}", urlencoding::encode(token)));
+            // Same hint the direct-browser fallback below gets - without this
+            // the launcher path always lands on the plain link page, ignoring
+            // which button (Google/Apple/Create account/Forgot password) sent
+            // the user there.
+            if let Some(h) = hint {
+                url.push('&');
+                url.push_str(h);
+            }
         }
         log::info!("Requesting local launcher to open URL: {url}");
         if let Ok(res) = Client::new()
@@ -74,4 +82,17 @@ pub fn open_system_browser(url: &str) {
 
 pub fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
+}
+
+/// Fixed allow-list for the `hint` query param appended to the browser
+/// sign-in URL (see `agent::controller::open_sign_in` and
+/// `auth::link_flow::AgentLinkFlow::start`). Unlike the link token spliced in
+/// next to it, `hint` used to go into that URL unescaped/unvalidated - only
+/// these exact values are ever sent by the frontend (App.tsx's sign-in
+/// buttons), so anything else is dropped rather than trusted.
+pub fn is_allowed_link_hint(hint: &str) -> bool {
+    matches!(
+        hint,
+        "provider=google" | "provider=apple" | "mode=signup" | "mode=forgot-password"
+    )
 }

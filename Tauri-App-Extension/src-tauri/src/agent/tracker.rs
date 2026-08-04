@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -11,8 +11,9 @@ use crate::capture::window::get_foreground_window;
 use crate::client::api::ApiClient;
 use crate::config::Settings;
 use crate::constants::{
-    APP_LOG_INTERVAL_SEC, FIRST_SCREENSHOT_DELAY_SEC, IDLE_FLAG_ALERT_SEC, IDLE_FLAG_STOP_SEC,
-    IDLE_FLAG_WARN_SEC, IDLE_THRESHOLD_SEC, SESSION_POLL_SEC, SESSION_SYNC_INTERVAL_SEC,
+    ACTIVITY_SCORING_REFRESH_INTERVAL_SEC, APP_LOG_INTERVAL_SEC, DISPLAY_NAME_REFRESH_INTERVAL_SEC,
+    FIRST_SCREENSHOT_DELAY_SEC, IDLE_FLAG_ALERT_SEC, IDLE_FLAG_STOP_SEC, IDLE_FLAG_WARN_SEC,
+    IDLE_THRESHOLD_SEC, SESSION_POLL_SEC, SESSION_SYNC_INTERVAL_SEC,
 };
 use crate::queue::EventQueue;
 
@@ -39,6 +40,33 @@ pub struct ActivityTracker {
     /// Current idle escalation stage, readable by the UI.
     /// 0 = working, 1 = warned, 2 = alerted, 3 = stopped for idling.
     idle_stage: Arc<Mutex<u8>>,
+    /// TC-6: an idle-escalation "stop" that hasn't reached the server yet.
+    /// While this is `Some`, `tick()` does nothing but retry it - it must not
+    /// fetch_session or otherwise touch session state, because that is
+    /// exactly what let tracking silently resume (with the idle rewind never
+    /// applied) whenever the original stop POST failed.
+    pending_stop: Arc<Mutex<Option<PendingStop>>>,
+    /// AC-1: throttle for the synthetic-input warning below - a jiggler runs
+    /// continuously, so without this the same detection would log every
+    /// SESSION_POLL_SEC forever instead of once per episode.
+    last_synthetic_warning_at: Mutex<Option<Instant>>,
+    /// ACT-3: server-tunable idle thresholds, defaulted to the compile-time
+    /// constants and overwritten by `apply_idle_thresholds` on the periodic
+    /// scoring-settings poll.
+    idle_threshold_sec: AtomicU64,
+    idle_warn_sec: AtomicU64,
+    idle_alert_sec: AtomicU64,
+    idle_stop_sec: AtomicU64,
+}
+
+/// Everything needed to retry a "stop" action that failed to reach the
+/// server, captured at the moment idle escalation decided to stop the timer.
+#[derive(Clone)]
+struct PendingStop {
+    task_id: String,
+    project_id: String,
+    active_seconds: u64,
+    idle_seconds: u64,
 }
 
 /// Cumulative active seconds at the last moment there was real input, plus the
@@ -50,6 +78,71 @@ pub struct ActivityTracker {
 struct IdleWatch {
     stage: u8,
     active_at_last_input: u64,
+}
+
+/// Suggestion #11: everything `loop_run` used to hand-maintain as ~10 separate
+/// locals and thread through `tick()` as 15 `&mut` parameters, bundled into
+/// one struct. Purely a carrier for state between ticks - every field here is
+/// the exact same variable that existed before, with the exact same meaning
+/// and the exact same read/write sites inside `tick()` (see that function's
+/// own comments for what each one does); only *how* it's passed around
+/// changed. This is what makes a future capture type additive (one new field)
+/// instead of another signature change across every call site.
+struct TickState {
+    last_app_log_at: Instant,
+    next_screenshot_at: Instant,
+    was_active: bool,
+    current_session: String,
+    next_flush_at: Instant,
+    task_id: String,
+    active_baseline: u64,
+    active_elapsed: u64,
+    idle_baseline: u64,
+    idle_elapsed: u64,
+    next_sync_at: Instant,
+    idle_watch: IdleWatch,
+    /// Real wall-clock time of the last credited tick (TC-2). Ticks are
+    /// credited by measuring the gap to this, not by assuming the loop's
+    /// sleep duration elapsed exactly - a tick that took longer (network I/O:
+    /// fetch_session/post_events/post_session_action all run inline) used to
+    /// silently under-credit the session.
+    last_tick_at: Instant,
+    /// MAC-3/CQ-4: due immediately on the first tick, then re-fetched every
+    /// DISPLAY_NAME_REFRESH_INTERVAL_SEC - see maybe_refresh_display_names.
+    next_display_name_refresh_at: Instant,
+    /// ACT-3: same immediate-then-periodic schedule, see
+    /// maybe_refresh_activity_scoring.
+    next_scoring_refresh_at: Instant,
+}
+
+impl TickState {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            last_app_log_at: now - Duration::from_secs(APP_LOG_INTERVAL_SEC),
+            next_screenshot_at: now,
+            was_active: false,
+            current_session: String::new(),
+            next_flush_at: now,
+            task_id: String::new(),
+            active_baseline: 0,
+            active_elapsed: 0,
+            idle_baseline: 0,
+            idle_elapsed: 0,
+            next_sync_at: now,
+            idle_watch: IdleWatch::default(),
+            last_tick_at: now,
+            next_display_name_refresh_at: now,
+            next_scoring_refresh_at: now,
+        }
+    }
+}
+
+/// ACT-3: a server-tunable idle-stage triple is only applied whole, never
+/// partially - an inverted stage order would make `tick_idle_escalation`'s
+/// stages fire out of the sequence a manager configured.
+fn valid_idle_thresholds(threshold_sec: u64, warn_sec: u64, alert_sec: u64, stop_sec: u64) -> bool {
+    threshold_sec > 0 && warn_sec < alert_sec && alert_sec < stop_sec
 }
 
 impl ActivityTracker {
@@ -74,6 +167,25 @@ impl ActivityTracker {
             session_id: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
             idle_stage: Arc::new(Mutex::new(0)),
+            pending_stop: Arc::new(Mutex::new(None)),
+            last_synthetic_warning_at: Mutex::new(None),
+            idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
+            idle_warn_sec: AtomicU64::new(IDLE_FLAG_WARN_SEC),
+            idle_alert_sec: AtomicU64::new(IDLE_FLAG_ALERT_SEC),
+            idle_stop_sec: AtomicU64::new(IDLE_FLAG_STOP_SEC),
+        }
+    }
+
+    /// ACT-3: applied from the periodic scoring-settings poll. Refused,
+    /// rather than partially stored, unless the whole triple stays ordered -
+    /// an inverted stage order would make the escalation stages in
+    /// `tick_idle_escalation` fire out of the sequence a manager configured.
+    fn apply_idle_thresholds(&self, threshold_sec: u64, warn_sec: u64, alert_sec: u64, stop_sec: u64) {
+        if valid_idle_thresholds(threshold_sec, warn_sec, alert_sec, stop_sec) {
+            self.idle_threshold_sec.store(threshold_sec, Ordering::Relaxed);
+            self.idle_warn_sec.store(warn_sec, Ordering::Relaxed);
+            self.idle_alert_sec.store(alert_sec, Ordering::Relaxed);
+            self.idle_stop_sec.store(stop_sec, Ordering::Relaxed);
         }
     }
 
@@ -96,6 +208,11 @@ impl ActivityTracker {
 
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+        // CQ-1: unregister the global input hooks now that ACT-1 uses real
+        // ones - a leaked low-level hook is a system-wide problem, not just
+        // this process's, so this must happen on every stop path, not just
+        // process exit.
+        self.activity.stop();
         *self.session_id.lock() = None;
     }
 
@@ -121,35 +238,11 @@ impl ActivityTracker {
     }
 
     fn loop_run(&self) {
-        let mut last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
-        let mut next_screenshot_at = Instant::now();
-        let mut was_active = false;
-        let mut current_session = String::new();
-        let mut next_flush_at = Instant::now();
-        let mut task_id = String::new();
-        let mut active_baseline: u64 = 0;
-        let mut active_elapsed: u64 = 0;
-        let mut idle_baseline: u64 = 0;
-        let mut idle_elapsed: u64 = 0;
-        let mut next_sync_at = Instant::now();
-        let mut idle_watch = IdleWatch::default();
+        let mut state = TickState::new();
 
         while !self.stop.load(Ordering::SeqCst) {
             if let Err(err) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                self.tick(
-                    &mut last_app_log_at,
-                    &mut next_screenshot_at,
-                    &mut was_active,
-                    &mut current_session,
-                    &mut next_flush_at,
-                    &mut task_id,
-                    &mut active_baseline,
-                    &mut active_elapsed,
-                    &mut idle_baseline,
-                    &mut idle_elapsed,
-                    &mut next_sync_at,
-                    &mut idle_watch,
-                );
+                self.tick(&mut state);
             })) {
                 log::warn!("Tracker tick failed: {err:?}");
             }
@@ -168,54 +261,137 @@ impl ActivityTracker {
             .flush(|session_id, events| self.api.lock().post_events(session_id, events));
     }
 
-    fn tick(
-        &self,
-        last_app_log_at: &mut Instant,
-        next_screenshot_at: &mut Instant,
-        was_active: &mut bool,
-        current_session: &mut String,
-        next_flush_at: &mut Instant,
-        task_id: &mut String,
-        active_baseline: &mut u64,
-        active_elapsed: &mut u64,
-        idle_baseline: &mut u64,
-        idle_elapsed: &mut u64,
-        next_sync_at: &mut Instant,
-        idle_watch: &mut IdleWatch,
-    ) {
-        self.maybe_flush_queue(next_flush_at);
+    /// MAC-3/CQ-4: pulls the latest server-delivered app display-name map
+    /// (CLS-1) into the event builder's cache. Best-effort and independent
+    /// of session/tracking state - runs on this schedule regardless of
+    /// whether a timer is active, since it's cheap and display names should
+    /// be fresh by the time a session starts, not fetched for the first time
+    /// mid-session. A failed fetch leaves the existing cache untouched (see
+    /// fetch_app_display_names's contract) and is retried next interval.
+    fn maybe_refresh_display_names(&self, next_refresh_at: &mut Instant) {
+        if Instant::now() < *next_refresh_at {
+            return;
+        }
+        *next_refresh_at = Instant::now() + Duration::from_secs(DISPLAY_NAME_REFRESH_INTERVAL_SEC);
+        if let Ok(entries) = self.api.lock().fetch_app_display_names() {
+            self.events.apply_display_names(entries);
+        }
+    }
 
-        let session = match self.api.lock().fetch_session() {
+    /// ACT-3: pulls server-tunable scoring calibration into the running
+    /// ActivityMeter. Same best-effort/throttled shape as
+    /// maybe_refresh_display_names - a failed fetch leaves the meter on
+    /// whatever it already had (the compile-time defaults, or the last
+    /// successful fetch) rather than resetting anything.
+    fn maybe_refresh_activity_scoring(&self, next_refresh_at: &mut Instant) {
+        if Instant::now() < *next_refresh_at {
+            return;
+        }
+        *next_refresh_at = Instant::now() + Duration::from_secs(ACTIVITY_SCORING_REFRESH_INTERVAL_SEC);
+        if let Ok(settings) = self.api.lock().fetch_activity_scoring_settings() {
+            self.activity
+                .apply_scoring_settings(settings.saturation_events, settings.window_ms);
+            self.events
+                .apply_screenshot_cadence(settings.screenshot_min_delay_sec, settings.screenshot_max_delay_sec);
+            self.apply_idle_thresholds(
+                settings.idle_threshold_sec,
+                settings.idle_warn_sec,
+                settings.idle_alert_sec,
+                settings.idle_stop_sec,
+            );
+        }
+    }
+
+    fn tick(&self, state: &mut TickState) {
+        self.maybe_flush_queue(&mut state.next_flush_at);
+        self.maybe_refresh_display_names(&mut state.next_display_name_refresh_at);
+        self.maybe_refresh_activity_scoring(&mut state.next_scoring_refresh_at);
+
+        // TC-6: retry an idle-stop that hasn't landed yet, and do nothing
+        // else this tick. Fetching a session now - before the server has
+        // confirmed the stop - is exactly what let a task-id mismatch on the
+        // next tick re-baseline from the server's still-active, pre-rewind
+        // totals and silently resume tracking.
+        if let Some(pending) = self.pending_stop.lock().clone() {
+            let delivered = self
+                .api
+                .lock()
+                .post_session_action(
+                    "stop",
+                    Some(pending.task_id.as_str()).filter(|id| !id.is_empty()),
+                    Some(pending.project_id.as_str()).filter(|id| !id.is_empty()),
+                    pending.active_seconds,
+                    pending.idle_seconds,
+                )
+                .is_ok();
+            if delivered {
+                *self.pending_stop.lock() = None;
+                log::info!("Pending idle-stop delivered");
+            } else {
+                log::warn!("Idle-stop still undelivered, retrying next tick");
+            }
+            return;
+        }
+
+        // Bound to a `let` on purpose, same reasoning as
+        // `AgentController::sign_in_with_password`'s `session_bootstrap` call:
+        // a temporary `MutexGuard` created inside a `match` scrutinee lives
+        // until the end of the whole match, not just until `fetch_session()`
+        // returns. Matching directly on `self.api.lock().fetch_session()`
+        // left `self.api` locked for the entire body of the `Err(_)` arm
+        // below - which itself calls `upload_screenshot`/`upload_app_slice`,
+        // each re-locking the same (non-reentrant) mutex. That is a
+        // self-deadlock the moment both conditions are true (mid-session and
+        // fetch_session fails), silently hanging the tracker thread forever.
+        // Never triggered before because this branch had zero test coverage
+        // until Suggestion #14 added it - the deadlock showed up immediately
+        // once the branch was actually exercised end to end.
+        let fetched = self.api.lock().fetch_session();
+        let session = match fetched {
             Ok(session) => session,
-            Err(()) => {
+            Err(_) => {
                 // Backend unreachable. If we were mid-session, keep capturing under
                 // it — nothing gets lost, it just queues locally (and keeps ticking
                 // active/idle seconds) until reconnected, when the next sync catches up.
-                if *was_active && !current_session.is_empty() {
+                if state.was_active && !state.current_session.is_empty() {
                     let window = get_foreground_window();
-                    let session_id = current_session.clone();
+                    let session_id = state.current_session.clone();
                     let now = Instant::now();
-                    self.tick_progress(task_id, active_baseline, active_elapsed, idle_baseline, idle_elapsed);
-                    if now >= *next_screenshot_at {
+                    self.tick_progress(
+                        &state.task_id,
+                        &mut state.last_tick_at,
+                        &state.active_baseline,
+                        &mut state.active_elapsed,
+                        &state.idle_baseline,
+                        &mut state.idle_elapsed,
+                    );
+                    if now >= state.next_screenshot_at {
                         self.upload_screenshot(&session_id, &window);
-                        *next_screenshot_at =
+                        state.next_screenshot_at =
                             now + Duration::from_secs(self.events.random_screenshot_delay_sec());
                     }
-                    if now.duration_since(*last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
+                    if now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
                         self.upload_app_slice(&session_id, &window);
-                        *last_app_log_at = now;
+                        state.last_app_log_at = now;
                     }
                 }
                 return;
             }
         };
         let Some(session) = session else {
-            if *was_active {
+            if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
-            self.reset_task_progress(task_id, active_baseline, active_elapsed, idle_baseline, idle_elapsed);
-            *was_active = false;
-            *current_session = String::new();
+            self.reset_task_progress(
+                &mut state.task_id,
+                &mut state.last_tick_at,
+                &mut state.active_baseline,
+                &mut state.active_elapsed,
+                &mut state.idle_baseline,
+                &mut state.idle_elapsed,
+            );
+            state.was_active = false;
+            state.current_session = String::new();
             *self.session_id.lock() = None;
             return;
         };
@@ -227,12 +403,19 @@ impl ActivityTracker {
         if status != "active" {
             if status == "idle" {
                 self.emit_status("Timer idle — capture paused");
-            } else if *was_active {
+            } else if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
-            self.reset_task_progress(task_id, active_baseline, active_elapsed, idle_baseline, idle_elapsed);
-            *was_active = false;
-            *current_session = String::new();
+            self.reset_task_progress(
+                &mut state.task_id,
+                &mut state.last_tick_at,
+                &mut state.active_baseline,
+                &mut state.active_elapsed,
+                &mut state.idle_baseline,
+                &mut state.idle_elapsed,
+            );
+            state.was_active = false;
+            state.current_session = String::new();
             *self.session_id.lock() = None;
             return;
         }
@@ -244,14 +427,14 @@ impl ActivityTracker {
 
         let window = get_foreground_window();
 
-        if current_session.as_str() != session_id {
-            *current_session = session_id.clone();
+        if state.current_session.as_str() != session_id {
+            state.current_session = session_id.clone();
             *self.session_id.lock() = Some(session_id.clone());
-            *last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
-            *next_screenshot_at = Instant::now() + Duration::from_secs(FIRST_SCREENSHOT_DELAY_SEC);
+            state.last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
+            state.next_screenshot_at = Instant::now() + Duration::from_secs(FIRST_SCREENSHOT_DELAY_SEC);
             log::info!("Tracking session {session_id}");
             self.upload_app_slice(&session_id, &window);
-            *last_app_log_at = Instant::now();
+            state.last_app_log_at = Instant::now();
         }
 
         // Task can change under a session that's already open (resume onto a
@@ -264,14 +447,14 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if task_id.as_str() != session_task_id {
-            *task_id = session_task_id.clone();
-            *active_elapsed = 0;
-            *idle_elapsed = 0;
+        if state.task_id.as_str() != session_task_id {
+            state.task_id = session_task_id.clone();
+            state.active_elapsed = 0;
+            state.idle_elapsed = 0;
             let tracking = if session_task_id.is_empty() {
                 None
             } else {
-                self.api.lock().fetch_task_time_tracking(&session_task_id)
+                self.api.lock().fetch_task_time_tracking(&session_task_id).ok()
             };
             // Task-less (calling project) sessions have no per-task totals to
             // re-baseline from, so the session's own accumulated seconds are
@@ -280,21 +463,29 @@ impl ActivityTracker {
             let session_seconds = |key: &str| {
                 session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
             };
-            *active_baseline = tracking
+            state.active_baseline = tracking
                 .as_ref()
                 .map(|t| t.active_seconds)
                 .unwrap_or_else(|| session_seconds("activeSeconds"));
-            *idle_baseline = tracking
+            state.idle_baseline = tracking
                 .as_ref()
                 .map(|t| t.idle_seconds)
                 .unwrap_or_else(|| session_seconds("idleSeconds"));
-            *next_sync_at = Instant::now();
+            state.next_sync_at = Instant::now();
         }
 
-        *was_active = true;
+        state.was_active = true;
 
         let now = Instant::now();
-        self.tick_progress(task_id, active_baseline, active_elapsed, idle_baseline, idle_elapsed);
+        self.tick_progress(
+            &state.task_id,
+            &mut state.last_tick_at,
+            &state.active_baseline,
+            &mut state.active_elapsed,
+            &state.idle_baseline,
+            &mut state.idle_elapsed,
+        );
+        self.maybe_flag_synthetic_input();
 
         // Calling-project sessions have no task, so they sync on project id
         // instead - gating purely on task id would leave their time unrecorded.
@@ -306,51 +497,89 @@ impl ActivityTracker {
             .to_string();
 
         if self.tick_idle_escalation(
-            idle_watch,
-            task_id,
+            &mut state.idle_watch,
+            &state.task_id,
             &session_project_id,
-            active_baseline,
-            active_elapsed,
-            idle_baseline,
-            idle_elapsed,
+            &state.active_baseline,
+            &state.active_elapsed,
+            &state.idle_baseline,
+            &state.idle_elapsed,
         ) {
             // Timer was stopped for idling; this session is over.
-            *was_active = false;
-            *current_session = String::new();
+            state.was_active = false;
+            state.current_session = String::new();
             *self.session_id.lock() = None;
             self.reset_task_progress(
-                task_id,
-                active_baseline,
-                active_elapsed,
-                idle_baseline,
-                idle_elapsed,
+                &mut state.task_id,
+                &mut state.last_tick_at,
+                &mut state.active_baseline,
+                &mut state.active_elapsed,
+                &mut state.idle_baseline,
+                &mut state.idle_elapsed,
             );
             return;
         }
 
-        if now >= *next_screenshot_at {
+        if now >= state.next_screenshot_at {
             self.upload_screenshot(&session_id, &window);
-            *next_screenshot_at =
+            state.next_screenshot_at =
                 now + Duration::from_secs(self.events.random_screenshot_delay_sec());
         }
 
-        if now.duration_since(*last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
+        if now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
             self.upload_app_slice(&session_id, &window);
-            *last_app_log_at = now;
+            state.last_app_log_at = now;
         }
 
-        if (!task_id.is_empty() || !session_project_id.is_empty()) && now >= *next_sync_at {
-            let active_total = *active_baseline + *active_elapsed;
-            let idle_total = *idle_baseline + *idle_elapsed;
+        if (!state.task_id.is_empty() || !session_project_id.is_empty()) && now >= state.next_sync_at {
+            let active_total = state.active_baseline + state.active_elapsed;
+            let idle_total = state.idle_baseline + state.idle_elapsed;
             let _ = self.api.lock().post_session_action(
                 "sync",
-                Some(task_id.as_str()).filter(|id| !id.is_empty()),
+                Some(state.task_id.as_str()).filter(|id| !id.is_empty()),
                 Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
                 active_total,
                 idle_total,
             );
-            *next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
+            state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
         }
+    }
+
+    /// AC-1: "a session that's 100% active but ~100% injected is a
+    /// near-certain fake" - falls out of ACT-1's real hooks almost for free.
+    /// Log-only, throttled to once per 10 minutes per episode: this is a
+    /// signal for human review (Part E's GDPR Art. 22 guardrail - never an
+    /// automatic verdict), not a block, and full session-level surfacing
+    /// (an integrity score in the UI, backend storage) is AC-4's job, not
+    /// this one. Gated on a real activity score too, not just a high
+    /// fraction alone - a handful of injected events with few total inputs
+    /// isn't a meaningful sample.
+    fn maybe_flag_synthetic_input(&self) {
+        const HIGH_ACTIVITY_SCORE: u32 = 80;
+        const HIGH_INJECTED_FRACTION: f64 = 0.85;
+        const RENOTIFY_AFTER: Duration = Duration::from_secs(10 * 60);
+
+        let score = self.activity.score();
+        if score < HIGH_ACTIVITY_SCORE {
+            return;
+        }
+        let Some(fraction) = self.activity.injected_fraction() else {
+            return;
+        };
+        if fraction < HIGH_INJECTED_FRACTION {
+            return;
+        }
+
+        let mut last_warning = self.last_synthetic_warning_at.lock();
+        let now = Instant::now();
+        if last_warning.is_some_and(|at| now.duration_since(at) < RENOTIFY_AFTER) {
+            return;
+        }
+        *last_warning = Some(now);
+        log::warn!(
+            "Possible synthetic input: activity score {score}% with {:.0}% of input OS-flagged as injected",
+            fraction * 100.0
+        );
     }
 
     /// Three-stage idle escalation. Returns true when the timer was stopped.
@@ -371,12 +600,22 @@ impl ActivityTracker {
         idle_baseline: &u64,
         idle_elapsed: &u64,
     ) -> bool {
+        // Idle escalation is Windows-only until real input-hook listeners
+        // exist for other platforms (see ActivityMeter::run_listeners /
+        // HOOKS_SUPPORTED). Off Windows, idle_seconds() only grows from
+        // process start and never resets, which would otherwise force-stop
+        // every session ~15 minutes after launch regardless of real
+        // activity - so escalation is skipped entirely rather than acting on
+        // that unreliable/absent signal.
+        if !ActivityMeter::HOOKS_SUPPORTED {
+            return false;
+        }
         let idle_for = self.activity.idle_seconds();
         let active_total = active_baseline.saturating_add(*active_elapsed);
 
         // Real input: clear any warning and remember this as the last honest
         // point the clock can be rewound to.
-        if idle_for < IDLE_THRESHOLD_SEC {
+        if idle_for < self.idle_threshold_sec.load(Ordering::Relaxed) {
             if watch.stage != 0 {
                 watch.stage = 0;
                 *self.idle_stage.lock() = 0;
@@ -386,7 +625,7 @@ impl ActivityTracker {
             return false;
         }
 
-        if idle_for >= IDLE_FLAG_STOP_SEC {
+        if idle_for >= self.idle_stop_sec.load(Ordering::Relaxed) {
             // Never let the rewind push the total up, and never below zero -
             // clamping both ways because a mis-ordered snapshot would
             // otherwise mint or destroy hours.
@@ -402,13 +641,32 @@ impl ActivityTracker {
             );
 
             self.set_task_progress(task_id, rewound, idle_total);
-            let _ = self.api.lock().post_session_action(
-                "stop",
-                Some(task_id).filter(|id| !id.is_empty()),
-                Some(project_id).filter(|id| !id.is_empty()),
-                rewound,
-                idle_total,
-            );
+            let delivered = self
+                .api
+                .lock()
+                .post_session_action(
+                    "stop",
+                    Some(task_id).filter(|id| !id.is_empty()),
+                    Some(project_id).filter(|id| !id.is_empty()),
+                    rewound,
+                    idle_total,
+                )
+                .is_ok();
+            if !delivered {
+                // TC-6: the network problem that often accompanies an idle
+                // stretch must not mean the stop is silently lost. Without
+                // this, the server still thinks the session is active, and
+                // the next tick's re-baseline path would resume tracking
+                // with the rewind never applied - re-crediting exactly the
+                // idle time this escalation just reversed.
+                *self.pending_stop.lock() = Some(PendingStop {
+                    task_id: task_id.to_string(),
+                    project_id: project_id.to_string(),
+                    active_seconds: rewound,
+                    idle_seconds: idle_total,
+                });
+                log::warn!("Idle-stop POST failed - will retry until delivered, tracking stays halted meanwhile");
+            }
 
             watch.stage = 3;
             *self.idle_stage.lock() = 3;
@@ -417,11 +675,11 @@ impl ActivityTracker {
             return true;
         }
 
-        if idle_for >= IDLE_FLAG_ALERT_SEC && watch.stage < 2 {
+        if idle_for >= self.idle_alert_sec.load(Ordering::Relaxed) && watch.stage < 2 {
             watch.stage = 2;
             *self.idle_stage.lock() = 2;
             self.emit_status("Still idle — timer will stop soon and this idle time will be removed");
-        } else if idle_for >= IDLE_FLAG_WARN_SEC && watch.stage < 1 {
+        } else if idle_for >= self.idle_warn_sec.load(Ordering::Relaxed) && watch.stage < 1 {
             watch.stage = 1;
             *self.idle_stage.lock() = 1;
             self.emit_status("Idle — no activity detected");
@@ -429,21 +687,44 @@ impl ActivityTracker {
         false
     }
 
-    /// Counts this tick's SESSION_POLL_SEC as idle rather than active if
-    /// there's been no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open
-    /// session sitting untouched shouldn't silently rack up "active" hours.
+    /// Seconds to credit for one tick: real elapsed wall time since the last
+    /// credited tick, not an assumed SESSION_POLL_SEC (TC-2). One iteration of
+    /// `loop_run` is `sleep(SESSION_POLL_SEC) + however long tick() itself
+    /// took` — and `tick()` does real network I/O every time (fetch_session
+    /// every tick, plus periodic app/screenshot/sync POSTs) — so crediting a
+    /// fixed interval silently under-counts by however long that I/O took.
+    /// The error was one-directional: the clock could only ever run slow.
+    ///
+    /// Clamped to `SESSION_POLL_SEC * 4` on purpose: a sleep/hibernate gap
+    /// makes the real elapsed time huge, and that must never be banked as
+    /// active work. A resumed laptop credits at most this, then idle
+    /// escalation takes over and rewinds to the last real input - which is
+    /// the correct outcome for a suspend, not a fabricated block of "active"
+    /// time in a single tick.
+    fn credited_seconds(elapsed: Duration) -> u64 {
+        elapsed.as_secs().min(SESSION_POLL_SEC * 4)
+    }
+
+    /// Counts the credited seconds as idle rather than active if there's been
+    /// no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session
+    /// sitting untouched shouldn't silently rack up "active" hours.
     fn tick_progress(
         &self,
         task_id: &str,
+        last_tick_at: &mut Instant,
         active_baseline: &u64,
         active_elapsed: &mut u64,
         idle_baseline: &u64,
         idle_elapsed: &mut u64,
     ) {
-        if self.activity.idle_seconds() >= IDLE_THRESHOLD_SEC {
-            *idle_elapsed += SESSION_POLL_SEC;
+        let now = Instant::now();
+        let delta = Self::credited_seconds(now.duration_since(*last_tick_at));
+        *last_tick_at = now;
+
+        if self.activity.idle_seconds() >= self.idle_threshold_sec.load(Ordering::Relaxed) {
+            *idle_elapsed += delta;
         } else {
-            *active_elapsed += SESSION_POLL_SEC;
+            *active_elapsed += delta;
         }
         self.set_task_progress(
             task_id,
@@ -464,6 +745,7 @@ impl ActivityTracker {
     fn reset_task_progress(
         &self,
         task_id: &mut String,
+        last_tick_at: &mut Instant,
         active_baseline: &mut u64,
         active_elapsed: &mut u64,
         idle_baseline: &mut u64,
@@ -474,6 +756,11 @@ impl ActivityTracker {
         *active_elapsed = 0;
         *idle_baseline = 0;
         *idle_elapsed = 0;
+        // A resumed session must not credit the gap since tracking stopped -
+        // without this, signing back in after a long break would credit that
+        // entire gap (clamped to SESSION_POLL_SEC * 4, but still wrong) on
+        // the very next tick_progress call.
+        *last_tick_at = Instant::now();
         *self.task_progress.lock() = (None, 0, 0);
         *self.idle_stage.lock() = 0;
     }
@@ -543,7 +830,233 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::ActivityTracker;
+    use super::{valid_idle_thresholds, ActivityTracker, TickState};
+    use std::thread;
+    use std::time::Duration;
+
+    use parking_lot::Mutex;
+    use tiny_http::Method;
+
+    use crate::capture::activity::ActivityMeter;
+    use crate::client::api::ApiClient;
+    use crate::config::Settings;
+    use crate::test_support::{fake_jwt, fake_server};
+
+    // Suggestion #14a: end-to-end tick() coverage, made tractable by the
+    // TickState refactor (Suggestion #11) - a test can now hand tick() one
+    // struct instead of hand-threading 15 `&mut` locals. These exercise the
+    // real session-transition and idle-escalation state machine against a
+    // real (fake) HTTP server, not just the pure helpers tested elsewhere in
+    // this module.
+
+    /// A `Settings` pointed at `api_url`, with every filesystem path inside
+    /// its own fresh temp directory so parallel tests never share state (the
+    /// queue file in particular - EventQueue::new reads it on construction).
+    fn test_settings(api_url: String) -> Settings {
+        let dir = std::env::temp_dir().join(format!(
+            "vt-tracker-test-{}-{:?}",
+            std::process::id(),
+            std::time::Instant::now()
+        ));
+        let _ = std::fs::create_dir_all(&dir);
+        Settings {
+            api_url,
+            web_url: "http://127.0.0.1:1".into(),
+            auth_url: "http://127.0.0.1:1".into(),
+            auth_port: 0,
+            store_path: dir.join("store.json"),
+            prefs_path: dir.join("prefs.json"),
+            queue_path: dir.join("queue.jsonl"),
+            log_path: dir.join("agent.log"),
+            url_script_path: dir.join("missing-get-browser-url.ps1"),
+            macos_url_script_path: dir.join("missing-get-browser-url.applescript"),
+        }
+    }
+
+    /// A tracker whose `ApiClient` already holds a not-yet-expired id token,
+    /// so `authorized()` never needs a real Firebase round-trip, pointed at
+    /// `api_url`.
+    fn test_tracker(api_url: String) -> ActivityTracker {
+        let mut api = ApiClient::new(api_url.clone(), "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        let settings = test_settings(api_url);
+        ActivityTracker::new(
+            std::sync::Arc::new(Mutex::new(api)),
+            &settings,
+            ActivityMeter::new(),
+            None,
+        )
+    }
+
+    /// Answers exactly the routes a session-transition tick needs; anything
+    /// else 404s, which every caller in `tick()` already treats as a
+    /// harmless failed best-effort fetch (display names, scoring settings).
+    fn session_test_server(session_body: &'static str) -> String {
+        fake_server(move |request| {
+            let path = request.url().split('?').next().unwrap_or("").to_string();
+            match (request.method(), path.as_str()) {
+                (Method::Get, "/api/activity/session") => (200, session_body.to_string()),
+                (Method::Get, p) if p.starts_with("/api/tasks/") && p.ends_with("/time-tracking") => {
+                    (200, r#"{"data": {"activeSeconds": 0, "idleSeconds": 0}}"#.to_string())
+                }
+                (Method::Post, "/api/activity/events") => {
+                    (200, r#"{"data": {"inserted": 1}}"#.to_string())
+                }
+                (Method::Post, "/api/activity/session") => {
+                    (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+                }
+                _ => (404, "{}".to_string()),
+            }
+        })
+    }
+
+    const ACTIVE_SESSION_WITH_TASK: &str = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0}}"#;
+
+    #[test]
+    fn tick_transitions_into_a_newly_started_session() {
+        let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
+        let mut state = TickState::new();
+
+        tracker.tick(&mut state);
+
+        assert!(state.was_active, "a fresh active session must mark the tracker active");
+        assert_eq!(state.current_session, "sess-1");
+        assert_eq!(state.task_id, "task-1");
+    }
+
+    #[test]
+    fn tick_keeps_capturing_under_the_last_known_session_when_fetch_session_fails() {
+        // A real, listening, always-500 server - not a dropped/unbound port.
+        // Whether a closed port fails a connect attempt fast or slow is an
+        // OS/sandbox networking detail this test has no business depending
+        // on; a server that's reached but answers with a server error hits
+        // the exact same `Err(_)` arm in tick() (fetch_session's contract
+        // treats "reached but bad response" and "unreachable" the same way),
+        // deterministically and fast.
+        let base_url = fake_server(|_request| (500, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+
+        // Simulate a tick that already has a session open - the exact
+        // scenario TC-2/this branch exists for: keep ticking under the last
+        // known session across a network blip instead of tearing it down.
+        let mut state = TickState::new();
+        state.was_active = true;
+        state.current_session = "sess-1".to_string();
+        state.task_id = "task-1".to_string();
+        // Skip the incidental best-effort refreshes and screenshot capture -
+        // none of them are what this test is about (and a real screenshot
+        // capture, via xcap, isn't reliable in a headless/sandboxed test
+        // environment). The app/URL log path below is what exercises the
+        // "backend unreachable" behavior this test guards.
+        let far_future = std::time::Instant::now() + Duration::from_secs(3600);
+        state.next_screenshot_at = far_future;
+        state.next_display_name_refresh_at = far_future;
+        state.next_scoring_refresh_at = far_future;
+
+        tracker.tick(&mut state);
+
+        assert!(state.was_active, "an unreachable backend must not be treated as session-over");
+        assert_eq!(state.current_session, "sess-1", "the last known session must be preserved");
+        assert_eq!(state.task_id, "task-1");
+    }
+
+    #[test]
+    fn tick_stops_the_timer_once_the_idle_escalation_deadline_passes() {
+        let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
+        // Shrunk far below the real 5/10/15-minute defaults so this test
+        // finishes in a few seconds instead of a quarter hour. Distinct,
+        // strictly increasing values, same shape `apply_idle_thresholds`
+        // requires in production.
+        tracker.apply_idle_thresholds(1, 1, 2, 3);
+        let mut state = TickState::new();
+
+        // Starts the session. ActivityMeter's last-input clock is set at
+        // construction and nothing in this test ever feeds it real input, so
+        // idle_seconds() grows with real wall-clock time from here exactly
+        // as it would if the user genuinely walked away.
+        tracker.tick(&mut state);
+        assert!(state.was_active, "precondition: the session must have started");
+
+        thread::sleep(Duration::from_millis(3_500));
+        tracker.tick(&mut state);
+
+        assert!(!state.was_active, "idle escalation should have stopped the timer");
+        assert!(state.current_session.is_empty());
+    }
+
+    // Guards ACT-3: a server-pushed idle-stage triple must be applied whole
+    // or not at all - a partially-applied inverted order would make the
+    // warn/alert/stop escalation fire out of sequence.
+
+    #[test]
+    fn a_correctly_ordered_triple_is_valid() {
+        assert!(valid_idle_thresholds(60, 300, 600, 900));
+    }
+
+    #[test]
+    fn warn_equal_to_alert_is_rejected() {
+        assert!(!valid_idle_thresholds(60, 300, 300, 900));
+    }
+
+    #[test]
+    fn alert_after_stop_is_rejected() {
+        assert!(!valid_idle_thresholds(60, 100, 1000, 900));
+    }
+
+    #[test]
+    fn a_zero_idle_threshold_is_rejected() {
+        assert!(!valid_idle_thresholds(0, 300, 600, 900));
+    }
+
+    // Guards TC-2: the tracker must credit real elapsed wall time, not an
+    // assumed SESSION_POLL_SEC per tick. Before this fix every tick credited
+    // exactly 5s regardless of how long the tick's own network I/O took,
+    // which meant every recorded hour was short by an amount proportional to
+    // the user's network latency.
+
+    #[test]
+    fn credits_real_elapsed_time_not_the_assumed_poll_interval() {
+        // A tick that actually took 9s (5s sleep + 4s of slow HTTP) must
+        // credit 9, not SESSION_POLL_SEC (5). This is the bug that made every
+        // recorded hour short.
+        assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(9)), 9);
+    }
+
+    #[test]
+    fn a_short_tick_credits_exactly_what_elapsed() {
+        assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(5)), 5);
+    }
+
+    #[test]
+    fn a_suspend_gap_cannot_bank_hours_nobody_worked() {
+        // Laptop closed for 2h: clamp to SESSION_POLL_SEC * 4, then let idle
+        // escalation take over and rewind to the last real input.
+        assert_eq!(
+            ActivityTracker::credited_seconds(Duration::from_secs(7200)),
+            super::SESSION_POLL_SEC * 4,
+        );
+    }
+
+    #[test]
+    fn the_clamp_boundary_is_exact() {
+        let ceiling = super::SESSION_POLL_SEC * 4;
+        assert_eq!(
+            ActivityTracker::credited_seconds(Duration::from_secs(ceiling)),
+            ceiling,
+            "exactly at the ceiling must not be clamped down further"
+        );
+        assert_eq!(
+            ActivityTracker::credited_seconds(Duration::from_secs(ceiling + 1)),
+            ceiling,
+            "one second past the ceiling must still clamp"
+        );
+    }
+
+    #[test]
+    fn zero_elapsed_credits_zero() {
+        assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(0)), 0);
+    }
 
     // Guards the money-adjacent bit of idle escalation: when the timer auto-
     // stops, exactly the time worked after the user stopped touching the
