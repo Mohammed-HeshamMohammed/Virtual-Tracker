@@ -111,6 +111,46 @@ const AuthPage: React.FC = () => {
     const next = url.pathname + (url.search ? url.search : "")
     window.history.replaceState({}, document.title, next)
   }, [searchParams])
+
+  // Desktop-agent deep link (?mode=signup|forgot-password): jump straight to
+  // that pane instead of always landing on plain sign-in.
+  useEffect(() => {
+    const mode = searchParams.get("mode")
+    if (mode !== "signup" && mode !== "forgot-password") return
+    const url = new URL(window.location.href)
+    url.searchParams.delete("mode")
+    window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""))
+    if (mode === "signup") {
+      setIsRegisterMode(true)
+    } else {
+      setLoginPane("forgot-password")
+    }
+  }, [searchParams])
+
+  // Desktop-agent deep link (?provider=google|apple): auto-run that
+  // provider's sign-in instead of making the user click it again.
+  useEffect(() => {
+    const provider = searchParams.get("provider")
+    if (provider !== "google" && provider !== "apple") return
+    const url = new URL(window.location.href)
+    url.searchParams.delete("provider")
+    window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""))
+    clearAuthError()
+    setActionBusy(true)
+    void (async () => {
+      try {
+        if (provider === "google") {
+          await signInWithGoogle(rememberMe)
+        } else {
+          await signInWithApple(rememberMe)
+        }
+      } catch {
+        // context sets authError
+      } finally {
+        setActionBusy(false)
+      }
+    })()
+  }, [searchParams])
   const [showPasswordPanel, setShowPasswordPanel] = useComponentState(false)
   const registerEmailAvailability = useRegisterEmailAvailability(identifier, isRegisterMode)
 
