@@ -48,6 +48,14 @@ export function SignInPanel({
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
 
+  // Live Password Validation Hints for Sign Up view
+  const isLengthValid = signUp.password.length >= 8;
+  const isCaseValid = /[A-Z]/.test(signUp.password) && /[a-z]/.test(signUp.password);
+  const isSymbolNumValid = /[0-9!@#$%^&*(),.?":{}|<>]/.test(signUp.password);
+  const isMatchValid = Boolean(
+    signUp.password && signUp.confirmPassword && signUp.password === signUp.confirmPassword
+  );
+
   return (
     <main className="agent-tray view-home">
       <TitleBar
@@ -62,34 +70,108 @@ export function SignInPanel({
             <img src="/app-icon.ico" width={36} height={36} alt="" draggable={false} />
             <span>Virtual Tracker</span>
           </div>
-          <div className="auth-brand-copy">
-            <h2>Time tracking that stays out of your way.</h2>
-            <p>Sign in to link this desktop agent to your account and start tracking your work seamlessly.</p>
 
-            <div className="auth-brand-features">
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">⚡</span>
-                <div>
-                  <strong>Instant Sync</strong>
-                  <p>Real-time sync with web dashboard & assigned tasks.</p>
+          <div key={authView} className="auth-brand-copy">
+            {authView === "signup" ? (
+              <>
+                <h2>Password Requirements & Tips</h2>
+                <p>Create a strong password to protect your account and tracking logs.</p>
+
+                <div className="auth-brand-features">
+                  <div className={`auth-feature-item${isLengthValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isLengthValid ? "✓" : "📏"}</span>
+                    <div>
+                      <strong>At least 8 characters</strong>
+                      <p>Longer passwords provide stronger security.</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isCaseValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isCaseValid ? "✓" : "🔤"}</span>
+                    <div>
+                      <strong>Mix of uppercase & lowercase</strong>
+                      <p>Combine both capital and small letters.</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isSymbolNumValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isSymbolNumValid ? "✓" : "🔢"}</span>
+                    <div>
+                      <strong>Includes numbers or symbols</strong>
+                      <p>Add digits (0-9) or special symbols (@, #, $).</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isMatchValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isMatchValid ? "✓" : "🔒"}</span>
+                    <div>
+                      <strong>Passwords match</strong>
+                      <p>Both password fields must match exactly.</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">🔒</span>
-                <div>
-                  <strong>Enterprise Security</strong>
-                  <p>Encrypted device authentication & secure tokens.</p>
+              </>
+            ) : authView === "forgot" ? (
+              <>
+                <h2>Password Reset Instructions</h2>
+                <p>Enter your email to receive a secure link to reset your account password.</p>
+
+                <div className="auth-brand-features">
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">📧</span>
+                    <div>
+                      <strong>Check Your Inbox</strong>
+                      <p>We will email you a secure single-use reset link.</p>
+                    </div>
+                  </div>
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">⏳</span>
+                    <div>
+                      <strong>Time-Sensitive Link</strong>
+                      <p>Reset links expire for safety after 1 hour.</p>
+                    </div>
+                  </div>
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">🛡️</span>
+                    <div>
+                      <strong>Account Protection</strong>
+                      <p>Your tracking session remains secure.</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">⏱️</span>
-                <div>
-                  <strong>Smart Tracking</strong>
-                  <p>Automatic idle detection & work limit notifications.</p>
+              </>
+            ) : (
+              <>
+                <h2>Time tracking that stays out of your way.</h2>
+                <p>Sign in to link this desktop agent to your account and start tracking your work seamlessly.</p>
+
+                <div className="auth-brand-features">
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">⚡</span>
+                    <div>
+                      <strong>Instant Sync</strong>
+                      <p>Real-time sync with web dashboard & assigned tasks.</p>
+                    </div>
+                  </div>
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">🔒</span>
+                    <div>
+                      <strong>Enterprise Security</strong>
+                      <p>Encrypted device authentication & secure tokens.</p>
+                    </div>
+                  </div>
+                  <div className="auth-feature-item">
+                    <span className="auth-feature-icon">⏱️</span>
+                    <div>
+                      <strong>Smart Tracking</strong>
+                      <p>Automatic idle detection & work limit notifications.</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              </>
+            )}
           </div>
+
           <div className="auth-brand-viz">
             {Array.from({ length: 16 }, (_, i) => (
               <span key={i} className="auth-brand-bar" style={{ animationDelay: `${i * 0.09}s` }} />
