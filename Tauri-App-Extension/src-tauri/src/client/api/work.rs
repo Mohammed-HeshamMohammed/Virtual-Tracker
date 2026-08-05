@@ -25,6 +25,64 @@ impl ApiClient {
             .map(|s| s.to_string())
     }
 
+    pub fn fetch_project_budgets_map(&mut self) -> std::collections::HashMap<String, bool> {
+        let mut map = std::collections::HashMap::new();
+        let auth = match self.authorized() {
+            Some(a) => a,
+            None => return map,
+        };
+        let url = format!("{}/api/project-budgets", self.api_url);
+        let res = match self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+        {
+            Ok(r) => r,
+            Err(_) => return map,
+        };
+        if !res.status().is_success() {
+            return map;
+        }
+        let body: Value = match res.json() {
+            Ok(b) => b,
+            Err(_) => return map,
+        };
+        let list = match body.get("data").and_then(|v| v.as_array()) {
+            Some(l) => l,
+            None => return map,
+        };
+
+        for item in list {
+            let pid = match item.get("project_id").and_then(|v| v.as_str()) {
+                Some(id) if !id.is_empty() => id.to_string(),
+                _ => continue,
+            };
+            let stop_when_reached = item
+                .get("stop_timers_when_reached")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if !stop_when_reached {
+                map.insert(pid, false);
+                continue;
+            }
+            let stop_pct = match item.get("stop_timers_at_pct") {
+                Some(v) if v.is_number() => v.as_f64().unwrap_or(100.0),
+                Some(v) if v.is_string() => v.as_str().unwrap_or("100").parse::<f64>().unwrap_or(100.0),
+                _ => 100.0,
+            };
+            let spent = item.get("spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let target = item.get("target").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let usage_pct = if target > 0.0 { (spent / target) * 100.0 } else { 0.0 };
+
+            let limit_reached = stop_when_reached && (usage_pct >= stop_pct);
+            map.insert(pid, limit_reached);
+        }
+
+        map
+    }
+
     pub fn fetch_viewer_projects(&mut self) -> Result<Vec<crate::types::ProjectInfo>, String> {
         let auth = self
             .authorized()
@@ -33,7 +91,7 @@ impl ApiClient {
         let res = self
             .client
             .get(url)
-            .header("Authorization", auth)
+            .header("Authorization", &auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
             .map_err(|e| e.to_string())?;
@@ -46,6 +104,9 @@ impl ApiClient {
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
+
+        let budget_map = self.fetch_project_budgets_map();
+
         let mut projects = Vec::new();
         for item in list {
             let id = item
@@ -55,6 +116,11 @@ impl ApiClient {
                 .to_string();
             if id.is_empty() {
                 continue;
+            }
+            if let Some(limit_reached) = budget_map.get(&id) {
+                if *limit_reached {
+                    continue;
+                }
             }
             let name = item
                 .get("name")
