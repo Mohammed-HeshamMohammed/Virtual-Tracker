@@ -1855,15 +1855,23 @@ body {
   will-change: transform, opacity;
 }
 
-.auth-anim-forward {
-  animation: auth-slide-forward 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+.auth-anim-enter-forward {
+  animation: auth-slide-enter-forward 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.auth-anim-back {
-  animation: auth-slide-back 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+.auth-anim-enter-back {
+  animation: auth-slide-enter-back 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-@keyframes auth-slide-forward {
+.auth-anim-exit-forward {
+  animation: auth-slide-exit-forward 0.19s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.auth-anim-exit-back {
+  animation: auth-slide-exit-back 0.19s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes auth-slide-enter-forward {
   0% {
     opacity: 0;
     transform: translateX(36px) scale(0.97);
@@ -1874,7 +1882,7 @@ body {
   }
 }
 
-@keyframes auth-slide-back {
+@keyframes auth-slide-enter-back {
   0% {
     opacity: 0;
     transform: translateX(-36px) scale(0.97);
@@ -1884,6 +1892,29 @@ body {
     transform: translateX(0) scale(1);
   }
 }
+
+@keyframes auth-slide-exit-forward {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-36px) scale(0.97);
+  }
+}
+
+@keyframes auth-slide-exit-back {
+  0% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(36px) scale(0.97);
+  }
+}
+
 
 /* Staggered micro-animations for input fields and buttons */
 .auth-form-view .auth-form-head,

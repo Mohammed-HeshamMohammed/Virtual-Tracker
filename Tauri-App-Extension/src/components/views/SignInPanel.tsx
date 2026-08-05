@@ -48,19 +48,29 @@ export function SignInPanel({
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
 
-  const [prevView, setPrevView] = useState<AuthView>(authView);
+  // Transition state: handles smooth exit (fade/slide out) followed by entry (fade/slide in)
+  const [displayView, setDisplayView] = useState<AuthView>(authView);
+  const [isExiting, setIsExiting] = useState(false);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
 
   useEffect(() => {
-    if (authView !== prevView) {
-      if (authView === "signin") {
-        setDirection("back");
-      } else {
-        setDirection("forward");
-      }
-      setPrevView(authView);
+    if (authView !== displayView && !isExiting) {
+      const nextDir = authView === "signin" ? "back" : "forward";
+      setDirection(nextDir);
+      setIsExiting(true);
+
+      const timer = setTimeout(() => {
+        setDisplayView(authView);
+        setIsExiting(false);
+      }, 190); // 190ms exit duration
+
+      return () => clearTimeout(timer);
     }
-  }, [authView, prevView]);
+  }, [authView, displayView, isExiting]);
+
+  const animClass = isExiting
+    ? `auth-anim-exit-${direction}`
+    : `auth-anim-enter-${direction}`;
 
   return (
     <main className="agent-tray view-home">
@@ -112,9 +122,9 @@ export function SignInPanel({
         </section>
 
         <section className="auth-form-panel">
-          <div className="auth-form-card">
-            {authView === "signup" ? (
-              <div key="signup" className={`auth-form-view auth-anim-${direction}`}>
+          <div className="auth-form-card" style={{ pointerEvents: isExiting ? "none" : "auto" }}>
+            {displayView === "signup" ? (
+              <div key="signup" className={`auth-form-view ${animClass}`}>
                 <div className="auth-form-head">
                   <h1>Create account</h1>
                   <p>Set up a new Virtual Tracker account</p>
@@ -284,8 +294,8 @@ export function SignInPanel({
                   </button>
                 </form>
               </div>
-            ) : authView === "forgot" ? (
-              <div key="forgot" className={`auth-form-view auth-anim-${direction}`}>
+            ) : displayView === "forgot" ? (
+              <div key="forgot" className={`auth-form-view ${animClass}`}>
                 <div className="auth-form-head">
                   <h1>Reset your password</h1>
                   <p>Enter your email and we'll send you a reset link</p>
@@ -346,7 +356,7 @@ export function SignInPanel({
                 </form>
               </div>
             ) : (
-              <div key="signin" className={`auth-form-view auth-anim-${direction}`}>
+              <div key="signin" className={`auth-form-view ${animClass}`}>
                 <div className="auth-form-head">
                   <h1>Welcome Back</h1>
                   <p>Sign in to your account to get started</p>
