@@ -149,9 +149,11 @@ export function Dropdown({
               type="button"
               role="option"
               aria-selected={option.id === value}
-              className={`dropdown-item${option.id === value ? " active" : ""}${index === activeIndex ? " highlighted" : ""}`}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => commit(index)}
+              aria-disabled={option.disabled}
+              disabled={option.disabled}
+              className={`dropdown-item${option.id === value ? " active" : ""}${index === activeIndex ? " highlighted" : ""}${option.disabled ? " disabled" : ""}`}
+              onMouseEnter={() => !option.disabled && setActiveIndex(index)}
+              onClick={() => !option.disabled && commit(index)}
             >
               {option.label}
             </button>

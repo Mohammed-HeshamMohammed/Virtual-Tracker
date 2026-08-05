@@ -1052,9 +1052,14 @@ body {
   white-space: nowrap;
 }
 
-
-.dropdown-item:hover {
+.dropdown-item:hover:not(.disabled) {
   background: rgba(186, 158, 255, 0.1);
+}
+
+.dropdown-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .dropdown-item.active {

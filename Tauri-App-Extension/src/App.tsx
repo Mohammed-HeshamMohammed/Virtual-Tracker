@@ -182,16 +182,36 @@ function MainApp() {
       return;
     }
     try {
-      const next = await invoke<AgentTask[]>("list_tasks", {
+      const rawTasks = await invoke<AgentTask[]>("list_tasks", {
         projectId: selectedProjectId,
       });
-      setTasks(next);
+
+      // Strict filtering: check task limits and filter out tasks that reached their budget
+      const taskLimitChecks = await Promise.all(
+        rawTasks.map(async (t) => {
+          try {
+            const tracking = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
+              taskId: t.id,
+            });
+            return { task: t, limitReached: tracking?.limitReached ?? false };
+          } catch {
+            return { task: t, limitReached: false };
+          }
+        })
+      );
+
+      const availableTasks = taskLimitChecks
+        .filter((item) => !item.limitReached)
+        .map((item) => item.task);
+
+      setTasks(availableTasks);
       setSelectedTaskId((current) => {
-        if (current && next.some((t) => t.id === current)) return current;
-        return next[0]?.id || "";
+        if (current && availableTasks.some((t) => t.id === current)) return current;
+        return availableTasks[0]?.id || "";
       });
     } catch {
       setTasks([]);
+      setSelectedTaskId("");
     }
   }, [signedIn, selectedProjectId, isCallingProject]);
 
