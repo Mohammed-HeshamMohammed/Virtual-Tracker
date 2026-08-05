@@ -11,6 +11,7 @@ export const projectSchemas = [
       disable_activity: "boolean",
       allow_project_tracking: "boolean",
       disable_idle_time: "boolean",
+      idle_time_seconds: "int",
       client_id: "uuid",
       managers_notes: "text",
       users_notes: "text",
