@@ -9,6 +9,7 @@ import {
   FolderArchive,
   Table2,
   Check,
+  RefreshCw,
 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { PROJECT_BATCH_ACTIONS } from "@/features/projects/config/project-management-config"
@@ -43,6 +44,8 @@ interface ProjectsToolbarProps {
   showCompactSearchRow: boolean
   toolbarRef: React.RefObject<HTMLDivElement | null>
   canManageProjects?: boolean
+  onRefresh: () => void
+  isRefreshing?: boolean
   t: {
     tabActive: string
     tabInactive: string
@@ -82,6 +85,8 @@ export function ProjectsToolbar({
   showCompactSearchRow,
   toolbarRef,
   canManageProjects = true,
+  onRefresh,
+  isRefreshing = false,
   t,
 }: ProjectsToolbarProps) {
   const hasSearchQuery = search.trim().length > 0
@@ -155,6 +160,20 @@ export function ProjectsToolbar({
               isDark={isDark}
             />
           ) : null}
+          <IconTooltip text="Refresh" isDark={isDark}>
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              aria-label="Refresh projects"
+              className={cn(
+                "flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80 disabled:cursor-not-allowed disabled:opacity-60",
+              )}
+            >
+              <RefreshCw className={cn("h-4 w-4 text-slate-500 dark:text-slate-400", isRefreshing && "animate-spin")} />
+            </button>
+          </IconTooltip>
+
           <div className="relative">
             <button
               type="button"
