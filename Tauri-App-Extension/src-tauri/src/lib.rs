@@ -381,6 +381,9 @@ pub fn run() {
         }
     };
 
+    // Taken before `.setup()` moves `controller` wholesale into its closure.
+    let exit_controller = Arc::clone(&controller);
+
     tauri::Builder::default()
         // Must be registered first: a second launch hits this instead of running
         // its own app, so only one copy of the agent is ever tracking at once.
@@ -519,6 +522,22 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            // PS-3: flushes the same way an explicit quit/tray-quit already
+            // does (controller.stop() -> flush_and_stop_tracker), but on
+            // tauri::RunEvent::Exit specifically - which Tauri's event loop
+            // emits both for an explicit app.exit() *and* an OS-initiated
+            // shutdown/logoff (WM_QUERYENDSESSION on Windows), unlike the
+            // window-level CloseRequested handler above, which only ever
+            // fires for a user closing the window. Turns an OS shutdown mid-
+            // session into a clean stop instead of the unclean-exit case
+            // PS-1/PS-2 exist to recover from. Harmless to call twice (an
+            // explicit quit already called stop(); this just no-ops on the
+            // second call since the tracker's already stopped).
+            if let tauri::RunEvent::Exit = event {
+                exit_controller.stop();
+            }
+        });
 }

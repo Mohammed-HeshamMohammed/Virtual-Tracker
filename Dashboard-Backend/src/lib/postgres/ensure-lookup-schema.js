@@ -737,6 +737,7 @@ GROUP BY task_id`,
   disable_activity        BOOLEAN NOT NULL DEFAULT false,
   allow_project_tracking  BOOLEAN NOT NULL DEFAULT true,
   disable_idle_time       BOOLEAN NOT NULL DEFAULT false,
+  idle_time_seconds       INTEGER NOT NULL DEFAULT 450,
   client_id               UUID,
   managers_notes          TEXT,
   users_notes             TEXT,
@@ -756,6 +757,11 @@ GROUP BY task_id`,
   // required, nothing archives on it. Deliberately no start_date: created_at
   // already answers "when did this project start".
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`,
+  // Pre-existing databases created before per-project idle time existed.
+  // ADD COLUMN ... DEFAULT on Postgres backfills existing rows to the
+  // default for free (metadata-only since PG11) - every pre-existing project
+  // reads 450s/7.5min same as a newly created one, no separate UPDATE needed.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS idle_time_seconds INTEGER NOT NULL DEFAULT 450`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,

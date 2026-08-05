@@ -27,7 +27,7 @@ function dateOrNull(value) {
 // ---------------------------------------------------------------------------
 
 /** @param {{ name: string, status?: string, billable?: boolean, disableActivity?: boolean,
- *   allowProjectTracking?: boolean, disableIdleTime?: boolean, clientId?: string|null,
+ *   allowProjectTracking?: boolean, disableIdleTime?: boolean, idleTimeSeconds?: number, clientId?: string|null,
  *   managersNotes?: string, usersNotes?: string, viewersNotes?: string,
  *   type?: "normal"|"calling", endDate?: string|null, createdBy?: string }} data */
 export async function createProjectPg(data) {
@@ -35,8 +35,8 @@ export async function createProjectPg(data) {
   const rows = await query(
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
-       client_id, managers_notes, users_notes, viewers_notes, type, end_date, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)
+       idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date, created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
      RETURNING *`,
     [
       id,
@@ -46,6 +46,9 @@ export async function createProjectPg(data) {
       data.disableActivity ?? false,
       data.allowProjectTracking ?? true,
       data.disableIdleTime ?? false,
+      // 450s = 7.5 minutes, the product default a new project gets when the
+      // creator doesn't touch the idle-time field (ID-1/ID-2 of the plan).
+      Number.isFinite(data.idleTimeSeconds) ? Math.max(0, Math.floor(data.idleTimeSeconds)) : 450,
       uuidOrNull(data.clientId),
       data.managersNotes ?? null,
       data.usersNotes ?? null,
@@ -72,6 +75,7 @@ export async function updateProjectPg(id, patch) {
     disableActivity: "disable_activity",
     allowProjectTracking: "allow_project_tracking",
     disableIdleTime: "disable_idle_time",
+    idleTimeSeconds: "idle_time_seconds",
     clientId: "client_id",
     managersNotes: "managers_notes",
     usersNotes: "users_notes",
@@ -83,7 +87,15 @@ export async function updateProjectPg(id, patch) {
   const params = [id];
   for (const [key, column] of Object.entries(columns)) {
     if (!(key in patch)) continue;
-    params.push(key === "clientId" ? uuidOrNull(patch[key]) : key === "endDate" ? dateOrNull(patch[key]) : patch[key]);
+    params.push(
+      key === "clientId"
+        ? uuidOrNull(patch[key])
+        : key === "endDate"
+          ? dateOrNull(patch[key])
+          : key === "idleTimeSeconds"
+            ? Math.max(0, Math.floor(Number(patch[key]) || 0))
+            : patch[key],
+    );
     sets.push(`${column} = $${params.length}`);
   }
   if (sets.length === 0) return getProjectPg(id);

@@ -483,6 +483,7 @@ CREATE TABLE IF NOT EXISTS projects (
   disable_activity        BOOLEAN NOT NULL DEFAULT false,
   allow_project_tracking  BOOLEAN NOT NULL DEFAULT true,
   disable_idle_time       BOOLEAN NOT NULL DEFAULT false,
+  idle_time_seconds       INTEGER NOT NULL DEFAULT 450,
   client_id               UUID,
   managers_notes          TEXT,
   users_notes             TEXT,

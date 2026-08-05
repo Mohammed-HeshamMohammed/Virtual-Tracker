@@ -283,6 +283,8 @@ impl ApiClient {
                 .and_then(|a| a.get("message"))
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
+            disable_idle_time: data.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false),
+            idle_time_seconds: data.get("idleTimeSeconds").and_then(|v| v.as_u64()).unwrap_or(450),
         })
     }
 

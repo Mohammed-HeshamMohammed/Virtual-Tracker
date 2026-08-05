@@ -201,6 +201,21 @@ pub struct TaskTimeTracking {
     #[serde(default)]
     pub limit_reached: bool,
     pub allowance_message: Option<String>,
+    /// ID-3: the owning project's idle-time settings, fetched fresh on every
+    /// task/session transition instead of a hardcoded/org-wide constant - see
+    /// PLAN-agent-crash-safe-progress.md. `disable_idle_time = true` means no
+    /// active/idle split and no idle escalation for this project at all.
+    #[serde(default)]
+    pub disable_idle_time: bool,
+    #[serde(default = "default_idle_time_seconds")]
+    pub idle_time_seconds: u64,
+}
+
+/// 450s = 7.5 minutes, the same product default `ensure-lookup-schema.js`
+/// gives a project on creation - used here only as a deserialization
+/// fallback if a response is ever missing the field.
+fn default_idle_time_seconds() -> u64 {
+    450
 }
 
 /// The viewer's own daily/weekly work-hour limits (People > member > Limits),
