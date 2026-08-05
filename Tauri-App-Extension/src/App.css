@@ -979,9 +979,9 @@ body {
   right: 0;
   bottom: calc(100% + 6px);
   z-index: 20;
-  /* Exactly 5 rows: .dropdown-item is a fixed 32px tall, ×5 = 160px, plus
+  /* Exactly 5 rows: .dropdown-item is a fixed 32px tall (flex-shrink: 0), ×5 = 160px, plus
      4 inter-row gaps (2px = 8px) and this menu's own 6px top/bottom padding
-     (12px). Scrolls (overflow-y: auto below) once options exceed that. */
+     (12px). Scrolls (overflow-y: auto) once options exceed 5 items. */
   max-height: 180px;
   overflow-y: auto;
   border-radius: 10px;
@@ -995,12 +995,30 @@ body {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
+.dropdown-menu::-webkit-scrollbar {
+  width: 5px;
+}
+
+.dropdown-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+  background: rgba(186, 158, 255, 0.25);
+  border-radius: 999px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(186, 158, 255, 0.45);
+}
+
 .dropdown-item {
   width: 100%;
   text-align: left;
-  /* Fixed height (not padding-driven) so the 5-row cap on .dropdown-menu's
-     max-height is exact, independent of font line-height rendering. */
+  /* Fixed height & flex-shrink: 0 so items never compress/squish inside the flex column container */
   height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 0 10px;
@@ -1015,6 +1033,7 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 
 .dropdown-item:hover {
   background: rgba(186, 158, 255, 0.1);
