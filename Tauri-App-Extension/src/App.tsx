@@ -1008,8 +1008,6 @@ function MainApp() {
             </div>
           ) : null}
 
-          {actionError ? <p className="inline-error">{actionError}</p> : null}
-
           <button
             className="settings-corner-btn"
             type="button"
