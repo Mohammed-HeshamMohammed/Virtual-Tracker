@@ -15,14 +15,14 @@ const CACHE_PASSWORD_POLICY = "public, max-age=0, stale-while-revalidate=3600";
 export async function routeAuth(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
-  if (url.pathname === "/api/auth/password-policy" && req.method === "GET") {
+  if (authPath === "/api/auth/password-policy" && req.method === "GET") {
     sendJson(res, origin, 200, { success: true, ...getPublicPasswordPolicyResponse() }, req, {
       "Cache-Control": CACHE_PASSWORD_POLICY,
     });
     return true;
   }
 
-  if (url.pathname === "/api/auth/readiness" && req.method === "GET") {
+  if (authPath === "/api/auth/readiness" && req.method === "GET") {
     const auth = getAuthAdmin();
     if (!auth) {
       sendJson(res, origin, 503, {
@@ -36,7 +36,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/validate-password" && req.method === "POST") {
+  if (authPath === "/api/auth/validate-password" && req.method === "POST") {
     let body;
     try {
       body = await readJsonBody(req);
@@ -76,7 +76,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/firebase-config" && req.method === "GET") {
+  if (authPath === "/api/auth/firebase-config" && req.method === "GET") {
     const web = readFirebaseWebConfigFromEnv();
     if (!web.apiKey || !web.authDomain || !web.projectId || !web.appId) {
       sendJson(res, origin, 503, {
@@ -92,7 +92,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/verify" && req.method === "POST") {
+  if (authPath === "/api/auth/verify" && req.method === "POST") {
     const auth = getAuthAdmin();
     if (!auth) {
       sendJson(res, origin, 503, { success: false, error: "Firebase Admin is not configured; cannot verify tokens." });
@@ -127,7 +127,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/resolve-sign-in-methods" && req.method === "POST") {
+  if (authPath === "/api/auth/resolve-sign-in-methods" && req.method === "POST") {
     let body;
     try {
       body = await readJsonBody(req);
