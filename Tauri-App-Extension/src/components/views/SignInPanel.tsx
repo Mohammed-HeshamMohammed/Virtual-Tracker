@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthView, ForgotState, SignUpFields, SignUpState } from "../../types";
 import { TitleBar } from "../common/TitleBar";
 
-// Signed-out screen: full-width split (brand panel + form), taking over the full 1150x650 window.
+// Signed-out screen: full-width split (brand panel + form), taking over the full window.
 export function SignInPanel({
   busy,
   actionError,
@@ -47,6 +47,20 @@ export function SignInPanel({
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
+
+  const [prevView, setPrevView] = useState<AuthView>(authView);
+  const [direction, setDirection] = useState<"forward" | "back">("forward");
+
+  useEffect(() => {
+    if (authView !== prevView) {
+      if (authView === "signin") {
+        setDirection("back");
+      } else {
+        setDirection("forward");
+      }
+      setPrevView(authView);
+    }
+  }, [authView, prevView]);
 
   return (
     <main className="agent-tray view-home">
@@ -100,7 +114,7 @@ export function SignInPanel({
         <section className="auth-form-panel">
           <div className="auth-form-card">
             {authView === "signup" ? (
-              <>
+              <div key="signup" className={`auth-form-view auth-anim-${direction}`}>
                 <div className="auth-form-head">
                   <h1>Create account</h1>
                   <p>Set up a new Virtual Tracker account</p>
@@ -269,9 +283,9 @@ export function SignInPanel({
                     {signUp.busy ? "Creating account…" : "Create account"}
                   </button>
                 </form>
-              </>
+              </div>
             ) : authView === "forgot" ? (
-              <>
+              <div key="forgot" className={`auth-form-view auth-anim-${direction}`}>
                 <div className="auth-form-head">
                   <h1>Reset your password</h1>
                   <p>Enter your email and we'll send you a reset link</p>
@@ -330,9 +344,9 @@ export function SignInPanel({
                     {forgot.busy ? "Sending…" : "Send reset link"}
                   </button>
                 </form>
-              </>
+              </div>
             ) : (
-              <>
+              <div key="signin" className={`auth-form-view auth-anim-${direction}`}>
                 <div className="auth-form-head">
                   <h1>Welcome Back</h1>
                   <p>Sign in to your account to get started</p>
@@ -472,7 +486,7 @@ export function SignInPanel({
                     </button>
                   </div>
                 </form>
-              </>
+              </div>
             )}
           </div>
         </section>

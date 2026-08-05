@@ -1839,4 +1839,104 @@ body {
   word-break: break-word;
 }
 
+/* ==========================================
+   Auth Forms Slide & Fade Transition Animations
+   ========================================== */
+.auth-form-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-form-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  will-change: transform, opacity;
+}
+
+.auth-anim-forward {
+  animation: auth-slide-forward 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-anim-back {
+  animation: auth-slide-back 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes auth-slide-forward {
+  0% {
+    opacity: 0;
+    transform: translateX(36px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes auth-slide-back {
+  0% {
+    opacity: 0;
+    transform: translateX(-36px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* Staggered micro-animations for input fields and buttons */
+.auth-form-view .auth-form-head,
+.auth-form-view .auth-back-row,
+.auth-form-view .input-field-group,
+.auth-form-view .auth-error-banner,
+.auth-form-view .auth-success-banner,
+.auth-form-view .btn-primary,
+.auth-form-view .signin-divider,
+.auth-form-view .social-row,
+.auth-form-view .btn-secondary,
+.auth-form-view .signin-links {
+  animation: auth-field-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-form-view .auth-form-head { animation-delay: 0.02s; }
+.auth-form-view .auth-back-row { animation-delay: 0.03s; }
+.auth-form-view .input-field-group:nth-of-type(1) { animation-delay: 0.05s; }
+.auth-form-view .input-field-group:nth-of-type(2) { animation-delay: 0.08s; }
+.auth-form-view .input-field-group:nth-of-type(3) { animation-delay: 0.11s; }
+.auth-form-view .input-field-group:nth-of-type(4) { animation-delay: 0.14s; }
+.auth-form-view .input-field-group:nth-of-type(5) { animation-delay: 0.17s; }
+.auth-form-view .input-field-group:nth-of-type(6) { animation-delay: 0.20s; }
+.auth-form-view .auth-error-banner,
+.auth-form-view .auth-success-banner { animation-delay: 0.18s; }
+.auth-form-view .btn-primary { animation-delay: 0.22s; }
+.auth-form-view .signin-divider { animation-delay: 0.24s; }
+.auth-form-view .social-row { animation-delay: 0.26s; }
+.auth-form-view .btn-secondary { animation-delay: 0.28s; }
+.auth-form-view .signin-links { animation-delay: 0.30s; }
+
+@keyframes auth-field-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Micro-interactions for Auth Controls */
+.auth-back-row .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.auth-back-row .link-btn:hover:not(:disabled) {
+  transform: translateX(-3px);
+}
+
+
 
