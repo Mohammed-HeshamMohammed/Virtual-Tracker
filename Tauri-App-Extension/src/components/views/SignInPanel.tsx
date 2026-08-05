@@ -3,6 +3,40 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AuthView, ForgotState, SignUpFields, SignUpState } from "../../types";
 import { TitleBar } from "../common/TitleBar";
 
+const UPPERCASE_RE = /[A-Z]/;
+const LOWERCASE_RE = /[a-z]/;
+const NUMBER_RE = /[0-9]/;
+const SPECIAL_RE = /[^A-Za-z0-9]/;
+
+const SEQUENTIAL_PATTERNS = [
+  "abcdefghijklmnopqrstuvwxyz",
+  "zyxwvutsrqponmlkjihgfedcba",
+  "0123456789",
+  "9876543210",
+  "qwertyuiop",
+  "asdfghjkl",
+  "zxcvbnm",
+];
+
+function hasSimplePattern(password: string): boolean {
+  if (!password) return false;
+  const lower = password.toLowerCase();
+  for (const seq of SEQUENTIAL_PATTERNS) {
+    const minChunk = Math.min(6, seq.length);
+    for (let len = seq.length; len >= minChunk; len--) {
+      for (let i = 0; i <= seq.length - len; i++) {
+        const chunk = seq.slice(i, i + len);
+        if (chunk.length >= 4 && lower.includes(chunk)) {
+          return true;
+        }
+      }
+    }
+  }
+  if (/(.)\1{5,}/.test(password)) return true;
+  if (password.length >= 4 && /^(.)\1+$/.test(password)) return true;
+  return false;
+}
+
 // Signed-out screen: full-width split (brand panel + form), taking over the full window.
 export function SignInPanel({
   busy,
@@ -48,10 +82,13 @@ export function SignInPanel({
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
 
-  // Live Password Validation Hints for Sign Up view
-  const isLengthValid = signUp.password.length >= 8;
-  const isCaseValid = /[A-Z]/.test(signUp.password) && /[a-z]/.test(signUp.password);
-  const isSymbolNumValid = /[0-9!@#$%^&*(),.?":{}|<>]/.test(signUp.password);
+  // Live Password Validation Hints matching Dashboard-Web & Dashboard-Backend policy
+  const isMinLengthValid = signUp.password.length >= 10;
+  const isUppercaseValid = UPPERCASE_RE.test(signUp.password);
+  const isLowercaseValid = LOWERCASE_RE.test(signUp.password);
+  const isNumberValid = NUMBER_RE.test(signUp.password);
+  const isSpecialValid = SPECIAL_RE.test(signUp.password);
+  const isNotSimplePatternValid = signUp.password.length > 0 && !hasSimplePattern(signUp.password);
   const isMatchValid = Boolean(
     signUp.password && signUp.confirmPassword && signUp.password === signUp.confirmPassword
   );
@@ -74,31 +111,55 @@ export function SignInPanel({
           <div key={authView} className="auth-brand-copy">
             {authView === "signup" ? (
               <>
-                <h2>Password Requirements & Tips</h2>
-                <p>Create a strong password to protect your account and tracking logs.</p>
+                <h2>Password Requirements</h2>
+                <p>Your password must satisfy all security rules from our platform policy.</p>
 
-                <div className="auth-brand-features">
-                  <div className={`auth-feature-item${isLengthValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isLengthValid ? "✓" : "📏"}</span>
+                <div className="auth-brand-features auth-password-checklist">
+                  <div className={`auth-feature-item${isMinLengthValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isMinLengthValid ? "✓" : "📏"}</span>
                     <div>
-                      <strong>At least 8 characters</strong>
-                      <p>Longer passwords provide stronger security.</p>
+                      <strong>Minimum 10 characters</strong>
+                      <p>At least 10 characters long.</p>
                     </div>
                   </div>
 
-                  <div className={`auth-feature-item${isCaseValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isCaseValid ? "✓" : "🔤"}</span>
+                  <div className={`auth-feature-item${isUppercaseValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isUppercaseValid ? "✓" : "🔤"}</span>
                     <div>
-                      <strong>Mix of uppercase & lowercase</strong>
-                      <p>Combine both capital and small letters.</p>
+                      <strong>Uppercase letter</strong>
+                      <p>Contains at least one uppercase letter (A-Z).</p>
                     </div>
                   </div>
 
-                  <div className={`auth-feature-item${isSymbolNumValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isSymbolNumValid ? "✓" : "🔢"}</span>
+                  <div className={`auth-feature-item${isLowercaseValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isLowercaseValid ? "✓" : "🔤"}</span>
                     <div>
-                      <strong>Includes numbers or symbols</strong>
-                      <p>Add digits (0-9) or special symbols (@, #, $).</p>
+                      <strong>Lowercase letter</strong>
+                      <p>Contains at least one lowercase letter (a-z).</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isNumberValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isNumberValid ? "✓" : "🔢"}</span>
+                    <div>
+                      <strong>Number</strong>
+                      <p>Contains at least one digit (0-9).</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isSpecialValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isSpecialValid ? "✓" : "✨"}</span>
+                    <div>
+                      <strong>Special character</strong>
+                      <p>Contains at least one symbol (!@#$%^&*).</p>
+                    </div>
+                  </div>
+
+                  <div className={`auth-feature-item${isNotSimplePatternValid ? " valid" : ""}`}>
+                    <span className="auth-feature-icon">{isNotSimplePatternValid ? "✓" : "🛡️"}</span>
+                    <div>
+                      <strong>Not a simple pattern</strong>
+                      <p>Avoid sequential characters (1234, abcd) or repeated letters.</p>
                     </div>
                   </div>
 
