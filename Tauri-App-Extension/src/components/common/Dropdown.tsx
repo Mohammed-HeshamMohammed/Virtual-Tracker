@@ -103,7 +103,7 @@ export function Dropdown({
   };
 
   return (
-    <div className="dropdown" ref={rootRef}>
+    <div className={`dropdown${open ? " open" : ""}`} ref={rootRef}>
       <button
         id={id}
         ref={triggerRef}
