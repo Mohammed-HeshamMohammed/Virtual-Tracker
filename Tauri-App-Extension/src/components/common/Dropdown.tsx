@@ -8,6 +8,7 @@ export function Dropdown({
   placeholder,
   emptyLabel,
   disabled,
+  direction = "down",
   onChange,
 }: {
   id: string;
@@ -16,6 +17,7 @@ export function Dropdown({
   placeholder: string;
   emptyLabel: string;
   disabled?: boolean;
+  direction?: "up" | "down";
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -139,7 +141,7 @@ export function Dropdown({
         </svg>
       </button>
       {open && !isEmpty ? (
-        <div className="dropdown-menu" role="listbox" id={`${id}-listbox`}>
+        <div className={`dropdown-menu dropdown-menu-${direction}`} role="listbox" id={`${id}-listbox`}>
           {options.map((option, index) => (
             <button
               key={option.id}

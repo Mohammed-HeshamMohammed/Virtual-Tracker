@@ -923,6 +923,7 @@ function MainApp() {
                   </label>
                   <Dropdown
                     id="project-select"
+                    direction="up"
                     value={selectedProjectId}
                     options={projects.map((project) => ({ id: project.id, label: project.name }))}
                     placeholder="Select a project"
@@ -943,6 +944,7 @@ function MainApp() {
                     </label>
                     <Dropdown
                       id="task-select"
+                      direction="down"
                       value={selectedTaskId}
                       options={tasks.map((task) => ({ id: task.id, label: task.title }))}
                       placeholder="Select a task"
