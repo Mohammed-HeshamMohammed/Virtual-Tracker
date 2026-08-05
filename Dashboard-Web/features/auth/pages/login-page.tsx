@@ -125,6 +125,15 @@ const AuthPage: React.FC = () => {
     window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""))
     if (linked === "1") {
       setRegisterSuccessNotice("Desktop agent linked. You can close this tab and return to Virtual Tracker Agent.")
+      // Browsers only allow window.close() on tabs opened via script - this
+      // tab was opened by the OS (Tauri's ShellExecuteW), so most browsers
+      // silently refuse. Try anyway; the notice above is the fallback for
+      // when they do.
+      try {
+        window.close()
+      } catch {
+        /* ignore — notice above covers this */
+      }
     } else {
       setLoginFormError(
         linkError === "cancelled"
