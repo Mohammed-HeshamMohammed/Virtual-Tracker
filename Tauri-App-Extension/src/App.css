@@ -1844,7 +1844,8 @@ body {
    ========================================== */
 .auth-form-card {
   position: relative;
-  overflow: hidden;
+  width: 100%;
+  max-width: 400px;
 }
 
 .auth-form-view {
@@ -1852,69 +1853,19 @@ body {
   flex-direction: column;
   gap: 20px;
   width: 100%;
-  will-change: transform, opacity;
+  animation: auth-form-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.auth-anim-enter-forward {
-  animation: auth-slide-enter-forward 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.auth-anim-enter-back {
-  animation: auth-slide-enter-back 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-.auth-anim-exit-forward {
-  animation: auth-slide-exit-forward 0.19s cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-.auth-anim-exit-back {
-  animation: auth-slide-exit-back 0.19s cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-@keyframes auth-slide-enter-forward {
+@keyframes auth-form-in {
   0% {
     opacity: 0;
-    transform: translateX(36px) scale(0.97);
+    transform: translateY(12px) scale(0.98);
   }
   100% {
     opacity: 1;
-    transform: translateX(0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
-
-@keyframes auth-slide-enter-back {
-  0% {
-    opacity: 0;
-    transform: translateX(-36px) scale(0.97);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
-}
-
-@keyframes auth-slide-exit-forward {
-  0% {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(-36px) scale(0.97);
-  }
-}
-
-@keyframes auth-slide-exit-back {
-  0% {
-    opacity: 1;
-    transform: translateX(0) scale(1);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(36px) scale(0.97);
-  }
-}
-
 
 /* Staggered micro-animations for input fields and buttons */
 .auth-form-view .auth-form-head,
@@ -1927,35 +1878,34 @@ body {
 .auth-form-view .social-row,
 .auth-form-view .btn-secondary,
 .auth-form-view .signin-links {
-  animation: auth-field-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: auth-item-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .auth-form-view .auth-form-head { animation-delay: 0.02s; }
 .auth-form-view .auth-back-row { animation-delay: 0.03s; }
-.auth-form-view .input-field-group:nth-of-type(1) { animation-delay: 0.05s; }
-.auth-form-view .input-field-group:nth-of-type(2) { animation-delay: 0.08s; }
-.auth-form-view .input-field-group:nth-of-type(3) { animation-delay: 0.11s; }
-.auth-form-view .input-field-group:nth-of-type(4) { animation-delay: 0.14s; }
-.auth-form-view .input-field-group:nth-of-type(5) { animation-delay: 0.17s; }
-.auth-form-view .input-field-group:nth-of-type(6) { animation-delay: 0.20s; }
-.auth-form-view .auth-error-banner,
-.auth-form-view .auth-success-banner { animation-delay: 0.18s; }
-.auth-form-view .btn-primary { animation-delay: 0.22s; }
-.auth-form-view .signin-divider { animation-delay: 0.24s; }
-.auth-form-view .social-row { animation-delay: 0.26s; }
-.auth-form-view .btn-secondary { animation-delay: 0.28s; }
-.auth-form-view .signin-links { animation-delay: 0.30s; }
+.auth-form-view .input-field-group:nth-of-type(1) { animation-delay: 0.04s; }
+.auth-form-view .input-field-group:nth-of-type(2) { animation-delay: 0.06s; }
+.auth-form-view .input-field-group:nth-of-type(3) { animation-delay: 0.08s; }
+.auth-form-view .input-field-group:nth-of-type(4) { animation-delay: 0.10s; }
+.auth-form-view .input-field-group:nth-of-type(5) { animation-delay: 0.12s; }
+.auth-form-view .input-field-group:nth-of-type(6) { animation-delay: 0.14s; }
+.auth-form-view .btn-primary { animation-delay: 0.16s; }
+.auth-form-view .signin-divider { animation-delay: 0.18s; }
+.auth-form-view .social-row { animation-delay: 0.20s; }
+.auth-form-view .btn-secondary { animation-delay: 0.22s; }
+.auth-form-view .signin-links { animation-delay: 0.24s; }
 
-@keyframes auth-field-in {
+@keyframes auth-item-in {
   0% {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   100% {
     opacity: 1;
     transform: translateY(0);
   }
 }
+
 
 /* Micro-interactions for Auth Controls */
 .auth-back-row .link-btn {
