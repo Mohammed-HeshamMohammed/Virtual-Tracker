@@ -102,10 +102,10 @@ export function SignInPanel({
         checkingUpdate={checkingUpdate}
       />
       <div className="app-body auth-split">
-        <section className="auth-brand" aria-hidden="true">
-          <div className="auth-brand-mark">
+        <section className="auth-brand" aria-hidden="true" data-tauri-drag-region>
+          <div className="auth-brand-mark" data-tauri-drag-region>
             <img src="/app-icon.ico" width={36} height={36} alt="" draggable={false} />
-            <span>Virtual Tracker</span>
+            <span data-tauri-drag-region>Virtual Tracker</span>
           </div>
 
           <div key={authView} className="auth-brand-copy">

@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Dashboard-Web", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "tauri-app-vite",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "Tauri-App-Extension", "run", "dev", "--", "--port", "4173"],
+      "port": 4173
+    }
+  ]
+}
