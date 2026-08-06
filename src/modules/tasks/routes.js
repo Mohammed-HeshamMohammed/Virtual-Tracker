@@ -12,6 +12,7 @@ import {
   syncTaskTimeTracking,
 } from "./task-time-tracking.js";
 import {
+  blockTaskForUser,
   getReviewQueue,
   getTaskParticipation,
   isReviewCenterRole,
@@ -280,6 +281,55 @@ export async function routeTasks(req, res, url, db, origin) {
     } catch (e) {
       logSafeError("[tasks/assignments/start]", e);
       const message = e instanceof Error ? e.message : "Failed to start task";
+      sendJson(res, origin, message === "Task not found" ? 404 : 500, { success: false, error: message });
+    }
+    return true;
+  }
+
+  // POST /api/tasks/:taskId/assignments/block - self-service "I'm blocked,
+  // waiting on X", distinct from the whole task being blocked (board drag).
+  // Same access model as .../start: management bypasses the "must be
+  // assigned" check, but the action always applies to the viewer's own
+  // assignment, never someone else's on their behalf.
+  const taskAssignmentBlockMatch = /^\/api\/tasks\/([^/]+)\/assignments\/block$/.exec(pn);
+  if (taskAssignmentBlockMatch && req.method === "POST") {
+    const taskId = taskAssignmentBlockMatch[1];
+    const access = await assertTaskAccessible(req, res, origin, db, taskId);
+    if (!access) return true;
+    if (!isManagementRole(access.viewer.roleName)) {
+      const task = access.task;
+      const primaryAssignee =
+        typeof task.assigned_to === "string"
+          ? task.assigned_to
+          : typeof task.assignedTo === "string"
+            ? task.assignedTo
+            : "";
+      if (primaryAssignee !== access.viewer.memberId) {
+        const isAssigned = await hasAssignmentPg(taskId, access.viewer.memberId);
+        if (!isAssigned) {
+          sendJson(res, origin, 403, {
+            success: false,
+            error: "Only assigned members can block this task.",
+          });
+          return true;
+        }
+      }
+    }
+    try {
+      const memberSnap = await db.collection("members").doc(access.viewer.memberId).get();
+      const memberData = memberSnap.exists ? memberSnap.data() : {};
+      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
+      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
+      const userName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "");
+      const data = await blockTaskForUser(db, {
+        taskId,
+        userId: access.viewer.memberId,
+        userName,
+      });
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      logSafeError("[tasks/assignments/block]", e);
+      const message = e instanceof Error ? e.message : "Failed to block task";
       sendJson(res, origin, message === "Task not found" ? 404 : 500, { success: false, error: message });
     }
     return true;

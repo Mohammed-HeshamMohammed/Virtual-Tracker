@@ -257,13 +257,17 @@ async function notifyAssignmentStatusChange(db, { task, assigneeId, previousStat
   }
 
   if (nextStatus === "blocked") {
-    await createNotification(db, {
-      recipient_id: assigneeId,
-      type: "task_rejected",
-      title: "Assignment rejected",
-      message: `"${taskTitle}" was rejected and marked blocked.`,
-      link: "pm-tasks",
-    }).catch(() => null);
+    // Self-service ("I'm blocked, waiting on X") - notify the people who'd
+    // want to know work stalled, same audience as the "started" notification,
+    // not the assignee themselves (they already know, they just did this).
+    const parents = await getDirectParentIds(db, assigneeId);
+    const projectLeaders = await getProjectLeadershipIds(db, projectId, assigneeId);
+    await notifyRecipients(db, [...parents, ...projectLeaders], {
+      type: "task_blocked",
+      title: "Assignee blocked",
+      message: `${actorName} marked "${taskTitle}" as blocked.`,
+      link,
+    });
   }
 }
 
@@ -361,6 +365,46 @@ export async function startTaskForUser(db, { taskId, userId, userName }) {
         assigneeId: userId,
         previousStatus: result.previousStatus,
         nextStatus: "in_progress",
+        actorName: userName || "A team member",
+      });
+    }
+  }
+
+  const taskStatus = await recomputeTaskStatus(db, taskId);
+  const freshTask = await getTaskPg(taskId);
+  const participation = computeParticipationStats(await getTaskAssignments(db, taskId));
+
+  return {
+    assignmentStatus,
+    taskStatus: freshTask?.status ?? taskStatus ?? "todo",
+    statusChanged,
+    ...participation,
+  };
+}
+
+/** Self-service "I'm blocked, waiting on X" - mirrors startTaskForUser. Only
+ * the caller's own assignment (userId is always the viewer, set by the
+ * route), never another assignee's on their behalf. A task with one blocked
+ * assignee and others still working stays "in_progress" overall -
+ * recomputeTaskStatus already checks in_progress before blocked. */
+export async function blockTaskForUser(db, { taskId, userId, userName }) {
+  const task = await getTaskPg(taskId);
+  if (!task) throw new Error("Task not found");
+
+  const assignment = await ensureAssignmentForUser(db, taskId, userId);
+  let statusChanged = false;
+  let assignmentStatus = assignment.status;
+
+  if (assignmentStatus === "todo" || assignmentStatus === "in_progress") {
+    const result = await updateAssignmentStatus(db, assignment.id, "blocked", userId);
+    if (result && result.previousStatus !== result.nextStatus) {
+      statusChanged = true;
+      assignmentStatus = result.nextStatus;
+      await notifyAssignmentStatusChange(db, {
+        task,
+        assigneeId: userId,
+        previousStatus: result.previousStatus,
+        nextStatus: "blocked",
         actorName: userName || "A team member",
       });
     }
