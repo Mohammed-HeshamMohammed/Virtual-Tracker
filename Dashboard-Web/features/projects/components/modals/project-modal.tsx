@@ -56,6 +56,9 @@ interface AddProjectFormState {
   disableActivity: boolean
   allowProjectTracking: boolean
   disableIdleTime: boolean
+  /** Decimal minutes as a string (e.g. "7.5") - the hours+minutes inputs in
+   * the General tab both read/write this one field. */
+  idleTimeMinutes: string
   endDate: string
   clientIds: string[]
   teams: string[]
@@ -131,6 +134,9 @@ function createDefaultAddForm(): AddProjectFormState {
     disableActivity: false,
     allowProjectTracking: true,
     disableIdleTime: false,
+    // Matches ID-1's server-side default (450s) - shown up front on a new
+    // project, not silently inferred after the fact.
+    idleTimeMinutes: "7.5",
     endDate: "",
     clientIds: [],
     teams: [],
@@ -302,6 +308,7 @@ function formStateToPayload(
     disableActivity: addForm.disableActivity,
     allowProjectTracking: addForm.allowProjectTracking,
     disableIdleTime: addForm.disableIdleTime,
+    idleTimeSeconds: Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60)),
     endDate: addForm.endDate,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
@@ -495,6 +502,9 @@ export function ProjectModal({
           disableActivity: payload.disableActivity,
           allowProjectTracking: payload.allowProjectTracking,
           disableIdleTime: payload.disableIdleTime,
+          // Real stored value in edit mode - the "7.5" default above is
+          // create-mode-only and never overwrites an existing project's saved seconds.
+          idleTimeMinutes: String((payload.idleTimeSeconds ?? 450) / 60),
           endDate: payload.endDate || "",
           clientIds: payload.clientIds,
           teams: payload.teamIds,
@@ -932,6 +942,69 @@ export function ProjectModal({
                     </>
                   }
                 />
+                <ExpandCollapse show={!addForm.disableIdleTime}>
+                  {(() => {
+                    const totalMinutes = Number(addForm.idleTimeMinutes) || 0
+                    const hours = Math.floor(totalMinutes / 60)
+                    const minutes = totalMinutes - hours * 60
+                    return (
+                      <FormField
+                        label="Idle time"
+                        hint="How long without activity before time on this project is marked idle."
+                        className="pt-1"
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              min={0}
+                              value={hours}
+                              onChange={(e) =>
+                                setAddForm((p) => ({
+                                  ...p,
+                                  idleTimeMinutes: String((Number(e.target.value) || 0) * 60 + minutes),
+                                }))
+                              }
+                              className={cn(formTheme.control, "pr-7")}
+                            />
+                            <span
+                              className={cn(
+                                "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                                formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                              )}
+                            >
+                              h
+                            </span>
+                          </div>
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={59}
+                              step={0.5}
+                              value={minutes}
+                              onChange={(e) =>
+                                setAddForm((p) => ({
+                                  ...p,
+                                  idleTimeMinutes: String(hours * 60 + (Number(e.target.value) || 0)),
+                                }))
+                              }
+                              className={cn(formTheme.control, "pr-7")}
+                            />
+                            <span
+                              className={cn(
+                                "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                                formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                              )}
+                            >
+                              m
+                            </span>
+                          </div>
+                        </div>
+                      </FormField>
+                    )
+                  })()}
+                </ExpandCollapse>
               </div>
 
               {formConfig ? (

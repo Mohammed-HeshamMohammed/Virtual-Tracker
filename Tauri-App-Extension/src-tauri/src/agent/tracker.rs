@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
+use crate::agent::progress_store::{PersistedProgress, ProgressStore};
 use crate::capture::activity::ActivityMeter;
 use crate::capture::events::EventBuilder;
 use crate::capture::window::get_foreground_window;
@@ -28,6 +29,9 @@ pub struct ActivityTracker {
     events: EventBuilder,
     activity: Arc<ActivityMeter>,
     queue: EventQueue,
+    /// PS-1: crash-safe mirror of `task_progress`, written on every credited
+    /// tick so an unclean exit doesn't lose whatever RAM alone was holding.
+    progress: ProgressStore,
     on_status: Option<StatusCallback>,
     stop: Arc<AtomicBool>,
     session_id: Arc<Mutex<Option<String>>>,
@@ -99,6 +103,12 @@ struct TickState {
     active_elapsed: u64,
     idle_baseline: u64,
     idle_elapsed: u64,
+    /// ID-3: this session's project's own idle settings, re-fetched on every
+    /// task/project transition instead of a hardcoded/org-wide constant.
+    /// `true` means no active/idle split and no idle escalation at all for
+    /// this project.
+    idle_time_disabled: bool,
+    idle_threshold_sec_for_project: u64,
     next_sync_at: Instant,
     idle_watch: IdleWatch,
     /// Real wall-clock time of the last credited tick (TC-2). Ticks are
@@ -129,6 +139,8 @@ impl TickState {
             active_elapsed: 0,
             idle_baseline: 0,
             idle_elapsed: 0,
+            idle_time_disabled: false,
+            idle_threshold_sec_for_project: IDLE_THRESHOLD_SEC,
             next_sync_at: now,
             idle_watch: IdleWatch::default(),
             last_tick_at: now,
@@ -162,6 +174,7 @@ impl ActivityTracker {
             events,
             activity,
             queue: EventQueue::new(settings.queue_path.clone()),
+            progress: ProgressStore::new(settings.progress_path.clone()),
             on_status,
             stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
@@ -364,6 +377,8 @@ impl ActivityTracker {
                         &mut state.active_elapsed,
                         &state.idle_baseline,
                         &mut state.idle_elapsed,
+                        state.idle_time_disabled,
+                        state.idle_threshold_sec_for_project,
                     );
                     if now >= state.next_screenshot_at {
                         self.upload_screenshot(&session_id, &window);
@@ -389,6 +404,8 @@ impl ActivityTracker {
                 &mut state.active_elapsed,
                 &mut state.idle_baseline,
                 &mut state.idle_elapsed,
+                &mut state.idle_time_disabled,
+                &mut state.idle_threshold_sec_for_project,
             );
             state.was_active = false;
             state.current_session = String::new();
@@ -413,6 +430,8 @@ impl ActivityTracker {
                 &mut state.active_elapsed,
                 &mut state.idle_baseline,
                 &mut state.idle_elapsed,
+                &mut state.idle_time_disabled,
+                &mut state.idle_threshold_sec_for_project,
             );
             state.was_active = false;
             state.current_session = String::new();
@@ -471,6 +490,51 @@ impl ActivityTracker {
                 .as_ref()
                 .map(|t| t.idle_seconds)
                 .unwrap_or_else(|| session_seconds("idleSeconds"));
+
+            // ID-3: task-anchored sessions get this from the same
+            // fetch_task_time_tracking call above (task-time-tracking.js
+            // attaches the owning project's settings to every response).
+            // Calling (task-less) sessions have no such fetch, so their
+            // settings are read straight off the session the agent already
+            // has (normalizeSession attaches them there for task-less
+            // sessions only - see activity/routes.js). A failed fetch on the
+            // task path falls back to the org-wide default rather than
+            // flapping on a transient network error.
+            state.idle_time_disabled = tracking
+                .as_ref()
+                .map(|t| t.disable_idle_time)
+                .unwrap_or_else(|| {
+                    session.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false)
+                });
+            state.idle_threshold_sec_for_project = tracking
+                .as_ref()
+                .map(|t| t.idle_time_seconds)
+                .unwrap_or_else(|| {
+                    session
+                        .get("idleTimeSeconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or_else(|| self.idle_threshold_sec.load(Ordering::Relaxed))
+                });
+
+            // PS-2: an unclean exit (crash/kill/reboot) between two `sync`
+            // calls loses whatever PS-1's on-disk mirror hadn't reached the
+            // server yet - reconcile against it here, same GREATEST-style
+            // rule TC-4 already applies server-side for `sync`, so a restart
+            // never displays less than what was last actually shown. Scoped
+            // to the exact same session+task on purpose: a leftover file from
+            // an already-closed session must never bleed into a new one.
+            let persisted_task_id = if session_task_id.is_empty() {
+                None
+            } else {
+                Some(session_task_id.clone())
+            };
+            if let Some(persisted) = self.progress.load() {
+                if persisted.session_id == session_id && persisted.task_id == persisted_task_id {
+                    state.active_baseline = state.active_baseline.max(persisted.active_seconds);
+                    state.idle_baseline = state.idle_baseline.max(persisted.idle_seconds);
+                }
+            }
+
             state.next_sync_at = Instant::now();
         }
 
@@ -484,6 +548,8 @@ impl ActivityTracker {
             &mut state.active_elapsed,
             &state.idle_baseline,
             &mut state.idle_elapsed,
+            state.idle_time_disabled,
+            state.idle_threshold_sec_for_project,
         );
         self.maybe_flag_synthetic_input();
 
@@ -504,6 +570,8 @@ impl ActivityTracker {
             &state.active_elapsed,
             &state.idle_baseline,
             &state.idle_elapsed,
+            state.idle_time_disabled,
+            state.idle_threshold_sec_for_project,
         ) {
             // Timer was stopped for idling; this session is over.
             state.was_active = false;
@@ -516,6 +584,8 @@ impl ActivityTracker {
                 &mut state.active_elapsed,
                 &mut state.idle_baseline,
                 &mut state.idle_elapsed,
+                &mut state.idle_time_disabled,
+                &mut state.idle_threshold_sec_for_project,
             );
             return;
         }
@@ -599,7 +669,15 @@ impl ActivityTracker {
         active_elapsed: &u64,
         idle_baseline: &u64,
         idle_elapsed: &u64,
+        idle_time_disabled: bool,
+        idle_threshold_sec: u64,
     ) -> bool {
+        // ID-3: idle time disabled for this project means no warn/alert/
+        // auto-stop/rewind either - the switch does what it says end to end,
+        // not just for the active/idle split in tick_progress.
+        if idle_time_disabled {
+            return false;
+        }
         // Idle escalation is Windows-only until real input-hook listeners
         // exist for other platforms (see ActivityMeter::run_listeners /
         // HOOKS_SUPPORTED). Off Windows, idle_seconds() only grows from
@@ -614,8 +692,10 @@ impl ActivityTracker {
         let active_total = active_baseline.saturating_add(*active_elapsed);
 
         // Real input: clear any warning and remember this as the last honest
-        // point the clock can be rewound to.
-        if idle_for < self.idle_threshold_sec.load(Ordering::Relaxed) {
+        // point the clock can be rewound to. Same per-project threshold
+        // tick_progress uses (ID-3) - this is the identical boundary, just
+        // read here too, not the separate warn/alert/stop stage timers below.
+        if idle_for < idle_threshold_sec {
             if watch.stage != 0 {
                 watch.stage = 0;
                 *self.idle_stage.lock() = 0;
@@ -708,6 +788,7 @@ impl ActivityTracker {
     /// Counts the credited seconds as idle rather than active if there's been
     /// no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session
     /// sitting untouched shouldn't silently rack up "active" hours.
+    #[allow(clippy::too_many_arguments)]
     fn tick_progress(
         &self,
         task_id: &str,
@@ -716,12 +797,20 @@ impl ActivityTracker {
         active_elapsed: &mut u64,
         idle_baseline: &u64,
         idle_elapsed: &mut u64,
+        idle_time_disabled: bool,
+        idle_threshold_sec: u64,
     ) {
         let now = Instant::now();
         let delta = Self::credited_seconds(now.duration_since(*last_tick_at));
         *last_tick_at = now;
 
-        if self.activity.idle_seconds() >= self.idle_threshold_sec.load(Ordering::Relaxed) {
+        // ID-3: a project with idle time disabled never splits into idle at
+        // all - everything is credited active. Otherwise use this session's
+        // own project's threshold (fetched on every task/project transition),
+        // never the flat org-wide `self.idle_threshold_sec`.
+        if idle_time_disabled {
+            *active_elapsed += delta;
+        } else if self.activity.idle_seconds() >= idle_threshold_sec {
             *idle_elapsed += delta;
         } else {
             *active_elapsed += delta;
@@ -739,9 +828,23 @@ impl ActivityTracker {
         } else {
             Some(task_id.to_string())
         };
-        *self.task_progress.lock() = (id, active_seconds, idle_seconds);
+        *self.task_progress.lock() = (id.clone(), active_seconds, idle_seconds);
+
+        // PS-1: same values, same call site, so the on-disk mirror can never
+        // drift from what's in RAM. Scoped to the current session so PS-2's
+        // restart reconciliation can tell a fresh session's leftovers apart
+        // from a genuinely resumable one.
+        if let Some(session_id) = self.session_id.lock().clone() {
+            self.progress.save(&PersistedProgress {
+                session_id,
+                task_id: id,
+                active_seconds,
+                idle_seconds,
+            });
+        }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn reset_task_progress(
         &self,
         task_id: &mut String,
@@ -750,12 +853,19 @@ impl ActivityTracker {
         active_elapsed: &mut u64,
         idle_baseline: &mut u64,
         idle_elapsed: &mut u64,
+        idle_time_disabled: &mut bool,
+        idle_threshold_sec: &mut u64,
     ) {
         task_id.clear();
         *active_baseline = 0;
         *active_elapsed = 0;
         *idle_baseline = 0;
         *idle_elapsed = 0;
+        // No session means no project to have fetched a threshold from - back
+        // to the bootstrap default so a stale disabled-project's setting can
+        // never bleed into whatever session/project starts next.
+        *idle_time_disabled = false;
+        *idle_threshold_sec = IDLE_THRESHOLD_SEC;
         // A resumed session must not credit the gap since tracking stopped -
         // without this, signing back in after a long break would credit that
         // entire gap (clamped to SESSION_POLL_SEC * 4, but still wrong) on
@@ -763,6 +873,7 @@ impl ActivityTracker {
         *last_tick_at = Instant::now();
         *self.task_progress.lock() = (None, 0, 0);
         *self.idle_stage.lock() = 0;
+        self.progress.clear();
     }
 
     /// The rewind arithmetic on its own, so it can be tested without a live
@@ -867,6 +978,7 @@ mod tests {
             store_path: dir.join("store.json"),
             prefs_path: dir.join("prefs.json"),
             queue_path: dir.join("queue.jsonl"),
+            progress_path: dir.join("progress.json"),
             log_path: dir.join("agent.log"),
             url_script_path: dir.join("missing-get-browser-url.ps1"),
             macos_url_script_path: dir.join("missing-get-browser-url.applescript"),
@@ -898,7 +1010,12 @@ mod tests {
             match (request.method(), path.as_str()) {
                 (Method::Get, "/api/activity/session") => (200, session_body.to_string()),
                 (Method::Get, p) if p.starts_with("/api/tasks/") && p.ends_with("/time-tracking") => {
-                    (200, r#"{"data": {"activeSeconds": 0, "idleSeconds": 0}}"#.to_string())
+                    // ID-3: idleTimeSeconds=1 so a test that shrinks the org-wide
+                    // idle stages via apply_idle_thresholds (warn/alert/stop) isn't
+                    // gated on the real 450s/60s default while it does - this
+                    // project-sourced value is what tick_idle_escalation's "is this
+                    // real input" check now reads, not the org-wide atomic.
+                    (200, r#"{"data": {"activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 1}}"#.to_string())
                 }
                 (Method::Post, "/api/activity/events") => {
                     (200, r#"{"data": {"inserted": 1}}"#.to_string())
@@ -983,6 +1100,45 @@ mod tests {
 
         assert!(!state.was_active, "idle escalation should have stopped the timer");
         assert!(state.current_session.is_empty());
+    }
+
+    /// ID-3: `disable_idle_time = true` on the project must mean no idle
+    /// escalation at all - the same idle stretch that stops the timer in the
+    /// test above must leave it running when the project has idle time
+    /// disabled. Guards the exact bug this task exists to fix: the switch
+    /// used to save to the database and change nothing.
+    #[test]
+    fn tick_never_escalates_when_the_projects_idle_time_is_disabled() {
+        let base_url = fake_server(move |request| {
+            let path = request.url().split('?').next().unwrap_or("").to_string();
+            match (request.method(), path.as_str()) {
+                (Method::Get, "/api/activity/session") => (200, ACTIVE_SESSION_WITH_TASK.to_string()),
+                (Method::Get, p) if p.starts_with("/api/tasks/") && p.ends_with("/time-tracking") => (
+                    200,
+                    r#"{"data": {"activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": true, "idleTimeSeconds": 1}}"#
+                        .to_string(),
+                ),
+                (Method::Post, "/api/activity/events") => (200, r#"{"data": {"inserted": 1}}"#.to_string()),
+                (Method::Post, "/api/activity/session") => {
+                    (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+                }
+                _ => (404, "{}".to_string()),
+            }
+        });
+        let tracker = test_tracker(base_url);
+        // Same shrunk stages as the test above - if disable_idle_time were
+        // being ignored, this would stop the timer within the same 3.5s.
+        tracker.apply_idle_thresholds(1, 1, 2, 3);
+        let mut state = TickState::new();
+
+        tracker.tick(&mut state);
+        assert!(state.was_active, "precondition: the session must have started");
+
+        thread::sleep(Duration::from_millis(3_500));
+        tracker.tick(&mut state);
+
+        assert!(state.was_active, "idle time disabled must never stop the timer");
+        assert_eq!(state.current_session, "sess-1");
     }
 
     // Guards ACT-3: a server-pushed idle-stage triple must be applied whole

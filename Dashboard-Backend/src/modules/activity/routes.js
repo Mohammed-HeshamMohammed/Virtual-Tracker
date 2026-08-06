@@ -195,7 +195,24 @@ export function isOneOpenSessionConflict(err) {
   );
 }
 
-function normalizeSession(id, data) {
+/**
+ * ID-3: task-anchored sessions get the owning project's idle-time settings
+ * from `fetch_task_time_tracking` on every task transition (see
+ * task-time-tracking.js) - cheap because it's throttled to transitions, not
+ * every 5s poll. A calling (task-less) project session has no task
+ * transition to hang that fetch off of, so it's attached here instead, on
+ * this same GET the agent already polls every SESSION_POLL_SEC. Scoped to
+ * task-less sessions only so a task-anchored session's 5s poll doesn't pay
+ * for a project lookup it doesn't need.
+ */
+async function normalizeSession(id, data) {
+  let disableIdleTime;
+  let idleTimeSeconds;
+  if (!data.task_id && data.project_id) {
+    const project = await getProjectPg(data.project_id).catch(() => null);
+    disableIdleTime = Boolean(project?.disable_idle_time ?? false);
+    idleTimeSeconds = Number(project?.idle_time_seconds ?? 450);
+  }
   return {
     id,
     memberId: data.member_id,
@@ -208,6 +225,7 @@ function normalizeSession(id, data) {
     projectId: data.project_id ?? null,
     updatedAt: toIso(data.updated_at),
     screenshotsEnabled: isActivityScreenshotsEnabled(),
+    ...(disableIdleTime !== undefined ? { disableIdleTime, idleTimeSeconds } : {}),
   };
 }
 
@@ -247,7 +265,7 @@ export async function routeActivity(req, res, url, origin) {
       const open = await findOpenSession(member.memberId);
       sendJson(res, origin, 200, {
         success: true,
-        data: open ? normalizeSession(open.id, open) : null,
+        data: open ? await normalizeSession(open.id, open) : null,
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
@@ -608,7 +626,7 @@ export async function routeActivity(req, res, url, origin) {
 
       sendJson(res, origin, 200, {
         success: true,
-        data: open ? { ...normalizeSession(open.id, open), timerCapped } : null,
+        data: open ? { ...(await normalizeSession(open.id, open)), timerCapped } : null,
       });
     } catch (e) {
       logSafeError("[activity/session POST]", e);

@@ -15,6 +15,7 @@ pub struct Settings {
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
     pub queue_path: PathBuf,
+    pub progress_path: PathBuf,
     pub log_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
@@ -33,6 +34,7 @@ impl Settings {
         let store_path = data_dir.join("agent-store.json");
         let prefs_path = data_dir.join("preferences.json");
         let queue_path = data_dir.join("pending-events.jsonl");
+        let progress_path = data_dir.join("tracker-progress.json");
         let log_path = data_dir.join("agent.log");
 
         let default_api = PROD_API_URL;
@@ -63,6 +65,7 @@ impl Settings {
             store_path,
             prefs_path,
             queue_path,
+            progress_path,
             log_path,
             url_script_path,
             macos_url_script_path,

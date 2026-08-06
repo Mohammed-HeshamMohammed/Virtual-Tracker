@@ -343,7 +343,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/profile" && req.method === "POST") {
+  if (authPath === "/api/auth/profile" && req.method === "POST") {
     const auth = getAuthAdmin();
     const db = getDb();
     if (!auth || !db) {

@@ -575,14 +575,14 @@ body {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  margin: 16px 16px 16px 0;
-  padding: 28px 32px;
-  border-radius: 20px;
+  margin: 44px 14px 14px 0;
+  padding: 20px 24px;
+  border-radius: 18px;
   background: var(--surface-high);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 16px;
 }
 
 .page-header {
@@ -667,8 +667,8 @@ body {
   display: flex;
   align-items: baseline;
   gap: 14px;
-  padding: 24px 26px;
-  border-radius: 16px;
+  padding: 16px 20px;
+  border-radius: 14px;
   background: linear-gradient(
     160deg,
     rgba(25, 37, 64, 0.9),
@@ -679,7 +679,7 @@ body {
 
 .page-clock-value {
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 44px;
+  font-size: 36px;
   font-weight: 800;
   letter-spacing: -1px;
   color: var(--on-surface);
@@ -697,7 +697,7 @@ body {
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
+  gap: 10px;
 }
 
 /* The personal-hours group is three cards, not four. */
@@ -719,8 +719,8 @@ body {
 .stat-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 16px;
+  gap: 4px;
+  padding: 12px 14px;
   border-radius: 12px;
   background: rgba(25, 37, 64, 0.55);
   border: 1px solid rgba(109, 117, 140, 0.1);
@@ -735,7 +735,7 @@ body {
 }
 
 .stat-card-value {
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   color: var(--on-surface);
   white-space: nowrap;
@@ -818,13 +818,13 @@ body {
 
 .side-panel {
   position: relative;
-  width: 300px;
+  width: 290px;
   flex-shrink: 0;
   overflow-y: auto;
-  padding: 24px 18px 16px;
+  padding: 44px 16px 14px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
   background: rgba(9, 19, 40, 0.4);
 }
 
@@ -903,6 +903,10 @@ body {
     opacity 0.22s ease 0.08s;
 }
 
+.task-slot.open > * {
+  overflow: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .task-slot,
   .task-slot.open {
@@ -920,6 +924,10 @@ body {
 
 .dropdown {
   position: relative;
+}
+
+.dropdown.open {
+  z-index: 1000;
 }
 
 .dropdown-trigger {
@@ -977,11 +985,10 @@ body {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 6px);
-  z-index: 20;
-  /* Exactly 5 rows: .dropdown-item is a fixed 32px tall, ×5 = 160px, plus
+  z-index: 1000;
+  /* Exactly 5 rows: .dropdown-item is a fixed 32px tall (flex-shrink: 0), ×5 = 160px, plus
      4 inter-row gaps (2px = 8px) and this menu's own 6px top/bottom padding
-     (12px). Scrolls (overflow-y: auto below) once options exceed that. */
+     (12px). Scrolls (overflow-y: auto) once options exceed 5 items. */
   max-height: 180px;
   overflow-y: auto;
   border-radius: 10px;
@@ -995,12 +1002,41 @@ body {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4);
 }
 
+.dropdown-menu-up {
+  bottom: calc(100% + 6px);
+  top: auto;
+}
+
+.dropdown-menu-down {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
+
+.dropdown-menu::-webkit-scrollbar {
+  width: 5px;
+}
+
+.dropdown-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb {
+  background: rgba(186, 158, 255, 0.25);
+  border-radius: 999px;
+}
+
+.dropdown-menu::-webkit-scrollbar-thumb:hover {
+  background: rgba(186, 158, 255, 0.45);
+}
+
 .dropdown-item {
   width: 100%;
   text-align: left;
-  /* Fixed height (not padding-driven) so the 5-row cap on .dropdown-menu's
-     max-height is exact, independent of font line-height rendering. */
+  /* Fixed height & flex-shrink: 0 so items never compress/squish inside the flex column container */
   height: 32px;
+  min-height: 32px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   padding: 0 10px;
@@ -1016,8 +1052,14 @@ body {
   white-space: nowrap;
 }
 
-.dropdown-item:hover {
+.dropdown-item:hover:not(.disabled) {
   background: rgba(186, 158, 255, 0.1);
+}
+
+.dropdown-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
 }
 
 .dropdown-item.active {
@@ -1047,12 +1089,35 @@ body {
 }
 
 .settings-window .content {
-  padding-top: 16px;
+  padding-top: 12px;
 }
 
 .settings-back-row {
   flex-shrink: 0;
-  padding: 14px 18px 0;
+  padding: 44px 18px 0;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 18px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.settings-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(
+    160deg,
+    rgba(25, 37, 64, 0.9),
+    rgba(9, 19, 40, 0.95)
+  );
+  border: 1px solid rgba(109, 117, 140, 0.12);
 }
 
 .settings-back-btn {
@@ -1504,24 +1569,26 @@ body {
 .auth-split {
   display: flex;
   width: 100%;
-  height: calc(100% - 36px);
+  height: calc(100% - 38px);
+  margin-top: 38px;
   overflow: hidden;
   background: var(--surface);
 }
 
 .auth-brand {
-  width: 440px;
+  width: 420px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 40px 36px;
+  padding: 24px 30px;
   background: linear-gradient(155deg, rgba(20, 31, 56, 0.95), rgba(9, 19, 40, 0.98)),
               radial-gradient(circle at 0% 0%, rgba(132, 85, 239, 0.25), transparent 60%);
   border-right: 1px solid rgba(109, 117, 140, 0.15);
   position: relative;
   overflow: hidden;
 }
+
 
 .auth-brand::before {
   content: "";
@@ -1545,11 +1612,40 @@ body {
   color: #fff;
 }
 
+.auth-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--on-surface);
+  background: rgba(25, 37, 64, 0.45);
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(109, 117, 140, 0.12);
+  backdrop-filter: blur(8px);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-feature-item.valid {
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.35);
+  box-shadow: 0 4px 14px rgba(52, 211, 153, 0.08);
+}
+
+.auth-feature-item.valid strong {
+  color: #6ee7b7;
+}
+
+.auth-feature-item.valid p {
+  color: rgba(110, 231, 183, 0.85);
+}
+
 .auth-brand-copy {
   display: flex;
   flex-direction: column;
   gap: 16px;
   z-index: 1;
+  animation: auth-form-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .auth-brand-copy h2 {
@@ -1574,18 +1670,27 @@ body {
   margin-top: 8px;
 }
 
-.auth-feature-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--on-surface);
-  background: rgba(25, 37, 64, 0.45);
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid rgba(109, 117, 140, 0.12);
-  backdrop-filter: blur(8px);
+.auth-password-checklist {
+  gap: 7px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding-right: 4px;
 }
+
+.auth-password-checklist .auth-feature-item {
+  padding: 8px 10px;
+}
+
+.auth-password-checklist .auth-feature-item strong {
+  font-size: 11.5px;
+}
+
+.auth-password-checklist .auth-feature-item p {
+  font-size: 10.5px;
+}
+
+
+
 
 .auth-feature-item strong {
   display: block;
@@ -1838,5 +1943,86 @@ body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* ==========================================
+   Auth Forms Slide & Fade Transition Animations
+   ========================================== */
+.auth-form-card {
+  position: relative;
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-form-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  animation: auth-form-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes auth-form-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Staggered micro-animations for input fields and buttons */
+.auth-form-view .auth-form-head,
+.auth-form-view .auth-back-row,
+.auth-form-view .input-field-group,
+.auth-form-view .auth-error-banner,
+.auth-form-view .auth-success-banner,
+.auth-form-view .btn-primary,
+.auth-form-view .signin-divider,
+.auth-form-view .social-row,
+.auth-form-view .btn-secondary,
+.auth-form-view .signin-links {
+  animation: auth-item-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.auth-form-view .auth-form-head { animation-delay: 0.02s; }
+.auth-form-view .auth-back-row { animation-delay: 0.03s; }
+.auth-form-view .input-field-group:nth-of-type(1) { animation-delay: 0.04s; }
+.auth-form-view .input-field-group:nth-of-type(2) { animation-delay: 0.06s; }
+.auth-form-view .input-field-group:nth-of-type(3) { animation-delay: 0.08s; }
+.auth-form-view .input-field-group:nth-of-type(4) { animation-delay: 0.10s; }
+.auth-form-view .input-field-group:nth-of-type(5) { animation-delay: 0.12s; }
+.auth-form-view .input-field-group:nth-of-type(6) { animation-delay: 0.14s; }
+.auth-form-view .btn-primary { animation-delay: 0.16s; }
+.auth-form-view .signin-divider { animation-delay: 0.18s; }
+.auth-form-view .social-row { animation-delay: 0.20s; }
+.auth-form-view .btn-secondary { animation-delay: 0.22s; }
+.auth-form-view .signin-links { animation-delay: 0.24s; }
+
+@keyframes auth-item-in {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+/* Micro-interactions for Auth Controls */
+.auth-back-row .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.auth-back-row .link-btn:hover:not(:disabled) {
+  transform: translateX(-3px);
+}
+
 
 

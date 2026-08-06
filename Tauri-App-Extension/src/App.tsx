@@ -1,1325 +1,44 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import { toast } from "./Toast";
 
-type ProfileInfo = {
-  signedIn: boolean;
-  linkPending?: boolean;
-  name: string;
-  email?: string;
-  avatarUrl: string;
-  serverLabel: string;
-};
-
-type LinkStatus = {
-  connected: boolean;
-  serverLabel: string;
-  status: string;
-};
-
-type SignInResult = {
-  success: boolean;
-  error?: string;
-};
-
-type AuthView = "signin" | "signup" | "forgot";
-
-type SignUpFields = {
-  firstName: string;
-  lastName: string;
-  phone: string;
-  email: string;
-  password: string;
-  confirmPassword: string;
-};
-
-type SignUpState = SignUpFields & {
-  busy: boolean;
-  error: string | null;
-  success: string | null;
-};
-
-type ForgotState = {
-  email: string;
-  busy: boolean;
-  error: string | null;
-  success: string | null;
-};
-
-type UserPreferences = {
-  launchAtLogin: boolean;
-  startHidden: boolean;
-  autoSignIn: boolean;
-  closeToTray: boolean;
-};
-
-type AppSettingsView = {
-  version: string;
-  preferences: UserPreferences;
-  logPath: string;
-};
-
-type AgentTask = {
-  id: string;
-  title: string;
-  status: string;
-};
-
-type ProjectInfo = {
-  id: string;
-  name: string;
-  // "calling" projects have no tasks — the timer runs against the project.
-  projectType: "normal" | "calling";
-};
-
-type SessionInfo = {
-  id?: string | null;
-  status: string;
-  taskId?: string | null;
-  taskTitle?: string | null;
-  projectId?: string | null;
-  /** 0 working, 1 idle 5m, 2 idle 10m, 3 stopped for idling. */
-  idleStage?: number;
-  activeSeconds?: number;
-  idleSeconds?: number;
-};
-
-/** CF-2: composed server-side from the live monitoring_policy row - never hardcoded here. */
-type MonitoringNoticeView = {
-  version: string;
-  text: string;
-  requiresAcknowledgement: boolean;
-};
-
-type ConnectionState = "connected" | "disconnected" | "signedOut";
-
-type ReconnectResult = {
-  success: boolean;
-  needsRelink: boolean;
-  error?: string;
-};
-
-type ActionResult = {
-  success: boolean;
-  error?: string;
-  session?: SessionInfo;
-};
-
-type TaskTimeTracking = {
-  activeSeconds: number;
-  idleSeconds: number;
-  taskStatus: string;
-  estimatedSeconds?: number | null;
-  overtimeSeconds?: number | null;
-  workingDays?: number | null;
-  hoursPerDay?: number | null;
-  overtimeHoursPerDay?: number | null;
-  progressPercent?: number | null;
-  workedTodaySeconds?: number | null;
-  workedTodayOnTaskSeconds?: number | null;
-  allowedRemainingSeconds?: number | null;
-  limitReached: boolean;
-  allowanceMessage?: string | null;
-};
-
-type MemberLimits = {
-  dailyHours: number;
-  weeklyHours: number;
-  usesShifts: boolean;
-  workedTodaySeconds: number;
-  workedWeekSeconds: number;
-  /** null = no cap applies. Not the same as 0 seconds left. */
-  allowedRemainingSeconds: number | null;
-  limitReached: boolean;
-};
-
-// The viewer's own People-page member record - richer than what's in the
-// Firebase JWT claims (role, status, date added, team count).
-type MemberProfile = {
-  name: string;
-  email: string;
-  avatarUrl: string;
-  role: string;
-  status: string;
-  dateAdded: string;
-  phone: string;
-  teams: number;
-};
-
-function fmtClock(totalSeconds: number): string {
-  const s = Math.max(0, Math.floor(totalSeconds));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-}
-
-// Sub-hour values need mins/seconds to actually look like they're recording
-// (an active task sitting at "0h" for the first 59 minutes reads as broken,
-// even though the real number underneath is fine). Right at an hour boundary
-// with 0 minutes elapsed, minutes alone would freeze on "Xh 0m" for up to a
-// full minute — show seconds there too until the first minute ticks over.
-function fmtHours(totalSeconds: number | null | undefined): string {
-  if (totalSeconds == null || totalSeconds <= 0) return "0s";
-  const total = Math.floor(totalSeconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  if (h > 0) return m === 0 ? `${h}h ${s}s` : `${h}h ${m}m`;
-  if (m > 0) return `${m}m ${s}s`;
-  return `${s}s`;
-}
-
-function initialsFromName(name: string): string {
-  const parts = String(name || "?")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  }
-  return (parts[0]?.[0] || "?").toUpperCase();
-}
-
-function statusTone(status: string, signedIn: boolean): "idle" | "ok" | "live" | "warn" {
-  const s = status.toLowerCase();
-  if (s.includes("active")) return "live";
-  if (s.includes("linking")) return "warn";
-  if (signedIn) return "ok";
-  return "idle";
-}
-
-function statusLabel(status: string, signedIn: boolean): string {
-  const s = status.toLowerCase();
-  if (s.includes("active")) return "Tracking";
-  if (s.includes("idle") || s.includes("paused")) return "Paused";
-  if (s.includes("linking")) return "Linking";
-  if (signedIn) return "Ready";
-  return "Signed out";
-}
-
-function TitleBar({
-  title,
-  showBrand = true,
-  onClose,
-  onCheckUpdate,
-  checkingUpdate,
-}: {
-  title?: string;
-  showBrand?: boolean;
-  onClose: () => void;
-  onCheckUpdate?: () => void;
-  checkingUpdate?: boolean;
-}) {
-  return (
-    <header className="titlebar">
-      <div className="titlebar-drag" data-tauri-drag-region>
-        {showBrand ? (
-          <>
-            <img
-              className="titlebar-logo-img"
-              src="/app-icon.ico"
-              width={16}
-              height={16}
-              alt=""
-              draggable={false}
-            />
-            {title ? (
-              <span className="titlebar-label" data-tauri-drag-region>
-                {title}
-              </span>
-            ) : null}
-          </>
-        ) : null}
-      </div>
-      <div className="titlebar-controls">
-        {onCheckUpdate ? (
-          <button
-            className="win-btn"
-            type="button"
-            title="Check for updates"
-            aria-label="Check for updates"
-            disabled={checkingUpdate}
-            onClick={onCheckUpdate}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M12 3a1 1 0 0 1 1 1v9.59l3.3-3.3a1 1 0 1 1 1.4 1.42l-5 5a1 1 0 0 1-1.4 0l-5-5a1 1 0 1 1 1.4-1.42l3.3 3.3V4a1 1 0 0 1 1-1Zm-7 15a1 1 0 0 1 1 1v1h12v-1a1 1 0 1 1 2 0v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-2a1 1 0 0 1 1-1Z"
-              />
-            </svg>
-          </button>
-        ) : null}
-        <button
-          className="win-btn"
-          type="button"
-          title="Minimize"
-          aria-label="Minimize"
-          onClick={() => void invoke("minimize_current")}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <rect x="1" y="5.5" width="10" height="1" fill="currentColor" />
-          </svg>
-        </button>
-        <button
-          className="win-btn win-close"
-          type="button"
-          title="Close"
-          aria-label="Close"
-          onClick={onClose}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path
-              d="M1.5 1.5l9 9M10.5 1.5l-9 9"
-              stroke="currentColor"
-              strokeWidth="1.1"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-    </header>
-  );
-}
-
-function SettingsPanel({ onBack }: { onBack: () => void }) {
-  const [settings, setSettings] = useState<AppSettingsView | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const next = await invoke<AppSettingsView>("get_app_settings");
-    setSettings(next);
-  }, []);
-
-  useEffect(() => {
-    void load().catch(console.error);
-  }, [load]);
-
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(null), 2500);
-    return () => window.clearTimeout(timer);
-  }, [message]);
-
-  const toggle = async (key: keyof UserPreferences, value: boolean) => {
-    if (!settings) return;
-    setSaving(true);
-    setMessage(null);
-    try {
-      const updated = await invoke<AppSettingsView>("save_preferences", {
-        preferences: { ...settings.preferences, [key]: value },
-      });
-      setSettings(updated);
-      setMessage("Saved");
-    } catch {
-      setMessage("Could not save");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const prefs = settings?.preferences;
-
-  return (
-    <main className="agent-tray settings-window view-settings">
-      <TitleBar title="Settings" onClose={() => void invoke("close_window")} />
-      <div className="settings-back-row">
-        <button
-          className="settings-back-btn"
-          type="button"
-          title="Back"
-          aria-label="Back"
-          onClick={onBack}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path
-              d="M7.5 2.5 3 6l4.5 3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="content settings-content">
-        <section className="settings-card">
-          <h3 className="settings-section-label">Diagnostics</h3>
-          <div className="settings-row static">
-            <span>Log file</span>
-            <code>{settings?.logPath || "—"}</code>
-          </div>
-          <button
-            className="btn btn-secondary"
-            type="button"
-            disabled={!settings?.logPath}
-            onClick={() => void invoke("open_log_file").catch(() => setMessage("No log file yet"))}
-          >
-            Open log file
-          </button>
-        </section>
-
-        <section className="settings-card">
-          <h3 className="settings-section-label">Startup</h3>
-          <label className="settings-toggle">
-            <div>
-              <strong>Launch at login</strong>
-              <span>Open with Windows</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={Boolean(prefs?.launchAtLogin)}
-              disabled={saving || !prefs}
-              onChange={(e) => void toggle("launchAtLogin", e.target.checked)}
-            />
-          </label>
-          <label className="settings-toggle">
-            <div>
-              <strong>Start in tray</strong>
-              <span>Hide window on launch</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={Boolean(prefs?.startHidden)}
-              disabled={saving || !prefs}
-              onChange={(e) => void toggle("startHidden", e.target.checked)}
-            />
-          </label>
-          <label className="settings-toggle">
-            <div>
-              <strong>Auto sign-in</strong>
-              <span>Open browser link when unsigned</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={Boolean(prefs?.autoSignIn)}
-              disabled={saving || !prefs}
-              onChange={(e) => void toggle("autoSignIn", e.target.checked)}
-            />
-          </label>
-          <label className="settings-toggle">
-            <div>
-              <strong>Keep running in tray</strong>
-              <span>Closing the window hides it instead of quitting</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={Boolean(prefs?.closeToTray)}
-              disabled={saving || !prefs}
-              onChange={(e) => void toggle("closeToTray", e.target.checked)}
-            />
-          </label>
-          {prefs?.closeToTray ? (
-            <p className="settings-hint">Tracking keeps running. Use Quit in the tray to stop.</p>
-          ) : null}
-        </section>
-
-        {message ? (
-          <p className="settings-message" role="status" aria-live="polite">
-            {message}
-          </p>
-        ) : null}
-
-        <p className="settings-version">v{settings?.version || "—"}</p>
-      </div>
-    </main>
-  );
-}
-
-function fmtLimitHours(hours: number): string {
-  if (!hours || hours <= 0) return "No cap";
-  return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;
-}
-
-function ProfilePanel({
-  profile,
-  memberProfile,
-  memberLimits,
-  onBack,
-  onSignOut,
-  signingOut,
-}: {
-  profile: ProfileInfo | null;
-  memberProfile: MemberProfile | null;
-  memberLimits: MemberLimits | null;
-  onBack: () => void;
-  onSignOut: () => void;
-  signingOut: boolean;
-}) {
-  // memberProfile (People-page record) is the richer, canonical source once
-  // it loads; profile (JWT claims) is what's available immediately so the
-  // page isn't blank on first open.
-  const displayName = memberProfile?.name || profile?.name || "Not signed in";
-  const displayEmail = memberProfile?.email || profile?.email || "";
-  const displayAvatar = memberProfile?.avatarUrl || profile?.avatarUrl || "";
-
-  return (
-    <main className="agent-tray settings-window view-settings">
-      <TitleBar title="Profile" onClose={() => void invoke("close_window")} />
-      <div className="settings-back-row">
-        <button
-          className="settings-back-btn"
-          type="button"
-          title="Back"
-          aria-label="Back"
-          onClick={onBack}
-        >
-          <svg viewBox="0 0 12 12" aria-hidden="true">
-            <path
-              d="M7.5 2.5 3 6l4.5 3.5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="content settings-content">
-        <section className="settings-card">
-          <div className="hero-top">
-            <div className="avatar-wrap">
-              {displayAvatar ? (
-                <img className="avatar-img" src={displayAvatar} alt="" draggable={false} />
-              ) : (
-                <div className="avatar-fallback">{initialsFromName(displayName)}</div>
-              )}
-            </div>
-            <div className="hero-copy">
-              <h1 className="hero-name">{displayName}</h1>
-              {displayEmail ? <span className="hero-kicker">{displayEmail}</span> : null}
-            </div>
-          </div>
-          {memberProfile ? (
-            <>
-              <div className="settings-row static">
-                <span>Role</span>
-                <code>{memberProfile.role || "—"}</code>
-              </div>
-              <div className="settings-row static">
-                <span>Status</span>
-                <code>{memberProfile.status || "—"}</code>
-              </div>
-              {memberProfile.dateAdded ? (
-                <div className="settings-row static">
-                  <span>Member since</span>
-                  <code>{memberProfile.dateAdded}</code>
-                </div>
-              ) : null}
-              {memberProfile.phone ? (
-                <div className="settings-row static">
-                  <span>Phone</span>
-                  <code>{memberProfile.phone}</code>
-                </div>
-              ) : null}
-              <div className="settings-row static">
-                <span>Teams</span>
-                <code>{memberProfile.teams}</code>
-              </div>
-            </>
-          ) : (
-            <p className="settings-message">Loading…</p>
-          )}
-        </section>
-
-        <section className="settings-card">
-          <h3 className="settings-section-label">Your work-hour limits</h3>
-          {memberLimits?.usesShifts ? (
-            <p className="settings-message">Your hours are scheduled by shifts instead of a daily/weekly cap.</p>
-          ) : memberLimits ? (
-            <>
-              <div className="settings-row static">
-                <span>Daily limit</span>
-                <code>{fmtLimitHours(memberLimits.dailyHours)}</code>
-              </div>
-              <div className="settings-row static">
-                <span>Weekly limit</span>
-                <code>{fmtLimitHours(memberLimits.weeklyHours)}</code>
-              </div>
-            </>
-          ) : (
-            <p className="settings-message">Loading…</p>
-          )}
-        </section>
-
-        <button
-          className="btn btn-danger"
-          type="button"
-          disabled={signingOut}
-          onClick={onSignOut}
-        >
-          Log out
-        </button>
-      </div>
-    </main>
-  );
-}
-
-/**
- * Shown when the agent still knows who you are but can no longer talk to the
- * backend. Name and avatar come from the cached token claims, so this renders
- * fully offline. The button recovers in-app - it does not send you to a
- * browser unless the device itself has been unlinked.
- */
-function WelcomeBackPanel({
-  profile,
-  message,
-  busy,
-  needsRelink,
-  staleSession,
-  onReconnect,
-  onRelink,
-  onSwitchAccount,
-}: {
-  profile: ProfileInfo | null;
-  message: string | null;
-  busy: boolean;
-  needsRelink: boolean;
-  /** Signed out server-side but still showing a cached identity. */
-  staleSession: boolean;
-  onReconnect: () => void;
-  onRelink: () => void;
-  onSwitchAccount: () => void;
-}) {
-  const [avatarBroken, setAvatarBroken] = useState(false);
-  const name = profile?.name || "Welcome back";
-  const firstName = profile?.name?.trim().split(/\s+/)[0] || "";
-
-  return (
-    <main className="agent-tray view-home">
-      <TitleBar title="Virtual Tracker" onClose={() => void invoke("close_window")} />
-      <div className="reconnect-body">
-        <div className="reconnect-card">
-          <div className="avatar-wrap reconnect-avatar">
-            {profile?.avatarUrl && !avatarBroken ? (
-              <img
-                className="avatar-img"
-                src={profile.avatarUrl}
-                alt=""
-                referrerPolicy="no-referrer"
-                draggable={false}
-                onError={() => setAvatarBroken(true)}
-              />
-            ) : (
-              <div className="avatar-fallback">{initialsFromName(name)}</div>
-            )}
-          </div>
-
-          <h1 className="reconnect-name">{name}</h1>
-          <p className="reconnect-text">
-            {message ??
-              (needsRelink
-                ? "This device is no longer linked to your account."
-                : staleSession
-                  ? "We couldn't verify this session. Continue, or sign in as someone else."
-                  : "Your session went idle. Reconnect to pick up where you left off.")}
-          </p>
-
-          <button
-            className="btn btn-primary reconnect-btn"
-            type="button"
-            disabled={busy}
-            onClick={needsRelink ? onRelink : onReconnect}
-          >
-            {busy
-              ? "Reconnecting…"
-              : needsRelink
-                ? "Link this device again"
-                : firstName
-                  ? `Continue as ${firstName}`
-                  : "Welcome back"}
-          </button>
-
-          {/* Replaces the old "Log out instead" button: signing out only to
-              sign back in as someone else was two steps and read as a dead
-              end. A link, not a third stacked button - it is the rarer path. */}
-          <button className="link-btn" type="button" disabled={busy} onClick={onSwitchAccount}>
-            Not you? Switch account →
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-// CF-2: full-screen, non-dismissible by design - no back button, no close-X,
-// no click-outside-to-dismiss. The only way past it is the Accept action,
-// which is exactly what "cannot be hidden or disabled by any setting or
-// flag" means for the one screen whose entire job is to require attention.
-function MonitoringNoticePanel({
-  notice,
-  busy,
-  onAccept,
-}: {
-  notice: MonitoringNoticeView;
-  busy: boolean;
-  onAccept: () => void;
-}) {
-  return (
-    <main className="agent-tray view-home">
-      <TitleBar title="Virtual Tracker" onClose={() => void invoke("close_window")} />
-      <div className="reconnect-body">
-        <div className="notice-card">
-          <h1 className="reconnect-name">Before you start tracking</h1>
-          <pre className="notice-text">{notice.text}</pre>
-          <button
-            className="btn btn-primary reconnect-btn"
-            type="button"
-            disabled={busy}
-            onClick={onAccept}
-          >
-            {busy ? "Recording…" : "I understand — continue"}
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-// Signed-out screen: full-width split (brand panel + form), taking over the full 1150x650 window.
-function SignInPanel({
-  busy,
-  actionError,
-  signInEmail,
-  signInPassword,
-  linkPending,
-  authView,
-  signUp,
-  forgot,
-  onEmailChange,
-  onPasswordChange,
-  onPasswordSignIn,
-  onSignIn,
-  onAuthViewChange,
-  onSignUpFieldChange,
-  onSignUpSubmit,
-  onForgotEmailChange,
-  onForgotSubmit,
-  onCheckUpdate,
-  checkingUpdate,
-}: {
-  busy: boolean;
-  actionError: string | null;
-  signInEmail: string;
-  signInPassword: string;
-  linkPending: boolean;
-  authView: AuthView;
-  signUp: SignUpState;
-  forgot: ForgotState;
-  onEmailChange: (value: string) => void;
-  onPasswordChange: (value: string) => void;
-  onPasswordSignIn: () => void;
-  onSignIn: (hint?: string) => void;
-  onAuthViewChange: (view: AuthView) => void;
-  onSignUpFieldChange: (field: keyof SignUpFields, value: string) => void;
-  onSignUpSubmit: () => void;
-  onForgotEmailChange: (value: string) => void;
-  onForgotSubmit: () => void;
-  onCheckUpdate: () => void;
-  checkingUpdate: boolean;
-}) {
-  const [showPassword, setShowPassword] = useState(false);
-  const [showSignUpPassword, setShowSignUpPassword] = useState(false);
-
-  return (
-    <main className="agent-tray view-home">
-      <TitleBar
-        showBrand={false}
-        onClose={() => void invoke("close_window")}
-        onCheckUpdate={onCheckUpdate}
-        checkingUpdate={checkingUpdate}
-      />
-      <div className="app-body auth-split">
-        <section className="auth-brand" aria-hidden="true">
-          <div className="auth-brand-mark">
-            <img src="/app-icon.ico" width={36} height={36} alt="" draggable={false} />
-            <span>Virtual Tracker</span>
-          </div>
-          <div className="auth-brand-copy">
-            <h2>Time tracking that stays out of your way.</h2>
-            <p>Sign in to link this desktop agent to your account and start tracking your work seamlessly.</p>
-
-            <div className="auth-brand-features">
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">⚡</span>
-                <div>
-                  <strong>Instant Sync</strong>
-                  <p>Real-time sync with web dashboard & assigned tasks.</p>
-                </div>
-              </div>
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">🔒</span>
-                <div>
-                  <strong>Enterprise Security</strong>
-                  <p>Encrypted device authentication & secure tokens.</p>
-                </div>
-              </div>
-              <div className="auth-feature-item">
-                <span className="auth-feature-icon">⏱️</span>
-                <div>
-                  <strong>Smart Tracking</strong>
-                  <p>Automatic idle detection & work limit notifications.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="auth-brand-viz">
-            {Array.from({ length: 16 }, (_, i) => (
-              <span key={i} className="auth-brand-bar" style={{ animationDelay: `${i * 0.09}s` }} />
-            ))}
-          </div>
-        </section>
-
-        <section className="auth-form-panel">
-          <div className="auth-form-card">
-            {authView === "signup" ? (
-              <>
-                <div className="auth-form-head">
-                  <h1>Create account</h1>
-                  <p>Set up a new Virtual Tracker account</p>
-                </div>
-                <form
-                  className="signin-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onSignUpSubmit();
-                  }}
-                >
-                  <div className="auth-back-row">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
-                      ← Back to sign in
-                    </button>
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-first-name">
-                      First name
-                    </label>
-                    <input
-                      id="signup-first-name"
-                      className="text-input"
-                      type="text"
-                      autoComplete="given-name"
-                      value={signUp.firstName}
-                      disabled={signUp.busy}
-                      onChange={(e) => onSignUpFieldChange("firstName", e.target.value)}
-                    />
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-last-name">
-                      Last name
-                    </label>
-                    <input
-                      id="signup-last-name"
-                      className="text-input"
-                      type="text"
-                      autoComplete="family-name"
-                      value={signUp.lastName}
-                      disabled={signUp.busy}
-                      onChange={(e) => onSignUpFieldChange("lastName", e.target.value)}
-                    />
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-phone">
-                      Phone number
-                    </label>
-                    <input
-                      id="signup-phone"
-                      className="text-input"
-                      type="tel"
-                      autoComplete="tel"
-                      value={signUp.phone}
-                      disabled={signUp.busy}
-                      onChange={(e) => onSignUpFieldChange("phone", e.target.value)}
-                    />
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-email">
-                      Email address
-                    </label>
-                    <input
-                      id="signup-email"
-                      className="text-input"
-                      type="email"
-                      placeholder="name@company.com"
-                      autoComplete="username"
-                      spellCheck={false}
-                      value={signUp.email}
-                      disabled={signUp.busy}
-                      onChange={(e) => onSignUpFieldChange("email", e.target.value)}
-                    />
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-password">
-                      Password
-                    </label>
-                    <div className="input-wrapper">
-                      <input
-                        id="signup-password"
-                        className="text-input"
-                        type={showSignUpPassword ? "text" : "password"}
-                        placeholder="••••••••"
-                        autoComplete="new-password"
-                        value={signUp.password}
-                        disabled={signUp.busy}
-                        onChange={(e) => onSignUpFieldChange("password", e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="input-eye-btn"
-                        title={showSignUpPassword ? "Hide password" : "Show password"}
-                        aria-label={showSignUpPassword ? "Hide password" : "Show password"}
-                        onClick={() => setShowSignUpPassword(!showSignUpPassword)}
-                      >
-                        {showSignUpPassword ? (
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                            <line x1="1" y1="1" x2="23" y2="23" />
-                          </svg>
-                        ) : (
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                            <circle cx="12" cy="12" r="3" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signup-confirm-password">
-                      Confirm password
-                    </label>
-                    <input
-                      id="signup-confirm-password"
-                      className="text-input"
-                      type={showSignUpPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      autoComplete="new-password"
-                      value={signUp.confirmPassword}
-                      disabled={signUp.busy}
-                      onChange={(e) => onSignUpFieldChange("confirmPassword", e.target.value)}
-                    />
-                  </div>
-
-                  {signUp.error ? (
-                    <div className="auth-error-banner">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="8" x2="12" y2="12" />
-                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                      </svg>
-                      <span>{signUp.error}</span>
-                    </div>
-                  ) : null}
-
-                  {signUp.success ? (
-                    <div className="auth-success-banner">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20 6 9 17l-5-5" />
-                      </svg>
-                      <span>{signUp.success}</span>
-                    </div>
-                  ) : null}
-
-                  <button
-                    className="btn btn-primary"
-                    type="submit"
-                    disabled={
-                      signUp.busy ||
-                      !signUp.firstName ||
-                      !signUp.lastName ||
-                      !signUp.phone ||
-                      !signUp.email ||
-                      !signUp.password ||
-                      !signUp.confirmPassword
-                    }
-                  >
-                    {signUp.busy ? "Creating account…" : "Create account"}
-                  </button>
-                </form>
-              </>
-            ) : authView === "forgot" ? (
-              <>
-                <div className="auth-form-head">
-                  <h1>Reset your password</h1>
-                  <p>Enter your email and we'll send you a reset link</p>
-                </div>
-                <form
-                  className="signin-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onForgotSubmit();
-                  }}
-                >
-                  <div className="auth-back-row">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
-                      ← Back to sign in
-                    </button>
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="forgot-email">
-                      Email address
-                    </label>
-                    <input
-                      id="forgot-email"
-                      className="text-input"
-                      type="email"
-                      placeholder="name@company.com"
-                      autoComplete="username"
-                      spellCheck={false}
-                      value={forgot.email}
-                      disabled={forgot.busy}
-                      onChange={(e) => onForgotEmailChange(e.target.value)}
-                    />
-                  </div>
-
-                  {forgot.error ? (
-                    <div className="auth-error-banner">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="8" x2="12" y2="12" />
-                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                      </svg>
-                      <span>{forgot.error}</span>
-                    </div>
-                  ) : null}
-
-                  {forgot.success ? (
-                    <div className="auth-success-banner">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M20 6 9 17l-5-5" />
-                      </svg>
-                      <span>{forgot.success}</span>
-                    </div>
-                  ) : null}
-
-                  <button className="btn btn-primary" type="submit" disabled={forgot.busy || !forgot.email}>
-                    {forgot.busy ? "Sending…" : "Send reset link"}
-                  </button>
-                </form>
-              </>
-            ) : (
-              <>
-                <div className="auth-form-head">
-                  <h1>Welcome Back</h1>
-                  <p>Sign in to your account to get started</p>
-                </div>
-
-                <form
-                  className="signin-form"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    onPasswordSignIn();
-                  }}
-                >
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signin-email">
-                      Email address
-                    </label>
-                    <input
-                      id="signin-email"
-                      className="text-input"
-                      type="email"
-                      placeholder="name@company.com"
-                      autoComplete="username"
-                      spellCheck={false}
-                      value={signInEmail}
-                      disabled={busy}
-                      onChange={(e) => onEmailChange(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="input-field-group">
-                    <label className="input-field-label" htmlFor="signin-password">
-                      Password
-                    </label>
-                    <div className="input-wrapper">
-                      <input
-                        id="signin-password"
-                        className="text-input"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="••••••••"
-                        autoComplete="current-password"
-                        value={signInPassword}
-                        disabled={busy}
-                        onChange={(e) => onPasswordChange(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        className="input-eye-btn"
-                        title={showPassword ? "Hide password" : "Show password"}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        onClick={() => setShowPassword(!showPassword)}
-                      >
-                        {showPassword ? (
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                            <line x1="1" y1="1" x2="23" y2="23" />
-                          </svg>
-                        ) : (
-                          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                            <circle cx="12" cy="12" r="3" />
-                          </svg>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  {actionError ? (
-                    <div className="auth-error-banner">
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="8" x2="12" y2="12" />
-                        <line x1="12" y1="16" x2="12.01" y2="16" />
-                      </svg>
-                      <span>{actionError}</span>
-                    </div>
-                  ) : null}
-
-                  <button className="btn btn-primary" type="submit" disabled={busy || !signInEmail || !signInPassword}>
-                    {busy ? "Signing in…" : "Sign in"}
-                  </button>
-
-                  <div className="signin-divider">
-                    <span>or continue with</span>
-                  </div>
-
-                  <div className="social-row">
-                    <button
-                      className="btn-icon-social"
-                      type="button"
-                      title="Continue with Google"
-                      aria-label="Continue with Google"
-                      disabled={busy}
-                      onClick={() => onSignIn("provider=google")}
-                    >
-                      <svg viewBox="0 0 18 18" aria-hidden="true" width="18" height="18">
-                        <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62Z" />
-                        <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.95v2.33A9 9 0 0 0 9 18Z" />
-                        <path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.95A9 9 0 0 0 0 9c0 1.45.35 2.83.95 4.03l3-2.33Z" />
-                        <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .95 4.97l3 2.33C4.66 5.17 6.65 3.58 9 3.58Z" />
-                      </svg>
-                      Google
-                    </button>
-
-                    <button
-                      className="btn-icon-social"
-                      type="button"
-                      title="Continue with Apple"
-                      aria-label="Continue with Apple"
-                      disabled={busy}
-                      onClick={() => onSignIn("provider=apple")}
-                    >
-                      <svg viewBox="0 0 17 20" aria-hidden="true" width="16" height="19">
-                        <path
-                          fill="currentColor"
-                          d="M13.94 10.6c-.02-2.1 1.72-3.1 1.8-3.15-.98-1.44-2.5-1.63-3.04-1.65-1.3-.13-2.53.76-3.19.76-.66 0-1.68-.75-2.76-.73-1.42.02-2.73.83-3.46 2.1-1.47 2.56-.38 6.35 1.06 8.42.7 1.02 1.53 2.15 2.63 2.11 1.05-.04 1.45-.68 2.72-.68 1.27 0 1.63.68 2.75.66 1.14-.02 1.86-1.03 2.55-2.06.8-1.18 1.13-2.32 1.15-2.38-.03-.01-2.19-.84-2.21-3.4ZM11.86 4.36c.58-.7.97-1.68.86-2.65-.83.03-1.85.56-2.45 1.25-.54.6-1.01 1.6-.88 2.55.93.07 1.88-.47 2.47-1.15Z"
-                        />
-                      </svg>
-                      Apple
-                    </button>
-                  </div>
-
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onSignIn()}
-                  >
-                    {linkPending ? "Open link page" : "Link account via browser"}
-                  </button>
-
-                  <div className="signin-links">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signup")}>
-                      Create account
-                    </button>
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("forgot")}>
-                      Forgot password?
-                    </button>
-                  </div>
-                </form>
-              </>
-            )}
-          </div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-type DropdownOption = { id: string; label: string };
-
-function Dropdown({
-  id,
-  value,
-  options,
-  placeholder,
-  emptyLabel,
-  disabled,
-  onChange,
-}: {
-  id: string;
-  value: string;
-  options: DropdownOption[];
-  placeholder: string;
-  emptyLabel: string;
-  disabled?: boolean;
-  onChange: (id: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
-
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  const selected = options.find((o) => o.id === value);
-  const isEmpty = options.length === 0;
-
-  const openAt = (index: number) => {
-    setActiveIndex(Math.max(0, Math.min(options.length - 1, index)));
-    setOpen(true);
-  };
-
-  const commit = (index: number) => {
-    const option = options[index];
-    if (!option) return;
-    onChange(option.id);
-    setOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  const onTriggerKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (isEmpty) return;
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        if (!open) {
-          openAt(options.findIndex((o) => o.id === value));
-        } else {
-          setActiveIndex((i) => Math.min(options.length - 1, i + 1));
-        }
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        if (!open) {
-          openAt(options.findIndex((o) => o.id === value));
-        } else {
-          setActiveIndex((i) => Math.max(0, i - 1));
-        }
-        break;
-      case "Home":
-        if (open) {
-          e.preventDefault();
-          setActiveIndex(0);
-        }
-        break;
-      case "End":
-        if (open) {
-          e.preventDefault();
-          setActiveIndex(options.length - 1);
-        }
-        break;
-      case "Enter":
-      case " ":
-        e.preventDefault();
-        if (open) commit(activeIndex);
-        else openAt(Math.max(0, options.findIndex((o) => o.id === value)));
-        break;
-      case "Escape":
-        if (open) {
-          e.preventDefault();
-          setOpen(false);
-        }
-        break;
-      default:
-        break;
-    }
-  };
-
-  return (
-    <div className="dropdown" ref={rootRef}>
-      <button
-        id={id}
-        ref={triggerRef}
-        type="button"
-        role="combobox"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={`${id}-listbox`}
-        aria-activedescendant={open && options[activeIndex] ? `${id}-opt-${activeIndex}` : undefined}
-        className={`dropdown-trigger${open ? " open" : ""}`}
-        disabled={disabled || isEmpty}
-        onClick={() => (open ? setOpen(false) : openAt(Math.max(0, options.findIndex((o) => o.id === value))))}
-        onKeyDown={onTriggerKeyDown}
-      >
-        <span className="dropdown-value">
-          {selected ? selected.label : isEmpty ? emptyLabel : placeholder}
-        </span>
-        <svg
-          className={`dropdown-chevron${open ? " open" : ""}`}
-          viewBox="0 0 12 12"
-          width="10"
-          height="10"
-          aria-hidden="true"
-        >
-          <path
-            d="M2.5 4.5 6 8l3.5-3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open && !isEmpty ? (
-        <div className="dropdown-menu" role="listbox" id={`${id}-listbox`}>
-          {options.map((option, index) => (
-            <button
-              key={option.id}
-              id={`${id}-opt-${index}`}
-              type="button"
-              role="option"
-              aria-selected={option.id === value}
-              className={`dropdown-item${option.id === value ? " active" : ""}${index === activeIndex ? " highlighted" : ""}`}
-              onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => commit(index)}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+import type {
+  ActionResult,
+  AgentTask,
+  AuthView,
+  ConnectionState,
+  ForgotState,
+  LinkStatus,
+  MemberLimits,
+  MemberProfile,
+  MonitoringNoticeView,
+  ProfileInfo,
+  ProjectInfo,
+  ReconnectResult,
+  SessionInfo,
+  SignInResult,
+  SignUpFields,
+  SignUpState,
+  TaskTimeTracking,
+} from "./types";
+import {
+  fmtClock,
+  fmtHours,
+  fmtLimitHours,
+  initialsFromName,
+  statusLabel,
+  statusTone,
+} from "./utils/formatters";
+import { TitleBar } from "./components/common/TitleBar";
+import { Dropdown } from "./components/common/Dropdown";
+import { SettingsPanel } from "./components/views/SettingsPanel";
+import { ProfilePanel } from "./components/views/ProfilePanel";
+import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
+import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
+import { SignInPanel } from "./components/views/SignInPanel";
 
 function MainApp() {
   const [view, setView] = useState<"home" | "settings" | "profile">("home");
@@ -1463,16 +182,36 @@ function MainApp() {
       return;
     }
     try {
-      const next = await invoke<AgentTask[]>("list_tasks", {
+      const rawTasks = await invoke<AgentTask[]>("list_tasks", {
         projectId: selectedProjectId,
       });
-      setTasks(next);
+
+      // Strict filtering: check task limits and filter out tasks that reached their budget
+      const taskLimitChecks = await Promise.all(
+        rawTasks.map(async (t) => {
+          try {
+            const tracking = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
+              taskId: t.id,
+            });
+            return { task: t, limitReached: tracking?.limitReached ?? false };
+          } catch {
+            return { task: t, limitReached: false };
+          }
+        })
+      );
+
+      const availableTasks = taskLimitChecks
+        .filter((item) => !item.limitReached)
+        .map((item) => item.task);
+
+      setTasks(availableTasks);
       setSelectedTaskId((current) => {
-        if (current && next.some((t) => t.id === current)) return current;
-        return next[0]?.id || "";
+        if (current && availableTasks.some((t) => t.id === current)) return current;
+        return availableTasks[0]?.id || "";
       });
     } catch {
       setTasks([]);
+      setSelectedTaskId("");
     }
   }, [signedIn, selectedProjectId, isCallingProject]);
 
@@ -1702,42 +441,41 @@ function MainApp() {
   };
 
   const handleSignUpFieldChange = (field: keyof SignUpFields, value: string) => {
-    setSignUp((s) => ({ ...s, [field]: value, error: null }));
+    setSignUp((s) => ({ ...s, [field]: value, error: null, success: null }));
   };
 
-  // In-app account creation, no browser round-trip. Mirrors the web's
-  // register form: create the account, then ask the user to verify their
-  // email and sign in normally - it does not sign the agent in directly.
+  // Native sign-up through Auth-Backend POST /api/auth/register-agent-user.
+  // Validation runs here first so obvious mismatches fail immediately without
+  // a network round-trip; error messages match the web auth page.
   const handleSignUp = async () => {
     if (signUp.busy) return;
     if (signUp.password !== signUp.confirmPassword) {
-      setSignUp((s) => ({ ...s, error: "Passwords do not match." }));
+      setSignUp((s) => ({ ...s, error: "Passwords do not match" }));
       return;
     }
     setSignUp((s) => ({ ...s, busy: true, error: null, success: null }));
     try {
-      const result = await invoke<SignInResult>("sign_up", {
-        email: signUp.email,
-        password: signUp.password,
+      const result = await invoke<SignInResult>("sign_up_with_password", {
         firstName: signUp.firstName,
         lastName: signUp.lastName,
         phone: signUp.phone,
+        email: signUp.email,
+        password: signUp.password,
       });
       if (result.success) {
-        toast.success("Account created");
-        setSignInEmail(signUp.email);
-        setSignUp({
+        toast.success("Account created — signed in");
+        setSignUp((s) => ({
+          ...s,
+          busy: false,
           firstName: "",
           lastName: "",
           phone: "",
           email: "",
           password: "",
           confirmPassword: "",
-          busy: false,
-          error: null,
-          success: `Account created. We sent a verification email to ${signUp.email}. Verify your email, then sign in.`,
-        });
-        setAuthView("signin");
+        }));
+        await refresh();
+        await refreshProjects();
       } else {
         const msg = result.error || "Could not create account";
         setSignUp((s) => ({ ...s, busy: false, error: msg }));
@@ -1750,11 +488,8 @@ function MainApp() {
     }
   };
 
-  const handleForgotEmailChange = (value: string) => {
-    setForgot((f) => ({ ...f, email: value, error: null }));
-  };
-
-  // In-app password reset request, no browser round-trip. Enumeration-safe on
+  // Native password-reset email via Auth-Backend POST /api/auth/forgot-password.
+  // Generic error text on missing accounts is enforced server-side inside
   // the Rust side - "success" here means the request was accepted, not that
   // this email has an account.
   const handleForgotPassword = async () => {
@@ -2038,22 +773,11 @@ function MainApp() {
     return <SettingsPanel onBack={() => setView("home")} />;
   }
 
-  // CF-2: mandatory disclosure. Blocks every view except settings (sign-out
-  // has to stay reachable for someone who doesn't want to consent) and never
-  // interrupts a session already in progress - same "don't yank the screen
-  // away mid-timer" rule the reconnect flow below follows. The real
-  // enforcement is server-side (start_task_session/start_project_session
-  // both refuse while unacknowledged); this is what makes that visible
-  // instead of surfacing as a rejected click. Gated on being actually
-  // connected - a stale cached "requires acknowledgement" from before a
-  // disconnect must not block the reconnect flow's own escape hatch below.
-  if (
-    signedIn &&
-    connection !== "disconnected" &&
-    !staleSession &&
-    !tracking &&
-    monitoringNotice?.requiresAcknowledgement
-  ) {
+  // CF-2: required disclosure notice blocks all tracker interactions until
+  // acknowledged. Takes priority over stale-session recovery (a user whose
+  // token aged out will reach WelcomeBackPanel immediately after accepting, or
+  // be sent to re-auth when acknowledge 401s).
+  if (signedIn && monitoringNotice?.requiresAcknowledgement) {
     return (
       <MonitoringNoticePanel
         notice={monitoringNotice}
@@ -2104,7 +828,7 @@ function MainApp() {
         onAuthViewChange={handleAuthViewChange}
         onSignUpFieldChange={handleSignUpFieldChange}
         onSignUpSubmit={() => void handleSignUp()}
-        onForgotEmailChange={handleForgotEmailChange}
+        onForgotEmailChange={(email) => setForgot((f) => ({ ...f, email }))}
         onForgotSubmit={() => void handleForgotPassword()}
         onCheckUpdate={() => void checkForUpdate()}
         checkingUpdate={checkingUpdate}
@@ -2166,8 +890,9 @@ function MainApp() {
                 <h1 className="hero-name">{firstName}</h1>
               </div>
               <span
-                className={`pill pill-${loadingProfile ? "idle" : connection === "disconnected" ? "warn" : tone
-                  }`}
+                className={`pill pill-${
+                  loadingProfile ? "idle" : connection === "disconnected" ? "warn" : tone
+                }`}
               >
                 {loadingProfile
                   ? "Loading"
@@ -2206,117 +931,6 @@ function MainApp() {
               <span className="skeleton-bar skeleton-bar-lg" />
               <span className="skeleton-bar" />
             </div>
-          ) : !signedIn ? (
-            /* Sign in here, in the app. The browser link flow stays as a peer
-               option below it - it is still the only path for Google/Apple
-               accounts and for anything needing a second factor. */
-            <form
-              className="signin-form side-panel-swap"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void handlePasswordSignIn();
-              }}
-            >
-              <label className="task-label" htmlFor="signin-email">
-                Email
-              </label>
-              <input
-                id="signin-email"
-                className="text-input"
-                type="email"
-                autoComplete="username"
-                spellCheck={false}
-                value={signInEmail}
-                disabled={busy}
-                onChange={(e) => setSignInEmail(e.target.value)}
-              />
-
-              <label className="task-label" htmlFor="signin-password">
-                Password
-              </label>
-              <input
-                id="signin-password"
-                className="text-input"
-                type="password"
-                autoComplete="current-password"
-                value={signInPassword}
-                disabled={busy}
-                onChange={(e) => setSignInPassword(e.target.value)}
-              />
-
-              <button className="btn btn-primary" type="submit" disabled={busy}>
-                {busy ? "Signing in…" : "Sign in"}
-              </button>
-
-              <div className="signin-divider">
-                <span>or</span>
-              </div>
-
-              {/* Google/Apple can't run inside this app's own webview (Google
-                  actively blocks OAuth in embedded webviews; Apple requires a
-                  full web context too) - both open the system browser to the
-                  web login page's existing, working provider buttons, with a
-                  hint so that page jumps straight to the right one instead of
-                  landing on plain email/password. */}
-              <button
-                className="btn btn-social btn-google"
-                type="button"
-                disabled={busy}
-                onClick={() => void handleSignIn("provider=google")}
-              >
-                <svg viewBox="0 0 18 18" aria-hidden="true" width="16" height="16">
-                  <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62Z" />
-                  <path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.84.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.95v2.33A9 9 0 0 0 9 18Z" />
-                  <path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.95A9 9 0 0 0 0 9c0 1.45.35 2.83.95 4.03l3-2.33Z" />
-                  <path fill="#EA4335" d="M9 3.58c1.32 0 2.51.46 3.44 1.35l2.58-2.58C13.46.9 11.43 0 9 0A9 9 0 0 0 .95 4.97l3 2.33C4.66 5.17 6.65 3.58 9 3.58Z" />
-                </svg>
-                Continue with Google
-              </button>
-
-              <button
-                className="btn btn-social btn-apple"
-                type="button"
-                disabled={busy}
-                onClick={() => void handleSignIn("provider=apple")}
-              >
-                <svg viewBox="0 0 17 20" aria-hidden="true" width="15" height="17">
-                  <path
-                    fill="currentColor"
-                    d="M13.94 10.6c-.02-2.1 1.72-3.1 1.8-3.15-.98-1.44-2.5-1.63-3.04-1.65-1.3-.13-2.53.76-3.19.76-.66 0-1.68-.75-2.76-.73-1.42.02-2.73.83-3.46 2.1-1.47 2.56-.38 6.35 1.06 8.42.7 1.02 1.53 2.15 2.63 2.11 1.05-.04 1.45-.68 2.72-.68 1.27 0 1.63.68 2.75.66 1.14-.02 1.86-1.03 2.55-2.06.8-1.18 1.13-2.32 1.15-2.38-.03-.01-2.19-.84-2.21-3.4ZM11.86 4.36c.58-.7.97-1.68.86-2.65-.83.03-1.85.56-2.45 1.25-.54.6-1.01 1.6-.88 2.55.93.07 1.88-.47 2.47-1.15Z"
-                  />
-                </svg>
-                Continue with Apple
-              </button>
-
-              <button
-                className="btn btn-secondary"
-                type="button"
-                disabled={busy}
-                onClick={() => void handleSignIn()}
-              >
-                {profile?.linkPending ? "Open link page" : "Link account in browser"}
-              </button>
-
-              <div className="signin-links">
-                {/* Both live on the web app's single auth page, which switches
-                    modes internally - no separate routes to point at. Each
-                    hint just pre-selects the right pane there. */}
-                <button
-                  className="link-btn"
-                  type="button"
-                  onClick={() => void handleSignIn("mode=signup")}
-                >
-                  Create account
-                </button>
-                <button
-                  className="link-btn"
-                  type="button"
-                  onClick={() => void handleSignIn("mode=forgot-password")}
-                >
-                  Forgot password?
-                </button>
-              </div>
-            </form>
           ) : (
             <>
               {/* Centred as a pair, so the project card visibly rides upward as
@@ -2329,6 +943,7 @@ function MainApp() {
                   </label>
                   <Dropdown
                     id="project-select"
+                    direction="up"
                     value={selectedProjectId}
                     options={projects.map((project) => ({ id: project.id, label: project.name }))}
                     placeholder="Select a project"
@@ -2349,6 +964,7 @@ function MainApp() {
                     </label>
                     <Dropdown
                       id="task-select"
+                      direction="down"
                       value={selectedTaskId}
                       options={tasks.map((task) => ({ id: task.id, label: task.title }))}
                       placeholder="Select a task"
@@ -2412,8 +1028,6 @@ function MainApp() {
             </div>
           ) : null}
 
-          {actionError ? <p className="inline-error">{actionError}</p> : null}
-
           <button
             className="settings-corner-btn"
             type="button"
@@ -2462,12 +1076,12 @@ function MainApp() {
                 </div>
 
                 {/* Your own hours - the only cap a calling project has, and the
-                  one the task cards below fold invisibly into "Remaining". */}
+                    one the task cards below fold invisibly into "Remaining". */}
                 <h3 className="stat-group-label">Your hours today</h3>
                 {hoursTodayCards}
 
                 {/* Task estimates, progress and budget are what performance is
-                  measured from - a calling project has none of it by design. */}
+                    measured from - a calling project has none of it by design. */}
                 {isCallingProject ? null : (
                   <div className="stat-grid page-content-swap" style={{ animationDelay: "0.08s" }}>
                     <div className="stat-card">

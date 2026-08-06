@@ -276,6 +276,8 @@ export function ProjectsPage() {
           showCompactSearchRow={showCompactSearchRow}
           toolbarRef={toolbarRef}
           canManageProjects={canManage}
+          onRefresh={() => void refetchProjects()}
+          isRefreshing={isLoading}
           t={t}
         />
 

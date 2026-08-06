@@ -26,6 +26,10 @@ export interface CreateProjectFormPayload {
   disableActivity: boolean
   allowProjectTracking: boolean
   disableIdleTime: boolean
+  /** Total idle-time threshold in seconds (hours+minutes in the UI, stored as
+   * seconds on the wire) - how long without activity before time on this
+   * project is marked idle. Defaults to 450 (7.5 minutes) on creation. */
+  idleTimeSeconds: number
   /** Optional, informational only - see item 5 of the budget fixes plan. */
   endDate: string
   clientIds: string[]
@@ -696,6 +700,7 @@ export async function updateProjectWithDetails(
       disableActivity: payload.disableActivity,
       allowProjectTracking: payload.allowProjectTracking,
       disableIdleTime: payload.disableIdleTime,
+      idleTimeSeconds: payload.idleTimeSeconds,
       endDate: payload.endDate,
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
@@ -752,6 +757,7 @@ export async function createProjectWithDetails(
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
     disableIdleTime: payload.disableIdleTime,
+    idleTimeSeconds: payload.idleTimeSeconds,
     endDate: payload.endDate,
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),

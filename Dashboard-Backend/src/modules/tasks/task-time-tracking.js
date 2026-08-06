@@ -21,6 +21,7 @@ import {
   updateTrackingFieldsPg,
 } from "../../lib/postgres/task-member-progress.service.js";
 import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { getProjectPg } from "../../lib/postgres/projects-postgres.service.js";
 import { getTaskAssignmentsPg, getInReviewAssignmentsForTaskPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 
 export { estimateAssignmentSeconds, estimateTaskDurationSeconds, isManagementRole };
@@ -269,6 +270,15 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const overtimeHoursPerDay = Number(taskData.overtime_hours_per_day ?? taskData.overtimeHoursPerDay ?? 0);
   const includeMemberBreakdown = options.includeMemberBreakdown === true;
 
+  // ID-3: the owning project's idle-time settings, fetched alongside the
+  // task on every re-baseline so the desktop agent applies the right
+  // project's threshold instead of one hardcoded/org-wide number - see
+  // PLAN-agent-crash-safe-progress.md.
+  const projectId = taskData.project_id ?? taskData.projectId ?? null;
+  const project = projectId ? await getProjectPg(projectId) : null;
+  const disableIdleTime = Boolean(project?.disable_idle_time ?? false);
+  const idleTimeSeconds = Number(project?.idle_time_seconds ?? 450);
+
   let memberContributions = null;
   if (includeMemberBreakdown) {
     const aggregate = await aggregateTaskProgress(db, taskId);
@@ -308,6 +318,8 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       aggregatedProgressPercent: taskData.aggregated_progress_percent ?? null,
       memberContributions,
       timerAllowance,
+      disableIdleTime,
+      idleTimeSeconds,
     };
   }
 
@@ -335,6 +347,8 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     aggregatedProgressPercent: taskData.aggregated_progress_percent ?? null,
     memberContributions,
     timerAllowance,
+    disableIdleTime,
+    idleTimeSeconds,
   };
 }
 
