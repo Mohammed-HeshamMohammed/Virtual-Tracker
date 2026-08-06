@@ -546,6 +546,7 @@ export async function recomputeTaskStatus(db, taskId) {
   if (assignments.length === 0) return task.status ?? "todo";
 
   const statuses = assignments.map((a) => a.status);
+  const previousStatus = task.status ?? "todo";
   let nextStatus = "todo";
 
   if (statuses.every((s) => s === "done")) {
@@ -557,12 +558,21 @@ export async function recomputeTaskStatus(db, taskId) {
   } else if (statuses.every((s) => s === "blocked" || s === "done")) {
     nextStatus = statuses.some((s) => s === "blocked") ? "blocked" : "done";
   } else if (statuses.some((s) => s === "blocked")) {
-    nextStatus = "in_progress";
+    // Every branch above ruled out done/in_review/in_progress, so this is a
+    // blocked+todo mix - nobody has started. "blocked" is the honest status;
+    // "in_progress" claimed active work that isn't happening.
+    nextStatus = "blocked";
+  } else if (previousStatus === "blocked") {
+    // Only "todo" assignees here, so no assignee signal justifies overriding
+    // a block. A task blocked manually (board drag writes tasks.status
+    // directly, bypassing assignments) must not silently revert just because
+    // an unrelated field was edited - any edit carrying assigneeIds runs
+    // syncTaskAssignments, which always calls back into this function.
+    nextStatus = "blocked";
   } else {
     nextStatus = statuses[0] ?? "todo";
   }
 
-  const previousStatus = task.status ?? "todo";
   const participation = computeParticipationStats(assignments);
   const patch = {
     status: nextStatus,

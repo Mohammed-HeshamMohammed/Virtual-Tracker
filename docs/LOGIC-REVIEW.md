@@ -2,15 +2,15 @@
 
 Targeted review of the features in [FEATURES.md](FEATURES.md) for real logic defects — wrong conditionals, unit mismatches, race conditions, silent partial writes. Not a security or style pass. Every entry was verified by tracing the full function and its callers, not just the snippet.
 
-15 confirmed bugs, 1 lower-confidence flag, split by area:
+16 confirmed bugs, 2 open policy questions, split by area. **Tasks' 5 confirmed bugs are fixed; one design-gap question (per-assignee blocking) is still open. The other four areas are untouched.**
 
-| Area | File | Confirmed bugs |
-|---|---|---|
-| Billing & Budgets | [LOGIC-REVIEW-billing-budgets.md](LOGIC-REVIEW-billing-budgets.md) | 3 (1 critical) |
-| Dashboard | [LOGIC-REVIEW-dashboard.md](LOGIC-REVIEW-dashboard.md) | 3 |
-| Tasks | [LOGIC-REVIEW-tasks.md](LOGIC-REVIEW-tasks.md) | 3 confirmed + 1 lower-confidence |
-| Members & Org Chart | [LOGIC-REVIEW-members-org-chart.md](LOGIC-REVIEW-members-org-chart.md) | 4 |
-| Auth | [LOGIC-REVIEW-auth.md](LOGIC-REVIEW-auth.md) | 2 |
+| Area | File | Confirmed bugs | Status |
+|---|---|---|---|
+| Billing & Budgets | [LOGIC-REVIEW-billing-budgets.md](dashboard-backend/LOGIC-REVIEW-billing-budgets.md) | 3 (1 critical) | Open |
+| Dashboard | [LOGIC-REVIEW-dashboard.md](dashboard-backend/LOGIC-REVIEW-dashboard.md) | 3 | Open |
+| Tasks | [LOGIC-REVIEW-tasks.md](dashboard-backend/LOGIC-REVIEW-tasks.md) | 5 (incl. 1 found later) | ✅ Bugs fixed, 1 open policy question |
+| Members & Org Chart | [LOGIC-REVIEW-members-org-chart.md](dashboard-backend/LOGIC-REVIEW-members-org-chart.md) | 4 | Open |
+| Auth | [LOGIC-REVIEW-auth.md](auth-backend/LOGIC-REVIEW-auth.md) | 2 | Open |
 
 Note: the "Budget Used always 0%" bug is filed under both Billing & Budgets (root cause) and Dashboard (where it's visible), since it's one defect with two audiences.
 

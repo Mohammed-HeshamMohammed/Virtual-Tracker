@@ -1,11 +1,14 @@
 # Logic Bug Review — Tasks
 
-Part of the [full logic review](LOGIC-REVIEW.md). Covers task assignment, time tracking, review, and reordering.
+Part of the [full logic review](../LOGIC-REVIEW.md). Covers task assignment, time tracking, review, and reordering.
+
+> **All 5 issues below are fixed.** Regression test: `Dashboard-Backend/test/recompute-task-status.test.js` (covers the two `blocked` branches — verified to fail against the pre-fix code and pass after). Full backend suite: 218/218 passing.
 
 ---
 
-### 🟡 High — Approving one in-review task assignment silently leaves other assignees stuck in review
-**File:** `Dashboard-Backend/src/modules/tasks/task-time-tracking.js:370-382`
+### ✅ Fixed — 🟡 High — Approving one in-review task assignment silently leaves other assignees stuck in review
+**Status:** **Fixed.** `reviewTaskTracking` now loops over every row in `inReviewRows` instead of only `inReviewRows[0]`, matching the sibling `/api/tasks/:taskId/review` endpoint. Returns the last result, preserving the existing single-object response contract the caller wraps in `{ success: true, data }` — no API change.
+**File:** `Dashboard-Backend/src/modules/tasks/task-time-tracking.js:389-401`
 
 `reviewTaskTracking` (backing `POST /api/tasks/:taskId/time-tracking/review`) only acts on `inReviewRows[0]` — it ignores every other row `getInReviewAssignmentsForTaskPg` returns (there's no `ORDER BY`, so it's whichever row Postgres happens to return first).
 
@@ -52,8 +55,9 @@ Returns the same shape the caller (`routes.js:382-389`) already expects (a singl
 
 ---
 
-### 🟠 Medium-High — Batch task reorder can partially commit before a permission check fails, with no rollback
-**File:** `Dashboard-Backend/src/modules/schema/routes.js:436-457`
+### ✅ Fixed — 🟠 Medium-High — Batch task reorder can partially commit before a permission check fails, with no rollback
+**Status:** **Fixed.** Split into the two-pass "validate everything, then write" version below — the 403 now returns before any `updateTaskPg` call in the batch, so a partial write is impossible. The stronger DB-transaction variant (which would also close the pass-1/pass-2 race) was deliberately not taken; see the trade-off note after the solution.
+**File:** `Dashboard-Backend/src/modules/schema/routes.js:425-467`
 
 The per-task project-permission check runs **inside** the update loop, after earlier rows in the same batch have already been written — no transaction wraps the batch.
 
@@ -130,7 +134,8 @@ This is the "validate everything, then write" version — no partial writes ever
 
 ---
 
-### 🟠 Medium — A task can show as "in progress" when nobody is actually working on it
+### ✅ Fixed — 🟠 Medium — A task can show as "in progress" when nobody is actually working on it
+**Status:** **Fixed** (`nextStatus = "blocked"` instead of `"in_progress"`). Note: this branch is currently unreachable — no code path writes `status: "blocked"` onto an individual *assignment* row (only onto the task itself), so `statuses.some((s) => s === "blocked")` can never be true today. Fixed anyway because assignment-level `"blocked"` is a documented state (`STARTED_ASSIGNMENT_STATUSES`, `startTaskForUser` explicitly reads it) that a future write path could plausibly produce, and the branch would then be silently wrong. Covered by the regression test regardless, since the test drives the function directly.
 **File:** `Dashboard-Backend/src/modules/tasks/task-assignments.js:559-560`
 
 `recomputeTaskStatus` sets `"in_progress"` for a task where assignees are a mix of `"todo"` and `"blocked"` — no assignee has actually started.
@@ -169,8 +174,11 @@ By the time this branch is reached, every branch above it has already ruled out 
 
 ---
 
-### ⚪ Lower confidence — Never-started assignee can be promoted straight to "in review" / "done"
-**File:** `Dashboard-Backend/src/modules/tasks/task-time-tracking.js:114-140`
+### ✅ Fixed — ⚪ Lower confidence → resolved as a bug — Never-started assignee can be promoted straight to "in review" / "done"
+**Status:** **Fixed — Option A adopted** (`if (status !== "in_progress") continue;`). A never-started (`"todo"`) assignee is no longer swept into `"in_review"` because a co-assignee hit the task's combined estimate.
+
+**Why Option A, since this was flagged as a product call:** researched how established multi-assignee tools handle it. The exact behavior this bug produced is the recognized anti-pattern — a task "flagged as completed by one of the users, instead of flagged as *done with my part*, which closed the task and removed it from everyone's work list." Asana sidesteps it entirely by allowing only one assignee per task and pushing multi-person work into subtasks with individual owners; tools that do allow multiple assignees (ClickUp, monday.com) pair that with per-assignee completion. Decisive factor for this codebase specifically: it already stores per-assignee `task_assignments` rows each carrying their own `status`, `expected_seconds`, and review state — it is *already* built on the "done with my part" model, and the promotion loop was the one place contradicting its own data model. Option B (keep task-level promotion, fix only the stats) would have kept that contradiction and required a second fix to `participation_percent`/`startedAssignees`; Option A makes those stats correct for free, because a never-started assignee simply stays `"todo"` and `computeParticipationStats` already counts only `STARTED_ASSIGNMENT_STATUSES`.
+**File:** `Dashboard-Backend/src/modules/tasks/task-time-tracking.js:115-141`
 
 `maybePromoteTaskToReview` promotes based on the **task's combined** active seconds across all assignees hitting the estimate, not the seconds logged by each individual assignee. An assignee who logged 0 seconds (still `"todo"`) can be swept into `"in_review"` — and, if approved, marked `"done"` — because a co-assignee did the work. May be intentional "task-level" completion, but it's inconsistent with every other status check in the module treating `"todo"` as strictly not-started, and it inflates participation stats for someone who did no work. Worth a product decision, not necessarily a pure bug.
 
@@ -195,3 +203,69 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
 **Option B:** keep today's task-level promotion behavior (some products do want "close the task once the work is done, regardless of who logged it"), but if so, stop counting never-started assignees in `participation_percent`/`startedAssignees` so those stats stay honest even when the status itself is promoted for everyone.
 
 Flag this to whoever owns task/time-tracking product behavior before picking one — it changes what "in review" means for a never-started assignee, which is a policy question, not just a bug.
+
+---
+
+### ✅ Fixed — 🟡 High — A task manually set to "Blocked" silently reverts on the next unrelated edit
+**Status:** **Fixed.** `recomputeTaskStatus` now preserves an existing `"blocked"` task status in its final fallback branch (the "every assignee is still `todo`" case, where no assignee signal justifies overriding a manual block). The branches that *should* override a block — someone starts work, submits for review, gets approved — are untouched and are explicitly covered by the regression test.
+**File:** `Dashboard-Backend/src/modules/tasks/task-assignments.js:537-563` (root cause), interacting with `Dashboard-Backend/src/modules/schema/routes.js:519-546` and `Dashboard-Backend/src/modules/tasks/task-assignments.js:381-440`
+
+`recomputeTaskStatus` derives `tasks.status` purely from the statuses of the task's *assignment* rows. Traced every write path to an assignment's `status` column (`updateAssignmentStatus` call sites in `task-assignments.js` and `task-time-tracking.js`, plus the raw `updateAssignmentPg` calls) — none of them ever writes `"blocked"`. Assignment status can only ever be `todo`, `in_progress`, `in_review`, or `done`. So `recomputeTaskStatus`'s derivation state machine can never actually output `"blocked"` (the one branch that tries to — `statuses.some(s => s === "blocked")` — is dead code for the same reason as the bug above: it's checking a value no assignment row ever has).
+
+Meanwhile, the **task's own** `status` field *can* be set to `"blocked"` directly — the board view's drag-and-drop (`Dashboard-Web/features/tasks/pages/tasks-page.tsx:146-158`, `handleDragEnd`) sends `{ status: "blocked" }` straight to the generic schema-driven `PATCH /api/tasks/:id` (`Dashboard-Backend/src/modules/schema/routes.js:519-546`), which writes the `tasks` row directly and has no awareness of assignments at all - it never calls `recomputeTaskStatus`.
+
+The two paths collide the next time anyone edits that task through the Task Wizard modal. `handleSaveTaskForm` (`Dashboard-Web/features/tasks/hooks/use-task-mutations.ts:287-298`) always sends both `status: formValues.status` *and* `assigneeIds` together, for every edit, not just assignee changes. The frontend's `updateTask` (`Dashboard-Web/features/tasks/api/task-api.ts:358-391`) splits that into two backend calls: first the `PATCH` above, then - because `assigneeIds` is present - `applyAssigneeSync` (`task-api.ts:269-272`), which hits `POST /api/tasks/:taskId/assignments` and runs `syncTaskAssignments` (`task-assignments.js:381-440`). `syncTaskAssignments` **unconditionally** calls `recomputeTaskStatus` as its last step (line 438), regardless of whether the assignee set actually changed. That recompute derives a fresh status from assignment rows - which, as established, can never be `"blocked"` - and overwrites whatever the PATCH just set, with no error, no log, and no signal to the user that their edit silently undid the block.
+
+**Failure scenario:** A manager drags a task to the "Blocked" column (task-level `status` becomes `"blocked"`, correctly, via the direct PATCH). Later, anyone - the same manager or a teammate - opens that task in the edit modal just to fix a typo in the title and hits Save. The save request always carries the current assignee list alongside the edit, which triggers assignment sync, which triggers `recomputeTaskStatus`, which - seeing assignees that are `todo`/`in_progress`/`in_review`/`done` but never `blocked` - recomputes the status to something else (e.g. back to `"todo"` or `"in_progress"`) and overwrites the task row. The task silently un-blocks. Nobody who saved the edit asked for that, and nothing in the response indicates it happened.
+
+**Fix direction:** `recomputeTaskStatus` should not clobber an existing `"blocked"` task status when the assignment-derived signal doesn't itself indicate someone has resumed or otherwise progressed the task. The cases that *should* still override a manual block (someone starts working → `in_progress`, submits for review → `in_review`, gets approved → `done`) already have explicit branches above the dead `"blocked"` one; only the final fallback (effectively "all assignees are `todo`") needs to respect a pre-existing manual block instead of silently discarding it.
+
+**Solution:**
+```js
+// Dashboard-Backend/src/modules/tasks/task-assignments.js:548-563
+  const statuses = assignments.map((a) => a.status);
+  let nextStatus = "todo";
+
+  if (statuses.every((s) => s === "done")) {
+    nextStatus = "done";
+  } else if (statuses.some((s) => s === "in_review")) {
+    nextStatus = "in_review";
+  } else if (statuses.some((s) => s === "in_progress")) {
+    nextStatus = "in_progress";
+  } else if (statuses.every((s) => s === "blocked" || s === "done")) {
+    nextStatus = statuses.some((s) => s === "blocked") ? "blocked" : "done";
+  } else if (statuses.some((s) => s === "blocked")) {
+    nextStatus = "in_progress"; // separate bug, see above
+  } else {
+-   nextStatus = statuses[0] ?? "todo";
++   // No assignee signal (in_progress/in_review/done) overrides a manual
++   // block here - only "todo" assignees are present. Keep an existing
++   // manual "blocked" task status instead of silently reverting it just
++   // because an unrelated field on the task was edited.
++   const previousStatus = task.status ?? "todo";
++   nextStatus = previousStatus === "blocked" ? "blocked" : (statuses[0] ?? "todo");
+  }
+```
+This only changes behavior for the specific case that's actually broken (task manually blocked, all assignees still sitting at `todo`) - every other branch, including the legitimate ones that should override a block (someone starts work, submits for review, gets approved), is untouched. The one-line moved-up `previousStatus` read is already computed a few lines below in the existing function (line 565) - this just needs it earlier, or the existing binding reused instead of redeclared.
+
+**Test to add:** task with one `todo` assignee; manually set task status to `"blocked"` via `updateTaskPg`; call `recomputeTaskStatus`; assert status stays `"blocked"`. Second case: same setup, but flip the assignee to `"in_progress"` first; assert `recomputeTaskStatus` now correctly overrides the block to `"in_progress"`.
+
+---
+
+### ⚪ Open — No way to block a single assignee; per-assignee "blocked" is modeled but never written
+**Status:** Open, needs a product decision — not fixed.
+**File:** `Dashboard-Backend/src/modules/tasks/task-assignments.js:35` (`STARTED_ASSIGNMENT_STATUSES`), `:354` (`startTaskForUser`), `:559-560` (`recomputeTaskStatus`)
+
+Three separate places in `task-assignments.js` treat an individual assignment's `status` as if `"blocked"` were a real, reachable value: `STARTED_ASSIGNMENT_STATUSES` counts it toward participation stats, `startTaskForUser` has an explicit branch for resuming a blocked assignee, and `recomputeTaskStatus` derives task-level status assuming some assignments can be blocked while others aren't. Traced every write path to an assignment's `status` column — none of them ever writes `"blocked"`. Only the *task's own* `status` field can be set to `"blocked"` (via board drag-and-drop), and that's whole-task, not per-person.
+
+This isn't dead code by accident — it's evidence of an unfinished or removed feature. Either:
+- **Per-assignee blocking used to exist** and the write path was removed without cleaning up the three read-side references, or
+- **It was never finished** — the product wants "I'm personally blocked, waiting on X" as distinct from the whole task being blocked for everyone, and only the task-level version got built.
+
+Either way, the practical gap is real: on a task with multiple assignees, there's no way to flag that *one* person is blocked while others keep working. The only lever is task-level (board drag), which blocks the task for every assignee at once, including people actively logging time.
+
+**Not fixed here** — needs a product call on which direction this goes:
+- **Option A — build the missing feature:** add a per-assignee "block this assignment" action (e.g. a control on each assignee row in the task detail view) that calls `updateAssignmentStatus(db, assignmentId, "blocked", ...)`. `recomputeTaskStatus`'s already-fixed blocked+todo branch (see above) would then have a real input to act on.
+- **Option B — remove the dead references:** if per-assignee blocking was never meant to exist, drop `"blocked"` from `STARTED_ASSIGNMENT_STATUSES`, drop the `assignmentStatus === "blocked"` check in `startTaskForUser`, and drop the now-genuinely-dead `statuses.some((s) => s === "blocked")` branch in `recomputeTaskStatus` (collapsing it into the fallback branch) — so the code stops implying a capability the product doesn't have.
+
+Flag to whoever owns task/time-tracking product behavior, same as the promotion-policy question above.

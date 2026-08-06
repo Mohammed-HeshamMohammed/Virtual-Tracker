@@ -433,7 +433,11 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         ? await getViewerProjectIds(db, viewer.memberId, viewer.roleName)
         : [];
       const allowedSet = toAllowedProjectSet(allowedProjects);
-      const touched = [];
+      // Two passes: a permission failure used to return 403 *after* earlier
+      // rows in the same batch were already written, leaving duplicate or
+      // gapped order_index values with no rollback and no signal to the
+      // caller. Nothing is written until every row has passed.
+      const validated = [];
       for (const row of updates.slice(0, 200)) {
         const id = typeof row?.id === "string" ? row.id : "";
         const orderIndex = row?.order_index ?? row?.orderIndex;
@@ -448,7 +452,11 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           });
           return true;
         }
-        await updateTaskPg(id, { order_index: Math.trunc(orderIndex) });
+        validated.push({ id, orderIndex: Math.trunc(orderIndex) });
+      }
+      const touched = [];
+      for (const { id, orderIndex } of validated) {
+        await updateTaskPg(id, { order_index: orderIndex });
         touched.push(id);
       }
       if (!touched.length) {
