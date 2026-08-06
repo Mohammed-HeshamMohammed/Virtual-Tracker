@@ -17,7 +17,7 @@ import { getTeams } from "@/features/teams/api/team-api"
 import { useAuth } from "@/shared/providers/app"
 import { canCreateTasksInProject, canViewParticipationMetrics, isManagementRole, normalizeMemberRole } from "@/features/auth"
 import { getProjectMembers, type ProjectMember } from "@/features/projects/api/project-api"
-import { startTaskAssignment } from "@/features/tasks/api/task-assignments-api"
+import { blockTaskAssignment, startTaskAssignment } from "@/features/tasks/api/task-assignments-api"
 import { useTheme } from "@/shared/providers/app"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { useCachedMultiList } from "@/features/members/hooks"
@@ -352,6 +352,23 @@ export function TasksPage() {
     void refetchTaskLists()
   }
 
+  /** Self-service "I'm blocked, waiting on X" - blocks only the current
+   * user's own assignment, not the whole task. Mirrors handleStartTask. */
+  async function handleBlockTask(task: Task) {
+    const result = await blockTaskAssignment(task.id)
+    if (!result) return
+    updateTask(task.id, {
+      status: result.taskStatus as TaskStatus,
+      completed: result.taskStatus === "done",
+      totalAssignees: result.totalAssignees ?? task.totalAssignees ?? null,
+      startedAssignees: result.startedAssignees ?? task.startedAssignees ?? null,
+      notStartedAssignees: result.notStartedAssignees ?? task.notStartedAssignees ?? null,
+      participationPercent: result.participationPercent ?? task.participationPercent ?? null,
+      allAssigneesStarted: result.allAssigneesStarted ?? task.allAssigneesStarted,
+    })
+    void refetchTaskLists()
+  }
+
   useEffect(() => {
     setSelectedTaskId(null)
     setTaskPreview(null)
@@ -557,6 +574,7 @@ export function TasksPage() {
                         onSubmitHours={openHoursSubmission}
                         onReview={openReviewDialog}
                         onStartTask={handleStartTask}
+                        onBlockTask={handleBlockTask}
                         showParticipation={showParticipation}
                         canMarkCompleted={canMarkCompleted}
                       />
@@ -581,6 +599,7 @@ export function TasksPage() {
                         onAddTask={canAddTask ? openTaskModal : undefined}
                         onSubmitHours={openHoursSubmission}
                         onReview={openReviewDialog}
+                        onBlockTask={handleBlockTask}
                         canMarkCompleted={canMarkCompleted}
                       />
                     )}
