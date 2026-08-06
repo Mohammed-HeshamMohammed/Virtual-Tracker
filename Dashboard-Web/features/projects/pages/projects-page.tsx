@@ -276,7 +276,11 @@ export function ProjectsPage() {
           showCompactSearchRow={showCompactSearchRow}
           toolbarRef={toolbarRef}
           canManageProjects={canManage}
-          onRefresh={() => void refetchProjects()}
+          // forceRefetch: true - without it, useCachedList's refetch silently
+          // re-applies the cached data and skips the network call whenever
+          // it's within staleMs (5min here) of the last fetch, which made
+          // this button look broken most of the time it was clicked.
+          onRefresh={() => void refetchProjects({ forceRefetch: true })}
           isRefreshing={isLoading}
           t={t}
         />
