@@ -2,7 +2,7 @@
 
 Part of the [full logic review](../LOGIC-REVIEW.md). Covers task assignment, time tracking, review, and reordering.
 
-> **All 5 issues below are fixed.** Regression test: `Dashboard-Backend/test/recompute-task-status.test.js` (covers the two `blocked` branches — verified to fail against the pre-fix code and pass after). Full backend suite: 218/218 passing.
+> **All 6 issues below are fixed**, including the per-assignee-blocking design gap, which was resolved by building the missing feature (Option A) rather than removing the code that implied it. Regression tests: `Dashboard-Backend/test/recompute-task-status.test.js` and `block-task-for-user.test.js`. Full backend suite: 224/224 passing.
 
 ---
 
@@ -252,20 +252,20 @@ This only changes behavior for the specific case that's actually broken (task ma
 
 ---
 
-### ⚪ Open — No way to block a single assignee; per-assignee "blocked" is modeled but never written
-**Status:** Open, needs a product decision — not fixed.
-**File:** `Dashboard-Backend/src/modules/tasks/task-assignments.js:35` (`STARTED_ASSIGNMENT_STATUSES`), `:354` (`startTaskForUser`), `:559-560` (`recomputeTaskStatus`)
+### ✅ Fixed — Option A adopted — No way to block a single assignee; per-assignee "blocked" is modeled but never written
+**Status:** **Fixed.** Built the missing feature: a self-service "I'm blocked, waiting on X" action that blocks only the caller's own assignment, not the whole task.
+**File:** `Dashboard-Backend/src/modules/tasks/task-assignments.js` (`blockTaskForUser`, new - mirrors `startTaskForUser`), `Dashboard-Backend/src/modules/tasks/routes.js` (`POST /api/tasks/:taskId/assignments/block`, new - mirrors `.../assignments/start`), `Dashboard-Web/features/tasks/api/task-assignments-api.ts` (`blockTaskAssignment`), `Dashboard-Web/features/tasks/components/list-view.tsx` + `board-view.tsx` (`TaskRowMenu` "I'm blocked" item), `Dashboard-Web/features/tasks/pages/tasks-page.tsx` (`handleBlockTask`)
 
-Three separate places in `task-assignments.js` treat an individual assignment's `status` as if `"blocked"` were a real, reachable value: `STARTED_ASSIGNMENT_STATUSES` counts it toward participation stats, `startTaskForUser` has an explicit branch for resuming a blocked assignee, and `recomputeTaskStatus` derives task-level status assuming some assignments can be blocked while others aren't. Traced every write path to an assignment's `status` column — none of them ever writes `"blocked"`. Only the *task's own* `status` field can be set to `"blocked"` (via board drag-and-drop), and that's whole-task, not per-person.
+Three separate places in `task-assignments.js` treated an individual assignment's `status` as if `"blocked"` were a real, reachable value (`STARTED_ASSIGNMENT_STATUSES`, `startTaskForUser`'s resume branch, `recomputeTaskStatus`'s derivation), but no write path ever produced it - only the *task's own* `status` could be set to `"blocked"` (whole-task, via board drag).
 
-This isn't dead code by accident — it's evidence of an unfinished or removed feature. Either:
-- **Per-assignee blocking used to exist** and the write path was removed without cleaning up the three read-side references, or
-- **It was never finished** — the product wants "I'm personally blocked, waiting on X" as distinct from the whole task being blocked for everyone, and only the task-level version got built.
+**Why Option A:** the practical gap was real - on a multi-assignee task, there was no way to flag that *one* person is blocked while others keep working; the only lever was task-level, blocking everyone at once including people actively logging time. The codebase already models per-assignee state everywhere else (`task_assignments` rows with their own `status`), so the missing write path was the actual gap, not the three read-side references - Option B (deleting them) would have removed the ability to fix this instead of fixing it.
 
-Either way, the practical gap is real: on a task with multiple assignees, there's no way to flag that *one* person is blocked while others keep working. The only lever is task-level (board drag), which blocks the task for every assignee at once, including people actively logging time.
+**What was built:**
+- `blockTaskForUser(db, { taskId, userId, userName })` - mirrors `startTaskForUser` exactly. Only transitions the caller's *own* assignment (`todo` or `in_progress` → `blocked`; no-ops if already `blocked`, `in_review`, or `done` - can't block work that's finished or under review). Calls `recomputeTaskStatus` afterward, same as every other assignment-status mutation.
+- `POST /api/tasks/:taskId/assignments/block` - mirrors `.../assignments/start`'s exact access model: management bypasses the "must be assigned" check, but the action always targets the *viewer's own* assignment (`userId: access.viewer.memberId`), never someone else's on their behalf.
+- Frontend: "I'm blocked" in the task row's `⋯` menu (list and board views), next to "Start task". Same optimistic local-state update pattern as `handleStartTask`.
+- Fixed `notifyAssignmentStatusChange`'s `nextStatus === "blocked"` branch, which had stale copy from an old reject-flow ("Assignment rejected... was rejected and marked blocked", sent to the assignee themselves). Rewired to notify direct parents + project leadership (same audience as the "started" notification) with accurate copy - notifying yourself that you just blocked yourself was never useful.
 
-**Not fixed here** — needs a product call on which direction this goes:
-- **Option A — build the missing feature:** add a per-assignee "block this assignment" action (e.g. a control on each assignee row in the task detail view) that calls `updateAssignmentStatus(db, assignmentId, "blocked", ...)`. `recomputeTaskStatus`'s already-fixed blocked+todo branch (see above) would then have a real input to act on.
-- **Option B — remove the dead references:** if per-assignee blocking was never meant to exist, drop `"blocked"` from `STARTED_ASSIGNMENT_STATUSES`, drop the `assignmentStatus === "blocked"` check in `startTaskForUser`, and drop the now-genuinely-dead `statuses.some((s) => s === "blocked")` branch in `recomputeTaskStatus` (collapsing it into the fallback branch) — so the code stops implying a capability the product doesn't have.
+**No change needed to `recomputeTaskStatus`'s derivation order:** it already checks `some(in_progress)` before `some(blocked)`, so a task with one blocked assignee and another still actively working correctly stays `"in_progress"` overall - only when *everyone* required is blocked (or blocked-and-done) does the task read as `"blocked"`. This ordering was already correct from the earlier fix above; the new write path just gives it real input for the first time.
 
-Flag to whoever owns task/time-tracking product behavior, same as the promotion-policy question above.
+**Test:** `Dashboard-Backend/test/block-task-for-user.test.js` - blocking from `todo`/`in_progress` succeeds; blocking from `blocked`/`done` no-ops; a sole assignee blocking themselves blocks the task; blocking while a co-assignee is still `in_progress` keeps the task `in_progress`. Full backend suite: 224/224 passing.

@@ -2,13 +2,13 @@
 
 Targeted review of the features in [FEATURES.md](FEATURES.md) for real logic defects — wrong conditionals, unit mismatches, race conditions, silent partial writes. Not a security or style pass. Every entry was verified by tracing the full function and its callers, not just the snippet.
 
-16 confirmed bugs, 2 open policy questions, split by area. **Tasks' 5 confirmed bugs are fixed; one design-gap question (per-assignee blocking) is still open. The other four areas are untouched.**
+17 confirmed bugs, split by area. **Tasks is fully resolved, including a design gap (per-assignee blocking) fixed by building the missing feature rather than deleting what implied it. The other four areas are untouched.**
 
 | Area | File | Confirmed bugs | Status |
 |---|---|---|---|
 | Billing & Budgets | [LOGIC-REVIEW-billing-budgets.md](dashboard-backend/LOGIC-REVIEW-billing-budgets.md) | 3 (1 critical) | Open |
 | Dashboard | [LOGIC-REVIEW-dashboard.md](dashboard-backend/LOGIC-REVIEW-dashboard.md) | 3 | Open |
-| Tasks | [LOGIC-REVIEW-tasks.md](dashboard-backend/LOGIC-REVIEW-tasks.md) | 5 (incl. 1 found later) | ✅ Bugs fixed, 1 open policy question |
+| Tasks | [LOGIC-REVIEW-tasks.md](dashboard-backend/LOGIC-REVIEW-tasks.md) | 6 (incl. 2 found later) | ✅ All fixed |
 | Members & Org Chart | [LOGIC-REVIEW-members-org-chart.md](dashboard-backend/LOGIC-REVIEW-members-org-chart.md) | 4 | Open |
 | Auth | [LOGIC-REVIEW-auth.md](auth-backend/LOGIC-REVIEW-auth.md) | 2 | Open |
 

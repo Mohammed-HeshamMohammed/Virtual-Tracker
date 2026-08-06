@@ -66,6 +66,7 @@ export function TaskRowMenu({
   onSubmitHours,
   onReview,
   onStartTask,
+  onBlockTask,
   isDark,
   canMarkCompleted = false,
 }: {
@@ -78,6 +79,9 @@ export function TaskRowMenu({
   onSubmitHours: () => void
   onReview: () => void
   onStartTask?: () => void
+  /** Self-service "I'm blocked, waiting on X" - blocks only the current
+   * user's own assignment, not the whole task (that's Change status below). */
+  onBlockTask?: () => void
   isDark: boolean
   canMarkCompleted?: boolean
 }) {
@@ -128,6 +132,19 @@ export function TaskRowMenu({
               className={cn(TABLE_ROW_MENU_ITEM_BASE, tableRowMenuItemClass(false, isDark))}
             >
               <Play className="w-3.5 h-3.5" /> Start task
+            </DropdownMenuItem>
+          ) : null}
+
+          {onBlockTask && task.status !== "done" ? (
+            <DropdownMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onBlockTask()
+                close()
+              }}
+              className={cn(TABLE_ROW_MENU_ITEM_BASE, tableRowMenuItemClass(false, isDark))}
+            >
+              <Ban className="w-3.5 h-3.5" /> I&apos;m blocked
             </DropdownMenuItem>
           ) : null}
 
@@ -245,6 +262,7 @@ function DraggableListRow({
   onSubmitHours,
   onReview,
   onStartTask,
+  onBlockTask,
   showParticipation,
   canMarkCompleted = false,
 }: any) {
@@ -398,6 +416,7 @@ function DraggableListRow({
           onSubmitHours={onSubmitHours}
           onReview={onReview}
           onStartTask={onStartTask ? () => onStartTask(task) : undefined}
+          onBlockTask={onBlockTask ? () => onBlockTask(task) : undefined}
           isDark={isDark}
           canMarkCompleted={canMarkCompleted}
         />
@@ -433,6 +452,7 @@ function DroppableListGroup({
   onSubmitHours,
   onReview,
   onStartTask,
+  onBlockTask,
   showParticipation,
   canMarkCompleted = false,
 }: any) {
@@ -520,6 +540,7 @@ function DroppableListGroup({
                       onSubmitHours={onSubmitHours}
                       onReview={onReview}
                       onStartTask={onStartTask}
+                      onBlockTask={onBlockTask}
                       showParticipation={showParticipation}
                       canMarkCompleted={canMarkCompleted}
                     />
@@ -554,6 +575,7 @@ export function ListView({
   onSubmitHours,
   onReview,
   onStartTask,
+  onBlockTask,
   showParticipation = false,
   canMarkCompleted = false,
 }: {
@@ -578,6 +600,9 @@ export function ListView({
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
   onStartTask?: (task: Task) => void
+  /** Self-service "I'm blocked, waiting on X" - blocks only the current
+   * user's own assignment on this task, not the whole task. */
+  onBlockTask?: (task: Task) => void
   showParticipation?: boolean
   canMarkCompleted?: boolean
 }) {
@@ -638,6 +663,7 @@ export function ListView({
             onSubmitHours={onSubmitHours}
             onReview={onReview}
             onStartTask={onStartTask}
+            onBlockTask={onBlockTask}
             showParticipation={showParticipation}
             canMarkCompleted={canMarkCompleted}
           />

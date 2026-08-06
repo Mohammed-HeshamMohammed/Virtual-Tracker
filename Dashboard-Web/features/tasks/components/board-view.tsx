@@ -41,6 +41,7 @@ function DraggableTaskCard({
   onDuplicate,
   onSubmitHours,
   onReview,
+  onBlockTask,
   canMarkCompleted = false,
 }: any) {
   const t = isDark ? dark : light
@@ -125,6 +126,7 @@ function DraggableTaskCard({
               onRename={() => {}}
               onSubmitHours={() => onSubmitHours?.(task.id)}
               onReview={() => onReview?.(task.id)}
+              onBlockTask={onBlockTask ? () => onBlockTask(task) : undefined}
               isDark={isDark}
               canMarkCompleted={canMarkCompleted}
             />
@@ -188,6 +190,7 @@ function DroppableColumn({
   onAddTask,
   onSubmitHours,
   onReview,
+  onBlockTask,
   canMarkCompleted = false,
 }: any) {
   const { setNodeRef, isOver } = useDroppable({ id: status })
@@ -228,6 +231,7 @@ function DroppableColumn({
                 onDuplicate={onDuplicate}
                 onSubmitHours={onSubmitHours}
                 onReview={onReview}
+                onBlockTask={onBlockTask}
                 canMarkCompleted={canMarkCompleted}
               />
             )
@@ -257,6 +261,7 @@ export function BoardView({
   onAddTask,
   onSubmitHours,
   onReview,
+  onBlockTask,
   canMarkCompleted = false,
 }: {
   tasks: Task[]
@@ -277,6 +282,9 @@ export function BoardView({
   onAddTask?: (status: TaskStatus) => void
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
+  /** Self-service "I'm blocked, waiting on X" - blocks only the current
+   * user's own assignment on this task, not the whole task. */
+  onBlockTask?: (task: Task) => void
   canMarkCompleted?: boolean
 }) {
   const memberMap = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members])
@@ -332,6 +340,7 @@ export function BoardView({
             onAddTask={onAddTask}
             onSubmitHours={onSubmitHours}
             onReview={onReview}
+            onBlockTask={onBlockTask}
             canMarkCompleted={canMarkCompleted}
           />
         )

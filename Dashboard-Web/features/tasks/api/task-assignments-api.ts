@@ -158,3 +158,30 @@ export async function startTaskAssignment(
     return null
   }
 }
+
+/** Self-service "I'm blocked, waiting on X" - blocks only the caller's own
+ * assignment, not the whole task. Mirrors startTaskAssignment. */
+export async function blockTaskAssignment(
+  taskId: string,
+): Promise<{
+  assignmentStatus: string
+  taskStatus: string
+  statusChanged?: boolean
+  totalAssignees?: number
+  startedAssignees?: number
+  notStartedAssignees?: number
+  participationPercent?: number | null
+  allAssigneesStarted?: boolean
+} | null> {
+  try {
+    const res = await apiFetch(apiPath(`/api/tasks/${encodeURIComponent(taskId)}/assignments/block`), {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) return null
+    const json = await res.json()
+    return json.data ?? null
+  } catch {
+    return null
+  }
+}
