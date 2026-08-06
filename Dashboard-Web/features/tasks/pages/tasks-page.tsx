@@ -45,6 +45,8 @@ import { TasksTimelineCalendar } from "@/features/tasks/components/tasks-timelin
 import { TaskWizardModal } from "@/features/tasks/components/modals/task-wizard-modal"
 import { TaskHoursModal } from "@/features/tasks/components/modals/task-hours-modal"
 import { TaskReviewModal } from "@/features/tasks/components/modals/task-review-modal"
+import { TasksBatchBar } from "@/features/tasks/components/tasks-batch-bar"
+import { DeleteConfirmDialog } from "@/features/projects/ui-components"
 
 const EMPTY_PROJECT_MEMBERS: Member[] = []
 
@@ -65,6 +67,9 @@ export function TasksPage() {
   )
 
   const [selectedTaskId, setSelectedTaskId] = useComponentState<string | null>(null)
+  const [selectedTaskIds, setSelectedTaskIds] = useComponentState<Set<string>>(new Set())
+  const [batchBusy, setBatchBusy] = useComponentState(false)
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useComponentState(false)
   const [showCompleted, setShowCompleted] = useComponentState(false)
   const { query: search, setQuery: setSearch } = usePageSearch()
   const [syncPulse, setSyncPulse] = useComponentState(false)
@@ -350,7 +355,54 @@ export function TasksPage() {
   useEffect(() => {
     setSelectedTaskId(null)
     setTaskPreview(null)
+    setSelectedTaskIds(new Set())
   }, [selectedProjectId])
+
+  function toggleTaskSelected(id: string) {
+    setSelectedTaskIds((prev) => {
+      const s = new Set(prev)
+      if (s.has(id)) s.delete(id)
+      else s.add(id)
+      return s
+    })
+  }
+
+  async function handleBatchStatusChange(status: TaskStatus) {
+    if (selectedTaskIds.size === 0 || batchBusy) return
+    const ids = [...selectedTaskIds]
+    setBatchBusy(true)
+    try {
+      await Promise.all(
+        ids.map((id) =>
+          updateTask(id, { status, completed: status === "done" }).catch((err) => {
+            console.error(`Failed to update task ${id}:`, err)
+          }),
+        ),
+      )
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  function handleBatchDeleteRequest() {
+    if (selectedTaskIds.size === 0) return
+    setBatchDeleteConfirmOpen(true)
+  }
+
+  async function handleBatchDeleteConfirm() {
+    if (selectedTaskIds.size === 0 || batchBusy) return
+    const ids = [...selectedTaskIds]
+    setBatchBusy(true)
+    try {
+      // Reuses the single-task delete, which already clears
+      // selectedTaskId/taskPreview if the deleted task was focused/previewed.
+      await Promise.all(ids.map((id) => deleteTask(id)))
+    } finally {
+      setSelectedTaskIds(new Set())
+      setBatchBusy(false)
+      setBatchDeleteConfirmOpen(false)
+    }
+  }
 
   function addTask() {
     if (!canAddTask) return
@@ -467,6 +519,16 @@ export function TasksPage() {
               handleSync={handleSync}
             />
 
+            <TasksBatchBar
+              count={selectedTaskIds.size}
+              onClear={() => setSelectedTaskIds(new Set())}
+              onDeleteRequest={handleBatchDeleteRequest}
+              onChangeStatus={handleBatchStatusChange}
+              canMarkCompleted={canMarkCompleted}
+              busy={batchBusy}
+              isDark={isDark}
+            />
+
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {showContentSkeleton ? (
                 <TasksContentSkeleton isDark={isDark} fillHeight />
@@ -482,6 +544,8 @@ export function TasksPage() {
                         selectedTaskId={selectedTaskId}
                         onSelectTask={setSelectedTaskId}
                         onTaskPreview={handleTaskPreview}
+                        selectedTaskIds={selectedTaskIds}
+                        onToggleTaskSelected={toggleTaskSelected}
                         onDelete={deleteTask}
                         onUpdate={updateTask}
                         onEdit={openEditTaskModal}
@@ -505,6 +569,8 @@ export function TasksPage() {
                         selectedTaskId={selectedTaskId}
                         onSelectTask={setSelectedTaskId}
                         onTaskPreview={handleTaskPreview}
+                        selectedTaskIds={selectedTaskIds}
+                        onToggleTaskSelected={toggleTaskSelected}
                         onDelete={deleteTask}
                         onUpdate={updateTask}
                         onEdit={openEditTaskModal}
@@ -599,6 +665,18 @@ export function TasksPage() {
         isDark={isDark}
         onClose={() => setTaskPreview(null)}
       />
+
+      <AnimatePresence>
+        <DeleteConfirmDialog
+          deleteConfirmId={batchDeleteConfirmOpen ? "batch" : null}
+          onClose={() => setBatchDeleteConfirmOpen(false)}
+          onConfirm={() => void handleBatchDeleteConfirm()}
+          actionBusy={batchBusy}
+          isDark={isDark}
+          t={t}
+          count={selectedTaskIds.size}
+        />
+      </AnimatePresence>
     </motion.div>
   )
 }

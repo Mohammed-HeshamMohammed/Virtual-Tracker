@@ -22,6 +22,7 @@ import {
 } from "@/features/projects/constants"
 import { AvatarBubble, PriorityDot } from "@/features/projects/ui-components"
 import { TaskRowMenu } from "@/features/tasks/components/list-view"
+import { Checkbox } from "@/shared/ui/checkbox"
 
 function DraggableTaskCard({
   task,
@@ -32,6 +33,8 @@ function DraggableTaskCard({
   isSelected,
   onSelectTask,
   onTaskPreview,
+  isChecked,
+  onToggleChecked,
   onDelete,
   onUpdate,
   onEdit,
@@ -89,23 +92,28 @@ function DraggableTaskCard({
           <GripVertical className={cn("h-3.5 w-3.5", t.tableCellMuted)} />
         </button>
         <div className="flex items-start justify-between gap-2 pl-4">
-          <div className="flex flex-col gap-1">
-            <span
-              className={cn(
-                "text-sm font-medium leading-snug",
-                task.completed ? "line-through text-slate-400" : t.tableCell,
-              )}
-            >
-              {task.title}
-            </span>
-            {task.reviewState && (
-              <span className={cn(
-                "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium w-fit",
-                task.reviewState === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-              )}>
-                {task.reviewState === "approved" ? "Approved" : "Rejected"}
+          <div className="flex items-start gap-2">
+            <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+              <Checkbox checked={!!isChecked} onChange={() => onToggleChecked?.(task.id)} isDark={isDark} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span
+                className={cn(
+                  "text-sm font-medium leading-snug",
+                  task.completed ? "line-through text-slate-400" : t.tableCell,
+                )}
+              >
+                {task.title}
               </span>
-            )}
+              {task.reviewState && (
+                <span className={cn(
+                  "inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium w-fit",
+                  task.reviewState === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                )}>
+                  {task.reviewState === "approved" ? "Approved" : "Rejected"}
+                </span>
+              )}
+            </div>
           </div>
           <div onPointerDown={(e) => e.stopPropagation()}>
             <TaskRowMenu
@@ -171,6 +179,8 @@ function DroppableColumn({
   selectedTaskId,
   onSelectTask,
   onTaskPreview,
+  selectedTaskIds,
+  onToggleTaskSelected,
   onDelete,
   onUpdate,
   onEdit,
@@ -210,6 +220,8 @@ function DroppableColumn({
                 isSelected={selectedTaskId === task.id}
                 onSelectTask={onSelectTask}
                 onTaskPreview={onTaskPreview}
+                isChecked={selectedTaskIds?.has(task.id) ?? false}
+                onToggleChecked={onToggleTaskSelected}
                 onDelete={onDelete}
                 onUpdate={onUpdate}
                 onEdit={onEdit}
@@ -233,6 +245,8 @@ export function BoardView({
   selectedTaskId,
   onSelectTask,
   onTaskPreview,
+  selectedTaskIds,
+  onToggleTaskSelected,
   onDelete,
   onUpdate,
   onEdit,
@@ -251,6 +265,8 @@ export function BoardView({
   selectedTaskId: string | null
   onSelectTask: (id: string | null) => void
   onTaskPreview: (task: Task, event: MouseEvent) => void
+  selectedTaskIds?: Set<string>
+  onToggleTaskSelected?: (id: string) => void
   onDelete: (id: string) => void
   onUpdate: (id: string, patch: Partial<Task>) => void
   onEdit: (task: Task) => void
@@ -307,6 +323,8 @@ export function BoardView({
             selectedTaskId={selectedTaskId}
             onSelectTask={onSelectTask}
             onTaskPreview={onTaskPreview}
+            selectedTaskIds={selectedTaskIds}
+            onToggleTaskSelected={onToggleTaskSelected}
             onDelete={onDelete}
             onUpdate={onUpdate}
             onEdit={onEdit}

@@ -59,6 +59,7 @@ export function DeleteConfirmDialog({
   actionBusy,
   isDark,
   t,
+  count,
 }: {
   deleteConfirmId: string | null
   onClose: () => void
@@ -66,6 +67,8 @@ export function DeleteConfirmDialog({
   actionBusy: boolean
   isDark: boolean
   t: any
+  /** When set (batch delete), pluralizes the message instead of the single-record copy. */
+  count?: number
 }) {
   return (
     <AnimatePresence>
@@ -90,7 +93,9 @@ export function DeleteConfirmDialog({
               </h3>
             </div>
             <p className={cn("mb-6 text-sm leading-relaxed", t.textMuted)}>
-              Are you sure you want to delete this record? This action cannot be undone and any linked data may be removed.
+              {count && count > 1
+                ? `Are you sure you want to delete ${count} projects? This action cannot be undone and any linked data may be removed.`
+                : "Are you sure you want to delete this record? This action cannot be undone and any linked data may be removed."}
             </p>
             <div className="flex justify-end gap-3">
               <button
