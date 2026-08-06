@@ -102,7 +102,11 @@ export async function routeTasks(req, res, url, db, origin) {
     try {
       const accessibleIds = [];
       for (const taskId of taskIds) {
-        if (await canAccessTask(db, viewer.memberId, viewer.roleName, taskId)) {
+        // canAccessTask always returns an object ({allowed, status, task}),
+        // never undefined - checking the object itself was always truthy,
+        // so this never actually filtered anything.
+        const access = await canAccessTask(db, viewer.memberId, viewer.roleName, taskId);
+        if (access.allowed) {
           accessibleIds.push(taskId);
         }
       }
