@@ -1112,6 +1112,56 @@ BEGIN
     ALTER TABLE task_member_progress ADD CONSTRAINT fk_tmp_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
   END IF;
 END $$`,
+  // Same class of bug as fk_tmp_task above, on the project side this time:
+  // tasks.project_id, task_assignments.project_id, and
+  // task_member_progress.project_id were all declared as inline
+  // `REFERENCES projects(id)` with no ON DELETE clause, which Postgres
+  // defaults to NO ACTION - so DELETE FROM projects fails outright for any
+  // project that has ever had a task ("violates foreign key constraint...
+  // on table tasks"), every time. Self-healing on every boot: for each
+  // table, find any FK to projects that isn't already CASCADE, drop it, and
+  // recreate it correctly. Table-scoped by conrelid rather than a specific
+  // constraint name, since these were never given one - Postgres auto-named
+  // them, and the auto-generated name isn't worth depending on.
+  `DO $$
+DECLARE
+  con_name text;
+BEGIN
+  SELECT conname INTO con_name FROM pg_constraint
+  WHERE conrelid = 'tasks'::regclass AND confrelid = 'projects'::regclass
+    AND contype = 'f' AND confdeltype != 'c'
+  LIMIT 1;
+  IF con_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE tasks DROP CONSTRAINT %I', con_name);
+    ALTER TABLE tasks ADD CONSTRAINT tasks_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
+  `DO $$
+DECLARE
+  con_name text;
+BEGIN
+  SELECT conname INTO con_name FROM pg_constraint
+  WHERE conrelid = 'task_assignments'::regclass AND confrelid = 'projects'::regclass
+    AND contype = 'f' AND confdeltype != 'c'
+  LIMIT 1;
+  IF con_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE task_assignments DROP CONSTRAINT %I', con_name);
+    ALTER TABLE task_assignments ADD CONSTRAINT task_assignments_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
+  `DO $$
+DECLARE
+  con_name text;
+BEGIN
+  SELECT conname INTO con_name FROM pg_constraint
+  WHERE conrelid = 'task_member_progress'::regclass AND confrelid = 'projects'::regclass
+    AND contype = 'f' AND confdeltype != 'c'
+  LIMIT 1;
+  IF con_name IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE task_member_progress DROP CONSTRAINT %I', con_name);
+    ALTER TABLE task_member_progress ADD CONSTRAINT task_member_progress_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
   // ─── Phase 4 schema hardening (implementation.md) - cheap/safe items ───
   // 4.12: these 3 columns already have a UNIQUE constraint, which Postgres backs
   // with its own index - the separate explicit index below is a second index
