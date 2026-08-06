@@ -1093,8 +1093,21 @@ END $$`,
   // cleans up its progress/session rows instead of orphaning them the way
   // deleteTaskPg alone would (task_assignments already had this via its own
   // table-level FK - these two didn't). Idempotent: safe to run on every boot.
+  //
+  // Self-healing: an earlier deploy of this exact migration created
+  // fk_tmp_task WITHOUT "ON DELETE CASCADE" (Postgres defaults to NO ACTION),
+  // and the original "IF NOT EXISTS (name)" guard only ever checked whether
+  // *a* constraint with that name existed - never whether it actually had
+  // cascade behavior - so it silently never got fixed. Every task delete has
+  // been failing with "violates foreign key constraint fk_tmp_task" since.
+  // confdeltype 'c' = CASCADE; anything else means it needs replacing.
   `DO $$
 BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'fk_tmp_task' AND confdeltype != 'c'
+  ) THEN
+    ALTER TABLE task_member_progress DROP CONSTRAINT fk_tmp_task;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tmp_task') THEN
     ALTER TABLE task_member_progress ADD CONSTRAINT fk_tmp_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
   END IF;

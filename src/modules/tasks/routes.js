@@ -26,6 +26,7 @@ import {
   taskChildDocRef,
 } from "../../lib/firestore/task-subcollections.js";
 import {
+  enrichTaskIds,
   getEnrichedTaskById,
   listTasksForAssignee,
 } from "./task-assignee-api.js";
