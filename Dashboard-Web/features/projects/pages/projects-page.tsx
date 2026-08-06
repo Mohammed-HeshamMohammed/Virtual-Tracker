@@ -26,6 +26,7 @@ import { useProjectColumns } from "@/features/projects/hooks/use-project-columns
 import { useProjectMutations } from "@/features/projects/hooks/use-project-mutations"
 import { ProjectModal } from "@/features/projects/components/modals/project-modal"
 import { ProjectsToolbar } from "@/features/projects/components/projects-toolbar"
+import { DeleteConfirmDialog } from "@/features/projects/ui-components"
 
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
 
@@ -63,7 +64,10 @@ function mapApiProject(
     budget: budgetRow
       ? {
         spent: budgetRow.spent ?? 0,
-        total: budgetRow.cost,
+        // target is the real total: for scope='per_person' rows `cost` is
+        // hours-per-member, not a total. `cost` is only correct here for
+        // scope='per_project', where target already equals cost.
+        total: budgetRow.target ?? budgetRow.cost,
         type: budgetRow.type === "Hours based" ? "hours" : "cost",
       }
       : null,
@@ -92,6 +96,8 @@ export function ProjectsPage() {
   const showCompactSearchRow = compactSearch && searchExpanded
   const [selected, setSelected] = useComponentState<Set<string>>(new Set())
   const [batchOpen, setBatchOpen] = useComponentState(false)
+  const [batchBusy, setBatchBusy] = useComponentState(false)
+  const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useComponentState(false)
 
   const [isAddOpen, setIsAddOpen] = useComponentState(false)
   const [editingProjectId, setEditingProjectId] = useComponentState<string | null>(null)
@@ -131,6 +137,8 @@ export function ProjectsPage() {
     archiveProject,
     deleteProject,
     saveProject,
+    batchArchive,
+    batchDelete,
   } = useProjectMutations({
     data,
     refetchProjects,
@@ -181,8 +189,38 @@ export function ProjectsPage() {
     archived: projectList.filter((p) => p.status === "archived").length,
   }), [projectList])
 
-  const selectedInView = searchFiltered.filter((p) => selected.has(p.id)).length
+  const selectedIdsInView = useMemo(
+    () => searchFiltered.filter((p) => selected.has(p.id)).map((p) => p.id),
+    [searchFiltered, selected],
+  )
+  const selectedInView = selectedIdsInView.length
   const showListSkeleton = isLoading && data.length === 0
+
+  async function handleBatchArchive() {
+    if (selectedIdsInView.length === 0 || batchBusy) return
+    setBatchBusy(true)
+    try {
+      await batchArchive(selectedIdsInView)
+    } finally {
+      setBatchBusy(false)
+    }
+  }
+
+  function handleBatchDeleteRequest() {
+    if (selectedIdsInView.length === 0) return
+    setBatchDeleteConfirmOpen(true)
+  }
+
+  async function handleBatchDeleteConfirm() {
+    if (selectedIdsInView.length === 0 || batchBusy) return
+    setBatchBusy(true)
+    try {
+      await batchDelete(selectedIdsInView)
+    } finally {
+      setBatchBusy(false)
+      setBatchDeleteConfirmOpen(false)
+    }
+  }
 
   const projectsEmptyContent = (
     <>
@@ -231,6 +269,9 @@ export function ProjectsPage() {
           selectedInView={selectedInView}
           batchOpen={batchOpen}
           setBatchOpen={setBatchOpen}
+          onBatchArchive={handleBatchArchive}
+          onBatchDelete={handleBatchDeleteRequest}
+          batchBusy={batchBusy}
           openAddProjectModal={openAddProjectModal}
           showCompactSearchRow={showCompactSearchRow}
           toolbarRef={toolbarRef}
@@ -299,6 +340,18 @@ export function ProjectsPage() {
             />
           </div>
         )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        <DeleteConfirmDialog
+          deleteConfirmId={batchDeleteConfirmOpen ? "batch" : null}
+          onClose={() => setBatchDeleteConfirmOpen(false)}
+          onConfirm={() => void handleBatchDeleteConfirm()}
+          actionBusy={batchBusy}
+          isDark={isDark}
+          t={t}
+          count={selectedIdsInView.length}
+        />
       </AnimatePresence>
     </div>
   )

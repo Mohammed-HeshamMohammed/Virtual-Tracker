@@ -192,19 +192,19 @@ async function syncClientLinks(
   const desired = new Set(filterValidUuids(clientIds))
   const existing = await getClientProjectLinksForProject(projectId)
 
-  for (const link of existing) {
-    if (!desired.has(link.clientId)) {
-      await deleteClientProjectLink(link.id)
-    }
-  }
+  // Derive "already linked" from the one fetch above instead of re-fetching
+  // after the deletes - the set of links being kept is just existing minus
+  // the ones about to be removed, no round-trip needed to know that.
+  const toDelete = existing.filter((link) => !desired.has(link.clientId))
+  const keptClientIds = new Set(
+    existing.filter((link) => desired.has(link.clientId)).map((link) => link.clientId),
+  )
+  const toAdd = [...desired].filter((clientId) => !keptClientIds.has(clientId))
 
-  const existingAfterDelete = await getClientProjectLinksForProject(projectId)
-  const existingClientIds = new Set(existingAfterDelete.map((link) => link.clientId))
-
-  for (const clientId of desired) {
-    if (existingClientIds.has(clientId)) continue
-    await linkClientToProject(clientId, projectId, actorMemberId)
-  }
+  await Promise.all([
+    ...toDelete.map((link) => deleteClientProjectLink(link.id)),
+    ...toAdd.map((clientId) => linkClientToProject(clientId, projectId, actorMemberId)),
+  ])
 }
 
 async function getProjectBudgets(projectId?: string, options: RequestOptions & { fields?: string[] } = {}): Promise<ProjectBudgetRow[]> {
@@ -525,29 +525,18 @@ async function syncTeamLinks(
   )
   const existing = await getTeamProjectLinksForProject(projectId)
 
-  for (const link of existing) {
-    if (!desired.has(link.teamId)) {
-      await deleteTeamProjectLink(link.id)
-    }
-  }
+  // Same one-fetch diff as syncClientLinks - no need to re-fetch after
+  // deleting to know what's left, it's derivable from `existing`.
+  const toDelete = existing.filter((link) => !desired.has(link.teamId))
+  const keptTeamIds = new Set(
+    existing.filter((link) => desired.has(link.teamId)).map((link) => link.teamId),
+  )
+  const toAdd = [...desired].filter((teamId) => !keptTeamIds.has(teamId))
 
-  const existingAfterDelete = await getTeamProjectLinksForProject(projectId)
-  const existingTeamIds = new Set(existingAfterDelete.map((l) => l.teamId))
-
-  for (const teamId of desired) {
-    if (existingTeamIds.has(teamId)) continue
-    const body: Record<string, unknown> = { team_id: teamId, project_id: projectId }
-    if (actorMemberId && isValidUuid(actorMemberId)) body.assigned_by = actorMemberId
-    const res = await apiFetch(apiPath("/api/team-projects"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    if (!res.ok) {
-      const json = await res.json().catch(() => null)
-      throw extractApiError(res.status, "Failed to link team to project", json)
-    }
-  }
+  await Promise.all([
+    ...toDelete.map((link) => deleteTeamProjectLink(link.id)),
+    linkTeamsFast(projectId, toAdd, actorMemberId),
+  ])
 }
 
 async function syncProjectMembers(
@@ -563,28 +552,28 @@ async function syncProjectMembers(
 
   const desiredKeys = new Set(desired.map((d) => `${d.memberId}:${d.role}`))
   const existing = await getProjectMembers(projectId)
-  for (const row of existing) {
+
+  const toRemove = existing.filter((row) => {
     const role = normalizeProjectRole(row.projectRole)
-    if (role === "member") {
-      await removeProjectMember(row.id)
-      continue
-    }
-    const key = `${row.memberId}:${role}`
-    if (!desiredKeys.has(key)) {
-      await removeProjectMember(row.id)
-    }
-  }
+    if (role === "member") return true
+    return !desiredKeys.has(`${row.memberId}:${role}`)
+  })
+
   const existingKeys = new Set(
     existing.map((r) => `${r.memberId}:${normalizeProjectRole(r.projectRole)}`),
   )
   const seen = new Set<string>()
-  for (const link of desired) {
+  const toAdd = desired.filter((link) => {
     const key = `${link.memberId}:${link.role}`
-    if (seen.has(key) || existingKeys.has(key)) continue
+    if (seen.has(key) || existingKeys.has(key)) return false
     seen.add(key)
-    if (!isValidUuid(link.memberId)) continue
-    await addProjectMember(projectId, link.memberId, link.role, actorMemberId)
-  }
+    return isValidUuid(link.memberId)
+  })
+
+  await Promise.all([
+    ...toRemove.map((row) => removeProjectMember(row.id)),
+    ...toAdd.map((link) => addProjectMember(projectId, link.memberId, link.role, actorMemberId)),
+  ])
 }
 
 // ---------------------------------------------------------------------------
@@ -698,42 +687,54 @@ export async function updateProjectWithDetails(
 
   const clientIds = filterValidUuids(payload.clientIds)
   const primaryClientId = clientIds[0]
-
-  const updated = await updateProject(projectId, {
-    name: payload.name,
-    billable: payload.billable,
-    disableActivity: payload.disableActivity,
-    allowProjectTracking: payload.allowProjectTracking,
-    disableIdleTime: payload.disableIdleTime,
-    idleTimeSeconds: payload.idleTimeSeconds,
-    endDate: payload.endDate,
-    clientId: primaryClientId || "",
-    ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
-  })
-
-  await syncClientLinks(projectId, clientIds, actorMemberId)
-
   const memberPayload = ensureActorInMembers(payload, actorMemberId)
-  await syncProjectMembers(projectId, memberPayload, actorMemberId)
-  await syncTeamLinks(projectId, payload.teamIds, actorMemberId)
 
-  if (shouldPersistBudget(payload)) {
-    const budgetData = buildBudgetFields(payload)
-    if (options?.budgetId) {
-      await updateProjectBudget(options.budgetId, {
-        ...budgetData,
-        ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
-      })
-    } else {
-      await createProjectBudget({
-        projectId,
-        ...budgetData,
-        ...(actorMemberId ? { createdBy: actorMemberId } : {}),
-      })
-    }
-  }
+  // projectId already exists (this is the edit path), so - same as
+  // createProjectWithDetails below - the core field update and every link/
+  // budget sync are independent of each other and run concurrently instead
+  // of as a 4+ round-trip serial chain.
+  const [updated] = await Promise.all([
+    updateProject(projectId, {
+      name: payload.name,
+      billable: payload.billable,
+      disableActivity: payload.disableActivity,
+      allowProjectTracking: payload.allowProjectTracking,
+      disableIdleTime: payload.disableIdleTime,
+      idleTimeSeconds: payload.idleTimeSeconds,
+      endDate: payload.endDate,
+      clientId: primaryClientId || "",
+      ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
+    }),
+    syncClientLinks(projectId, clientIds, actorMemberId),
+    syncProjectMembers(projectId, memberPayload, actorMemberId),
+    syncTeamLinks(projectId, payload.teamIds, actorMemberId),
+    shouldPersistBudget(payload)
+      ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId)
+      : Promise.resolve(),
+  ])
 
   return updated
+}
+
+async function persistBudgetForProject(
+  projectId: string,
+  payload: CreateProjectFormPayload,
+  actorMemberId: string | undefined,
+  budgetId: string | undefined,
+): Promise<void> {
+  const budgetData = buildBudgetFields(payload)
+  if (budgetId) {
+    await updateProjectBudget(budgetId, {
+      ...budgetData,
+      ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
+    })
+  } else {
+    await createProjectBudget({
+      projectId,
+      ...budgetData,
+      ...(actorMemberId ? { createdBy: actorMemberId } : {}),
+    })
+  }
 }
 
 /** Creates project + budget, member limit, team links, and optional client link. */

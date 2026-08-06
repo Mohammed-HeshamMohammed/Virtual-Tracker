@@ -45,6 +45,7 @@ import {
 import { rowTransition } from "@/features/tasks/constants/motion"
 import { TaskParticipationChip } from "@/features/tasks/components/task-participation-chip"
 import { AvatarBubble, PriorityDot } from "@/features/projects/ui-components"
+import { Checkbox } from "@/shared/ui/checkbox"
 import {
   type Task,
   type Member,
@@ -230,6 +231,8 @@ function DraggableListRow({
   isSelected,
   onSelectTask,
   onTaskPreview,
+  isChecked,
+  onToggleChecked,
   editingId,
   setEditingId,
   editTitle,
@@ -272,6 +275,9 @@ function DraggableListRow({
           (isDark ? "bg-[#4be277]/10 ring-1 ring-inset ring-[#4be277]/35" : "bg-blue-50/90 ring-1 ring-inset ring-blue-200"),
       )}
     >
+      <td className="w-8 px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <Checkbox checked={isChecked} onChange={() => onToggleChecked?.(task.id)} isDark={isDark} />
+      </td>
       <td className="w-8 px-2 py-3" onClick={(e) => e.stopPropagation()}>
         <button
           type="button"
@@ -412,6 +418,8 @@ function DroppableListGroup({
   selectedTaskId,
   onSelectTask,
   onTaskPreview,
+  selectedTaskIds,
+  onToggleTaskSelected,
   onDelete,
   onUpdate,
   onEdit,
@@ -463,6 +471,7 @@ function DroppableListGroup({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-50" aria-label="Interactive control">
+                  <th className="w-8 px-3 py-2" />
                   <th className="w-8 px-2 py-2" />
                   <th className="w-8 px-5 py-2" />
                   <th className="text-left text-[10px] font-semibold text-slate-300 uppercase tracking-wider px-4 py-2">Task</th>
@@ -497,6 +506,8 @@ function DroppableListGroup({
                       isSelected={selectedTaskId === task.id}
                       onSelectTask={onSelectTask}
                       onTaskPreview={onTaskPreview}
+                      isChecked={selectedTaskIds?.has(task.id) ?? false}
+                      onToggleChecked={onToggleTaskSelected}
                       editingId={editingId}
                       setEditingId={setEditingId}
                       editTitle={editTitle}
@@ -530,6 +541,8 @@ export function ListView({
   selectedTaskId,
   onSelectTask,
   onTaskPreview,
+  selectedTaskIds,
+  onToggleTaskSelected,
   onDelete,
   onUpdate,
   onEdit,
@@ -550,6 +563,10 @@ export function ListView({
   selectedTaskId: string | null
   onSelectTask: (id: string | null) => void
   onTaskPreview: (task: Task, event: MouseEvent) => void
+  /** Batch-selection checkboxes - separate from selectedTaskId, which is the
+   * single "focused" row used by the toolbar's Edit/Duplicate buttons. */
+  selectedTaskIds?: Set<string>
+  onToggleTaskSelected?: (id: string) => void
   onDelete: (id: string) => void
   onUpdate: (id: string, patch: Partial<Task>) => void
   onEdit: (task: Task) => void
@@ -606,6 +623,8 @@ export function ListView({
             selectedTaskId={selectedTaskId}
             onSelectTask={onSelectTask}
             onTaskPreview={onTaskPreview}
+            selectedTaskIds={selectedTaskIds}
+            onToggleTaskSelected={onToggleTaskSelected}
             onDelete={onDelete}
             onUpdate={onUpdate}
             onEdit={onEdit}
