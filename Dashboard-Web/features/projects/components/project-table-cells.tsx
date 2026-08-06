@@ -35,13 +35,18 @@ export function BudgetBar({
 }) {
   const pct = Math.min(Math.round((spent / total) * 100), 100)
   const color = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400"
+  // Logged hours can exceed the budgeted total (nothing stops a timer
+  // mid-session unless the budget's own "stop timers" setting is on) - but
+  // the column itself should never display a spent figure past the limit
+  // the budget defines. "12h/10h" reads as broken math, not as a warning.
+  const displaySpent = type === "hours" ? Math.min(spent, total) : spent
   return (
     <div className="flex items-center gap-2">
       <div className={cn("h-1.5 w-16 overflow-hidden rounded-full", isDark ? "bg-[#2e3447]" : "bg-slate-100")}>
         <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
       </div>
       <span className={cn("text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-        {formatProjectBudget(spent, type)}
+        {formatProjectBudget(displaySpent, type)}
         <span className={isDark ? "text-[#3d4a3d]" : "text-slate-300"}>/{formatProjectBudget(total, type)}</span>
       </span>
     </div>
