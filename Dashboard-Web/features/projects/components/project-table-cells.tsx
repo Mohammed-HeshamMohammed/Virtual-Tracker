@@ -3,10 +3,21 @@
 
 import { cn } from "@/shared/utils/utils"
 
+/** Hours as "Xh Ym" instead of a decimal - `0.2h` from `toFixed(1)` reads as
+ * "12 minutes" when the real value is 10, since round-to-1-decimal loses
+ * anything under 6 minutes of precision. */
+export function formatHoursLabel(totalHours: number): string {
+  if (!(totalHours > 0)) return "0h"
+  const totalMinutes = Math.round(totalHours * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (h > 0 && m > 0) return `${h}h ${m}m`
+  if (h > 0) return `${h}h`
+  return `${m}m`
+}
+
 export function formatProjectBudget(n: number, type: "hours" | "cost" = "cost") {
-  if (type === "hours") {
-    return Number.isInteger(n) ? `${n}h` : `${n.toFixed(1)}h`
-  }
+  if (type === "hours") return formatHoursLabel(n)
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
   return `$${n}`
 }

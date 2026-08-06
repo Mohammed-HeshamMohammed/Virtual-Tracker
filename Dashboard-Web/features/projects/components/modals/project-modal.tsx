@@ -18,6 +18,7 @@ import {
 } from "@/infrastructure/api"
 import type { ProjectType } from "@/features/projects/api/project-api"
 import { ProjectTypePicker } from "@/features/projects/components/modals/project-type-picker"
+import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers } from "@/features/teams/api/team-api"
 import {
@@ -173,18 +174,9 @@ function toSelectOptions(items: string[], placeholder = "Select") {
 }
 
 /** Budget hours are stored as a single decimal-hours string (`budgetTotal`,
- * unchanged on the wire) - these two just let the input show/take hours AND
- * minutes instead of forcing e.g. "8.5" for 8h30m. */
-function formatHoursLabel(totalHours: number): string {
-  if (!(totalHours > 0)) return "0h"
-  const totalMinutes = Math.round(totalHours * 60)
-  const h = Math.floor(totalMinutes / 60)
-  const m = totalMinutes % 60
-  if (h > 0 && m > 0) return `${h}h ${m}m`
-  if (h > 0) return `${h}h`
-  return `${m}m`
-}
-
+ * unchanged on the wire) - these let the input show/take hours AND minutes
+ * instead of forcing e.g. "8.5" for 8h30m. formatHoursLabel itself lives in
+ * project-table-cells.tsx, shared with the Projects table's budget column. */
 function decimalHoursToParts(value: string): { hours: string; minutes: string } {
   const trimmed = value.trim()
   if (!trimmed) return { hours: "", minutes: "" }
