@@ -120,7 +120,12 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
   let statusChanged = false;
   for (const row of assignmentRows) {
     const status = String(row.status ?? "todo").toLowerCase();
-    if (status !== "in_progress" && status !== "todo") continue;
+    // Only assignees who actually worked. Promoting a "todo" assignee because
+    // a co-assignee hit the task's combined estimate marks work as reviewed/
+    // done for someone who logged zero seconds, and inflates their
+    // participation stats. Per-assignee completion ("done with my part") is
+    // what the assignment rows model in the first place.
+    if (status !== "in_progress") continue;
     const result = await updateAssignmentStatus(db, row.id, "in_review", userId);
     if (result && result.previousStatus !== result.nextStatus) {
       statusChanged = true;
@@ -391,11 +396,19 @@ export async function reviewTaskTracking(db, { taskId, reviewerId, reviewerName,
   if (!inReviewRows.length) throw new Error("No assignment in review for this task");
 
   const mappedDecision = decision === "rework" ? "reject" : decision;
-  return reviewAssignment(db, {
-    assignmentId: inReviewRows[0].id,
-    reviewerId,
-    reviewerName,
-    decision: mappedDecision,
-    notes,
-  });
+  // Every in-review row, not just the first: getInReviewAssignmentsForTaskPg
+  // has no ORDER BY, so "the first" was whichever row Postgres happened to
+  // return, leaving co-assignees stuck in review while the API reported
+  // success. Matches the sibling POST /api/tasks/:taskId/review endpoint.
+  let last = null;
+  for (const row of inReviewRows) {
+    last = await reviewAssignment(db, {
+      assignmentId: row.id,
+      reviewerId,
+      reviewerName,
+      decision: mappedDecision,
+      notes,
+    });
+  }
+  return last;
 }
