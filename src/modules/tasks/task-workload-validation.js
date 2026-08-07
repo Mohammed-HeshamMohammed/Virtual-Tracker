@@ -1,4 +1,4 @@
-import { estimateAssignmentSeconds } from "./task-assignments.js";
+import { estimateAssignmentSeconds } from "./task-schedule-math.js";
 import { SHIFT_ALLOWANCE_LIMITS_ENABLED } from "../members/services/shift-allowance-feature.js";
 import {
   getMemberLimitHours as getMemberLimitHoursFromStore,
@@ -24,13 +24,9 @@ export async function getMemberLimitHours(db, memberId, limitType) {
   return getMemberLimitHoursFromStore(db, memberId, limitType);
 }
 
-/** hours/day + overtime/day */
-export function computeTaskDailyHours(task) {
-  const hoursPerDay = Number(task.duration_hours_per_day ?? task.durationHoursPerDay ?? 0);
-  const overtimePerDay = Number(task.overtime_hours_per_day ?? task.overtimeHoursPerDay ?? 0);
-  const total = hoursPerDay + overtimePerDay;
-  return Number.isFinite(total) && total > 0 ? total : 0;
-}
+// computeTaskDailyHours now lives in task-schedule-math.js (pure, no
+// Postgres/Firestore) - re-exported here for existing callers.
+export { computeTaskDailyHours } from "./task-schedule-math.js";
 
 /** min(task cap, member daily limit); 0 member limit = unlimited */
 export function computeEffectiveDailyCap(taskDailyHours, memberDailyLimit) {
