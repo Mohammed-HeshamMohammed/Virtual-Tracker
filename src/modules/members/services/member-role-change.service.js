@@ -3,6 +3,7 @@ import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { applyRoleChangeHierarchyEffects } from "../../hierarchy/hierarchy-sync.js";
 import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
+import { publishChange } from "../../realtime/change-bus.js";
 
 /**
  * @param {Record<string, unknown>} body
@@ -85,6 +86,8 @@ export async function applyMemberRoleChange(db, input) {
     actorRoleName: resolvedActorRoleName,
     deferBackground: true,
   });
+
+  void publishChange("members", memberId, "updated", actorMemberId);
 
   return { roleId, roleName: trimmed, hierarchyResult };
 }
