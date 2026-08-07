@@ -40,6 +40,29 @@ import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
 import { SignInPanel } from "./components/views/SignInPanel";
 
+// ponytail: hand-rolled rAF countdown, ~15 lines. Dashboard-Web has
+// @number-flow/react for this, but it is not a dependency of the agent and
+// one animation does not justify adding it.
+//
+// Eases "Today, all work" from its pre-correction value down to the
+// server's post-idle-stop value instead of snapping in one frame, so the
+// idle rewind reads as a correction rather than lost data.
+function animateWorkedTodayRewind(
+  from: number,
+  to: number,
+  setValue: (updater: (seconds: number) => number) => void
+) {
+  const duration = 700;
+  const start = performance.now();
+  const step = (now: number) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    setValue(() => Math.round(from - (from - to) * eased));
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 function MainApp() {
   const [view, setView] = useState<"home" | "settings" | "profile">("home");
   const [signingOut, setSigningOut] = useState(false);
@@ -372,8 +395,22 @@ function MainApp() {
   // "Today, all work" - it previously only ever showed the raw 5s-polled
   // memberLimits value, so it sat still for up to 20s (the server's own sync
   // interval) while the task clock beside it moved every second.
+  //
+  // idleRewindFromRef captures the on-screen value the instant idle escalates
+  // to stage 3 (stopped). The next poll's lower workedTodaySeconds is then
+  // animated down to instead of snapped to, so the correction reads as a
+  // rewind rather than data loss - see animateWorkedTodayRewind above.
+  const idleRewindFromRef = useRef<number | null>(null);
   useEffect(() => {
     const next = memberLimits?.workedTodaySeconds ?? 0;
+    const rewindFrom = idleRewindFromRef.current;
+    if (rewindFrom != null && !tracking) {
+      idleRewindFromRef.current = null;
+      if (next < rewindFrom) {
+        animateWorkedTodayRewind(rewindFrom, next, setLiveWorkedTodaySeconds);
+        return;
+      }
+    }
     setLiveWorkedTodaySeconds((s) => (tracking ? Math.max(s, next) : next));
   }, [memberLimits?.workedTodaySeconds, tracking]);
 
@@ -385,6 +422,28 @@ function MainApp() {
     const timer = window.setInterval(() => setLiveWorkedTodaySeconds((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
   }, [tracking, session?.idleStage]);
+
+  // Idle-stage toasts, fired once per transition into a higher stage - the
+  // in-page banner (below, in the render body) already explains the current
+  // stage, but a toast is what actually gets noticed since the agent mostly
+  // runs in the tray. Stage 3 (stopped) is announced by the banner text and
+  // by the rewind animation above; no extra toast needed there.
+  const prevIdleStageRef = useRef(0);
+  useEffect(() => {
+    const stage = session?.idleStage ?? 0;
+    const prevStage = prevIdleStageRef.current;
+    if (stage === 1 && prevStage < 1) {
+      toast.warning("You look idle — the timer will stop in 10 minutes if there's no activity.");
+    } else if (stage === 2 && prevStage < 2) {
+      toast.warning("Still idle — the timer stops in 5 minutes and this idle time will be removed.");
+    } else if (stage === 3 && prevStage < 3) {
+      idleRewindFromRef.current = liveWorkedTodaySeconds;
+    }
+    prevIdleStageRef.current = stage;
+    // liveWorkedTodaySeconds is read at the moment of the transition only -
+    // it must not retrigger this effect on every tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.idleStage]);
 
   useEffect(() => {
     void checkForUpdate();
@@ -707,6 +766,59 @@ function MainApp() {
       setBusy(false);
     }
   };
+
+  // T4 - the timer never stopped itself once a task's own limit was reached;
+  // limitReached/allowedRemainingSeconds only ever gated *starting* a new
+  // session (the task-list filter above and the disabled start button
+  // below). P6 and P7 close that gap from two directions and share one guard
+  // since both can notice the crossing close together - only one should
+  // actually call handleStop.
+  const limitStopTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!tracking) limitStopTriggeredRef.current = false;
+  }, [tracking]);
+
+  const stopForTaskLimit = (message?: string | null) => {
+    if (limitStopTriggeredRef.current || !tracking) return;
+    limitStopTriggeredRef.current = true;
+    toast.warning(message || "Task limit reached — timer stopped. Your time is saved.");
+    void handleStop();
+  };
+
+  // P7 - server-confirmed stop. Catches time logged against the same task
+  // from another device or an admin adjustment - anything the local estimate
+  // below can't see coming - the next time the 5s poll reports limitReached.
+  useEffect(() => {
+    if (!tracking || isCallingProject) return;
+    if (taskTracking?.limitReached) {
+      stopForTaskLimit(taskTracking.allowanceMessage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracking, isCallingProject, taskTracking?.limitReached, taskTracking?.allowanceMessage]);
+
+  // P6 - local, to-the-second stop. allowedRemainingSeconds is known as of
+  // the last poll; ticking it down locally between polls stops the timer at
+  // the true limit instant ("once I finish 10 mins the timer stops") instead
+  // of up to 5s late waiting for the next server confirmation.
+  const localTaskRemainingRef = useRef<number | null>(null);
+  useEffect(() => {
+    localTaskRemainingRef.current =
+      tracking && !isCallingProject ? taskTracking?.allowedRemainingSeconds ?? null : null;
+  }, [taskTracking?.allowedRemainingSeconds, tracking, isCallingProject]);
+
+  useEffect(() => {
+    if (!tracking || isCallingProject) return;
+    const timer = window.setInterval(() => {
+      if (localTaskRemainingRef.current == null) return;
+      localTaskRemainingRef.current -= 1;
+      if (localTaskRemainingRef.current <= 0) {
+        localTaskRemainingRef.current = null;
+        stopForTaskLimit(null);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracking, isCallingProject]);
 
   const idleStage = session?.idleStage ?? 0;
   const tone = statusTone(link?.status || "", signedIn);
