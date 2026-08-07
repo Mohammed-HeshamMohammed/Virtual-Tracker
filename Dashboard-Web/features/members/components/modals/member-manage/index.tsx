@@ -107,7 +107,9 @@ function buildProfilePayload(
 function mergeProfileForm(base: MemberFormState, profile?: Partial<MemberFormState>): MemberFormState {
   if (!profile) return normalizeMemberFormState(base)
   const defined = Object.fromEntries(
-    Object.entries(profile).filter((entry): entry is [string, MemberFormState[keyof MemberFormState]] => entry[1] !== undefined),
+    Object.entries(profile).filter(
+      (entry): entry is [string, Exclude<MemberFormState[keyof MemberFormState], undefined>] => entry[1] !== undefined,
+    ),
   ) as Partial<MemberFormState>
   return normalizeMemberFormState({ ...base, ...defined })
 }
@@ -396,7 +398,20 @@ export function MemberManageModal({
     setSaveError(null)
     try {
       if (onSaveProfile) {
-        await onSaveProfile(member.id, payload)
+        // §6.9 - only employment/payBill/settings have a per-section
+        // updated_at that isn't also touched by every other tab's save
+        // (see MemberFormState's comment). Other tabs send undefined,
+        // which the backend treats as "no conflict check requested" -
+        // same optional-token convention as Projects/Tasks/Clients.
+        const expectedUpdatedAt =
+          activeTab === "employment"
+            ? formState.employmentUpdatedAt
+            : activeTab === "payBill"
+              ? formState.payBillUpdatedAt
+              : activeTab === "settings"
+                ? formState.settingsUpdatedAt
+                : undefined
+        await onSaveProfile(member.id, payload, expectedUpdatedAt)
       } else {
         await onPatchMember(member.id, {
           name: [formState.editFirst, formState.editLast].filter(Boolean).join(" ").trim() || undefined,
@@ -409,7 +424,16 @@ export function MemberManageModal({
       }
       handleClose()
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Save failed")
+      // §6.9 - a stale-write 409 gets the same non-blocking reload notice as
+      // a live update arriving while the dialog was open (both funnel into
+      // liveUpdateNotice already), not a generic save error.
+      const status = e instanceof Error ? (e as Error & { status?: number }).status : undefined
+      if (status === 409) {
+        invalidateMemberProfileCache(member.id)
+        setLiveUpdateNotice(true)
+      } else {
+        setSaveError(e instanceof Error ? e.message : "Save failed")
+      }
     } finally {
       setBusy(false)
     }

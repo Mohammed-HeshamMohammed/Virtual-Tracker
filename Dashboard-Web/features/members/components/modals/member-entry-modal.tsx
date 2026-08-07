@@ -152,7 +152,7 @@ export function MemberEntryModal({
   actorRole?: string
   onClose: () => void
   onPatchMember: (id: string, body: MemberPatchBody) => Promise<Member | undefined>
-  onSaveProfile?: (id: string, payload: MemberProfilePayload) => Promise<Member>
+  onSaveProfile?: (id: string, payload: MemberProfilePayload, expectedUpdatedAt?: string) => Promise<Member>
   onRemoveMember: (id: string) => void | Promise<void>
   onRemoveFromTree?: (id: string) => void | Promise<void>
 }) {

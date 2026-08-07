@@ -145,14 +145,14 @@ export function useMemberMutations({
     return updated
   }
 
-  async function handleSaveProfile(id: string, payload: MemberProfilePayload) {
+  async function handleSaveProfile(id: string, payload: MemberProfilePayload, expectedUpdatedAt?: string) {
     const canPatch = canManageMemberRecord(id, manageableMemberIds, currentMemberId)
     if (!canPatch) {
       console.error("[MembersPage] Permission denied: cannot edit member outside your manage scope")
       return Promise.reject(new Error("Permission denied"))
     }
 
-    const { member: updated } = await updateMemberProfile(id, payload, "desktop-members")
+    const { member: updated } = await updateMemberProfile(id, payload, "desktop-members", expectedUpdatedAt)
     setMembers((prev) => prev.map((m) => (m.id === id ? { ...m, ...updated } : m)))
     return updated
   }

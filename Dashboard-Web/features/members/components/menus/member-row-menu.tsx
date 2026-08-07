@@ -35,7 +35,11 @@ export function MemberRowMenu({
 }: {
   member: Member
   onPatchMember: (id: string, body: MemberPatchBody) => Promise<Member | undefined>
-  onSaveProfile?: (id: string, payload: import("@/features/members/api/member-api").MemberProfilePayload) => Promise<Member>
+  onSaveProfile?: (
+    id: string,
+    payload: import("@/features/members/api/member-api").MemberProfilePayload,
+    expectedUpdatedAt?: string,
+  ) => Promise<Member>
   onRemoveMember: (id: string) => void | Promise<void>
   onRemoveFromTree?: (id: string) => void | Promise<void>
   onNavigate?: (id: string) => void

@@ -566,6 +566,14 @@ export type MemberProfileForm = MemberProfilePayload["info"] &
     empEndDate: string
     empTermination: string
     empComments: string
+    /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
+     * Per-section: only employment/payBill/settings have one backing table
+     * each that isn't also touched by every other section's save (unlike
+     * the shared `members` doc info/roles write through, or workLimits
+     * which can span two tables) - see member-profile.service.js. */
+    employmentUpdatedAt: string
+    payBillUpdatedAt: string
+    settingsUpdatedAt: string
   }
 
 export async function getMemberProfile(
@@ -608,6 +616,7 @@ export async function updateMemberProfile(
   id: string,
   payload: MemberProfilePayload,
   updatedBy?: string,
+  expectedUpdatedAt?: string,
 ): Promise<{ form: Partial<MemberProfileForm>; member: Member }> {
   const isRoleOnly =
     payload.roles?.role != null &&
@@ -624,10 +633,22 @@ export async function updateMemberProfile(
   const res = await apiFetch(apiPath(`/api/members/${id}/profile`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, updatedBy }),
+    // §6.9 - optional, only present when the caller sends back the
+    // section-specific *UpdatedAt it loaded the form with.
+    body: JSON.stringify({ ...payload, updatedBy, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }),
   })
   const json = (await res.json()) as ApiEnvelope<{ form: Partial<MemberProfileForm>; member: Member }>
-  if (!res.ok || !json.success) throw new Error(json.error || `Failed to save member profile: ${res.status}`)
+  if (!res.ok || !json.success) {
+    // §6.9 - same convention updateProject/updateTask/updateClient use:
+    // attach .status so the caller can branch on a stale-write conflict.
+    const err = new Error(json.error || `Failed to save member profile: ${res.status}`) as Error & {
+      status?: number
+      conflictData?: unknown
+    }
+    err.status = res.status
+    if (res.status === 409) err.conflictData = json?.data
+    throw err
+  }
   const data = pickPayload(json) ?? { form: {}, member: {} as Member }
   const result = {
     form: (data.form ?? {}) as Partial<MemberProfileForm>,

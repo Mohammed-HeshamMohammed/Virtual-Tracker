@@ -8,7 +8,11 @@ export interface MemberManageModalProps {
   member: Member
   onClose: () => void
   onPatchMember: (id: string, body: MemberPatchBody) => Promise<Member | undefined>
-  onSaveProfile?: (id: string, payload: import("@/features/members/api/member-api").MemberProfilePayload) => Promise<Member>
+  onSaveProfile?: (
+    id: string,
+    payload: import("@/features/members/api/member-api").MemberProfilePayload,
+    expectedUpdatedAt?: string,
+  ) => Promise<Member>
   onRemoveMember: (id: string) => void | Promise<void>
   onNavigate?: (id: string) => void
   allowedTabs?: MemberManageTab[]
@@ -72,6 +76,12 @@ export interface MemberFormState {
   useShiftsForLimits: boolean
   workDays: number[]
   dailyLimit: string
+  /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
+   * See MemberProfileForm in member-api.ts for why only these three tabs
+   * have one. */
+  employmentUpdatedAt?: string
+  payBillUpdatedAt?: string
+  settingsUpdatedAt?: string
 }
 
 /** Keep controlled inputs on stable string values (never null/undefined). */
