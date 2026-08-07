@@ -1,4 +1,5 @@
 import { query } from "../../lib/postgres/client.js";
+import { publishChange } from "../realtime/change-bus.js";
 
 /**
  * @typedef {Object} NotificationPayload
@@ -35,6 +36,10 @@ export async function createNotification(_db, payload) {
      RETURNING id`,
     [payload.recipient_id, payload.type || "system", payload.title, payload.message, payload.link || ""],
   );
+  // No actor here on purpose - a notification is always about someone
+  // else's action, never the recipient's own write, so there is nothing
+  // to self-echo-suppress against (case 51's guard doesn't apply).
+  void publishChange("notifications", rows[0].id, "created");
   return rows[0].id;
 }
 

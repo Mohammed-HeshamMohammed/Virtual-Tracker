@@ -34,6 +34,7 @@ import {
   updateAssignmentPg,
   upsertAssignmentPg,
 } from "../../../lib/postgres/task-assignments-postgres.service.js";
+import { publishChange } from "../../realtime/change-bus.js";
 
 export const POSTGRES_ENTITY_KEYS = new Set([
   "time-entries",
@@ -235,6 +236,7 @@ export async function createPostgresRow(entityKey, payload) {
         payload.updated_by ?? null,
       ],
     );
+    void publishChange("timesheets", rows[0]?.id, "created", payload.created_by ?? undefined);
     return normalizePgRow(rows[0]);
   }
 
@@ -264,6 +266,7 @@ export async function createPostgresRow(entityKey, payload) {
       payload.approved_by ?? null,
     ],
   );
+  void publishChange("timesheets", rows[0]?.id, "created", payload.created_by ?? undefined);
   return normalizePgRow(rows[0]);
 }
 
@@ -309,6 +312,7 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
         merged.updated_by ?? null,
       ],
     );
+    void publishChange("timesheets", id, "updated", merged.updated_by ?? undefined);
     return normalizePgRow(rows[0]);
   }
 
@@ -339,6 +343,7 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
       merged.approved_by ?? null,
     ],
   );
+  void publishChange("timesheets", id, "updated", merged.updated_by ?? undefined);
   return normalizePgRow(rows[0]);
 }
 
@@ -361,6 +366,7 @@ export async function deletePostgresRow(entityKey, id) {
   }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+  void publishChange("timesheets", id, "deleted");
 }
 
 /**
