@@ -22,6 +22,8 @@ export interface Client {
   invoicing: ClientInvoicing
   budgetId?: string
   invoicingId?: string
+  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+  updatedAt?: string
 }
 
 export interface ClientBudget {
@@ -56,7 +58,7 @@ export type ClientInvoicingSettings = {
 
 function buildDetailsBody(
   data: ClientFormData,
-  options?: { budgetId?: string; invoicingId?: string },
+  options?: { budgetId?: string; invoicingId?: string; expectedUpdatedAt?: string },
   actorMemberId?: string,
 ): Record<string, unknown> {
   return {
@@ -64,6 +66,9 @@ function buildDetailsBody(
     budgetId: options?.budgetId ?? data.budgetId,
     invoicingId: options?.invoicingId ?? data.invoicingId,
     ...(actorMemberId ? { actorMemberId } : {}),
+    // §6.9 - optional, only present when the caller sends back the
+    // updatedAt it loaded the client with.
+    ...(options?.expectedUpdatedAt ? { expected_updated_at: options.expectedUpdatedAt } : {}),
   }
 }
 
@@ -130,7 +135,7 @@ export async function createClientWithDetails(
 export async function updateClientWithDetails(
   clientId: string,
   data: ClientFormData,
-  options?: { budgetId?: string; invoicingId?: string },
+  options?: { budgetId?: string; invoicingId?: string; expectedUpdatedAt?: string },
   actorMemberId?: string,
 ): Promise<Client> {
   const actorId =
@@ -141,7 +146,17 @@ export async function updateClientWithDetails(
     body: JSON.stringify(buildDetailsBody(data, options, actorId)),
   })
   const json = await readJsonSafe<ApiEnvelope<Client>>(res)
-  if (!res.ok) throw extractApiError(res.status, "Failed to update client", json)
+  if (!res.ok) {
+    // §6.9 - same convention updateProject/updateTask use: attach .status
+    // so the caller can branch on a stale-write conflict.
+    const err = extractApiError(res.status, "Failed to update client", json) as Error & {
+      status?: number
+      conflictData?: unknown
+    }
+    err.status = res.status
+    if (res.status === 409) err.conflictData = json?.data
+    throw err
+  }
   if (!json?.success || !json.data) throw new Error(json?.error || "Failed to update client")
   return json.data
 }

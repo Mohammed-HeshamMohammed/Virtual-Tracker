@@ -12,14 +12,22 @@ import { fetchPasswordPolicy } from "@/features/auth/services/password-policy/fe
 
 /** Parallel auth boot — readiness + config/policy in one round. */
 export async function prefetchAuthBootResources(signal?: AbortSignal): Promise<BackendReadiness> {
-  const [authReadiness, dashboardReadiness] = await Promise.all([
+  const [authReadiness, dashboardReadiness, firebaseConfig] = await Promise.all([
     checkBackendReadiness(signal),
     checkDashboardReadiness(signal),
-    prefetchFirebaseWebConfig(),
+    prefetchFirebaseWebConfig().then(
+      () => ({ ok: true as const }),
+      (e) => ({
+        ok: false as const,
+        code: "UNREACHABLE",
+        error: e instanceof Error ? e.message : "Firebase config unavailable",
+      }),
+    ),
     fetchPasswordPolicy(),
     prefetchSignInClientExtras(),
   ])
   if (!authReadiness.ok) return authReadiness
   if (!dashboardReadiness.ok) return dashboardReadiness
+  if (!firebaseConfig.ok) return firebaseConfig
   return { ok: true }
 }

@@ -3,6 +3,7 @@
 "use client"
 
 import React, { createContext, useState as useComponentState, useEffect, useRef, ReactNode, useCallback, use } from "react"
+import { useRouter } from "next/navigation"
 import {
   type User,
   onAuthStateChanged,
@@ -88,6 +89,7 @@ import {
 import { isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
 import { prefetchAuthBootResources } from "@/features/auth/services/auth-boot-prefetch"
 import { checkAllBackendsReady } from "@/features/auth/services/backend-availability"
+import { SCOPE_CHANGED_EVENT } from "@/infrastructure/api/change-events"
 import {
   BACKEND_CONNECTION_LOST,
   BACKEND_CONNECTION_RESTORED,
@@ -254,6 +256,7 @@ function isReconnectAbortError(error: unknown): boolean {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const router = useRouter()
   const [user, setUser] = useComponentState<User | null>(null)
   const [profile, setProfile] = useComponentState<AuthProfileSnapshot | null>(null)
   const [currentMember, setCurrentMember] = useComponentState<Member | null>(null)
@@ -283,6 +286,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
   }, [])
   const retrySessionSyncRef = useRef<(() => Promise<void>) | null>(null)
   const reconnectAbortRef = useRef<AbortController | null>(null)
+
+  // Live sync (§4.2/§6.3): a scope-changed frame means the viewer's own
+  // permissions changed - handleScopeChanged (change-events.ts) already
+  // clears every cache and force-refetches every mounted list;
+  // router.refresh() is the one thing that plain module can't do itself
+  // (it's not a component), and it's what re-evaluates route guards
+  // against the now-current role.
+  useEffect(() => {
+    const handler = () => router.refresh()
+    window.addEventListener(SCOPE_CHANGED_EVENT, handler)
+    return () => window.removeEventListener(SCOPE_CHANGED_EVENT, handler)
+  }, [router])
   const signOutForAccountRestrictionRef = useRef<(message: string) => Promise<void>>(async () => {})
   const pendingSignInCredentialsRef = useRef<{ email: string; password: string } | null>(null)
   const skipNextAuthStateSyncRef = useRef(false)
@@ -443,6 +458,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setSessionAuthorized(true)
       void syncSharedSessionCookie()
+      // change-events.ts is a plain module with no hook access - this is the
+      // one place that knows the fresh memberId, so it hands it over here
+      // rather than change-events.ts trying to re-derive it.
+      if (memberId) {
+        void import("@/infrastructure/api/change-events").then(({ setCurrentMemberId }) => {
+          setCurrentMemberId(memberId)
+        })
+      }
       void import("@/features/auth/services/presence-ws").then(({ connectPresenceWebSocket, sendPresenceActivity }) => {
         void connectPresenceWebSocket().then((ok) => {
           if (ok) sendPresenceActivity()
@@ -1135,6 +1158,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       void clearSharedSessionCookie()
       const { clearAllListCaches } = await import("@/shared/tables/hooks/list-cache-registry")
       clearAllListCaches()
+      const { setCurrentMemberId } = await import("@/infrastructure/api/change-events")
+      setCurrentMemberId(null)
       const { postActivitySession } = await import("@/features/activity/services/activity-api")
       await postActivitySession("stop").catch(() => { })
       const { disconnectPresenceWebSocket } = await import("@/features/auth/services/presence-ws")

@@ -2,7 +2,7 @@
 /* eslint-disable react-doctor/no-giant-component */
 "use client"
 
-import { useMemo, useState as useComponentState } from "react"
+import { useEffect, useMemo, useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Building2 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
@@ -20,6 +20,7 @@ import { getMembers } from "@/features/members/api/member-api"
 import type { Member } from "@/features/members/models/member"
 import { PEOPLE_TABLE_ROWS_PER_PAGE } from "@/features/members/config/ui-config"
 import { useCachedMultiList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { readMembersListCache } from "@/shared/tables/hooks/list-cache-registry"
 import type { Client, ClientStatus } from "@/features/clients/models/client"
 import type { Client as ApiClient } from "@/features/clients/api/client-api"
@@ -36,6 +37,7 @@ import { useClientColumns } from "@/features/clients/hooks/use-client-columns"
 import { useClientMutations } from "@/features/clients/hooks/use-client-mutations"
 import { ClientsToolbar } from "@/features/clients/components/clients-toolbar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
+import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 
 async function fetchClientsForCache(): Promise<Client[]> {
   return (await getClients()) as unknown as Client[]
@@ -53,6 +55,7 @@ export function ClientsPage() {
   const [editingClientId, setEditingClientId] = useComponentState<string | null>(null)
   const [editInitial, setEditInitial] = useComponentState<ApiClient | null>(null)
   const [pageError, setPageError] = useComponentState<string | null>(null)
+  const [entityGoneNotice, setEntityGoneNotice] = useComponentState<string | null>(null)
   const [deleteConfirmId, setDeleteConfirmId] = useComponentState<string | null>(null)
   const [actionBusy, setActionBusy] = useComponentState(false)
   const [showUnlinkedModal, setShowUnlinkedModal] = useComponentState(false)
@@ -78,6 +81,7 @@ export function ClientsPage() {
     data: { clients, members, projects },
     setData: setClientsListData,
     isLoading,
+    refetch: refetchClientsData,
   } = useCachedMultiList({
     namespace: "pm-clients",
     lists: {
@@ -110,7 +114,6 @@ export function ClientsPage() {
     },
     loadingKey: "clients",
     staleMs: 60_000,
-    refetchIntervalMs: 50_000,
     refetchOnVisibility: true,
     backgroundRefetchKeys: ["clients"],
     initialData: {
@@ -122,7 +125,24 @@ export function ClientsPage() {
       console.error("Failed to fetch clients data:", err)
       setPageError(err instanceof Error ? err.message : "Failed to load clients")
     },
+    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 4): replaces the
+    // 50s poll - forceRefetch bypasses staleMs so a broadcast repaints in
+    // under a second instead of waiting out the interval.
+    presencePingEvent: changedEvent("clients"),
+    backgroundRefetch: { forceRefetch: true },
   })
+
+  // Live sync (case 16/17): useCachedMultiList only accepts one
+  // presencePingEvent, already spent above on "clients" - a member
+  // deleted while this page is open needs its own listener to force the
+  // "members" sub-list to refetch (the cache is already marked stale via
+  // change-events.ts either way; this is what makes a *mounted* page act
+  // on it instead of waiting for its next natural revisit).
+  useEffect(() => {
+    const handler = () => void refetchClientsData({ keys: ["members"], forceRefetch: true })
+    window.addEventListener(changedEvent("members"), handler)
+    return () => window.removeEventListener(changedEvent("members"), handler)
+  }, [refetchClientsData])
 
   const setClients = (value: Client[] | ((prev: Client[]) => Client[])): void => {
     setClientsListData("clients", value)
@@ -364,9 +384,20 @@ export function ClientsPage() {
             onClose={closeClientModal}
             onSave={saveClient}
             members={modalMembers}
+            onEntityGone={(message) => {
+              closeClientModal()
+              setEntityGoneNotice(message)
+            }}
           />
         )}
       </AnimatePresence>
+
+      <NotifyToastHost
+        message={entityGoneNotice}
+        onDismiss={() => setEntityGoneNotice(null)}
+        title="Notice"
+        tone="error"
+      />
 
       <AnimatePresence>
         <DeleteConfirmDialog

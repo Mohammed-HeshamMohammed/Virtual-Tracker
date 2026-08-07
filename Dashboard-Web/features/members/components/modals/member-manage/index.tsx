@@ -10,6 +10,7 @@ import { cn } from "@/shared/utils/utils"
 import { getMemberProfile, type MemberProfilePayload } from "@/features/members/api/member-api"
 import {
   fetchMemberProfileSectionCached,
+  invalidateMemberProfileCache,
   isMemberProfileSectionFresh,
   isMemberProfileSectionLoaded,
   peekMemberProfileCache,
@@ -25,6 +26,7 @@ import { MemberManageModalSkeleton } from "@/features/members/components/modals/
 import type { MemberManageModalProps, MemberFormState } from "@/features/members/components/modals/member-manage/types"
 import { initialFormState, normalizeMemberFormState } from "@/features/members/components/modals/member-manage/types"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
+import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 
 function buildProfilePayload(
   formState: MemberFormState,
@@ -169,6 +171,14 @@ export function MemberManageModal({
   const [removeConfirm, setRemoveConfirm] = useComponentState(false)
   const [formState, setFormState] = useComponentState<MemberFormState>(initialFormState)
   const phoneVerifyRef = useRef<PhoneVerifyControlHandle>(null)
+  // Live-guard only (no optimistic concurrency): member profile fields live
+  // across several Firestore collections written by non-transactional
+  // upserts, so there is no single updated_at to condition a write on the
+  // way Projects/Tasks/Clients do against Postgres. This still catches the
+  // two failure modes that matter for an open dialog - editing a member
+  // someone else just deleted, or saving over a change someone else just made.
+  const [liveDeleted, setLiveDeleted] = useComponentState(false)
+  const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
 
   const visibleTabs = useMemo(
     () =>
@@ -182,7 +192,7 @@ export function MemberManageModal({
     loadedTabs.has(activeTab) ||
     isMemberProfileSectionLoaded(member.id, activeTab)
   const showProfileSkeleton = loadingTabs.has(activeTab) && !activeTabReady
-  const canSaveProfile = canSave && !failedTabs.has(activeTab) && activeTabReady
+  const canSaveProfile = canSave && !failedTabs.has(activeTab) && activeTabReady && !liveDeleted
 
   const [prevId, setPrevId] = useComponentState<string | null>(null)
   const [prevOpen, setPrevOpen] = useComponentState(false)
@@ -194,6 +204,13 @@ export function MemberManageModal({
     setIsClosing(true)
     onClose()
   }
+
+  useEntityLiveGuard({
+    resource: "members",
+    id: open ? member.id : null,
+    onDeleted: () => setLiveDeleted(true),
+    onUpdated: () => setLiveUpdateNotice(true),
+  })
 
   const { firstName, lastName } = splitMemberDisplayName(member.name)
   const fallback = useMemo<MemberFormState>(() => ({
@@ -226,6 +243,8 @@ export function MemberManageModal({
     if (open) {
       setIsClosing(false)
       setSaveError(null)
+      setLiveDeleted(false)
+      setLiveUpdateNotice(false)
       const wantedTab = memberEntryToTab(openEntry)
       const canShowWanted = visibleTabs.some((t) => t.id === wantedTab)
       setActiveTab(canShowWanted ? wantedTab : (visibleTabs[0]?.id ?? "info"))
@@ -490,6 +509,40 @@ export function MemberManageModal({
             </div>
 
             <div className="h-120 overflow-y-auto px-5 py-5 sm:px-6 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: "none", scrollbarWidth: "none" }}>
+              {liveDeleted ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">This member no longer exists</p>
+                  <p className="max-w-sm text-sm text-slate-500 dark:text-slate-400">
+                    Someone else removed this member while you had this dialog open. Any unsaved changes here can&apos;t be saved.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      invalidateMemberProfileCache(member.id)
+                      handleClose()
+                    }}
+                    className="mt-1 rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  >
+                    Close
+                  </button>
+                </div>
+              ) : (
+              <>
+              {liveUpdateNotice && (
+                <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+                  <span>This member was updated elsewhere. Close and reopen to see the latest details.</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      invalidateMemberProfileCache(member.id)
+                      handleClose()
+                    }}
+                    className="shrink-0 rounded-md border border-amber-300 dark:border-amber-800 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
               {saveError && <div className="mb-4 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-3 py-2 text-sm text-red-800 dark:text-red-300">{saveError}</div>}
               {showProfileSkeleton ? (
                 <MemberManageModalSkeleton activeTab={activeTab} />
@@ -533,6 +586,8 @@ export function MemberManageModal({
                     </motion.div>
                   )}
               </AnimatePresence>
+              )}
+              </>
               )}
             </div>
           </motion.div>

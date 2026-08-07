@@ -45,7 +45,12 @@ export function hasCachedData(key: string): boolean {
   return getSlot(key).data !== null
 }
 
-/** Clears cached data for a key (e.g. after logout). */
+/** Clears cached data for a key (e.g. after logout). Drops `data` to null,
+ * which makes `hasCachedData` false - correct for a page that isn't
+ * mounted (it should show its loading state on next visit), but a
+ * currently-mounted page reading this key mid-render would flash a
+ * skeleton before its background refetch repaints. For that case use
+ * markStale below instead. */
 export function invalidateCache(key: string): void {
   const slot = getSlot(key)
   slot.data = null
@@ -53,10 +58,27 @@ export function invalidateCache(key: string): void {
   slot.fetchPromise = null
 }
 
+/** Marks a key due for refetch without clearing what's already on screen -
+ * `hasCachedData` stays true, only staleness changes. The live-sync
+ * dispatch path (change-events.ts) uses this as its default so a
+ * currently-mounted page's background refetch can repaint in place
+ * instead of dropping through a loading skeleton first. */
+export function markStale(key: string): void {
+  const slot = getSlot(key)
+  slot.lastFetchTime = 0
+}
+
 /** Clears all cache keys with the given prefix. */
 export function invalidateCachesByPrefix(prefix: string): void {
   for (const key of [...slots.keys()]) {
     if (key.startsWith(prefix)) invalidateCache(key)
+  }
+}
+
+/** markStale, applied to every existing cache key with the given prefix. */
+export function markStaleByPrefix(prefix: string): void {
+  for (const key of [...slots.keys()]) {
+    if (key.startsWith(prefix)) markStale(key)
   }
 }
 

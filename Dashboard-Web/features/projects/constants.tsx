@@ -175,6 +175,8 @@ export interface Task {
   notStartedAssignees?: number | null
   participationPercent?: number | null
   allAssigneesStarted?: boolean
+  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+  updatedAt?: string
 }
 
 export const STATUS_CONFIG: Record<TaskStatus, { label: string; color: string; bg: string; icon: React.ReactNode }> = {

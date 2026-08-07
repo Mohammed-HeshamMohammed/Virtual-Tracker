@@ -37,6 +37,7 @@ import { MEMBERS_TABLE_ROWS_PER_PAGE, PEOPLE_TABLE_ROW_CAP_BY_BREAKPOINT } from 
 import { useResponsiveRowCap } from "@/shared/tables/hooks/use-responsive-row-cap"
 import { INVITES_LIST_API_FIELDS } from "@/features/members/components/list-api-fields"
 import { useCachedList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { useMembersListData } from "@/features/members/hooks/use-members-list-data"
 import {
   useAutoHiddenTableColumns,
@@ -168,7 +169,11 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     staleMs: 300_000,
     minLoadingMs: 0,
     initialData: [],
-    presencePingEvent: "vt-presence-ping",
+    // Was the generic presence-ping heartbeat; changedEvent("invites") only
+    // fires when invites actually changed (case 6), and forceRefetch
+    // bypasses staleMs so it repaints without waiting on the next ping.
+    presencePingEvent: changedEvent("invites"),
+    backgroundRefetch: { forceRefetch: true },
   })
 
   const setInvites = (value: Invite[] | ((prev: Invite[]) => Invite[])): void => {

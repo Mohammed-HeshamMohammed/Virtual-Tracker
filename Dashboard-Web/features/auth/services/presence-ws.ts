@@ -17,7 +17,15 @@ type PresenceHelloMessage = {
   memberId?: string
 }
 
-type PresenceServerMessage = PresenceHelloMessage | { type: "pong" } | { type: "force-sign-out" }
+type ChangedMessage = { type: "changed"; resource: string; id: string; action: "created" | "updated" | "deleted"; actor?: string; at: number }
+type ScopeChangedMessage = { type: "scope-changed"; reason: "role" | "project-access" | "team" | "ban" | "hierarchy"; at: number }
+
+type PresenceServerMessage =
+  | PresenceHelloMessage
+  | { type: "pong" }
+  | { type: "force-sign-out" }
+  | ChangedMessage
+  | ScopeChangedMessage
 
 type PresenceClientMessage = { type: "ping" } | { type: "activity" }
 
@@ -26,6 +34,10 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let intentionalClose = false
 let activityHandler: (() => void) | null = null
+// Distinguishes the very first connect (fresh mount-time fetches already
+// cover it) from a reconnect after a drop (§6.10 - frames missed while
+// down are gone, so a reconnect must force a full refetch instead).
+let hasConnectedBefore = false
 
 function clearTimers() {
   if (heartbeatTimer) {
@@ -96,6 +108,12 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
       }
       clearTimers()
       heartbeatTimer = setInterval(() => sendMessage({ type: "ping" }), HEARTBEAT_MS)
+      if (hasConnectedBefore) {
+        void import("@/infrastructure/api/change-events").then(({ dispatchReconnectRefetch }) => {
+          dispatchReconnectRefetch()
+        })
+      }
+      hasConnectedBefore = true
     }
 
     ws.onmessage = (event) => {
@@ -109,6 +127,14 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
               detail: { message: "You were signed out from another page." },
             }),
           )
+        } else if (data.type === "changed") {
+          void import("@/infrastructure/api/change-events").then(({ dispatchChanged }) => {
+            dispatchChanged(data)
+          })
+        } else if (data.type === "scope-changed") {
+          void import("@/infrastructure/api/change-events").then(({ handleScopeChanged }) => {
+            void handleScopeChanged(data)
+          })
         }
       } catch {
         /* ignore malformed frames */

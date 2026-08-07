@@ -2,7 +2,8 @@
 /* eslint-disable react-doctor/no-giant-component */
 "use client"
 
-import { useEffect, useMemo, useState as useComponentState, type ComponentProps } from "react"
+import { useCallback, useEffect, useMemo, useState as useComponentState, type ComponentProps } from "react"
+import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 import { motion, AnimatePresence, LayoutGroup, MotionConfig } from "framer-motion"
 import {
   X,
@@ -70,6 +71,9 @@ export type ClientSaveMeta = {
   budgetId?: string
   invoicingId?: string
   newClientMember?: ClientMemberDraft
+  /** Optimistic-concurrency token (§6.9) - the client's updatedAt when the
+   * form loaded, sent back unchanged so a stale write 409s. */
+  expectedUpdatedAt?: string
 }
 const TAB_ICONS: Record<ClientModalTab, React.ReactNode> = {
     "General": <Building2 className="w-3.5 h-3.5" />,
@@ -88,6 +92,7 @@ export function ClientModal({
   mode = "create",
   initialData,
   editClientId,
+  onEntityGone,
 }: {
   onClose: () => void
   onSave: (c: ClientFormData, meta: ClientSaveMeta) => void | Promise<void>
@@ -96,6 +101,9 @@ export function ClientModal({
   mode?: "create" | "edit"
   initialData?: ApiClient
   editClientId?: string
+  /** Live sync (§6.7) - the client was deleted by someone else while this
+   * modal was open. */
+  onEntityGone?: (message: string) => void
 }) {
   const isEdit = mode === "edit"
   const [tab, setTab] = useComponentState<ClientModalTab>("General")
@@ -108,6 +116,25 @@ export function ClientModal({
   const [projectOptions, setProjectOptions] = useComponentState<ProjectOption[]>([])
   const [saving, setSaving] = useComponentState(false)
   const [saveError, setSaveError] = useComponentState<string | null>(null)
+  const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
+
+  // Live sync (§6.7): this modal receives initialData as a prop (from the
+  // already-cached Clients list, refreshed by fetchClientForEdit after
+  // open), so - same as the task modal - "reload" here means closing
+  // rather than an in-place refetch.
+  const handleLiveDeleted = useCallback(() => {
+    onClose()
+    onEntityGone?.("This client was deleted by another user - your changes weren't saved.")
+  }, [onClose, onEntityGone])
+  const handleLiveUpdated = useCallback(() => {
+    setLiveUpdateNotice(true)
+  }, [])
+  useEntityLiveGuard({
+    resource: "clients",
+    id: isEdit ? (editClientId ?? null) : null,
+    onDeleted: handleLiveDeleted,
+    onUpdated: handleLiveUpdated,
+  })
 
   const eligibleMembers = useMemo(() => {
     return members // Allow any member to be selected as a client
@@ -148,6 +175,7 @@ export function ClientModal({
   useEffect(() => {
     if (!initialData) return
     setForm(clientFormFromApi(initialData))
+    setLiveUpdateNotice(false)
   }, [initialData])
 
   useEffect(() => {
@@ -236,11 +264,18 @@ export function ClientModal({
           budgetId: form.budgetId ?? initialData?.budgetId,
           invoicingId: form.invoicingId ?? initialData?.invoicingId,
           newClientMember: addNewClientMember && !isEdit ? memberDraft : undefined,
+          expectedUpdatedAt: initialData?.updatedAt,
         }),
       )
       onClose()
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "Failed to save client")
+      // §6.9 - a stale-write 409 gets the same non-blocking notice as a
+      // live update arriving while the form was open, not a generic error.
+      if ((error as Error & { status?: number })?.status === 409) {
+        setLiveUpdateNotice(true)
+      } else {
+        setSaveError(error instanceof Error ? error.message : "Failed to save client")
+      }
     } finally {
       setSaving(false)
     }
@@ -796,6 +831,27 @@ export function ClientModal({
         </motion.div>
 
         {/* Footer */}
+        {liveUpdateNotice ? (
+          <motion.div className="mx-5 mb-2 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <span>Someone else changed this client while you had it open.</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setLiveUpdateNotice(false)}
+                className="text-sm font-medium underline underline-offset-2"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md bg-amber-100 px-2 py-1 text-sm font-medium"
+              >
+                Close &amp; reopen
+              </button>
+            </div>
+          </motion.div>
+        ) : null}
         {saveError ? (
           <motion.div className="mx-5 mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
             {saveError}

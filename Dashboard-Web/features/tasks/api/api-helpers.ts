@@ -60,6 +60,7 @@ function mapApiTask(row: Record<string, unknown>): Task {
     notStartedAssignees: asNumberOrNull(row.notStartedAssignees ?? row.not_started_assignees),
     participationPercent: asNumberOrNull(row.participationPercent ?? row.participation_percent),
     allAssigneesStarted: row.allAssigneesStarted === true || row.all_assignees_started === true,
+    updatedAt: asStringOrNull(row.updatedAt ?? row.updated_at) ?? undefined,
   }
 }
 
@@ -117,6 +118,7 @@ export async function fetchTasksList(): Promise<Task[]> {
       "not_started_assignees",
       "participation_percent",
       "all_assignees_started",
+      "updated_at",
     ],
   })
   return (rows ?? []).map((r) => mapApiTask(r as unknown as Record<string, unknown>))

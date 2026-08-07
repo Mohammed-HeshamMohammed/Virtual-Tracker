@@ -223,7 +223,7 @@ async function getProjectBudgets(projectId?: string, options: RequestOptions & {
 
 async function updateProjectBudget(
   id: string,
-  data: Partial<Omit<ProjectBudgetRow, "id" | "projectId">> & { updatedBy?: string },
+  data: Partial<Omit<ProjectBudgetRow, "id" | "projectId">> & { updatedBy?: string; expectedUpdatedAt?: string },
 ): Promise<void> {
   const body: Record<string, unknown> = {}
   if (data.type !== undefined) body.type = data.type
@@ -239,13 +239,26 @@ async function updateProjectBudget(
   if (data.startDate !== undefined) body.start_date = data.startDate || undefined
   if (data.includeNonBillableTime !== undefined) body.include_non_billable_time = data.includeNonBillableTime
   if (data.updatedBy && isValidUuid(data.updatedBy)) body.updated_by = data.updatedBy
+  // §6.9 - optional, only present when the caller sends back the
+  // budgetUpdatedAt it loaded the budget with.
+  if (data.expectedUpdatedAt) body.expected_updated_at = data.expectedUpdatedAt
   const res = await apiFetch(apiPath(`/api/project-budgets/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   })
   const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!res.ok) throw extractApiError(res.status, "Failed to update project budget", json)
+  if (!res.ok) {
+    // §6.9 - same convention updateProject/updateTask use: attach .status
+    // so the caller can branch on a stale-write conflict.
+    const err = extractApiError(res.status, "Failed to update project budget", json) as Error & {
+      status?: number
+      conflictData?: unknown
+    }
+    err.status = res.status
+    if (res.status === 409) err.conflictData = json?.data
+    throw err
+  }
   if (!json.success) throw new Error(json.error || "Failed to update project budget")
 }
 
@@ -434,6 +447,10 @@ export type CreateProjectActor = {
 
 export type ProjectEditLoadedState = CreateProjectFormPayload & {
   budgetId?: string
+  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+  updatedAt?: string
+  /** Same, for the budget row specifically - it saves through its own PATCH. */
+  budgetUpdatedAt?: string
 }
 
 function normalizeProjectRole(role: string): string {
@@ -494,7 +511,11 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     {},
     { retries: 1 },
   )
-  if (!res.ok) throw extractApiError(res.status, "Failed to load project for edit", json)
+  if (!res.ok) {
+    const err = extractApiError(res.status, "Failed to load project for edit", json) as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
   if (!json?.success || !json.data) throw new Error(json?.error || "Failed to load project for edit")
   const data = json.data
   const legacyClientId = (data as ProjectEditLoadedState & { clientId?: string }).clientId
@@ -679,7 +700,7 @@ export async function updateProjectWithDetails(
   projectId: string,
   payload: CreateProjectFormPayload,
   actor?: CreateProjectActor,
-  options?: { budgetId?: string },
+  options?: { budgetId?: string; expectedUpdatedAt?: string; expectedBudgetUpdatedAt?: string },
 ): Promise<ApiProject> {
   const actorMemberId =
     (actor?.memberId && isValidUuid(actor.memberId) ? actor.memberId : undefined) ??
@@ -704,12 +725,13 @@ export async function updateProjectWithDetails(
       endDate: payload.endDate,
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
+      ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
     }),
     syncClientLinks(projectId, clientIds, actorMemberId),
     syncProjectMembers(projectId, memberPayload, actorMemberId),
     syncTeamLinks(projectId, payload.teamIds, actorMemberId),
     shouldPersistBudget(payload)
-      ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId)
+      ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId, options?.expectedBudgetUpdatedAt)
       : Promise.resolve(),
   ])
 
@@ -721,12 +743,14 @@ async function persistBudgetForProject(
   payload: CreateProjectFormPayload,
   actorMemberId: string | undefined,
   budgetId: string | undefined,
+  expectedBudgetUpdatedAt?: string,
 ): Promise<void> {
   const budgetData = buildBudgetFields(payload)
   if (budgetId) {
     await updateProjectBudget(budgetId, {
       ...budgetData,
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
+      ...(expectedBudgetUpdatedAt ? { expectedUpdatedAt: expectedBudgetUpdatedAt } : {}),
     })
   } else {
     await createProjectBudget({

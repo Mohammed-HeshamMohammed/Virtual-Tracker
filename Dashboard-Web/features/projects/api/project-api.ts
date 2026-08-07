@@ -60,6 +60,9 @@ function toProjectPayload(
   if ((input as UpdateProjectInput).archivedAt !== undefined) {
     out.archived_at = (input as UpdateProjectInput).archivedAt
   }
+  if ((input as UpdateProjectInput).expectedUpdatedAt !== undefined) {
+    out.expected_updated_at = (input as UpdateProjectInput).expectedUpdatedAt
+  }
   return out
 }
 
@@ -135,6 +138,10 @@ export interface UpdateProjectInput {
   updatedBy?: string
   archivedBy?: string
   archivedAt?: string | null
+  /** Optimistic-concurrency token (§6.9) - the updatedAt the modal loaded
+   * the project with. Optional: omitting it keeps the old blind-write
+   * behavior. */
+  expectedUpdatedAt?: string
 }
 
 export async function getProjects(options: RequestOptions & { fields?: string[] } = {}): Promise<Project[]> {
@@ -183,7 +190,18 @@ export async function updateProject(id: string, data: UpdateProjectInput): Promi
     body: JSON.stringify(toProjectPayload(data)),
   })
   const json = (await res.json()) as Envelope<Record<string, unknown>>
-  if (!res.ok) throw extractApiError(res.status, "Failed to update project", json)
+  if (!res.ok) {
+    // §6.9: same convention fetchProjectForEdit's 404 path already uses -
+    // attach .status so the caller can branch on a stale-write conflict
+    // instead of treating it like any other failed save.
+    const err = extractApiError(res.status, "Failed to update project", json) as Error & {
+      status?: number
+      conflictData?: Record<string, unknown>
+    }
+    err.status = res.status
+    if (res.status === 409) err.conflictData = json.data
+    throw err
+  }
   if (!json.success) throw new Error(json.error || "Failed to update project")
   return toProject(json.data ?? {})
 }

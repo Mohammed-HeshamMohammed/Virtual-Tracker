@@ -15,6 +15,7 @@ import { usePageSearch } from "@/shared/ui/layout"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { TEAMS_TABLE_ROWS_PER_PAGE, TEAMS_TABLE_MIN_ROWS, TEAMS_TABLE_MAX_ROWS } from "@/features/members/config/ui-config"
 import { useCachedList, usePaginatedTable } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { PaginatedTableShell, TableRefreshButton, TableScroll, TablePagination } from "@/shared/tables/ui"
 import { MyTeamScopeIconButton } from "@/features/members/components/my-team-scope-controls"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
@@ -120,6 +121,8 @@ export function TeamsPage() {
     onError: (err) => console.error("Failed to fetch teams:", err),
     staleMs: 300_000,
     minLoadingMs: 0,
+    presencePingEvent: changedEvent("teams"),
+    backgroundRefetch: { forceRefetch: true },
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
   const handleRefresh = useCallback(async () => {
