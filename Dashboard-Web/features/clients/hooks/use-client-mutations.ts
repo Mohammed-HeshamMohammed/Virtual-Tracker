@@ -42,9 +42,13 @@ export function useClientMutations({
     if (!canManageClients) return
     setPageError(null)
     if (meta.mode === "edit" && meta.clientId) {
+      // §6.9 - a 409 here (stale write) is left to propagate: the modal's
+      // own submit handler shows a reload/keep-editing notice instead of a
+      // generic save error.
       const updated = await updateClientWithDetails(meta.clientId, data, {
         budgetId: data.budgetId ?? meta.budgetId,
         invoicingId: data.invoicingId ?? meta.invoicingId,
+        expectedUpdatedAt: meta.expectedUpdatedAt,
       })
       setClients((prev) => prev.map((client) => (client.id === updated.id ? (updated as unknown as Client) : client)))
       return

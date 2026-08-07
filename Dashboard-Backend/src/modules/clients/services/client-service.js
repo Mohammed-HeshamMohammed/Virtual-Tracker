@@ -20,6 +20,7 @@ import {
   syncClientBudgetAutomationState,
 } from "./client-budget-notify.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
+import { toIso } from "../../dashboard/dashboard-utils.js";
 import {
   BUDGET_BASE_OPTIONS,
   BUDGET_RESET_OPTIONS,
@@ -243,6 +244,10 @@ export function mapClientResponse(clientDoc, budgetDoc, invoicingDoc, projectIds
     budgetId: budget?.id,
     invoicing,
     invoicingId,
+    // Optimistic-concurrency version token (§6.9) - sent back unchanged on
+    // save so a stale-snapshot write can be detected instead of silently
+    // overwriting whatever changed in between.
+    updatedAt: toIso(row.updated_at ?? row.updatedAt),
   };
 }
 
