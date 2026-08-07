@@ -3,7 +3,9 @@
 /* eslint-disable react-doctor/no-giant-component */
 "use client"
 
-import { useEffect, useMemo, useState as useComponentState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState as useComponentState, type FormEvent, type ReactNode } from "react"
+import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { AnimatePresence, motion } from "framer-motion"
 import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
@@ -375,6 +377,11 @@ export function ProjectModal({
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
   const [submitError, setSubmitError] = useComponentState<string | null>(null)
   const [budgetFromClientsCount, setBudgetFromClientsCount] = useComponentState(0)
+  // Live sync (§6.7): bumped by "Reload" on the banner below to force the
+  // edit-state effect to refetch without needing a projectId change.
+  const [reloadKey, setReloadKey] = useComponentState(0)
+  const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
+  const [staleSelectionNote, setStaleSelectionNote] = useComponentState<string | null>(null)
 
   const modalContentLoading = isEditMode && editFormLoading
   const formConfigPending = formConfigLoading && !formConfig && !formConfigError
@@ -416,66 +423,131 @@ export function ProjectModal({
     if (projectId) {
       setEditFormLoading(true)
       setSubmitError(null)
+      setLiveUpdateNotice(false)
+      setStaleSelectionNote(null)
     }
   }
 
-  // Fetch configs
+  // Fetch configs (clients + members options). Re-run on mount and whenever
+  // a clients/members change broadcasts (§6.6) - this effect previously ran
+  // once and never again, so a member or client deleted while the modal
+  // stayed open kept showing as selectable here.
   useEffect(() => {
     let cancelled = false
-    setFormConfigLoading(true)
-    setFormConfigError(null)
-    getProjectFormConfig()
-      .then((config) => {
-        if (!cancelled) setFormConfig(config)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setFormConfig(null)
-          setFormConfigError(err instanceof Error ? err.message : "Failed to load form fields")
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setFormConfigLoading(false)
-      })
+    const load = () => {
+      setFormConfigLoading(true)
+      setFormConfigError(null)
+      getProjectFormConfig()
+        .then((config) => {
+          if (!cancelled) setFormConfig(config)
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setFormConfig(null)
+            setFormConfigError(err instanceof Error ? err.message : "Failed to load form fields")
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setFormConfigLoading(false)
+        })
+    }
+    load()
+    const onClientsChanged = () => load()
+    const onMembersChanged = () => load()
+    window.addEventListener(changedEvent("clients"), onClientsChanged)
+    window.addEventListener(changedEvent("members"), onMembersChanged)
     return () => {
       cancelled = true
+      window.removeEventListener(changedEvent("clients"), onClientsChanged)
+      window.removeEventListener(changedEvent("members"), onMembersChanged)
     }
   }, [])
 
-  // Fetch teams
+  // Fetch teams - same treatment, refreshed on a "teams" broadcast too.
   useEffect(() => {
     let cancelled = false
-    fetchUserTeams(user?.uid, user?.email ?? undefined)
-      .then((teams) => {
-        if (!cancelled) setAvailableTeams(teams)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) {
-          setAvailableTeams([])
-          setTeamsLoadError(err instanceof Error ? err.message : "Failed to load teams")
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setTeamsLoading(false)
-      })
+    const load = () => {
+      fetchUserTeams(user?.uid, user?.email ?? undefined)
+        .then((teams) => {
+          if (!cancelled) setAvailableTeams(teams)
+        })
+        .catch((err: unknown) => {
+          if (!cancelled) {
+            setAvailableTeams([])
+            setTeamsLoadError(err instanceof Error ? err.message : "Failed to load teams")
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setTeamsLoading(false)
+        })
+    }
+    load()
+    const onTeamsChanged = () => load()
+    window.addEventListener(changedEvent("teams"), onTeamsChanged)
     return () => {
       cancelled = true
+      window.removeEventListener(changedEvent("teams"), onTeamsChanged)
     }
   }, [user?.uid, user?.email])
 
+  // Previously `[]` deps - never refreshed at all, the exact gap §6.6
+  // calls out. Now also reruns on team/member changes.
   useEffect(() => {
     let cancelled = false
-    getTeamMembers(undefined, { fields: ["team_id", "member_id", "member_role"] })
-      .then((rows) => {
-        if (!cancelled) setAllTeamMembers(rows)
-      })
-      .catch(() => {
-        if (!cancelled) setAllTeamMembers([])
-      })
+    const load = () => {
+      getTeamMembers(undefined, { fields: ["team_id", "member_id", "member_role"] })
+        .then((rows) => {
+          if (!cancelled) setAllTeamMembers(rows)
+        })
+        .catch(() => {
+          if (!cancelled) setAllTeamMembers([])
+        })
+    }
+    load()
+    const onChanged = () => load()
+    window.addEventListener(changedEvent("teams"), onChanged)
+    window.addEventListener(changedEvent("members"), onChanged)
     return () => {
       cancelled = true
+      window.removeEventListener(changedEvent("teams"), onChanged)
+      window.removeEventListener(changedEvent("members"), onChanged)
     }
   }, [])
+
+  // §6.6/6.8 - after clients/members options refresh, drop any selection
+  // that's no longer among them (deleted mid-edit) so a dead id can never
+  // reach the save payload, and say so rather than silently vanishing it.
+  useEffect(() => {
+    if (!formConfig) return
+    const validClientIds = new Set(formConfig.options.clients.map((c) => c.id))
+    const validMemberIds = new Set(formConfig.options.members.map((m) => m.id))
+    setAddForm((prev) => {
+      const nextClientIds = prev.clientIds.filter((id) => validClientIds.has(id))
+      const nextManagers = prev.managers.filter((id) => validMemberIds.has(id))
+      const nextUsers = prev.users.filter((id) => validMemberIds.has(id))
+      const nextViewers = prev.viewers.filter((id) => validMemberIds.has(id))
+      const nextMemberLimitMembers = prev.memberLimitMembers.filter((id) => validMemberIds.has(id))
+      const droppedCount =
+        prev.clientIds.length -
+        nextClientIds.length +
+        (prev.managers.length - nextManagers.length) +
+        (prev.users.length - nextUsers.length) +
+        (prev.viewers.length - nextViewers.length) +
+        (prev.memberLimitMembers.length - nextMemberLimitMembers.length)
+      if (droppedCount === 0) return prev
+      setStaleSelectionNote(
+        `${droppedCount} selected ${droppedCount === 1 ? "item was" : "items were"} removed and ${droppedCount === 1 ? "has" : "have"} been deselected.`,
+      )
+      return {
+        ...prev,
+        clientIds: nextClientIds,
+        managers: nextManagers,
+        users: nextUsers,
+        viewers: nextViewers,
+        memberLimitMembers: nextMemberLimitMembers,
+      }
+    })
+  }, [formConfig])
 
   // Fetch project details for editing
   useEffect(() => {
@@ -546,7 +618,30 @@ export function ProjectModal({
     return () => {
       cancelled = true
     }
-  }, [projectId])
+    // reloadKey has no value of its own - bumping it (from the live-update
+    // banner's "Reload" button) is only ever a signal to re-run this fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, reloadKey])
+
+  // Live sync (§6.7): reacts when another user deletes or edits the project
+  // this modal has open. Deleted -> close and toast, same path a 404 on
+  // initial load already takes. Updated -> non-blocking banner; the user
+  // chooses whether to reload (re-fetching edit-state) or keep editing
+  // (proceeds to the 6.9 conflict check on save) - nothing is discarded
+  // behind their back.
+  const handleLiveDeleted = useCallback(() => {
+    onClose()
+    onEntityGone?.("This project was deleted by another user - your changes weren't saved.")
+  }, [onClose, onEntityGone])
+  const handleLiveUpdated = useCallback(() => {
+    setLiveUpdateNotice(true)
+  }, [setLiveUpdateNotice])
+  useEntityLiveGuard({
+    resource: "projects",
+    id: projectId,
+    onDeleted: handleLiveDeleted,
+    onUpdated: handleLiveUpdated,
+  })
 
   function parseProjectNamesFromInput(raw: string): string[] {
     const seen = new Set<string>()
@@ -736,7 +831,24 @@ export function ProjectModal({
     setSubmitError(null)
 
     try {
-      const payloads = projectNames.map((name) => formStateToPayload(addForm, name, memberRoleById))
+      // §6.8 - defense in depth: the reactive prune above already keeps
+      // addForm in sync with formConfig as it refreshes, but a picker that
+      // never got a chance to refresh (e.g. no broadcast reached this tab
+      // before submit) must still not be able to submit an id formConfig
+      // already knows is gone.
+      const sanitizedAddForm = formConfig
+        ? {
+            ...addForm,
+            clientIds: addForm.clientIds.filter((id) => formConfig.options.clients.some((c) => c.id === id)),
+            managers: addForm.managers.filter((id) => formConfig.options.members.some((m) => m.id === id)),
+            users: addForm.users.filter((id) => formConfig.options.members.some((m) => m.id === id)),
+            viewers: addForm.viewers.filter((id) => formConfig.options.members.some((m) => m.id === id)),
+            memberLimitMembers: addForm.memberLimitMembers.filter((id) =>
+              formConfig.options.members.some((m) => m.id === id),
+            ),
+          }
+        : addForm
+      const payloads = projectNames.map((name) => formStateToPayload(sanitizedAddForm, name, memberRoleById))
       await onSave(projectId, payloads, editingBudgetId)
       onClose()
     } catch (err) {
@@ -1537,6 +1649,63 @@ export function ProjectModal({
           )}
           </AnimatePresence>
         </div>
+
+        {staleSelectionNote ? (
+          <div
+            className={cn(
+              "mx-5 mb-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm",
+              formTheme.isDark
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                : "border-amber-200 bg-amber-50 text-amber-800",
+            )}
+          >
+            <span>{staleSelectionNote}</span>
+            <button
+              type="button"
+              onClick={() => setStaleSelectionNote(null)}
+              className="shrink-0 text-sm font-medium underline underline-offset-2"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
+
+        {liveUpdateNotice ? (
+          <div
+            className={cn(
+              "mx-5 mb-2 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm",
+              formTheme.isDark
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                : "border-amber-200 bg-amber-50 text-amber-800",
+            )}
+          >
+            <span>Someone else changed this project while you had it open.</span>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setLiveUpdateNotice(false)}
+                className="text-sm font-medium underline underline-offset-2"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLiveUpdateNotice(false)
+                  setEditFormLoading(true)
+                  setReloadKey((k) => k + 1)
+                }}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2 py-1 text-sm font-medium",
+                  formTheme.isDark ? "bg-amber-500/20" : "bg-amber-100",
+                )}
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                Reload
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {submitError ? (
           <div
