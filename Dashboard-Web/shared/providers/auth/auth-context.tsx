@@ -443,6 +443,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setSessionAuthorized(true)
       void syncSharedSessionCookie()
+      // change-events.ts is a plain module with no hook access - this is the
+      // one place that knows the fresh memberId, so it hands it over here
+      // rather than change-events.ts trying to re-derive it.
+      if (memberId) {
+        void import("@/infrastructure/api/change-events").then(({ setCurrentMemberId }) => {
+          setCurrentMemberId(memberId)
+        })
+      }
       void import("@/features/auth/services/presence-ws").then(({ connectPresenceWebSocket, sendPresenceActivity }) => {
         void connectPresenceWebSocket().then((ok) => {
           if (ok) sendPresenceActivity()
@@ -1135,6 +1143,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       void clearSharedSessionCookie()
       const { clearAllListCaches } = await import("@/shared/tables/hooks/list-cache-registry")
       clearAllListCaches()
+      const { setCurrentMemberId } = await import("@/infrastructure/api/change-events")
+      setCurrentMemberId(null)
       const { postActivitySession } = await import("@/features/activity/services/activity-api")
       await postActivitySession("stop").catch(() => { })
       const { disconnectPresenceWebSocket } = await import("@/features/auth/services/presence-ws")
