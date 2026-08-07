@@ -241,6 +241,9 @@ export function useTaskMutations({
       durationHoursPerDay: string
       overtimeHoursPerDay: string
       position: "Top" | "Bottom"
+      /** Optimistic-concurrency token (§6.9) - the task's updatedAt when
+       * the form loaded, sent back unchanged so a stale write 409s. */
+      expectedUpdatedAt?: string
     }
   ) {
     const durationHoursPerDay = formValues.durationHoursPerDay.trim() ? Number(formValues.durationHoursPerDay) : null
@@ -294,7 +297,11 @@ export function useTaskMutations({
         assignedTo: primaryAssignee,
         assigneeIds,
         ...durationFields,
+        expectedUpdatedAt: formValues.expectedUpdatedAt,
       }
+      // §6.9 - a 409 here (stale write) is left to propagate: the modal's
+      // own submit handler shows a reload/keep-editing notice instead of a
+      // generic save error.
       await updateTaskApi(editingId, updatePayload)
       const fresh = await getTask(editingId)
       applyTaskToState(mapApiTask(fresh as unknown as Record<string, unknown>), editingId)

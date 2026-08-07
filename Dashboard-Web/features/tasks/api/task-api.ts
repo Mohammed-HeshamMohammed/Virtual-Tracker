@@ -95,6 +95,7 @@ function normalizeTask(input: any): Task {
     createdAt: asString(input.createdAt || input.created_at),
     createdBy: asString(input.createdBy || input.created_by),
     updatedBy: asString(input.updatedBy || input.updated_by),
+    updatedAt: input.updatedAt || input.updated_at ? asString(input.updatedAt || input.updated_at) : undefined,
     comments: input.comments,
     attachments: input.attachments,
     reviewState: input.reviewState ?? input.review_state ? asString(input.reviewState ?? input.review_state) : null,
@@ -138,6 +139,8 @@ export interface Task {
   createdAt: string
   createdBy: string
   updatedBy: string
+  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+  updatedAt?: string
   comments?: TaskComment[]
   attachments?: TaskAttachment[]
   reviewState: string | null
@@ -201,6 +204,10 @@ export interface UpdateTaskInput {
   reviewState?: string | null
   reviewedBy?: string | null
   reviewedAt?: string | null
+  /** Optimistic-concurrency token (§6.9) - the updatedAt the form loaded
+   * the task with. Optional: omitting it keeps the old blind-write
+   * behavior. */
+  expectedUpdatedAt?: string
 }
 
 export interface TaskHours {
@@ -375,11 +382,23 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
   if (input.reviewState !== undefined) payload.review_state = input.reviewState
   if (input.reviewedBy !== undefined) payload.reviewed_by = input.reviewedBy
   if (input.reviewedAt !== undefined) payload.reviewed_at = input.reviewedAt
+  if (input.expectedUpdatedAt !== undefined) payload.expected_updated_at = input.expectedUpdatedAt
 
   if (Object.keys(payload).length > 0) {
     const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(apiPath(`/api/tasks/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
-    if (!res.ok) throw extractApiError(res.status, "Failed to update task", json)
+    if (!res.ok) {
+      // §6.9 - same convention updateProject uses: attach .status so the
+      // caller can branch on a stale-write conflict instead of treating it
+      // like any other failed save.
+      const err = extractApiError(res.status, "Failed to update task", json) as Error & {
+        status?: number
+        conflictData?: unknown
+      }
+      err.status = res.status
+      if (res.status === 409) err.conflictData = json?.data
+      throw err
+    }
     if (!json) throw new Error("Failed to parse update response")
     if (!json.success && json.error) throw new Error(json.error)
   }

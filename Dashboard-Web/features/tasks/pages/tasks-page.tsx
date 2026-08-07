@@ -48,6 +48,7 @@ import { TaskHoursModal } from "@/features/tasks/components/modals/task-hours-mo
 import { TaskReviewModal } from "@/features/tasks/components/modals/task-review-modal"
 import { TasksBatchBar } from "@/features/tasks/components/tasks-batch-bar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
+import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 
 const EMPTY_PROJECT_MEMBERS: Member[] = []
 
@@ -80,6 +81,7 @@ export function TasksPage() {
   const [isTaskModalOpen, setIsTaskModalOpen] = useComponentState(false)
   const [editingTaskId, setEditingTaskId] = useComponentState<string | null>(null)
   const [newTaskStatus, setNewTaskStatus] = useComponentState<TaskStatus>("todo")
+  const [entityGoneNotice, setEntityGoneNotice] = useComponentState<string | null>(null)
 
   const [taskPreview, setTaskPreview] = useComponentState<{ taskId: string; anchor: TaskPreviewAnchor } | null>(null)
 
@@ -184,22 +186,34 @@ export function TasksPage() {
         }
       })
 
-    const cachedMembers = readMembersListCache<{ id: string; name?: string; avatar?: string; avatarColor?: string }>()
-    if (cachedMembers?.length) {
-      setAllMembers(mapMembers(cachedMembers))
-      return
+    const loadMembers = (force: boolean) => {
+      if (!force) {
+        const cachedMembers = readMembersListCache<{ id: string; name?: string; avatar?: string; avatarColor?: string }>()
+        if (cachedMembers?.length) {
+          setAllMembers(mapMembers(cachedMembers))
+          return
+        }
+      }
+      getMembers()
+        .then((rows) => {
+          if (cancelled) return
+          setAllMembers(mapMembers(rows))
+        })
+        .catch(() => {
+          if (!cancelled) setAllMembers([])
+        })
     }
 
-    getMembers()
-      .then((rows) => {
-        if (cancelled) return
-        setAllMembers(mapMembers(rows))
-      })
-      .catch(() => {
-        if (!cancelled) setAllMembers([])
-      })
+    loadMembers(false)
+
+    // Live sync (§6.6/case 16): previously `[]` deps, never refreshed at
+    // all - a member deleted while a task modal had them selected stayed
+    // selectable for the rest of the tab's life.
+    const onMembersChanged = () => loadMembers(true)
+    window.addEventListener(changedEvent("members"), onMembersChanged)
     return () => {
       cancelled = true
+      window.removeEventListener(changedEvent("members"), onMembersChanged)
     }
   }, [])
 
@@ -654,6 +668,11 @@ export function TasksPage() {
           allMembers={allMembers}
           allTeamsById={allTeamsById}
           initialStatus={newTaskStatus}
+          onEntityGone={(message) => {
+            setIsTaskModalOpen(false)
+            setEditingTaskId(null)
+            setEntityGoneNotice(message)
+          }}
         />
       )}
 
@@ -701,6 +720,13 @@ export function TasksPage() {
           count={selectedTaskIds.size}
         />
       </AnimatePresence>
+
+      <NotifyToastHost
+        message={entityGoneNotice}
+        onDismiss={() => setEntityGoneNotice(null)}
+        title="Notice"
+        tone="error"
+      />
     </motion.div>
   )
 }

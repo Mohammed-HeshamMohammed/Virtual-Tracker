@@ -2,7 +2,7 @@
 /* eslint-disable react-doctor/no-giant-component */
 "use client"
 
-import React, { useEffect, useState as useComponentState, useMemo } from "react"
+import React, { useCallback, useEffect, useState as useComponentState, useMemo } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/shared/ui/dialog"
 import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field"
 import { DatePickerField } from "@/shared/ui/forms/date-picker-field"
@@ -19,6 +19,7 @@ import {
   PRIORITY_CONFIG,
   BOARD_COLUMNS,
 } from "@/features/projects/constants"
+import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 
 interface TaskWizardModalProps {
   open: boolean
@@ -32,6 +33,10 @@ interface TaskWizardModalProps {
   allMembers: Member[]
   allTeamsById: Record<string, string>
   initialStatus?: TaskStatus
+  /** Live sync (§6.7) - the task was deleted by someone else while this
+   * modal was open; parent shows a toast the same way projects-page.tsx
+   * does for the project modal. */
+  onEntityGone?: (message: string) => void
 }
 
 export function TaskWizardModal({
@@ -46,10 +51,13 @@ export function TaskWizardModal({
   allMembers,
   allTeamsById,
   initialStatus = "todo",
+  onEntityGone,
 }: TaskWizardModalProps) {
   const isEditingTask = task !== null
   const teamsLoading = false
   const teamsLoadError = null
+  const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
+  const [staleSelectionNote, setStaleSelectionNote] = useComponentState<string | null>(null)
 
   const [newTaskTitle, setNewTaskTitle] = useComponentState("")
   const [newTaskDescription, setNewTaskDescription] = useComponentState("")
@@ -75,6 +83,24 @@ export function TaskWizardModal({
 
   const currentTaskId = task ? task.id : null
 
+  // Live sync (§6.7): this modal doesn't own its own fetch (task arrives as
+  // a prop from the already-cached Tasks list), so "reload" here means
+  // closing the modal rather than re-fetching in place - reopening it picks
+  // up whatever the parent's own live-synced list now has.
+  const handleLiveDeleted = useCallback(() => {
+    onClose()
+    onEntityGone?.("This task was deleted by another user - your changes weren't saved.")
+  }, [onClose, onEntityGone])
+  const handleLiveUpdated = useCallback(() => {
+    setLiveUpdateNotice(true)
+  }, [])
+  useEntityLiveGuard({
+    resource: "tasks",
+    id: currentTaskId,
+    onDeleted: handleLiveDeleted,
+    onUpdated: handleLiveUpdated,
+  })
+
   useEffect(() => {
     if (!open) return
     if (open === prevOpen && currentTaskId === prevId) return
@@ -82,6 +108,8 @@ export function TaskWizardModal({
     setPrevOpen(open)
     setPrevId(currentTaskId)
     setCreateTaskError(null)
+    setLiveUpdateNotice(false)
+    setStaleSelectionNote(null)
 
     if (task) {
       setNewTaskTitle(task.title)
@@ -204,6 +232,23 @@ export function TaskWizardModal({
     }
   }, [open, newTaskTeamId, memberLookups, isEditingTask, editPreserveAssigneeIds])
 
+  // §6.6/6.8 - after the assignee options refresh (live or otherwise), drop
+  // any selection no longer among them (deleted mid-edit) instead of
+  // silently letting a dead id reach the save payload.
+  useEffect(() => {
+    if (!open || formAssigneesLoading) return
+    const validIds = new Set(formAssigneeOptions.map((opt) => opt.value))
+    setNewTaskAssigneeIds((prev) => {
+      const next = prev.filter((id) => validIds.has(id))
+      if (next.length === prev.length) return prev
+      setStaleSelectionNote(
+        `${prev.length - next.length} selected ${prev.length - next.length === 1 ? "member was" : "members were"} removed and deselected.`,
+      )
+      setNewTaskAssigneeId(next[0] ?? null)
+      return next
+    })
+  }, [open, formAssigneesLoading, formAssigneeOptions])
+
   async function handleSave() {
     if (isSavingTask) return
     const titleError = validateRequiredText(newTaskTitle, "Task title")
@@ -227,6 +272,13 @@ export function TaskWizardModal({
     setIsSavingTask(true)
     setCreateTaskError(null)
 
+    // §6.8 - defense in depth: the reactive prune above already keeps
+    // newTaskAssigneeIds in sync with formAssigneeOptions as it refreshes,
+    // but a picker that never got a chance to refresh must still not be
+    // able to submit an id the options already know is gone.
+    const validAssigneeIds = new Set(formAssigneeOptions.map((opt) => opt.value))
+    const sanitizedAssigneeIds = newTaskAssigneeIds.filter((id) => validAssigneeIds.has(id))
+
     try {
       await onSave(task ? task.id : null, {
         title: newTaskTitle.trim(),
@@ -234,17 +286,24 @@ export function TaskWizardModal({
         teamId: newTaskTeamId,
         status: newTaskStatus,
         priority: newTaskPriority,
-        assignedTo: newTaskAssigneeIds[0] ?? newTaskAssigneeId,
-        assigneeIds: newTaskAssigneeIds,
+        assignedTo: sanitizedAssigneeIds[0] ?? newTaskAssigneeId,
+        assigneeIds: sanitizedAssigneeIds,
         startDate: newTaskStartDate,
         dueDate: newTaskDueDate,
         durationHoursPerDay: newTaskDurationHoursPerDay,
         overtimeHoursPerDay: newTaskOvertimeHoursPerDay,
         position: newTaskPosition,
+        expectedUpdatedAt: task?.updatedAt,
       })
       onClose()
     } catch (error: any) {
-      setCreateTaskError(error instanceof Error ? error.message : "Failed to save task")
+      // §6.9 - a stale-write 409 gets the same non-blocking notice as a
+      // live update arriving while the form was open, not a generic error.
+      if (error?.status === 409) {
+        setLiveUpdateNotice(true)
+      } else {
+        setCreateTaskError(error instanceof Error ? error.message : "Failed to save task")
+      }
     } finally {
       setIsSavingTask(false)
     }
@@ -470,6 +529,56 @@ export function TaskWizardModal({
             )}
           </div>
           </div>
+          {staleSelectionNote ? (
+            <div
+              className={cn(
+                "mt-3 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm",
+                isDark
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                  : "border-amber-200 bg-amber-50 text-amber-800",
+              )}
+            >
+              <span>{staleSelectionNote}</span>
+              <button
+                type="button"
+                onClick={() => setStaleSelectionNote(null)}
+                className="shrink-0 text-sm font-medium underline underline-offset-2"
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+          {liveUpdateNotice ? (
+            <div
+              className={cn(
+                "mt-3 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm",
+                isDark
+                  ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                  : "border-amber-200 bg-amber-50 text-amber-800",
+              )}
+            >
+              <span>Someone else changed this task while you had it open.</span>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLiveUpdateNotice(false)}
+                  className="text-sm font-medium underline underline-offset-2"
+                >
+                  Keep editing
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className={cn(
+                    "rounded-md px-2 py-1 text-sm font-medium",
+                    isDark ? "bg-amber-500/20" : "bg-amber-100",
+                  )}
+                >
+                  Close &amp; reopen
+                </button>
+              </div>
+            </div>
+          ) : null}
           {createTaskError ? <p className="mt-3 text-sm text-red-500">{createTaskError}</p> : null}
         </div>
         <DialogFooter
