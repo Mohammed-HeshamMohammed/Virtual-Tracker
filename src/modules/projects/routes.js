@@ -666,7 +666,7 @@ export async function routeProjects(req, res, url, db, origin) {
       try {
         const viewer = await assertProjectDomainWrite(projectId, null);
         if (!viewer) return true;
-        await deleteProjectPg(projectId);
+        await deleteProjectPg(projectId, viewer.memberId);
         sendJson(res, origin, 200, { success: true, data: { id: projectId } });
       } catch (e) {
         logSafeError("[projects/:id DELETE]", e);

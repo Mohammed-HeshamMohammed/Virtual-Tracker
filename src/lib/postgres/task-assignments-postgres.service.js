@@ -6,6 +6,7 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { publishChange } from "../../modules/realtime/change-bus.js";
 
 const ASSIGNMENT_COLUMNS = [
   "id",
@@ -86,6 +87,7 @@ export async function upsertAssignmentPg(payload) {
       payload.updated_at ?? new Date(),
     ],
   );
+  void publishChange("task-assignments", payload.task_id, "updated");
   return normalizeAssignmentRow(rows[0]);
 }
 
@@ -115,12 +117,15 @@ export async function updateAssignmentPg(id, patch) {
     `UPDATE task_assignments SET ${sets.join(", ")} WHERE id = $1 RETURNING ${ASSIGNMENT_COLUMNS.join(", ")}`,
     params,
   );
+  if (rows[0]) void publishChange("task-assignments", rows[0].task_id, "updated");
   return rows[0] ? normalizeAssignmentRow(rows[0]) : null;
 }
 
 /** @param {string} id */
 export async function deleteAssignmentPg(id) {
+  const existing = await getAssignmentByIdPg(id);
   await query("DELETE FROM task_assignments WHERE id = $1", [id]);
+  if (existing) void publishChange("task-assignments", existing.task_id, "deleted");
 }
 
 /** Task IDs assigned to any of these members - no 30-item chunking needed,

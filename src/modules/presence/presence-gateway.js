@@ -25,6 +25,27 @@ export function sendToMember(memberId, message) {
   }
 }
 
+/**
+ * Push a frame to every connected socket, regardless of member. Live-sync
+ * "something changed" broadcasts only (PLAN-livesyncandagenttimer.md §3) —
+ * signals, never row data, so there is deliberately no per-member filtering
+ * here. A send failure on one socket must never stop the rest; it will be
+ * cleaned up on its own "close" handler.
+ * @param {Record<string, unknown>} message
+ */
+export function broadcastToAll(message) {
+  const payload = JSON.stringify(message);
+  for (const sockets of connectionsByMember.values()) {
+    for (const ws of sockets) {
+      try {
+        ws.send(payload);
+      } catch {
+        /* ignore — connection will be cleaned up on close */
+      }
+    }
+  }
+}
+
 /** Auth WS gateway for ephemeral presence. */
 export function attachPresenceGateway(httpServer, deps) {
   const wss = new WebSocketServer({ noServer: true });

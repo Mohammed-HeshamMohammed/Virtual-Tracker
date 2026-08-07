@@ -10,6 +10,7 @@ import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getSingleByMemberId } from "./member-data-store.js";
 import { getClientBudgetPg } from "./clients-postgres.service.js";
+import { publishChange } from "../../modules/realtime/change-bus.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -58,7 +59,9 @@ export async function createProjectPg(data) {
       uuidOrNull(data.createdBy),
     ],
   );
-  return rows[0] ?? null;
+  const project = rows[0] ?? null;
+  if (project) void publishChange("projects", id, "created", uuidOrNull(data.createdBy) ?? undefined);
+  return project;
 }
 
 export async function getProjectPg(id) {
@@ -101,7 +104,9 @@ export async function updateProjectPg(id, patch) {
   if (sets.length === 0) return getProjectPg(id);
   sets.push("updated_at = now()");
   const rows = await query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
-  return rows[0] ?? null;
+  const project = rows[0] ?? null;
+  if (project) void publishChange("projects", id, "updated", uuidOrNull(patch.updatedBy) ?? undefined);
+  return project;
 }
 
 /** Soft-archive, matching the existing status-flag pattern rather than deleting the row. */
@@ -111,11 +116,17 @@ export async function archiveProjectPg(id, actorId) {
      WHERE id = $1 RETURNING *`,
     [id, uuidOrNull(actorId)],
   );
-  return rows[0] ?? null;
+  const project = rows[0] ?? null;
+  // Archiving doesn't remove the row - an open edit form should offer to
+  // reload, not force-close like a real delete does (§4.1's action field).
+  if (project) void publishChange("projects", id, "updated", uuidOrNull(actorId) ?? undefined);
+  return project;
 }
 
-export async function deleteProjectPg(id) {
+/** @param {string} id @param {string} [actorId] */
+export async function deleteProjectPg(id, actorId) {
   await query("DELETE FROM projects WHERE id = $1", [id]);
+  void publishChange("projects", id, "deleted", uuidOrNull(actorId) ?? undefined);
 }
 
 /** @param {{ status?: string, limit?: number }} [options] */
@@ -143,11 +154,14 @@ export async function addProjectMemberPg(projectId, memberId, options = {}) {
      RETURNING *`,
     [id, projectId, memberId, options.role ?? null, uuidOrNull(options.actorId)],
   );
-  return rows[0] ?? null;
+  const row = rows[0] ?? null;
+  if (row) void publishChange("project-members", projectId, "updated", uuidOrNull(options.actorId) ?? undefined);
+  return row;
 }
 
-export async function removeProjectMemberPg(projectId, memberId) {
+export async function removeProjectMemberPg(projectId, memberId, actorId) {
   await query("DELETE FROM project_members WHERE project_id = $1 AND member_id = $2", [projectId, memberId]);
+  void publishChange("project-members", projectId, "updated", uuidOrNull(actorId) ?? undefined);
 }
 
 export async function listProjectMembersPg(projectId) {
@@ -223,7 +237,9 @@ export async function upsertProjectBudgetPg(projectId, data, actorId) {
       uuidOrNull(actorId),
     ],
   );
-  return rows[0] ?? null;
+  const budget = rows[0] ?? null;
+  if (budget) void publishChange("project-budgets", projectId, "updated", uuidOrNull(actorId) ?? undefined);
+  return budget;
 }
 
 // ---------------------------------------------------------------------------
