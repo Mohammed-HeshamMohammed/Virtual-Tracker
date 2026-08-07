@@ -72,6 +72,11 @@ interface AddProjectFormState {
   // named `hasBudget` before, which conflated the two.
   budgetStopTimers: boolean
   budgetType: string
+  // True once the user has explicitly set a budget type - either by loading
+  // an existing project (its saved type IS an explicit choice) or by using
+  // the Cost/Hours toggle. Client-budget aggregation must never overwrite a
+  // type the user (or a prior save) already chose.
+  budgetTypeTouched: boolean
   budgetBasedOn: string
   // 'per_project': budgetTotal is a flat total (the only behavior before this
   // field existed). 'per_person': budgetTotal is hours-per-member - the real
@@ -147,6 +152,7 @@ function createDefaultAddForm(): AddProjectFormState {
     memberLimit: "",
     budgetStopTimers: true,
     budgetType: "Cost based",
+    budgetTypeTouched: false,
     budgetBasedOn: "Bill rate",
     budgetScope: "per_project",
     budgetResets: "Never",
@@ -507,6 +513,9 @@ export function ProjectModal({
           memberLimitMembers: payload.memberLimitMemberIds,
           budgetStopTimers: payload.budgetStopTimers,
           budgetType: payload.budgetType || "Cost based",
+          // Loaded from a saved project - already an explicit choice, not a
+          // blank default, so client-budget aggregation must not touch it.
+          budgetTypeTouched: true,
           budgetBasedOn: payload.budgetBasedOn || "Bill rate",
           budgetScope: payload.budgetScope === "per_person" ? "per_person" : "per_project",
           budgetResets: payload.budgetResets,
@@ -589,6 +598,12 @@ export function ProjectModal({
       return { ...prev, clientIds }
     }
     setBudgetFromClientsCount(aggregated.fromClientCount)
+    // Only prefill from the linked client's budget when the user hasn't
+    // already chosen a budget type - a client link should never silently
+    // flip an existing/manually-picked Cost vs Hours setting.
+    if (prev.budgetTypeTouched) {
+      return { ...prev, clientIds }
+    }
     const next = {
       ...prev,
       clientIds,
@@ -1126,6 +1141,7 @@ export function ProjectModal({
                               setAddForm((p) => ({
                                 ...p,
                                 budgetType: value,
+                                budgetTypeTouched: true,
                                 budgetBasedOn: value === "Hours based" ? "" : (p.budgetBasedOn || "Bill rate"),
                               }))
                             }
