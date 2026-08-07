@@ -11,7 +11,7 @@ let flagById = null;
 let contestCalls = [];
 
 mock.module("../src/lib/postgres/integrity-postgres.service.js", {
-  exports: {
+  namedExports: {
     listIntegrityFlagsForSessionPg: async () => flagsForSession,
     listIntegrityFlagsForMemberPg: async () => flagsForMember,
     getIntegrityFlagByIdPg: async () => flagById,

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 let row;
 
 mock.module("../src/lib/postgres/activity-scoring-postgres.service.js", {
-  exports: {
+  namedExports: {
     getActivityScoringSettingsPg: async () => row,
     setActivityScoringSettingsPg: async (input) => {
       row = {

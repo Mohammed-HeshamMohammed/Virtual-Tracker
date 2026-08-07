@@ -14,7 +14,7 @@ let auditRows;
 let consentRows;
 
 mock.module("../src/lib/postgres/monitoring-policy-postgres.service.js", {
-  exports: {
+  namedExports: {
     getAllMonitoringCapabilitiesPg: async () => [...capabilityRows.values()],
     getMonitoringCapabilityPg: async (capability) => capabilityRows.get(capability) ?? null,
     setMonitoringCapabilityPg: async (input) => {

@@ -12,7 +12,7 @@ let lifetimeRollupTotals = new Map();
 let recordedEvents = [];
 
 mock.module("../src/lib/postgres/counter-reconciliation-postgres.service.js", {
-  exports: {
+  namedExports: {
     fetchSessionActiveSecondsByMemberForDayPg: async () => sessionTotals,
     fetchDailyRollupByMemberForDayPg: async () => rollupTotals,
     fetchLifetimeTaskProgressByMemberPg: async () => taskProgressTotals,
@@ -20,7 +20,7 @@ mock.module("../src/lib/postgres/counter-reconciliation-postgres.service.js", {
   },
 });
 mock.module("../src/core/metrics.js", {
-  exports: {
+  namedExports: {
     recordSecurityEvent: (evt) => {
       recordedEvents.push(evt);
     },

@@ -12,7 +12,7 @@ let devices;
 let queryLog;
 
 mock.module("../src/lib/postgres/client.js", {
-  exports: {
+  namedExports: {
     query: async (sql, params = []) => {
       queryLog.push({ sql, params });
 

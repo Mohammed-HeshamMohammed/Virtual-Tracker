@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 const stub = { rows: {}, payRates: {} };
 
 mock.module("../src/lib/postgres/client.js", {
-  exports: {
+  namedExports: {
     query: async (sql) => {
       if (sql.includes("FROM project_members")) return stub.rows.projectMembers ?? [];
       if (sql.includes("FROM client_projects")) return stub.rows.clientProjects ?? [];
@@ -20,7 +20,7 @@ mock.module("../src/lib/postgres/client.js", {
 });
 
 mock.module("../src/lib/postgres/member-data-store.js", {
-  exports: {
+  namedExports: {
     getSingleByMemberId: async (_db, _collection, memberId) => ({
       rate: stub.payRates[memberId] ?? 0,
     }),
@@ -28,7 +28,7 @@ mock.module("../src/lib/postgres/member-data-store.js", {
 });
 
 mock.module("../src/lib/postgres/clients-postgres.service.js", {
-  exports: {
+  namedExports: {
     getClientBudgetPg: async () => null,
   },
 });

@@ -12,7 +12,7 @@ let exclusionRows;
 let settingsRow;
 
 mock.module("../src/lib/postgres/capture-minimization-postgres.service.js", {
-  exports: {
+  namedExports: {
     getCaptureExclusionsPg: async () => [...exclusionRows],
     addCaptureExclusionPg: async (input) => {
       const key = `${input.matchType}:${input.pattern.toLowerCase()}`;

@@ -10,13 +10,13 @@ let categoryRows;
 let memberRole;
 
 mock.module("../src/config/firebase.js", {
-  exports: { getDb: () => ({}) },
+  namedExports: { getDb: () => ({}) },
 });
 mock.module("../src/modules/activity/activity-scope.js", {
-  exports: { resolveMemberRoleName: async () => memberRole },
+  namedExports: { resolveMemberRoleName: async () => memberRole },
 });
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  exports: {
+  namedExports: {
     sumAppLogSecondsByAppNamePg: async () => appRows,
     sumUrlLogSecondsByDomainPg: async () => domainRows,
     // Unused by focused-time.js itself, but activity-categories.js (imported
@@ -27,7 +27,7 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   },
 });
 mock.module("../src/lib/postgres/classification-postgres.service.js", {
-  exports: {
+  namedExports: {
     getAllCategoriesPg: async () => categoryRows,
     getCategoryPg: async () => null,
     upsertCategoryPg: async () => null,

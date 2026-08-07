@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 const stub = { task: {}, assignments: [], patched: null };
 
 mock.module("../src/lib/postgres/tasks-postgres.service.js", {
-  exports: {
+  namedExports: {
     getTaskPg: async () => stub.task,
     updateTaskPg: async (_id, patch) => {
       stub.patched = patch;
@@ -21,7 +21,7 @@ mock.module("../src/lib/postgres/tasks-postgres.service.js", {
 });
 
 mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
-  exports: {
+  namedExports: {
     getTaskAssignmentsPg: async () => stub.assignments,
     deleteAssignmentPg: async () => {},
     findAssignmentPg: async () => null,
@@ -37,7 +37,7 @@ mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
 });
 
 mock.module("../src/modules/tasks/task-time-tracking.js", {
-  exports: { aggregateTaskProgress: async () => null },
+  namedExports: { aggregateTaskProgress: async () => null },
 });
 
 const { recomputeTaskStatus } = await import("../src/modules/tasks/task-assignments.js");

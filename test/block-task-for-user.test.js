@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 const stub = { task: {}, assignment: {}, assignments: [], patchedAssignment: null, patchedTask: null };
 
 mock.module("../src/lib/postgres/tasks-postgres.service.js", {
-  exports: {
+  namedExports: {
     getTaskPg: async () => stub.task,
     updateTaskPg: async (_id, patch) => {
       stub.patchedTask = patch;
@@ -21,7 +21,7 @@ mock.module("../src/lib/postgres/tasks-postgres.service.js", {
 });
 
 mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
-  exports: {
+  namedExports: {
     getTaskAssignmentsPg: async () => stub.assignments,
     deleteAssignmentPg: async () => {},
     findAssignmentPg: async () => stub.assignment,
@@ -42,7 +42,7 @@ mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
 });
 
 mock.module("../src/lib/postgres/projects-postgres.service.js", {
-  exports: {
+  namedExports: {
     getProjectPg: async () => null,
     listProjectMembersPg: async () => [],
     listProjectIdsForMemberPg: async () => [],
@@ -54,14 +54,14 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
 // recipient lookups (getDirectParentIds via db.collection, getProjectLeadershipIds
 // via these two) end up empty either way, so there's nothing left to notify.
 mock.module("../src/modules/member-relationships/service.js", {
-  exports: { getMemberAncestors: async () => [], getVisibleMemberIds: async () => [] },
+  namedExports: { getMemberAncestors: async () => [], getVisibleMemberIds: async () => [] },
 });
 mock.module("../src/modules/activity/activity-scope.js", {
-  exports: { resolveMemberRoleName: async () => "employee" },
+  namedExports: { resolveMemberRoleName: async () => "employee" },
 });
 
 mock.module("../src/modules/tasks/task-time-tracking.js", {
-  exports: { aggregateTaskProgress: async () => null },
+  namedExports: { aggregateTaskProgress: async () => null },
 });
 
 const { blockTaskForUser } = await import("../src/modules/tasks/task-assignments.js");

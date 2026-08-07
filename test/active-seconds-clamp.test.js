@@ -23,7 +23,7 @@ function fakeClient() {
 }
 
 mock.module("../src/lib/postgres/client.js", {
-  exports: {
+  namedExports: {
     // activity-events-postgres.service.js drives its own client.query() via
     // getPostgresPool().connect() (pgQuery, module-local).
     getPostgresPool: () => ({ connect: async () => fakeClient() }),
@@ -38,7 +38,7 @@ mock.module("../src/lib/postgres/client.js", {
   },
 });
 mock.module("../src/http/sanitize-error.js", {
-  exports: { logSafeWarn: () => {}, logSafeError: () => {} },
+  namedExports: { logSafeWarn: () => {}, logSafeError: () => {} },
 });
 
 const { updatePgSession } = await import(

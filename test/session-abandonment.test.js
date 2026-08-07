@@ -14,14 +14,14 @@ import assert from "node:assert/strict";
 // timer-allowance.test.js); isSessionAbandoned no longer calls either one,
 // which this test suite is precisely what proves.
 mock.module("../src/lib/redis/client.js", {
-  exports: {
+  namedExports: {
     getRedisClient: () => {
       throw new Error("isSessionAbandoned must not touch Redis at all");
     },
   },
 });
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  exports: { updatePgSession: async () => {} },
+  namedExports: { updatePgSession: async () => {} },
 });
 
 const { isSessionAbandoned } = await import(
