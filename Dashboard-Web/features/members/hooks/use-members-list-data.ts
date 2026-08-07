@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { logSafeWarn } from "@/infrastructure/logging/logger"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { getMembers } from "@/features/members/api/member-api"
 import type { Member } from "@/features/members/models/member"
 import type { MemberListFilters } from "@/features/members/components/filters/member-filters-panel"
@@ -187,6 +188,16 @@ export function useMembersListData({
     // Refetch when the resolved API field set grows (column enable / filter / sort).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, fieldSignature])
+
+  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 6): this hook
+  // predates useCachedList's presencePingEvent option and has its own
+  // fetch/cache logic, so the listener is wired directly here instead.
+  useEffect(() => {
+    if (!enabled) return
+    const handler = () => void refetch({ forceRefetch: true })
+    window.addEventListener(changedEvent("members"), handler)
+    return () => window.removeEventListener(changedEvent("members"), handler)
+  }, [enabled, refetch])
 
   return {
     members,

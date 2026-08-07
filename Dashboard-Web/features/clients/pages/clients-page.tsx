@@ -20,6 +20,7 @@ import { getMembers } from "@/features/members/api/member-api"
 import type { Member } from "@/features/members/models/member"
 import { PEOPLE_TABLE_ROWS_PER_PAGE } from "@/features/members/config/ui-config"
 import { useCachedMultiList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { readMembersListCache } from "@/shared/tables/hooks/list-cache-registry"
 import type { Client, ClientStatus } from "@/features/clients/models/client"
 import type { Client as ApiClient } from "@/features/clients/api/client-api"
@@ -110,7 +111,6 @@ export function ClientsPage() {
     },
     loadingKey: "clients",
     staleMs: 60_000,
-    refetchIntervalMs: 50_000,
     refetchOnVisibility: true,
     backgroundRefetchKeys: ["clients"],
     initialData: {
@@ -122,6 +122,11 @@ export function ClientsPage() {
       console.error("Failed to fetch clients data:", err)
       setPageError(err instanceof Error ? err.message : "Failed to load clients")
     },
+    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 4): replaces the
+    // 50s poll - forceRefetch bypasses staleMs so a broadcast repaints in
+    // under a second instead of waiting out the interval.
+    presencePingEvent: changedEvent("clients"),
+    backgroundRefetch: { forceRefetch: true },
   })
 
   const setClients = (value: Client[] | ((prev: Client[]) => Client[])): void => {

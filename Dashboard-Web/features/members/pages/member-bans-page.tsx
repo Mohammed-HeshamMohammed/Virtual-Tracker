@@ -9,6 +9,7 @@ import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared
 import { Avatar } from "@/shared/ui/avatar"
 import { PaginatedTableShell, TableRefreshButton, TableScroll } from "@/shared/tables/ui"
 import { useCachedList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { useResponsiveRowCap } from "@/shared/tables/hooks/use-responsive-row-cap"
 import { MEMBERS_TABLE_ROWS_PER_PAGE, PEOPLE_TABLE_ROW_CAP_BY_BREAKPOINT } from "@/features/members/config/ui-config"
 import { MemberBansSkeleton } from "@/features/members/components/skeletons/member-bans-skeleton"
@@ -42,6 +43,8 @@ export function MemberBansPage() {
     minLoadingMs: 0,
     initialData: [],
     onError: (err) => setError(err instanceof Error ? err.message : "Failed to load bans."),
+    presencePingEvent: changedEvent("member-bans"),
+    backgroundRefetch: { forceRefetch: true },
   })
 
   const showListSkeleton = isLoading && bans.length === 0

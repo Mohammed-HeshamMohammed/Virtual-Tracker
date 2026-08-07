@@ -21,6 +21,7 @@ import { blockTaskAssignment, startTaskAssignment } from "@/features/tasks/api/t
 import { useTheme } from "@/shared/providers/app"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { useCachedMultiList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { hasCachedData, readCache, readMembersListCache } from "@/shared/tables/hooks/list-cache-registry"
 import { toolbarEnter, viewSwitch } from "@/features/tasks/constants/motion"
 import { TasksContentSkeleton } from "@/features/tasks/components/skeletons/tasks-skeleton"
@@ -112,10 +113,14 @@ export function TasksPage() {
     },
     loadingKey: "tasks",
     staleMs: 60_000,
-    refetchIntervalMs: 50_000,
     refetchOnVisibility: true,
     backgroundRefetchKeys: ["tasks"],
     initialData: { projects: [], tasks: [] },
+    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 3): replaces the
+    // 50s poll - forceRefetch bypasses staleMs so a broadcast repaints in
+    // under a second instead of waiting out the interval.
+    presencePingEvent: changedEvent("tasks"),
+    backgroundRefetch: { forceRefetch: true },
   })
 
   const setTasks = (value: Task[] | ((prev: Task[]) => Task[])): void => {

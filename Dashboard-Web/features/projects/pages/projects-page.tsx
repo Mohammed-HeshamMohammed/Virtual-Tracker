@@ -16,6 +16,7 @@ import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared
 import { TEAMS_TABLE_ROWS_PER_PAGE } from "@/features/members/config/ui-config"
 import { useResponsivePageSearch } from "@/shared/tables/ui/responsive-page-search"
 import { useCachedList } from "@/features/members/hooks"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { ProjectsSkeleton } from "@/features/projects/components/skeletons/projects-skeleton"
 import { ProjectsTab } from "@/features/projects/components/tables/projects-tab"
 import type { ProjectListItem as Project } from "@/features/projects/models/list"
@@ -132,6 +133,11 @@ export function ProjectsPage() {
     onError: (err) => console.error("Failed to fetch projects:", err),
     staleMs: 300_000,
     minLoadingMs: 0,
+    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 1,2): forceRefetch
+    // bypasses the 5min staleMs above so a broadcast repaints within ~1s
+    // instead of waiting out the poll window.
+    presencePingEvent: changedEvent("projects"),
+    backgroundRefetch: { forceRefetch: true },
   })
 
   // Mutations Hook
