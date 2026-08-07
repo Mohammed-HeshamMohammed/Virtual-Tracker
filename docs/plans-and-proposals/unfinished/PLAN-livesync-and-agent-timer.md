@@ -747,22 +747,22 @@ for a local publish (local-echo de-dup does not double-deliver), and that
 
 | # | Task | Fixes | Cases | Effort | Status |
 |---|------|-------|-------|--------|--------|
-| 1 | Modal 404 → close + toast ([`project-modal.tsx:532`](Dashboard-Web/features/projects/components/modals/project-modal.tsx:532)) | C1 | 14 | XS | ✅ Done |
-| 2 | Postgres `23503` → 409 `stale_reference` | C2 | 30–34 | XS | ✅ Done |
-| 3 | `broadcastToAll` + `change-bus.js` + startup wiring | — | — | S | ✅ Done |
-| 4 | `publishChange` inside the shared write helpers | A | 1–13 | S | ✅ Done |
-| 5 | `change-events.ts` + `presence-ws.ts` branch + **registry invalidation** | A, **D** | 1–13, 51 | S | ✅ Done |
-| 6 | Subscribe Projects, Tasks, Clients; delete the 50 s polls | A | 1–4 | XS | ✅ Done |
-| 7 | `useEntityLiveGuard` + modal deleted/updated handling | C1, C3 | 14–21 | M | ✅ Done — Project, Task, Client, **and Member** modals |
-| 8 | Modal + filter option lists refresh, deselect stale ids | C2 | 16, 17, 33 | M | ✅ Done |
-| 9 | Subscribe Timesheets (review queue, approvals) | A | 7, 8 | S | ✅ Done |
-| 10 | Notifications bell: drop the `!open` gate, drive off signals | A | 11 | XS | ✅ Done |
-| 11 | Subscribe + throttle Activity | A | 12, 56 | M | ✅ Done |
-| 12 | Targeted `scope-changed` frames + client handler | — | 35–40 | M | ✅ Done, incl. hierarchy/team-move frames (`recordMemberRelationship`) added during implementation |
-| 13 | Timer live-stop on deleted task/project/unassign | — | 41–45 | M | ✅ Done |
-| 14 | `expectedUpdatedAt` → 409 on projects, budgets, clients, members, tasks | B | 22–29 | M | ⚠️ Done for **projects, project_budgets, clients, tasks**, and for **three of the six member profile tabs** (employment, payBill, settings). Investigating turned up that `employment`/`time_settings`/`limits` have since been migrated off Firestore onto Postgres (see `PROG_MEMBER_SCOPED` in `member-data-store.js`), each with its own `updated_at`, making the same conditional-write pattern usable there. **info, roles, and workLimits remain excluded**, each for a distinct reason: `info` and `roles` both write through the single `members` Firestore doc, whose `updated_at` gets bumped by *every* section's save (`memberRef.update(memberUpdates)` runs unconditionally regardless of which tab changed) - conditioning on it would false-positive-conflict an open `info` tab whenever an unrelated `employment` save landed elsewhere, so it's not a usable token for either tab. `roles` additionally cascades into hierarchy/relationship-table sync (`syncMemberPrimaryRole`, `applyRoleChangeHierarchyEffects`) - a correctness-critical system this codebase already has separate repair/audit tooling for (`hierarchy-repair.js`) - too much blast radius to retrofit hastily. `workLimits` spans two Postgres tables (`limits` + conditionally `time_settings`) that would need one token compared against two rows atomically, a genuine design problem rather than a mechanical port of the pattern used elsewhere. All three tabs still have the §6.7 live-guard from item 7. |
-| 15 | Client 409 handling in the save paths, incl. batch summaries | B | 23–29 | S | ✅ Done for the single-entity save path. Batch-summary reporting is N/A: no batch archive/delete endpoint exists for projects/tasks/clients in this codebase to attach it to. |
-| 16 | Reconnect refetch + toast suppression during outages | — | 47–50, 55 | S | ✅ Done |
+| 1 | Modal 404 → close + toast ([`project-modal.tsx:532`](Dashboard-Web/features/projects/components/modals/project-modal.tsx:532)) | C1 | 14 | XS | ✅ Fixed |
+| 2 | Postgres `23503` → 409 `stale_reference` | C2 | 30–34 | XS | ✅ Fixed |
+| 3 | `broadcastToAll` + `change-bus.js` + startup wiring | — | — | S | ✅ Fixed |
+| 4 | `publishChange` inside the shared write helpers | A | 1–13 | S | ✅ Fixed |
+| 5 | `change-events.ts` + `presence-ws.ts` branch + **registry invalidation** | A, **D** | 1–13, 51 | S | ✅ Fixed |
+| 6 | Subscribe Projects, Tasks, Clients; delete the 50 s polls | A | 1–4 | XS | ✅ Fixed |
+| 7 | `useEntityLiveGuard` + modal deleted/updated handling | C1, C3 | 14–21 | M | ✅ Fixed — Project, Task, Client, **and Member** modals |
+| 8 | Modal + filter option lists refresh, deselect stale ids | C2 | 16, 17, 33 | M | ✅ Fixed |
+| 9 | Subscribe Timesheets (review queue, approvals) | A | 7, 8 | S | ✅ Fixed |
+| 10 | Notifications bell: drop the `!open` gate, drive off signals | A | 11 | XS | ✅ Fixed |
+| 11 | Subscribe + throttle Activity | A | 12, 56 | M | ✅ Fixed |
+| 12 | Targeted `scope-changed` frames + client handler | — | 35–40 | M | ✅ Fixed, incl. hierarchy/team-move frames (`recordMemberRelationship`) added during implementation |
+| 13 | Timer live-stop on deleted task/project/unassign | — | 41–45 | M | ✅ Fixed |
+| 14 | `expectedUpdatedAt` → 409 on projects, budgets, clients, members, tasks | B | 22–29 | M | ⚠️ Fixed for **projects, project_budgets, clients, tasks**, and for **three of the six member profile tabs** (employment, payBill, settings). Investigating turned up that `employment`/`time_settings`/`limits` have since been migrated off Firestore onto Postgres (see `PROG_MEMBER_SCOPED` in `member-data-store.js`), each with its own `updated_at`, making the same conditional-write pattern usable there. **info, roles, and workLimits remain excluded**, each for a distinct reason: `info` and `roles` both write through the single `members` Firestore doc, whose `updated_at` gets bumped by *every* section's save (`memberRef.update(memberUpdates)` runs unconditionally regardless of which tab changed) - conditioning on it would false-positive-conflict an open `info` tab whenever an unrelated `employment` save landed elsewhere, so it's not a usable token for either tab. `roles` additionally cascades into hierarchy/relationship-table sync (`syncMemberPrimaryRole`, `applyRoleChangeHierarchyEffects`) - a correctness-critical system this codebase already has separate repair/audit tooling for (`hierarchy-repair.js`) - too much blast radius to retrofit hastily. `workLimits` spans two Postgres tables (`limits` + conditionally `time_settings`) that would need one token compared against two rows atomically, a genuine design problem rather than a mechanical port of the pattern used elsewhere. All three tabs still have the §6.7 live-guard from item 7. |
+| 15 | Client 409 handling in the save paths, incl. batch summaries | B | 23–29 | S | ✅ Fixed for the single-entity save path. Batch-summary reporting is N/A: no batch archive/delete endpoint exists for projects/tasks/clients in this codebase to attach it to. |
+| 16 | Reconnect refetch + toast suppression during outages | — | 47–50, 55 | S | ✅ Fixed |
 
 **Steps 1–2 ship today**, need no WebSocket work, and remove the ugliest half of the reported
 experience — the blank form and the constraint-speak error.
@@ -1185,16 +1185,16 @@ then the existing poll covers it, just more slowly.
 
 | # | Task | Issue | Depends on | Effort | Status |
 |---|------|-------|-----------|--------|--------|
-| P1 | Log the resolved preferences path; reconcile / delete the committed `preferences.json` | T1a | — | XS | ✅ Done |
-| P2 | `has_launched_before` gate + one-time tray notice | T1b | P1 | S | ✅ Done |
-| P3 | `liveWorkedTodaySeconds` — local tick + monotonic reconcile | T2 | — | S | ✅ Done |
-| P4 | Idle-stage toasts at stages 1 and 2 | T3 | — | XS | ✅ Done |
-| P5 | rAF rewind animation on stage 3 | T3 | P3 | S | ✅ Done |
-| P6 | Local to-the-second stop at the task limit | T4 | — | S | ✅ Done |
-| P7 | Server-confirmed limit stop via the existing stop path | T4 | P6 | S | ✅ Done |
-| P8 | `assignedToday` query + block on `/api/activity/limits` | T5 | — | M | ✅ Done, incl. the §8 rollover runnable check |
-| P9 | Split the tile: "Assigned today" + "Daily cap left", surface deferred/rollover | T5 | P8 | S | ✅ Done, incl. `taskCount` in the sub-label when nothing else needs surfacing. `plannedSeconds`/`byProjectType` are parsed and available but deliberately not rendered - redundant with `demandSeconds` while nothing is deferred, and no per-task-type view exists yet to use `byProjectType` for. |
-| P10 | Subscribe the agent to `changedEvent("task-assignments")` | T4, T5 | Part I steps 3–5 | S | ✅ Done. See [§15](#15-implementation-status-2026-08-07) for how - it needed a new WS client dependency and thread, but the Rust→JS event bridge it needed already existed (`vt-status`'s `window.eval` pattern in lib.rs), which lowered the risk originally flagged here. |
+| P1 | Log the resolved preferences path; reconcile / delete the committed `preferences.json` | T1a | — | XS | ✅ Fixed |
+| P2 | `has_launched_before` gate + one-time tray notice | T1b | P1 | S | ✅ Fixed |
+| P3 | `liveWorkedTodaySeconds` — local tick + monotonic reconcile | T2 | — | S | ✅ Fixed |
+| P4 | Idle-stage toasts at stages 1 and 2 | T3 | — | XS | ✅ Fixed |
+| P5 | rAF rewind animation on stage 3 | T3 | P3 | S | ✅ Fixed |
+| P6 | Local to-the-second stop at the task limit | T4 | — | S | ✅ Fixed |
+| P7 | Server-confirmed limit stop via the existing stop path | T4 | P6 | S | ✅ Fixed |
+| P8 | `assignedToday` query + block on `/api/activity/limits` | T5 | — | M | ✅ Fixed, incl. the §8 rollover runnable check |
+| P9 | Split the tile: "Assigned today" + "Daily cap left", surface deferred/rollover | T5 | P8 | S | ✅ Fixed, incl. `taskCount` in the sub-label when nothing else needs surfacing. `plannedSeconds`/`byProjectType` are parsed and available but deliberately not rendered - redundant with `demandSeconds` while nothing is deferred, and no per-task-type view exists yet to use `byProjectType` for. |
+| P10 | Subscribe the agent to `changedEvent("task-assignments")` | T4, T5 | Part I steps 3–5 | S | ✅ Fixed. See [§15](#15-implementation-status-2026-08-07) for how - it needed a new WS client dependency and thread, but the Rust→JS event bridge it needed already existed (`vt-status`'s `window.eval` pattern in lib.rs), which lowered the risk originally flagged here. |
 
 **P1–P3 are same-day changes** and cover the two issues a user notices within thirty seconds of
 opening the app. **P6–P7 protect billing data** and should ship before P8.
@@ -1233,22 +1233,32 @@ each with its own real `updated_at` column - so **employment, payBill, and setti
 conditional-write pattern as the Postgres entities (`upsertMemberScopedRowPg`/
 `upsertSingleByMemberIdConditional`, threaded through per-tab tokens on `MemberFormState`).
 
-**info, roles, and workLimits remain excluded**, each for a distinct, real reason rather than time
-pressure:
+**info, roles, and workLimits were excluded** from the first pass, each for a distinct, real reason
+rather than time pressure - and all three have since been closed:
 - `info` and `roles` both write through the single `members` Firestore doc, and *every* section's save
   bumps that doc's `updated_at` (`memberRef.update(memberUpdates)` runs unconditionally regardless of
   which tab changed) - conditioning on it would false-positive-conflict an open `info` tab the moment
-  an unrelated `employment` save landed elsewhere. Not a usable token for either tab without adding a
-  section-specific timestamp field, which is its own follow-up.
+  an unrelated `employment` save landed elsewhere. **Fixed** by giving each its own stamp field on the
+  `members` doc (`info_updated_at`, `roles_updated_at`), bumped only by that section's own save, checked
+  inside a `db.runTransaction` before the write commits (`member-profile.service.js`).
 - `roles` additionally cascades into hierarchy/relationship-table sync (`syncMemberPrimaryRole`,
   `applyRoleChangeHierarchyEffects`) - a correctness-critical system this codebase already carries
-  separate repair/audit tooling for (`hierarchy-repair.js`). Retrofitting concurrency there without
-  dedicated review of that sync path risks the kind of hierarchy corruption that tooling exists to fix.
-- `workLimits` spans two Postgres tables (`limits` + conditionally `time_settings`) that would need one
-  token compared against two rows atomically - a design problem, not a mechanical port of the pattern
-  used everywhere else.
+  separate repair/audit tooling for (`hierarchy-repair.js`). **Fixed conservatively**: the token check
+  above guards only the narrow `members` doc write (a single-document compare-and-swap, safe to retry);
+  the cascade itself still runs afterward exactly as before, untouched, so no changes were made to
+  `hierarchy-sync.js` or its blast radius.
+- `workLimits` spans two Postgres tables (`limits` + `time_settings`) that would need one token compared
+  against two rows atomically. **Fixed** with `updateWorkLimitsConditionalPg`: one composite token
+  (`buildWorkLimitsToken`, `limitsIso|timeSettingsIso`) split back into two checks inside a single DB
+  transaction (`client.js`'s new `withTransaction`) - a stale token on either table rolls back both
+  writes, so the tab never ends up half-saved. As a byproduct, this also stopped a pre-existing bug
+  where a workLimits-only save silently reset the settings tab's `able_to_track_time`/`keep_idle_time`/
+  `idle_timeout`/`modify_time`/`require_approval` columns to their defaults (the old unconditional
+  `upsertMemberScopedRowPg` path overwrote the full `time_settings` row; the new path only touches the
+  three columns workLimits owns).
 
-All six tabs still have the §6.7 live-guard from item 7.
+All six tabs have the §6.7 live-guard from item 7, and now all six also have the §6.9 `expectedUpdatedAt`
+→ 409 conflict check.
 
 **Found missing during implementation, not originally itemized in §9, and fixed anyway** because they
 follow directly from the plan's own root-cause analysis:

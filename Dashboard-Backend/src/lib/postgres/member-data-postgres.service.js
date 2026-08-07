@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { getPostgresPool, query } from "./client.js";
+import { getPostgresPool, query, withTransaction } from "./client.js";
 
 const MEMBER_SCOPED_COLLECTIONS = new Set(["employment", "time_settings", "pay_rates"]);
 
@@ -137,6 +137,97 @@ export async function ensureLimitsDocPg(memberId, actor) {
  */
 export async function deleteLimitsDocPg(memberId) {
   await query("DELETE FROM limits WHERE member_id = $1", [memberId]);
+}
+
+/**
+ * §6.9 follow-up - the workLimits tab spans two tables (`limits`.weekly/daily,
+ * `time_settings`.work_days/disable_tracking_specific_days/use_shifts_for_limits)
+ * with no single row/timestamp to condition on. Callers pass one composite
+ * token (built by member-profile.service.js's buildWorkLimitsToken) split
+ * back into the two sides here, and both sides are checked-and-written inside
+ * one DB transaction: a stale token on either table rolls back both writes,
+ * so the tab never ends up half-saved.
+ *
+ * Only touches the three time_settings columns workLimits owns - unlike
+ * upsertMemberScopedRowPg's full-row overwrite, this never resets the
+ * settings tab's able_to_track_time/keep_idle_time/idle_timeout/modify_time/
+ * require_approval columns to their defaults.
+ *
+ * @param {string} memberId
+ * @param {{ weekly: number, daily: number, workDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
+ * @param {string} actor
+ * @param {{ limits?: string, timeSettings?: string }} [expected] ISO updated_at
+ *   tokens; a missing side is unconditional (first-time create, or no prior
+ *   token to compare against).
+ * @returns {Promise<{ conflict: boolean }>}
+ */
+export async function updateWorkLimitsConditionalPg(memberId, payload, actor, expected = {}) {
+  const actorId = actorIdOrNull(actor) ?? "system";
+  const workDaysJson = JSON.stringify(Array.isArray(payload.workDays) ? payload.workDays : [0, 1, 2, 3, 4]);
+  const disableTrackingSpecificDays = payload.disableTrackingSpecificDays === true;
+  const useShiftsForLimits = payload.useShiftsForLimits === true;
+  const weekly = Number(payload.weekly) || 0;
+  const daily = Number(payload.daily) || 0;
+
+  try {
+    return await withTransaction(async (client) => {
+      const limitsRow = await client.query("SELECT updated_at FROM limits WHERE member_id = $1 FOR UPDATE", [
+        memberId,
+      ]);
+      if (limitsRow.rows.length === 0) {
+        await client.query(
+          `INSERT INTO limits (member_id, weekly, daily, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, now())`,
+          [memberId, weekly, daily, actorId],
+        );
+      } else {
+        if (expected.limits && new Date(limitsRow.rows[0].updated_at).toISOString() !== expected.limits) {
+          const conflictErr = new Error("workLimits conflict");
+          conflictErr.__workLimitsConflict = true;
+          throw conflictErr;
+        }
+        await client.query(
+          `UPDATE limits SET weekly = $2, daily = $3, updated_by = $4, updated_at = now() WHERE member_id = $1`,
+          [memberId, weekly, daily, actorId],
+        );
+      }
+
+      const tsRow = await client.query("SELECT updated_at FROM time_settings WHERE member_id = $1 FOR UPDATE", [
+        memberId,
+      ]);
+      if (tsRow.rows.length === 0) {
+        await client.query(
+          `INSERT INTO time_settings (
+            id, member_id, able_to_track_time, keep_idle_time, idle_timeout, modify_time,
+            require_approval, work_days, disable_tracking_specific_days, use_shifts_for_limits,
+            updated_by, updated_at
+          ) VALUES ($1, $2, true, 'never', '5 min', 'off', false, $3::jsonb, $4, $5, $6, now())`,
+          [crypto.randomUUID(), memberId, workDaysJson, disableTrackingSpecificDays, useShiftsForLimits, actorId],
+        );
+      } else {
+        if (
+          expected.timeSettings &&
+          new Date(tsRow.rows[0].updated_at).toISOString() !== expected.timeSettings
+        ) {
+          const conflictErr = new Error("workLimits conflict");
+          conflictErr.__workLimitsConflict = true;
+          throw conflictErr;
+        }
+        await client.query(
+          `UPDATE time_settings
+           SET work_days = $2::jsonb, disable_tracking_specific_days = $3, use_shifts_for_limits = $4,
+               updated_by = $5, updated_at = now()
+           WHERE member_id = $1`,
+          [memberId, workDaysJson, disableTrackingSpecificDays, useShiftsForLimits, actorId],
+        );
+      }
+
+      return { conflict: false };
+    });
+  } catch (err) {
+    if (err && err.__workLimitsConflict) return { conflict: true };
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------

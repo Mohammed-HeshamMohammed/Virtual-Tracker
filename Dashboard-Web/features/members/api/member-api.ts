@@ -567,12 +567,17 @@ export type MemberProfileForm = MemberProfilePayload["info"] &
     empTermination: string
     empComments: string
     /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
-     * Per-section: only employment/payBill/settings have one backing table
-     * each that isn't also touched by every other section's save (unlike
-     * the shared `members` doc info/roles write through, or workLimits
-     * which can span two tables) - see member-profile.service.js. */
+     * employment/payBill/settings each have their own backing table's
+     * updated_at. info/roles each get a dedicated stamp field on the shared
+     * `members` doc (bumped only by their own section's save, not by every
+     * other section touching that doc). workLimits gets one composite token
+     * packing both of its backing tables' timestamps. See
+     * member-profile.service.js for the write side of each. */
+    infoUpdatedAt: string
     employmentUpdatedAt: string
+    rolesUpdatedAt: string
     payBillUpdatedAt: string
+    workLimitsUpdatedAt: string
     settingsUpdatedAt: string
   }
 

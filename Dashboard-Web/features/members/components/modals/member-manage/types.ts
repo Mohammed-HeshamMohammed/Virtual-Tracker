@@ -77,10 +77,13 @@ export interface MemberFormState {
   workDays: number[]
   dailyLimit: string
   /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
-   * See MemberProfileForm in member-api.ts for why only these three tabs
-   * have one. */
+   * See MemberProfileForm in member-api.ts for what each is checked
+   * against. */
+  infoUpdatedAt?: string
   employmentUpdatedAt?: string
+  rolesUpdatedAt?: string
   payBillUpdatedAt?: string
+  workLimitsUpdatedAt?: string
   settingsUpdatedAt?: string
 }
 
