@@ -10,7 +10,7 @@ fully implemented, with one deliberate scope decision noted inline below.
 | | Status |
 |---|---|
 | Part I §9 order of work, items 1–16 | ✅ All implemented, incl. Projects/Tasks/Clients full optimistic concurrency |
-| Part I item 14 exception | ⚠️ Members: live-guard (deleted/updated notice) shipped; optimistic concurrency deliberately **not** built — see the note under item 14 |
+| Part I item 14 exception | ⚠️ Members: live-guard shipped for all tabs; optimistic concurrency shipped for **employment, payBill, settings** (Postgres/Firestore single-doc, per-section). **info, roles, workLimits remain excluded** — see the note under item 14 for the per-section reasoning. |
 | Part II §14 order of work, P1–P10 | ✅ All implemented, incl. P10 (agent live-sync subscription) |
 
 Jump to [§15](#15-implementation-status-2026-08-07) for the full status writeup, including what was
@@ -760,7 +760,7 @@ for a local publish (local-echo de-dup does not double-deliver), and that
 | 11 | Subscribe + throttle Activity | A | 12, 56 | M | ✅ Done |
 | 12 | Targeted `scope-changed` frames + client handler | — | 35–40 | M | ✅ Done, incl. hierarchy/team-move frames (`recordMemberRelationship`) added during implementation |
 | 13 | Timer live-stop on deleted task/project/unassign | — | 41–45 | M | ✅ Done |
-| 14 | `expectedUpdatedAt` → 409 on projects, budgets, clients, members, tasks | B | 22–29 | M | ⚠️ Done for **projects, project_budgets, clients, tasks**. **Members deliberately excluded** — profile fields span several non-transactional Firestore upserts with no single `updated_at` to condition a write on, unlike the Postgres-backed entities. Members got the §6.7 live-guard (item 7) instead; full concurrency there needs separate design work. |
+| 14 | `expectedUpdatedAt` → 409 on projects, budgets, clients, members, tasks | B | 22–29 | M | ⚠️ Done for **projects, project_budgets, clients, tasks**, and for **three of the six member profile tabs** (employment, payBill, settings). Investigating turned up that `employment`/`time_settings`/`limits` have since been migrated off Firestore onto Postgres (see `PROG_MEMBER_SCOPED` in `member-data-store.js`), each with its own `updated_at`, making the same conditional-write pattern usable there. **info, roles, and workLimits remain excluded**, each for a distinct reason: `info` and `roles` both write through the single `members` Firestore doc, whose `updated_at` gets bumped by *every* section's save (`memberRef.update(memberUpdates)` runs unconditionally regardless of which tab changed) - conditioning on it would false-positive-conflict an open `info` tab whenever an unrelated `employment` save landed elsewhere, so it's not a usable token for either tab. `roles` additionally cascades into hierarchy/relationship-table sync (`syncMemberPrimaryRole`, `applyRoleChangeHierarchyEffects`) - a correctness-critical system this codebase already has separate repair/audit tooling for (`hierarchy-repair.js`) - too much blast radius to retrofit hastily. `workLimits` spans two Postgres tables (`limits` + conditionally `time_settings`) that would need one token compared against two rows atomically, a genuine design problem rather than a mechanical port of the pattern used elsewhere. All three tabs still have the §6.7 live-guard from item 7. |
 | 15 | Client 409 handling in the save paths, incl. batch summaries | B | 23–29 | S | ✅ Done for the single-entity save path. Batch-summary reporting is N/A: no batch archive/delete endpoint exists for projects/tasks/clients in this codebase to attach it to. |
 | 16 | Reconnect refetch + toast suppression during outages | — | 47–50, 55 | S | ✅ Done |
 
@@ -1218,20 +1218,37 @@ Both parts were implemented end to end on `claude/virtual-tracker-plan-review-5b
 records what shipped, the two deliberate deviations from the plan as written, and what was found
 missing along the way that this plan named but the order-of-work tables didn't originally itemize.
 
-### Part I — fully implemented, with one scoped exception
+### Part I — fully implemented, with three scoped exceptions on Members
 
 Every item in §9 (1–16) is done, including full optimistic concurrency (§6.9) and the §6.7 live-guard
 on all four single-entity modals: **Project, Task, Client, and Member**.
 
-**The one deviation:** item 14 asked for `expectedUpdatedAt` → 409 on projects, budgets, clients,
-**members**, and tasks. Members got the §6.7 live-guard (deleted/updated notice) but not the
-conditional-write concurrency check. Reason: `updateProjectPg`/`updateClientWithDetails`/task update
-all condition a single `UPDATE ... WHERE id = $1 AND updated_at = $2` against one Postgres row. Member
-profile fields are spread across several independently-written Firestore collections
-(`employment`, `pay_rates`, `time_settings`, the member limits doc, `members` itself) with no single
-`updated_at` that covers a save the way the Postgres entities have one. Building real concurrency
-control across that write shape is a separate, non-trivial piece of design work — not a corner cut for
-time, a genuine architectural difference the plan's Postgres-only Bug B analysis didn't anticipate.
+**Members got partial concurrency, not a full deviation.** Item 14 asked for `expectedUpdatedAt` → 409
+on projects, budgets, clients, **members**, and tasks. First pass shipped only the §6.7 live-guard for
+Members, on the assumption that member profile fields are spread across several independently-written
+Firestore collections with no single `updated_at` covering a save the way the Postgres entities have
+one. Closer investigation found that assumption half wrong: `employment`, `time_settings`, and `limits`
+have since been migrated off Firestore onto Postgres (`member-data-store.js`'s `PG_MEMBER_SCOPED`),
+each with its own real `updated_at` column - so **employment, payBill, and settings** now get the same
+conditional-write pattern as the Postgres entities (`upsertMemberScopedRowPg`/
+`upsertSingleByMemberIdConditional`, threaded through per-tab tokens on `MemberFormState`).
+
+**info, roles, and workLimits remain excluded**, each for a distinct, real reason rather than time
+pressure:
+- `info` and `roles` both write through the single `members` Firestore doc, and *every* section's save
+  bumps that doc's `updated_at` (`memberRef.update(memberUpdates)` runs unconditionally regardless of
+  which tab changed) - conditioning on it would false-positive-conflict an open `info` tab the moment
+  an unrelated `employment` save landed elsewhere. Not a usable token for either tab without adding a
+  section-specific timestamp field, which is its own follow-up.
+- `roles` additionally cascades into hierarchy/relationship-table sync (`syncMemberPrimaryRole`,
+  `applyRoleChangeHierarchyEffects`) - a correctness-critical system this codebase already carries
+  separate repair/audit tooling for (`hierarchy-repair.js`). Retrofitting concurrency there without
+  dedicated review of that sync path risks the kind of hierarchy corruption that tooling exists to fix.
+- `workLimits` spans two Postgres tables (`limits` + conditionally `time_settings`) that would need one
+  token compared against two rows atomically - a design problem, not a mechanical port of the pattern
+  used everywhere else.
+
+All six tabs still have the §6.7 live-guard from item 7.
 
 **Found missing during implementation, not originally itemized in §9, and fixed anyway** because they
 follow directly from the plan's own root-cause analysis:
