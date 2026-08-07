@@ -34,6 +34,7 @@ import {
   resolveTimerActiveLimit,
   type TimerAllowance,
 } from "@/features/activity/utils/timer-limit"
+import { changedEvent, type ChangeFrame } from "@/infrastructure/api/change-events"
 
 export type TrackingPhase = "online" | "active" | "idle"
 
@@ -84,6 +85,13 @@ function notifyTaskLimitReached(taskTitle: string, message?: string) {
       detail: { taskTitle, message: message ?? TIMER_LIMIT_REACHED_MESSAGE },
     }),
   )
+}
+
+// Reuses the same toast path as a limit-reached stop (timer-button.tsx
+// only reads detail.message, not detail.taskTitle) - no new UI plumbing
+// needed for a second kind of forced stop.
+function notifyTimerStoppedLive(taskTitle: string, message: string) {
+  notifyTaskLimitReached(taskTitle, message)
 }
 
 export function useActivityTracking() {
@@ -383,6 +391,33 @@ export function ActivityTrackingProvider({
     }
     applyPhase("online")
   }, [applyPhase, persistCurrentTaskTimer, sessionCounters, syncTaskTracking])
+
+  // Live sync (PLAN-livesyncandagenttimer.md §6.11, case 41) - the
+  // highest-value item in that plan after the reported bug itself: without
+  // this, a task deleted while its timer is running keeps counting and
+  // produces a time entry against a task that no longer exists. The 5s
+  // session poll below is kept as the fallback for whenever the WS is
+  // down; this listener just closes the gap from up-to-5s to sub-second.
+  //
+  // Deliberately scoped to task deletion only for this pass - a currently-
+  // tracked task's project isn't stored anywhere in this context (only
+  // TimerTaskRef, which has no projectId), so live-stopping on the parent
+  // project being archived (case 42) isn't wired here.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<ChangeFrame>).detail
+      const taskId = currentTaskRef.current?.id
+      if (!detail || !taskId || detail.id !== taskId) return
+      if (detail.action !== "deleted") return
+      if (phaseRef.current !== "active" && phaseRef.current !== "idle") return
+      const taskTitle = currentTaskRef.current?.title ?? "This task"
+      void stopTracking().then(() => {
+        notifyTimerStoppedLive(taskTitle, `${taskTitle} was deleted - timer stopped, your time up to now was saved.`)
+      })
+    }
+    window.addEventListener(changedEvent("tasks"), handler)
+    return () => window.removeEventListener(changedEvent("tasks"), handler)
+  }, [stopTracking])
 
   const ensureAgentReadyForTimer = useCallback(async (): Promise<boolean> => {
     const readiness = await refreshAgentStatus()
