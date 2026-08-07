@@ -45,6 +45,7 @@ import {
 import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { syncTaskTimeTracking } from "../tasks/task-time-tracking.js";
+import { computeAssignedTodayDemand, applyCapToAssignedTodayDemand } from "../tasks/assigned-today.service.js";
 import {
   computeMemberTimerAllowance,
   computeTimerAllowance,
@@ -292,15 +293,21 @@ export async function routeActivity(req, res, url, origin) {
       // timerAllowance is the same computation the calling-project start path
       // gates on below, so what the agent displays as "remaining today" and
       // what actually blocks the start button can never disagree.
-      const [dailyHours, weeklyHours, usesShifts, timerAllowance] = await Promise.all([
+      const [dailyHours, weeklyHours, usesShifts, timerAllowance, assignedDemand] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
         memberUsesShiftsForLimits(db, member.memberId),
         computeMemberTimerAllowance(db, member.memberId),
+        computeAssignedTodayDemand(member.memberId),
       ]);
+      // Shift-based members have no daily/weekly cap (loadMemberCapContext
+      // zeroes it out), so nothing caps their assigned demand either -
+      // T5's "report demandSeconds, plannedSeconds = demandSeconds" case.
+      const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
+      const assignedToday = applyCapToAssignedTodayDemand(assignedDemand, capLeftToday);
       sendJson(res, origin, 200, {
         success: true,
-        data: { dailyHours, weeklyHours, usesShifts, timerAllowance },
+        data: { dailyHours, weeklyHours, usesShifts, timerAllowance, assignedToday },
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
