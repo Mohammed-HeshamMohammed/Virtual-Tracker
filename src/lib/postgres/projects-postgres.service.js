@@ -69,8 +69,14 @@ export async function getProjectPg(id) {
   return rows[0] ?? null;
 }
 
-/** @param {string} id @param {Record<string, unknown>} patch */
-export async function updateProjectPg(id, patch) {
+/**
+ * @param {string} id @param {Record<string, unknown>} patch
+ * @param {string} [expectedUpdatedAt] Optimistic-concurrency token (§6.9).
+ *   Optional so existing callers (and the Tauri agent) keep working
+ *   unchanged - only a caller that actually sends one back gets the
+ *   conditional-write behavior.
+ */
+export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   const columns = {
     name: "name",
     status: "status",
@@ -103,19 +109,34 @@ export async function updateProjectPg(id, patch) {
   }
   if (sets.length === 0) return getProjectPg(id);
   sets.push("updated_at = now()");
-  const rows = await query(`UPDATE projects SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
+  const where = expectedUpdatedAt
+    ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}`
+    : "WHERE id = $1";
+  const rows = await query(`UPDATE projects SET ${sets.join(", ")} ${where} RETURNING *`, params);
+  if (rows.length === 0 && expectedUpdatedAt) {
+    // Someone wrote first - zero rows means the WHERE's updated_at check
+    // failed to match, not that the project doesn't exist (id alone would
+    // have matched). Caller maps this to a 409 with the current row.
+    return { conflict: true, current: await getProjectPg(id) };
+  }
   const project = rows[0] ?? null;
   if (project) void publishChange("projects", id, "updated", uuidOrNull(patch.updatedBy) ?? undefined);
   return project;
 }
 
-/** Soft-archive, matching the existing status-flag pattern rather than deleting the row. */
-export async function archiveProjectPg(id, actorId) {
+/** Soft-archive, matching the existing status-flag pattern rather than
+ * deleting the row. expectedUpdatedAt optional, same conditional-write
+ * contract as updateProjectPg (§6.9 case 28: archive racing a rename). */
+export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
+  const params = [id, uuidOrNull(actorId)];
+  const where = expectedUpdatedAt ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}` : "WHERE id = $1";
   const rows = await query(
-    `UPDATE projects SET status = 'archived', archived_by = $2, archived_at = now(), updated_at = now()
-     WHERE id = $1 RETURNING *`,
-    [id, uuidOrNull(actorId)],
+    `UPDATE projects SET status = 'archived', archived_by = $2, archived_at = now(), updated_at = now() ${where} RETURNING *`,
+    params,
   );
+  if (rows.length === 0 && expectedUpdatedAt) {
+    return { conflict: true, current: await getProjectPg(id) };
+  }
   const project = rows[0] ?? null;
   // Archiving doesn't remove the row - an open edit form should offer to
   // reload, not force-close like a real delete does (§4.1's action field).

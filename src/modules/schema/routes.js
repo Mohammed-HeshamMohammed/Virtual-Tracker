@@ -548,7 +548,19 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
-        const updated = await updatePostgresRow(parsed.key, parsed.id, payload, existing);
+        // §6.9 - optional; only forwarded to the "tasks" branch of
+        // updatePostgresRow today (see that function's comment for scope).
+        const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
+        const updated = await updatePostgresRow(parsed.key, parsed.id, payload, existing, expectedUpdatedAt);
+        if (updated && typeof updated === "object" && "conflict" in updated) {
+          sendJson(res, origin, 409, {
+            success: false,
+            code: "stale_write",
+            error: "Someone else changed this while you were editing. Reload to see their changes.",
+            data: updated.current,
+          });
+          return true;
+        }
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
           const projectId = String(payload.project_id ?? existing.project_id ?? "").trim();
           if (projectId) await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);

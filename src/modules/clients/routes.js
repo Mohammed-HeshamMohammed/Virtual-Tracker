@@ -242,6 +242,15 @@ export async function routeClients(req, res, url, db, origin) {
     } catch (e) {
       logSafeError("[clients/with-details PUT]", e);
       if (sendPgConstraintError(res, origin, e, req)) return true;
+      if (e && typeof e === "object" && "staleWrite" in e) {
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "stale_write",
+          error: e instanceof Error ? e.message : "Conflict",
+          data: e.current,
+        });
+        return true;
+      }
       const status = e instanceof Error && e.message === "Client not found" ? 404 : 400;
       sendJson(res, origin, status, {
         success: false,
