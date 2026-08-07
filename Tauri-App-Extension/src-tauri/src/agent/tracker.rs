@@ -1078,6 +1078,15 @@ mod tests {
         assert_eq!(state.task_id, "task-1");
     }
 
+    // `tick_idle_escalation` itself short-circuits to a no-op off Windows
+    // (`if !ActivityMeter::HOOKS_SUPPORTED { return false; }`, see its own
+    // doc comment) because idle_seconds() has no real input hook to reset it
+    // on those platforms - the escalation this test exercises does not exist
+    // to test outside Windows. Without this guard the test fails on every
+    // non-Windows CI/dev machine regardless of the sleep/threshold timing:
+    // `tick_idle_escalation` returns `false` immediately, before ever
+    // reading `idle_for`.
+    #[cfg(windows)]
     #[test]
     fn tick_stops_the_timer_once_the_idle_escalation_deadline_passes() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
