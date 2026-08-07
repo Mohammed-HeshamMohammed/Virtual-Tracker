@@ -1,5 +1,7 @@
 # Plan — Projects & Tasks fixes
 
+**Status: shipped.** All items below are live on `main`.
+
 Three reported issues in `Dashboard-Web`:
 
 1. Budget column on the Projects page only shows hours (never money).
@@ -106,11 +108,11 @@ No schema or endpoint changes are required for a first pass; everything reuses e
 ---
 
 ## Task checklist
-- [ ] **#1** `mapApiProject`: `total: budgetRow.target ?? budgetRow.cost`; add `target` to requested budget `fields`; confirm DB `type` values and decide on the client-aggregation override.
-- [ ] **#2** Parallelize `updateProjectWithDetails` syncs (`Promise.all`); remove redundant second GETs in `syncClientLinks`/`syncTeamLinks`; replace blocking `forceRefetch` with optimistic row update + background reconcile.
-- [ ] **#3a** Add `batchArchive`/`batchDelete` to project mutations; wire `ProjectsToolbar` dropdown to real handlers with confirm-on-delete; decide scope of "Set member limit".
-- [ ] **#3b** Add `selectedTaskIds` + row checkboxes to Tasks list/board; add batch bar with Delete / Change status backed by looped existing mutations.
-- [ ] Extract shared `batchRun` helper + batch-bar component.
+- [x] **#1** `mapApiProject`: `total: budgetRow.target ?? budgetRow.cost`; add `target` to requested budget `fields`; confirm DB `type` values and decide on the client-aggregation override.
+- [x] **#2** Parallelize `updateProjectWithDetails` syncs (`Promise.all`); remove redundant second GETs in `syncClientLinks`/`syncTeamLinks`; replace blocking `forceRefetch` with optimistic row update + background reconcile.
+- [x] **#3a** Add `batchArchive`/`batchDelete` to project mutations; wire `ProjectsToolbar` dropdown to real handlers with confirm-on-delete; decide scope of "Set member limit".
+- [x] **#3b** Add `selectedTaskIds` + row checkboxes to Tasks list/board; add batch bar with Delete / Change status backed by looped existing mutations.
+- [ ] Extract shared `batchRun` helper + batch-bar component. (still duplicated between Projects/Tasks handlers — not blocking, YAGNI until a third call site shows up)
 
 ## Verification
 - Budget: create one Cost-based per-project, one Cost-based per-person, one Hours-based project; confirm the column shows `$` vs `h` correctly and per-person shows the scaled total.
