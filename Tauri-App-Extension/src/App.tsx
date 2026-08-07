@@ -359,6 +359,29 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [view, refreshMemberLimits]);
 
+  // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
+  // as the fallback for whenever the live-sync WebSocket (Rust side:
+  // agent/live_sync.rs) is down; this just shrinks the gap to sub-second when
+  // it's up. Only task-assignments/tasks changes and scope changes matter
+  // here - a manager assigning a new task, logging time from another device,
+  // or reaching a limit are exactly the events "Assigned today" and the
+  // running task-limit timer need to react to without waiting on the poll.
+  useEffect(() => {
+    const onLiveChanged = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (!detail || typeof detail !== "object") return;
+      const frame = detail as { type?: unknown; resource?: unknown };
+      const isRelevantChange =
+        frame.type === "changed" && (frame.resource === "task-assignments" || frame.resource === "tasks");
+      const isScopeChanged = frame.type === "scope-changed";
+      if (!isRelevantChange && !isScopeChanged) return;
+      void refreshTaskTracking();
+      void refreshMemberLimits();
+    };
+    window.addEventListener("vt-live-changed", onLiveChanged);
+    return () => window.removeEventListener("vt-live-changed", onLiveChanged);
+  }, [refreshTaskTracking, refreshMemberLimits]);
+
   // The People-page member record never changes while the app is open - one
   // fetch when the profile view opens, no polling.
   useEffect(() => {
@@ -882,12 +905,15 @@ function MainApp() {
     : fmtHours(memberLimits.assignedToday.demandSeconds);
   const assignedTodaySubLabel = (() => {
     if (!memberLimits) return "";
-    const { deferredSeconds, rolloverSeconds } = memberLimits.assignedToday;
+    const { deferredSeconds, rolloverSeconds, taskCount } = memberLimits.assignedToday;
     const parts: string[] = [];
     // Never hide what got pushed to later days - the whole point of the
     // rollover rule is that nothing is silently dropped.
     if (deferredSeconds > 0) parts.push(`${fmtHours(deferredSeconds)} over your cap, moves on`);
     if (rolloverSeconds > 0) parts.push(`includes ${fmtHours(rolloverSeconds)} carried from earlier`);
+    if (parts.length === 0 && taskCount > 0) {
+      parts.push(taskCount === 1 ? "across 1 task" : `across ${taskCount} tasks`);
+    }
     return parts.join(" · ");
   })();
 

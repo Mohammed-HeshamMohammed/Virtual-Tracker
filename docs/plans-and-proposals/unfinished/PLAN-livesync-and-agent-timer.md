@@ -1,8 +1,7 @@
 # Plan — Live sync across the Dashboard, and Tauri agent timer correctness
 
-**Status:** **Implemented 2026-08-07** — Part I (§1–§9) is fully implemented, including two
-deliberate scope decisions noted inline below. Part II (§10–§14) is fully implemented for T1–T5
-except **P10**, which is intentionally deferred — see [§15](#15-implementation-status-2026-08-07).
+**Status:** **Implemented 2026-08-07** — Part I (§1–§9) and Part II (§10–§14, T1–T5 and P10) are
+fully implemented, with one deliberate scope decision noted inline below.
 **Date:** 2026-08-07 · **Implemented:** 2026-08-07
 **Scope:** `Dashboard-Backend`, `Dashboard-Web`, `Tauri-App-Extension`
 
@@ -12,8 +11,7 @@ except **P10**, which is intentionally deferred — see [§15](#15-implementatio
 |---|---|
 | Part I §9 order of work, items 1–16 | ✅ All implemented, incl. Projects/Tasks/Clients full optimistic concurrency |
 | Part I item 14 exception | ⚠️ Members: live-guard (deleted/updated notice) shipped; optimistic concurrency deliberately **not** built — see the note under item 14 |
-| Part II §14 order of work, P1–P9 | ✅ All implemented |
-| Part II P10 | ❌ **Not implemented** — deliberately deferred, see [§15](#15-implementation-status-2026-08-07) |
+| Part II §14 order of work, P1–P10 | ✅ All implemented, incl. P10 (agent live-sync subscription) |
 
 Jump to [§15](#15-implementation-status-2026-08-07) for the full status writeup, including what was
 found additionally missing during the implementation pass (project-budget concurrency, hierarchy
@@ -1195,8 +1193,8 @@ then the existing poll covers it, just more slowly.
 | P6 | Local to-the-second stop at the task limit | T4 | — | S | ✅ Done |
 | P7 | Server-confirmed limit stop via the existing stop path | T4 | P6 | S | ✅ Done |
 | P8 | `assignedToday` query + block on `/api/activity/limits` | T5 | — | M | ✅ Done, incl. the §8 rollover runnable check |
-| P9 | Split the tile: "Assigned today" + "Daily cap left", surface deferred/rollover | T5 | P8 | S | ✅ Done (minor: `plannedSeconds`/`taskCount`/`byProjectType` are parsed and available but not yet rendered in the UI) |
-| P10 | Subscribe the agent to `changedEvent("task-assignments")` | T4, T5 | Part I steps 3–5 | S | ❌ **Not implemented — deliberately deferred.** See [§15](#15-implementation-status-2026-08-07). |
+| P9 | Split the tile: "Assigned today" + "Daily cap left", surface deferred/rollover | T5 | P8 | S | ✅ Done, incl. `taskCount` in the sub-label when nothing else needs surfacing. `plannedSeconds`/`byProjectType` are parsed and available but deliberately not rendered - redundant with `demandSeconds` while nothing is deferred, and no per-task-type view exists yet to use `byProjectType` for. |
+| P10 | Subscribe the agent to `changedEvent("task-assignments")` | T4, T5 | Part I steps 3–5 | S | ✅ Done. See [§15](#15-implementation-status-2026-08-07) for how - it needed a new WS client dependency and thread, but the Rust→JS event bridge it needed already existed (`vt-status`'s `window.eval` pattern in lib.rs), which lowered the risk originally flagged here. |
 
 **P1–P3 are same-day changes** and cover the two issues a user notices within thirty seconds of
 opening the app. **P6–P7 protect billing data** and should ship before P8.
@@ -1261,38 +1259,59 @@ follow directly from the plan's own root-cause analysis:
 locks, event replay, row data over the socket, and the optional "soft edit indicator" §6.9 explicitly
 says not to build in the first pass.
 
-### Part II — T1–T5 implemented, P10 deferred
+### Part II — T1–T5 and P10 all implemented
 
-P1–P9 are all implemented and match the plan closely (see the §14 table above for per-item notes,
-including the one minor UI gap on P9 where `plannedSeconds`/`taskCount`/`byProjectType` round-trip
-correctly but aren't rendered yet).
+P1–P9 match the plan closely (see the §14 table above for per-item notes). P9's tile now also
+surfaces `taskCount` in its sub-label when nothing more urgent (deferred/rollover) needs the space.
 
-**P10 — not implemented.** The plan estimates this at "S" effort on the assumption that it reuses
-existing push infrastructure the way the Dashboard-Web side of this plan reuses the presence
-WebSocket. That assumption doesn't hold on the agent side: `Tauri-App-Extension` has **no Rust↔JS push
-channel of any kind** today (no `app.emit`/`listen` usage anywhere in the codebase) and **no WebSocket
-or SSE client dependency** in `Cargo.toml`/`Cargo.lock`. Every piece of live data in the agent —
-session state, task tracking, member limits — is `invoke`-command polling on a 5 s `setInterval`, by
-design (see `run_blocking` in `lib.rs`, which documents why this app's blocking `reqwest` calls are
-kept off the async runtime's worker threads).
+**P10 was initially deferred, then built.** The plan estimates "S" effort on the assumption that it
+reuses existing push infrastructure the way the Dashboard-Web side of this plan reuses the presence
+WebSocket. On first look that assumption seemed not to hold on the agent side — no WebSocket/SSE
+client dependency existed in `Cargo.toml`, and a scan for `app.emit`/`listen` (Tauri's own event API)
+found nothing. On closer inspection there **was** already a Rust→JS push channel in `lib.rs`'s
+`.setup()`: the existing status bridge calls `window.eval("window.dispatchEvent(new CustomEvent(...))"
+)` directly rather than using `app.emit`/`listen`, functionally equivalent to (and from the JS side,
+literally the same idiom as) the `window.dispatchEvent(new CustomEvent(...))` pattern
+`change-events.ts` already uses throughout Dashboard-Web. That materially lowered the risk this was
+originally deferred over: P10 became "add a WS client + reuse an existing bridge," not "originate a
+whole new push mechanism from nothing."
 
-Building P10 for real means: adding a new WebSocket client dependency (a synchronous `tungstenite`
-client on the existing `std::thread`-based background-loop pattern is the right fit here, not
-`tokio-tungstenite` — this codebase deliberately avoids running blocking work on the tokio runtime
-tauri already carries, per the `run_blocking` comment above); reusing the `id_token` already held on
-`ApiClient` for the same `?token=` query-param auth `presence-gateway.js` expects; a reconnect/backoff
-loop; and a new `app.emit`/`listen` bridge into `App.tsx` — the **first** one in this codebase, so
-nothing to extend, only to originate.
+What was actually built:
 
-That is buildable, and the pieces it needs (the token, the base URL, the thread-per-background-task
-pattern) all already exist — but it's a genuine first-of-its-kind addition to a shipped desktop app,
-not a wiring job, and it cannot be integration-tested end-to-end in this environment (no live backend
-+ real Firebase + a running packaged agent to actually exercise the WS handshake and reconnect
-behavior against). Shipping an unverified reconnect loop into a background thread on a tracking agent
-that must never wedge is exactly the kind of risk this plan's own §7 non-goals section is written to
-avoid taking casually elsewhere. The plan's own fallback story already covers the gap in the
-meantime: "Until then the existing poll covers it, just more slowly" (§11, T5) — `assignedToday` and
-task-limit state are correct, just up to 5 s slower to update than they would be with a push channel.
+- `Tauri-App-Extension/src-tauri/Cargo.toml` - added `tungstenite` (`rustls-tls-webpki-roots`
+  feature, matching the `rustls-tls` reqwest already uses, so only one TLS backend links).
+- `Tauri-App-Extension/src-tauri/src/agent/live_sync.rs` (new) - a dedicated `std::thread` (matching
+  this app's existing all-blocking-call architecture; explicitly *not* `tokio-tungstenite`, since
+  `run_blocking` in `lib.rs` documents why blocking work stays off the tokio runtime tauri carries).
+  Connects to the same `/api/presence/ws?token=<id_token>` endpoint Dashboard-Web uses, reusing the
+  `id_token` already held on `ApiClient`. Builds its own `TcpStream` with a read timeout (rather than
+  `tungstenite::connect`'s all-in-one helper) so the same thread can both read incoming frames and send
+  the application-level `{"type":"ping"}` `presence-gateway.js` requires every 30s - it only resets its
+  120s heartbeat watch on that message, not on WS-protocol control frames. Reconnects with a 5s backoff
+  on any disconnect, including a clean server-initiated close, to avoid hot-looping against a
+  momentarily-rejecting server (e.g. a token mid-refresh).
+- Every inbound frame is parsed and re-serialized through `serde_json` before being handed to the
+  bridge callback - not a trust assumption that the server always sends well-formed JSON, but what
+  guarantees the string is safe to interpolate into the `window.eval(...)` call, the same way the
+  existing status bridge re-escapes through `serde_json::to_string` rather than embedding raw text.
+- `AgentController` gained a `live_sync_listeners` field and `add_live_sync_listener()`, mirroring the
+  existing `status_listeners`/`add_status_listener()` fan-out pattern exactly, and calls
+  `live_sync::spawn(...)` from `start()`.
+- `lib.rs`'s `.setup()` registers a listener that dispatches `vt-live-changed` via the same
+  `window.eval` pattern as `vt-status`.
+- `App.tsx` listens for `vt-live-changed`; on a `"changed"` frame for `task-assignments`/`tasks` or any
+  `"scope-changed"` frame, it calls `refreshTaskTracking()`/`refreshMemberLimits()` immediately instead
+  of waiting for their 5s polls (cases 45, 46b). The polls are unchanged and still run - they are what
+  keeps working whenever this connection is down, exactly as the plan requires.
 
-**Recommendation:** take P10 up as its own follow-up with access to a real build/run/verify loop
-against a live backend, rather than as a line item folded into this pass.
+No backend changes were needed: `presence-gateway.js`'s `broadcastToAll` already sends to every
+connected socket regardless of client type, so the agent connecting to the same endpoint the browser
+uses is all that was required.
+
+**Verified:** `cargo check` clean, `cargo test --lib` (one pre-existing, unrelated failure -
+`tick_stops_the_timer_once_the_idle_escalation_deadline_passes` in `agent/tracker.rs`, confirmed via
+`git stash` to fail identically with none of this session's changes applied), `tsc --noEmit` clean on
+`App.tsx`. **Not verified:** an actual WS handshake/reconnect cycle against a live backend and a
+running packaged agent - this environment has no live Dashboard-Backend + Firebase + built agent to
+exercise that against, so treat the connect/reconnect path as compile-correct and logically reviewed,
+not integration-tested. Recommend a manual pass per §13 check 25 before the next agent release.

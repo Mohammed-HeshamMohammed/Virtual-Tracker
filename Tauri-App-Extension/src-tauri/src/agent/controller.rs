@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 
+use crate::agent::live_sync::{self, LiveSyncCallback};
 use crate::agent::tracker::{ActivityTracker, StatusCallback};
 use crate::auth::link_flow::{AgentLinkFlow, OnError, OnTokens};
 use crate::auth::server::AuthServer;
@@ -31,6 +32,7 @@ pub struct AgentController {
     auth_server: AuthServer,
     status: Arc<Mutex<String>>,
     status_listeners: Arc<Mutex<Vec<StatusCallback>>>,
+    live_sync_listeners: Arc<Mutex<Vec<LiveSyncCallback>>>,
     activity: Arc<ActivityMeter>,
     /// Consecutive failed connection checks. One blip must not throw a
     /// full-screen recovery view at the user, so the UI only switches after
@@ -64,6 +66,7 @@ impl AgentController {
         let activity = ActivityMeter::new();
         let status = Arc::new(Mutex::new("Not signed in".to_string()));
         let status_listeners = Arc::new(Mutex::new(Vec::new()));
+        let live_sync_listeners = Arc::new(Mutex::new(Vec::new()));
 
         Ok(Arc::new(Self {
             settings,
@@ -74,6 +77,7 @@ impl AgentController {
             auth_server,
             status,
             status_listeners,
+            live_sync_listeners,
             activity,
             connection_failures: Arc::new(AtomicU32::new(0)),
         }))
@@ -83,11 +87,30 @@ impl AgentController {
         self.status_listeners.lock().push(listener);
     }
 
+    /// PLAN-livesyncandagenttimer.md P10 - `listener` receives the raw JSON
+    /// text of every "changed"/"scope-changed" frame the presence WebSocket
+    /// delivers. Filtering by resource is the listener's job (see live_sync.rs
+    /// module doc) - this stays a dumb passthrough, same as add_status_listener.
+    pub fn add_live_sync_listener(&self, listener: LiveSyncCallback) {
+        self.live_sync_listeners.lock().push(listener);
+    }
+
     pub fn start(self: &Arc<Self>) {
         self.auth_server.start();
         self.restore_session();
         log::info!("API: {}", self.settings.api_url);
         log::info!("Web: {}", self.settings.web_url);
+
+        let listeners = Arc::clone(&self.live_sync_listeners);
+        live_sync::spawn(
+            self.settings.api_url.clone(),
+            Arc::clone(&self.api),
+            Arc::new(move |text: String| {
+                for listener in listeners.lock().iter() {
+                    listener(text.clone());
+                }
+            }),
+        );
     }
 
     pub fn stop(&self) {

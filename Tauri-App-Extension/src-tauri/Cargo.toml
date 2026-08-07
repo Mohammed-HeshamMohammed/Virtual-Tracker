@@ -50,6 +50,7 @@ rand = "0.8"
 # its own target-gated optional deps, so only the store for the platform
 # actually being built pulls in and links - no per-target split needed here.
 keyring = { version = "4.1.6", default-features = false, features = ["v1"] }
+tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
 tauri = { version = "2", features = ["tray-icon"] }

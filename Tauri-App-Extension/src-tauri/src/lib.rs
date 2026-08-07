@@ -484,6 +484,19 @@ pub fn run() {
                 }
             }));
 
+            // P10 - forward the raw "changed"/"scope-changed" frame text as-is;
+            // it's already JSON, so no re-serialization needed (it's not a Rust
+            // string being embedded, it's the literal JSON payload).
+            let live_sync_handle = app.handle().clone();
+            let live_sync_controller = Arc::clone(&controller);
+            live_sync_controller.add_live_sync_listener(Arc::new(move |frame_json: String| {
+                if let Some(window) = live_sync_handle.get_webview_window("main") {
+                    let _ = window.eval(format!(
+                        "window.dispatchEvent(new CustomEvent('vt-live-changed', {{ detail: {frame_json} }}));"
+                    ));
+                }
+            }));
+
             let _ = apply_autostart(app.handle(), launch_at_login);
 
             controller.start();
