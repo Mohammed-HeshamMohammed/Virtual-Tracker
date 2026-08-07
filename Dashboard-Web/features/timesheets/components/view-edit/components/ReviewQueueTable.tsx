@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Ban, CheckCircle2, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { useAuth, useTheme } from "@/shared/providers/app"
 import { canViewParticipationMetrics } from "@/features/auth"
 import {
@@ -138,6 +139,17 @@ export function ReviewQueueTable({
 
   useEffect(() => {
     void loadRows()
+  }, [loadRows])
+
+  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 7): this queue
+  // previously never refreshed on its own - only a filter change re-ran
+  // loadRows. Review-state transitions publish as "task-assignments"
+  // changes on the backend (updateAssignmentPg), the same resource a
+  // submission-for-review or a reviewer's decision both go through.
+  useEffect(() => {
+    const handler = () => void loadRows()
+    window.addEventListener(changedEvent("task-assignments"), handler)
+    return () => window.removeEventListener(changedEvent("task-assignments"), handler)
   }, [loadRows])
 
   const rows = variant === "needs-review" ? needsReview : priorityMonitor

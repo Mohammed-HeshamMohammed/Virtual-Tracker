@@ -8,6 +8,7 @@ import { useAuth } from "@/shared/providers/app"
 import { apiPath } from "@/infrastructure/api/path"
 import { fetchJsonWithRetry, getApiAuthToken } from "@/infrastructure/api/http"
 import { clearCoalescedRequest, coalesceRequest } from "@/infrastructure/api/request-coalesce"
+import { changedEvent } from "@/infrastructure/api/change-events"
 
 type Notification = {
   id: string
@@ -74,19 +75,21 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
+  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 11): previously
+  // gated on `open`, so the badge only ever moved after the dropdown had
+  // been opened once, and only kept moving on a 30s poll while it stayed
+  // open. Now fetches on login and again on every "notifications"
+  // broadcast, whether or not the dropdown is open - that's the whole
+  // point of a badge tracking live.
   useEffect(() => {
-    if (!open || !isLoggedIn || !sessionReady || profile?.mustChangePassword) return
+    if (!isLoggedIn || !sessionReady || profile?.mustChangePassword) return
 
     void fetchNotifications()
 
-    const interval = window.setInterval(() => {
-      void fetchNotifications()
-    }, 30000)
-
-    return () => {
-      window.clearInterval(interval)
-    }
-  }, [open, fetchNotifications, isLoggedIn, sessionReady, profile?.mustChangePassword])
+    const handler = () => void fetchNotifications()
+    window.addEventListener(changedEvent("notifications"), handler)
+    return () => window.removeEventListener(changedEvent("notifications"), handler)
+  }, [fetchNotifications, isLoggedIn, sessionReady, profile?.mustChangePassword])
 
   async function markAsRead(id: string) {
     fetchGenerationRef.current += 1

@@ -11,6 +11,7 @@ import { SetupModal } from "@/features/timesheets/components/approvals/component
 import { TimesheetPreviewCard } from "@/features/timesheets/components/approvals/components/TimesheetPreviewCard"
 import { ManualTimeContent } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
 import { getMembers, getTimesheets } from "@/infrastructure/api"
+import { changedEvent } from "@/infrastructure/api/change-events"
 
 export function TimesheetsApprovalsContent() {
   const { memberRole } = useAuth()
@@ -42,6 +43,19 @@ export function TimesheetsApprovalsContent() {
     getTimesheets()
       .then((rows: any[]) => setTimesheetCount(Array.isArray(rows) ? rows.length : 0))
       .catch(() => {})
+  }, [canManage])
+
+  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 8): this loader was
+  // a one-shot fetchedRef guard - counts never updated again after mount.
+  useEffect(() => {
+    if (!canManage) return
+    const handler = () => {
+      void getTimesheets()
+        .then((rows: any[]) => setTimesheetCount(Array.isArray(rows) ? rows.length : 0))
+        .catch(() => {})
+    }
+    window.addEventListener(changedEvent("timesheets"), handler)
+    return () => window.removeEventListener(changedEvent("timesheets"), handler)
   }, [canManage])
 
   const handleSave = (data: SetupData) => {

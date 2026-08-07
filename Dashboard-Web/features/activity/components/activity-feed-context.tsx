@@ -18,6 +18,7 @@ import {
   type ActivityFeedScope,
 } from "@/features/activity/services/activity-api"
 import { ACTIVITY_FEED_PING_DEBOUNCE_MS, ACTIVITY_FEED_POLL_MS } from "@/infrastructure/config/firestore-throttle"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import {
   buildActivityFeedCacheKey,
   clearActivityFeedCache,
@@ -186,6 +187,23 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
     }, POLL_MS)
     return () => clearInterval(poll)
   }, [isActivityPageActive, isLoggedIn])
+
+  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 12): the poll above
+  // stays as the fallback for whenever the WS is down or this "activity"
+  // resource isn't published yet from a given write path - this listener
+  // just lets a real signal repaint sooner than the poll interval when one
+  // does arrive, same silent/force reload path onPing already uses.
+  useEffect(() => {
+    if (!isActivityPageActive) return
+    const handler = () => {
+      if (isBackendRateLimited()) return
+      clearActivityFeedCache()
+      clearActivityApiFeedCache()
+      window.dispatchEvent(new Event("vt-activity-feed-invalidate"))
+    }
+    window.addEventListener(changedEvent("activity"), handler)
+    return () => window.removeEventListener(changedEvent("activity"), handler)
+  }, [isActivityPageActive])
 
   const buildQuery = useCallback(
     (type: ActivityFeedQuery["type"]): ActivityFeedQuery => ({
