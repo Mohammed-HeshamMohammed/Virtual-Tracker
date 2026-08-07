@@ -398,19 +398,24 @@ export function MemberManageModal({
     setSaveError(null)
     try {
       if (onSaveProfile) {
-        // §6.9 - only employment/payBill/settings have a per-section
-        // updated_at that isn't also touched by every other tab's save
-        // (see MemberFormState's comment). Other tabs send undefined,
-        // which the backend treats as "no conflict check requested" -
-        // same optional-token convention as Projects/Tasks/Clients.
+        // §6.9 - every tab now has its own token (see MemberFormState's
+        // comment for what each is checked against). A missing token sends
+        // undefined, which the backend treats as "no conflict check
+        // requested" - same optional-token convention as Projects/Tasks/Clients.
         const expectedUpdatedAt =
-          activeTab === "employment"
-            ? formState.employmentUpdatedAt
-            : activeTab === "payBill"
-              ? formState.payBillUpdatedAt
-              : activeTab === "settings"
-                ? formState.settingsUpdatedAt
-                : undefined
+          activeTab === "info"
+            ? formState.infoUpdatedAt
+            : activeTab === "employment"
+              ? formState.employmentUpdatedAt
+              : activeTab === "roles"
+                ? formState.rolesUpdatedAt
+                : activeTab === "payBill"
+                  ? formState.payBillUpdatedAt
+                  : activeTab === "workLimits"
+                    ? formState.workLimitsUpdatedAt
+                    : activeTab === "settings"
+                      ? formState.settingsUpdatedAt
+                      : undefined
         await onSaveProfile(member.id, payload, expectedUpdatedAt)
       } else {
         await onPatchMember(member.id, {
