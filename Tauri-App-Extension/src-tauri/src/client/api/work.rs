@@ -329,6 +329,7 @@ impl ApiClient {
                 .and_then(|a| a.get("limitReached"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            assigned_today: parse_assigned_today(data.get("assignedToday")),
         })
     }
 
@@ -369,5 +370,33 @@ impl ApiClient {
             phone: str_field("phone"),
             teams: data.get("teams").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         })
+    }
+}
+
+/// Parses the `assignedToday` block on GET /api/activity/limits (T5,
+/// PLAN-livesyncandagenttimer.md §11). Absent on older backends - every
+/// field then keeps its zero default via #[derive(Default)], same fallback
+/// timerAllowance already relies on above.
+fn parse_assigned_today(node: Option<&Value>) -> crate::types::AssignedToday {
+    let i64_field = |key: &str| -> i64 {
+        node.and_then(|n| n.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+    };
+    let by_project_type = node.and_then(|n| n.get("byProjectType"));
+    crate::types::AssignedToday {
+        demand_seconds: i64_field("demandSeconds"),
+        planned_seconds: i64_field("plannedSeconds"),
+        deferred_seconds: i64_field("deferredSeconds"),
+        rollover_seconds: i64_field("rolloverSeconds"),
+        task_count: i64_field("taskCount"),
+        by_project_type: crate::types::AssignedTodayByProjectType {
+            normal: by_project_type
+                .and_then(|b| b.get("normal"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+            calling: by_project_type
+                .and_then(|b| b.get("calling"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0),
+        },
     }
 }

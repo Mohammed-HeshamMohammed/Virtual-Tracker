@@ -245,6 +245,42 @@ pub struct MemberLimits {
     pub allowed_remaining_seconds: Option<i64>,
     #[serde(default)]
     pub limit_reached: bool,
+    /// T5 - how much work is assigned across today's open tasks, a
+    /// different question from allowed_remaining_seconds above ("how much
+    /// am I still allowed to work" vs "how much work do I have").
+    #[serde(default)]
+    pub assigned_today: AssignedToday,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignedTodayByProjectType {
+    #[serde(default)]
+    pub normal: i64,
+    #[serde(default)]
+    pub calling: i64,
+}
+
+/// See PLAN-livesyncandagenttimer.md §11 (T5) for the allocation rules this
+/// mirrors from the backend's assigned-today.service.js - demandSeconds is
+/// everything due today (including rollover from earlier days);
+/// plannedSeconds is the part that fits under the member's own cap;
+/// deferredSeconds is what got pushed to later days, never dropped.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignedToday {
+    #[serde(default)]
+    pub demand_seconds: i64,
+    #[serde(default)]
+    pub planned_seconds: i64,
+    #[serde(default)]
+    pub deferred_seconds: i64,
+    #[serde(default)]
+    pub rollover_seconds: i64,
+    #[serde(default)]
+    pub task_count: i64,
+    #[serde(default)]
+    pub by_project_type: AssignedTodayByProjectType,
 }
 
 /// The viewer's own People-page member record (GET /api/members/current) -

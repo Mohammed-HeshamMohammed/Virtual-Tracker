@@ -860,7 +860,10 @@ function MainApp() {
         : memberLimits.weeklyHours > 0
           ? "weekly limit — no daily cap"
           : "no cap set on your account";
-  const remainingTodayLabel = !memberLimits
+  // "Daily cap left" - renamed from "Remaining today". T5: keeping that name
+  // on the cap while adding a second, differently-sourced number (below) is
+  // exactly how the two ended up conflated in the first place.
+  const dailyCapLeftLabel = !memberLimits
     ? "—"
     : memberLimits.usesShifts || memberLimits.allowedRemainingSeconds == null
       ? "No cap"
@@ -869,14 +872,38 @@ function MainApp() {
         : `${fmtHours(memberLimits.allowedRemainingSeconds)} left`;
   const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds) : "—";
 
+  // T5 - "how much work is assigned to me today" (demandSeconds, including
+  // rollover from earlier days), a different question from the cap above
+  // ("how much am I still allowed to work"). Both matter; this is the one
+  // that answers "1h task + 3h calling project = 4h before I select
+  // anything."
+  const assignedTodayLabel = !memberLimits
+    ? "—"
+    : fmtHours(memberLimits.assignedToday.demandSeconds);
+  const assignedTodaySubLabel = (() => {
+    if (!memberLimits) return "";
+    const { deferredSeconds, rolloverSeconds } = memberLimits.assignedToday;
+    const parts: string[] = [];
+    // Never hide what got pushed to later days - the whole point of the
+    // rollover rule is that nothing is silently dropped.
+    if (deferredSeconds > 0) parts.push(`${fmtHours(deferredSeconds)} over your cap, moves on`);
+    if (rolloverSeconds > 0) parts.push(`includes ${fmtHours(rolloverSeconds)} carried from earlier`);
+    return parts.join(" · ");
+  })();
+
   // Rendered under both project types: on its own for a calling project (which
   // has no task stats at all), and alongside the task cards otherwise.
   const hoursTodayCards = (
-    <div className="stat-grid cols-3 page-content-swap" style={{ animationDelay: "0.04s" }}>
+    <div className="stat-grid page-content-swap" style={{ animationDelay: "0.04s" }}>
       <div className="stat-card">
         <span className="stat-card-label">Today, all work</span>
         <span className="stat-card-value">{workedTodayLabel}</span>
         <span className="stat-card-sub">across every project</span>
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">Assigned today</span>
+        <span className="stat-card-value">{assignedTodayLabel}</span>
+        {assignedTodaySubLabel ? <span className="stat-card-sub">{assignedTodaySubLabel}</span> : null}
       </div>
       <div className="stat-card">
         <span className="stat-card-label">Daily cap</span>
@@ -884,9 +911,9 @@ function MainApp() {
         {capSubLabel ? <span className="stat-card-sub">{capSubLabel}</span> : null}
       </div>
       <div className="stat-card">
-        <span className="stat-card-label">Remaining today</span>
+        <span className="stat-card-label">Daily cap left</span>
         <span className={`stat-card-value${memberLimits?.limitReached ? " warn" : ""}`}>
-          {remainingTodayLabel}
+          {dailyCapLeftLabel}
         </span>
       </div>
     </div>

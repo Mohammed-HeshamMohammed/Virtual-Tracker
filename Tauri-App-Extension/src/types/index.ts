@@ -121,6 +121,20 @@ export type TaskTimeTracking = {
   allowanceMessage?: string | null;
 };
 
+/** T5 (PLAN-livesyncandagenttimer.md §11) - "how much work is assigned to
+ * me today", distinct from allowedRemainingSeconds's "how much am I still
+ * allowed to work". demandSeconds includes rollover from earlier days;
+ * plannedSeconds is what fits under the member's own cap; deferredSeconds
+ * is what got pushed to later days - never dropped. */
+export type AssignedToday = {
+  demandSeconds: number;
+  plannedSeconds: number;
+  deferredSeconds: number;
+  rolloverSeconds: number;
+  taskCount: number;
+  byProjectType: { normal: number; calling: number };
+};
+
 export type MemberLimits = {
   dailyHours: number;
   weeklyHours: number;
@@ -130,6 +144,7 @@ export type MemberLimits = {
   /** null = no cap applies. Not the same as 0 seconds left. */
   allowedRemainingSeconds: number | null;
   limitReached: boolean;
+  assignedToday: AssignedToday;
 };
 
 // The viewer's own People-page member record - richer than what's in the
