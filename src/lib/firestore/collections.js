@@ -2,10 +2,8 @@
 export const COLLECTIONS = Object.freeze({
   members: "members",
   memberAuthIndex: "member_auth_index",
-  memberOnboarding: "member_onboarding",
   memberRelationships: "member_relationships",
   memberTransferRequests: "member_transfer_requests",
-  payRates: "pay_rates",
   roles: "roles",
   membersFieldData: "members_field_data",
   jobTitles: "job_titles",

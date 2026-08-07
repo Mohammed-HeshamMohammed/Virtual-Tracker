@@ -1,13 +1,12 @@
 import { deleteMemberTreeCache } from "../../../lib/postgres/member-data-store.js";
 import { reassignPgActivityMemberId } from "../../../lib/postgres/activity-events-postgres.service.js";
+import { rekeyMemberDataMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import { deleteMemberProfileData } from "./member-profile.service.js";
 
 const MEMBER_AUTH_INDEX = "member_auth_index";
 
 /** @type {Array<{ collection: string, fields: string[] }>} */
 const MEMBER_REFERENCES = [
-  { collection: "pay_rates", fields: ["member_id"] },
-  { collection: "member_onboarding", fields: ["member_id"] },
   { collection: "team_members", fields: ["member_id"] },
   { collection: "project_members", fields: ["member_id"] },
   { collection: "clients", fields: ["member_id"] },
@@ -65,6 +64,9 @@ async function reassignMemberReferences(db, fromId, toId) {
     }
   }
   await reassignPgActivityMemberId(fromId, toId);
+  // Covers employment/time_settings/pay_rates/limits/member_bans/member_onboarding
+  // - the Postgres-migrated tables MEMBER_REFERENCES above no longer lists.
+  await rekeyMemberDataMemberIdPg(fromId, toId);
   await deleteMemberTreeCache(db, fromId);
 }
 

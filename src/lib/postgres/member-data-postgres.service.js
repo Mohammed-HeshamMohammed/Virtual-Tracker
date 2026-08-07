@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { getPostgresPool, query } from "./client.js";
 
-const MEMBER_SCOPED_COLLECTIONS = new Set(["employment", "time_settings"]);
+const MEMBER_SCOPED_COLLECTIONS = new Set(["employment", "time_settings", "pay_rates"]);
 
 function actorIdOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -155,6 +155,18 @@ export async function getMemberScopedRowPg(collection, memberId) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
+/**
+ * Batch variant for member-list-enrichment.js's enrichMembersWithPayAndLimits,
+ * same shape as getLimitsBatchPg.
+ * @param {string[]} memberIds
+ */
+export async function getPayRatesBatchPg(memberIds) {
+  const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
+  if (!unique.length) return [];
+  const rows = await query(`SELECT * FROM pay_rates WHERE member_id = ANY($1::uuid[])`, [unique]);
+  return rows.map((row) => normalizeMemberDataRow(row));
+}
+
 const EMPLOYMENT_UPDATABLE_COLUMNS = [
   "job_title_id",
   "department_id",
@@ -185,6 +197,16 @@ const TIME_SETTINGS_UPDATABLE_COLUMNS = [
   "disable_tracking_specific_days",
   "use_shifts_for_limits",
 ];
+const PAY_RATES_UPDATABLE_COLUMNS = [
+  "type",
+  "rate",
+  "currency",
+  "pay_period",
+  "require_timesheet_approval",
+  "effective_date",
+  "status",
+  "note",
+];
 
 function employmentColumnValue(column, payload) {
   switch (column) {
@@ -205,6 +227,27 @@ function employmentColumnValue(column, payload) {
       return parseDateOnly(payload.start_date);
     case "end_date":
       return parseDateOnly(payload.end_date);
+    default:
+      return String(payload[column] ?? "");
+  }
+}
+
+function payRatesColumnValue(column, payload) {
+  switch (column) {
+    case "rate":
+      return Number(payload.rate ?? 0);
+    case "require_timesheet_approval":
+      return payload.require_timesheet_approval === true;
+    case "effective_date":
+      return parseDateOnly(payload.effective_date);
+    case "type":
+      return String(payload.type ?? "hourly");
+    case "currency":
+      return String(payload.currency ?? "USD");
+    case "pay_period":
+      return String(payload.pay_period ?? "None");
+    case "status":
+      return String(payload.status ?? "active");
     default:
       return String(payload[column] ?? "");
   }
@@ -233,18 +276,24 @@ function timeSettingsColumnValue(column, payload) {
   }
 }
 
+const SCOPED_COLUMN_SPECS = {
+  employment: { columns: EMPLOYMENT_UPDATABLE_COLUMNS, valueFor: employmentColumnValue },
+  time_settings: { columns: TIME_SETTINGS_UPDATABLE_COLUMNS, valueFor: timeSettingsColumnValue },
+  pay_rates: { columns: PAY_RATES_UPDATABLE_COLUMNS, valueFor: payRatesColumnValue },
+};
+
 /**
- * §6.9 conditional-write path for an existing employment/time_settings row.
- * Same shape as project_budgets' equivalent: a plain `WHERE member_id = $1
- * AND updated_at = $expected` UPDATE, returning true (conflict) on zero rows.
+ * §6.9 conditional-write path for an existing employment/time_settings/
+ * pay_rates row. Same shape as project_budgets' equivalent: a plain
+ * `WHERE member_id = $1 AND updated_at = $expected` UPDATE, returning true
+ * (conflict) on zero rows.
  * @param {string} collection @param {string} memberId
  * @param {Record<string, unknown>} payload @param {string} actor
  * @param {string} expectedUpdatedAt
  * @returns {Promise<boolean>} true on conflict
  */
 async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload, actor, expectedUpdatedAt) {
-  const columns = collection === "employment" ? EMPLOYMENT_UPDATABLE_COLUMNS : TIME_SETTINGS_UPDATABLE_COLUMNS;
-  const valueFor = collection === "employment" ? employmentColumnValue : timeSettingsColumnValue;
+  const { columns, valueFor } = SCOPED_COLUMN_SPECS[collection];
   const params = [memberId];
   const setClauses = columns.map((column) => {
     params.push(valueFor(column, payload));
@@ -350,36 +399,73 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
     return id;
   }
 
-  const workDays = Array.isArray(payload.work_days) ? payload.work_days : [0, 1, 2, 3, 4];
+  if (collection === "time_settings") {
+    const workDays = Array.isArray(payload.work_days) ? payload.work_days : [0, 1, 2, 3, 4];
+    await query(
+      `INSERT INTO time_settings (
+        id, member_id, able_to_track_time, keep_idle_time, idle_timeout, modify_time,
+        require_approval, work_days, disable_tracking_specific_days, use_shifts_for_limits,
+        updated_by, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, now())
+      ON CONFLICT (member_id) DO UPDATE SET
+        able_to_track_time = EXCLUDED.able_to_track_time,
+        keep_idle_time = EXCLUDED.keep_idle_time,
+        idle_timeout = EXCLUDED.idle_timeout,
+        modify_time = EXCLUDED.modify_time,
+        require_approval = EXCLUDED.require_approval,
+        work_days = EXCLUDED.work_days,
+        disable_tracking_specific_days = EXCLUDED.disable_tracking_specific_days,
+        use_shifts_for_limits = EXCLUDED.use_shifts_for_limits,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = now()`,
+      [
+        id,
+        memberId,
+        payload.able_to_track_time !== false,
+        String(payload.keep_idle_time ?? "never"),
+        String(payload.idle_timeout ?? "5 min"),
+        String(payload.modify_time ?? "off"),
+        payload.require_approval === true,
+        JSON.stringify(workDays),
+        payload.disable_tracking_specific_days === true,
+        payload.use_shifts_for_limits === true,
+        actor,
+      ],
+    );
+    return id;
+  }
+
+  // pay_rates
   await query(
-    `INSERT INTO time_settings (
-      id, member_id, able_to_track_time, keep_idle_time, idle_timeout, modify_time,
-      require_approval, work_days, disable_tracking_specific_days, use_shifts_for_limits,
-      updated_by, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, now())
+    `INSERT INTO pay_rates (
+      id, member_id, type, rate, currency, pay_period, require_timesheet_approval,
+      effective_date, status, note, created_by, updated_by, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, now()), now())
     ON CONFLICT (member_id) DO UPDATE SET
-      able_to_track_time = EXCLUDED.able_to_track_time,
-      keep_idle_time = EXCLUDED.keep_idle_time,
-      idle_timeout = EXCLUDED.idle_timeout,
-      modify_time = EXCLUDED.modify_time,
-      require_approval = EXCLUDED.require_approval,
-      work_days = EXCLUDED.work_days,
-      disable_tracking_specific_days = EXCLUDED.disable_tracking_specific_days,
-      use_shifts_for_limits = EXCLUDED.use_shifts_for_limits,
+      type = EXCLUDED.type,
+      rate = EXCLUDED.rate,
+      currency = EXCLUDED.currency,
+      pay_period = EXCLUDED.pay_period,
+      require_timesheet_approval = EXCLUDED.require_timesheet_approval,
+      effective_date = EXCLUDED.effective_date,
+      status = EXCLUDED.status,
+      note = EXCLUDED.note,
       updated_by = EXCLUDED.updated_by,
       updated_at = now()`,
     [
       id,
       memberId,
-      payload.able_to_track_time !== false,
-      String(payload.keep_idle_time ?? "never"),
-      String(payload.idle_timeout ?? "5 min"),
-      String(payload.modify_time ?? "off"),
-      payload.require_approval === true,
-      JSON.stringify(workDays),
-      payload.disable_tracking_specific_days === true,
-      payload.use_shifts_for_limits === true,
+      String(payload.type ?? "hourly"),
+      Number(payload.rate ?? 0),
+      String(payload.currency ?? "USD"),
+      String(payload.pay_period ?? "None"),
+      payload.require_timesheet_approval === true,
+      parseDateOnly(payload.effective_date),
+      String(payload.status ?? "active"),
+      String(payload.note ?? ""),
+      actorIdOrNull(payload.created_by) ?? actor,
       actor,
+      payload.created_at ?? null,
     ],
   );
   return id;
@@ -676,16 +762,20 @@ export async function clearAllMemberTreeCachePg() {
 export async function rekeyMemberDataMemberIdPg(oldId, newId) {
   await query("UPDATE employment SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
   await query("UPDATE time_settings SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
+  await query("UPDATE pay_rates SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
   await query("UPDATE limits SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
   await query("UPDATE member_tree_cache SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
   await query("UPDATE member_bans SET member_id = $2 WHERE member_id = $1", [oldId, newId]);
+  await query("UPDATE member_onboarding SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
 }
 
 export const MEMBER_DATA_POSTGRES_ENTITY_KEYS = new Set([
   "employment",
   "time-settings",
+  "pay-rates",
   "limits",
   "member-tree-cache",
+  "member-onboarding",
 ]);
 
 /**
@@ -724,6 +814,18 @@ export async function listMemberDataSchemaRows(entityKey, url) {
     const rows = await query(`SELECT * FROM time_settings ${where} ORDER BY updated_at DESC LIMIT 200`, params);
     return rows.map(normalizeMemberDataRow);
   }
+  if (entityKey === "pay-rates") {
+    const conditions = [];
+    const params = [];
+    const memberId = url.searchParams.get("member_id") ?? url.searchParams.get("memberId");
+    if (memberId) {
+      params.push(memberId);
+      conditions.push(`member_id = $${params.length}`);
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const rows = await query(`SELECT * FROM pay_rates ${where} ORDER BY updated_at DESC LIMIT 200`, params);
+    return rows.map(normalizeMemberDataRow);
+  }
   if (entityKey === "limits") {
     const conditions = [];
     const params = [];
@@ -744,6 +846,9 @@ export async function listMemberDataSchemaRows(entityKey, url) {
         updated_at: row.updated_at,
       }),
     );
+  }
+  if (entityKey === "member-onboarding") {
+    return listMemberOnboardingRowsPg();
   }
   const rows = await query("SELECT * FROM member_tree_cache ORDER BY updated_at DESC LIMIT 200");
   return rows.map((row) =>
@@ -766,11 +871,9 @@ export async function listMemberDataSchemaRows(entityKey, url) {
 export async function getMemberDataSchemaRow(entityKey, id) {
   if (entityKey === "limits") return getLimitsPg(id);
   if (entityKey === "member-tree-cache") return getMemberTreeCachePg(id);
-  if (entityKey === "employment") {
-    const rows = await query("SELECT * FROM employment WHERE id = $1 LIMIT 1", [id]);
-    return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
-  }
-  const rows = await query("SELECT * FROM time_settings WHERE id = $1 LIMIT 1", [id]);
+  if (entityKey === "member-onboarding") return getMemberOnboardingRowByIdPg(id);
+  const table = entityKey === "employment" ? "employment" : entityKey === "pay-rates" ? "pay_rates" : "time_settings";
+  const rows = await query(`SELECT * FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
@@ -793,7 +896,10 @@ export async function createMemberDataSchemaRow(entityKey, payload) {
     await setMemberTreeCachePg(memberId, payload);
     return getMemberTreeCachePg(memberId);
   }
-  const collection = entityKey === "employment" ? "employment" : "time_settings";
+  if (entityKey === "member-onboarding") {
+    return createMemberOnboardingRowPg(payload);
+  }
+  const collection = entityKey === "employment" ? "employment" : entityKey === "pay-rates" ? "pay_rates" : "time_settings";
   const memberId = String(payload.member_id ?? "");
   const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
   await upsertMemberScopedRowPg(collection, memberId, { ...payload, id, member_id: memberId });
@@ -821,7 +927,10 @@ export async function updateMemberDataSchemaRow(entityKey, id, payload, existing
     await setMemberTreeCachePg(memberId, { ...existing, ...payload, id: memberId });
     return getMemberTreeCachePg(memberId);
   }
-  const collection = entityKey === "employment" ? "employment" : "time_settings";
+  if (entityKey === "member-onboarding") {
+    return updateMemberOnboardingRowPg(id, payload);
+  }
+  const collection = entityKey === "employment" ? "employment" : entityKey === "pay-rates" ? "pay_rates" : "time_settings";
   const memberId = String(existing.member_id ?? payload.member_id ?? "");
   await upsertMemberScopedRowPg(collection, memberId, { ...existing, ...payload, id, member_id: memberId });
   return getMemberScopedRowPg(collection, memberId);
@@ -840,6 +949,164 @@ export async function deleteMemberDataSchemaRow(entityKey, id) {
     await deleteMemberTreeCachePg(id);
     return;
   }
-  const table = entityKey === "employment" ? "employment" : "time_settings";
+  if (entityKey === "member-onboarding") {
+    await query("DELETE FROM member_onboarding WHERE id = $1", [id]);
+    return;
+  }
+  const table = entityKey === "employment" ? "employment" : entityKey === "pay-rates" ? "pay_rates" : "time_settings";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+}
+
+// ---------------------------------------------------------------------------
+// member_onboarding
+// ---------------------------------------------------------------------------
+
+const MEMBER_ONBOARDING_COLUMNS = [
+  "id",
+  "member_id",
+  "invite_id",
+  "created_account",
+  "created_account_at",
+  "downloaded_app",
+  "downloaded_app_at",
+  "tracked_time",
+  "tracked_time_at",
+  "last_reminder_sent_at",
+  "last_reminder_sent_by",
+  "created_at",
+  "created_by",
+  "updated_by",
+  "updated_at",
+];
+
+/** @param {Record<string, unknown>} row */
+function normalizeOnboardingRowPg(row) {
+  return normalizeMemberDataRow(row);
+}
+
+export async function listMemberOnboardingRowsPg() {
+  const rows = await query(
+    `SELECT * FROM member_onboarding ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 2000`,
+  );
+  return rows.map(normalizeOnboardingRowPg);
+}
+
+/** @param {string} id */
+export async function getMemberOnboardingRowByIdPg(id) {
+  const rows = await query("SELECT * FROM member_onboarding WHERE id = $1 LIMIT 1", [id]);
+  return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
+}
+
+/** @param {string} memberId */
+export async function findMemberOnboardingByMemberIdPg(memberId) {
+  const rows = await query("SELECT * FROM member_onboarding WHERE member_id = $1 LIMIT 1", [memberId]);
+  return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
+}
+
+/** @param {string} inviteId */
+export async function findMemberOnboardingByInviteIdPg(inviteId) {
+  const rows = await query("SELECT * FROM member_onboarding WHERE invite_id = $1 LIMIT 1", [inviteId]);
+  return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
+}
+
+/**
+ * Full overwrite (INSERT .. ON CONFLICT (id) DO UPDATE SET everything),
+ * matching the Firestore `.set()` calls this replaces in
+ * member-onboarding/routes.js - not a partial merge.
+ * @param {string} id @param {Record<string, unknown>} data
+ */
+export async function setMemberOnboardingRowPg(id, data) {
+  await query(
+    `INSERT INTO member_onboarding (
+      id, member_id, invite_id, created_account, created_account_at,
+      downloaded_app, downloaded_app_at, tracked_time, tracked_time_at,
+      last_reminder_sent_at, last_reminder_sent_by, created_at, created_by, updated_by, updated_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::timestamptz, now()),$13,$14,now())
+    ON CONFLICT (id) DO UPDATE SET
+      member_id = EXCLUDED.member_id,
+      invite_id = EXCLUDED.invite_id,
+      created_account = EXCLUDED.created_account,
+      created_account_at = EXCLUDED.created_account_at,
+      downloaded_app = EXCLUDED.downloaded_app,
+      downloaded_app_at = EXCLUDED.downloaded_app_at,
+      tracked_time = EXCLUDED.tracked_time,
+      tracked_time_at = EXCLUDED.tracked_time_at,
+      last_reminder_sent_at = EXCLUDED.last_reminder_sent_at,
+      last_reminder_sent_by = EXCLUDED.last_reminder_sent_by,
+      created_by = EXCLUDED.created_by,
+      updated_by = EXCLUDED.updated_by,
+      updated_at = now()`,
+    [
+      id,
+      uuidOrNull(data.member_id),
+      uuidOrNull(data.invite_id),
+      data.created_account === true,
+      data.created_account_at ?? null,
+      data.downloaded_app === true,
+      data.downloaded_app_at ?? null,
+      data.tracked_time === true,
+      data.tracked_time_at ?? null,
+      data.last_reminder_sent_at ?? null,
+      String(data.last_reminder_sent_by ?? ""),
+      data.created_at ?? null,
+      actorIdOrNull(data.created_by),
+      actorIdOrNull(data.updated_by),
+    ],
+  );
+  return getMemberOnboardingRowByIdPg(id);
+}
+
+/**
+ * Partial update, matching the Firestore `.update()` calls this replaces.
+ * @param {string} id @param {Record<string, unknown>} patch
+ */
+export async function updateMemberOnboardingRowPg(id, patch) {
+  const columns = MEMBER_ONBOARDING_COLUMNS.filter((c) => c !== "id" && patch[c] !== undefined);
+  if (!columns.length) return getMemberOnboardingRowByIdPg(id);
+  const params = [id];
+  const setClauses = columns.map((column) => {
+    const value =
+      column === "member_id" || column === "invite_id"
+        ? uuidOrNull(patch[column])
+        : column === "created_account" || column === "downloaded_app" || column === "tracked_time"
+          ? patch[column] === true
+          : column === "created_by" || column === "updated_by"
+            ? actorIdOrNull(patch[column])
+            : patch[column];
+    params.push(value);
+    return `${column} = $${params.length}`;
+  });
+  setClauses.push("updated_at = now()");
+  await query(`UPDATE member_onboarding SET ${setClauses.join(", ")} WHERE id = $1`, params);
+  return getMemberOnboardingRowByIdPg(id);
+}
+
+/** Cascade-delete cleanup counterpart to deleteMemberScopedRowsPg. @param {string} memberId */
+export async function deleteMemberOnboardingByMemberIdPg(memberId) {
+  await query("DELETE FROM member_onboarding WHERE member_id = $1", [memberId]);
+}
+
+/** @param {Record<string, unknown>} payload */
+export async function createMemberOnboardingRowPg(payload) {
+  const id = typeof payload.id === "string" && payload.id ? payload.id : crypto.randomUUID();
+  return setMemberOnboardingRowPg(id, { ...payload, id });
+}
+
+/**
+ * member_onboarding has no unique constraint on member_id (a row can also
+ * key off invite_id alone with member_id null) - dedupe the same way the
+ * Firestore version did: keep the most-recently-updated row per member_id,
+ * delete the rest.
+ * @param {string} memberId
+ * @returns {Promise<number>} rows removed
+ */
+export async function dedupeMemberOnboardingByMemberIdPg(memberId) {
+  const rows = await query(
+    "SELECT id FROM member_onboarding WHERE member_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC",
+    [memberId],
+  );
+  if (rows.length <= 1) return 0;
+  const staleIds = rows.slice(1).map((r) => r.id);
+  await query("DELETE FROM member_onboarding WHERE id = ANY($1::uuid[])", [staleIds]);
+  return staleIds.length;
 }

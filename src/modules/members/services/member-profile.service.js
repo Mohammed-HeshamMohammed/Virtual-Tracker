@@ -28,6 +28,7 @@ import {
   upsertSingleByMemberId,
   upsertSingleByMemberIdConditional,
 } from "../../../lib/postgres/member-data-store.js";
+import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 
 const LOOKUP_COLLECTIONS = {
   jobTitle: "job_titles",
@@ -684,10 +685,11 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
  * @param {string} memberId
  */
 export async function deleteMemberProfileData(db, memberId) {
-  for (const collection of ["employment", "time_settings"]) {
+  for (const collection of ["employment", "time_settings", "pay_rates"]) {
     await deleteMemberScopedRows(db, collection, memberId);
   }
-  const fkCollections = ["pay_rates", "team_members", "project_members", "member_onboarding"];
+  await deleteMemberOnboardingByMemberIdPg(memberId);
+  const fkCollections = ["team_members", "project_members"];
   for (const collection of fkCollections) {
     const snap = await db.collection(collection).where("member_id", "==", memberId).get();
     if (snap.empty) continue;

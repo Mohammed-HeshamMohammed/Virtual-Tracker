@@ -10,8 +10,6 @@ const MEMBER_REFERENCES = [
   { collection: "clients", fields: ["member_id"] },
   { collection: "project_members", fields: ["member_id"] },
   { collection: "team_members", fields: ["member_id"] },
-  { collection: "pay_rates", fields: ["member_id"] },
-  { collection: "member_onboarding", fields: ["member_id"] },
   { collection: "member_relationships", fields: ["parent_member_id", "child_member_id"] },
   { collection: "client_projects", fields: ["assigned_by"] },
   { collection: "members_field_data", fields: ["memberDocId"] },

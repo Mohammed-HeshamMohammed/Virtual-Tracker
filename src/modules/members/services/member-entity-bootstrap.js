@@ -1,16 +1,16 @@
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { updateTreeCache } from "../../member-relationships/service.js";
-import { dedupeByMemberId } from "./member-dedupe-helpers.js";
 import { resolveRoleNameById, syncMemberPrimaryRole } from "./relation-sync.js";
+import { dedupeMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import {
   ensureLimitsDoc,
   ensureSingleByMemberId,
   getMemberTreeCache,
 } from "../../../lib/postgres/member-data-store.js";
 
-/** Singleton Firestore rows per member still deduped in Firestore. */
+/** Singleton per-member rows still worth deduping. pay_rates isn't listed -
+ * its Postgres member_id column is UNIQUE, so a duplicate can't exist. */
 export const MEMBER_SINGLETON_COLLECTIONS = [
-  "pay_rates",
   "member_onboarding",
 ];
 
@@ -48,12 +48,9 @@ async function canonicalRoleNameForBootstrap(db, memberData) {
  * @param {string} memberId
  */
 export async function dedupeAllMemberScopedEntities(db, memberId) {
-  let total = 0;
-  for (const collection of MEMBER_SINGLETON_COLLECTIONS) {
-    total += await dedupeByMemberId(db, collection, memberId);
-  }
-  // limits: one row per member_id in Postgres, nothing to dedupe.
-  return total;
+  // limits, employment, time_settings, pay_rates: one row per member_id in
+  // Postgres (UNIQUE constraint), nothing to dedupe.
+  return dedupeMemberOnboardingByMemberIdPg(memberId);
 }
 
 /**
