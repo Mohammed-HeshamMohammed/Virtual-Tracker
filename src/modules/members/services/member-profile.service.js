@@ -26,6 +26,7 @@ import {
   getSingleByMemberId,
   upsertLimitField,
   upsertSingleByMemberId,
+  upsertSingleByMemberIdConditional,
 } from "../../../lib/postgres/member-data-store.js";
 
 const LOOKUP_COLLECTIONS = {
@@ -138,6 +139,16 @@ function parseLimitValue(raw) {
 function limitToInput(value) {
   const n = parseLimitValue(value);
   return n > 0 ? String(n) : "";
+}
+
+/** Postgres rows arrive as a Date (already normalized to ISO by
+ * normalizeMemberDataRow); Firestore rows arrive as a Timestamp. */
+function toIsoTimestamp(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value.toDate === "function") return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return "";
 }
 
 export function validateWorkLimitsMutualExclusion(weeklyLimitRaw, dailyLimitRaw, useShiftsForLimits = false) {
@@ -340,12 +351,16 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.empEndDate = employment.end_date ? String(employment.end_date).slice(0, 10) : "";
     form.empTermination = typeof employment.termination_reason === "string" ? employment.termination_reason : "";
     form.empComments = typeof employment.employment_comments === "string" ? employment.employment_comments : "";
+    // §6.9 - sent back unchanged on save, only for this section: the
+    // employment table's own updated_at, not the shared members doc.
+    form.employmentUpdatedAt = toIsoTimestamp(employment.updated_at);
   }
 
   if (want("payBill")) {
     form.payRate = String(parsePayRate(payRateRow.rate ?? 0) || "");
     form.paySegment = "pay";
     form.payPeriod = typeof payRateRow.pay_period === "string" ? payRateRow.pay_period : "None";
+    form.payBillUpdatedAt = toIsoTimestamp(payRateRow.updated_at);
   }
 
   if (want("workLimits")) {
@@ -368,6 +383,10 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     const privileges =
       memberData.privileges && typeof memberData.privileges === "object" ? memberData.privileges : {};
     form.manageEmployeeTeams = privileges.manage_employee_teams === true;
+    // §6.9 - time_settings' own updated_at. Note this section's save can
+    // also carry workLimits fields (batch-update route only); the token
+    // captured here is meaningful for a settings-tab-only save.
+    form.settingsUpdatedAt = toIsoTimestamp(timeSettings.updated_at);
   }
 
   return form;
@@ -386,7 +405,11 @@ export async function getMemberProfileForm(db, memberId) {
  * @param {string} memberId
  * @param {Record<string, unknown>} body
  * @param {string} [updatedBy]
- * @param {{ actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null }} [options]
+ * @param {{ actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null, expectedUpdatedAt?: string }} [options]
+ *   `expectedUpdatedAt` (§6.9) only applies to a single-section save
+ *   (employment, payBill, or settings - see the note above the "roles"
+ *   and "info" branches for why those two are excluded). Throws with
+ *   `.staleWrite = true` on a conflict; callers map that to a 409.
  */
 export async function updateMemberProfile(db, memberId, body, updatedBy = "", options = {}) {
   const memberRef = db.collection("members").doc(memberId);
@@ -504,46 +527,73 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       resolveLookupIdByName(db, LOOKUP_COLLECTIONS.taxType, employmentIn.empTaxType),
     ]);
 
-    await upsertSingleByMemberId(db, "employment", memberId, {
-      job_title_id: jobTitleId,
-      department_id: departmentId,
-      job_type_id: jobTypeId,
-      tax_type_id: taxTypeId,
-      job_title_label: typeof employmentIn.empJobTitle === "string" ? employmentIn.empJobTitle.trim() : "",
-      department_label: typeof employmentIn.empDepartment === "string" ? employmentIn.empDepartment.trim() : "",
-      job_type_label: typeof employmentIn.empJobType === "string" ? employmentIn.empJobType.trim() : "",
-      tax_type_label: typeof employmentIn.empTaxType === "string" ? employmentIn.empTaxType.trim() : "",
-      work_address: typeof employmentIn.empWorkAddress === "string" ? employmentIn.empWorkAddress.trim() : "",
-      mailing_address: employmentIn.empMailing === true,
-      employment_type: typeof employmentIn.empEmploymentType === "string" ? employmentIn.empEmploymentType.trim() : "",
-      employed_through: typeof employmentIn.empEmployedThrough === "string" ? employmentIn.empEmployedThrough.trim() : "",
-      workplace_model: typeof employmentIn.empWorkplace === "string" ? employmentIn.empWorkplace.trim() : "",
-      pct_in_office: parsePayRate(employmentIn.empOfficePct),
-      pct_remote: parsePayRate(employmentIn.empRemotePct),
-      tax_info: typeof employmentIn.empTaxInfo === "string" ? employmentIn.empTaxInfo.trim() : "",
-      account_code: typeof employmentIn.empAccountCode === "string" ? employmentIn.empAccountCode.trim() : "",
-      start_date: typeof employmentIn.empStartDate === "string" && employmentIn.empStartDate ? employmentIn.empStartDate : null,
-      end_date: typeof employmentIn.empEndDate === "string" && employmentIn.empEndDate ? employmentIn.empEndDate : null,
-      termination_reason: typeof employmentIn.empTermination === "string" ? employmentIn.empTermination.trim() : "",
-      employment_comments: typeof employmentIn.empComments === "string" ? employmentIn.empComments.trim() : "",
-      updated_by: actor,
-      updated_at: now,
-    });
+    // §6.9 - conditional only when the caller sent back employment's own
+    // updated_at (options.expectedUpdatedAt is per-section: it's only
+    // meaningful for whichever single section the modal's active tab is
+    // saving). Not checked against the shared `members` doc - every section
+    // bumps that one, which would make this conflict on unrelated tab saves.
+    const employmentResult = await upsertSingleByMemberIdConditional(
+      db,
+      "employment",
+      memberId,
+      {
+        job_title_id: jobTitleId,
+        department_id: departmentId,
+        job_type_id: jobTypeId,
+        tax_type_id: taxTypeId,
+        job_title_label: typeof employmentIn.empJobTitle === "string" ? employmentIn.empJobTitle.trim() : "",
+        department_label: typeof employmentIn.empDepartment === "string" ? employmentIn.empDepartment.trim() : "",
+        job_type_label: typeof employmentIn.empJobType === "string" ? employmentIn.empJobType.trim() : "",
+        tax_type_label: typeof employmentIn.empTaxType === "string" ? employmentIn.empTaxType.trim() : "",
+        work_address: typeof employmentIn.empWorkAddress === "string" ? employmentIn.empWorkAddress.trim() : "",
+        mailing_address: employmentIn.empMailing === true,
+        employment_type: typeof employmentIn.empEmploymentType === "string" ? employmentIn.empEmploymentType.trim() : "",
+        employed_through: typeof employmentIn.empEmployedThrough === "string" ? employmentIn.empEmployedThrough.trim() : "",
+        workplace_model: typeof employmentIn.empWorkplace === "string" ? employmentIn.empWorkplace.trim() : "",
+        pct_in_office: parsePayRate(employmentIn.empOfficePct),
+        pct_remote: parsePayRate(employmentIn.empRemotePct),
+        tax_info: typeof employmentIn.empTaxInfo === "string" ? employmentIn.empTaxInfo.trim() : "",
+        account_code: typeof employmentIn.empAccountCode === "string" ? employmentIn.empAccountCode.trim() : "",
+        start_date: typeof employmentIn.empStartDate === "string" && employmentIn.empStartDate ? employmentIn.empStartDate : null,
+        end_date: typeof employmentIn.empEndDate === "string" && employmentIn.empEndDate ? employmentIn.empEndDate : null,
+        termination_reason: typeof employmentIn.empTermination === "string" ? employmentIn.empTermination.trim() : "",
+        employment_comments: typeof employmentIn.empComments === "string" ? employmentIn.empComments.trim() : "",
+        updated_by: actor,
+        updated_at: now,
+      },
+      options.expectedUpdatedAt,
+    );
+    if (employmentResult && typeof employmentResult === "object" && "conflict" in employmentResult) {
+      const err = new Error("Someone else changed this member's employment info while you were editing.");
+      err.staleWrite = true;
+      throw err;
+    }
   }
 
   if (hasPayBill) {
     const payRate = parsePayRate(payBill.payRate);
-    await upsertSingleByMemberId(db, "pay_rates", memberId, {
-      type: "hourly",
-      rate: payRate,
-      currency: "USD",
-      pay_period: typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None",
-      ...(hasSettings ? { require_timesheet_approval: settings.requireApproval === true } : {}),
-      effective_date: now,
-      status: "active",
-      updated_by: actor,
-      updated_at: now,
-    });
+    const payBillResult = await upsertSingleByMemberIdConditional(
+      db,
+      "pay_rates",
+      memberId,
+      {
+        type: "hourly",
+        rate: payRate,
+        currency: "USD",
+        pay_period: typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None",
+        ...(hasSettings ? { require_timesheet_approval: settings.requireApproval === true } : {}),
+        effective_date: now,
+        status: "active",
+        updated_by: actor,
+        updated_at: now,
+      },
+      options.expectedUpdatedAt,
+    );
+    if (payBillResult && typeof payBillResult === "object" && "conflict" in payBillResult) {
+      const err = new Error("Someone else changed this member's pay/billing info while you were editing.");
+      err.staleWrite = true;
+      throw err;
+    }
   }
 
   if (hasSettings) {
@@ -552,20 +602,34 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       ? workLimits.workDays.filter((d) => Number.isInteger(d))
       : undefined;
 
-    await upsertSingleByMemberId(db, "time_settings", memberId, {
-      able_to_track_time: ableToTrack,
-      keep_idle_time: idleModeToDb(settings.idleMode),
-      idle_timeout: typeof settings.idleTimeout === "string" ? settings.idleTimeout : "5 min",
-      modify_time: manualTimeToDb(settings.manualTime),
-      require_approval: settings.requireApproval === true,
-      ...(workDays ? { work_days: workDays } : {}),
-      ...(hasWorkLimits ? { disable_tracking_specific_days: workLimits.disableTrackingSpecificDays === true } : {}),
-      ...(hasWorkLimits
-        ? { use_shifts_for_limits: SHIFT_ALLOWANCE_LIMITS_ENABLED && workLimits.useShiftsForLimits === true }
-        : {}),
-      updated_by: actor,
-      updated_at: now,
-    });
+    const settingsResult = await upsertSingleByMemberIdConditional(
+      db,
+      "time_settings",
+      memberId,
+      {
+        able_to_track_time: ableToTrack,
+        keep_idle_time: idleModeToDb(settings.idleMode),
+        idle_timeout: typeof settings.idleTimeout === "string" ? settings.idleTimeout : "5 min",
+        modify_time: manualTimeToDb(settings.manualTime),
+        require_approval: settings.requireApproval === true,
+        ...(workDays ? { work_days: workDays } : {}),
+        ...(hasWorkLimits ? { disable_tracking_specific_days: workLimits.disableTrackingSpecificDays === true } : {}),
+        ...(hasWorkLimits
+          ? { use_shifts_for_limits: SHIFT_ALLOWANCE_LIMITS_ENABLED && workLimits.useShiftsForLimits === true }
+          : {}),
+        updated_by: actor,
+        updated_at: now,
+      },
+      // Not checked when this save also carries workLimits fields (a
+      // combined section save only the batch-update route can produce) -
+      // this token is captured for the settings tab specifically.
+      hasWorkLimits ? undefined : options.expectedUpdatedAt,
+    );
+    if (settingsResult && typeof settingsResult === "object" && "conflict" in settingsResult) {
+      const err = new Error("Someone else changed this member's settings while you were editing.");
+      err.staleWrite = true;
+      throw err;
+    }
   } else if (hasWorkLimits) {
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 

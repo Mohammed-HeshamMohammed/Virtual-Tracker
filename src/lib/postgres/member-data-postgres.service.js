@@ -155,12 +155,122 @@ export async function getMemberScopedRowPg(collection, memberId) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
+const EMPLOYMENT_UPDATABLE_COLUMNS = [
+  "job_title_id",
+  "department_id",
+  "job_type_id",
+  "tax_type_id",
+  "work_address",
+  "mailing_address",
+  "employment_type",
+  "employed_through",
+  "workplace_model",
+  "pct_in_office",
+  "pct_remote",
+  "tax_info",
+  "account_code",
+  "currency",
+  "start_date",
+  "end_date",
+  "termination_reason",
+  "employment_comments",
+];
+const TIME_SETTINGS_UPDATABLE_COLUMNS = [
+  "able_to_track_time",
+  "keep_idle_time",
+  "idle_timeout",
+  "modify_time",
+  "require_approval",
+  "work_days",
+  "disable_tracking_specific_days",
+  "use_shifts_for_limits",
+];
+
+function employmentColumnValue(column, payload) {
+  switch (column) {
+    case "job_title_id":
+    case "department_id":
+    case "job_type_id":
+    case "tax_type_id":
+      return uuidOrNull(payload[column]);
+    case "mailing_address":
+      return payload.mailing_address === true;
+    case "pct_in_office":
+      return Number(payload.pct_in_office ?? 0);
+    case "pct_remote":
+      return Number(payload.pct_remote ?? 0);
+    case "currency":
+      return String(payload.currency ?? "USD");
+    case "start_date":
+      return parseDateOnly(payload.start_date);
+    case "end_date":
+      return parseDateOnly(payload.end_date);
+    default:
+      return String(payload[column] ?? "");
+  }
+}
+
+function timeSettingsColumnValue(column, payload) {
+  switch (column) {
+    case "able_to_track_time":
+      return payload.able_to_track_time !== false;
+    case "require_approval":
+      return payload.require_approval === true;
+    case "work_days":
+      return JSON.stringify(Array.isArray(payload.work_days) ? payload.work_days : [0, 1, 2, 3, 4]);
+    case "disable_tracking_specific_days":
+      return payload.disable_tracking_specific_days === true;
+    case "use_shifts_for_limits":
+      return payload.use_shifts_for_limits === true;
+    case "keep_idle_time":
+      return String(payload.keep_idle_time ?? "never");
+    case "idle_timeout":
+      return String(payload.idle_timeout ?? "5 min");
+    case "modify_time":
+      return String(payload.modify_time ?? "off");
+    default:
+      return null;
+  }
+}
+
+/**
+ * §6.9 conditional-write path for an existing employment/time_settings row.
+ * Same shape as project_budgets' equivalent: a plain `WHERE member_id = $1
+ * AND updated_at = $expected` UPDATE, returning true (conflict) on zero rows.
+ * @param {string} collection @param {string} memberId
+ * @param {Record<string, unknown>} payload @param {string} actor
+ * @param {string} expectedUpdatedAt
+ * @returns {Promise<boolean>} true on conflict
+ */
+async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload, actor, expectedUpdatedAt) {
+  const columns = collection === "employment" ? EMPLOYMENT_UPDATABLE_COLUMNS : TIME_SETTINGS_UPDATABLE_COLUMNS;
+  const valueFor = collection === "employment" ? employmentColumnValue : timeSettingsColumnValue;
+  const params = [memberId];
+  const setClauses = columns.map((column) => {
+    params.push(valueFor(column, payload));
+    const cast = column === "work_days" ? "::jsonb" : "";
+    return `${column} = $${params.length}${cast}`;
+  });
+  params.push(actor);
+  setClauses.push(`updated_by = $${params.length}`);
+  params.push(expectedUpdatedAt);
+  const rows = await query(
+    `UPDATE ${collection} SET ${setClauses.join(", ")}, updated_at = now()
+     WHERE member_id = $1 AND updated_at = $${params.length}
+     RETURNING member_id`,
+    params,
+  );
+  return rows.length === 0;
+}
+
 /**
  * @param {string} collection
  * @param {string} memberId
  * @param {Record<string, unknown>} payload
+ * @param {string} [expectedUpdatedAt] §6.9 - only checked when a row already
+ *   exists; a first-time create has nothing to conflict with.
  */
-export async function upsertMemberScopedRowPg(collection, memberId, payload) {
+export async function upsertMemberScopedRowPg(collection, memberId, payload, expectedUpdatedAt) {
   if (!MEMBER_SCOPED_COLLECTIONS.has(collection)) {
     throw new Error(`Unsupported member-scoped collection: ${collection}`);
   }
@@ -168,6 +278,12 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload) {
   const existing = await getMemberScopedRowPg(collection, memberId);
   const id = existing?.id ?? (typeof payload.id === "string" ? payload.id : crypto.randomUUID());
   const actor = actorIdOrNull(payload.updated_by) ?? "system";
+
+  if (existing && expectedUpdatedAt) {
+    const conflict = await conditionalUpdateMemberScopedRowPg(collection, memberId, payload, actor, expectedUpdatedAt);
+    if (conflict) return { conflict: true };
+    return id;
+  }
 
   if (collection === "employment") {
     await query(

@@ -148,6 +148,50 @@ export async function upsertSingleByMemberId(db, collection, memberId, payload) 
   return id;
 }
 
+/**
+ * §6.9 - same contract as the Postgres write helpers: only checked when
+ * `expectedUpdatedAt` is provided and a row already exists; a first-time
+ * create has nothing to conflict with. Returns `{ conflict: true }` instead
+ * of the row id on a stale write.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} collection @param {string} memberId
+ * @param {Record<string, unknown>} payload @param {string} [expectedUpdatedAt]
+ */
+export async function upsertSingleByMemberIdConditional(db, collection, memberId, payload, expectedUpdatedAt) {
+  if (PG_MEMBER_SCOPED.has(collection)) {
+    await requireMemberDataPostgres();
+    const existing = await getMemberScopedRowPg(collection, memberId);
+    const id = existing?.id ?? crypto.randomUUID();
+    const result = await upsertMemberScopedRowPg(collection, memberId, { id, member_id: memberId, ...payload }, expectedUpdatedAt);
+    if (result && typeof result === "object" && "conflict" in result) return { conflict: true };
+    return id;
+  }
+  if (!expectedUpdatedAt) {
+    return upsertSingleByMemberId(db, collection, memberId, payload);
+  }
+  const snap = await db.collection(collection).where("member_id", "==", memberId).get();
+  if (snap.empty) {
+    // Nothing to conflict with yet - same as the Postgres path's first create.
+    return upsertSingleByMemberId(db, collection, memberId, payload);
+  }
+  const target = pickLatestMemberRow(snap.docs);
+  return db.runTransaction(async (tx) => {
+    const fresh = await tx.get(target.ref);
+    const currentUpdatedAt = fresh.data()?.updated_at;
+    const currentIso =
+      currentUpdatedAt && typeof currentUpdatedAt.toDate === "function"
+        ? currentUpdatedAt.toDate().toISOString()
+        : currentUpdatedAt instanceof Date
+          ? currentUpdatedAt.toISOString()
+          : String(currentUpdatedAt ?? "");
+    if (currentIso !== expectedUpdatedAt) {
+      return { conflict: true };
+    }
+    tx.update(target.ref, { ...payload, updated_at: new Date() });
+    return target.id;
+  });
+}
+
 /** @param {import("firebase-admin/firestore").Firestore} db */
 export async function ensureSingleByMemberId(db, collection, memberId, buildPayload) {
   if (PG_MEMBER_SCOPED.has(collection)) {

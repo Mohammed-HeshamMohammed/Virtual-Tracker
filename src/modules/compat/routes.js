@@ -1059,15 +1059,28 @@ export async function routeCompatibility(req, res, url, db, origin) {
 
       const reloadSections = getProfilePatchSections(body);
       const singleSection = reloadSections.length === 1 ? reloadSections[0] : null;
+      // §6.9 - optional, only present when the caller sends back the
+      // per-section *UpdatedAt it loaded the form with.
+      const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
       if (
         !hasRoleChange &&
         (singleSection === "payBill" || singleSection === "workLimits" || singleSection === "settings")
       ) {
-        const form = await updateMemberProfile(db, id, body, updatedBy, {
-          actorIsManager: canManage,
-          actorUid: viewer?.uid ?? "",
-          reloadSections,
-        });
+        let form;
+        try {
+          form = await updateMemberProfile(db, id, body, updatedBy, {
+            actorIsManager: canManage,
+            actorUid: viewer?.uid ?? "",
+            reloadSections,
+            expectedUpdatedAt,
+          });
+        } catch (e) {
+          if (e instanceof Error && e.staleWrite) {
+            sendJson(res, origin, 409, { success: false, code: "stale_write", error: e.message });
+            return true;
+          }
+          throw e;
+        }
         void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
           logSafeWarn("[members] form snapshot upsert:", e);
         });
@@ -1088,12 +1101,22 @@ export async function routeCompatibility(req, res, url, db, origin) {
           }),
         );
       }
-      const form = await updateMemberProfile(db, id, body, updatedBy, {
-        actorIsManager: canManage,
-        actorUid: viewer?.uid ?? "",
-        skipRoleSync: hasRoleChange,
-        reloadSections,
-      });
+      let form;
+      try {
+        form = await updateMemberProfile(db, id, body, updatedBy, {
+          actorIsManager: canManage,
+          actorUid: viewer?.uid ?? "",
+          skipRoleSync: hasRoleChange,
+          reloadSections,
+          expectedUpdatedAt,
+        });
+      } catch (e) {
+        if (e instanceof Error && e.staleWrite) {
+          sendJson(res, origin, 409, { success: false, code: "stale_write", error: e.message });
+          return true;
+        }
+        throw e;
+      }
       void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
         logSafeWarn("[members] form snapshot upsert:", e);
       });
