@@ -9,6 +9,7 @@ import {
 import { canEditTeam } from "../../http/team-edit-access.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
+import { sendPgConstraintError } from "../../http/api-error.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { listClientsEnriched } from "../clients/services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
@@ -655,6 +656,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: project });
       } catch (e) {
         logSafeError("[projects/:id PATCH]", e);
+        if (sendPgConstraintError(res, origin, e, req)) return true;
         sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to update project" });
       }
       return true;
@@ -896,6 +898,7 @@ export async function routeProjects(req, res, url, db, origin) {
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-budgets/:id PATCH]", e);
+      if (sendPgConstraintError(res, origin, e, req)) return true;
       sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to update project budget" });
     }
     return true;

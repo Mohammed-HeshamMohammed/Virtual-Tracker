@@ -6,6 +6,7 @@ import { canAccessTask } from "../../http/task-access.js";
 import { getViewerProjectIds, toAllowedProjectSet, viewerCanWriteProject, viewerCanCreateProjectTasks } from "../../http/project-access.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
+import { sendPgConstraintError } from "../../http/api-error.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { assertRowVisible, applyVisibilityFilter } from "./visibility.js";
 import { schemaByKey, schemaEntities } from "./catalog/index.js";
@@ -468,6 +469,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       sendJson(res, origin, 200, { success: true, data });
     } catch (error) {
       logSafeError("[tasks/batch/reorder]", error);
+      if (sendPgConstraintError(res, origin, error, req)) return true;
       sendJson(res, origin, 400, {
         success: false,
         error: error instanceof Error ? error.message : "Failed to reorder tasks",
@@ -1066,6 +1068,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
     // were none). Logged now so a real failure is diagnosable instead of
     // only ever showing up as an opaque 400 in the browser.
     logSafeError(`[schema-crud ${req.method} ${url.pathname}]`, error);
+    if (sendPgConstraintError(res, origin, error, req)) return true;
     sendJson(res, origin, 400, { success: false, error: error.message || "Invalid request" });
     return true;
   }

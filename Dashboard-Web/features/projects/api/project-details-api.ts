@@ -494,7 +494,11 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     {},
     { retries: 1 },
   )
-  if (!res.ok) throw extractApiError(res.status, "Failed to load project for edit", json)
+  if (!res.ok) {
+    const err = extractApiError(res.status, "Failed to load project for edit", json) as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
   if (!json?.success || !json.data) throw new Error(json?.error || "Failed to load project for edit")
   const data = json.data
   const legacyClientId = (data as ProjectEditLoadedState & { clientId?: string }).clientId

@@ -336,6 +336,8 @@ interface ProjectModalProps {
   user: any
   onClose: () => void
   onSave: (editingProjectId: string | null, payloads: CreateProjectFormPayload[], editingBudgetId?: string) => Promise<void>
+  /** Called instead of showing an in-form error when the project being edited no longer exists. */
+  onEntityGone?: (message: string) => void
 }
 
 export function ProjectModal({
@@ -343,6 +345,7 @@ export function ProjectModal({
   user,
   onClose,
   onSave,
+  onEntityGone,
 }: ProjectModalProps) {
   const formTheme = useClientFormTheme()
   const segmented = useSegmentedClasses()
@@ -528,9 +531,14 @@ export function ProjectModal({
         })
       })
       .catch((err) => {
-        if (!cancelled) {
-          setSubmitError(err instanceof Error ? err.message : "Failed to load project details")
+        if (cancelled) return
+        const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined
+        if (status === 404) {
+          onClose()
+          onEntityGone?.("This project no longer exists.")
+          return
         }
+        setSubmitError(err instanceof Error ? err.message : "Failed to load project details")
       })
       .finally(() => {
         if (!cancelled) setEditFormLoading(false)

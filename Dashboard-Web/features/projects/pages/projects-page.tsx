@@ -27,6 +27,7 @@ import { useProjectMutations } from "@/features/projects/hooks/use-project-mutat
 import { ProjectModal } from "@/features/projects/components/modals/project-modal"
 import { ProjectsToolbar } from "@/features/projects/components/projects-toolbar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
+import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
 
@@ -101,6 +102,7 @@ export function ProjectsPage() {
 
   const [isAddOpen, setIsAddOpen] = useComponentState(false)
   const [editingProjectId, setEditingProjectId] = useComponentState<string | null>(null)
+  const [entityGoneNotice, setEntityGoneNotice] = useComponentState<string | null>(null)
 
   // Columns Hook
   const {
@@ -152,6 +154,11 @@ export function ProjectsPage() {
   function closeProjectModal() {
     setIsAddOpen(false)
     setEditingProjectId(null)
+  }
+
+  function handleEntityGone(message: string) {
+    closeProjectModal()
+    setEntityGoneNotice(message)
   }
 
   function openAddProjectModal() {
@@ -341,10 +348,18 @@ export function ProjectsPage() {
               user={user}
               onClose={closeProjectModal}
               onSave={saveProject}
+              onEntityGone={handleEntityGone}
             />
           </div>
         )}
       </AnimatePresence>
+
+      <NotifyToastHost
+        message={entityGoneNotice}
+        onDismiss={() => setEntityGoneNotice(null)}
+        title="Notice"
+        tone="error"
+      />
 
       <AnimatePresence>
         <DeleteConfirmDialog

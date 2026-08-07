@@ -4,6 +4,7 @@ import { assertManagementRole } from "../../http/authorization.js";
 import { applyVisibilityFilter } from "../schema/visibility.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
+import { sendPgConstraintError } from "../../http/api-error.js";
 import {
   CLIENT_FORM_FIELDS,
   CLIENT_FORM_TABS,
@@ -240,6 +241,7 @@ export async function routeClients(req, res, url, db, origin) {
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[clients/with-details PUT]", e);
+      if (sendPgConstraintError(res, origin, e, req)) return true;
       const status = e instanceof Error && e.message === "Client not found" ? 404 : 400;
       sendJson(res, origin, status, {
         success: false,

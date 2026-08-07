@@ -35,6 +35,30 @@ export function enrichErrorPayload(status, payload) {
   };
 }
 
+/**
+ * Maps a Postgres foreign-key-violation (23503) to a clean 409, in place of the
+ * raw driver message. Returns true if it sent a response, false if the caller
+ * should handle `err` itself.
+ * @param {import("node:http").ServerResponse} res
+ * @param {string|undefined} origin
+ * @param {unknown} err
+ * @param {import("node:http").IncomingMessage} [req]
+ */
+export function sendPgConstraintError(res, origin, err, req) {
+  if (!err || typeof err !== "object" || /** @type {{code?: string}} */ (err).code !== "23503") {
+    return false;
+  }
+  sendApiError(
+    res,
+    origin,
+    409,
+    "stale_reference",
+    "Someone deleted one of the selected items while you were editing. Reload to continue.",
+    req,
+  );
+  return true;
+}
+
 /** Standard error envelope — keeps top-level `error` string for old clients. */
 export function sendApiError(res, origin, status, code, message, req) {
   sendJson(

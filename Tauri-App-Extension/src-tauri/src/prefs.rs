@@ -27,6 +27,15 @@ pub struct UserPreferences {
     /// Closing the window hides it in the tray instead of quitting the agent.
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
+    /// Set after the first successful startup. `start_hidden` only applies once
+    /// this is true - a fresh install always shows the window on first launch,
+    /// since the user has never seen the tray icon yet.
+    #[serde(default)]
+    pub has_launched_before: bool,
+    /// Set the first time the window is hidden to the tray in this install, so
+    /// the "still running" notice is shown once and never repeated.
+    #[serde(default)]
+    pub tray_notice_shown: bool,
 }
 
 impl Default for UserPreferences {
@@ -36,6 +45,8 @@ impl Default for UserPreferences {
             start_hidden: false,
             auto_sign_in: true,
             close_to_tray: true,
+            has_launched_before: false,
+            tray_notice_shown: false,
         }
     }
 }

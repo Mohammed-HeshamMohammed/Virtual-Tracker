@@ -47,6 +47,7 @@ impl Settings {
             url_script_path.display(),
             url_script_path.exists()
         );
+        log::info!("Preferences file resolved to {}", prefs_path.display());
 
         Self {
             api_url: env::var("VT_API_URL")

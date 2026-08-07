@@ -58,6 +58,7 @@ function MainApp() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
   const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
+  const [liveWorkedTodaySeconds, setLiveWorkedTodaySeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
@@ -366,6 +367,24 @@ function MainApp() {
     const timer = window.setInterval(() => setLiveActiveSeconds((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
   }, [tracking]);
+
+  // Same reconcile-then-tick pattern as liveActiveSeconds above, applied to
+  // "Today, all work" - it previously only ever showed the raw 5s-polled
+  // memberLimits value, so it sat still for up to 20s (the server's own sync
+  // interval) while the task clock beside it moved every second.
+  useEffect(() => {
+    const next = memberLimits?.workedTodaySeconds ?? 0;
+    setLiveWorkedTodaySeconds((s) => (tracking ? Math.max(s, next) : next));
+  }, [memberLimits?.workedTodaySeconds, tracking]);
+
+  useEffect(() => {
+    // Only while actively working: ticking through an idle period would run
+    // ahead of the backend's idle-time subtraction and produce a visible
+    // rewind once the poll catches up (see the idle-stage banner below).
+    if (!tracking || (session?.idleStage ?? 0) !== 0) return;
+    const timer = window.setInterval(() => setLiveWorkedTodaySeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [tracking, session?.idleStage]);
 
   useEffect(() => {
     void checkForUpdate();
@@ -736,7 +755,7 @@ function MainApp() {
       : memberLimits.limitReached
         ? "Limit reached"
         : `${fmtHours(memberLimits.allowedRemainingSeconds)} left`;
-  const workedTodayLabel = memberLimits ? fmtHours(memberLimits.workedTodaySeconds) : "—";
+  const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds) : "—";
 
   // Rendered under both project types: on its own for a calling project (which
   // has no task stats at all), and alongside the task cards otherwise.

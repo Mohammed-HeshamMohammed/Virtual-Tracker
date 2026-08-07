@@ -364,6 +364,43 @@ fn show_startup_error(message: &str) {
 #[cfg(not(windows))]
 fn show_startup_error(_message: &str) {}
 
+/// Shown the first time the window is hidden to the tray in a given install,
+/// whichever path gets there first - startup with `start_hidden` on, or the
+/// close button with "keep running in tray" on. Without this a user who has
+/// never seen the tray icon assumes the app failed to open. Reuses the same
+/// WinAPI pattern as `show_startup_error`; a no-op elsewhere is an accepted
+/// gap rather than a new cross-platform notification dependency.
+#[cfg(windows)]
+fn show_tray_hidden_notice() {
+    use windows::core::PCWSTR;
+    use windows::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONINFORMATION, MB_OK};
+
+    fn to_wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+    let text = to_wide("Virtual Tracker is still running.\n\nClick the tray icon to reopen it.");
+    let caption = to_wide("Virtual Tracker");
+    unsafe {
+        let _ = MessageBoxW(None, PCWSTR(text.as_ptr()), PCWSTR(caption.as_ptr()), MB_OK | MB_ICONINFORMATION);
+    }
+}
+
+#[cfg(not(windows))]
+fn show_tray_hidden_notice() {}
+
+/// Shows the one-time "still running" notice and flags it shown, exactly once
+/// per install - re-reads preferences fresh rather than trusting a value
+/// captured at startup, since the close-button path can fire long after.
+fn notify_hidden_to_tray_once(controller: &Arc<AgentController>) {
+    let mut prefs = controller.get_app_settings().preferences;
+    if prefs.tray_notice_shown {
+        return;
+    }
+    prefs.tray_notice_shown = true;
+    let _ = controller.save_preferences(prefs);
+    show_tray_hidden_notice();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
@@ -372,6 +409,7 @@ pub fn run() {
     let prefs = settings.preferences_store().load();
     let start_hidden = prefs.start_hidden;
     let launch_at_login = prefs.launch_at_login;
+    let has_launched_before = prefs.has_launched_before;
     let controller = match AgentController::new(settings) {
         Ok(controller) => controller,
         Err(err) => {
@@ -509,14 +547,23 @@ pub fn run() {
                         api.prevent_close();
                         if close_controller.close_to_tray() {
                             let _ = win.hide();
+                            notify_hidden_to_tray_once(&close_controller);
                             return;
                         }
                         close_controller.stop();
                         win.app_handle().exit(0);
                     }
                 });
-                if start_hidden {
+                // A first run always shows the window - the user has never
+                // seen the tray icon yet and has no reason to look for it.
+                if start_hidden && has_launched_before {
                     let _ = window.hide();
+                    notify_hidden_to_tray_once(&controller);
+                }
+                if !has_launched_before {
+                    let mut updated = controller.get_app_settings().preferences;
+                    updated.has_launched_before = true;
+                    let _ = controller.save_preferences(updated);
                 }
             }
 

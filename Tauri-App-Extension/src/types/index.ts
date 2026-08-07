@@ -47,6 +47,9 @@ export type UserPreferences = {
   startHidden: boolean;
   autoSignIn: boolean;
   closeToTray: boolean;
+  /** Internal bookkeeping, not user-facing: gates first-run visibility and the one-time tray notice. */
+  hasLaunchedBefore: boolean;
+  trayNoticeShown: boolean;
 };
 
 export type AppSettingsView = {
