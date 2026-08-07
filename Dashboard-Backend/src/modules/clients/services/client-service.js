@@ -408,7 +408,16 @@ export async function updateClientWithDetails(db, clientId, body, actorId) {
   if (parsed.status) patch.status = String(parsed.status).toLowerCase();
   if (actorId) patch.updatedBy = actorId;
 
-  const updated = await updateClientPg(clientId, patch);
+  // §6.9 - optional: only present when the caller sends back the
+  // updatedAt it loaded the client with.
+  const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
+  const updated = await updateClientPg(clientId, patch, expectedUpdatedAt);
+  if (updated && typeof updated === "object" && "conflict" in updated) {
+    const err = new Error("Someone else changed this client while you were editing. Reload to see their changes.");
+    err.staleWrite = true;
+    err.current = updated.current;
+    throw err;
+  }
 
   const budgetDoc = await upsertClientBudget(db, clientId, parsed.budget, null, actorId);
   const invoicingDoc = await upsertClientInvoicing(db, clientId, parsed.invoicing, null, actorId);

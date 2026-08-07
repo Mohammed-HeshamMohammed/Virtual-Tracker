@@ -276,7 +276,7 @@ export async function createPostgresRow(entityKey, payload) {
  * @param {Record<string, unknown>} payload
  * @param {Record<string, unknown>} existing
  */
-export async function updatePostgresRow(entityKey, id, payload, existing) {
+export async function updatePostgresRow(entityKey, id, payload, existing, expectedUpdatedAt) {
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return updateMemberDataSchemaRow(entityKey, id, payload, existing);
   }
@@ -284,7 +284,10 @@ export async function updatePostgresRow(entityKey, id, payload, existing) {
     return updateLookupPostgresRow(entityKey, id, payload, existing);
   }
   if (entityKey === "tasks") {
-    return updateTaskPg(id, payload);
+    // §6.9 - optimistic concurrency, optional. Every other entityKey here
+    // keeps its unconditional write for now (see PLAN-livesyncandagenttimer.md
+    // §9 step 14's scope: projects/budgets/clients/tasks first).
+    return updateTaskPg(id, payload, expectedUpdatedAt);
   }
   if (entityKey === "task-assignments") {
     return updateAssignmentPg(id, payload);

@@ -434,6 +434,8 @@ export type CreateProjectActor = {
 
 export type ProjectEditLoadedState = CreateProjectFormPayload & {
   budgetId?: string
+  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+  updatedAt?: string
 }
 
 function normalizeProjectRole(role: string): string {
@@ -683,7 +685,7 @@ export async function updateProjectWithDetails(
   projectId: string,
   payload: CreateProjectFormPayload,
   actor?: CreateProjectActor,
-  options?: { budgetId?: string },
+  options?: { budgetId?: string; expectedUpdatedAt?: string },
 ): Promise<ApiProject> {
   const actorMemberId =
     (actor?.memberId && isValidUuid(actor.memberId) ? actor.memberId : undefined) ??
@@ -708,6 +710,7 @@ export async function updateProjectWithDetails(
       endDate: payload.endDate,
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
+      ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
     }),
     syncClientLinks(projectId, clientIds, actorMemberId),
     syncProjectMembers(projectId, memberPayload, actorMemberId),

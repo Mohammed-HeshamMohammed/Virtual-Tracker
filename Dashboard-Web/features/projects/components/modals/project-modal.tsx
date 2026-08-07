@@ -337,7 +337,12 @@ interface ProjectModalProps {
   projectId: string | null
   user: any
   onClose: () => void
-  onSave: (editingProjectId: string | null, payloads: CreateProjectFormPayload[], editingBudgetId?: string) => Promise<void>
+  onSave: (
+    editingProjectId: string | null,
+    payloads: CreateProjectFormPayload[],
+    editingBudgetId?: string,
+    expectedUpdatedAt?: string,
+  ) => Promise<void>
   /** Called instead of showing an in-form error when the project being edited no longer exists. */
   onEntityGone?: (message: string) => void
 }
@@ -356,6 +361,9 @@ export function ProjectModal({
   const [addForm, setAddForm] = useComponentState<AddProjectFormState>(createDefaultAddForm)
   const [budgetFieldErrors, setBudgetFieldErrors] = useComponentState<ProjectBudgetFieldErrors>({})
   const [editingBudgetId, setEditingBudgetId] = useComponentState<string | undefined>(undefined)
+  // §6.9 - the version token this form loaded the project with, sent back
+  // unchanged on save so a stale-snapshot write can be detected server-side.
+  const [editingUpdatedAt, setEditingUpdatedAt] = useComponentState<string | undefined>(undefined)
   const [addProjectTab, setAddProjectTab] = useComponentState<AddProjectTab>("general")
   // Type is create-time only, so editing an existing project skips the picker.
   const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
@@ -560,8 +568,9 @@ export function ProjectModal({
       .then(([loaded, linkedTeams]) => {
         if (cancelled) return
         setLinkedTeamOptions(linkedTeams)
-        const { budgetId, ...payload } = loaded
+        const { budgetId, updatedAt, ...payload } = loaded
         setEditingBudgetId(budgetId)
+        setEditingUpdatedAt(updatedAt)
         setAddForm({
           projectNames: payload.name,
           type: payload.type ?? "normal",
@@ -849,10 +858,19 @@ export function ProjectModal({
           }
         : addForm
       const payloads = projectNames.map((name) => formStateToPayload(sanitizedAddForm, name, memberRoleById))
-      await onSave(projectId, payloads, editingBudgetId)
+      await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt)
       onClose()
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : "Failed to save project")
+      // §6.9 - a stale-write 409 gets the same non-blocking reload banner
+      // as a live update arriving while the form was open (6.7), not a
+      // generic error: the save didn't fail because of bad input, it
+      // failed because someone else's change landed first.
+      const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined
+      if (status === 409) {
+        setLiveUpdateNotice(true)
+      } else {
+        setSubmitError(err instanceof Error ? err.message : "Failed to save project")
+      }
     } finally {
       setIsSubmitting(false)
     }

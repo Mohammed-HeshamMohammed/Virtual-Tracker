@@ -176,6 +176,7 @@ export function useProjectMutations({
     editingProjectId: string | null,
     payloads: CreateProjectFormPayload[],
     editingBudgetId?: string,
+    expectedUpdatedAt?: string,
   ) {
     if (!canManageProjects) return
     const actor = {
@@ -184,11 +185,14 @@ export function useProjectMutations({
       memberId: memberId ?? undefined,
     }
     if (editingProjectId) {
+      // §6.9 - a 409 here (stale write) is deliberately left to propagate:
+      // the modal's own submit handler shows the reload/keep-editing
+      // banner, same as a live update arriving while the form was open.
       await updateProjectWithDetails(
         editingProjectId,
         payloads[0]!,
         actor,
-        { budgetId: editingBudgetId },
+        { budgetId: editingBudgetId, expectedUpdatedAt },
       )
       setProjects((prev) =>
         prev.map((p) => (p.id === editingProjectId ? applyOptimisticProjectEdit(p, payloads[0]!) : p)),

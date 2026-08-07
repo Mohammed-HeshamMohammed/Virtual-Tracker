@@ -383,6 +383,10 @@ export async function routeProjects(req, res, url, db, origin) {
             : true,
           memberLimitMembers: limit ? String(limit.member_id || limit.memberId || "") : "",
           budgetSpent: 0,
+          // Optimistic-concurrency version token (§6.9) - sent back
+          // unchanged on save so a stale-snapshot write can be detected
+          // instead of silently overwriting whatever changed in between.
+          updatedAt: toIso(project.updated_at),
         },
       });
     } catch (e) {
@@ -644,11 +648,23 @@ export async function routeProjects(req, res, url, db, origin) {
         }
         const archivedAtRaw = body.archived_at ?? body.archivedAt;
         const archivedByRaw = body.archived_by ?? body.archivedBy;
+        // Optional (§6.9): only a caller that actually sends its last-known
+        // updated_at back gets the conditional-write / 409 behavior.
+        const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
         let project;
         if (patch.status === "archived" && (archivedAtRaw || archivedByRaw)) {
-          project = await archiveProjectPg(projectId, archivedByRaw ?? viewer.memberId);
+          project = await archiveProjectPg(projectId, archivedByRaw ?? viewer.memberId, expectedUpdatedAt);
         } else {
-          project = await updateProjectPg(projectId, patch);
+          project = await updateProjectPg(projectId, patch, expectedUpdatedAt);
+        }
+        if (project && typeof project === "object" && "conflict" in project) {
+          sendJson(res, origin, 409, {
+            success: false,
+            code: "stale_write",
+            error: "Someone else changed this project while you were editing. Reload to see their changes.",
+            data: project.current,
+          });
+          return true;
         }
         if (!project) {
           sendJson(res, origin, 404, { success: false, error: "Project not found" });

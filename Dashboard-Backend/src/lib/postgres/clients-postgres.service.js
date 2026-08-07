@@ -58,8 +58,10 @@ export async function createClientPg(data) {
   return client;
 }
 
-/** @param {string} id @param {Record<string, unknown>} patch */
-export async function updateClientPg(id, patch) {
+/** @param {string} id @param {Record<string, unknown>} patch
+ * @param {string} [expectedUpdatedAt] Optimistic-concurrency token (§6.9) -
+ *   optional, same conditional-write contract as updateProjectPg. */
+export async function updateClientPg(id, patch, expectedUpdatedAt) {
   const columns = {
     memberId: "member_id",
     name: "name",
@@ -82,7 +84,11 @@ export async function updateClientPg(id, patch) {
   }
   if (sets.length === 0) return getClientPg(id);
   sets.push("updated_at = now()");
-  const rows = await query(`UPDATE clients SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
+  const where = expectedUpdatedAt ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}` : "WHERE id = $1";
+  const rows = await query(`UPDATE clients SET ${sets.join(", ")} ${where} RETURNING *`, params);
+  if (rows.length === 0 && expectedUpdatedAt) {
+    return { conflict: true, current: await getClientPg(id) };
+  }
   const client = rows[0] ?? null;
   if (client) void publishChange("clients", id, "updated", uuidOrNull(patch.updatedBy) ?? undefined);
   return client;

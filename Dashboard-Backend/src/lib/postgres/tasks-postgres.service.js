@@ -180,8 +180,14 @@ export async function listTasksPg(filters = {}) {
   return rows.map(normalizeTaskRow);
 }
 
-/** @param {string} id @param {Record<string, unknown>} payload - already coerced/validated by buildUpdatePayload */
-export async function updateTaskPg(id, payload) {
+/**
+ * @param {string} id @param {Record<string, unknown>} payload - already coerced/validated by buildUpdatePayload
+ * @param {string} [expectedUpdatedAt] Optimistic-concurrency token (§6.9),
+ *   optional. Only ever passed by the user-facing edit route - the
+ *   frequent bookkeeping callers (task-time-tracking.js, recomputeTaskStatus)
+ *   never send one, so their writes stay unconditional as before.
+ */
+export async function updateTaskPg(id, payload, expectedUpdatedAt) {
   const columns = {
     project_id: "project_id",
     team_id: "team_id",
@@ -227,7 +233,11 @@ export async function updateTaskPg(id, payload) {
   }
   if (sets.length === 0) return getTaskPg(id);
   sets.push("updated_at = now()");
-  const rows = await query(`UPDATE tasks SET ${sets.join(", ")} WHERE id = $1 RETURNING ${TASK_COLUMNS.join(", ")}`, params);
+  const where = expectedUpdatedAt ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}` : "WHERE id = $1";
+  const rows = await query(`UPDATE tasks SET ${sets.join(", ")} ${where} RETURNING ${TASK_COLUMNS.join(", ")}`, params);
+  if (rows.length === 0 && expectedUpdatedAt) {
+    return { conflict: true, current: await getTaskPg(id) };
+  }
   const isBookkeepingOnly = Object.keys(payload).every((key) => TASK_BOOKKEEPING_ONLY_KEYS.has(key));
   if (rows[0] && !isBookkeepingOnly) {
     void publishChange("tasks", id, "updated", payload.updated_by ?? undefined);
