@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { publishChange } from "../../realtime/change-bus.js";
 import { ensureMemberScopedEntities } from "./member-entity-bootstrap.js";
 import { enrichMemberWithPresence } from "./member-presence.service.js";
 import { alignMemberRoleTables, pickCanonicalPrimaryRoleName, syncMemberPrimaryRole } from "./relation-sync.js";
@@ -595,6 +596,10 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
     const dailyValue = parseLimitValue(workLimits.dailyLimit);
     await upsertLimitField(db, memberId, "weekly", weeklyValue, actor);
     await upsertLimitField(db, memberId, "daily", dailyValue, actor);
+  }
+
+  if (hasInfo || hasEmployment || hasRoles || hasPayBill || hasWorkLimits || hasSettings) {
+    void publishChange("members", memberId, "updated", actor);
   }
 
   const reloadSections =

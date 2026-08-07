@@ -14,6 +14,7 @@ import { sendJson } from "../../http/response.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { COMPAT_BODY_SCHEMAS, readCompatBody } from "./body-schemas.js";
 import { sendToMember } from "../presence/index.js";
+import { publishChange } from "../realtime/change-bus.js";
 import { getVisibleMemberIds, recordMemberRelationship } from "../member-relationships/service.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
@@ -1156,6 +1157,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     try {
       await deleteMemberProfileData(db, id);
       await db.collection("members").doc(id).delete();
+      void publishChange("members", id, "deleted", viewer?.memberId);
       sendJson(res, origin, 200, { success: true, data: { id, deleted: true } });
     } catch (error) {
       sendJson(res, origin, 500, { success: false, error: error instanceof Error ? error.message : "Delete failed" });
@@ -1259,6 +1261,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     [mapped] = await enrichMembersWithPayAndLimits(db, [mapped]);
     const patchViewer = getAuthContext(req);
     mapped = applyMemberFieldPolicy([mapped], patchViewer)[0] ?? mapped;
+    void publishChange("members", id, "updated", actorId);
     sendJson(res, origin, 200, { success: true, data: mapped });
     return true;
   }
