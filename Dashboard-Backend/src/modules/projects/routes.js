@@ -44,6 +44,7 @@ import {
   listProjectIdsForTeamPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import { sendToMember } from "../presence/index.js";
 import { schemaByKey } from "../schema/catalog/index.js";
 import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schema-crud.service.js";
 import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/project-budget-capacity.js";
@@ -705,6 +706,9 @@ export async function routeProjects(req, res, url, db, origin) {
         role: body.project_role ?? body.projectRole,
         actorId: body.assigned_by ?? body.assignedBy ?? viewer.memberId,
       });
+      // Targeted frame (§4.2): gaining access to a project is the added
+      // member's own scope changing, not something to broadcast.
+      sendToMember(memberId, { type: "scope-changed", reason: "project-access", at: Date.now() });
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-members POST]", e);
@@ -726,7 +730,8 @@ export async function routeProjects(req, res, url, db, origin) {
       }
       const viewer = await assertProjectDomainWrite(existing.project_id, existing.member_id);
       if (!viewer) return true;
-      await removeProjectMemberPg(existing.project_id, existing.member_id);
+      await removeProjectMemberPg(existing.project_id, existing.member_id, viewer.memberId);
+      sendToMember(existing.member_id, { type: "scope-changed", reason: "project-access", at: Date.now() });
       sendJson(res, origin, 200, { success: true, data: { id: projectMemberIdMatch[1] } });
     } catch (e) {
       logSafeError("[project-members DELETE]", e);

@@ -105,25 +105,13 @@ export function dispatchChanged(msg: ChangeFrame): void {
   pending.set(msg.resource, timer)
 }
 
-export const SCOPE_CHANGED_EVENT = "vt-scope-changed"
-
-/** Targeted frame (§4.2): what changed is the viewer's own permissions,
- * which must never be broadcast. The nuclear response - clear everything,
- * refetch the current route - is deliberately the correct one here: a
- * scope change invalidates essentially every list at once. */
-export async function handleScopeChanged(msg: ScopeChangedFrame): Promise<void> {
-  const { clearAllListCaches } = await import("@/shared/tables/hooks/list-cache-registry")
-  clearAllListCaches()
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new CustomEvent(SCOPE_CHANGED_EVENT, { detail: msg }))
-  }
-}
-
-/** Called on WS reconnect (§6.10): frames missed while the socket was down
- * are gone - refetch, don't attempt replay. Reuses the same "changed"
- * window-event mechanism with a wildcard resource so every subscribed
- * page treats it the same as a real change to its own resource. */
-export function dispatchReconnectRefetch(): void {
+/** Shared by dispatchReconnectRefetch and handleScopeChanged: marks every
+ * known resource's cache keys stale and fires its changedEvent, so any
+ * currently-mounted page's presencePingEvent listener force-refetches.
+ * Clearing the registry alone is not enough for a page that's already
+ * mounted - its fetch hook only refetches reactively when this window
+ * event actually arrives, not merely because a cache slot went stale. */
+function dispatchAllResourceRefetch(): void {
   if (typeof window === "undefined") return
   for (const resource of new Set([...Object.keys(CACHE_KEYS), ...Object.keys(PREFIXES)])) {
     for (const key of CACHE_KEYS[resource] ?? []) markStale(key)
@@ -134,4 +122,28 @@ export function dispatchReconnectRefetch(): void {
       }),
     )
   }
+}
+
+export const SCOPE_CHANGED_EVENT = "vt-scope-changed"
+
+/** Targeted frame (§4.2): what changed is the viewer's own permissions,
+ * which must never be broadcast. The nuclear response - clear everything,
+ * refetch the current route - is deliberately the correct one here: a
+ * scope change invalidates essentially every list at once. Dispatches
+ * SCOPE_CHANGED_EVENT too, for the one thing cache invalidation can't do
+ * on its own: re-evaluating route guards, which needs the router (this is
+ * a plain module, so that part is left to a component-level listener). */
+export async function handleScopeChanged(msg: ScopeChangedFrame): Promise<void> {
+  const { clearAllListCaches } = await import("@/shared/tables/hooks/list-cache-registry")
+  clearAllListCaches()
+  dispatchAllResourceRefetch()
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(SCOPE_CHANGED_EVENT, { detail: msg }))
+  }
+}
+
+/** Called on WS reconnect (§6.10): frames missed while the socket was down
+ * are gone - refetch, don't attempt replay. */
+export function dispatchReconnectRefetch(): void {
+  dispatchAllResourceRefetch()
 }

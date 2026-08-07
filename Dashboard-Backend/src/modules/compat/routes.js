@@ -13,6 +13,7 @@ import { applyMemberFieldPolicy, redactProfileFormCompensation } from "../../htt
 import { sendJson } from "../../http/response.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { COMPAT_BODY_SCHEMAS, readCompatBody } from "./body-schemas.js";
+import { sendToMember } from "../presence/index.js";
 import { getVisibleMemberIds, recordMemberRelationship } from "../member-relationships/service.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
@@ -927,6 +928,10 @@ export async function routeCompatibility(req, res, url, db, origin) {
         viewer,
         id,
       );
+      // Targeted frame (§4.2): what changed is the affected member's own
+      // permissions, which must never be broadcast - sendToMember only
+      // reaches their own sockets, not everyone's.
+      sendToMember(id, { type: "scope-changed", reason: "role", at: Date.now() });
       sendJson(res, origin, 200, { success: true, data: { form: safeForm, member } });
     } catch (error) {
       sendJson(res, origin, 400, { success: false, error: error instanceof Error ? error.message : "Failed to change role" });
