@@ -26,6 +26,7 @@ import {
   setMemberTreeCachePg,
   setSystemMetaPg,
   updateMemberBanPg,
+  updateWorkLimitsConditionalPg,
   upsertLimitFieldPg,
   upsertMemberScopedRowPg,
 } from "./member-data-postgres.service.js";
@@ -99,6 +100,20 @@ export async function ensureLimitsDoc(_db, memberId, actor) {
 export async function deleteLimitsDoc(_db, memberId) {
   await requireMemberDataPostgres();
   await deleteLimitsDocPg(memberId);
+}
+
+/**
+ * §6.9 follow-up - atomic combined conditional write for the workLimits tab
+ * (see updateWorkLimitsConditionalPg for why it needs its own path).
+ * @param {import("firebase-admin/firestore").Firestore} _db
+ * @param {string} memberId
+ * @param {{ weekly: number, daily: number, workDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
+ * @param {string} actor
+ * @param {{ limits?: string, timeSettings?: string }} [expected]
+ */
+export async function updateWorkLimitsConditional(_db, memberId, payload, actor, expected) {
+  await requireMemberDataPostgres();
+  return updateWorkLimitsConditionalPg(memberId, payload, actor, expected);
 }
 
 /** @param {import("firebase-admin/firestore").Firestore} _db */

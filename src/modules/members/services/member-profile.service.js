@@ -24,6 +24,7 @@ import {
   deleteMemberScopedRows,
   getMemberLimitsDoc,
   getSingleByMemberId,
+  updateWorkLimitsConditional,
   upsertLimitField,
   upsertSingleByMemberId,
   upsertSingleByMemberIdConditional,
@@ -152,6 +153,21 @@ function toIsoTimestamp(value) {
   return "";
 }
 
+/** §6.9 follow-up - workLimits' one composite token packs both backing
+ * tables' timestamps (`limits`.updated_at, `time_settings`.updated_at) so the
+ * modal only has to thread a single string, same as every other tab. */
+function buildWorkLimitsToken(limitsIso, timeSettingsIso) {
+  return `${limitsIso || ""}|${timeSettingsIso || ""}`;
+}
+
+function splitWorkLimitsToken(token) {
+  if (typeof token !== "string" || !token.includes("|")) return { limits: undefined, timeSettings: undefined };
+  const sep = token.indexOf("|");
+  const limits = token.slice(0, sep);
+  const timeSettings = token.slice(sep + 1);
+  return { limits: limits || undefined, timeSettings: timeSettings || undefined };
+}
+
 export function validateWorkLimitsMutualExclusion(weeklyLimitRaw, dailyLimitRaw, useShiftsForLimits = false) {
   if (useShiftsForLimits) return null;
   const weeklyValue = parseLimitValue(weeklyLimitRaw);
@@ -247,6 +263,10 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.phoneVerified = memberData.phone_verified === true;
     form.employeeId = typeof memberData.employee_id === "string" ? memberData.employee_id : "";
     form.lastIp = typeof memberData.ip_address === "string" ? memberData.ip_address.trim() : "";
+    // §6.9 follow-up - info's own stamp on the shared `members` doc, bumped
+    // only when an info save lands (see updateMemberProfile). Not the doc's
+    // general `updated_at`, which every section's save also bumps.
+    form.infoUpdatedAt = toIsoTimestamp(memberData.info_updated_at);
     const firebaseUid = typeof memberData.firebase_uid === "string" ? memberData.firebase_uid.trim() : "";
     if (!form.lastIp && firebaseUid) {
       pending.push(
@@ -272,9 +292,7 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
   /** @type {Record<string, unknown>} */
   let timeSettings = {};
   /** @type {Record<string, unknown>} */
-  let weeklyLimitRow = {};
-  /** @type {Record<string, unknown>} */
-  let dailyLimitRow = {};
+  let limitsRow = {};
 
   if (want("employment")) {
     pending.push(
@@ -300,9 +318,7 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
   if (want("workLimits")) {
     pending.push(
       getMemberLimitsDoc(db, memberId).then((limitsData) => {
-        const data = limitsData || {};
-        weeklyLimitRow = { value: data.weekly ?? 0 };
-        dailyLimitRow = { value: data.daily ?? 0 };
+        limitsRow = limitsData || {};
       }),
     );
   }
@@ -322,6 +338,9 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
           );
           const { name: roleName } = pickCanonicalPrimaryRoleName(memberData, [], roleNameById);
           form.role = roleName;
+          // §6.9 follow-up - roles' own stamp on the shared `members` doc,
+          // bumped only when a role change lands (see updateMemberProfile).
+          form.rolesUpdatedAt = toIsoTimestamp(memberData.roles_updated_at);
         }),
     );
   }
@@ -365,13 +384,19 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
   }
 
   if (want("workLimits")) {
-    form.weeklyLimit = limitToInput(weeklyLimitRow.value);
-    form.dailyLimit = limitToInput(dailyLimitRow.value);
+    form.weeklyLimit = limitToInput(limitsRow.weekly);
+    form.dailyLimit = limitToInput(limitsRow.daily);
     form.disableTrackingSpecificDays = timeSettings.disable_tracking_specific_days === true;
     form.useShiftsForLimits = normalizeShiftAllowanceFlag(timeSettings.use_shifts_for_limits);
     form.workDays = Array.isArray(timeSettings.work_days)
       ? timeSettings.work_days.filter((d) => Number.isInteger(d))
       : [0, 1, 2, 3, 4];
+    // §6.9 follow-up - one composite token covering both backing tables;
+    // see updateWorkLimitsConditionalPg for why a single timestamp can't.
+    form.workLimitsUpdatedAt = buildWorkLimitsToken(
+      toIsoTimestamp(limitsRow.updated_at),
+      toIsoTimestamp(timeSettings.updated_at),
+    );
   }
 
   if (want("settings")) {
@@ -407,10 +432,11 @@ export async function getMemberProfileForm(db, memberId) {
  * @param {Record<string, unknown>} body
  * @param {string} [updatedBy]
  * @param {{ actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null, expectedUpdatedAt?: string }} [options]
- *   `expectedUpdatedAt` (§6.9) only applies to a single-section save
- *   (employment, payBill, or settings - see the note above the "roles"
- *   and "info" branches for why those two are excluded). Throws with
- *   `.staleWrite = true` on a conflict; callers map that to a 409.
+ *   `expectedUpdatedAt` (§6.9) only applies to a single-section save - all
+ *   six profile sections (info, employment, roles, payBill, workLimits,
+ *   settings) now support it; see the notes above each section's write for
+ *   what it's checked against. Throws with `.staleWrite = true` on a
+ *   conflict; callers map that to a 409.
  */
 export async function updateMemberProfile(db, memberId, body, updatedBy = "", options = {}) {
   const memberRef = db.collection("members").doc(memberId);
@@ -467,9 +493,16 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       }
     }
     if (typeof info.employeeId === "string") memberUpdates.employee_id = info.employeeId.trim();
+    // §6.9 follow-up - info's own stamp, separate from the doc's general
+    // `updated_at` which every section bumps (see the guard below).
+    memberUpdates.info_updated_at = now;
   }
 
   const roleName = hasRoles && typeof rolesIn.role === "string" ? rolesIn.role.trim() : "";
+  if (hasRoles) {
+    // §6.9 follow-up - roles' own stamp, same reasoning as info's above.
+    memberUpdates.roles_updated_at = now;
+  }
 
   if (hasRoles && roleName && !options.skipRoleSync) {
     const currentRoleName = await resolveMemberRoleName(db, memberId);
@@ -502,7 +535,34 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   }
 
   if (hasInfo || hasRoles || hasEmployment || hasPayBill || hasWorkLimits || hasSettings) {
-    await memberRef.update(memberUpdates);
+    // §6.9 follow-up - info and roles are the only two sections that share
+    // the `members` doc's write with every other section but never with each
+    // other (the modal only ever saves the single active tab - see
+    // buildProfilePayload). That makes each section's own *_updated_at stamp
+    // set above a safe, narrow conflict token: checking it only fires on a
+    // real concurrent info (or roles) save, never on an unrelated tab's save
+    // landing in between. Only applies to a single-section save carrying a
+    // token; anything else (no token, or both sections at once) writes
+    // unconditionally, same as before.
+    const guardField = hasInfo && !hasRoles ? "info_updated_at" : hasRoles && !hasInfo ? "roles_updated_at" : null;
+    if (guardField && options.expectedUpdatedAt) {
+      await db.runTransaction(async (tx) => {
+        const fresh = await tx.get(memberRef);
+        const currentIso = toIsoTimestamp(fresh.data()?.[guardField]);
+        if (currentIso !== options.expectedUpdatedAt) {
+          const err = new Error(
+            hasInfo
+              ? "Someone else changed this member's info while you were editing."
+              : "Someone else changed this member's role while you were editing.",
+          );
+          err.staleWrite = true;
+          throw err;
+        }
+        tx.update(memberRef, memberUpdates);
+      });
+    } else {
+      await memberRef.update(memberUpdates);
+    }
   }
 
   if (hasRoles && roleName && !options.skipRoleSync) {
@@ -634,27 +694,50 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   } else if (hasWorkLimits) {
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 
+    const limitsErr = validateWorkLimitsMutualExclusion(workLimits.weeklyLimit, workLimits.dailyLimit, false);
+    if (limitsErr) throw new Error(limitsErr);
+
     const workDays = Array.isArray(workLimits.workDays)
       ? workLimits.workDays.filter((d) => Number.isInteger(d))
       : [0, 1, 2, 3, 4];
+    const weeklyValue = parseLimitValue(workLimits.weeklyLimit);
+    const dailyValue = parseLimitValue(workLimits.dailyLimit);
 
-    await upsertSingleByMemberId(db, "time_settings", memberId, {
-      work_days: workDays,
-      disable_tracking_specific_days: workLimits.disableTrackingSpecificDays === true,
-      use_shifts_for_limits: false,
-      updated_by: actor,
-      updated_at: now,
-    });
+    // §6.9 follow-up - the workLimits tab spans two tables (limits +
+    // time_settings); write both atomically in one DB transaction so a
+    // stale token on either side rolls back the whole save instead of
+    // leaving the tab half-applied.
+    const { limits: expectedLimits, timeSettings: expectedTimeSettings } = splitWorkLimitsToken(
+      options.expectedUpdatedAt,
+    );
+    const workLimitsResult = await updateWorkLimitsConditional(
+      db,
+      memberId,
+      {
+        weekly: weeklyValue,
+        daily: dailyValue,
+        workDays,
+        disableTrackingSpecificDays: workLimits.disableTrackingSpecificDays === true,
+        useShiftsForLimits: false,
+      },
+      actor,
+      { limits: expectedLimits, timeSettings: expectedTimeSettings },
+    );
+    if (workLimitsResult && workLimitsResult.conflict) {
+      const err = new Error("Someone else changed this member's work limits while you were editing.");
+      err.staleWrite = true;
+      throw err;
+    }
   }
 
-  if (hasWorkLimits) {
+  if (hasWorkLimits && hasSettings) {
+    // Combined settings+workLimits save (batch-update route only, not
+    // produced by the tab UI) - time_settings' workLimits columns were
+    // already written above inside the hasSettings branch; only limits
+    // still needs writing, unconditionally, same as before this fix.
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 
-    const limitsErr = validateWorkLimitsMutualExclusion(
-      workLimits.weeklyLimit,
-      workLimits.dailyLimit,
-      false,
-    );
+    const limitsErr = validateWorkLimitsMutualExclusion(workLimits.weeklyLimit, workLimits.dailyLimit, false);
     if (limitsErr) throw new Error(limitsErr);
 
     const weeklyValue = parseLimitValue(workLimits.weeklyLimit);

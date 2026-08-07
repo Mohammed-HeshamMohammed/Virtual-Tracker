@@ -58,6 +58,33 @@ export async function query(sql, params = []) {
 }
 
 /**
+ * Runs `fn` inside a single BEGIN/COMMIT, rolling back on any thrown error -
+ * for callers that need more than one statement (e.g. two different tables)
+ * to succeed or fail together, which the one-shot `query()` above can't do.
+ * @template T
+ * @param {(client: pg.PoolClient) => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export async function withTransaction(fn) {
+  const activePool = getPostgresPool();
+  if (!activePool) {
+    throw new Error("POSTGRES_URL is not configured");
+  }
+  const client = await activePool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * @returns {Promise<boolean>}
  */
 export async function probePostgresReadiness() {
