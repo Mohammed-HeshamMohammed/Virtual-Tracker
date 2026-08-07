@@ -222,9 +222,49 @@ export async function getAllProjectBudgetsPg() {
   return query("SELECT * FROM project_budgets");
 }
 
-/** Create-or-replace, matching the one-row-per-project shape the Firestore doc had. */
-export async function upsertProjectBudgetPg(projectId, data, actorId) {
+/**
+ * Create-or-replace, matching the one-row-per-project shape the Firestore doc had.
+ * @param {string} projectId @param {object} data @param {string} [actorId]
+ * @param {string} [expectedUpdatedAt] §6.9 - only checked when a budget row already
+ *   exists; a first-time create has nothing to conflict with.
+ */
+export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUpdatedAt) {
   const existing = await getProjectBudgetPg(projectId);
+
+  if (existing && expectedUpdatedAt) {
+    const rows = await query(
+      `UPDATE project_budgets SET
+         type = $2, based_on = $3, scope = $4, cost = $5, notify_project_members = $6, notify_at_pct = $7,
+         who_to_notify = $8, stop_timers_when_reached = $9, stop_timers_at_pct = $10, resets = $11,
+         start_date = $12, include_non_billable_time = $13, updated_by = $14, updated_at = now()
+       WHERE project_id = $1 AND updated_at = $15
+       RETURNING *`,
+      [
+        projectId,
+        data.type ?? "Cost based",
+        data.basedOn ?? null,
+        data.scope === "per_person" ? "per_person" : "per_project",
+        data.cost ?? 0,
+        data.notifyProjectMembers ?? false,
+        data.notifyAtPct ?? null,
+        data.whoToNotify ?? null,
+        data.stopTimersWhenReached ?? false,
+        data.stopTimersAtPct ?? null,
+        data.resets ?? "Never",
+        dateOrNull(data.startDate),
+        data.includeNonBillableTime ?? true,
+        uuidOrNull(actorId),
+        expectedUpdatedAt,
+      ],
+    );
+    if (rows.length === 0) {
+      return { conflict: true, current: await getProjectBudgetPg(projectId) };
+    }
+    const budget = rows[0];
+    void publishChange("project-budgets", projectId, "updated", uuidOrNull(actorId) ?? undefined);
+    return budget;
+  }
+
   const id = existing?.id ?? crypto.randomUUID();
   const rows = await query(
     `INSERT INTO project_budgets (

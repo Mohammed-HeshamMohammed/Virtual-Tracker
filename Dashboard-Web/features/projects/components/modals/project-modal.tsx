@@ -342,6 +342,7 @@ interface ProjectModalProps {
     payloads: CreateProjectFormPayload[],
     editingBudgetId?: string,
     expectedUpdatedAt?: string,
+    expectedBudgetUpdatedAt?: string,
   ) => Promise<void>
   /** Called instead of showing an in-form error when the project being edited no longer exists. */
   onEntityGone?: (message: string) => void
@@ -364,6 +365,8 @@ export function ProjectModal({
   // §6.9 - the version token this form loaded the project with, sent back
   // unchanged on save so a stale-snapshot write can be detected server-side.
   const [editingUpdatedAt, setEditingUpdatedAt] = useComponentState<string | undefined>(undefined)
+  // Same, for the budget row - it saves through its own PATCH with its own version token.
+  const [editingBudgetUpdatedAt, setEditingBudgetUpdatedAt] = useComponentState<string | undefined>(undefined)
   const [addProjectTab, setAddProjectTab] = useComponentState<AddProjectTab>("general")
   // Type is create-time only, so editing an existing project skips the picker.
   const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
@@ -568,9 +571,10 @@ export function ProjectModal({
       .then(([loaded, linkedTeams]) => {
         if (cancelled) return
         setLinkedTeamOptions(linkedTeams)
-        const { budgetId, updatedAt, ...payload } = loaded
+        const { budgetId, updatedAt, budgetUpdatedAt, ...payload } = loaded
         setEditingBudgetId(budgetId)
         setEditingUpdatedAt(updatedAt)
+        setEditingBudgetUpdatedAt(budgetUpdatedAt)
         setAddForm({
           projectNames: payload.name,
           type: payload.type ?? "normal",
@@ -858,7 +862,7 @@ export function ProjectModal({
           }
         : addForm
       const payloads = projectNames.map((name) => formStateToPayload(sanitizedAddForm, name, memberRoleById))
-      await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt)
+      await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt, editingBudgetUpdatedAt)
       onClose()
     } catch (err) {
       // §6.9 - a stale-write 409 gets the same non-blocking reload banner

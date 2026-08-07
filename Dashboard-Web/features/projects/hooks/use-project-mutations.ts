@@ -177,6 +177,7 @@ export function useProjectMutations({
     payloads: CreateProjectFormPayload[],
     editingBudgetId?: string,
     expectedUpdatedAt?: string,
+    expectedBudgetUpdatedAt?: string,
   ) {
     if (!canManageProjects) return
     const actor = {
@@ -192,7 +193,7 @@ export function useProjectMutations({
         editingProjectId,
         payloads[0]!,
         actor,
-        { budgetId: editingBudgetId, expectedUpdatedAt },
+        { budgetId: editingBudgetId, expectedUpdatedAt, expectedBudgetUpdatedAt },
       )
       setProjects((prev) =>
         prev.map((p) => (p.id === editingProjectId ? applyOptimisticProjectEdit(p, payloads[0]!) : p)),

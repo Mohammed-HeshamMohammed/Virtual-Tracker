@@ -343,6 +343,8 @@ export async function routeProjects(req, res, url, db, origin) {
             ? Boolean(budget.stop_timers_when_reached ?? budget.stopTimersWhenReached ?? true)
             : true,
           budgetId: budget ? String(budget.id) : undefined,
+          /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
+          budgetUpdatedAt: budget ? toIso(budget.updated_at) : undefined,
           budgetType: budget ? String(budget.type || "") : "",
           budgetBasedOn: budget ? String(budget.based_on || budget.basedOn || "") : "",
           budgetScope: budget && budget.scope === "per_person" ? "per_person" : "per_project",
@@ -896,6 +898,9 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: endDateError });
         return true;
       }
+      // Optional (§6.9): only a caller that sends back its last-known updated_at
+      // gets the conditional-write / 409 behavior.
+      const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
       const row = await upsertProjectBudgetPg(
         existing.project_id,
         {
@@ -915,7 +920,17 @@ export async function routeProjects(req, res, url, db, origin) {
             body.include_non_billable_time ?? body.includeNonBillableTime ?? current?.include_non_billable_time,
         },
         body.updated_by ?? body.updatedBy ?? viewer.memberId,
+        expectedUpdatedAt,
       );
+      if (row && typeof row === "object" && "conflict" in row) {
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "stale_write",
+          error: "Someone else changed this budget while you were editing. Reload to see their changes.",
+          data: row.current,
+        });
+        return true;
+      }
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-budgets/:id PATCH]", e);

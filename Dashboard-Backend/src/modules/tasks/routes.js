@@ -210,8 +210,19 @@ export async function routeTasks(req, res, url, db, origin) {
     } catch (e) {
       logSafeError("[task-assignments/review]", e);
       const message = e instanceof Error ? e.message : "Failed to review assignment";
-      const status =
-        message.includes("authorized") || message.includes("not in review") ? 403 : 500;
+      if (message.includes("not in review")) {
+        // Case 27 - another reviewer's decision landed first, not a
+        // permissions problem. A clean 409 instead of the 403 this used to
+        // share with the out-of-scope case, so the UI can offer a reload
+        // instead of reading it as "you're not allowed to do this."
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "already_reviewed",
+          error: "This assignment was already reviewed by someone else. Reload to see the outcome.",
+        });
+        return true;
+      }
+      const status = message.includes("authorized") ? 403 : 500;
       sendJson(res, origin, status, { success: false, error: message });
     }
     return true;
@@ -445,7 +456,16 @@ export async function routeTasks(req, res, url, db, origin) {
     } catch (e) {
       logSafeError("[tasks/time-tracking/review]", e);
       const message = e instanceof Error ? e.message : "Failed to review task tracking";
-      const status = message.includes("management") || message.includes("not in review") ? 403 : 500;
+      if (message.includes("not in review")) {
+        // Case 27 - see the same branch in the /task-assignments/review route above.
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "already_reviewed",
+          error: "This assignment was already reviewed by someone else. Reload to see the outcome.",
+        });
+        return true;
+      }
+      const status = message.includes("management") ? 403 : 500;
       sendJson(res, origin, status, { success: false, error: message });
     }
     return true;

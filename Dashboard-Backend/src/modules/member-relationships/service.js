@@ -2,6 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { canActorManageTargetRole } from "../../http/role-manage-policy.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { sendToMember } from "../presence/index.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { isOrganizationAdminRole, isOrganizationRootRole } from "../hierarchy/hierarchy-placement.js";
 import { normalizeRoleKey } from "../members/services/relation-sync.js";
@@ -317,6 +318,12 @@ export async function recordMemberRelationship(db, {
     await invalidateTreeCache(db, parentMemberId);
     await invalidateTreeCache(db, childMemberId);
   }
+
+  // §6.3 - a manager/hierarchy change is scoped to the two members whose
+  // tree position moved, not broadcast: it can reveal org structure to
+  // members outside it.
+  sendToMember(childMemberId, { type: "scope-changed", reason: "hierarchy", at: Date.now() });
+  sendToMember(parentMemberId, { type: "scope-changed", reason: "hierarchy", at: Date.now() });
 
   return relationship;
 }
