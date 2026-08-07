@@ -12,6 +12,7 @@ import {
   markStale,
   markStaleByPrefix,
 } from "@/shared/tables/hooks/list-cache-registry"
+import { BACKEND_CONNECTION_RESTORED, isBackendConnectionLost } from "@/infrastructure/api/backend-connection-events"
 
 export type ChangeFrame = {
   type: "changed"
@@ -98,7 +99,13 @@ export function dispatchChanged(msg: ChangeFrame): void {
   if (pending.has(msg.resource)) return
   const timer = setTimeout(() => {
     pending.delete(msg.resource)
-    if (typeof window !== "undefined") {
+    // §6.10 - while the connection-lost banner is up, suppress the window
+    // event (and therefore any toast/banner a listener would show for it -
+    // useEntityLiveGuard, the modal notices). The cache is already marked
+    // stale above regardless, so nothing is lost: BACKEND_CONNECTION_RESTORED
+    // triggers dispatchReconnectRefetch, which re-fires for every resource
+    // once it's actually safe to act on.
+    if (typeof window !== "undefined" && !isBackendConnectionLost()) {
       window.dispatchEvent(new CustomEvent(changedEvent(msg.resource), { detail: msg }))
     }
   }, 400)
@@ -146,4 +153,14 @@ export async function handleScopeChanged(msg: ScopeChangedFrame): Promise<void> 
  * are gone - refetch, don't attempt replay. */
 export function dispatchReconnectRefetch(): void {
   dispatchAllResourceRefetch()
+}
+
+// §6.10 - the HTTP outage/recovery signal (backend-connection-events.ts) is
+// independent of the presence WebSocket: HTTP calls can fail and recover
+// while the WS stays connected the whole time, in which case presence-ws.ts's
+// own reconnect dispatch never fires. This is what catches that case -
+// module-level because change-events.ts has no component lifecycle to hang
+// it on, and it only needs to run once per page load.
+if (typeof window !== "undefined") {
+  window.addEventListener(BACKEND_CONNECTION_RESTORED, () => dispatchAllResourceRefetch())
 }
