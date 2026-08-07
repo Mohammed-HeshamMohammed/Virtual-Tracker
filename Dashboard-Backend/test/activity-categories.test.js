@@ -19,14 +19,14 @@ let unclassifiedApps;
 let unclassifiedDomains;
 
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  exports: {
+  namedExports: {
     findUnclassifiedAppsPg: async () => unclassifiedApps,
     findUnclassifiedDomainsPg: async () => unclassifiedDomains,
   },
 });
 
 mock.module("../src/lib/postgres/classification-postgres.service.js", {
-  exports: {
+  namedExports: {
     getAllCategoriesPg: async () => [...rows.values()],
     getCategoryPg: async (matchType, pattern) => rows.get(key(matchType, pattern)) ?? null,
     upsertCategoryPg: async (input) => {

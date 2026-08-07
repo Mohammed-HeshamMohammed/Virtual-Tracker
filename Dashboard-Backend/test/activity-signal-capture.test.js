@@ -23,7 +23,7 @@ function fakeClient() {
 }
 
 mock.module("../src/lib/postgres/client.js", {
-  exports: {
+  namedExports: {
     getPostgresPool: () => ({ connect: async () => fakeClient() }),
     // task-member-progress.service.js (imported transitively for
     // parseProgressUuid) calls the higher-level query() helper directly.
@@ -31,7 +31,7 @@ mock.module("../src/lib/postgres/client.js", {
   },
 });
 mock.module("../src/http/sanitize-error.js", {
-  exports: { logSafeWarn: () => {}, logSafeError: () => {} },
+  namedExports: { logSafeWarn: () => {}, logSafeError: () => {} },
 });
 
 const { insertActivityScreenshot, insertActivityAppLog } = await import(

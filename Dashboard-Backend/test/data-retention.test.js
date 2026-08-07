@@ -15,7 +15,7 @@ let deletedGcsObjects;
 let deleteCalls;
 
 mock.module("../src/lib/postgres/data-retention-postgres.service.js", {
-  exports: {
+  namedExports: {
     getRetentionSettingsPg: async () =>
       [...retentionDays.entries()].map(([data_type, retention_days]) => ({
         data_type,
@@ -64,7 +64,7 @@ mock.module("../src/lib/postgres/data-retention-postgres.service.js", {
 });
 
 mock.module("../src/lib/gcs/upload.js", {
-  exports: {
+  namedExports: {
     deleteFromGCS: async (objectPath) => {
       deletedGcsObjects.push(objectPath);
     },

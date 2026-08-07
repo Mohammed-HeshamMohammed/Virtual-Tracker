@@ -20,7 +20,7 @@ const stub = {
 };
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
-  exports: {
+  namedExports: {
     computeTaskDailyHours: (task) => Number(task?.duration_hours_per_day ?? 0),
     computeEffectiveDailyCap: (taskHours, memberHours) => {
       const candidates = [taskHours, memberHours].filter((h) => h > 0);
@@ -35,7 +35,7 @@ mock.module("../src/modules/tasks/task-workload-validation.js", {
 });
 
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  exports: {
+  namedExports: {
     sumDailyMemberActiveSeconds: async (_id, { fromDay, toDay }) =>
       fromDay === toDay ? stub.workedToday : stub.workedWeek,
     sumDailyMemberTaskActiveSeconds: async () => stub.workedTodayOnTask,

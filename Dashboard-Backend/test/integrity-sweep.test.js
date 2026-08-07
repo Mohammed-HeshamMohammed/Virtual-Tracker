@@ -12,7 +12,7 @@ let insertedFlags = [];
 let categoryMap = {};
 
 mock.module("../src/lib/postgres/integrity-postgres.service.js", {
-  exports: {
+  namedExports: {
     fetchRecentScreenshotsPg: async () => screenshots,
     fetchRecentActivityLevelsBySessionPg: async () => activityRows,
     fetchRecentAppLogNamesPg: async () => appRows,
@@ -23,7 +23,7 @@ mock.module("../src/lib/postgres/integrity-postgres.service.js", {
   },
 });
 mock.module("../src/modules/classification/activity-categories.js", {
-  exports: {
+  namedExports: {
     categorize: async (_matchType, name) => categoryMap[name] ?? "unclassified",
   },
 });

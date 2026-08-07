@@ -8,13 +8,13 @@ import assert from "node:assert/strict";
 const stub = { members: [], caps: {} };
 
 mock.module("../src/lib/postgres/projects-postgres.service.js", {
-  exports: {
+  namedExports: {
     listProjectMembersPg: async () => stub.members,
   },
 });
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
-  exports: {
+  namedExports: {
     memberUsesShiftsForLimits: async (_db, memberId) => stub.caps[memberId]?.shifts ?? false,
     getMemberLimitHours: async (_db, memberId, period) =>
       period === "daily" ? stub.caps[memberId]?.daily ?? 0 : stub.caps[memberId]?.weekly ?? 0,
