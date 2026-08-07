@@ -1,5 +1,7 @@
 /** Batch-load pay rates, limits, and relations for member list rows. */
 
+import { getPayRatesBatchPg } from "../../../lib/postgres/member-data-postgres.service.js";
+
 export { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
 
 const MEMBER_ID_IN_CHUNK = 30;
@@ -63,11 +65,15 @@ async function fetchDocsByMemberIdChunks(db, collection, memberIds, applyFilter)
 }
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
+ * pay_rates is Postgres-backed (member-data-store.js's PG_MEMBER_SCOPED) -
+ * `db` stays unused here only to keep this call-compatible with its sibling
+ * fetch functions below, which are still Firestore.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string[]} memberIds
  */
-export async function fetchPayRatesForMembers(db, memberIds) {
-  return fetchDocsByMemberIdChunks(db, "pay_rates", memberIds);
+export async function fetchPayRatesForMembers(_db, memberIds) {
+  const rows = await getPayRatesBatchPg(memberIds);
+  return rows.map((row) => ({ data: () => row }));
 }
 
 /**

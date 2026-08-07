@@ -6,6 +6,14 @@ import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
 import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
+import {
+  findMemberOnboardingByInviteIdPg,
+  findMemberOnboardingByMemberIdPg,
+  getMemberOnboardingRowByIdPg,
+  listMemberOnboardingRowsPg,
+  setMemberOnboardingRowPg,
+  updateMemberOnboardingRowPg,
+} from "../../lib/postgres/member-data-postgres.service.js";
 
 function asBool(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
@@ -85,8 +93,8 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   if ((pn === "/api/member-onboarding" || pn === "/api/v1/member-onboarding") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [onboardingDocs, membersDocs, invitesDocs] = await Promise.all([
-        fetchAllDocs(db.collection("member_onboarding").orderBy("updated_at", "desc")),
+      const [onboardingRows, membersDocs, invitesDocs] = await Promise.all([
+        listMemberOnboardingRowsPg(),
         fetchAllDocs(db.collection("members").orderBy("date_added", "desc")),
         fetchAllDocs(db.collection("invites").orderBy("sent_at", "desc")),
       ]);
@@ -107,7 +115,7 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         inviteById.set(doc.id, email);
       }
 
-      const rows = onboardingDocs.map((doc) => normalizeOnboardingDoc(doc.id, doc.data() || {}));
+      const rows = onboardingRows.map((row) => normalizeOnboardingDoc(row.id, row));
       const byMemberId = new Map(rows.filter((r) => r.memberId).map((r) => [r.memberId, r]));
       const byInviteId = new Map(rows.filter((r) => r.inviteId).map((r) => [r.inviteId, r]));
 
@@ -185,21 +193,20 @@ export async function routeMemberOnboarding(req, res, url, origin) {
     try {
       const isSyntheticMember = id.startsWith("member:");
       const isSyntheticInvite = id.startsWith("invite:");
-      const ref = isSyntheticMember || isSyntheticInvite ? db.collection("member_onboarding").doc(crypto.randomUUID()) : db.collection("member_onboarding").doc(id);
-      const existing = isSyntheticMember || isSyntheticInvite ? null : await ref.get();
-      if (!isSyntheticMember && !isSyntheticInvite && !existing?.exists) {
+      const existing = isSyntheticMember || isSyntheticInvite ? null : await getMemberOnboardingRowByIdPg(id);
+      if (!isSyntheticMember && !isSyntheticInvite && !existing) {
         sendJson(res, origin, 404, { success: false, error: "Onboarding row not found" });
         return true;
       }
       const patch = buildTimestampsPatch(body || {});
+      let next;
       if (isSyntheticMember) {
         const memberId = id.slice("member:".length);
         if (memberId && (await isOwnerMemberById(memberId))) {
           sendJson(res, origin, 400, { success: false, error: "Owner role is excluded from onboarding." });
           return true;
         }
-        await ref.set({
-          id: ref.id,
+        next = await setMemberOnboardingRowPg(crypto.randomUUID(), {
           member_id: memberId,
           invite_id: null,
           created_at: new Date(),
@@ -208,8 +215,7 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         });
       } else if (isSyntheticInvite) {
         const inviteId = id.slice("invite:".length);
-        await ref.set({
-          id: ref.id,
+        next = await setMemberOnboardingRowPg(crypto.randomUUID(), {
           member_id: null,
           invite_id: inviteId,
           created_at: new Date(),
@@ -217,10 +223,9 @@ export async function routeMemberOnboarding(req, res, url, origin) {
           ...patch,
         });
       } else {
-        await ref.update(patch);
+        next = await updateMemberOnboardingRowPg(id, patch);
       }
-      const next = await ref.get();
-      sendJson(res, origin, 200, { success: true, data: normalizeOnboardingDoc(next.id, next.data() || {}) });
+      sendJson(res, origin, 200, { success: true, data: normalizeOnboardingDoc(next.id, next) });
     } catch (e) {
       logSafeError("[member-onboarding/patch]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to update onboarding row" });
@@ -241,21 +246,20 @@ export async function routeMemberOnboarding(req, res, url, origin) {
     try {
       const isSyntheticMember = id.startsWith("member:");
       const isSyntheticInvite = id.startsWith("invite:");
-      const ref = isSyntheticMember || isSyntheticInvite ? db.collection("member_onboarding").doc(crypto.randomUUID()) : db.collection("member_onboarding").doc(id);
-      const existing = isSyntheticMember || isSyntheticInvite ? null : await ref.get();
-      if (!isSyntheticMember && !isSyntheticInvite && !existing?.exists) {
+      const existing = isSyntheticMember || isSyntheticInvite ? null : await getMemberOnboardingRowByIdPg(id);
+      if (!isSyntheticMember && !isSyntheticInvite && !existing) {
         sendJson(res, origin, 404, { success: false, error: "Onboarding row not found" });
         return true;
       }
       const updatedBy = typeof body.updatedBy === "string" ? body.updatedBy : "system";
+      let next;
       if (isSyntheticMember) {
         const memberId = id.slice("member:".length);
         if (memberId && (await isOwnerMemberById(memberId))) {
           sendJson(res, origin, 400, { success: false, error: "Owner role is excluded from onboarding." });
           return true;
         }
-        await ref.set({
-          id: ref.id,
+        next = await setMemberOnboardingRowPg(crypto.randomUUID(), {
           member_id: memberId,
           invite_id: null,
           created_account: true,
@@ -266,12 +270,10 @@ export async function routeMemberOnboarding(req, res, url, origin) {
           last_reminder_sent_at: new Date(),
           last_reminder_sent_by: updatedBy,
           updated_by: updatedBy,
-          updated_at: new Date(),
         });
       } else if (isSyntheticInvite) {
         const inviteId = id.slice("invite:".length);
-        await ref.set({
-          id: ref.id,
+        next = await setMemberOnboardingRowPg(crypto.randomUUID(), {
           member_id: null,
           invite_id: inviteId,
           created_account: false,
@@ -282,18 +284,15 @@ export async function routeMemberOnboarding(req, res, url, origin) {
           last_reminder_sent_at: new Date(),
           last_reminder_sent_by: updatedBy,
           updated_by: updatedBy,
-          updated_at: new Date(),
         });
       } else {
-        await ref.update({
+        next = await updateMemberOnboardingRowPg(id, {
           last_reminder_sent_at: new Date(),
           last_reminder_sent_by: updatedBy,
           updated_by: updatedBy,
-          updated_at: new Date(),
         });
       }
-      const next = await ref.get();
-      sendJson(res, origin, 200, { success: true, data: normalizeOnboardingDoc(next.id, next.data() || {}) });
+      sendJson(res, origin, 200, { success: true, data: normalizeOnboardingDoc(next.id, next) });
     } catch (e) {
       logSafeError("[member-onboarding/reminder]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to send reminder" });
@@ -311,12 +310,10 @@ export async function routeMemberOnboarding(req, res, url, origin) {
 
       const writes = [];
       for (const member of membersSnap.docs) {
-        const existing = await db.collection("member_onboarding").where("member_id", "==", member.id).limit(1).get();
-        if (!existing.empty) continue;
-        const id = crypto.randomUUID();
+        const existing = await findMemberOnboardingByMemberIdPg(member.id);
+        if (existing) continue;
         writes.push(
-          db.collection("member_onboarding").doc(id).set({
-            id,
+          setMemberOnboardingRowPg(crypto.randomUUID(), {
             member_id: member.id,
             invite_id: null,
             created_account: true,
@@ -330,18 +327,15 @@ export async function routeMemberOnboarding(req, res, url, origin) {
             created_at: new Date(),
             created_by: "seed",
             updated_by: "seed",
-            updated_at: new Date(),
           }),
         );
       }
 
       for (const invite of invitesSnap.docs) {
-        const existing = await db.collection("member_onboarding").where("invite_id", "==", invite.id).limit(1).get();
-        if (!existing.empty) continue;
-        const id = crypto.randomUUID();
+        const existing = await findMemberOnboardingByInviteIdPg(invite.id);
+        if (existing) continue;
         writes.push(
-          db.collection("member_onboarding").doc(id).set({
-            id,
+          setMemberOnboardingRowPg(crypto.randomUUID(), {
             member_id: null,
             invite_id: invite.id,
             created_account: false,
@@ -355,7 +349,6 @@ export async function routeMemberOnboarding(req, res, url, origin) {
             created_at: new Date(),
             created_by: "seed",
             updated_by: "seed",
-            updated_at: new Date(),
           }),
         );
       }

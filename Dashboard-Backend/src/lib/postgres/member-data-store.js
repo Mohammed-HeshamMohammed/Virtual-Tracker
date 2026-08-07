@@ -30,8 +30,8 @@ import {
   upsertMemberScopedRowPg,
 } from "./member-data-postgres.service.js";
 
-const PG_MEMBER_SCOPED = new Set(["employment", "time_settings"]);
-const FIRESTORE_MEMBER_SCOPED = new Set(["pay_rates", "member_onboarding"]);
+const PG_MEMBER_SCOPED = new Set(["employment", "time_settings", "pay_rates"]);
+const FIRESTORE_MEMBER_SCOPED = new Set(["member_onboarding"]);
 
 async function requireMemberDataPostgres() {
   if (!(await isPostgresMemberDataReady())) {
