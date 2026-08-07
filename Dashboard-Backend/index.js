@@ -9,7 +9,8 @@ if (config.security.disableTlsVerificationInDev) {
 }
 
 import { createServer } from "./server.js";
-import { initPresenceGateway } from "./src/modules/presence/index.js";
+import { initPresenceGateway, broadcastToAll } from "./src/modules/presence/index.js";
+import { subscribeChanges } from "./src/modules/realtime/change-bus.js";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { getDb } from "./src/config/firebase.js";
@@ -83,6 +84,11 @@ process.on("SIGINT", () => {
 export async function startServer(port = getEnv().server.port) {
   const server = createServer();
   initPresenceGateway(server);
+  // Live sync (PLAN-livesyncandagenttimer.md §6.1): reuses the presence
+  // gateway's socket set as the change-notification transport. One
+  // subscription for the whole process lifetime, wired once here so every
+  // publishChange() call anywhere in the app reaches every connected client.
+  subscribeChanges((msg) => broadcastToAll({ type: "changed", ...msg }));
   activeServer = server;
   registerServerErrorHandler(server, port);
 

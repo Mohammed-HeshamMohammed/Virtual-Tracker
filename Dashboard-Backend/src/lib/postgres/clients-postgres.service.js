@@ -6,6 +6,7 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { publishChange } from "../../modules/realtime/change-bus.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -52,7 +53,9 @@ export async function createClientPg(data) {
       uuidOrNull(data.actorId),
     ],
   );
-  return rows[0] ?? null;
+  const client = rows[0] ?? null;
+  if (client) void publishChange("clients", id, "created", uuidOrNull(data.actorId) ?? undefined);
+  return client;
 }
 
 /** @param {string} id @param {Record<string, unknown>} patch */
@@ -80,12 +83,15 @@ export async function updateClientPg(id, patch) {
   if (sets.length === 0) return getClientPg(id);
   sets.push("updated_at = now()");
   const rows = await query(`UPDATE clients SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
-  return rows[0] ?? null;
+  const client = rows[0] ?? null;
+  if (client) void publishChange("clients", id, "updated", uuidOrNull(patch.updatedBy) ?? undefined);
+  return client;
 }
 
 /** Cascades to client_budgets/client_invoicing/client_projects via their FKs. */
-export async function deleteClientPg(id) {
+export async function deleteClientPg(id, actorId) {
   await query("DELETE FROM clients WHERE id = $1", [id]);
+  void publishChange("clients", id, "deleted", uuidOrNull(actorId) ?? undefined);
 }
 
 // ---------------------------------------------------------------------------

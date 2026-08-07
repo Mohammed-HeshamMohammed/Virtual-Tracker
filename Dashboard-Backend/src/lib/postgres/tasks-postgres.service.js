@@ -8,6 +8,26 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { publishChange } from "../../modules/realtime/change-bus.js";
+
+// Fields task-time-tracking.js's aggregateTaskProgress() recomputes on
+// every activity sync (every SESSION_SYNC_INTERVAL_SEC while anyone is
+// actively tracking - far more often than a real edit). A patch touching
+// only these is bookkeeping, not something a user did; broadcasting it
+// would turn routine ticking into a live-sync storm for no reader that
+// needs it. A real status/assignment change still reaches the wire, either
+// through the other fields on this same patch or through the
+// "task-assignments" resource that assignment writes publish separately.
+const TASK_BOOKKEEPING_ONLY_KEYS = new Set([
+  "total_active_seconds",
+  "total_idle_seconds",
+  "aggregated_progress_percent",
+  "total_assignees",
+  "started_assignees",
+  "not_started_assignees",
+  "participation_percent",
+  "all_assignees_started",
+]);
 
 function uuidOrNull(value) {
   if (typeof value !== "string") return null;
@@ -109,6 +129,7 @@ export async function createTaskPg(payload) {
       payload.updated_by ?? null,
     ],
   );
+  void publishChange("tasks", id, "created", payload.created_by ?? undefined);
   return normalizeTaskRow(rows[0]);
 }
 
@@ -207,10 +228,15 @@ export async function updateTaskPg(id, payload) {
   if (sets.length === 0) return getTaskPg(id);
   sets.push("updated_at = now()");
   const rows = await query(`UPDATE tasks SET ${sets.join(", ")} WHERE id = $1 RETURNING ${TASK_COLUMNS.join(", ")}`, params);
+  const isBookkeepingOnly = Object.keys(payload).every((key) => TASK_BOOKKEEPING_ONLY_KEYS.has(key));
+  if (rows[0] && !isBookkeepingOnly) {
+    void publishChange("tasks", id, "updated", payload.updated_by ?? undefined);
+  }
   return rows[0] ? normalizeTaskRow(rows[0]) : null;
 }
 
-/** @param {string} id */
-export async function deleteTaskPg(id) {
+/** @param {string} id @param {string} [actorId] */
+export async function deleteTaskPg(id, actorId) {
   await query("DELETE FROM tasks WHERE id = $1", [id]);
+  void publishChange("tasks", id, "deleted", actorId ?? undefined);
 }
