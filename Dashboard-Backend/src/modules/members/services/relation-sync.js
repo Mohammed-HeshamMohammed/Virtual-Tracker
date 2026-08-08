@@ -90,12 +90,31 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  */
-async function loadRoleNameById(db) {
+export async function loadRoleNameById(db) {
   await isPostgresLookupReady();
   const data = await getLookupData();
   return new Map(
     data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
   );
+}
+
+/**
+ * Role ids whose Postgres `roles.name` satisfies `predicate` - the shared
+ * "which members have an admin/management/employee-tier role" query. Every
+ * call site that needs this used to run its own `db.collection("roles")`
+ * Firestore scan; that collection has had nothing writing to it since roles
+ * moved to Postgres (see resolveRoleIdByNamePg/ensureDefaultRolesPg), so
+ * those reads were silently returning empty/stale results. This hits the
+ * same 5-minute-cached `roles` table every other role lookup in the app uses.
+ * @param {(roleName: string) => boolean} predicate
+ * @returns {Promise<string[]>}
+ */
+export async function resolveRoleIdsWhere(predicate) {
+  await isPostgresLookupReady();
+  const { roles } = await getLookupData();
+  return roles
+    .filter((row) => predicate(typeof row.name === "string" ? row.name.trim() : ""))
+    .map((row) => String(row.id));
 }
 
 /**

@@ -134,10 +134,8 @@ async function promotePendingMemberCore(db, auth, uid) {
   };
   let roleName = "Viewer";
   if (typeof p.role_id === "string" && p.role_id) {
-    const roleDoc = await db.collection("roles").doc(p.role_id).get();
-    if (roleDoc.exists && typeof roleDoc.data()?.name === "string" && roleDoc.data().name.trim()) {
-      roleName = roleDoc.data().name.trim();
-    }
+    const resolvedRoleName = await resolveRoleNameById(db, p.role_id);
+    if (resolvedRoleName) roleName = resolvedRoleName;
   } else if (typeof p.role_name === "string" && p.role_name) {
     roleName = p.role_name;
   }
@@ -493,11 +491,8 @@ export async function routeMemberInvites(req, res, url, origin) {
       const uid = userRecord.uid;
       const memberId = crypto.randomUUID();
       const inviteRoleId = typeof row.role_id === "string" && row.role_id ? row.role_id : "";
-      const roleDocSnap = inviteRoleId ? await db.collection("roles").doc(inviteRoleId).get() : null;
-      const roleName =
-        roleDocSnap?.exists && typeof roleDocSnap.data()?.name === "string" && roleDocSnap.data().name.trim()
-          ? roleDocSnap.data().name.trim()
-          : "Viewer";
+      const resolvedRoleName = inviteRoleId ? await resolveRoleNameById(db, inviteRoleId) : "";
+      const roleName = resolvedRoleName || "Viewer";
       const payRate = typeof row.pay_rate === "number" && !Number.isNaN(row.pay_rate) ? row.pay_rate : 0;
       const inviteProjects = await getInviteProjectIds(db, inv.id);
       const memberPayload = {

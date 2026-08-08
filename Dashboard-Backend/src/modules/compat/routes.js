@@ -29,7 +29,6 @@ import {
   alignMemberRoleTables,
   syncMemberPrimaryRole,
   syncProjectMembersForMember,
-  pickCanonicalPrimaryRoleName,
 } from "../members/services/relation-sync.js";
 import { resolveProfileAvatarUrl } from "../auth/profile-image-resolve.js";
 import { resolveMemberDisplayName } from "../members/services/member-display-name.js";
@@ -168,37 +167,6 @@ async function enrichMembersWithRelations(db, members) {
     snaps.teamsSnap,
     snaps.projectMembersSnap,
   );
-}
-
-function enrichMembersWithRoleNamesFromSnaps(members, memberRolesSnap, rolesSnap) {
-  if (!members.length) return members;
-  if (!memberRolesSnap || !rolesSnap) return members;
-  const memberIdSet = new Set(members.map((m) => m.id));
-  const roleNameById = new Map(
-    rolesSnap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-    }),
-  );
-  const memberRoleRowsByMember = new Map();
-  for (const doc of memberRolesSnap.docs) {
-    const row = doc.data() || {};
-    const memberId = typeof row.member_id === "string" ? row.member_id : "";
-    if (!memberIdSet.has(memberId)) continue;
-    const list = memberRoleRowsByMember.get(memberId) || [];
-    list.push(row);
-    memberRoleRowsByMember.set(memberId, list);
-  }
-  return members.map((member) => {
-    const mrRows = memberRoleRowsByMember.get(member.id) || [];
-    const { name, roleId } = pickCanonicalPrimaryRoleName(member, mrRows, roleNameById);
-    return {
-      ...member,
-      role_name: name,
-      role: name,
-      role_id: roleId || (typeof member.role_id === "string" ? member.role_id : ""),
-    };
-  });
 }
 
 function enrichMembersWithRelationsFromSnaps(members, teamMembersSnap, teamsSnap, projectMembersSnap) {

@@ -80,14 +80,6 @@ export async function fetchPayRatesForMembers(_db, memberIds) {
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string[]} memberIds
  */
-export async function fetchMemberRolesForMembers(db, memberIds) {
-  return fetchDocsByMemberIdChunks(db, "member_roles", memberIds);
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- */
 export async function fetchMemberRelationSnaps(db, memberIds) {
   const ids = memberIds.filter((id) => typeof id === "string" && id);
   if (!ids.length) {

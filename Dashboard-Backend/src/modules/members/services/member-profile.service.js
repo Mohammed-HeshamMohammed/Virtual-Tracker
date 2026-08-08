@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { publishChange } from "../../realtime/change-bus.js";
 import { ensureMemberScopedEntities } from "./member-entity-bootstrap.js";
 import { enrichMemberWithPresence } from "./member-presence.service.js";
-import { alignMemberRoleTables, pickCanonicalPrimaryRoleName, syncMemberPrimaryRole } from "./relation-sync.js";
+import { alignMemberRoleTables, loadRoleNameById, pickCanonicalPrimaryRoleName, syncMemberPrimaryRole } from "./relation-sync.js";
 import { getProfilePatchSections, profilePatchNeedsBootstrap } from "./member-role-change.service.js";
 import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
@@ -325,23 +325,13 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
 
   if (want("roles")) {
     pending.push(
-      db
-        .collection("roles")
-        .limit(100)
-        .get()
-        .then((rolesSnap) => {
-          const roleNameById = new Map(
-            rolesSnap.docs.map((doc) => {
-              const row = doc.data() || {};
-              return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-            }),
-          );
-          const { name: roleName } = pickCanonicalPrimaryRoleName(memberData, [], roleNameById);
-          form.role = roleName;
-          // §6.9 follow-up - roles' own stamp on the shared `members` doc,
-          // bumped only when a role change lands (see updateMemberProfile).
-          form.rolesUpdatedAt = toIsoTimestamp(memberData.roles_updated_at);
-        }),
+      loadRoleNameById(db).then((roleNameById) => {
+        const { name: roleName } = pickCanonicalPrimaryRoleName(memberData, [], roleNameById);
+        form.role = roleName;
+        // §6.9 follow-up - roles' own stamp on the shared `members` doc,
+        // bumped only when a role change lands (see updateMemberProfile).
+        form.rolesUpdatedAt = toIsoTimestamp(memberData.roles_updated_at);
+      }),
     );
   }
 

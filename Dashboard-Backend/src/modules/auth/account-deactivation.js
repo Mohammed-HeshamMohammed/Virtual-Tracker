@@ -1,6 +1,7 @@
 import { isDeactivationApprovalRole, deactivationGovernanceForRole } from "../../http/role-hierarchy.js";
 import { revokeAgentDevicesForMember } from "../activity/agent-devices.service.js";
 import { deleteMemberProfileData } from "../members/services/member-profile.service.js";
+import { resolveRoleIdsWhere } from "../members/services/relation-sync.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 
 const DEACTIVATION_REQUESTS = "deactivation_requests";
@@ -38,12 +39,7 @@ async function findPendingDeactivationRequest(db, memberId) {
  * @param {string} [excludeMemberId]
  */
 async function resolveAdminLevelRecipientIds(db, excludeMemberId = "") {
-  const rolesSnap = await db.collection("roles").limit(100).get();
-  const adminRoleIds = new Set();
-  for (const doc of rolesSnap.docs) {
-    const name = typeof doc.data()?.name === "string" ? doc.data().name : "";
-    if (isDeactivationApprovalRole(name)) adminRoleIds.add(doc.id);
-  }
+  const adminRoleIds = new Set(await resolveRoleIdsWhere(isDeactivationApprovalRole));
   if (adminRoleIds.size === 0) return [];
 
   const recipients = new Set();
