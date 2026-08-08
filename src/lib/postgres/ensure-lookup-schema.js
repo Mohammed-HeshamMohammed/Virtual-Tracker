@@ -23,6 +23,205 @@ $$ LANGUAGE plpgsql`,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name)",
+  // ─── Member identity (migrated from Firestore) ──────────────────────────
+  // The one collection every other migration deliberately deferred (schema.sql
+  // used to say outright "members stay in Firestore" - see implementation.md
+  // §4.9, "materially bigger scope than this plan"). Moved for real once an
+  // accidental Firestore collection delete took the entire app down through
+  // auth-middleware.js's per-request `members.where("firebase_uid", ...)`
+  // lookup - every authenticated request 404'd with no recovery path, because
+  // nothing in Postgres could resolve a Firebase UID back to a member without
+  // that Firestore doc. This table plus the unique index below replaces both
+  // the Firestore `members` collection AND `member_auth_index` (a native
+  // unique index on firebase_uid does the same O(1) lookup that doc-per-uid
+  // index existed for). Column set pulled from the live field catalog
+  // (src/modules/schema/catalog/members/index.js) plus every field actually
+  // read/written in members/services/*.js that the catalog didn't cover
+  // (presence, ban, and role-change timestamps) - not invented.
+  `CREATE TABLE IF NOT EXISTS members (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firebase_uid              VARCHAR(128) NOT NULL DEFAULT '',
+  first_name                VARCHAR(120) NOT NULL DEFAULT '',
+  last_name                 VARCHAR(120) NOT NULL DEFAULT '',
+  display_name              VARCHAR(250) NOT NULL DEFAULT '',
+  must_change_password      BOOLEAN NOT NULL DEFAULT false,
+  work_email                VARCHAR(255) NOT NULL DEFAULT '',
+  personal_email            VARCHAR(255) NOT NULL DEFAULT '',
+  employee_id               VARCHAR(60) NOT NULL DEFAULT '',
+  phone_number               VARCHAR(40) NOT NULL DEFAULT '',
+  phone_verified            BOOLEAN NOT NULL DEFAULT false,
+  ip_address                VARCHAR(45) NOT NULL DEFAULT '',
+  avatar_url                TEXT,
+  avatar_color              VARCHAR(20),
+  status                    VARCHAR(20) NOT NULL DEFAULT 'active',
+  role_id                   UUID,
+  hierarchy_status          VARCHAR(30),
+  hierarchy_entitlements    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  privileges                JSONB NOT NULL DEFAULT '{}'::jsonb,
+  independent_hierarchy     BOOLEAN NOT NULL DEFAULT false,
+  hierarchy_status_updated_at TIMESTAMPTZ,
+  roles_updated_at          TIMESTAMPTZ,
+  info_updated_at           TIMESTAMPTZ,
+  last_seen_at              TIMESTAMPTZ,
+  profile_linked_records_at TIMESTAMPTZ,
+  banned_at                 TIMESTAMPTZ,
+  registration_invite_kind  VARCHAR(20),
+  created_by                VARCHAR(255) NOT NULL DEFAULT '',
+  created_by_uid             VARCHAR(128) NOT NULL DEFAULT '',
+  updated_by                VARCHAR(255) NOT NULL DEFAULT '',
+  date_added                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  // Replaces both a Firestore uniqueness-by-convention on firebase_uid and
+  // the separate member_auth_index doc-per-uid collection - one real
+  // constraint instead of two things that could drift apart.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_members_firebase_uid ON members (firebase_uid) WHERE firebase_uid <> ''`,
+  `CREATE INDEX IF NOT EXISTS idx_members_status ON members (status)`,
+  `CREATE INDEX IF NOT EXISTS idx_members_role ON members (role_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_members_work_email ON members (work_email) WHERE work_email <> ''`,
+  `DROP TRIGGER IF EXISTS trg_members_updated_at ON members`,
+  `CREATE TRIGGER trg_members_updated_at
+  BEFORE UPDATE ON members
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  // ─── Teams (migrated from Firestore) ─────────────────────────────────────
+  // Column set from src/modules/schema/catalog/teams/index.js. team_projects
+  // already moved to Postgres earlier; teams/team_members were left in
+  // Firestore ("low-volume, self-contained" - PROPOSAL-Projects-Migration-
+  // to-PostgreSQL.md) until the incident that took the whole members domain
+  // with it forced the rest of this migration too.
+  `CREATE TABLE IF NOT EXISTS teams (
+  id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name                        VARCHAR(200) NOT NULL,
+  schedule_weekly_report      BOOLEAN NOT NULL DEFAULT false,
+  last_weekly_report_sent_at  TIMESTAMPTZ,
+  created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by                  UUID,
+  updated_by                  UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_teams_name ON teams (name)`,
+  `CREATE TABLE IF NOT EXISTS team_members (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id       UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  member_id     UUID NOT NULL,
+  is_lead       BOOLEAN NOT NULL DEFAULT false,
+  joined_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  assigned_by   UUID,
+  updated_by    UUID,
+  UNIQUE (team_id, member_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members (team_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members (member_id)`,
+  // team_projects.team_id has carried no FK since it predates this table
+  // (see deleteTeamProjectsForTeamPg's own comment) - add it now that teams
+  // exists, same idempotent DO-block pattern already used for fk_cp_client.
+  `DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tp_team') THEN
+    ALTER TABLE team_projects ADD CONSTRAINT fk_tp_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
+  // ─── Invites (migrated from Firestore) ───────────────────────────────────
+  // Column set from schema/catalog/members/index.js, widened with the real
+  // fields member-invites.routes.js actually reads/writes that the catalog
+  // didn't cover (phone_number, invite fan-out timestamps).
+  `CREATE TABLE IF NOT EXISTS invites (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email             VARCHAR(255) NOT NULL DEFAULT '',
+  first_name        VARCHAR(120) NOT NULL DEFAULT '',
+  last_name         VARCHAR(120) NOT NULL DEFAULT '',
+  phone_number      VARCHAR(40) NOT NULL DEFAULT '',
+  role_id           UUID,
+  invite_token      VARCHAR(255) NOT NULL DEFAULT '',
+  invite_kind       VARCHAR(20) NOT NULL DEFAULT 'email',
+  firebase_uid      VARCHAR(128) NOT NULL DEFAULT '',
+  pay_rate          NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  weekly_limit      VARCHAR(20) NOT NULL DEFAULT '',
+  currency          VARCHAR(10) NOT NULL DEFAULT 'USD',
+  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_by_uid    VARCHAR(128) NOT NULL DEFAULT '',
+  sent_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  accepted_at       TIMESTAMPTZ,
+  created_by        UUID,
+  updated_by        UUID
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites (invite_token) WHERE invite_token <> ''`,
+  `CREATE INDEX IF NOT EXISTS idx_invites_email ON invites (email)`,
+  `CREATE INDEX IF NOT EXISTS idx_invites_status ON invites (status)`,
+  `CREATE TABLE IF NOT EXISTS invite_projects (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invite_id     UUID NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by    UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_invite_projects_invite ON invite_projects (invite_id)`,
+  // ─── Pre-auth staging (migrated from Firestore) ──────────────────────────
+  // Short-lived rows: created when an admin preprovisions a member before
+  // they ever sign in, consumed by promotePendingMemberCore once they do.
+  `CREATE TABLE IF NOT EXISTS pending_auth_members (
+  firebase_uid      VARCHAR(128) PRIMARY KEY,
+  email             VARCHAR(255) NOT NULL DEFAULT '',
+  display_name      VARCHAR(250) NOT NULL DEFAULT '',
+  phone_number      VARCHAR(40) NOT NULL DEFAULT '',
+  role_id           UUID,
+  role_name         VARCHAR(60) NOT NULL DEFAULT '',
+  pay_rate          NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  created_by_uid    VARCHAR(128) NOT NULL DEFAULT '',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE TABLE IF NOT EXISTS pending_auth_projects (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firebase_uid      VARCHAR(128) NOT NULL REFERENCES pending_auth_members(firebase_uid) ON DELETE CASCADE,
+  project_id        UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by        UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_auth_projects_uid ON pending_auth_projects (firebase_uid)`,
+  // ─── Member relationships / hierarchy graph (migrated from Firestore) ───
+  // member_tree_cache (the derived, fast-read version of this graph) was
+  // already Postgres-resident (member-data-postgres.service.js) - this is
+  // the underlying edge list it's computed from, which was not.
+  `CREATE TABLE IF NOT EXISTS member_relationships (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_member_id      UUID NOT NULL,
+  child_member_id       UUID NOT NULL,
+  relationship_type     VARCHAR(20) NOT NULL DEFAULT 'admin_create',
+  projects              JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by            UUID,
+  UNIQUE (parent_member_id, child_member_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_rel_parent ON member_relationships (parent_member_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_rel_child ON member_relationships (child_member_id)`,
+  `CREATE TABLE IF NOT EXISTS member_transfer_requests (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id         UUID NOT NULL,
+  from_parent_id    UUID,
+  to_parent_id      UUID NOT NULL,
+  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
+  requested_by      UUID,
+  resolved_by       UUID,
+  resolved_at       TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_transfer_member ON member_transfer_requests (member_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_transfer_status ON member_transfer_requests (status)`,
+  // ─── Miscellaneous member-adjacent (migrated from Firestore) ────────────
+  `CREATE TABLE IF NOT EXISTS members_field_data (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID,
+  form_key      VARCHAR(60) NOT NULL DEFAULT '',
+  data          JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS access_requests (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         VARCHAR(255) NOT NULL DEFAULT '',
+  name          VARCHAR(250) NOT NULL DEFAULT '',
+  message       TEXT NOT NULL DEFAULT '',
+  status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
   `CREATE TABLE IF NOT EXISTS lookup_tables (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   category     VARCHAR(20) NOT NULL CHECK (category IN (

@@ -17,6 +17,7 @@ import { sendToMember } from "../presence/index.js";
 import { publishChange } from "../realtime/change-bus.js";
 import { getVisibleMemberIds, recordMemberRelationship } from "../member-relationships/service.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
+import { listMembersPagePg } from "../../lib/postgres/members-postgres.service.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { assertEmailCanUseMemberInviteOrPreprovision } from "../members/services/eligibility.js";
@@ -545,92 +546,13 @@ export async function routeCompatibility(req, res, url, db, origin) {
       : null;
     const cursorId = paginate ? decodeMemberPageCursor(url.searchParams.get("cursor") ?? "") : null;
 
-    let membersQuery = paginate
-      ? db.collection("members").orderBy("date_added", "desc").limit(pageLimit + 1)
-      : db.collection("members").limit(500);
-
-    if (paginate && cursorId) {
-      const cursorSnap = await db.collection("members").doc(cursorId).get();
-      if (cursorSnap.exists) {
-        membersQuery = db
-          .collection("members")
-          .orderBy("date_added", "desc")
-          .startAfter(cursorSnap)
-          .limit(pageLimit + 1);
-      }
-    }
-
-    if (fieldsToSelect) {
-      const fields = [...fieldsToSelect];
-      if (!fields.includes("date_added")) {
-        fields.push("date_added");
-      }
-      if (needsPhoto && !fields.includes("firebase_uid")) {
-        fields.push("firebase_uid");
-      }
-      if (fieldsToSelect.some(f => ["name", "avatar", "initials"].includes(f))) {
-        if (!fields.includes("first_name")) fields.push("first_name");
-        if (!fields.includes("last_name")) fields.push("last_name");
-      }
-      
-      const firestoreFields = new Set();
-      for (const f of fields) {
-        if (f === "dateAdded" || f === "date_added") {
-          firestoreFields.add("date_added");
-        } else if (f === "firebaseUid" || f === "firebase_uid") {
-          firestoreFields.add("firebase_uid");
-        } else if (f === "personalEmail" || f === "personal_email") {
-          firestoreFields.add("personal_email");
-        } else if (f === "weeklyLimit" || f === "weekly_limit" || f === "limits") {
-          // resolved from limits collection at read time
-        } else if (f === "payRate" || f === "pay_rate" || f === "payment") {
-          // resolved from pay_rates collection at read time
-        } else if (f === "payPeriod" || f === "pay_period") {
-          // resolved from pay_rates collection at read time
-        } else if (f === "avatarColor" || f === "avatar_color") {
-          firestoreFields.add("avatar_color");
-        } else if (f === "trackingStatus" || f === "tracking_status" || f === "lastPresenceAt" || f === "last_presence_at") {
-          firestoreFields.add("presence");
-        } else if (f === "roleName" || f === "role_name" || f === "role") {
-          firestoreFields.add("role_id");
-        } else if (f === "roleId" || f === "role_id") {
-          firestoreFields.add("role_id");
-        } else if (f === "workEmail" || f === "work_email") {
-          firestoreFields.add("work_email");
-        } else if (f === "employeeId" || f === "employee_id") {
-          firestoreFields.add("employee_id");
-        } else if (f === "email") {
-          firestoreFields.add("work_email");
-          firestoreFields.add("personal_email");
-        } else if (f === "phone") {
-          firestoreFields.add("phone_number");
-          firestoreFields.add("mobile");
-          firestoreFields.add("phone");
-        } else if (f === "avatarUrl" || f === "avatar_url" || f === "photo_url" || f === "photoURL") {
-          firestoreFields.add("photo_url");
-          firestoreFields.add("photoURL");
-          firestoreFields.add("avatar_url");
-        } else if (f === "hierarchy_status" || f === "hierarchyStatus") {
-          firestoreFields.add("hierarchy_status");
-        } else if (f === "privileges") {
-          firestoreFields.add("privileges");
-        } else {
-          firestoreFields.add(f);
-        }
-      }
-      
-      const physicalFields = [
-        "first_name", "last_name", "work_email", "personal_email", "employee_id",
-        "ip_address", "status", "date_added", "created_by", "created_by_uid",
-        "updated_by", "updated_at", "role_id", "presence",
-        "firebase_uid", "phone_number", "mobile", "phone", "avatar_color",
-        "hierarchy_status", "privileges",
-      ];
-      const selectFields = Array.from(firestoreFields).filter(f => physicalFields.includes(f));
-      if (selectFields.length > 0) {
-        membersQuery = membersQuery.select(...selectFields);
-      }
-    }
+    // Postgres SELECT * instead of Firestore's per-request field projection
+    // (`.select(...)`) - members is no longer schemaless-doc-shaped, and the
+    // downstream enrichment pipeline below already just reads whichever
+    // properties it needs off the row. A few extra columns coming back on
+    // the wire is a minor efficiency cost, not a correctness one; the
+    // projection logic this replaced existed to shrink a Firestore doc read,
+    // which doesn't apply to a single indexed Postgres query the same way.
 
     const needsPayOrLimits =
       !fieldsToSelect ||
@@ -666,8 +588,10 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
       memberDocSnaps = docs;
     } else {
-      const snapshot = await membersQuery.get();
-      memberDocSnaps = snapshot.docs;
+      const rows = paginate
+        ? await listMembersPagePg({ limit: pageLimit + 1, cursorId })
+        : await listMembersPagePg({ limit: 500 });
+      memberDocSnaps = rows.map((row) => ({ id: String(row.id), data: () => row }));
     }
 
     let members = await mapMembersWithProfilePhotos(db, memberDocSnaps, {

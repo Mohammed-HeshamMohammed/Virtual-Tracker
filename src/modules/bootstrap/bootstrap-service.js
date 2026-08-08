@@ -1,5 +1,6 @@
 import { isManagementRole } from "../../http/auth-context.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import { canCreateTransferRequests } from "../hierarchy/hierarchy-placement.js";
 import { hasHierarchyAssignmentRestriction } from "../hierarchy/hierarchy-placement.js";
@@ -136,14 +137,10 @@ export async function getBootstrapPayload(db, viewer) {
   }
 
   const roleName = viewer.roleName || (await resolveMemberRoleNameCached(db, viewer.memberId));
-  const memberSnap = await db.collection("members").doc(viewer.memberId).get();
-  const memberData = memberSnap.exists ? memberSnap.data() || {} : null;
-
-  const [profileSnap, dashboardSummary] = await Promise.all([
-    db.collection("User_profiles").doc(viewer.uid).get(),
+  const [memberData, dashboardSummary] = await Promise.all([
+    getMemberByIdPg(viewer.memberId),
     getDashboardSummaryCounts(db, { memberId: viewer.memberId, roleName }),
   ]);
-  const profileData = profileSnap.exists ? profileSnap.data() || {} : {};
 
   const normalizedRole = normalizeRole(roleName);
   const management = isManagementRole(roleName);
@@ -151,14 +148,12 @@ export async function getBootstrapPayload(db, viewer) {
   return {
     user: {
       uid: viewer.uid,
-      email: viewer.email ?? profileData.primaryEmail ?? profileData.primary_email ?? null,
+      email: viewer.email ?? memberData?.work_email ?? null,
       displayName:
-        profileData.displayName ??
-        profileData.display_name ??
-        memberData?.name ??
+        memberData?.display_name ||
+        [memberData?.first_name, memberData?.last_name].filter(Boolean).join(" ").trim() ||
         null,
-      mustChangePassword:
-        profileData.must_change_password === true || profileData.mustChangePassword === true,
+      mustChangePassword: memberData?.must_change_password === true,
     },
     member: buildMemberSummary(memberData, viewer.memberId, roleName),
     role: {
