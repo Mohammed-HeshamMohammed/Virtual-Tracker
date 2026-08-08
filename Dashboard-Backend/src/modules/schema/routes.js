@@ -42,7 +42,7 @@ import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-b
 import { syncProjectBudgetFromClients } from "../projects/services/project-budget-from-clients.js";
 import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
-import { deleteTeamProjectsForTeamPg } from "../../lib/postgres/projects-postgres.service.js";
+import { deleteTeamPg, getTeamByIdPg } from "../../lib/postgres/teams-postgres.service.js";
 import {
   parseTaskChildPath,
   resolveEntityCollectionRef,
@@ -985,19 +985,15 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       }
       if (parsed.key === "teams") {
         const teamId = parsed.id;
-        const teamDoc = await db.collection(entity.collection).doc(teamId).get();
-        if (!teamDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const visible = await assertRowVisible(req, db, "teams", { id: teamDoc.id, ...teamDoc.data() });
+        const team = await getTeamByIdPg(teamId);
+        if (!team) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        const visible = await assertRowVisible(req, db, "teams", team);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        // team_projects is Postgres-resident (see team-roster.service.js); the team
-        // doc itself has no FK to cascade this, so it's deleted explicitly here -
-        // same reasoning as unlinkTeamProjectPg, just for every link at once.
-        await deleteTeamProjectsForTeamPg(teamId);
-        const batch = db.batch();
-        const teamMembersSnap = await db.collection("team_members").where("team_id", "==", teamId).get();
-        for (const doc of teamMembersSnap.docs) batch.delete(doc.ref);
-        batch.delete(db.collection(entity.collection).doc(teamId));
-        await batch.commit();
+        // Both team_members.team_id and team_projects.team_id are real FKs
+        // with ON DELETE CASCADE now that `teams` exists in Postgres (see
+        // fk_tp_team in ensure-lookup-schema.js) - deleting the team row is
+        // enough, no explicit child cleanup needed on either side anymore.
+        await deleteTeamPg(teamId);
         sendJson(res, origin, 200, { success: true, data: { id: teamId, deleted: true } });
         return true;
       }

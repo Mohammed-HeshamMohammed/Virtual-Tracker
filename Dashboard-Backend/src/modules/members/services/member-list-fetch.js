@@ -1,16 +1,17 @@
+import { getMembersByIdsPg } from "../../../lib/postgres/members-postgres.service.js";
+
 /**
- * Firestore getAll in batches of 10.
- * @param {import("firebase-admin/firestore").Firestore} db
+ * Postgres members by id, wrapped in a minimal Firestore-QueryDocumentSnapshot
+ * shape ({ id, data() }) so the large existing downstream pipeline
+ * (mapMembersWithProfilePhotos, enrichMembersWithRelationsFromSnaps, etc. in
+ * compat/routes.js) needs zero changes - they only ever call .id/.data() on
+ * what this returns, never anything Firestore-specific like .ref/.exists.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string[]} memberIds
- * @returns {Promise<import("firebase-admin/firestore").QueryDocumentSnapshot[]>}
+ * @returns {Promise<{ id: string, data: () => Record<string, unknown> }[]>}
  */
-export async function fetchMemberDocsByIds(db, memberIds) {
+export async function fetchMemberDocsByIds(_db, memberIds) {
   if (!memberIds.length) return [];
-  const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id.length > 0))];
-  const snaps = [];
-  for (let i = 0; i < unique.length; i += 10) {
-    const batch = unique.slice(i, i + 10).map((id) => db.collection("members").doc(id));
-    snaps.push(...(await db.getAll(...batch)));
-  }
-  return snaps.filter((snap) => snap.exists);
+  const rows = await getMembersByIdsPg(memberIds);
+  return rows.map((row) => ({ id: String(row.id), data: () => row }));
 }

@@ -7,6 +7,7 @@ import { checkHierarchyAccess } from "../modules/hierarchy/hierarchy-access-guar
 import { readIdToken } from "./auth-token.js";
 import { setAuthContext } from "./auth-context.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
+import { getMemberByFirebaseUidPg, getMemberByIdPg } from "../lib/postgres/members-postgres.service.js";
 
 /** Unauthenticated API routes (no Bearer token required). */
 const PUBLIC_API_ROUTES = [
@@ -99,10 +100,8 @@ export async function authenticateRequest(req, url, db) {
       }
     }
 
-    const profileSnap = await db.collection("User_profiles").doc(decoded.uid).get();
-    const profileData = profileSnap.exists ? profileSnap.data() || {} : {};
-    const mustChangePassword =
-      profileData.must_change_password === true || profileData.mustChangePassword === true;
+    const memberData = await getMemberByFirebaseUidPg(decoded.uid);
+    const mustChangePassword = memberData?.must_change_password === true;
 
     if (mustChangePassword && !isMustChangePasswordAllowedRoute(req.method ?? "GET", url.pathname)) {
       return {
@@ -113,9 +112,6 @@ export async function authenticateRequest(req, url, db) {
       };
     }
 
-    const snap = await db.collection("members").where("firebase_uid", "==", decoded.uid).limit(1).get();
-    const memberData = snap.empty ? null : snap.docs[0].data() || null;
-
     if (requiresEmailVerification(userRecord, { mustChangePassword, memberData })) {
       return {
         ok: false,
@@ -125,7 +121,7 @@ export async function authenticateRequest(req, url, db) {
       };
     }
 
-    if (snap.empty) {
+    if (!memberData) {
       if (mustChangePassword) {
         const context = {
           uid: decoded.uid,
@@ -139,7 +135,7 @@ export async function authenticateRequest(req, url, db) {
       return { ok: false, status: 404, error: "Member profile not found for this account." };
     }
 
-    const memberId = snap.docs[0].id;
+    const memberId = String(memberData.id);
     const roleName = await resolveMemberRoleNameCached(db, memberId);
     const gov = await enforcePrivilegedRoleGovernanceForMember(db, memberId, {
       requestIp: getRequestIp(req),
@@ -192,8 +188,7 @@ export async function enforceApiAuthentication(req, url, db) {
   }
 
   if (result.context?.memberId) {
-    const memberSnap = await db.collection("members").doc(result.context.memberId).get();
-    const memberData = memberSnap.exists ? memberSnap.data() : null;
+    const memberData = await getMemberByIdPg(result.context.memberId);
     const banGate = await assertMemberNotBanned(db, {
       email: result.context.email || "",
       memberId: result.context.memberId,

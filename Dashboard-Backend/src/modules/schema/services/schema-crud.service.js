@@ -16,7 +16,22 @@ const LOOKUP_FK_COLLECTIONS = new Set(["roles", "job_titles", "departments", "jo
 // Checking the old Firestore collections here would reject every reference to a
 // project/task created after each domain's cutover, since new rows never land
 // in Firestore anymore. See implementation.md Phase 2.
-const POSTGRES_FK_TABLE_BY_FIELD = { project_id: "projects", task_id: "tasks" };
+//
+// member_id/assigned_to/team_id/invite_id/client_id joined this list for the
+// same reason, all at once, during the members-domain migration: without
+// this, the fallback branch below checks db.collection("members")/("teams")/
+// ("invites")/("clients") - collections that are empty now that those
+// domains are Postgres-resident - and validateForeignKeys would reject every
+// valid reference as "missing", not just ones actually deleted.
+const POSTGRES_FK_TABLE_BY_FIELD = {
+  project_id: "projects",
+  task_id: "tasks",
+  member_id: "members",
+  assigned_to: "members",
+  team_id: "teams",
+  invite_id: "invites",
+  client_id: "clients",
+};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());

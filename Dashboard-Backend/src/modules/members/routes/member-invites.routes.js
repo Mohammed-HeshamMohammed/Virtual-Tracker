@@ -8,6 +8,7 @@ import { readJsonBody } from "../../../http/read-json-body.js";
 import { sendJson } from "../../../http/response.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
+import { createMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { upsertProfileFromUserRecord } from "../../auth/profile-sync.js";
 import { sendPreprovisionWelcomeEmail } from "../../auth/preprovision-email.js";
 import { isNotifyEmailRoutingConfigured } from "../../../lib/notify/email-client.js";
@@ -143,7 +144,7 @@ async function promotePendingMemberCore(db, auth, uid) {
 
   const projects = await getPendingAuthProjectIds(db, uid);
 
-  await db.collection("members").doc(memberId).set(memberPayload);
+  await createMemberPg(memberPayload);
   const creatorRoleName = await resolveInviteCreatorRoleName(db, p);
   await syncMemberPrimaryRole(
     db,
@@ -514,7 +515,7 @@ export async function routeMemberInvites(req, res, url, origin) {
         updated_at: new Date(),
         firebase_uid: uid,
       };
-      await db.collection("members").doc(memberId).set(memberPayload);
+      await createMemberPg(memberPayload);
       const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
       await syncMemberPrimaryRole(
         db,

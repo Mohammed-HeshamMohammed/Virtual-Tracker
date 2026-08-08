@@ -3,32 +3,28 @@ import {
   flattenPresenceForApi,
   resolveEffectivePresence,
 } from "./presence-status.js";
-
-const AUTH_INDEX = "member_auth_index";
+import { getMemberByFirebaseUidPg, getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
 
 /**
- * member_auth_index lookup — no full members scan.
- * @param {import("firebase-admin/firestore").Firestore} db
+ * O(1) firebase_uid -> memberId, via the unique index on members.firebase_uid.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} firebaseUid
  */
-export async function resolveMemberIdForUid(db, firebaseUid) {
+export async function resolveMemberIdForUid(_db, firebaseUid) {
   if (!firebaseUid) return "";
-  const indexSnap = await db.collection(AUTH_INDEX).doc(firebaseUid).get();
-  const indexed = indexSnap.exists && typeof indexSnap.data()?.member_id === "string" ? indexSnap.data().member_id : "";
-  if (indexed) return indexed;
-  const snap = await db.collection("members").where("firebase_uid", "==", firebaseUid).limit(1).get();
-  return snap.empty ? "" : snap.docs[0].id;
+  const member = await getMemberByFirebaseUidPg(firebaseUid);
+  return member ? String(member.id) : "";
 }
 
 /**
  * last_seen_at from DB; live status is in the runtime store.
- * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} memberId
  */
-export async function getMemberPresence(db, memberId) {
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) return null;
-  const fields = extractPresenceFields(memberSnap.data() || {});
+export async function getMemberPresence(_db, memberId) {
+  const member = await getMemberByIdPg(memberId);
+  if (!member) return null;
+  const fields = extractPresenceFields(member);
   return fields.last_seen_at || fields.profile_linked_records_at ? fields : null;
 }
 
