@@ -394,6 +394,11 @@ export async function unlinkTeamProjectPg(teamId, projectId) {
   await query("DELETE FROM team_projects WHERE team_id = $1 AND project_id = $2", [teamId, projectId]);
 }
 
+/** Team itself lives in Firestore, so there's no FK to cascade this on delete. */
+export async function deleteTeamProjectsForTeamPg(teamId) {
+  await query("DELETE FROM team_projects WHERE team_id = $1", [teamId]);
+}
+
 export async function listTeamIdsForProjectPg(projectId) {
   const rows = await query("SELECT team_id FROM team_projects WHERE project_id = $1", [projectId]);
   return rows.map((r) => r.team_id);

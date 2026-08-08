@@ -42,6 +42,7 @@ import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-b
 import { syncProjectBudgetFromClients } from "../projects/services/project-budget-from-clients.js";
 import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { deleteTeamProjectsForTeamPg } from "../../lib/postgres/projects-postgres.service.js";
 import {
   parseTaskChildPath,
   resolveEntityCollectionRef,
@@ -988,44 +989,21 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         if (!teamDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         const visible = await assertRowVisible(req, db, "teams", { id: teamDoc.id, ...teamDoc.data() });
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        // team_projects is Postgres-resident (see team-roster.service.js); the team
+        // doc itself has no FK to cascade this, so it's deleted explicitly here -
+        // same reasoning as unlinkTeamProjectPg, just for every link at once.
+        await deleteTeamProjectsForTeamPg(teamId);
         const batch = db.batch();
-        const [teamMembersSnap, teamProjectsSnap] = await Promise.all([
-          db.collection("team_members").where("team_id", "==", teamId).get(),
-          db.collection("team_projects").where("team_id", "==", teamId).get(),
-        ]);
+        const teamMembersSnap = await db.collection("team_members").where("team_id", "==", teamId).get();
         for (const doc of teamMembersSnap.docs) batch.delete(doc.ref);
-        for (const doc of teamProjectsSnap.docs) batch.delete(doc.ref);
         batch.delete(db.collection(entity.collection).doc(teamId));
         await batch.commit();
         sendJson(res, origin, 200, { success: true, data: { id: teamId, deleted: true } });
         return true;
       }
-      if (parsed.key === "projects") {
-        const projectId = parsed.id;
-        const projectDoc = await db.collection(entity.collection).doc(projectId).get();
-        if (!projectDoc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const visible = await assertRowVisible(req, db, "projects", { id: projectDoc.id, ...projectDoc.data() });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const projectWriteOk = await assertProjectWriteAuthorized(req, res, origin, db, parsed.key, {}, projectDoc.data(), projectId);
-        if (!projectWriteOk) return true;
-        const batch = db.batch();
-        const [membersSnap, teamLinksSnap, clientLinksSnap, budgetsSnap, limitsSnap] = await Promise.all([
-          db.collection("project_members").where("project_id", "==", projectId).get(),
-          db.collection("team_projects").where("project_id", "==", projectId).get(),
-          db.collection("client_projects").where("project_id", "==", projectId).get(),
-          db.collection("project_budgets").where("project_id", "==", projectId).get(),
-          db.collection("project_member_limits").where("project_id", "==", projectId).get(),
-        ]);
-        for (const doc of membersSnap.docs) batch.delete(doc.ref);
-        for (const doc of teamLinksSnap.docs) batch.delete(doc.ref);
-        for (const doc of clientLinksSnap.docs) batch.delete(doc.ref);
-        for (const doc of budgetsSnap.docs) batch.delete(doc.ref);
-        for (const doc of limitsSnap.docs) batch.delete(doc.ref);
-        batch.delete(db.collection(entity.collection).doc(projectId));
-        await batch.commit();
-        sendJson(res, origin, 200, { success: true, data: { id: projectId, deleted: true } });
-        return true;
-      }
+      // Project deletion is handled by routeProjects (DELETE /api/projects/:id,
+      // deleteProjectPg) before requests ever reach here - projects are fully
+      // Postgres-resident now, so there is deliberately no "projects" branch below.
       // Task deletion now handled above, inside the shouldRouteEntityToPostgres(tasks)
       // branch - deleteTaskWithChildren() moved there since tasks are Postgres-resident
       // now and this generic Firestore fallback path is no longer reached for "tasks".
