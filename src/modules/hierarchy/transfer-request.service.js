@@ -3,6 +3,7 @@ import { createNotification } from "../notifications/service.js";
 import { recordMemberRelationship } from "../member-relationships/service.js";
 import { getMemberParentId } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
+import { resolveRoleIdsWhere } from "../members/services/relation-sync.js";
 import {
   canCreateTransferRequests,
   isValidTransferTarget,
@@ -86,12 +87,7 @@ async function getRequesterDisplayName(db, requesterMemberId) {
  */
 export async function notifyAdminRoles(db, title, message, link = "") {
   const adminRoles = ["Owner", "Super Admin", "Admin"];
-  const roleSnaps = await Promise.all(
-    adminRoles.map((name) => db.collection("roles").where("name", "==", name).limit(1).get()),
-  );
-  const roleIds = roleSnaps
-    .filter((s) => !s.empty)
-    .map((s) => s.docs[0].id);
+  const roleIds = await resolveRoleIdsWhere((name) => adminRoles.includes(name));
 
   if (!roleIds.length) return;
 

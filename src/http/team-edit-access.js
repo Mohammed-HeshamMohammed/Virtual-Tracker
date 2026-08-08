@@ -1,4 +1,4 @@
-import { normalizeRoleKey } from "../modules/members/services/relation-sync.js";
+import { normalizeRoleKey, resolveRoleIdsWhere } from "../modules/members/services/relation-sync.js";
 import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { getManageableMemberIds, getVisibleMemberIds } from "../modules/member-relationships/service.js";
 import { isEmployeeRole } from "./role-hierarchy.js";
@@ -19,15 +19,11 @@ export function isManagerRole(roleName) {
 
 /** All employee-tier member ids (org-wide). */
 export async function getOrgWideEmployeeMemberIds(db) {
-  const [membersSnap, rolesSnap] = await Promise.all([
+  const [membersSnap, employeeRoleIdList] = await Promise.all([
     db.collection("members").limit(2000).get(),
-    db.collection("roles").limit(100).get(),
+    resolveRoleIdsWhere(isEmployeeRole),
   ]);
-  const employeeRoleIds = new Set();
-  for (const doc of rolesSnap.docs) {
-    const name = typeof doc.data()?.name === "string" ? doc.data().name : "";
-    if (isEmployeeRole(name)) employeeRoleIds.add(doc.id);
-  }
+  const employeeRoleIds = new Set(employeeRoleIdList);
   const ids = [];
   for (const doc of membersSnap.docs) {
     const roleId = doc.data()?.role_id;

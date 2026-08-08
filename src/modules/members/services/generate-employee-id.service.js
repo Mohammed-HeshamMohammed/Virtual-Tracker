@@ -5,7 +5,7 @@ import {
   isOrganizationAdminRole,
   isOrganizationRootRole,
 } from "../../hierarchy/hierarchy-placement.js";
-import { normalizeRoleKey, rolePrivilegeRank } from "./relation-sync.js";
+import { loadRoleNameById, normalizeRoleKey, rolePrivilegeRank } from "./relation-sync.js";
 import { fetchAllDocs } from "../../../lib/firestore/paginate-all.js";
 
 const MIN_EMPLOYEE_ID_LENGTH = 2;
@@ -136,18 +136,11 @@ function buildEmployeeIdCandidate(nameSlug, metrics, attempt, memberId) {
  * @param {{ firstName?: string }} [options]
  */
 export async function generateMemberEmployeeId(db, memberId, options = {}) {
-  const [memberDocs, relDocs, rolesSnap] = await Promise.all([
+  const [memberDocs, relDocs, roleNameById] = await Promise.all([
     fetchAllDocs(db.collection("members")),
     fetchAllDocs(db.collection("member_relationships")),
-    db.collection("roles").limit(100).get(),
+    loadRoleNameById(db),
   ]);
-
-  const roleNameById = new Map(
-    rolesSnap.docs.map((doc) => {
-      const row = doc.data() || {};
-      return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-    }),
-  );
 
   /** @type {Map<string, Record<string, unknown>>} */
   const memberDataById = new Map();

@@ -1,5 +1,6 @@
 import { createNotification } from "../../notifications/service.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
+import { resolveRoleIdsWhere } from "../../members/services/relation-sync.js";
 import {
   buildBudgetPolicy,
   evaluateBudgetUsage,
@@ -68,12 +69,9 @@ export async function syncClientBudgetAutomationState(_db, clientId, budget) {
 }
 
 async function loadManagementMemberIds(db) {
-  const rolesSnap = await db.collection("roles").limit(100).get();
-  const managementRoleIds = new Set();
-  for (const doc of rolesSnap.docs) {
-    const roleKey = normalizeRole(doc.data()?.name);
-    if (MANAGEMENT_ROLES.has(roleKey)) managementRoleIds.add(doc.id);
-  }
+  const managementRoleIds = new Set(
+    await resolveRoleIdsWhere((name) => MANAGEMENT_ROLES.has(normalizeRole(name))),
+  );
 
   if (managementRoleIds.size === 0) return [];
 

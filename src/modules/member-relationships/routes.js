@@ -31,6 +31,7 @@ import { maybeRepairOrphansOnTreeLoad, cleanupExternalEntityHierarchyEdges, mayb
 import { classifyHierarchyPlacement, isExcludedFromHierarchy, isOrganizationAdminRole, isOrganizationRootRole } from "../hierarchy/hierarchy-placement.js";
 import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { getTeamStaffableMemberIds, getTeamStaffableMemberSummaries } from "../../http/team-edit-access.js";
+import { loadRoleNameById } from "../members/services/relation-sync.js";
 
 function normalizeRole(value) {
   if (typeof value !== "string") return "";
@@ -166,10 +167,10 @@ export async function routeMemberRelationships(req, res, url, origin) {
         await maybeRepairOrphansOnTreeLoad(db, authz.memberId);
       }
 
-      let [membersDocs, relDocs, rolesSnap] = await Promise.all([
+      let [membersDocs, relDocs, roleNameById] = await Promise.all([
         fetchAllDocs(db.collection("members")),
         fetchAllDocs(db.collection("member_relationships")),
-        db.collection("roles").limit(100).get(),
+        loadRoleNameById(db),
       ]);
 
       const relationshipRows = relDocs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -179,13 +180,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
           relDocs = await fetchAllDocs(db.collection("member_relationships"));
         }
       }
-
-      const roleNameById = new Map(
-        rolesSnap.docs.map((doc) => {
-          const row = doc.data() || {};
-          return [doc.id, typeof row.name === "string" ? row.name.trim() : ""];
-        }),
-      );
 
       const includeFirebaseUid = normalizeRole(authz.roleName) === "owner";
       const memberDataById = new Map(membersDocs.map((doc) => [doc.id, doc.data() || {}]));
