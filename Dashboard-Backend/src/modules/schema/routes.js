@@ -43,6 +43,7 @@ import { syncProjectBudgetFromClients } from "../projects/services/project-budge
 import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { deleteTeamPg, getTeamByIdPg } from "../../lib/postgres/teams-postgres.service.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import {
   parseTaskChildPath,
   resolveEntityCollectionRef,
@@ -189,8 +190,7 @@ async function assertTeamWriteAuthorized(
   const teamId = resolveTeamIdFromWrite(entityKey, body, existingData, resourceId);
 
   if (method === "POST" && entityKey === "teams") {
-    const viewerSnap = await db.collection("members").doc(viewer.memberId).get();
-    const viewerData = viewerSnap.exists ? viewerSnap.data() || {} : {};
+    const viewerData = (await getMemberByIdPg(viewer.memberId)) || {};
     if (!canCreateTeams(viewer.roleName, viewerData)) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
       return false;
@@ -198,8 +198,7 @@ async function assertTeamWriteAuthorized(
   } else if (method === "POST") {
     const managementTeamProjectLink = entityKey === "team-projects" && requireManagementRole(viewer);
     if (!managementTeamProjectLink) {
-      const viewerSnap = await db.collection("members").doc(viewer.memberId).get();
-      const viewerData = viewerSnap.exists ? viewerSnap.data() || {} : {};
+      const viewerData = (await getMemberByIdPg(viewer.memberId)) || {};
       const allowed =
         (teamId && (await canEditTeam(db, viewer.memberId, viewer.roleName, teamId))) ||
         (teamId &&

@@ -32,6 +32,8 @@ import { classifyHierarchyPlacement, isExcludedFromHierarchy, isOrganizationAdmi
 import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { getTeamStaffableMemberIds, getTeamStaffableMemberSummaries } from "../../http/team-edit-access.js";
 import { loadRoleNameById } from "../members/services/relation-sync.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
+import { query } from "../../lib/postgres/client.js";
 
 function normalizeRole(value) {
   if (typeof value !== "string") return "";
@@ -167,8 +169,8 @@ export async function routeMemberRelationships(req, res, url, origin) {
         await maybeRepairOrphansOnTreeLoad(db, authz.memberId);
       }
 
-      let [membersDocs, relDocs, roleNameById] = await Promise.all([
-        fetchAllDocs(db.collection("members")),
+      let [membersRows, relDocs, roleNameById] = await Promise.all([
+        listMembersPg({ limit: 5000 }),
         fetchAllDocs(db.collection("member_relationships")),
         loadRoleNameById(db),
       ]);
@@ -182,16 +184,16 @@ export async function routeMemberRelationships(req, res, url, origin) {
       }
 
       const includeFirebaseUid = normalizeRole(authz.roleName) === "owner";
-      const memberDataById = new Map(membersDocs.map((doc) => [doc.id, doc.data() || {}]));
+      const memberDataById = new Map(membersRows.map((r) => [String(r.id), r]));
 
-      let nodes = membersDocs.map((doc) => {
-        const d = doc.data() || {};
+      let nodes = membersRows.map((d) => {
+        const id = String(d.id);
         const first = typeof d.first_name === "string" ? d.first_name : "";
         const last = typeof d.last_name === "string" ? d.last_name : "";
         const name = `${first} ${last}`.trim() || (typeof d.work_email === "string" ? d.work_email : "Unnamed member");
         const roleId = typeof d.role_id === "string" ? d.role_id : "";
         return {
-          id: doc.id,
+          id,
           name,
           email: typeof d.work_email === "string" ? d.work_email : "",
           role: roleNameById.get(roleId) || "User",
@@ -552,14 +554,15 @@ export async function routeMemberRelationships(req, res, url, origin) {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
       const existingRel = await db.collection("member_relationships").limit(1).get();
-      const memberCount = await db.collection("members").count().get();
+      const countResult = await query("SELECT COUNT(*)::int as count FROM members");
+      const memberCount = countResult[0]?.count ?? 0;
 
       sendJson(res, origin, 200, {
         success: true,
         data: {
           initialized: !existingRel.empty,
           relationships_exist: !existingRel.empty,
-          member_count: memberCount.data().count,
+          member_count: memberCount,
         },
       });
     } catch (e) {

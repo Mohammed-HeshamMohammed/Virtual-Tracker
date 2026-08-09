@@ -404,9 +404,9 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/projects/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [clientRows, membersSnap] = await Promise.all([
+      const [clientRows, memberRows] = await Promise.all([
         listClientsEnriched(db),
-        db.collection("members").limit(500).get(),
+        listMembersPg({ limit: 500 }),
       ]);
 
       const clients = clientRows
@@ -418,12 +418,11 @@ export async function routeProjects(req, res, url, db, origin) {
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
 
-      const rawMembers = membersSnap.docs
-        .map((doc) => {
-          const d = doc.data() || {};
+      const rawMembers = memberRows
+        .map((d) => {
           const status = typeof d.status === "string" ? d.status.toLowerCase() : "active";
           if (status === "archived" || status === "inactive") return null;
-          return { id: doc.id, ...d };
+          return { id: String(d.id), ...d };
         })
         .filter(Boolean);
 
