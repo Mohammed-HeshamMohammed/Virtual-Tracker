@@ -1,4 +1,5 @@
 import { ensureEntityDiagramForAuthUser, ensureOrganizationEntities } from "../../../bootstrap/entity-bootstrap.js";
+import { getMemberByFirebaseUidPg, getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { reconcileMemberNamesFromProfile } from "../../auth/profile-settings.js";
 import { dedupeMembersForFirebaseUid } from "./member-dedupe.js";
 import { ensureMemberRowForUserRecord } from "./ensure-member-from-auth.js";
@@ -16,10 +17,9 @@ async function reconcileMemberNamesSafe(db, uid, memberId) {
 
 /** profile_linked_records_at on members (bootstrap marker, not presence). */
 async function hasBootstrapMarker(db, memberId) {
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) return false;
-  const data = memberSnap.data() || {};
-  if (data.profile_linked_records_at) return true;
+  const memberRow = await getMemberByIdPg(memberId);
+  if (!memberRow) return false;
+  if (memberRow.profile_linked_records_at) return true;
   const legacy = await getMemberPresence(db, memberId);
   return Boolean(legacy?.profile_linked_records_at);
 }
@@ -34,18 +34,12 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   const uid = userRecord.uid;
 
   if (uid) {
-    const indexSnap = await db.collection("member_auth_index").doc(uid).get();
-    if (indexSnap.exists) {
-      const memberId =
-        typeof indexSnap.data()?.member_id === "string" ? indexSnap.data().member_id : null;
-      if (memberId) {
-        const memberDoc = await db.collection("members").doc(memberId).get();
-        if (!memberDoc.exists) {
-          await db.collection("member_auth_index").doc(uid).delete();
-        } else if (await hasBootstrapMarker(db, memberId)) {
-          await reconcileMemberNamesSafe(db, uid, memberId);
-          return { memberId, created: [], skipped: "already_bootstrapped" };
-        }
+    const existingPg = await getMemberByFirebaseUidPg(uid);
+    if (existingPg) {
+      const memberId = String(existingPg.id);
+      if (await hasBootstrapMarker(db, memberId)) {
+        await reconcileMemberNamesSafe(db, uid, memberId);
+        return { memberId, created: [], skipped: "already_bootstrapped" };
       }
     }
   }
@@ -59,8 +53,7 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   let memberData = null;
 
   if (memberId) {
-    const memberRef = await db.collection("members").doc(memberId).get();
-    if (memberRef.exists) memberData = memberRef.data() || {};
+    memberData = await getMemberByIdPg(memberId);
   }
 
   if (!memberId) {
@@ -93,7 +86,7 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   await reconcileMemberNamesSafe(db, uid, memberId);
 
   if (needsBootstrapMarker) {
-    await db.collection("members").doc(memberId).update({
+    await updateMemberPg(memberId, {
       profile_linked_records_at: new Date(),
     });
   }
