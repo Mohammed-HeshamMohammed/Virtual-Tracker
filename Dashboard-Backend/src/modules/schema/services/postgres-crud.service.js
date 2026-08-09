@@ -34,6 +34,60 @@ import {
   updateAssignmentPg,
   upsertAssignmentPg,
 } from "../../../lib/postgres/task-assignments-postgres.service.js";
+import {
+  createProjectPg,
+  getProjectPg,
+  updateProjectPg,
+  deleteProjectPg,
+  listProjectsPg,
+  addProjectMemberPg,
+  removeProjectMemberPg,
+  listProjectMembersPg,
+  getProjectBudgetPg,
+  getAllProjectBudgetsPg,
+  upsertProjectBudgetPg,
+  listProjectMemberLimitsPg,
+  getAllProjectMemberLimitsPg,
+  upsertProjectMemberLimitPg,
+  linkClientProjectPg,
+  unlinkClientProjectPg,
+  listClientIdsForProjectPg,
+  listProjectIdsForClientPg,
+  linkTeamProjectPg,
+  unlinkTeamProjectPg,
+  listTeamIdsForProjectPg,
+  listProjectIdsForTeamPg,
+} from "../../../lib/postgres/projects-postgres.service.js";
+import {
+  getClientPg,
+  listClientsPg,
+  createClientPg,
+  updateClientPg,
+  deleteClientPg,
+  getClientBudgetPg,
+  getAllClientBudgetsPg,
+  upsertClientBudgetPg,
+  getClientInvoicingPg,
+  upsertClientInvoicingPg,
+} from "../../../lib/postgres/clients-postgres.service.js";
+import {
+  createTeamPg,
+  getTeamByIdPg,
+  listTeamsPg,
+  updateTeamPg,
+  deleteTeamPg,
+  listTeamMembersPg,
+  listAllTeamMembersPg,
+  addTeamMemberPg,
+  removeTeamMemberPg,
+} from "../../../lib/postgres/teams-postgres.service.js";
+import {
+  createMemberPg,
+  getMemberByIdPg,
+  listMembersPg,
+  updateMemberPg,
+  deleteMemberPg,
+} from "../../../lib/postgres/members-postgres.service.js";
 import { publishChange } from "../../realtime/change-bus.js";
 
 export const POSTGRES_ENTITY_KEYS = new Set([
@@ -41,6 +95,20 @@ export const POSTGRES_ENTITY_KEYS = new Set([
   "timesheets",
   "tasks",
   "task-assignments",
+  "projects",
+  "project-members",
+  "project-budgets",
+  "project-member-limits",
+  "client-projects",
+  "team-projects",
+  "clients",
+  "client-budgets",
+  "client-invoicing",
+  "teams",
+  "team-members",
+  "members",
+  "member-bans",
+  "invites",
   ...LOOKUP_POSTGRES_ENTITY_KEYS,
   ...MEMBER_DATA_POSTGRES_ENTITY_KEYS,
 ]);
@@ -136,6 +204,102 @@ export async function listPostgresRows(entityKey, url) {
     const rows = await listAllAssignmentsPg();
     return memberId ? rows.filter((row) => row.member_id === memberId) : rows;
   }
+  if (entityKey === "projects") {
+    const status = url.searchParams.get("status") ?? undefined;
+    const rows = await listProjectsPg({ status });
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "project-members") {
+    const projectId = url.searchParams.get("project_id") ?? url.searchParams.get("projectId");
+    const rows = projectId ? await listProjectMembersPg(projectId) : await query("SELECT * FROM project_members LIMIT 5000");
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "project-budgets") {
+    const projectId = url.searchParams.get("project_id") ?? url.searchParams.get("projectId");
+    if (projectId) {
+      const budget = await getProjectBudgetPg(projectId);
+      return budget ? [normalizePgRow(budget)] : [];
+    }
+    const rows = await getAllProjectBudgetsPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "project-member-limits") {
+    const projectId = url.searchParams.get("project_id") ?? url.searchParams.get("projectId");
+    const rows = projectId ? await listProjectMemberLimitsPg(projectId) : await getAllProjectMemberLimitsPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "client-projects") {
+    const clientId = url.searchParams.get("client_id") ?? url.searchParams.get("clientId");
+    const projectId = url.searchParams.get("project_id") ?? url.searchParams.get("projectId");
+    if (clientId) {
+      const pids = await listProjectIdsForClientPg(clientId);
+      return pids.map((pid) => normalizePgRow({ client_id: clientId, project_id: pid }));
+    }
+    if (projectId) {
+      const cids = await listClientIdsForProjectPg(projectId);
+      return cids.map((cid) => normalizePgRow({ client_id: cid, project_id: projectId }));
+    }
+    const rows = await query("SELECT * FROM client_projects LIMIT 5000");
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "team-projects") {
+    const teamId = url.searchParams.get("team_id") ?? url.searchParams.get("teamId");
+    const projectId = url.searchParams.get("project_id") ?? url.searchParams.get("projectId");
+    if (teamId) {
+      const pids = await listProjectIdsForTeamPg(teamId);
+      return pids.map((pid) => normalizePgRow({ team_id: teamId, project_id: pid }));
+    }
+    if (projectId) {
+      const tids = await listTeamIdsForProjectPg(projectId);
+      return tids.map((tid) => normalizePgRow({ team_id: tid, project_id: projectId }));
+    }
+    const rows = await query("SELECT * FROM team_projects LIMIT 5000");
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "clients") {
+    const rows = await listClientsPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "client-budgets") {
+    const clientId = url.searchParams.get("client_id") ?? url.searchParams.get("clientId");
+    if (clientId) {
+      const budget = await getClientBudgetPg(clientId);
+      return budget ? [normalizePgRow(budget)] : [];
+    }
+    const rows = await getAllClientBudgetsPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "client-invoicing") {
+    const clientId = url.searchParams.get("client_id") ?? url.searchParams.get("clientId");
+    if (clientId) {
+      const invoicing = await getClientInvoicingPg(clientId);
+      return invoicing ? [normalizePgRow(invoicing)] : [];
+    }
+    const rows = await query("SELECT * FROM client_invoicing LIMIT 2000");
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "teams") {
+    const rows = await listTeamsPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "team-members") {
+    const teamId = url.searchParams.get("team_id") ?? url.searchParams.get("teamId");
+    const rows = teamId ? await listTeamMembersPg(teamId) : await listAllTeamMembersPg();
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "members") {
+    const status = url.searchParams.get("status") ?? undefined;
+    const rows = await listMembersPg({ status });
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "member-bans") {
+    const rows = await query("SELECT * FROM member_bans WHERE active = true ORDER BY banned_at DESC LIMIT 200");
+    return rows.map(normalizePgRow);
+  }
+  if (entityKey === "invites") {
+    const rows = await query("SELECT * FROM invites ORDER BY created_at DESC LIMIT 200");
+    return rows.map(normalizePgRow);
+  }
   if (entityKey === "time-entries") {
     const conditions = [];
     const params = [];
@@ -188,6 +352,62 @@ export async function getPostgresRow(entityKey, id) {
   if (entityKey === "task-assignments") {
     return getAssignmentByIdPg(id);
   }
+  if (entityKey === "projects") {
+    const row = await getProjectPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "project-members") {
+    const rows = await query("SELECT * FROM project_members WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "project-budgets") {
+    const rows = await query("SELECT * FROM project_budgets WHERE id = $1 OR project_id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "project-member-limits") {
+    const rows = await query("SELECT * FROM project_member_limits WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "client-projects") {
+    const rows = await query("SELECT * FROM client_projects WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "team-projects") {
+    const rows = await query("SELECT * FROM team_projects WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "clients") {
+    const row = await getClientPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "client-budgets") {
+    const row = await getClientBudgetPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "client-invoicing") {
+    const row = await getClientInvoicingPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "teams") {
+    const row = await getTeamByIdPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "team-members") {
+    const rows = await query("SELECT * FROM team_members WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "members") {
+    const row = await getMemberByIdPg(id);
+    return row ? normalizePgRow(row) : null;
+  }
+  if (entityKey === "member-bans") {
+    const rows = await query("SELECT * FROM member_bans WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
+  if (entityKey === "invites") {
+    const rows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+    return rows[0] ? normalizePgRow(rows[0]) : null;
+  }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   const columns = entityKey === "time-entries" ? TIME_ENTRY_COLUMNS : TIMESHEET_COLUMNS;
   const rows = await query(`SELECT ${columns.join(", ")} FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
@@ -210,6 +430,83 @@ export async function createPostgresRow(entityKey, payload) {
   }
   if (entityKey === "task-assignments") {
     return upsertAssignmentPg(payload);
+  }
+  if (entityKey === "projects") {
+    const created = await createProjectPg(payload);
+    return normalizePgRow(created);
+  }
+  if (entityKey === "project-members") {
+    const created = await addProjectMemberPg(
+      payload.project_id ?? payload.projectId,
+      payload.member_id ?? payload.memberId,
+      { role: payload.project_role ?? payload.projectRole, actorId: payload.assigned_by ?? payload.assignedBy }
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "project-budgets") {
+    const created = await upsertProjectBudgetPg(
+      payload.project_id ?? payload.projectId,
+      payload,
+      payload.created_by ?? payload.createdBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "project-member-limits") {
+    const created = await upsertProjectMemberLimitPg(
+      payload.project_id ?? payload.projectId,
+      payload.member_id ?? payload.memberId,
+      payload,
+      payload.created_by ?? payload.createdBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "client-projects") {
+    const created = await linkClientProjectPg(
+      payload.client_id ?? payload.clientId,
+      payload.project_id ?? payload.projectId,
+      payload.assigned_by ?? payload.assignedBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "team-projects") {
+    const created = await linkTeamProjectPg(
+      payload.team_id ?? payload.teamId,
+      payload.project_id ?? payload.projectId,
+      payload.assigned_by ?? payload.assignedBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "clients") {
+    const created = await createClientPg(payload);
+    return normalizePgRow(created);
+  }
+  if (entityKey === "client-budgets") {
+    const created = await upsertClientBudgetPg(
+      payload.client_id ?? payload.clientId,
+      payload,
+      payload.created_by ?? payload.createdBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "client-invoicing") {
+    const created = await upsertClientInvoicingPg(
+      payload.client_id ?? payload.clientId,
+      payload,
+      payload.created_by ?? payload.createdBy
+    );
+    return normalizePgRow(created);
+  }
+  if (entityKey === "teams") {
+    const created = await createTeamPg(payload);
+    return normalizePgRow(created);
+  }
+  if (entityKey === "team-members") {
+    const created = await addTeamMemberPg(payload);
+    return normalizePgRow(created);
+  }
+  if (entityKey === "members") {
+    const created = await createMemberPg(payload);
+    return normalizePgRow(created);
   }
   if (entityKey === "time-entries") {
     // This is the only writer time_entries has - every row created here comes from the
@@ -284,13 +581,54 @@ export async function updatePostgresRow(entityKey, id, payload, existing, expect
     return updateLookupPostgresRow(entityKey, id, payload, existing);
   }
   if (entityKey === "tasks") {
-    // §6.9 - optimistic concurrency, optional. Every other entityKey here
-    // keeps its unconditional write for now (see PLAN-livesyncandagenttimer.md
-    // §9 step 14's scope: projects/budgets/clients/tasks first).
     return updateTaskPg(id, payload, expectedUpdatedAt);
   }
   if (entityKey === "task-assignments") {
     return updateAssignmentPg(id, payload);
+  }
+  if (entityKey === "projects") {
+    const updated = await updateProjectPg(id, payload, expectedUpdatedAt);
+    if (updated && typeof updated === "object" && "conflict" in updated) return updated;
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "clients") {
+    const updated = await updateClientPg(id, payload, expectedUpdatedAt);
+    if (updated && typeof updated === "object" && "conflict" in updated) return updated;
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "teams") {
+    const updated = await updateTeamPg(id, payload);
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "members") {
+    const updated = await updateMemberPg(id, payload);
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "project-budgets") {
+    const updated = await upsertProjectBudgetPg(
+      payload.project_id ?? existing.project_id,
+      { ...existing, ...payload },
+      payload.updated_by ?? payload.updatedBy,
+      expectedUpdatedAt
+    );
+    if (updated && typeof updated === "object" && "conflict" in updated) return updated;
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "client-budgets") {
+    const updated = await upsertClientBudgetPg(
+      payload.client_id ?? existing.client_id,
+      { ...existing, ...payload },
+      payload.updated_by ?? payload.updatedBy
+    );
+    return normalizePgRow(updated);
+  }
+  if (entityKey === "client-invoicing") {
+    const updated = await upsertClientInvoicingPg(
+      payload.client_id ?? existing.client_id,
+      { ...existing, ...payload },
+      payload.updated_by ?? payload.updatedBy
+    );
+    return normalizePgRow(updated);
   }
   if (entityKey === "time-entries") {
     const merged = { ...existing, ...payload, id };
@@ -366,6 +704,42 @@ export async function deletePostgresRow(entityKey, id) {
   }
   if (entityKey === "task-assignments") {
     return deleteAssignmentPg(id);
+  }
+  if (entityKey === "projects") {
+    return deleteProjectPg(id);
+  }
+  if (entityKey === "clients") {
+    return deleteClientPg(id);
+  }
+  if (entityKey === "teams") {
+    return deleteTeamPg(id);
+  }
+  if (entityKey === "members") {
+    return deleteMemberPg(id);
+  }
+  if (entityKey === "project-members") {
+    const rows = await query("SELECT * FROM project_members WHERE id = $1 LIMIT 1", [id]);
+    if (rows[0]) await removeProjectMemberPg(rows[0].project_id, rows[0].member_id);
+    return;
+  }
+  if (entityKey === "project-budgets") {
+    await query("DELETE FROM project_budgets WHERE id = $1 OR project_id = $1", [id]);
+    return;
+  }
+  if (entityKey === "client-projects") {
+    const rows = await query("SELECT * FROM client_projects WHERE id = $1 LIMIT 1", [id]);
+    if (rows[0]) await unlinkClientProjectPg(rows[0].client_id, rows[0].project_id);
+    return;
+  }
+  if (entityKey === "team-members") {
+    const rows = await query("SELECT * FROM team_members WHERE id = $1 LIMIT 1", [id]);
+    if (rows[0]) await removeTeamMemberPg(rows[0].team_id, rows[0].member_id);
+    return;
+  }
+  if (entityKey === "team-projects") {
+    const rows = await query("SELECT * FROM team_projects WHERE id = $1 LIMIT 1", [id]);
+    if (rows[0]) await unlinkTeamProjectPg(rows[0].team_id, rows[0].project_id);
+    return;
   }
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);

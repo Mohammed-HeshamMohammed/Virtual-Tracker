@@ -2,7 +2,6 @@ import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/services/relation-sync.js";
 import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
-import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
@@ -15,13 +14,9 @@ function normalizeRole(roleName) {
 }
 
 export async function resolveMemberRoleName(db, memberId) {
-  if (!memberId) return "Viewer";
-  const memberPg = await getMemberByIdPg(memberId);
-  let memberRoleId = typeof memberPg?.role_id === "string" ? memberPg.role_id : "";
-  if (!memberRoleId) {
-    const memberSnap = await db.collection("members").doc(memberId).get();
-    memberRoleId = typeof memberSnap.data()?.role_id === "string" ? memberSnap.data().role_id : "";
-  }
+  const memberSnap = await db.collection("members").doc(memberId).get();
+  if (!memberSnap.exists) return "Viewer";
+  const memberRoleId = typeof memberSnap.data()?.role_id === "string" ? memberSnap.data().role_id : "";
   if (!memberRoleId) return "Viewer";
   const roleName = await resolveRoleNameById(db, memberRoleId);
   return pickHighestPrivilegeRoleName([roleName || "Viewer"]);
