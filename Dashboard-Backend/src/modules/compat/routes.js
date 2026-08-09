@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { getAuthAdmin } from "../../config/firebase.js";
-import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { isPostgresConfigured, query } from "../../lib/postgres/client.js";
 import { isPostgresLookupReady } from "../../lib/postgres/lookup-availability.js";
 import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
@@ -14,10 +14,17 @@ import { sendJson } from "../../http/response.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { COMPAT_BODY_SCHEMAS, readCompatBody } from "./body-schemas.js";
 import { sendToMember } from "../presence/index.js";
-import { publishChange } from "../realtime/change-bus.js";
+import { publishChange, subscribeChanges } from "../realtime/change-bus.js";
 import { getVisibleMemberIds, recordMemberRelationship } from "../member-relationships/service.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
-import { listMembersPagePg } from "../../lib/postgres/members-postgres.service.js";
+import {
+  createMemberPg,
+  deleteMemberPg,
+  getMemberByFirebaseUidPg,
+  getMemberByIdPg,
+  listMembersPagePg,
+  updateMemberPg,
+} from "../../lib/postgres/members-postgres.service.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { assertEmailCanUseMemberInviteOrPreprovision } from "../members/services/eligibility.js";
@@ -64,6 +71,17 @@ import {
 } from "../members/services/member-list-enrichment.js";
 
 /**
+ * Wraps a Postgres row in the minimal Firestore-doc shape expected by
+ * mapMembersWithProfilePhotos and the rest of the enrichment pipeline.
+ * @param {Record<string, unknown> | null | undefined} row
+ * @returns {{ id: string; data: () => Record<string, unknown> } | null}
+ */
+function pgRowToDocShim(row) {
+  if (!row) return null;
+  return { id: String(row.id), data: () => row };
+}
+
+/**
  * @param {import("node:http").IncomingMessage} req
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
@@ -94,9 +112,9 @@ async function isMemberManageableByViewer(req, db, memberId) {
  * @param {ReturnType<typeof getAuthContext>} viewer
  */
 async function buildRoleChangeMemberResponse(db, memberId, viewer) {
-  const doc = await db.collection("members").doc(memberId).get();
-  if (!doc.exists) throw new Error("Member not found");
-  let [member] = await mapMembersWithProfilePhotos(db, [doc]);
+  const row = await getMemberByIdPg(memberId);
+  if (!row) throw new Error("Member not found");
+  let [member] = await mapMembersWithProfilePhotos(db, [pgRowToDocShim(row)]);
   [member] = await enrichMembersWithRoleNames(db, [member]);
   member = applyMemberFieldPolicy([member], viewer)[0] ?? member;
   return member;
@@ -109,9 +127,9 @@ async function buildRoleChangeMemberResponse(db, memberId, viewer) {
  * @param {string} section
  */
 async function buildLightSectionMemberResponse(db, memberId, viewer, section) {
-  const doc = await db.collection("members").doc(memberId).get();
-  if (!doc.exists) throw new Error("Member not found");
-  let [member] = await mapMembersWithProfilePhotos(db, [doc]);
+  const row = await getMemberByIdPg(memberId);
+  if (!row) throw new Error("Member not found");
+  let [member] = await mapMembersWithProfilePhotos(db, [pgRowToDocShim(row)]);
   [member] = await enrichMembersWithRoleNames(db, [member]);
   if (section === "payBill" || section === "workLimits") {
     [member] = await enrichMembersWithPayAndLimits(db, [member]);
@@ -357,23 +375,32 @@ export async function routeCompatibility(req, res, url, db, origin) {
       return true;
     }
     res.writeHead(200, { "Access-Control-Allow-Origin": origin || "*", "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" });
-    const unsubscribe = db.collection("members").onSnapshot(
-      async (snapshot) => {
-        try {
-          const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
-          let rows = snapshot.docs.map((d) => normalizeDoc({ id: d.id, ...d.data() }));
-          if (visibleIds !== null) {
-            const visibleSet = new Set(visibleIds);
-            rows = rows.filter((row) => visibleSet.has(row.id));
-          }
-          rows = applyMemberFieldPolicy(rows, viewer);
-          res.write(`data: ${JSON.stringify({ members: rows })}\n\n`);
-        } catch (error) {
-          res.write(`event: error\ndata: ${JSON.stringify({ message: error instanceof Error ? error.message : "Stream failed" })}\n\n`);
+
+    async function sendMembersFrame() {
+      try {
+        const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+        const { listMembersPg } = await import("../../lib/postgres/members-postgres.service.js");
+        let rows = await listMembersPg({ limit: 2000 });
+        let docs = rows.map((r) => pgRowToDocShim(r));
+        if (visibleIds !== null) {
+          const visibleSet = new Set(visibleIds);
+          docs = docs.filter((d) => visibleSet.has(d.id));
         }
-      },
-      (error) => res.write(`event: error\ndata: ${JSON.stringify({ message: error.message })}\n\n`),
-    );
+        let members = await mapMembersWithProfilePhotos(db, docs, { needsPresence: false });
+        members = applyMemberFieldPolicy(members, viewer);
+        res.write(`data: ${JSON.stringify({ members })}\n\n`);
+      } catch (error) {
+        res.write(`event: error\ndata: ${JSON.stringify({ message: error instanceof Error ? error.message : "Stream failed" })}\n\n`);
+      }
+    }
+
+    // Send initial snapshot immediately
+    await sendMembersFrame();
+
+    // Re-send on any members change event
+    const unsubscribe = subscribeChanges((msg) => {
+      if (msg.resource === "members") void sendMembersFrame();
+    });
     req.on("close", () => unsubscribe());
     return true;
   }
@@ -419,7 +446,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     try {
       for (const id of limitedIds) {
         await deleteMemberProfileData(db, id);
-        await db.collection("members").doc(id).delete();
+        await deleteMemberPg(id, viewer?.memberId);
       }
       sendJson(res, origin, 200, { success: true, data: { deleted: limitedIds.length } });
     } catch (error) {
@@ -485,33 +512,29 @@ export async function routeCompatibility(req, res, url, db, origin) {
     const auth = getAuthAdmin();
     if (!auth) return sendJson(res, origin, 503, { success: false, error: "Auth not configured" }), true;
     const decoded = await auth.verifyIdToken(token);
-    let snap = await db.collection("members").where("firebase_uid", "==", decoded.uid).limit(1).get();
-    if (snap.empty && typeof decoded.email === "string" && decoded.email) {
-      snap = await db.collection("members").where("work_email", "==", decoded.email.trim().toLowerCase()).limit(1).get();
+    // Primary lookup: by firebase_uid in Postgres members table (O(1) index)
+    let memberRow = await getMemberByFirebaseUidPg(decoded.uid);
+    // Email fallback (same two-step the Firestore path used)
+    if (!memberRow && typeof decoded.email === "string" && decoded.email) {
+      const rows = await query("SELECT * FROM members WHERE work_email = $1 LIMIT 1", [decoded.email.trim().toLowerCase()]);
+      memberRow = rows[0] ?? null;
     }
-    if (snap.empty) {
-      const indexSnap = await db.collection("member_auth_index").doc(decoded.uid).get();
-      const indexedId =
-        indexSnap.exists && typeof indexSnap.data()?.member_id === "string" ? indexSnap.data().member_id : "";
-      if (indexedId) {
-        const indexedDoc = await db.collection("members").doc(indexedId).get();
-        if (indexedDoc.exists) snap = { empty: false, docs: [indexedDoc] };
-      }
-    }
-    if (snap.empty) {
+    if (!memberRow) {
       const userRecord = await auth.getUser(decoded.uid);
       await ensureMemberLinkedRecordsForUserRecord(db, userRecord);
-      snap = await db.collection("members").where("firebase_uid", "==", decoded.uid).limit(1).get();
-      if (snap.empty && typeof decoded.email === "string" && decoded.email) {
-        snap = await db.collection("members").where("work_email", "==", decoded.email.trim().toLowerCase()).limit(1).get();
+      memberRow = await getMemberByFirebaseUidPg(decoded.uid);
+      if (!memberRow && typeof decoded.email === "string" && decoded.email) {
+        const rows = await query("SELECT * FROM members WHERE work_email = $1 LIMIT 1", [decoded.email.trim().toLowerCase()]);
+        memberRow = rows[0] ?? null;
       }
     }
-    if (snap.empty) return sendJson(res, origin, 404, { success: false, error: "Member not found" }), true;
-    const doc = snap.docs[0];
-    await alignMemberRoleTables(db, doc.id, decoded.uid);
-    const refreshed = await db.collection("members").doc(doc.id).get();
-    const memberDoc = refreshed.exists ? refreshed : doc;
-    const [member] = await mapMembersWithProfilePhotos(db, [memberDoc]);
+    if (!memberRow) return sendJson(res, origin, 404, { success: false, error: "Member not found" }), true;
+    const memberDoc = pgRowToDocShim(memberRow);
+    await alignMemberRoleTables(db, memberDoc.id, decoded.uid);
+    // Re-fetch after alignment to pick up any role changes
+    const refreshedRow = await getMemberByIdPg(memberDoc.id);
+    const finalDoc = refreshedRow ? pgRowToDocShim(refreshedRow) : memberDoc;
+    const [member] = await mapMembersWithProfilePhotos(db, [finalDoc]);
     let enriched = await enrichMembersWithRoleNames(db, [member]);
     enriched = await enrichMembersWithRelations(db, enriched);
     enriched = await enrichMembersWithPayAndLimits(db, enriched);
@@ -684,7 +707,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
       updated_by: "",
       updated_at: new Date(),
     };
-    await db.collection("members").doc(payload.id).set(payload);
+    await createMemberPg(payload);
+    // publishChange is emitted inside createMemberPg
     const actorId = viewer?.memberId ?? "";
     if (typeof body.role === "string") {
       await syncMemberPrimaryRole(db, payload.id, body.role, actorId, viewer?.roleName ?? "");
@@ -727,9 +751,9 @@ export async function routeCompatibility(req, res, url, db, origin) {
     if (!(await isMemberVisibleToViewer(req, db, id))) {
       return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
     }
-    const doc = await db.collection("members").doc(id).get();
-    if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-    let [mapped] = await mapMembersWithProfilePhotos(db, [doc]);
+    const row = await getMemberByIdPg(id);
+    if (!row) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+    let [mapped] = await mapMembersWithProfilePhotos(db, [pgRowToDocShim(row)]);
     [mapped] = await enrichMembersWithRoleNames(db, [mapped]);
     [mapped] = await enrichMembersWithRelations(db, [mapped]);
     [mapped] = await enrichMembersWithPayAndLimits(db, [mapped]);
@@ -837,8 +861,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
       if (!(await isMemberVisibleToViewer(req, db, id))) {
         return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
       }
-      const doc = await db.collection("members").doc(id).get();
-      if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+      const row = await getMemberByIdPg(id);
+      if (!row) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
 
       const sectionsParam = url.searchParams.get("sections");
       const requestedSections = sectionsParam
@@ -852,7 +876,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       const want = (section) => activeSections.includes(section);
 
       let form = await getMemberProfileFormSections(db, id, activeSections);
-      let [member] = await mapMembersWithProfilePhotos(db, [doc]);
+      let [member] = await mapMembersWithProfilePhotos(db, [pgRowToDocShim(row)]);
       if (want("roles") || want("payBill") || want("workLimits") || want("settings")) {
         [member] = await enrichMembersWithRoleNames(db, [member]);
       }
@@ -1012,8 +1036,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
       void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
         logSafeWarn("[members] form snapshot upsert:", e);
       });
-      const doc = await db.collection("members").doc(id).get();
-      let [member] = await mapMembersWithProfilePhotos(db, [doc]);
+      const updatedRow = await getMemberByIdPg(id);
+      let [member] = await mapMembersWithProfilePhotos(db, [pgRowToDocShim(updatedRow)]);
       [member] = await enrichMembersWithRoleNames(db, [member]);
       if (!roleOnly && !hasRoleChange) {
         [member] = await enrichMembersWithRelations(db, [member]);
@@ -1071,8 +1095,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
     }
     try {
       await deleteMemberProfileData(db, id);
-      await db.collection("members").doc(id).delete();
-      void publishChange("members", id, "deleted", viewer?.memberId);
+      await deleteMemberPg(id, viewer?.memberId);
+      // publishChange is emitted inside deleteMemberPg
       sendJson(res, origin, 200, { success: true, data: { id, deleted: true } });
     } catch (error) {
       sendJson(res, origin, 500, { success: false, error: error instanceof Error ? error.message : "Delete failed" });
@@ -1128,7 +1152,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
     updates.updated_by = actorId;
     updates.updated_at = new Date();
     if (Object.keys(updates).length > 1) {
-      await db.collection("members").doc(id).update(updates);
+      await updateMemberPg(id, updates);
+      // publishChange is emitted inside updateMemberPg
     }
     if (typeof body.role === "string") {
       await timeRoleChangeStep("applyMemberRoleChange", () =>
@@ -1169,13 +1194,14 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
       await patchMemberPresence(db, id, { tracking_status: normalized });
     }
-    const next = await db.collection("members").doc(id).get();
-    let mapped = mapLegacyMember({ id: next.id, ...next.data() });
+    const nextRow = await getMemberByIdPg(id);
+    let mapped = mapLegacyMember({ id: String(nextRow?.id ?? id), ...(nextRow ?? {}) });
     [mapped] = await enrichMembersWithRoleNames(db, [mapped]);
     [mapped] = await enrichMembersWithRelations(db, [mapped]);
     [mapped] = await enrichMembersWithPayAndLimits(db, [mapped]);
     const patchViewer = getAuthContext(req);
     mapped = applyMemberFieldPolicy([mapped], patchViewer)[0] ?? mapped;
+    // publishChange is emitted inside updateMemberPg (if updates were written)
     void publishChange("members", id, "updated", actorId);
     sendJson(res, origin, 200, { success: true, data: mapped });
     return true;
@@ -1187,9 +1213,10 @@ export async function routeCompatibility(req, res, url, db, origin) {
       return true;
     }
     const id = inviteAccept[1];
-    await db.collection("invites").doc(id).update({ status: "accepted", accepted_at: new Date() });
-    const next = await db.collection("invites").doc(id).get();
-    sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: next.id, ...next.data() }) });
+    await query("UPDATE invites SET status = 'accepted', accepted_at = now() WHERE id = $1", [id]);
+    const rows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+    const next = rows[0];
+    sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: String(next?.id ?? id), ...(next ?? {}) }) });
     return true;
   }
   if ((url.pathname === "/api/invites" || url.pathname === "/api/v1/invites") && req.method === "POST") {
@@ -1213,7 +1240,11 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
     }
     const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" ? body.roleId : "", pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId ?? "", created_by_uid: viewer?.uid ?? "", updated_by: "" };
-    await db.collection("invites").doc(payload.id).set(payload);
+    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+    const colList = INVITE_COLS.join(", ");
+    const phList = INVITE_COLS.map((_, i) => `$${i + 1}`).join(", ");
+    const vals = INVITE_COLS.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
+    await query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals);
     const inviteBase = resolveAppPublicUrl(typeof body.appOrigin === "string" ? body.appOrigin : "");
     const inviteUrl = `${inviteBase}/invite/${payload.invite_token}`;
     let emailSent = false;
@@ -1319,7 +1350,11 @@ export async function routeCompatibility(req, res, url, db, origin) {
         updated_by: "",
         ...(inviteKind === "open_link" ? shareLinkInviteFields() : {}),
       };
-      await db.collection("invites").doc(id).set(payload);
+      const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+      const bulkColList = bulkCols.join(", ");
+      const bulkPhList = bulkCols.map((_, i) => `$${i + 1}`).join(", ");
+      const bulkVals = bulkCols.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
+      await query(`INSERT INTO invites (${bulkColList}) VALUES (${bulkPhList})`, bulkVals);
       const invitePath = `/invite/${token}`;
       const inviteUrl = `${inviteBase}${invitePath}`;
       let emailSent = false;
@@ -1352,8 +1387,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
       const viewer = getAuthContext(req);
-      const snapshot = await db.collection("invites").orderBy("sent_at", "desc").limit(200).get();
-      let invites = snapshot.docs.map((d) => normalizeDoc({ id: d.id, ...d.data() }));
+      const rows = await query("SELECT * FROM invites ORDER BY sent_at DESC LIMIT 200", []);
+      let invites = rows.map((d) => normalizeDoc({ id: String(d.id), ...d }));
       if (viewer) {
         const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
         if (visibleIds !== null) {
@@ -1381,17 +1416,17 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
       const viewer = getAuthContext(req);
-      const inviteSnap = await db.collection("invites").doc(id).get();
-      if (!inviteSnap.exists) {
+      const inviteRows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+      if (!inviteRows.length) {
         sendJson(res, origin, 404, { success: false, error: "Invite not found." });
         return true;
       }
-      const inviteRow = inviteSnap.data() ?? {};
+      const inviteRow = inviteRows[0];
       if (!(await canViewerManageInvite(db, viewer, inviteRow))) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to delete this invite." });
         return true;
       }
-      await db.collection("invites").doc(id).delete();
+      await query("DELETE FROM invites WHERE id = $1", [id]);
       sendJson(res, origin, 200, { success: true, data: { id, deleted: true } });
       return true;
     }
@@ -1400,14 +1435,14 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to update invites." });
         return true;
       }
-      const inviteSnap = await db.collection("invites").doc(id).get();
-      if (!inviteSnap.exists) {
+      const inviteRows2 = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+      if (!inviteRows2.length) {
         sendJson(res, origin, 404, { success: false, error: "Invite not found." });
         return true;
       }
-      const inviteRow = inviteSnap.data() ?? {};
+      const inviteRow2 = inviteRows2[0];
       const viewer = getAuthContext(req);
-      if (!(await canViewerManageInvite(db, viewer, inviteRow))) {
+      if (!(await canViewerManageInvite(db, viewer, inviteRow2))) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to update this invite." });
         return true;
       }
@@ -1433,9 +1468,11 @@ export async function routeCompatibility(req, res, url, db, origin) {
       if (typeof body.pay_rate === "number") updates.pay_rate = body.pay_rate;
       if (typeof body.role_id === "string") updates.role_id = body.role_id;
       if (Object.keys(updates).length === 0) return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
-      await db.collection("invites").doc(id).update(updates);
-      const next = await db.collection("invites").doc(id).get();
-      sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: next.id, ...next.data() }) });
+      const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(", ");
+      await query(`UPDATE invites SET ${setClauses} WHERE id = $1`, [id, ...Object.values(updates)]);
+      const nextRows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+      const nextRow = nextRows[0];
+      sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: String(nextRow?.id ?? id), ...(nextRow ?? {}) }) });
       return true;
     }
     if (id && action === "accept" && req.method === "POST") {
@@ -1443,9 +1480,10 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to accept invites." });
         return true;
       }
-      await db.collection("invites").doc(id).update({ status: "accepted", accepted_at: new Date() });
-      const next = await db.collection("invites").doc(id).get();
-      sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id, ...next.data() }) });
+      await query("UPDATE invites SET status = 'accepted', accepted_at = now() WHERE id = $1", [id]);
+      const nextAcceptRows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [id]);
+      const nextAccept = nextAcceptRows[0];
+      sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: String(nextAccept?.id ?? id), ...(nextAccept ?? {}) }) });
       return true;
     }
   }
