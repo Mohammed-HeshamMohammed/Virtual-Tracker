@@ -14,6 +14,8 @@ import {
   setMemberOnboardingRowPg,
   updateMemberOnboardingRowPg,
 } from "../../lib/postgres/member-data-postgres.service.js";
+import { getMemberByIdPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
+import { query } from "../../lib/postgres/client.js";
 
 function asBool(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
@@ -93,26 +95,26 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   if ((pn === "/api/member-onboarding" || pn === "/api/v1/member-onboarding") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [onboardingRows, membersDocs, invitesDocs] = await Promise.all([
+      const [onboardingRows, membersRows, invitesRows] = await Promise.all([
         listMemberOnboardingRowsPg(),
-        fetchAllDocs(db.collection("members").orderBy("date_added", "desc")),
-        fetchAllDocs(db.collection("invites").orderBy("sent_at", "desc")),
+        listMembersPg({ limit: 2000 }),
+        query("SELECT * FROM invites ORDER BY sent_at DESC LIMIT 2000", []),
       ]);
 
       const memberById = new Map();
       const ownerMemberIds = new Set();
-      for (const doc of membersDocs) {
-        const d = doc.data() || {};
+      for (const d of membersRows) {
+        const id = String(d.id);
         const email = typeof d.work_email === "string" ? d.work_email : typeof d.email === "string" ? d.email : "";
-        memberById.set(doc.id, email);
-        if (isOwnerRole(d.role)) ownerMemberIds.add(doc.id);
+        memberById.set(id, email);
+        if (isOwnerRole(d.role)) ownerMemberIds.add(id);
       }
 
       const inviteById = new Map();
-      for (const doc of invitesDocs) {
-        const d = doc.data() || {};
+      for (const d of invitesRows) {
+        const id = String(d.id);
         const email = typeof d.email === "string" ? d.email : "";
-        inviteById.set(doc.id, email);
+        inviteById.set(id, email);
       }
 
       const rows = onboardingRows.map((row) => normalizeOnboardingDoc(row.id, row));
@@ -303,18 +305,19 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   if ((pn === "/api/member-onboarding/seed" || pn === "/api/v1/member-onboarding/seed") && req.method === "POST") {
     if (!assertOrgAdminRole(req, res, origin)) return true;
     try {
-      const [membersSnap, invitesSnap] = await Promise.all([
-        db.collection("members").limit(400).get(),
-        db.collection("invites").where("status", "in", ["pending_signup", "pending"]).limit(400).get(),
+      const [membersRows, invitesRows] = await Promise.all([
+        listMembersPg({ limit: 400 }),
+        query("SELECT * FROM invites WHERE status IN ('pending_signup', 'pending') LIMIT 400", []),
       ]);
 
       const writes = [];
-      for (const member of membersSnap.docs) {
-        const existing = await findMemberOnboardingByMemberIdPg(member.id);
+      for (const member of membersRows) {
+        const memberId = String(member.id);
+        const existing = await findMemberOnboardingByMemberIdPg(memberId);
         if (existing) continue;
         writes.push(
           setMemberOnboardingRowPg(crypto.randomUUID(), {
-            member_id: member.id,
+            member_id: memberId,
             invite_id: null,
             created_account: true,
             created_account_at: new Date(),
@@ -331,13 +334,14 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         );
       }
 
-      for (const invite of invitesSnap.docs) {
-        const existing = await findMemberOnboardingByInviteIdPg(invite.id);
+      for (const invite of invitesRows) {
+        const inviteId = String(invite.id);
+        const existing = await findMemberOnboardingByInviteIdPg(inviteId);
         if (existing) continue;
         writes.push(
           setMemberOnboardingRowPg(crypto.randomUUID(), {
             member_id: null,
-            invite_id: invite.id,
+            invite_id: inviteId,
             created_account: false,
             created_account_at: null,
             downloaded_app: false,
@@ -373,10 +377,8 @@ export async function routeMemberOnboarding(req, res, url, origin) {
  * @returns {Promise<boolean>}
  */
 async function isOwnerMemberById(memberId) {
-  const db = getDb();
-  if (!db || !memberId) return false;
-  const snap = await db.collection("members").doc(memberId).get();
-  if (!snap.exists) return false;
-  const data = snap.data() || {};
-  return isOwnerRole(data.role);
+  if (!memberId) return false;
+  const row = await getMemberByIdPg(memberId);
+  if (!row) return false;
+  return isOwnerRole(row.role);
 }

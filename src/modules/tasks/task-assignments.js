@@ -21,6 +21,7 @@ import {
   getAllTrackingRowsPg,
   updateTrackingFieldsPg,
 } from "../../lib/postgres/task-member-progress.service.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 const REVIEW_CENTER_ROLES = new Set([
   "owner",
@@ -235,9 +236,9 @@ export async function getTaskParticipation(db, taskId, viewerMemberId, viewerRol
   const memberCache = new Map();
   async function memberName(userId) {
     if (memberCache.has(userId)) return memberCache.get(userId);
-    const snap = await db.collection("members").doc(userId).get();
-    const name = snap.exists
-      ? `${snap.data()?.first_name || ""} ${snap.data()?.last_name || ""}`.trim() || "Unknown"
+    const row = await getMemberByIdPg(userId);
+    const name = row
+      ? `${row.first_name || ""} ${row.last_name || ""}`.trim() || "Unknown"
       : "Unknown";
     memberCache.set(userId, name);
     return name;
@@ -594,9 +595,9 @@ export async function recomputeTaskStatus(db, taskId) {
 }
 
 async function getClientProjectIds(db, memberId) {
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  if (!memberDoc.exists) return [];
-  const projects = memberDoc.data()?.projects;
+  const memberRow = await getMemberByIdPg(memberId);
+  if (!memberRow) return [];
+  const projects = memberRow.projects;
   if (Array.isArray(projects) && projects.length > 0) return projects;
 
   return listProjectIdsForMemberPg(memberId).catch(() => []);
@@ -632,12 +633,11 @@ async function enrichAssignmentRow(db, assignment, trackingByKey, caches) {
 
   async function loadMember(memberId) {
     if (memberCache.has(memberId)) return memberCache.get(memberId);
-    const snap = await db.collection("members").doc(memberId).get();
-    if (!snap.exists) {
+    const d = await getMemberByIdPg(memberId);
+    if (!d) {
       memberCache.set(memberId, { name: "Unknown" });
       return memberCache.get(memberId);
     }
-    const d = snap.data();
     const name = `${d.first_name || ""} ${d.last_name || ""}`.trim() || "Unknown";
     memberCache.set(memberId, { name });
     return memberCache.get(memberId);

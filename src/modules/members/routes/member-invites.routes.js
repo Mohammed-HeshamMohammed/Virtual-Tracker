@@ -8,7 +8,8 @@ import { readJsonBody } from "../../../http/read-json-body.js";
 import { sendJson } from "../../../http/response.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
-import { createMemberPg } from "../../../lib/postgres/members-postgres.service.js";
+import { createMemberPg, getMemberByFirebaseUidPg } from "../../../lib/postgres/members-postgres.service.js";
+import { query } from "../../../lib/postgres/client.js";
 import { upsertProfileFromUserRecord } from "../../auth/profile-sync.js";
 import { sendPreprovisionWelcomeEmail } from "../../auth/preprovision-email.js";
 import { isNotifyEmailRoutingConfigured } from "../../../lib/notify/email-client.js";
@@ -61,9 +62,9 @@ async function resolveInviteCreatorRoleName(db, row) {
   }
   const creatorUid = typeof row.created_by_uid === "string" ? row.created_by_uid.trim() : "";
   if (!creatorUid) return "";
-  const snap = await db.collection("members").where("firebase_uid", "==", creatorUid).limit(1).get();
-  if (snap.empty) return "";
-  return resolveMemberRoleName(db, snap.docs[0].id);
+  const member = await getMemberByFirebaseUidPg(creatorUid);
+  if (!member) return "";
+  return resolveMemberRoleName(db, String(member.id));
 }
 
 const PENDING_AUTH = "pending_auth_members";
@@ -89,10 +90,23 @@ function randomTempPassword() {
  */
 async function findInviteByToken(db, token) {
   if (!token || typeof token !== "string" || token.length < 16) return null;
-  const q = await db.collection("invites").where("invite_token", "==", token).limit(1).get();
-  if (q.empty) return null;
-  const doc = q.docs[0];
-  return { ref: doc.ref, id: doc.id, data: doc.data() };
+  const rows = await query("SELECT * FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
+  if (!rows.length) return null;
+  const doc = rows[0];
+  const id = String(doc.id);
+  return {
+    id,
+    data: doc,
+    ref: {
+      update: async (patch) => {
+        const useCountInc = patch.use_count ? 1 : 0;
+        await query(
+          "UPDATE invites SET status = $1, accepted_at = $2, firebase_uid = $3, use_count = COALESCE(use_count, 0) + $4, updated_at = now() WHERE id = $5",
+          [patch.status ?? doc.status, patch.accepted_at ?? new Date(), patch.firebase_uid ?? "", useCountInc, id],
+        );
+      },
+    },
+  };
 }
 
 /**
@@ -164,9 +178,9 @@ async function promotePendingMemberCore(db, auth, uid) {
   if (createdByUid && !isExcludedFromHierarchy(roleName)) {
     try {
       // Find the member ID of the creator
-      const creatorQuery = await db.collection("members").where("firebase_uid", "==", createdByUid).limit(1).get();
-      if (!creatorQuery.empty) {
-        const creatorMemberId = creatorQuery.docs[0].id;
+      const creatorMember = await getMemberByFirebaseUidPg(createdByUid);
+      if (creatorMember) {
+        const creatorMemberId = String(creatorMember.id);
         await recordMemberRelationship(db, {
           parentMemberId: creatorMemberId,
           childMemberId: memberId,
@@ -272,12 +286,12 @@ export async function routeMemberInvites(req, res, url, origin) {
     const inviteId = inviteActionMatch[1];
     const action = inviteActionMatch[2];
     const viewer = getAuthContext(req);
-    const inviteSnap = await db.collection("invites").doc(inviteId).get();
-    if (!inviteSnap.exists) {
+    const inviteRows = await query("SELECT * FROM invites WHERE id = $1 LIMIT 1", [inviteId]);
+    if (!inviteRows.length) {
       sendJson(res, origin, 404, { success: false, error: "Invite not found." });
       return true;
     }
-    const inviteRow = inviteSnap.data() ?? {};
+    const inviteRow = inviteRows[0];
     if (!(await canViewerManageInvite(db, viewer, inviteRow))) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this invite." });
       return true;
@@ -539,9 +553,9 @@ export async function routeMemberInvites(req, res, url, origin) {
       const inviterUid = typeof row.created_by_uid === "string" ? row.created_by_uid : "";
       if (inviterUid && !isExcludedFromHierarchy(roleName)) {
         try {
-          const inviterQuery = await db.collection("members").where("firebase_uid", "==", inviterUid).limit(1).get();
-          if (!inviterQuery.empty) {
-            const inviterMemberId = inviterQuery.docs[0].id;
+          const inviterMember = await getMemberByFirebaseUidPg(inviterUid);
+          if (inviterMember) {
+            const inviterMemberId = String(inviterMember.id);
             await recordMemberRelationship(db, {
               parentMemberId: inviterMemberId,
               childMemberId: memberId,
@@ -642,7 +656,11 @@ export async function routeMemberInvites(req, res, url, origin) {
       updated_by: "",
       ...shareLinkInviteFields(),
     };
-    await db.collection("invites").doc(id).set(payload);
+    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+    const colList = INVITE_COLS.join(", ");
+    const phList = INVITE_COLS.map((_, i) => `$${i + 1}`).join(", ");
+    const vals = INVITE_COLS.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
+    await query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals);
     const appOrigin = typeof body.appOrigin === "string" && body.appOrigin.startsWith("http") ? body.appOrigin : "";
     const inviteBase = resolveAppPublicUrl(appOrigin);
     const invitePath = `/invite/${token}`;
