@@ -36,8 +36,12 @@ mock.module("../src/modules/tasks/task-workload-validation.js", {
 
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   namedExports: {
-    sumDailyMemberActiveSeconds: async (_id, { fromDay, toDay }) =>
-      fromDay === toDay ? stub.workedToday : stub.workedWeek,
+    sumDailyMemberActiveSeconds: async () => {
+      // First call in loadMemberCapContext is for workedToday, second call is for workedWeek
+      const val = stub._callToggle ? stub.workedWeek : stub.workedToday;
+      stub._callToggle = !stub._callToggle;
+      return val;
+    },
     sumDailyMemberTaskActiveSeconds: async () => stub.workedTodayOnTask,
   },
 });
@@ -54,6 +58,7 @@ function reset(patch = {}) {
     workedToday: 0,
     workedWeek: 0,
     workedTodayOnTask: 0,
+    _callToggle: false,
   }, patch);
 }
 

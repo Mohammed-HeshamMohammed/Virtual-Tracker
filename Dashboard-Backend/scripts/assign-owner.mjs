@@ -93,7 +93,7 @@ async function main() {
   try {
     const { invalidateMemberRoleCache } = await import("../src/http/role-cache.js");
     invalidateMemberRoleCache(memberId);
-  } catch {}
+  } catch { }
 
   console.log(
     JSON.stringify(
