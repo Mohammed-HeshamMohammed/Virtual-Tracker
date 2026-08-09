@@ -18,6 +18,7 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { publishChange } from "../../modules/realtime/change-bus.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -78,7 +79,9 @@ export async function createMemberPg(data) {
     `INSERT INTO members (${columns.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING *`,
     params,
   );
-  return rows[0] ?? null;
+  const created = rows[0] ?? null;
+  if (created) void publishChange("members", String(created.id), "created", uuidOrNull(data.created_by) ?? undefined);
+  return created;
 }
 
 /** @param {string} id */
@@ -150,12 +153,18 @@ export async function updateMemberPg(id, patch) {
   if (sets.length === 0) return getMemberByIdPg(id);
   sets.push("updated_at = now()");
   const rows = await query(`UPDATE members SET ${sets.join(", ")} WHERE id = $1 RETURNING *`, params);
-  return rows[0] ?? null;
+  const updated = rows[0] ?? null;
+  if (updated) void publishChange("members", String(updated.id), "updated", uuidOrNull(patch.updated_by) ?? undefined);
+  return updated;
 }
 
-/** @param {string} id */
-export async function deleteMemberPg(id) {
+/**
+ * @param {string} id
+ * @param {string} [actorId]
+ */
+export async function deleteMemberPg(id, actorId) {
   await query("DELETE FROM members WHERE id = $1", [id]);
+  void publishChange("members", String(id), "deleted", actorId ?? undefined);
 }
 
 /**

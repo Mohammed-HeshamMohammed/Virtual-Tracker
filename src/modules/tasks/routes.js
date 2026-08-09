@@ -32,6 +32,7 @@ import {
 } from "./task-assignee-api.js";
 import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getInReviewAssignmentsForTaskPg, hasAssignmentPg } from "../../lib/postgres/task-assignments-postgres.service.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -194,11 +195,10 @@ export async function routeTasks(req, res, url, db, origin) {
       return true;
     }
     try {
-      const memberSnap = await db.collection("members").doc(viewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const reviewerName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "") || "Unknown";
+      const memberRow = await getMemberByIdPg(viewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const reviewerName = `${first} ${last}`.trim() || "Unknown";
       const data = await reviewAssignment(db, {
         assignmentId,
         reviewerId: viewer.memberId,
@@ -283,11 +283,10 @@ export async function routeTasks(req, res, url, db, origin) {
       }
     }
     try {
-      const memberSnap = await db.collection("members").doc(access.viewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const userName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "");
+      const memberRow = await getMemberByIdPg(access.viewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const userName = `${first} ${last}`.trim() || "Unknown";
       const data = await startTaskForUser(db, {
         taskId,
         userId: access.viewer.memberId,
@@ -332,11 +331,10 @@ export async function routeTasks(req, res, url, db, origin) {
       }
     }
     try {
-      const memberSnap = await db.collection("members").doc(access.viewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const userName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "");
+      const memberRow = await getMemberByIdPg(access.viewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const userName = `${first} ${last}`.trim() || "Unknown";
       const data = await blockTaskForUser(db, {
         taskId,
         userId: access.viewer.memberId,
@@ -439,11 +437,10 @@ export async function routeTasks(req, res, url, db, origin) {
       return true;
     }
     try {
-      const memberSnap = await db.collection("members").doc(viewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const reviewerName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "") || "Unknown";
+      const memberRow = await getMemberByIdPg(viewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const reviewerName = `${first} ${last}`.trim() || "Unknown";
       const mappedDecision = decision === "rework" ? "reject" : decision;
       const data = await reviewTaskTracking(db, {
         taskId,
@@ -603,11 +600,10 @@ export async function routeTasks(req, res, url, db, origin) {
     const idleSeconds = typeof body.idleSeconds === "number" ? Math.max(0, Math.floor(body.idleSeconds)) : 0;
     const sessionId = typeof body.sessionId === "string" && body.sessionId.trim() ? body.sessionId.trim() : null;
     try {
-      const memberSnap = await db.collection("members").doc(viewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const userName = `${first} ${last}`.trim() || (typeof memberData.name === "string" ? memberData.name : "") || "Unknown";
+      const memberRow = await getMemberByIdPg(viewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const userName = `${first} ${last}`.trim() || "Unknown";
       const data = await syncTaskTimeTracking(db, {
         taskId,
         userId: viewer.memberId,
@@ -806,14 +802,10 @@ export async function routeTasks(req, res, url, db, origin) {
         return true;
       }
 
-      const memberSnap = await db.collection("members").doc(reviewer.memberId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
-      const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
-      const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
-      const reviewerName =
-        `${first} ${last}`.trim() ||
-        (typeof memberData.name === "string" ? memberData.name : "") ||
-        "Unknown";
+      const memberRow = await getMemberByIdPg(reviewer.memberId);
+      const first = typeof memberRow?.first_name === "string" ? memberRow.first_name : "";
+      const last = typeof memberRow?.last_name === "string" ? memberRow.last_name : "";
+      const reviewerName = `${first} ${last}`.trim() || "Unknown";
 
       const inReviewRows = await getInReviewAssignmentsForTaskPg(taskId);
 
