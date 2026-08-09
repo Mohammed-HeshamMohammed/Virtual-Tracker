@@ -1,58 +1,26 @@
 import crypto from "node:crypto";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { createMemberPg, getMemberByFirebaseUidPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
-import { dedupeMembersForFirebaseUid, ensureMemberAuthIndex } from "./member-dedupe.js";
 import { placeholderEmailForUid, resolveEmailFromUserRecord } from "./auth-user-email.js";
 import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { sanitizeMemberNamePart } from "./member-display-name.js";
 
 const PENDING_AUTH = "pending_auth_members";
-const MEMBER_AUTH_INDEX = "member_auth_index";
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {import("firebase-admin/firestore").DocumentReference} indexRef
- * @param {unknown} error
- */
-async function resolveMemberIdAfterCreateRace(db, uid, indexRef, error) {
-  const code =
-    error && typeof error === "object" && error !== null && "code" in error
-      ? String(/** @type {{ code?: unknown }} */ (error).code)
-      : "";
-  const message = error instanceof Error ? error.message : "";
-  const isRace =
-    message === "VT_MEMBER_INDEX_EXISTS" ||
-    code === "aborted" ||
-    code === "10" ||
-    code === "already-exists" ||
-    code === "6";
-  if (!isRace) return null;
-
-  const again = await indexRef.get();
-  const existingId = again.data()?.member_id;
-  if (typeof existingId === "string" && existingId) {
-    return { created: false, memberId: existingId, linked: false };
-  }
-
-  const byUid = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (!byUid.empty) {
-    const memberId = byUid.docs[0].id;
-    await ensureMemberAuthIndex(db, uid, memberId);
-    return { created: false, memberId, linked: false };
-  }
-
-  return null;
-}
-
-/**
- * Create a members row on first sign-in if missing. Skips pending_auth_members (pre-provision flow).
+ * Create a members row in Postgres on first sign-in if missing. Skips pending_auth_members (pre-provision flow).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/auth").UserRecord} userRecord
  * @returns {Promise<{ created: boolean, memberId: string | null, linked: boolean, skipped?: string }>}
  */
 export async function ensureMemberRowForUserRecord(db, userRecord) {
   const uid = userRecord.uid;
+  if (!uid) {
+    return { created: false, memberId: null, linked: false, skipped: "no_uid" };
+  }
+
   const emailRaw = resolveEmailFromUserRecord(userRecord) || placeholderEmailForUid(uid);
   const email = emailRaw.toLowerCase();
 
@@ -61,71 +29,49 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
     return { created: false, memberId: null, linked: false, skipped: "pending_auth" };
   }
 
-  const dedupe = await dedupeMembersForFirebaseUid(db, uid);
-  if (dedupe.canonicalId) {
-    return { created: false, memberId: dedupe.canonicalId, linked: false };
+  // 1. Direct lookup in Postgres by firebase_uid
+  const existingMember = await getMemberByFirebaseUidPg(uid);
+  if (existingMember) {
+    return { created: false, memberId: String(existingMember.id), linked: false };
   }
 
-  const indexRef = db.collection(MEMBER_AUTH_INDEX).doc(uid);
-  const indexSnap = await indexRef.get();
-  if (indexSnap.exists && typeof indexSnap.data()?.member_id === "string") {
-    const memberId = indexSnap.data().member_id;
-    const memberDoc = await db.collection("members").doc(memberId).get();
-    if (memberDoc.exists) {
-      return { created: false, memberId, linked: false };
+  // 2. Email fallback in Postgres (link firebase_uid to pre-created member)
+  if (email && email !== placeholderEmailForUid(uid)) {
+    const rows = await pgQuery(
+      "SELECT * FROM members WHERE LOWER(work_email) = LOWER($1) OR LOWER(personal_email) = LOWER($1) LIMIT 1",
+      [email],
+    );
+    if (rows[0]) {
+      const matched = rows[0];
+      const memberId = String(matched.id);
+      const existingFid = typeof matched.firebase_uid === "string" ? matched.firebase_uid : "";
+      if (!existingFid) {
+        await updateMemberPg(memberId, { firebase_uid: uid, updated_by: "auth-verify-link" });
+        return { created: false, memberId, linked: true };
+      }
+      if (existingFid === uid) {
+        return { created: false, memberId, linked: false };
+      }
+      logSafeWarn("[ensureMemberFromAuth] work_email already linked to another firebase_uid", {
+        email,
+        memberId,
+      });
+      return { created: false, memberId: null, linked: false, skipped: "email_uid_conflict" };
     }
   }
 
-  const byUid = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (!byUid.empty) {
-    const memberId = byUid.docs[0].id;
-    await ensureMemberAuthIndex(db, uid, memberId);
-    return { created: false, memberId, linked: false };
+  // 3. Create member row in Postgres
+  let profileRow = null;
+  try {
+    const profileSnap = await db.collection(USER_PROFILES_COLLECTION).doc(uid).get();
+    if (profileSnap.exists) profileRow = profileSnap.data();
+  } catch {
+    /* Optional profile fetch failure non-fatal */
   }
 
-  let byEmail = await db.collection("members").where("work_email", "==", email).limit(1).get();
-  if (byEmail.empty && emailRaw && emailRaw !== email) {
-    byEmail = await db.collection("members").where("work_email", "==", emailRaw).limit(1).get();
-  }
-  if (byEmail.empty) {
-    const scan = await db.collection("members").limit(500).get();
-    const matched = scan.docs.find((d) => {
-      const data = d.data() || {};
-      const workEmail = typeof data.work_email === "string" ? data.work_email.trim().toLowerCase() : "";
-      return workEmail !== "" && workEmail === email;
-    });
-    if (matched) {
-      byEmail = { empty: false, docs: [matched] };
-    }
-  }
-  if (!byEmail.empty) {
-    const d = byEmail.docs[0];
-    const data = d.data() || {};
-    const existingFid = typeof data.firebase_uid === "string" ? data.firebase_uid : "";
-    if (!existingFid) {
-      await d.ref.update({ firebase_uid: uid, updated_at: new Date(), updated_by: "auth-verify-link" });
-      await ensureMemberAuthIndex(db, uid, d.id);
-      return { created: false, memberId: d.id, linked: true };
-    }
-    if (existingFid === uid) {
-      await ensureMemberAuthIndex(db, uid, d.id);
-      return { created: false, memberId: d.id, linked: false };
-    }
-    logSafeWarn("[ensureMemberFromAuth] work_email already linked to another firebase_uid", {
-      email,
-      memberId: d.id,
-    });
-    return { created: false, memberId: null, linked: false, skipped: "email_uid_conflict" };
-  }
-
-  const profileSnap = await db.collection(USER_PROFILES_COLLECTION).doc(uid).get();
-  const profileRow = profileSnap.exists ? profileSnap.data() : null;
-  const profileFirst =
-    profileRow && typeof profileRow.firstName === "string" ? profileRow.firstName.trim() : "";
-  const profileLast =
-    profileRow && typeof profileRow.lastName === "string" ? profileRow.lastName.trim() : "";
-  const profilePhone =
-    profileRow && typeof profileRow.phone === "string" ? profileRow.phone.trim() : "";
+  const profileFirst = profileRow && typeof profileRow.firstName === "string" ? profileRow.firstName.trim() : "";
+  const profileLast = profileRow && typeof profileRow.lastName === "string" ? profileRow.lastName.trim() : "";
+  const profilePhone = profileRow && typeof profileRow.phone === "string" ? profileRow.phone.trim() : "";
 
   const displayName = typeof userRecord.displayName === "string" ? userRecord.displayName.trim() : "";
   const parts = displayName ? displayName.split(/\s+/).filter(Boolean) : [];
@@ -156,21 +102,7 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
     hierarchy_status: "unassigned",
   };
 
-  try {
-    await db.runTransaction(async (tx) => {
-      const idx = await tx.get(indexRef);
-      if (idx.exists && typeof idx.data()?.member_id === "string") {
-        throw new Error("VT_MEMBER_INDEX_EXISTS");
-      }
-      tx.set(indexRef, { member_id: memberId, created_at: new Date() });
-      tx.set(db.collection("members").doc(memberId), memberPayload);
-    });
-  } catch (e) {
-    const resolved = await resolveMemberIdAfterCreateRace(db, uid, indexRef, e);
-    if (resolved) return resolved;
-    throw e;
-  }
-
+  await createMemberPg(memberPayload);
   await syncMemberPrimaryRole(db, memberId, "Viewer", uid);
 
   return { created: true, memberId, linked: false };
