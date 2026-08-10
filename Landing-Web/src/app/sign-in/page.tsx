@@ -92,11 +92,11 @@ export default function SignInPage() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className={labelClass}>First name</label>
-                  <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
+                  <input id="firstName" name="firstName" className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
                 </div>
                 <div className="space-y-2">
                   <label className={labelClass}>Last name</label>
-                  <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} required />
+                  <input id="lastName" name="lastName" className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} required />
                 </div>
               </div>
             )}
@@ -104,6 +104,8 @@ export default function SignInPage() {
             <div className="space-y-2">
               <label className={labelClass}>Email</label>
               <input
+                id="email"
+                name="email"
                 type="email"
                 className={inputClass}
                 value={email}
@@ -116,6 +118,8 @@ export default function SignInPage() {
             <div className="space-y-2">
               <label className={labelClass}>Password</label>
               <input
+                id="password"
+                name="password"
                 type="password"
                 className={inputClass}
                 value={password}

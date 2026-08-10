@@ -188,6 +188,8 @@ export function LoginMainPane({
           <AuthStaggerItem>
             <div className="relative">
               <input
+                id="email"
+                name="email"
                 type="email"
                 autoComplete="email"
                 value={identifier}
@@ -218,6 +220,8 @@ export function LoginMainPane({
             <AuthStaggerItem>
               <div className="grid grid-cols-2 gap-2">
                 <input
+                  id="firstName"
+                  name="firstName"
                   type="text"
                   autoComplete="given-name"
                   value={registerFirstName}
@@ -231,6 +235,8 @@ export function LoginMainPane({
                   required
                 />
                 <input
+                  id="lastName"
+                  name="lastName"
                   type="text"
                   autoComplete="family-name"
                   value={registerLastName}
@@ -250,6 +256,8 @@ export function LoginMainPane({
           <AuthPresenceFade show={isRegisterMode}>
             <AuthStaggerItem>
               <input
+                id="phone"
+                name="phone"
                 type="tel"
                 autoComplete="tel"
                 value={registerPhone}
@@ -291,6 +299,8 @@ export function LoginMainPane({
               ) : (
                 <div className="relative">
                   <input
+                    id="password"
+                    name="password"
                     type={showPasscode ? "text" : "password"}
                     value={passcode}
                     onChange={(e) => {
