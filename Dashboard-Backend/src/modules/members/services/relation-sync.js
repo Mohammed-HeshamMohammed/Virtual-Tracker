@@ -66,16 +66,6 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
 
   const roleId = await resolveRoleIdByName(db, trimmedName);
 
-  const memberMerge = {
-    role_id: roleId,
-    role_name: FieldValue.delete(),
-    role: FieldValue.delete(),
-    roles: FieldValue.delete(),
-    member_roles: FieldValue.delete(),
-    members_roles: FieldValue.delete(),
-    deactivation_governance: deactivationGovernanceForRole(trimmedName),
-    updated_at: new Date(),
-  };
   await updateMemberPg(memberId, {
     role_id: roleId,
     deactivation_governance: deactivationGovernanceForRole(trimmedName),

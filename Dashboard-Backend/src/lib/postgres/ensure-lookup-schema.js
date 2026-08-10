@@ -83,6 +83,12 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_members_updated_at
   BEFORE UPDATE ON members
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  `DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_members_role') THEN
+    ALTER TABLE members ADD CONSTRAINT fk_members_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT;
+  END IF;
+END $$`,
   // ─── Teams (migrated from Firestore) ─────────────────────────────────────
   // Column set from src/modules/schema/catalog/teams/index.js. team_projects
   // already moved to Postgres earlier; teams/team_members were left in

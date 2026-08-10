@@ -1,8 +1,15 @@
 import { query } from "./client.js";
+import { subscribeChanges } from "../../modules/realtime/change-bus.js";
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const CACHE_TTL_MS = 15 * 1000;
 /** @type {{ data: { roles: Record<string, unknown>[]; lookups: Record<string, unknown>[]; orgOptions: Record<string, unknown>[] } | null; expiresAt: number }} */
 let cache = { data: null, expiresAt: 0 };
+
+subscribeChanges((msg) => {
+  if (msg.resource === "roles" || msg.resource === "lookups" || msg.resource === "orgOptions") {
+    invalidateLookupCache();
+  }
+});
 
 /**
  * @returns {Promise<{ roles: Record<string, unknown>[]; lookups: Record<string, unknown>[]; orgOptions: Record<string, unknown>[] }>}
@@ -30,3 +37,4 @@ export async function getLookupData() {
 export function invalidateLookupCache() {
   cache = { data: null, expiresAt: 0 };
 }
+
