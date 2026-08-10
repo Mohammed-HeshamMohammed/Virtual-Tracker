@@ -78,6 +78,10 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
 
   const { invalidateMemberRoleCache } = await import("../../../http/role-cache.js");
   invalidateMemberRoleCache(memberId);
+  if (isPostgresConfigured()) {
+    const { revokeAllMemberSessionsPg } = await import("../../../lib/postgres/members-postgres.service.js");
+    await revokeAllMemberSessionsPg(memberId).catch(() => {});
+  }
 
   return roleId;
 }
