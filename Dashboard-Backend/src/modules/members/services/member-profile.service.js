@@ -19,6 +19,8 @@ import { validateMemberNamePart } from "./member-display-name.js";
 import { assertValidPhone } from "../../../http/validate-body.js";
 import { syncUserProfilePhoneForUid } from "../../auth/profile-settings.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
+import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
+import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import {
   deleteLimitsDoc,
   deleteMemberScopedRows,
@@ -29,7 +31,6 @@ import {
   upsertSingleByMemberId,
   upsertSingleByMemberIdConditional,
 } from "../../../lib/postgres/member-data-store.js";
-import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 
 const LOOKUP_COLLECTIONS = {
   jobTitle: "job_titles",
@@ -107,8 +108,7 @@ export async function upsertMemberPayRate(db, memberId, rate, updatedBy = "") {
  * @param {string} [updatedBy]
  */
 export async function ensureMemberProfileRecords(db, memberId, updatedBy = "") {
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  const memberData = memberDoc.exists ? memberDoc.data() || {} : {};
+  const memberData = (await getMemberByIdPg(memberId)) || {};
   await ensureMemberScopedEntities(db, {
     memberId,
     memberData,
@@ -237,9 +237,8 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
 
   const want = (s) => sections.includes(s);
 
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  if (!memberDoc.exists) throw new Error("Member not found");
-  const memberData = memberDoc.data() || {};
+  const memberData = await getMemberByIdPg(memberId);
+  if (!memberData) throw new Error("Member not found");
 
   if (want("employment")) {
     await ensureMemberProfileRecords(db, memberId);
@@ -429,10 +428,8 @@ export async function getMemberProfileForm(db, memberId) {
  *   conflict; callers map that to a 409.
  */
 export async function updateMemberProfile(db, memberId, body, updatedBy = "", options = {}) {
-  const memberRef = db.collection("members").doc(memberId);
-  const memberDoc = await memberRef.get();
-  if (!memberDoc.exists) throw new Error("Member not found");
-  const memberData = memberDoc.data() || {};
+  const memberData = await getMemberByIdPg(memberId);
+  if (!memberData) throw new Error("Member not found");
 
   const hasInfo = body.info && typeof body.info === "object";
   const hasEmployment = body.employment && typeof body.employment === "object";
@@ -514,8 +511,8 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
         throw new Error("Manage Employee teams is only available for Employee L2 and above.");
       }
       const existingPriv =
-        memberDoc.data()?.privileges && typeof memberDoc.data().privileges === "object"
-          ? memberDoc.data().privileges
+        memberData.privileges && typeof memberData.privileges === "object"
+          ? memberData.privileges
           : {};
       memberUpdates.privileges = {
         ...existingPriv,
@@ -525,33 +522,22 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   }
 
   if (hasInfo || hasRoles || hasEmployment || hasPayBill || hasWorkLimits || hasSettings) {
-    // §6.9 follow-up - info and roles are the only two sections that share
-    // the `members` doc's write with every other section but never with each
-    // other (the modal only ever saves the single active tab - see
-    // buildProfilePayload). That makes each section's own *_updated_at stamp
-    // set above a safe, narrow conflict token: checking it only fires on a
-    // real concurrent info (or roles) save, never on an unrelated tab's save
-    // landing in between. Only applies to a single-section save carrying a
-    // token; anything else (no token, or both sections at once) writes
-    // unconditionally, same as before.
     const guardField = hasInfo && !hasRoles ? "info_updated_at" : hasRoles && !hasInfo ? "roles_updated_at" : null;
     if (guardField && options.expectedUpdatedAt) {
-      await db.runTransaction(async (tx) => {
-        const fresh = await tx.get(memberRef);
-        const currentIso = toIsoTimestamp(fresh.data()?.[guardField]);
-        if (currentIso !== options.expectedUpdatedAt) {
-          const err = new Error(
-            hasInfo
-              ? "Someone else changed this member's info while you were editing."
-              : "Someone else changed this member's role while you were editing.",
-          );
-          err.staleWrite = true;
-          throw err;
-        }
-        tx.update(memberRef, memberUpdates);
-      });
-    } else {
-      await memberRef.update(memberUpdates);
+      const fresh = await getMemberByIdPg(memberId);
+      const currentIso = toIsoTimestamp(fresh?.[guardField]);
+      if (currentIso !== options.expectedUpdatedAt) {
+        const err = new Error(
+          hasInfo
+            ? "Someone else changed this member's info while you were editing."
+            : "Someone else changed this member's role while you were editing.",
+        );
+        err.staleWrite = true;
+        throw err;
+      }
+    }
+    if (Object.keys(memberUpdates).length > 0) {
+      await updateMemberPg(memberId, memberUpdates);
     }
   }
 

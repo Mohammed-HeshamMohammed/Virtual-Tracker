@@ -3,6 +3,8 @@ import { normalizeRoleKey } from "./relation-sync.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { banMember, findActiveBanByMemberId } from "./member-ban-service.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
+import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 export const UNAUTHORIZED_PRIVILEGED_ROLE_REASON =
   "Administrative access (Admin or Super Admin) was not authorized by an Owner.";
@@ -20,7 +22,7 @@ export function requiresOwnerGrantedRole(roleName) {
  * @param {Record<string, unknown> | null | undefined} memberData
  */
 export function hasOwnerRoleGrant(memberData) {
-  return Boolean(memberData && memberData.privileged_role_owner_granted === true);
+  return Boolean(memberData && (memberData.privileged_role_owner_granted === true || memberData.privilegedRoleOwnerGranted === true));
 }
 
 /**
@@ -34,29 +36,21 @@ export async function syncPrivilegedRoleOwnerGrant(db, memberId, roleName, actor
   if (!memberId) return;
   const roleKey = normalizeRoleKey(roleName);
   if (!PRIVILEGED_ROLE_KEYS.has(roleKey)) {
-    await db.collection("members").doc(memberId).set(
-      {
-        privileged_role_owner_granted: FieldValue.delete(),
-        privileged_role_owner_granted_at: FieldValue.delete(),
-      },
-      { merge: true },
-    );
+    await updateMemberPg(memberId, {
+      privileged_role_owner_granted: null,
+      privileged_role_owner_granted_at: null,
+    }).catch(() => null);
     return;
   }
 
-  // Role alignment / login bootstrap calls syncMemberPrimaryRole without actor context.
-  // Do not clear an Owner-granted flag that was set during an explicit role change.
   const actorKey = normalizeRoleKey(actorRoleName);
   if (!actorKey) return;
 
   const granted = actorKey === "owner";
-  await db.collection("members").doc(memberId).set(
-    {
-      privileged_role_owner_granted: granted,
-      privileged_role_owner_granted_at: granted ? new Date() : FieldValue.delete(),
-    },
-    { merge: true },
-  );
+  await updateMemberPg(memberId, {
+    privileged_role_owner_granted: granted,
+    privileged_role_owner_granted_at: granted ? new Date().toISOString() : null,
+  }).catch(() => null);
 }
 
 /**
@@ -111,7 +105,6 @@ export async function enforceUnauthorizedPrivilegedRole(db, memberId, roleName, 
 export async function enforcePrivilegedRoleGovernanceForMember(db, memberId, opts = {}) {
   if (!memberId) return { ok: true };
   const roleName = await resolveMemberRoleName(db, memberId);
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  const memberData = memberSnap.exists ? memberSnap.data() || {} : {};
+  const memberData = (await getMemberByIdPg(memberId)) || {};
   return enforceUnauthorizedPrivilegedRole(db, memberId, roleName, memberData, opts);
 }

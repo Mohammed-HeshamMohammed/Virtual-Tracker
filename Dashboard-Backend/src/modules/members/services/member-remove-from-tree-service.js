@@ -2,32 +2,9 @@ import { isOwnerRole, OWNER_REMOVE_BLOCKED_MESSAGE } from "../../../http/role-ow
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { removeMemberHierarchyRelationships } from "../../member-relationships/service.js";
 import { syncMemberHierarchyStatus } from "../../hierarchy/hierarchy-sync.js";
-import { MEMBER_SCOPED_DELETE_COLLECTIONS } from "./member-entity-bootstrap.js";
 import { alignMemberRoleTables, syncMemberPrimaryRole } from "./relation-sync.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
-
-const ASSIGNMENT_COLLECTIONS = ["team_members", "project_members"];
-
-/**
- * Delete rows where member_id matches (batched).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string} memberId
- */
-async function deleteRowsByMemberId(db, collection, memberId) {
-  let removed = 0;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const snap = await db.collection(collection).where("member_id", "==", memberId).limit(200).get();
-    if (snap.empty) break;
-    const batch = db.batch();
-    for (const doc of snap.docs) batch.delete(doc.ref);
-    await batch.commit();
-    removed += snap.size;
-    if (snap.size < 200) break;
-  }
-  return removed;
-}
+import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
 /**
  * Clear assigned_to on this member's tasks.
@@ -63,8 +40,8 @@ export async function removeMemberFromTree(db, input) {
     );
   }
 
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) {
+  const member = await getMemberByIdPg(memberId);
+  if (!member) {
     throw Object.assign(new Error("Member not found."), { status: 404 });
   }
 
@@ -75,14 +52,10 @@ export async function removeMemberFromTree(db, input) {
 
   const hierarchyEdgesRemoved = await removeMemberHierarchyRelationships(db, memberId);
 
-  let teamLinksRemoved = 0;
-  let projectLinksRemoved = 0;
-  for (const collection of ASSIGNMENT_COLLECTIONS) {
-    if (!MEMBER_SCOPED_DELETE_COLLECTIONS.includes(collection)) continue;
-    const count = await deleteRowsByMemberId(db, collection, memberId);
-    if (collection === "team_members") teamLinksRemoved = count;
-    if (collection === "project_members") projectLinksRemoved = count;
-  }
+  const teamRes = await pgQuery("DELETE FROM team_members WHERE member_id = $1 RETURNING id", [memberId]);
+  const projectRes = await pgQuery("DELETE FROM project_members WHERE member_id = $1 RETURNING id", [memberId]);
+  const teamLinksRemoved = teamRes.length;
+  const projectLinksRemoved = projectRes.length;
 
   const tasksUnassigned = await unassignMemberFromTasks(db, memberId, actorMemberId);
 
@@ -90,16 +63,13 @@ export async function removeMemberFromTree(db, input) {
   await alignMemberRoleTables(db, memberId, actorMemberId);
   await syncMemberHierarchyStatus(db, memberId, "Viewer");
 
-  await db.collection("members").doc(memberId).set(
-    {
-      hierarchy_status: "unassigned",
-      hierarchy_status_updated_at: new Date(),
-      privileged_role_owner_granted: false,
-      updated_at: new Date(),
-      updated_by: actorMemberId,
-    },
-    { merge: true },
-  );
+  await updateMemberPg(memberId, {
+    hierarchy_status: "unassigned",
+    hierarchy_status_updated_at: new Date().toISOString(),
+    privileged_role_owner_granted: false,
+    updated_at: new Date().toISOString(),
+    updated_by: actorMemberId,
+  });
 
   return {
     memberId,

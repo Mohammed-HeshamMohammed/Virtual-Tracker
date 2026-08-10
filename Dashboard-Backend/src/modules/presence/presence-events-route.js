@@ -37,8 +37,7 @@ export async function routePresenceEvents(req, res, url, origin) {
       res.end(JSON.stringify({ success: false, error: "Member profile not found." }));
       return true;
     }
-    const memberSnap = await db.collection("members").doc(viewerMemberId).get();
-    viewerRole = memberSnap.exists ? await resolveMemberRoleName(db, viewerMemberId) : "";
+    viewerRole = (await resolveMemberRoleName(db, viewerMemberId)) || "";
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Invalid token";
     res.writeHead(401, { "Content-Type": "application/json" });

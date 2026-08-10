@@ -24,6 +24,8 @@ import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.servi
 import { getProjectPg } from "../../lib/postgres/projects-postgres.service.js";
 import { getTaskAssignmentsPg, getInReviewAssignmentsForTaskPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+
 export { estimateAssignmentSeconds, estimateTaskDurationSeconds, isManagementRole };
 
 function toIso(value) {
@@ -289,13 +291,12 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     const aggregate = await aggregateTaskProgress(db, taskId);
     memberContributions = aggregate?.memberContributions ?? [];
     for (const row of memberContributions) {
-      const memberSnap = await db.collection("members").doc(row.userId).get();
-      const memberData = memberSnap.exists ? memberSnap.data() : {};
+      const memberData = (await getMemberByIdPg(row.userId)) || {};
       const first = typeof memberData.first_name === "string" ? memberData.first_name : "";
       const last = typeof memberData.last_name === "string" ? memberData.last_name : "";
       row.employeeName =
         `${first} ${last}`.trim() ||
-        (typeof memberData.name === "string" ? memberData.name : "") ||
+        (typeof memberData.display_name === "string" ? memberData.display_name : "") ||
         "Unknown";
     }
   }

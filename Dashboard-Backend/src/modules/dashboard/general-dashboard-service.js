@@ -533,21 +533,18 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- */
+import { getMembersByIdsPg } from "../../lib/postgres/members-postgres.service.js";
+
 async function buildPresenceByMember(db, memberIds) {
   const { getPresenceService } = await import("../presence/index.js");
   const presenceService = getPresenceService();
   const map = new Map();
   if (!memberIds.length) return map;
-  const refs = memberIds.map((id) => db.collection("members").doc(id));
-  const snaps = await db.getAll(...refs);
-  for (const snap of snaps) {
-    if (!snap.exists) continue;
-    const runtime = presenceService.getPresence(snap.id);
-    map.set(snap.id, resolveEffectivePresence(runtime, snap.data() || {}));
+  const memberRows = await getMembersByIdsPg(memberIds);
+  for (const row of memberRows) {
+    if (!row || !row.id) continue;
+    const runtime = presenceService.getPresence(row.id);
+    map.set(row.id, resolveEffectivePresence(runtime, row));
   }
   return map;
 }

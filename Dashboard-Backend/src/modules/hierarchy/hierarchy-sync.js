@@ -2,22 +2,18 @@ import { normalizeRoleKey } from "../members/services/relation-sync.js";
 import { getMemberParentId } from "../member-relationships/service.js";
 import { resolveHierarchyStatus } from "./hierarchy-placement.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
 /** Recompute + write hierarchy_status on members row. */
 export async function syncMemberHierarchyStatus(db, memberId, roleName) {
-  const memberRef = db.collection("members").doc(memberId);
-  const memberSnap = await memberRef.get();
-  const memberData = memberSnap.exists ? memberSnap.data() : {};
+  const memberData = (await getMemberByIdPg(memberId)) || {};
   const parentId = await getMemberParentId(db, memberId);
   const status = resolveHierarchyStatus(roleName, parentId, memberData);
 
-  await memberRef.set(
-    {
-      hierarchy_status: status,
-      hierarchy_status_updated_at: new Date(),
-    },
-    { merge: true },
-  );
+  await updateMemberPg(memberId, {
+    hierarchy_status: status,
+    hierarchy_status_updated_at: new Date().toISOString(),
+  });
 
   return status;
 }
@@ -63,9 +59,7 @@ export async function applyRoleChangeHierarchyEffects(db, {
     return { parentAssigned: false, hierarchyStatus };
   }
 
-  const memberRef = db.collection("members").doc(memberId);
-  const memberSnap = memberDataInput ? null : await memberRef.get();
-  const memberData = memberDataInput ?? (memberSnap?.exists ? memberSnap.data() : {});
+  const memberData = memberDataInput ?? ((await getMemberByIdPg(memberId)) || {});
   const existingParentId = await getMemberParentId(db, memberId);
 
   let parentAssigned = false;
@@ -106,8 +100,8 @@ export async function applyRoleChangeHierarchyEffects(db, {
   if (placement === "invalid" || hierarchyStatus === "hierarchy_assignment_required") {
     const notify = async () => {
       try {
-        const memberSnap2 = await db.collection("members").doc(memberId).get();
-        const email = memberSnap2.data()?.work_email || memberId;
+        const m = (await getMemberByIdPg(memberId)) || {};
+        const email = m.work_email || memberId;
         const { notifyAdminRoles } = await import("./transfer-request.service.js");
         await notifyAdminRoles(
           db,

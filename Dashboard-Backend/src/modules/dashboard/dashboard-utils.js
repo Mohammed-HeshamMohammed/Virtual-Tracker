@@ -103,12 +103,5 @@ export function calculateHealth(status, tasksForProject) {
  * @param {string} memberId
  */
 export async function getMemberProjectIds(db, memberId) {
-  const ids = new Set(await listProjectIdsForMemberPg(memberId));
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  if (memberDoc.exists) {
-    for (const pid of memberDoc.data()?.projects || []) {
-      if (pid) ids.add(String(pid));
-    }
-  }
-  return ids;
+  return new Set(await listProjectIdsForMemberPg(memberId));
 }

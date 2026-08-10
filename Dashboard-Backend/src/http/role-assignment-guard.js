@@ -70,6 +70,8 @@ export async function validateRoleAssignment(db, actorRoleName, target) {
  * @param {string} actorRoleName
  * @returns {Promise<string | null>}
  */
+import { getMemberByIdPg } from "../lib/postgres/members-postgres.service.js";
+
 export async function validateMemberRoleChange(db, memberId, nextRoleName, actorRoleName) {
   const trimmed = typeof nextRoleName === "string" ? nextRoleName.trim() : "";
   if (!trimmed) return null;
@@ -85,8 +87,7 @@ export async function validateMemberRoleChange(db, memberId, nextRoleName, actor
   const assignErr = await validateRoleAssignment(db, actorRoleName, { roleName: trimmed });
   if (assignErr) return assignErr;
 
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  const memberData = memberSnap.exists ? memberSnap.data() : {};
+  const memberData = (await getMemberByIdPg(memberId)) || {};
   const parentId = await getMemberParentId(db, memberId);
 
   if (

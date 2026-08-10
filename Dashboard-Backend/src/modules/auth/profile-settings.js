@@ -3,6 +3,8 @@ import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { resolveMemberDisplayName, sanitizeMemberNamePart, assertValidMemberNamePart } from "../members/services/member-display-name.js";
 import { assertValidPhone } from "../../http/validate-body.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -10,15 +12,10 @@ import { assertValidPhone } from "../../http/validate-body.js";
  * @param {string} email
  */
 async function syncMemberEmailForUid(db, uid, email) {
-  const snap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (snap.empty) return;
-  await snap.docs[0].ref.set(
-    {
-      work_email: email,
-      updated_at: new Date(),
-      updated_by: uid,
-    },
-    { merge: true },
+  if (!uid) return;
+  await pgQuery(
+    "UPDATE members SET work_email = $2, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
+    [uid, email],
   );
 }
 
@@ -29,18 +26,16 @@ async function syncMemberEmailForUid(db, uid, email) {
  * @param {string} lastName
  */
 export async function syncMemberNamesForUid(db, uid, firstName, lastName) {
-  const snap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (snap.empty) return;
+  if (!uid) return;
   const trimmedFirst = sanitizeMemberNamePart(typeof firstName === "string" ? firstName : "", "");
   const trimmedLast = sanitizeMemberNamePart(typeof lastName === "string" ? lastName : "", "");
-  await snap.docs[0].ref.set(
-    {
-      first_name: trimmedFirst || "Member",
-      last_name: trimmedLast,
-      updated_at: new Date(),
-      updated_by: uid,
-    },
-    { merge: true },
+  const first = trimmedFirst || "Member";
+  const last = trimmedLast || "";
+  const display = `${first} ${last}`.trim();
+
+  await pgQuery(
+    "UPDATE members SET first_name = $2, last_name = $3, display_name = $4, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
+    [uid, first, last, display],
   );
 }
 
@@ -50,20 +45,21 @@ export async function syncMemberNamesForUid(db, uid, firstName, lastName) {
  * @param {string} phone
  */
 export async function syncMemberPhoneForUid(db, uid, phone, options = {}) {
-  const snap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (snap.empty) return;
-  /** @type {Record<string, unknown>} */
-  const patch = {
-    phone_number: typeof phone === "string" ? phone.trim() : "",
-    updated_at: new Date(),
-    updated_by: uid,
-  };
-  if (options.phoneVerified === true) {
-    patch.phone_verified = true;
-  } else if (options.phoneVerified === false) {
-    patch.phone_verified = false;
+  if (!uid) return;
+  const p = typeof phone === "string" ? phone.trim() : "";
+  const verified = options.phoneVerified === true ? true : options.phoneVerified === false ? false : null;
+
+  if (verified !== null) {
+    await pgQuery(
+      "UPDATE members SET phone_number = $2, phone_verified = $3, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
+      [uid, p, verified],
+    );
+  } else {
+    await pgQuery(
+      "UPDATE members SET phone_number = $2, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
+      [uid, p],
+    );
   }
-  await snap.docs[0].ref.set(patch, { merge: true });
 }
 
 /**
@@ -72,15 +68,10 @@ export async function syncMemberPhoneForUid(db, uid, phone, options = {}) {
  * @param {string} timezone IANA zone id, e.g. "America/Los_Angeles"
  */
 export async function syncMemberTimezoneForUid(db, uid, timezone) {
-  const snap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (snap.empty) return;
-  await snap.docs[0].ref.set(
-    {
-      timezone,
-      updated_at: new Date(),
-      updated_by: uid,
-    },
-    { merge: true },
+  if (!uid) return;
+  await pgQuery(
+    "UPDATE members SET timezone = $2, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
+    [uid, timezone],
   );
 }
 
@@ -112,23 +103,23 @@ export async function reconcileMemberNamesFromProfile(db, uid, memberId) {
   const profileLast = sanitizeMemberNamePart(typeof profile.lastName === "string" ? profile.lastName.trim() : "", "");
   if (!profileFirst && !profileLast) return;
 
-  const memberRef = db.collection("members").doc(memberId);
-  const memberSnap = await memberRef.get();
-  if (!memberSnap.exists) return;
-  const member = memberSnap.data() || {};
+  const member = await getMemberByIdPg(memberId);
+  if (!member) return;
   const memberFirst = typeof member.first_name === "string" ? member.first_name.trim() : "";
   const memberLast = typeof member.last_name === "string" ? member.last_name.trim() : "";
   if (profileFirst === memberFirst && profileLast === memberLast) return;
 
-  await memberRef.set(
-    {
-      first_name: profileFirst || memberFirst || "Member",
-      last_name: profileLast || memberLast,
-      updated_at: new Date(),
-      updated_by: uid,
-    },
-    { merge: true },
-  );
+  const first = profileFirst || memberFirst || "Member";
+  const last = profileLast || memberLast;
+  const display = `${first} ${last}`.trim();
+
+  await updateMemberPg(memberId, {
+    first_name: first,
+    last_name: last,
+    display_name: display,
+    updated_at: new Date().toISOString(),
+    updated_by: uid,
+  });
 }
 
 /** Merge profile settings + optional Auth displayName update. */

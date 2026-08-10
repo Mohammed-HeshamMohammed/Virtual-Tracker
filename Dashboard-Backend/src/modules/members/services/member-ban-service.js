@@ -83,6 +83,8 @@ export async function assertMemberNotBanned(db, input) {
 
 export { listActiveMemberBans };
 
+import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
+
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {{
@@ -99,11 +101,10 @@ export async function banMember(db, input) {
   if (!memberId) throw Object.assign(new Error("Member id is required."), { status: 400 });
   if (!reason) throw Object.assign(new Error("A ban reason is required."), { status: 400 });
 
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) {
+  const memberData = await getMemberByIdPg(memberId);
+  if (!memberData) {
     throw Object.assign(new Error("Member not found."), { status: 404 });
   }
-  const memberData = memberSnap.data() || {};
   const existing = await findActiveBanByMemberId(db, memberId);
   if (existing) {
     throw Object.assign(new Error("This member is already banned."), { status: 409 });
@@ -112,7 +113,7 @@ export async function banMember(db, input) {
   const first = typeof memberData.first_name === "string" ? memberData.first_name.trim() : "";
   const last = typeof memberData.last_name === "string" ? memberData.last_name.trim() : "";
   const memberName =
-    (typeof memberData.name === "string" && memberData.name.trim()) ||
+    (typeof memberData.display_name === "string" && memberData.display_name.trim()) ||
     [first, last].filter(Boolean).join(" ").trim() ||
     "Member";
   const email =
@@ -135,9 +136,6 @@ export async function banMember(db, input) {
     }
   }
 
-  // Kill the desktop agent's device credentials too - otherwise a banned
-  // member's already-linked machine could keep minting fresh tokens for
-  // itself via /agent/reauth and go on tracking.
   try {
     await revokeAgentDevicesForMember(memberId);
   } catch (err) {
@@ -162,14 +160,11 @@ export async function banMember(db, input) {
   };
   const { id: banId } = await createMemberBanRecord(db, banPayload);
 
-  await db.collection("members").doc(memberId).set(
-    {
-      status: "banned",
-      updated_at: now,
-      updated_by: input.bannedByMemberId || null,
-    },
-    { merge: true },
-  );
+  await updateMemberPg(memberId, {
+    status: "banned",
+    updated_at: now.toISOString(),
+    updated_by: input.bannedByMemberId || null,
+  });
 
   if (memberIp) {
     try {
@@ -225,14 +220,11 @@ export async function revokeMemberBan(db, input) {
   });
 
   if (memberId) {
-    await db.collection("members").doc(memberId).set(
-      {
-        status: "active",
-        updated_at: now,
-        updated_by: input.revokedByMemberId || null,
-      },
-      { merge: true },
-    );
+    await updateMemberPg(memberId, {
+      status: "active",
+      updated_at: now.toISOString(),
+      updated_by: input.revokedByMemberId || null,
+    });
   }
 
   const auth = getAuthAdmin();

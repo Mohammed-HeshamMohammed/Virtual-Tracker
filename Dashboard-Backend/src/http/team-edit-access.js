@@ -5,6 +5,9 @@ import { isEmployeeRole } from "./role-hierarchy.js";
 import { canAccessMember } from "./authorization.js";
 import { canBeTeamMember } from "./team-member-assign-policy.js";
 import { listTeamIdsForProjectPg } from "../lib/postgres/projects-postgres.service.js";
+import { getMemberByIdPg, getMembersByIdsPg, listMembersPg } from "../lib/postgres/members-postgres.service.js";
+import { listTeamMembersPg } from "../lib/postgres/teams-postgres.service.js";
+import { query as pgQuery } from "../lib/postgres/client.js";
 
 /** Owner-tier roles can manage any team. */
 export function canManageAllTeams(roleName) {
@@ -19,15 +22,14 @@ export function isManagerRole(roleName) {
 
 /** All employee-tier member ids (org-wide). */
 export async function getOrgWideEmployeeMemberIds(db) {
-  const [membersSnap, employeeRoleIdList] = await Promise.all([
-    db.collection("members").limit(2000).get(),
+  const [members, employeeRoleIdList] = await Promise.all([
+    listMembersPg(),
     resolveRoleIdsWhere(isEmployeeRole),
   ]);
   const employeeRoleIds = new Set(employeeRoleIdList);
   const ids = [];
-  for (const doc of membersSnap.docs) {
-    const roleId = doc.data()?.role_id;
-    if (typeof roleId === "string" && employeeRoleIds.has(roleId)) ids.push(doc.id);
+  for (const m of members) {
+    if (m.role_id && employeeRoleIds.has(m.role_id)) ids.push(m.id);
   }
   return ids;
 }
@@ -54,8 +56,8 @@ export async function isManagerTeamStaffableMember(
   if (manageable !== null && manageable.includes(targetMemberId)) return true;
   if (!isEmployeeRole(targetRoleName)) return false;
 
-  const snap = await db.collection("members").doc(targetMemberId).get();
-  return snap.exists;
+  const member = await getMemberByIdPg(targetMemberId);
+  return Boolean(member);
 }
 
 /**
@@ -86,26 +88,25 @@ export async function getTeamStaffableMemberSummaries(db, memberId, roleName) {
   const ids = await getTeamStaffableMemberIds(db, memberId, roleName);
   if (ids === null) return null;
 
+  const members = await getMembersByIdsPg(ids);
   const summaries = [];
-  for (const id of ids) {
-    const snap = await db.collection("members").doc(id).get();
-    if (!snap.exists) continue;
-    const data = snap.data() || {};
-    const memberRoleName = await resolveMemberRoleName(db, id);
+  for (const m of members) {
+    const memberRoleName = await resolveMemberRoleName(db, m.id);
     if (!canBeTeamMember(memberRoleName)) continue;
     summaries.push({
-      id,
-      first_name: typeof data.first_name === "string" ? data.first_name : "",
-      last_name: typeof data.last_name === "string" ? data.last_name : "",
-      work_email: typeof data.work_email === "string" ? data.work_email : "",
+      id: m.id,
+      first_name: m.first_name || "",
+      last_name: m.last_name || "",
+      work_email: m.work_email || "",
       role_name: memberRoleName,
-      avatar: typeof data.avatar === "string" ? data.avatar : "",
-      avatar_color: typeof data.avatar_color === "string" ? data.avatar_color : "",
-      avatar_url: typeof data.avatar_url === "string" ? data.avatar_url : "",
+      avatar: m.avatar || "",
+      avatar_color: m.avatar_color || "",
+      avatar_url: m.avatar_url || "",
     });
   }
   return summaries;
 }
+
 /**
  * @param {string} entityKey
  * @param {Record<string, unknown>} body
@@ -134,8 +135,9 @@ export function resolveTeamIdFromWrite(entityKey, body, existingData, resourceId
  * @param {string} teamId
  */
 export async function teamHasMembers(db, teamId) {
-  const snap = await db.collection("team_members").where("team_id", "==", teamId).limit(1).get();
-  return !snap.empty;
+  if (!teamId) return false;
+  const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 LIMIT 1", [teamId]);
+  return rows.length > 0;
 }
 
 /**
@@ -144,15 +146,8 @@ export async function teamHasMembers(db, teamId) {
  */
 export async function getTeamIdsLedByMember(db, memberId) {
   if (!memberId) return new Set();
-  const snap = await db.collection("team_members").where("member_id", "==", memberId).limit(200).get();
-  const ids = new Set();
-  for (const doc of snap.docs) {
-    const row = doc.data() || {};
-    if (row.is_lead !== true) continue;
-    const teamId = typeof row.team_id === "string" ? row.team_id : "";
-    if (teamId) ids.add(teamId);
-  }
-  return ids;
+  const rows = await pgQuery("SELECT team_id FROM team_members WHERE member_id = $1 AND (is_lead = true OR role = 'lead')", [memberId]);
+  return new Set(rows.map((r) => r.team_id).filter(Boolean));
 }
 
 /**
@@ -166,12 +161,8 @@ export async function canEditTeam(db, memberId, roleName, teamId) {
   if (!teamId || !memberId) return false;
   if (canManageAllTeams(roleName)) return true;
 
-  const snap = await db.collection("team_members").where("team_id", "==", teamId).limit(200).get();
-  for (const doc of snap.docs) {
-    const row = doc.data() || {};
-    if (row.member_id === memberId && row.is_lead === true) return true;
-  }
-  return false;
+  const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 AND (is_lead = true OR role = 'lead') LIMIT 1", [teamId, memberId]);
+  return rows.length > 0;
 }
 
 /**
@@ -181,13 +172,8 @@ export async function canEditTeam(db, memberId, roleName, teamId) {
  */
 export async function isMemberOnTeam(db, teamId, targetMemberId) {
   if (!teamId || !targetMemberId) return false;
-  const snap = await db
-    .collection("team_members")
-    .where("team_id", "==", teamId)
-    .where("member_id", "==", targetMemberId)
-    .limit(1)
-    .get();
-  return !snap.empty;
+  const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 LIMIT 1", [teamId, targetMemberId]);
+  return rows.length > 0;
 }
 
 /**
@@ -217,3 +203,4 @@ export async function canAssignMemberToTeamRoster(
   if (!(await canEditTeam(db, viewerMemberId, viewerRoleName, teamId))) return false;
   return isMemberOnTeam(db, teamId, targetMemberId);
 }
+

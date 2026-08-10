@@ -3,6 +3,8 @@ import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { resolveAppPublicUrl } from "../auth/app-public-url.js";
 import { canBeTeamLead } from "../../http/team-member-assign-policy.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -50,9 +52,7 @@ export function isActiveMemberRecipient(memberData) {
  */
 async function resolveMemberEmail(db, memberId) {
   if (!memberId) return "";
-  const snap = await db.collection("members").doc(memberId).get();
-  if (!snap.exists) return "";
-  const data = snap.data() || {};
+  const data = (await getMemberByIdPg(memberId)) || {};
   if (!isActiveMemberRecipient(data)) return "";
   const work = typeof data.work_email === "string" ? data.work_email.trim() : "";
   const personal = typeof data.personal_email === "string" ? data.personal_email.trim() : "";
@@ -63,27 +63,26 @@ async function resolveMemberEmail(db, memberId) {
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} teamId
  * @param {Record<string, unknown>} teamData
- * @param {import("firebase-admin/firestore").QueryDocumentSnapshot[]} teamMemberDocs
+ * @param {Array<Record<string, unknown>>} teamMemberRows
  */
-export async function collectWeeklyReportRecipientIds(db, teamId, teamData, teamMemberDocs) {
+export async function collectWeeklyReportRecipientIds(db, teamId, teamData, teamMemberRows) {
   const recipientIds = new Set();
   const createdBy = typeof teamData.created_by === "string" ? teamData.created_by : "";
   if (createdBy) {
-    const creatorSnap = await db.collection("members").doc(createdBy).get();
-    if (creatorSnap.exists && isActiveMemberRecipient(creatorSnap.data() || {})) {
+    const creator = (await getMemberByIdPg(createdBy)) || {};
+    if (isActiveMemberRecipient(creator)) {
       recipientIds.add(createdBy);
     }
   }
 
-  for (const doc of teamMemberDocs) {
-    const row = doc.data() || {};
-    if (row.is_lead !== true) continue;
+  for (const row of teamMemberRows) {
+    if (row.is_lead !== true && row.role !== "lead") continue;
     const memberId = typeof row.member_id === "string" ? row.member_id : "";
     if (!memberId || memberId === createdBy) continue;
     const roleName = await resolveMemberRoleName(db, memberId);
     if (!canBeTeamLead(roleName)) continue;
-    const memberSnap = await db.collection("members").doc(memberId).get();
-    if (!memberSnap.exists || !isActiveMemberRecipient(memberSnap.data() || {})) continue;
+    const member = (await getMemberByIdPg(memberId)) || {};
+    if (!isActiveMemberRecipient(member)) continue;
     recipientIds.add(memberId);
   }
 
@@ -101,8 +100,8 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
   }
 
   const teamName = typeof teamData.name === "string" && teamData.name.trim() ? teamData.name.trim() : "Team";
-  const teamMembersSnap = await db.collection("team_members").where("team_id", "==", teamId).get();
-  const recipientIds = await collectWeeklyReportRecipientIds(db, teamId, teamData, teamMembersSnap.docs);
+  const teamMemberRows = await pgQuery("SELECT * FROM team_members WHERE team_id = $1", [teamId]);
+  const recipientIds = await collectWeeklyReportRecipientIds(db, teamId, teamData, teamMemberRows);
 
   const emails = new Set();
   for (const memberId of recipientIds) {
@@ -114,7 +113,7 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
     return { sent: 0, skipped: true, reason: "no_recipients" };
   }
 
-  const memberCount = teamMembersSnap.size;
+  const memberCount = teamMemberRows.length;
   const appUrl = resolveAppPublicUrl();
 
   let sent = 0;
@@ -129,13 +128,7 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
   }
 
   if (sent > 0) {
-    await db.collection("teams").doc(teamId).set(
-      {
-        last_weekly_report_sent_at: new Date(),
-        updated_at: new Date(),
-      },
-      { merge: true },
-    );
+    await pgQuery("UPDATE teams SET last_weekly_report_sent_at = NOW(), updated_at = NOW() WHERE id = $1", [teamId]);
   }
 
   return { sent, recipients: emails.size };
@@ -145,13 +138,12 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function processDueTeamWeeklyReports(db) {
-  const teamsSnap = await db.collection("teams").where("schedule_weekly_report", "==", true).get();
+  const teams = await pgQuery("SELECT * FROM teams WHERE schedule_weekly_report = true");
   const now = new Date();
   let processed = 0;
   let sentTeams = 0;
 
-  for (const doc of teamsSnap.docs) {
-    const data = doc.data() || {};
+  for (const data of teams) {
     if (data.schedule_weekly_report !== true) continue;
     const lastSentAt = parseReportTimestamp(data.last_weekly_report_sent_at);
     if (!isWeeklyReportDue(lastSentAt, now)) continue;
