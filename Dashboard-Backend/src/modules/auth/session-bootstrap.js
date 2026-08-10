@@ -97,9 +97,15 @@ export async function handleSessionBootstrap(req, res, origin, url) {
         logSafeWarn("[session-bootstrap] member bootstrap incomplete:", memberBootstrap);
       } else if (memberId && !profileMustChange) {
         await alignMemberRoleTables(db, memberId, decoded.uid);
-        const memberSnap = await db.collection("members").doc(memberId).get();
-        if (memberSnap.exists) {
-          memberData = memberSnap.data() || null;
+        const { getMemberByIdPg } = await import("../../lib/postgres/members-postgres.service.js");
+        memberData = await getMemberByIdPg(memberId).catch(() => null);
+        if (!memberData) {
+          try {
+            const memberSnap = await db.collection("members").doc(memberId).get();
+            if (memberSnap.exists) memberData = memberSnap.data() || null;
+          } catch {
+            // Firestore collection fallback optional
+          }
         }
 
         if (memberId && memberData) {
