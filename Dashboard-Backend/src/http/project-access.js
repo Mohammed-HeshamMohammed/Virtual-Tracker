@@ -24,22 +24,7 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
     return null;
   }
 
-  const ids = new Set();
-  for (const pid of await listProjectIdsForMemberPg(viewerMemberId)) {
-    if (pid) ids.add(pid);
-  }
-
-  const memberDoc = await db.collection("members").doc(viewerMemberId).get();
-  if (memberDoc.exists) {
-    const legacyProjects = memberDoc.data()?.projects;
-    if (Array.isArray(legacyProjects)) {
-      for (const pid of legacyProjects) {
-        if (pid) ids.add(String(pid));
-      }
-    }
-  }
-
-  return [...ids];
+  return await listProjectIdsForMemberPg(viewerMemberId);
 }
 
 const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([

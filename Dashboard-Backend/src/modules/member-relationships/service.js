@@ -11,12 +11,8 @@ import {
   getMemberTreeCache,
   setMemberTreeCache,
 } from "../../lib/postgres/member-data-store.js";
-import {
-  filterTeamScopeEdges,
-  planRelationshipRepairs,
-  RelationshipIntegrityError,
-  validateNewRelationshipWithRoles,
-} from "./relationship-integrity.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 export { filterTeamScopeEdges } from "./relationship-integrity.js";
 
@@ -597,33 +593,12 @@ export async function getConnectedMembers(db, memberId) {
  * @returns {Promise<string[]>} - Array of member IDs who share at least one project
  */
 export async function getMembersBySharedProjects(db, memberId) {
-  // Get the member's projects
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  if (!memberDoc.exists) return [];
-
-  const memberData = memberDoc.data();
-  const memberProjects = memberData.projects || [];
-
-  if (memberProjects.length === 0) return [];
-
-  // Find all members who share at least one project
-  const sharedMemberIds = new Set();
-
-  // Query members collection for each project
-  for (const projectId of memberProjects) {
-    const membersWithProject = await db.collection("members")
-      .where("projects", "array-contains", projectId)
-      .limit(100)
-      .get();
-
-    for (const doc of membersWithProject.docs) {
-      if (doc.id !== memberId) {
-        sharedMemberIds.add(doc.id);
-      }
-    }
-  }
-
-  return Array.from(sharedMemberIds);
+  if (!memberId) return [];
+  const rows = await pgQuery(
+    "SELECT DISTINCT member_id FROM project_members WHERE project_id IN (SELECT project_id FROM project_members WHERE member_id = $1) AND member_id != $1",
+    [memberId],
+  );
+  return rows.map((r) => r.member_id).filter(Boolean);
 }
 
 /**
@@ -705,13 +680,11 @@ async function memberBelongsToOrg(db, memberId, ownerMemberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   if (ancestors.some((ancestor) => ancestor.member_id === ownerMemberId)) return true;
 
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) return false;
-  const data = memberSnap.data() || {};
+  const data = (await getMemberByIdPg(memberId)) || {};
   if (data.created_by === ownerMemberId) return true;
 
-  const ownerSnap = await db.collection("members").doc(ownerMemberId).get();
-  const ownerUid = ownerSnap.exists ? String(ownerSnap.data()?.firebase_uid || "").trim() : "";
+  const ownerData = (await getMemberByIdPg(ownerMemberId)) || {};
+  const ownerUid = String(ownerData.firebase_uid || "").trim();
   const createdByUid = String(data.created_by_uid || "").trim();
   return Boolean(ownerUid && createdByUid === ownerUid);
 }
@@ -721,10 +694,9 @@ async function collectOrgAdminCreators(db, ownerMemberId) {
   const adminMemberIds = new Set([ownerMemberId]);
   const adminFirebaseUids = new Set();
 
-  const ownerSnap = await db.collection("members").doc(ownerMemberId).get();
-  if (ownerSnap.exists) {
-    const uid = String(ownerSnap.data()?.firebase_uid || "").trim();
-    if (uid) adminFirebaseUids.add(uid);
+  const ownerData = await getMemberByIdPg(ownerMemberId);
+  if (ownerData && ownerData.firebase_uid) {
+    adminFirebaseUids.add(String(ownerData.firebase_uid).trim());
   }
 
   const descendants = await getMemberDescendants(db, ownerMemberId, 100);
@@ -732,9 +704,10 @@ async function collectOrgAdminCreators(db, ownerMemberId) {
     const roleName = await resolveMemberRoleName(db, node.member_id);
     if (!isUplineOrgAdminRole(roleName)) continue;
     adminMemberIds.add(node.member_id);
-    const snap = await db.collection("members").doc(node.member_id).get();
-    const uid = String(snap.data()?.firebase_uid || "").trim();
-    if (uid) adminFirebaseUids.add(uid);
+    const mData = await getMemberByIdPg(node.member_id);
+    if (mData && mData.firebase_uid) {
+      adminFirebaseUids.add(String(mData.firebase_uid).trim());
+    }
   }
 
   return { adminMemberIds, adminFirebaseUids };
@@ -753,12 +726,11 @@ async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
 
   for (const uid of adminFirebaseUids) {
     try {
-      const snap = await db
-        .collection("members")
-        .where("created_by_uid", "==", uid)
-        .limit(500)
-        .get();
-      for (const doc of snap.docs) candidateIds.add(doc.id);
+      const rows = await pgQuery(
+        "SELECT id FROM members WHERE created_by_uid = $1 LIMIT 500",
+        [uid],
+      );
+      for (const row of rows) if (row.id) candidateIds.add(row.id);
     } catch (err) {
       logSafeWarn("[getOrgUplineAddedMemberIds] created_by_uid lookup failed:", err);
     }
@@ -766,12 +738,11 @@ async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
 
   for (const adminId of adminMemberIds) {
     try {
-      const snap = await db
-        .collection("members")
-        .where("created_by", "==", adminId)
-        .limit(500)
-        .get();
-      for (const doc of snap.docs) candidateIds.add(doc.id);
+      const rows = await pgQuery(
+        "SELECT id FROM members WHERE created_by = $1 LIMIT 500",
+        [adminId],
+      );
+      for (const row of rows) if (row.id) candidateIds.add(row.id);
     } catch (err) {
       logSafeWarn("[getOrgUplineAddedMemberIds] created_by lookup failed:", err);
     }
@@ -795,21 +766,20 @@ export async function getTeamSubtreeMemberIds(db, memberId, maxDepth = 100) {
     ids.add(d.member_id);
   }
 
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  const firebaseUid =
-    memberSnap.exists && typeof memberSnap.data()?.firebase_uid === "string"
-      ? memberSnap.data().firebase_uid.trim()
-      : "";
+  const memberData = await getMemberByIdPg(memberId);
+  const firebaseUid = memberData && typeof memberData.firebase_uid === "string"
+    ? memberData.firebase_uid.trim()
+    : "";
   if (firebaseUid) {
     try {
-      const addedSnap = await db
-        .collection("members")
-        .where("created_by_uid", "==", firebaseUid)
-        .limit(500)
-        .get();
-      for (const doc of addedSnap.docs) {
-        ids.add(doc.id);
-        const nested = await getMemberDescendants(db, doc.id, maxDepth);
+      const addedRows = await pgQuery(
+        "SELECT id FROM members WHERE created_by_uid = $1 LIMIT 500",
+        [firebaseUid],
+      );
+      for (const row of addedRows) {
+        if (!row.id) continue;
+        ids.add(row.id);
+        const nested = await getMemberDescendants(db, row.id, maxDepth);
         for (const d of nested) ids.add(d.member_id);
       }
     } catch (err) {

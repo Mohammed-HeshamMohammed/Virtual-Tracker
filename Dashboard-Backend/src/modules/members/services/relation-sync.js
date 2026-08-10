@@ -16,6 +16,7 @@ import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { addProjectMemberPg, listProjectIdsForMemberPg, removeProjectMemberPg } from "../../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { getMemberByIdPg, getMembersByIdsPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
 const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Employee L2", "Employee L1", "Employee L0", "Client", "Viewer"];
 
@@ -75,8 +76,12 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
     deactivation_governance: deactivationGovernanceForRole(trimmedName),
     updated_at: new Date(),
   };
-  if (assignedBy) memberMerge.updated_by = assignedBy;
-  await db.collection("members").doc(memberId).set(memberMerge, { merge: true });
+  await updateMemberPg(memberId, {
+    role_id: roleId,
+    deactivation_governance: deactivationGovernanceForRole(trimmedName),
+    updated_at: new Date().toISOString(),
+    ...(assignedBy ? { updated_by: assignedBy } : {}),
+  });
 
   const { syncPrivilegedRoleOwnerGrant } = await import("./privileged-role-governance.js");
   await syncPrivilegedRoleOwnerGrant(db, memberId, trimmedName, actorRoleName);
@@ -202,13 +207,11 @@ export function pickCanonicalPrimaryRoleName(memberData, memberRoleRows = [], ro
 export async function alignMemberRoleTables(db, memberId, assignedBy = "role-align") {
   if (!memberId) return null;
   const { invalidateMemberRoleCache } = await import("../../../http/role-cache.js");
-  const [memberSnap, roleNameById] = await Promise.all([
-    db.collection("members").doc(memberId).get(),
+  const [memberData, roleNameById] = await Promise.all([
+    getMemberByIdPg(memberId),
     loadRoleNameById(db),
   ]);
-  if (!memberSnap.exists) return null;
-
-  const memberData = memberSnap.data() || {};
+  if (!memberData) return null;
   const { name } = pickCanonicalPrimaryRoleName(memberData, [], roleNameById);
   const currentRoleId = typeof memberData.role_id === "string" ? memberData.role_id : "";
   const alignedRoleId =
@@ -354,13 +357,11 @@ export async function deletePendingAuthProjects(db, pendingUid) {
  * @param {string} memberId
  */
 export async function cascadeDeleteMemberRelations(db, memberId) {
-  const [teamMembers] = await Promise.all([
-    db.collection("team_members").where("member_id", "==", memberId).get(),
+  if (!memberId) return;
+  await Promise.all([
+    pgQuery("DELETE FROM team_members WHERE member_id = $1", [memberId]),
     pgQuery("DELETE FROM project_members WHERE member_id = $1", [memberId]),
   ]);
-  const batch = db.batch();
-  for (const doc of teamMembers.docs) batch.delete(doc.ref);
-  if (teamMembers.size > 0) await batch.commit();
 }
 
 /**
@@ -480,21 +481,17 @@ export async function enrichTeamMembersWithProfiles(db, rows) {
     roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
   );
 
-  for (let i = 0; i < memberIds.length; i += 30) {
-    const chunk = memberIds.slice(i, i + 30);
-    const refs = chunk.map((id) => db.collection("members").doc(id));
-    const snaps = await db.getAll(...refs);
-
-    for (const snap of snaps) {
-      if (!snap.exists) continue;
-      const data = snap.data() || {};
-      profileByMemberId.set(snap.id, memberProfileFromDoc(data));
+  if (memberIds.length > 0) {
+    const memberRows = await getMembersByIdsPg(memberIds);
+    for (const data of memberRows) {
+      if (!data || !data.id) continue;
+      profileByMemberId.set(data.id, memberProfileFromDoc(data));
       const { name } = pickCanonicalPrimaryRoleName(
         data,
         [],
         roleNameById,
       );
-      if (name) roleByMemberId.set(snap.id, name);
+      if (name) roleByMemberId.set(data.id, name);
     }
   }
 

@@ -192,13 +192,10 @@ export async function routeProjects(req, res, url, db, origin) {
 
       const teamNameById = new Map();
       if (teamIds.length > 0) {
-        const refs = teamIds.map((id) => db.collection("teams").doc(id));
-        const snaps = await db.getAll(...refs);
-        for (const snap of snaps) {
-          if (!snap.exists) continue;
-          const row = snap.data() || {};
+        const teamRows = await pgQuery("SELECT id, name FROM teams WHERE id = ANY($1)", [teamIds]);
+        for (const row of teamRows) {
           teamNameById.set(
-            snap.id,
+            row.id,
             typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Unnamed team",
           );
         }
@@ -242,13 +239,10 @@ export async function routeProjects(req, res, url, db, origin) {
 
       const teams = [];
       if (teamIds.length > 0) {
-        const refs = teamIds.map((id) => db.collection("teams").doc(id));
-        const snaps = await db.getAll(...refs);
-        for (const snap of snaps) {
-          if (!snap.exists) continue;
-          const row = snap.data() || {};
+        const teamRows = await pgQuery("SELECT id, name FROM teams WHERE id = ANY($1)", [teamIds]);
+        for (const row of teamRows) {
           teams.push({
-            id: snap.id,
+            id: row.id,
             name: typeof row.name === "string" && row.name.trim() ? row.name.trim() : "Unnamed team",
           });
         }

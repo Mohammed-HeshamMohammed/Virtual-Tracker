@@ -4,6 +4,7 @@ import { applyInviteFieldPolicy, applyMemberFieldPolicy } from "../../http/field
 import { getViewerProjectIds } from "../../http/project-access.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { getTeamIdsLedByMember, canManageAllTeams } from "../../http/team-edit-access.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 
 const visibilityCache = new Map();
 const CACHE_TTL_MS = 5000;
@@ -195,11 +196,12 @@ export async function applyVisibilityFilter(req, db, collectionKey, rows) {
           visibleTeamIds.add(row.id);
         }
       }
-      for (let i = 0; i < teamIds.length; i += 30) {
-        const chunk = teamIds.slice(i, i + 30);
-        const snap = await db.collection("team_members").where("team_id", "in", chunk).get();
-        for (const doc of snap.docs) {
-          const data = doc.data() || {};
+      if (teamIds.length > 0) {
+        const rows = await pgQuery(
+          "SELECT team_id, member_id FROM team_members WHERE team_id = ANY($1)",
+          [teamIds],
+        );
+        for (const data of rows) {
           const teamId = typeof data.team_id === "string" ? data.team_id : "";
           const memberId = typeof data.member_id === "string" ? data.member_id : "";
           if (teamId && (memberId === mId || visibleWithSelf.has(memberId))) {

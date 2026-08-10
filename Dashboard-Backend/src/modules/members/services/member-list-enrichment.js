@@ -1,6 +1,7 @@
 /** Batch-load pay rates, limits, and relations for member list rows. */
 
 import { getPayRatesBatchPg } from "../../../lib/postgres/member-data-postgres.service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 export { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
 
@@ -86,22 +87,20 @@ export async function fetchMemberRelationSnaps(db, memberIds) {
     return { teamMembersSnap: { docs: [] }, teamsSnap: { docs: [] }, projectMembersSnap: { docs: [] } };
   }
 
-  const [teamMemberDocs, projectMemberDocs] = await Promise.all([
-    fetchDocsByMemberIdChunks(db, "team_members", ids),
-    fetchDocsByMemberIdChunks(db, "project_members", ids),
+  const [teamMemberRows, projectMemberRows] = await Promise.all([
+    pgQuery("SELECT id, team_id, member_id, role, is_lead FROM team_members WHERE member_id = ANY($1)", [ids]),
+    pgQuery("SELECT id, project_id, member_id, project_role FROM project_members WHERE member_id = ANY($1)", [ids]),
   ]);
 
-  const teamIds = new Set();
-  for (const doc of teamMemberDocs) {
-    const teamId = typeof doc.data()?.team_id === "string" ? doc.data().team_id : "";
-    if (teamId) teamIds.add(teamId);
+  const teamIds = [...new Set(teamMemberRows.map((r) => r.team_id).filter(Boolean))];
+  let teamRows = [];
+  if (teamIds.length > 0) {
+    teamRows = await pgQuery("SELECT id, name FROM teams WHERE id = ANY($1)", [teamIds]);
   }
 
-  let teamDocs = [];
-  if (teamIds.size > 0) {
-    const refs = [...teamIds].map((id) => db.collection("teams").doc(id));
-    teamDocs = await db.getAll(...refs);
-  }
+  const teamMemberDocs = teamMemberRows.map((r) => ({ id: r.id, data: () => r }));
+  const projectMemberDocs = projectMemberRows.map((r) => ({ id: r.id, data: () => r }));
+  const teamDocs = teamRows.map((r) => ({ id: r.id, exists: true, data: () => r }));
 
   return {
     teamMembersSnap: { docs: teamMemberDocs },

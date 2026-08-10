@@ -255,10 +255,12 @@ async function loadProjectIdsForClient(db, clientId) {
   return (await listProjectIdsForClientPg(clientId)).map((id) => String(id).trim()).filter(Boolean);
 }
 
+import { getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
+
 async function assertMemberExists(db, memberId) {
   if (!memberId) return;
-  const doc = await db.collection("members").doc(memberId).get();
-  if (!doc.exists) throw new Error("member_id references missing members");
+  const member = await getMemberByIdPg(memberId);
+  if (!member) throw new Error("member_id references missing members");
 }
 
 async function assertProjectsExist(db, projectIds) {

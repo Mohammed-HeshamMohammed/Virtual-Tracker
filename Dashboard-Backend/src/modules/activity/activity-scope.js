@@ -3,6 +3,8 @@ import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/se
 import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
+import { getMemberByIdPg, getMembersByIdsPg } from "../../lib/postgres/members-postgres.service.js";
+
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 
@@ -14,24 +16,19 @@ function normalizeRole(roleName) {
 }
 
 export async function resolveMemberRoleName(db, memberId) {
-  const memberSnap = await db.collection("members").doc(memberId).get();
-  if (!memberSnap.exists) return "Viewer";
-  const memberRoleId = typeof memberSnap.data()?.role_id === "string" ? memberSnap.data().role_id : "";
+  if (!memberId) return "Viewer";
+  const memberData = await getMemberByIdPg(memberId);
+  if (!memberData) return "Viewer";
+  const memberRoleId = typeof memberData.role_id === "string" ? memberData.role_id : "";
   if (!memberRoleId) return "Viewer";
   const roleName = await resolveRoleNameById(db, memberRoleId);
   return pickHighestPrivilegeRoleName([roleName || "Viewer"]);
 }
 
-/** Member IDs on projects the viewer belongs to (via project_members + members.projects). */
+/** Member IDs on projects the viewer belongs to (via project_members). */
 export async function getProjectScopedMemberIds(db, viewerMemberId) {
   const ids = new Set([viewerMemberId]);
   const projectIds = new Set(await listProjectIdsForMemberPg(viewerMemberId));
-
-  const memberDoc = await db.collection("members").doc(viewerMemberId).get();
-  const memberProjects = memberDoc.exists ? memberDoc.data()?.projects || [] : [];
-  for (const pid of memberProjects) {
-    if (pid) projectIds.add(pid);
-  }
 
   for (const mid of await listMemberIdsForProjectsPg([...projectIds])) {
     if (mid) ids.add(mid);
@@ -40,17 +37,17 @@ export async function getProjectScopedMemberIds(db, viewerMemberId) {
   return ids;
 }
 
-function memberMetaFromDoc(doc) {
-  const d = doc.data() || {};
+function memberMetaFromRow(row) {
+  if (!row) return { name: "Unknown", initials: "??" };
   const first =
-    (typeof d.first_name === "string" && d.first_name) ||
-    (typeof d.firstName === "string" && d.firstName) ||
+    (typeof row.first_name === "string" && row.first_name) ||
+    (typeof row.firstName === "string" && row.firstName) ||
     "";
   const last =
-    (typeof d.last_name === "string" && d.last_name) ||
-    (typeof d.lastName === "string" && d.lastName) ||
+    (typeof row.last_name === "string" && row.last_name) ||
+    (typeof row.lastName === "string" && row.lastName) ||
     "";
-  const name = `${first} ${last}`.trim() || (typeof d.name === "string" ? d.name : "") || "Unknown";
+  const name = (typeof row.display_name === "string" && row.display_name.trim()) || `${first} ${last}`.trim() || (typeof row.name === "string" ? row.name : "") || "Unknown";
   const initials =
     name
       .split(/\s+/)
@@ -61,27 +58,22 @@ function memberMetaFromDoc(doc) {
   return { name, initials };
 }
 
-const MEMBER_META_SELECT = ["first_name", "firstName", "last_name", "lastName", "name"];
-
 export async function buildMemberMetaMap(db, allowedIds) {
   const meta = new Map();
   if (allowedIds === null) {
-    const snap = await db.collection("members").select(...MEMBER_META_SELECT).limit(400).get();
-    for (const doc of snap.docs) {
-      meta.set(doc.id, memberMetaFromDoc(doc));
+    const memberRows = await getMembersByIdsPg([]);
+    for (const row of memberRows) {
+      if (row.id) meta.set(row.id, memberMetaFromRow(row));
     }
     return meta;
   }
 
   if (allowedIds.length === 0) return meta;
 
-  for (let i = 0; i < allowedIds.length; i += 10) {
-    const chunk = allowedIds.slice(i, i + 10);
-    const refs = chunk.map((id) => db.collection("members").doc(id));
-    const docs = await db.getAll(...refs);
-    for (const doc of docs) {
-      if (!doc.exists) continue;
-      meta.set(doc.id, memberMetaFromDoc(doc));
+  const memberRows = await getMembersByIdsPg(allowedIds);
+  for (const row of memberRows) {
+    if (row && row.id) {
+      meta.set(row.id, memberMetaFromRow(row));
     }
   }
   return meta;

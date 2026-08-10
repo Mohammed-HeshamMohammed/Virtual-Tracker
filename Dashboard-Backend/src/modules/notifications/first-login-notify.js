@@ -39,6 +39,9 @@ export function formatMemberDisplayName(memberData, profile, userRecord) {
   return "A new member";
 }
 
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
+
 /** First-login notify recipients — ancestors, else created_by_uid lookup. */
 export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData) {
   const recipientIds = new Set();
@@ -58,14 +61,13 @@ export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData
     typeof memberData.created_by_uid === "string" ? memberData.created_by_uid.trim() : "";
   if (!createdByUid) return [];
 
-  const creatorQuery = await db
-    .collection("members")
-    .where("firebase_uid", "==", createdByUid)
-    .limit(1)
-    .get();
-  if (creatorQuery.empty) return [];
+  const creatorRows = await pgQuery(
+    "SELECT id FROM members WHERE firebase_uid = $1 LIMIT 1",
+    [createdByUid],
+  );
+  if (!creatorRows.length) return [];
 
-  const adderMemberId = creatorQuery.docs[0].id;
+  const adderMemberId = creatorRows[0].id;
   if (adderMemberId !== memberId) {
     recipientIds.add(adderMemberId);
   }
@@ -98,22 +100,15 @@ export async function maybeNotifyTeamMemberFirstLogin(db, input) {
     return { notified: false, recipientCount: 0 };
   }
 
-  const memberRef = db.collection("members").doc(memberId);
-  const shouldNotify = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(memberRef);
-    if (!snap.exists) return false;
-    const row = snap.data() || {};
-    if (row.first_login_notified_at || row.firstLoginNotifiedAt) return false;
-    tx.update(memberRef, {
-      first_login_notified_at: FieldValue.serverTimestamp(),
-      firstLoginNotifiedAt: FieldValue.serverTimestamp(),
-    });
-    return true;
-  });
-
-  if (!shouldNotify) {
+  const fresh = await getMemberByIdPg(memberId);
+  if (!fresh) return { notified: false, recipientCount: 0 };
+  if (fresh.first_login_notified_at || fresh.firstLoginNotifiedAt) {
     return { notified: false, recipientCount: 0 };
   }
+
+  await updateMemberPg(memberId, {
+    first_login_notified_at: new Date().toISOString(),
+  });
 
   const recipientIds = await resolveFirstLoginNotifyRecipients(db, memberId, memberData);
   if (recipientIds.length === 0) {

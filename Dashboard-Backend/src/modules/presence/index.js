@@ -12,21 +12,21 @@ import { createMemoryPresenceStore } from "./presence-store.js";
 import { createRtdbPresenceStore } from "./presence-store-rtdb.js";
 import { createRedisPresenceStore } from "./presence-store-redis.js";
 import { publishPresenceChange, presenceRecordToChange } from "./presence-pubsub.js";
+import { updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
 /** @type {{ presenceService: ReturnType<typeof createPresenceService>; presenceManager: ReturnType<typeof createPresenceManager>; store: ReturnType<typeof createMemoryPresenceStore>; rtdbStore: ReturnType<typeof createRtdbPresenceStore> | ReturnType<typeof createRedisPresenceStore> | null } | null} */
 let runtime = null;
 
 /**
- * On disconnect, persist last_seen_at only — nothing else from presence goes to Firestore.
+ * On disconnect, persist last_seen_at to PostgreSQL.
  * @param {string} memberId
  * @param {number} lastSeenAt
  */
 async function persistLastSeenAtOnDisconnect(memberId, lastSeenAt) {
-  const db = getDb();
-  if (!db || !memberId) return;
+  if (!memberId) return;
   try {
-    await db.collection("members").doc(memberId).update({
-      last_seen_at: new Date(lastSeenAt),
+    await updateMemberPg(memberId, {
+      last_seen_at: new Date(lastSeenAt).toISOString(),
     });
   } catch {
     // Member row may not exist in partial test environments.

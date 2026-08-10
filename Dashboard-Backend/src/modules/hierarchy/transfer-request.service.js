@@ -16,6 +16,9 @@ import {
   sendMemberTransferEmail,
 } from "./transfer-email.js";
 
+import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
+
 const COLLECTION = "member_transfer_requests";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -27,18 +30,13 @@ async function findMemberByEmail(db, email) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
 
-  const queries = [
-    db.collection("members").where("work_email", "==", normalized).limit(1).get(),
-    db.collection("members").where("personal_email", "==", normalized).limit(1).get(),
-  ];
-  const results = await Promise.all(queries);
-  for (const snap of results) {
-    if (!snap.empty) {
-      const doc = snap.docs[0];
-      return { id: doc.id, data: doc.data() || {} };
-    }
-  }
-  return null;
+  const rows = await pgQuery(
+    "SELECT * FROM members WHERE LOWER(work_email) = $1 OR LOWER(personal_email) = $1 LIMIT 1",
+    [normalized],
+  );
+  if (!rows.length) return null;
+  const m = rows[0];
+  return { id: m.id, data: m };
 }
 
 /**
@@ -69,12 +67,10 @@ async function findTransferByToken(db, token) {
  * @param {string} requesterMemberId
  */
 async function getRequesterDisplayName(db, requesterMemberId) {
-  const snap = await db.collection("members").doc(requesterMemberId).get();
-  if (!snap.exists) return "A team manager";
-  const d = snap.data() || {};
+  const d = (await getMemberByIdPg(requesterMemberId)) || {};
   const first = typeof d.first_name === "string" ? d.first_name.trim() : "";
   const last = typeof d.last_name === "string" ? d.last_name.trim() : "";
-  const name = [first, last].filter(Boolean).join(" ");
+  const name = (typeof d.display_name === "string" && d.display_name.trim()) || [first, last].filter(Boolean).join(" ");
   return name || "A team manager";
 }
 
@@ -91,14 +87,14 @@ export async function notifyAdminRoles(db, title, message, link = "") {
 
   if (!roleIds.length) return;
 
-  const membersSnap = await db.collection("members").where("role_id", "in", roleIds.slice(0, 10)).get();
+  const rows = await pgQuery("SELECT id FROM members WHERE role_id = ANY($1) AND status != 'banned'", [roleIds]);
   const notified = new Set();
-  for (const doc of membersSnap.docs) {
-    if (notified.has(doc.id)) continue;
-    notified.add(doc.id);
+  for (const row of rows) {
+    if (!row.id || notified.has(row.id)) continue;
+    notified.add(row.id);
     try {
       await createNotification(db, {
-        recipient_id: doc.id,
+        recipient_id: row.id,
         type: "hierarchy_alert",
         title,
         message,

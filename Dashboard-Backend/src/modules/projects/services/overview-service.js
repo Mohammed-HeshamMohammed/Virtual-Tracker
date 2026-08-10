@@ -196,13 +196,13 @@ export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
 
-  const [taskRows, projectRows, clientRows, budgetRows, clientProjectRows, membersSnap] = await Promise.all([
+  const [taskRows, projectRows, clientRows, budgetRows, clientProjectRows, memberRows] = await Promise.all([
     pgQuery("SELECT id, project_id, status, title, priority, assigned_to FROM tasks LIMIT $1", [taskLimit]),
     pgQuery("SELECT id, name FROM projects"),
     pgQuery("SELECT id, status, name, email_addresses FROM clients LIMIT 100"),
     pgQuery("SELECT client_id, cost FROM client_budgets LIMIT 100"),
     pgQuery("SELECT client_id, project_id FROM client_projects"),
-    db.collection("members").select("first_name", "firstName", "last_name", "lastName", "name").limit(200).get(),
+    pgQuery("SELECT id, first_name, last_name, display_name FROM members LIMIT 200"),
   ]);
 
   const projectNameById = new Map();
@@ -215,12 +215,11 @@ export async function getOverviewPanels(db, options = {}) {
   }
 
   const memberNameById = new Map();
-  for (const doc of membersSnap.docs) {
-    const row = doc.data() || {};
-    const first = str(row, "first_name", "firstName");
-    const last = str(row, "last_name", "lastName");
-    const name = `${first} ${last}`.trim() || str(row, "name") || "Unknown";
-    memberNameById.set(doc.id, name);
+  for (const row of memberRows) {
+    const first = str(row, "first_name");
+    const last = str(row, "last_name");
+    const full = `${first} ${last}`.trim() || str(row, "display_name") || "Member";
+    memberNameById.set(row.id, full);
   }
 
   const tasksByProject = new Map();
