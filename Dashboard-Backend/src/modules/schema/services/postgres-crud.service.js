@@ -297,7 +297,7 @@ export async function listPostgresRows(entityKey, url) {
     return rows.map(normalizePgRow);
   }
   if (entityKey === "invites") {
-    const rows = await query("SELECT * FROM invites ORDER BY created_at DESC LIMIT 200");
+    const rows = await query("SELECT * FROM invites ORDER BY sent_at DESC NULLS LAST LIMIT 200");
     return rows.map(normalizePgRow);
   }
   if (entityKey === "time-entries") {
