@@ -1,0 +1,9 @@
+{
+  "apiKey": "PASTE_FROM_FIREBASE_CONSOLE",
+  "authDomain": "your-project-id.firebaseapp.com",
+  "projectId": "your-project-id",
+  "storageBucket": "your-project-id.firebasestorage.app",
+  "messagingSenderId": "PASTE_FROM_FIREBASE_CONSOLE",
+  "appId": "1:PASTE:web:PASTE",
+  "measurementId": "G-OPTIONAL"
+}

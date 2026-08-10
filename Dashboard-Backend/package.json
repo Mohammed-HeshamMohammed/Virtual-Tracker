@@ -1,0 +1,45 @@
+{
+  "name": "virtual-tracker-dashboard-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.6"
+  },
+  "scripts": {
+    "start": "node --use-system-ca index.js",
+    "dev": "node scripts/dev-watch.mjs",
+    "deploy:firestore": "npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes",
+    "deploy:storage": "npx -y firebase-tools@latest deploy --only storage",
+    "firebase:login": "npx -y firebase-tools@latest login",
+    "firebase:deploy-hosting": "npx -y firebase-tools@latest deploy --only hosting",
+    "lint:config": "node scripts/lint-env-access.mjs && node scripts/lint-mobile-collections.mjs",
+    "assign-owner": "node --use-system-ca --env-file-if-exists=.env scripts/assign-owner.mjs",
+    "verify-user-email": "node --use-system-ca --env-file-if-exists=.env scripts/verify-user-email.mjs",
+    "archive:screenshots": "node --use-system-ca --env-file-if-exists=.env scripts/archive-screenshots.mjs",
+    "rebuild-members": "node --use-system-ca --env-file-if-exists=.env scripts/rebuild-members-from-firebase-auth.mjs",
+    "test": "node --experimental-test-module-mocks --test test/*.test.js",
+    "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
+    "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
+  },
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "firebase-admin": "^13.8.0",
+    "ioredis": "^5.11.1",
+    "pdfkit": "^0.19.1",
+    "pg": "^8.16.3",
+    "sharp": "^0.35.3",
+    "ws": "^8.21.0",
+    "zod": "^3.25.76"
+  },
+  "overrides": {
+    "protobufjs": ">=8.7.1",
+    "@tootallnate/once": ">=3.0.0",
+    "http-proxy-agent": ">=7.0.0",
+    "teeny-request": ">=9.0.0",
+    "uuid": ">=14.0.0",
+    "google-gax": ">=4.6.0",
+    "brace-expansion": "5.0.8",
+    "sharp": "^0.35.3"
+  }
+}
