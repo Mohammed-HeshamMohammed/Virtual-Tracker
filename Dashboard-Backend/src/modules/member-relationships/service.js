@@ -391,19 +391,26 @@ export async function removeMemberHierarchyRelationships(db, memberId) {
 /**
  * Avatar URLs for tree nodes (batched getAll per uid).
  * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/firestore").QuerySnapshot} membersSnap
+ * @param {import("firebase-admin/firestore").QuerySnapshot | Array<Record<string, unknown>> | { docs?: Array<unknown> }} membersInput
  * @returns {Promise<Map<string, string>>}
  */
-export async function resolveAvatarUrlsForMembers(db, membersSnap) {
+export async function resolveAvatarUrlsForMembers(db, membersInput) {
   /** @type {Map<string, string>} */
   const avatarByMemberId = new Map();
   /** @type {Map<string, string>} */
   const uidByMemberId = new Map();
 
-  for (const doc of membersSnap.docs) {
-    const uid = doc.data()?.firebase_uid;
-    if (typeof uid === "string" && uid.trim()) {
-      uidByMemberId.set(doc.id, uid.trim());
+  const items = Array.isArray(membersInput)
+    ? membersInput
+    : (membersInput && Array.isArray(membersInput.docs) ? membersInput.docs : []);
+
+  for (const item of items) {
+    if (!item) continue;
+    const id = item.id ? String(item.id) : "";
+    const data = typeof item.data === "function" ? item.data() : item;
+    const uid = data?.firebase_uid;
+    if (id && typeof uid === "string" && uid.trim()) {
+      uidByMemberId.set(id, uid.trim());
     }
   }
 

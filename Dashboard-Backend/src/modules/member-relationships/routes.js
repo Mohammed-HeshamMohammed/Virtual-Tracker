@@ -157,7 +157,9 @@ export async function routeMemberRelationships(req, res, url, origin) {
 
   // GET /api/member-relationships/visual-tree (org: Owner/SuperAdmin/Admin; team: managers+)
   if ((pn === "/api/member-relationships/visual-tree" || pn === "/api/v1/member-relationships/visual-tree") && req.method === "GET") {
-    const scope = url.searchParams.get("scope") === "team" ? "team" : "organization";
+    const rawScope = (url.searchParams.get("scope") || "").trim();
+    const isTeamScope = rawScope === "team" || rawScope.startsWith("team:") || rawScope.startsWith("team_");
+    const scope = isTeamScope ? "team" : "organization";
     const authz = scope === "team"
       ? await requireTeamTreeRole(req, res, origin)
       : await requireOrgTreeRole(req, res, origin);
@@ -269,7 +271,7 @@ export async function routeMemberRelationships(req, res, url, origin) {
         edges = filterTeamScopeEdges(branchRootId, edges);
       }
 
-      const avatarByMemberId = await resolveAvatarUrlsForMembers(db, { docs: membersDocs });
+      const avatarByMemberId = await resolveAvatarUrlsForMembers(db, membersRows);
       nodes = nodes.map((node) => {
         const avatarUrl = avatarByMemberId.get(node.id);
         return avatarUrl ? { ...node, avatar_url: avatarUrl } : node;
