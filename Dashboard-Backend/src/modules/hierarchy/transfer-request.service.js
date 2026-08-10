@@ -16,8 +16,8 @@ import {
   sendMemberTransferEmail,
 } from "./transfer-email.js";
 
-import { query as pgQuery } from "../../../lib/postgres/client.js";
-import { getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 const COLLECTION = "member_transfer_requests";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
