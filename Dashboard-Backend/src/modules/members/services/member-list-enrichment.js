@@ -87,26 +87,30 @@ export async function fetchMemberRelationSnaps(db, memberIds) {
     return { teamMembersSnap: { docs: [] }, teamsSnap: { docs: [] }, projectMembersSnap: { docs: [] } };
   }
 
-  const [teamMemberRows, projectMemberRows] = await Promise.all([
-    pgQuery("SELECT id, team_id, member_id, role, is_lead FROM team_members WHERE member_id = ANY($1)", [ids]),
-    pgQuery("SELECT id, project_id, member_id, project_role FROM project_members WHERE member_id = ANY($1)", [ids]),
-  ]);
+  try {
+    const [teamMemberRows, projectMemberRows] = await Promise.all([
+      pgQuery("SELECT id, team_id, member_id, role, is_lead FROM team_members WHERE member_id = ANY($1)", [ids]),
+      pgQuery("SELECT id, project_id, member_id, project_role FROM project_members WHERE member_id = ANY($1)", [ids]),
+    ]);
 
-  const teamIds = [...new Set(teamMemberRows.map((r) => r.team_id).filter(Boolean))];
-  let teamRows = [];
-  if (teamIds.length > 0) {
-    teamRows = await pgQuery("SELECT id, name FROM teams WHERE id = ANY($1)", [teamIds]);
+    const teamIds = [...new Set(teamMemberRows.map((r) => r.team_id).filter(Boolean))];
+    let teamRows = [];
+    if (teamIds.length > 0) {
+      teamRows = await pgQuery("SELECT id, name FROM teams WHERE id = ANY($1)", [teamIds]);
+    }
+
+    const teamMemberDocs = teamMemberRows.map((r) => ({ id: r.id, data: () => r }));
+    const projectMemberDocs = projectMemberRows.map((r) => ({ id: r.id, data: () => r }));
+    const teamDocs = teamRows.map((r) => ({ id: r.id, exists: true, data: () => r }));
+
+    return {
+      teamMembersSnap: { docs: teamMemberDocs },
+      teamsSnap: { docs: teamDocs },
+      projectMembersSnap: { docs: projectMemberDocs },
+    };
+  } catch (err) {
+    return { teamMembersSnap: { docs: [] }, teamsSnap: { docs: [] }, projectMembersSnap: { docs: [] } };
   }
-
-  const teamMemberDocs = teamMemberRows.map((r) => ({ id: r.id, data: () => r }));
-  const projectMemberDocs = projectMemberRows.map((r) => ({ id: r.id, data: () => r }));
-  const teamDocs = teamRows.map((r) => ({ id: r.id, exists: true, data: () => r }));
-
-  return {
-    teamMembersSnap: { docs: teamMemberDocs },
-    teamsSnap: { docs: teamDocs },
-    projectMembersSnap: { docs: projectMemberDocs },
-  };
 }
 
 /**

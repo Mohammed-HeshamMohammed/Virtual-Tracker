@@ -1,6 +1,6 @@
 import { sendJson } from "./response.js";
 
-/** @typedef {{ uid: string, memberId: string, roleName: string, email?: string }} AuthContext */
+/** @typedef {{ uid: string, memberId: string, roleName: string, roleId?: string, hierarchyLevel?: number, isManagement?: boolean, securityStamp?: string, email?: string }} AuthContext */
 
 const AUTH_CONTEXT = Symbol("vtAuthContext");
 
@@ -51,5 +51,9 @@ export function isManagementRole(roleName) {
  * @param {AuthContext | null | undefined} context
  */
 export function requireManagementRole(context) {
-  return Boolean(context && isManagementRole(context.roleName));
+  if (!context) return false;
+  if (context.isManagement === true || (typeof context.hierarchyLevel === "number" && context.hierarchyLevel >= 50)) {
+    return true;
+  }
+  return isManagementRole(context.roleName);
 }

@@ -7,9 +7,13 @@ let memberDataReady;
 export async function isPostgresMemberDataReady() {
   if (!isPostgresConfigured()) return false;
   if (memberDataReady === true) return true;
-  await query("SELECT 1 FROM limits LIMIT 1");
-  memberDataReady = true;
-  return true;
+  try {
+    await query("SELECT 1 FROM limits LIMIT 1");
+    memberDataReady = true;
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** @internal */

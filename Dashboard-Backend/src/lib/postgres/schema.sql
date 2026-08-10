@@ -82,13 +82,15 @@ CREATE TRIGGER trg_timesheets_updated_at
 -- ---------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS roles (
-  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        VARCHAR(60)  NOT NULL UNIQUE,
-  description TEXT,
-  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  created_by  VARCHAR(255),
-  updated_by  VARCHAR(255),
-  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            VARCHAR(60)  NOT NULL UNIQUE,
+  description     TEXT,
+  hierarchy_level INTEGER      NOT NULL DEFAULT 10,
+  is_management   BOOLEAN      NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  created_by      VARCHAR(255),
+  updated_by      VARCHAR(255),
+  updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 -- No separate index on roles.name - the UNIQUE constraint above already backs one.

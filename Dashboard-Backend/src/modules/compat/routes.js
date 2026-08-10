@@ -23,6 +23,7 @@ import {
   getMemberByFirebaseUidPg,
   getMemberByIdPg,
   listMembersPagePg,
+  listMembersEnrichedPg,
   updateMemberPg,
 } from "../../lib/postgres/members-postgres.service.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
@@ -542,134 +543,148 @@ export async function routeCompatibility(req, res, url, db, origin) {
     return true;
   }
   if (membersRoot && req.method === "GET") {
-    const { normalizeLegacyMemberDocumentIds } = await import("../members/services/normalize-member-doc-ids.js");
-    if (!hasNormalizedLegacyDocIds) {
-      try {
-        await normalizeLegacyMemberDocumentIds(db);
-        hasNormalizedLegacyDocIds = true;
-      } catch (e) {
-        logSafeWarn("[members] legacy id normalize:", e);
-      }
-    }
-
-    const fieldsParam = url.searchParams.get("fields");
-    const fieldsToSelect = fieldsParam
-      ? fieldsParam.split(",").map((f) => f.trim()).filter(Boolean)
-      : null;
-
-    const needsRoles = !fieldsToSelect || fieldsToSelect.some(f => ["role", "role_name", "role_id", "roleName", "roleId"].includes(f));
-    const needsTeams = !fieldsToSelect || fieldsToSelect.some(f => ["teams", "team_names", "teamNames"].includes(f));
-    const needsProjects = !fieldsToSelect || fieldsToSelect.some(f => ["projects", "project_ids", "projectIds"].includes(f));
-    const needsPresence = !fieldsToSelect || fieldsToSelect.some(f => ["trackingStatus", "tracking_status", "lastPresenceAt", "last_presence_at", "lastIp", "ip_address", "ipAddress"].includes(f));
-    const needsPhoto = !fieldsToSelect || fieldsToSelect.some(f => ["avatarUrl", "photo_url", "photoURL", "avatar"].includes(f));
-
-    const paginate = url.searchParams.has("limit") || url.searchParams.has("cursor");
-    const pageLimit = paginate
-      ? Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 200)
-      : null;
-    const cursorId = paginate ? decodeMemberPageCursor(url.searchParams.get("cursor") ?? "") : null;
-
-    // Postgres SELECT * instead of Firestore's per-request field projection
-    // (`.select(...)`) - members is no longer schemaless-doc-shaped, and the
-    // downstream enrichment pipeline below already just reads whichever
-    // properties it needs off the row. A few extra columns coming back on
-    // the wire is a minor efficiency cost, not a correctness one; the
-    // projection logic this replaced existed to shrink a Firestore doc read,
-    // which doesn't apply to a single indexed Postgres query the same way.
-
-    const needsPayOrLimits =
-      !fieldsToSelect ||
-      fieldsToSelect.some((f) =>
-        ["payRate", "pay_rate", "payment", "payPeriod", "pay_period", "weeklyLimit", "weekly_limit", "limits"].includes(f),
-      );
-
-    const viewer = getAuthContext(req);
-    if (!viewer) {
-      sendJson(res, origin, 200, { success: true, data: [], members: [] });
-      return true;
-    }
-
-    const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
-    const scopedFetch = visibleIds !== null;
-
-    let memberDocSnaps;
-    if (scopedFetch) {
-      let docs = await fetchMemberDocsByIds(db, visibleIds);
-      docs.sort(
-        (a, b) =>
-          memberSortMs({ date_added: b.data()?.date_added }) -
-          memberSortMs({ date_added: a.data()?.date_added }),
-      );
-      if (paginate) {
-        if (cursorId) {
-          const cursorIdx = docs.findIndex((doc) => doc.id === cursorId);
-          const start = cursorIdx >= 0 ? cursorIdx + 1 : 0;
-          docs = docs.slice(start, start + pageLimit + 1);
-        } else {
-          docs = docs.slice(0, pageLimit + 1);
+    try {
+      const { normalizeLegacyMemberDocumentIds } = await import("../members/services/normalize-member-doc-ids.js");
+      if (!hasNormalizedLegacyDocIds) {
+        try {
+          await normalizeLegacyMemberDocumentIds(db);
+          hasNormalizedLegacyDocIds = true;
+        } catch (e) {
+          logSafeWarn("[members] legacy id normalize:", e);
         }
       }
-      memberDocSnaps = docs;
-    } else {
-      const rows = paginate
-        ? await listMembersPagePg({ limit: pageLimit + 1, cursorId })
-        : await listMembersPagePg({ limit: 500 });
-      memberDocSnaps = rows.map((row) => ({ id: String(row.id), data: () => row }));
-    }
 
-    let members = await mapMembersWithProfilePhotos(db, memberDocSnaps, {
-      needsPresence,
-      needsPhoto,
-    });
-    const memberIds = members.map((member) => member.id);
+      const fieldsParam = url.searchParams.get("fields");
+      const fieldsToSelect = fieldsParam
+        ? fieldsParam.split(",").map((f) => f.trim()).filter(Boolean)
+        : null;
 
-    const [relationSnaps, payDocs, limitDocs] = await Promise.all([
-      needsTeams || needsProjects ? fetchMemberRelationSnaps(db, memberIds) : Promise.resolve(null),
-      needsPayOrLimits ? fetchPayRatesForMembers(db, memberIds) : Promise.resolve(null),
-      needsPayOrLimits ? fetchWeeklyLimitsForMembers(db, memberIds) : Promise.resolve(null),
-    ]);
+      const needsRoles = !fieldsToSelect || fieldsToSelect.some(f => ["role", "role_name", "role_id", "roleName", "roleId"].includes(f));
+      const needsTeams = !fieldsToSelect || fieldsToSelect.some(f => ["teams", "team_names", "teamNames"].includes(f));
+      const needsProjects = !fieldsToSelect || fieldsToSelect.some(f => ["projects", "project_ids", "projectIds"].includes(f));
+      const needsPresence = !fieldsToSelect || fieldsToSelect.some(f => ["trackingStatus", "tracking_status", "lastPresenceAt", "last_presence_at", "lastIp", "ip_address", "ipAddress"].includes(f));
+      const needsPhoto = !fieldsToSelect || fieldsToSelect.some(f => ["avatarUrl", "photo_url", "photoURL", "avatar"].includes(f));
 
-    if (needsRoles) {
-      members = await enrichMembersWithRoleNames(db, members);
-    }
-    if ((needsTeams || needsProjects) && relationSnaps) {
-      members = enrichMembersWithRelationsFromSnaps(
-        members,
-        relationSnaps.teamMembersSnap,
-        relationSnaps.teamsSnap,
-        relationSnaps.projectMembersSnap,
-      );
-    }
-    if (needsPayOrLimits) {
-      members = enrichMembersWithPayAndLimitsFromDocs(members, payDocs ?? [], limitDocs ?? []);
-    }
+      const paginate = url.searchParams.has("limit") || url.searchParams.has("cursor");
+      const pageLimit = paginate
+        ? Math.min(Math.max(Number.parseInt(url.searchParams.get("limit") ?? "50", 10) || 50, 1), 200)
+        : null;
+      const cursorId = paginate ? decodeMemberPageCursor(url.searchParams.get("cursor") ?? "") : null;
 
-    members = applyMemberFieldPolicy(members, viewer);
+      const needsPayOrLimits =
+        !fieldsToSelect ||
+        fieldsToSelect.some((f) =>
+          ["payRate", "pay_rate", "payment", "payPeriod", "pay_period", "weeklyLimit", "weekly_limit", "limits"].includes(f),
+        );
 
-    const roleFilter = parseCsvQueryParam(url.searchParams.get("roles"));
-    const projectFilter = parseCsvQueryParam(url.searchParams.get("project_ids"));
-    if (roleFilter.length > 0 || projectFilter.length > 0) {
-      members = filterMembersByRoleAndProject(members, roleFilter, projectFilter);
-    }
-    
-    if (!paginate) {
-      members.sort((a, b) => memberSortMs(b) - memberSortMs(a));
-      const page = scopedFetch ? members : members.slice(0, 200);
-      sendJson(res, origin, 200, { success: true, data: page, members: page });
+      const viewer = getAuthContext(req);
+      if (!viewer) {
+        sendJson(res, origin, 200, { success: true, data: [], members: [] });
+        return true;
+      }
+
+      if (isPostgresConfigured()) {
+        const enrichedRows = await listMembersEnrichedPg({ viewer, limit: pageLimit ?? 500 });
+        let members = enrichedRows.map((row) => normalizeDoc(row));
+        members = applyMemberFieldPolicy(members, viewer);
+        const roleFilter = parseCsvQueryParam(url.searchParams.get("roles"));
+        const projectFilter = parseCsvQueryParam(url.searchParams.get("project_ids"));
+        if (roleFilter.length > 0 || projectFilter.length > 0) {
+          members = filterMembersByRoleAndProject(members, roleFilter, projectFilter);
+        }
+        sendJson(res, origin, 200, { success: true, data: members, members });
+        return true;
+      }
+
+      const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+      const scopedFetch = visibleIds !== null;
+
+      let memberDocSnaps;
+      if (scopedFetch) {
+        let docs = await fetchMemberDocsByIds(db, visibleIds);
+        docs.sort(
+          (a, b) =>
+            memberSortMs({ date_added: b.data()?.date_added }) -
+            memberSortMs({ date_added: a.data()?.date_added }),
+        );
+        if (paginate) {
+          if (cursorId) {
+            const cursorIdx = docs.findIndex((doc) => doc.id === cursorId);
+            const start = cursorIdx >= 0 ? cursorIdx + 1 : 0;
+            docs = docs.slice(start, start + pageLimit + 1);
+          } else {
+            docs = docs.slice(0, pageLimit + 1);
+          }
+        }
+        memberDocSnaps = docs;
+      } else {
+        const rows = paginate
+          ? await listMembersPagePg({ limit: pageLimit + 1, cursorId })
+          : await listMembersPagePg({ limit: 500 });
+        memberDocSnaps = rows.map((row) => ({ id: String(row.id), data: () => row }));
+      }
+
+      let members = await mapMembersWithProfilePhotos(db, memberDocSnaps, {
+        needsPresence,
+        needsPhoto,
+      });
+      const memberIds = members.map((member) => member.id);
+
+      const [relationSnaps, payDocs, limitDocs] = await Promise.all([
+        needsTeams || needsProjects ? fetchMemberRelationSnaps(db, memberIds) : Promise.resolve(null),
+        needsPayOrLimits ? fetchPayRatesForMembers(db, memberIds) : Promise.resolve(null),
+        needsPayOrLimits ? fetchWeeklyLimitsForMembers(db, memberIds) : Promise.resolve(null),
+      ]);
+
+      if (needsRoles) {
+        members = await enrichMembersWithRoleNames(db, members);
+      }
+      if ((needsTeams || needsProjects) && relationSnaps) {
+        members = enrichMembersWithRelationsFromSnaps(
+          members,
+          relationSnaps.teamMembersSnap,
+          relationSnaps.teamsSnap,
+          relationSnaps.projectMembersSnap,
+        );
+      }
+      if (needsPayOrLimits) {
+        members = enrichMembersWithPayAndLimitsFromDocs(members, payDocs ?? [], limitDocs ?? []);
+      }
+
+      members = applyMemberFieldPolicy(members, viewer);
+
+      const roleFilter = parseCsvQueryParam(url.searchParams.get("roles"));
+      const projectFilter = parseCsvQueryParam(url.searchParams.get("project_ids"));
+      if (roleFilter.length > 0 || projectFilter.length > 0) {
+        members = filterMembersByRoleAndProject(members, roleFilter, projectFilter);
+      }
+      
+      if (!paginate) {
+        members.sort((a, b) => memberSortMs(b) - memberSortMs(a));
+        const page = scopedFetch ? members : members.slice(0, 200);
+        sendJson(res, origin, 200, { success: true, data: page, members: page });
+        return true;
+      }
+
+      const hasMore = members.length > pageLimit;
+      const page = members.slice(0, pageLimit);
+      const nextCursor = hasMore && page.length > 0 ? encodeMemberPageCursor(page[page.length - 1].id) : null;
+      sendJson(res, origin, 200, {
+        success: true,
+        data: page,
+        members: page,
+        nextCursor,
+        hasMore,
+      });
+      return true;
+    } catch (err) {
+      logSafeWarn("[members] list members error:", err);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: err instanceof Error ? err.message : "Failed to fetch members",
+      });
       return true;
     }
-
-    const hasMore = members.length > pageLimit;
-    const page = members.slice(0, pageLimit);
-    const nextCursor = hasMore && page.length > 0 ? encodeMemberPageCursor(page[page.length - 1].id) : null;
-    sendJson(res, origin, 200, {
-      success: true,
-      data: page,
-      members: page,
-      nextCursor,
-      hasMore,
-    });
-    return true;
   }
   if (membersRoot && req.method === "POST") {
     if (!requireManagementRole(getAuthContext(req))) {

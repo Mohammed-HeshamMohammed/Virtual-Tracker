@@ -98,6 +98,30 @@ export async function getMemberByFirebaseUidPg(firebaseUid) {
   return rows[0] ?? null;
 }
 
+/** @param {string} firebaseUid */
+export async function getMemberAuthContextPg(firebaseUid) {
+  if (!firebaseUid) return null;
+  const sql = `
+    SELECT 
+      m.id,
+      m.id AS member_id,
+      m.firebase_uid,
+      m.work_email,
+      m.status,
+      m.security_stamp,
+      m.must_change_password,
+      r.id AS role_id,
+      COALESCE(r.name, 'Viewer') AS role_name,
+      COALESCE(r.hierarchy_level, 10) AS hierarchy_level,
+      COALESCE(r.is_management, false) AS is_management
+    FROM members m
+    LEFT JOIN roles r ON r.id = m.role_id
+    WHERE m.firebase_uid = $1 LIMIT 1
+  `;
+  const rows = await query(sql, [firebaseUid]);
+  return rows[0] ?? null;
+}
+
 /** @param {string[]} ids */
 export async function getMembersByIdsPg(ids) {
   const clean = [...new Set((ids ?? []).map((id) => uuidOrNull(id)).filter(Boolean))];
@@ -115,6 +139,35 @@ export async function listMembersPg(options = {}) {
     ]);
   }
   return query("SELECT * FROM members ORDER BY date_added DESC LIMIT $1", [limit]);
+}
+
+/**
+ * @param {{ viewer: any, limit?: number }} options
+ */
+export async function listMembersEnrichedPg({ viewer, limit = 500 }) {
+  const safeLimit = Math.min(Math.max(limit, 1), 2000);
+  const isMgmt = viewer?.isManagement === true || (typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 50);
+  const isSuper = typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 80;
+
+  if (isSuper) {
+    return query("SELECT * FROM v_members_enriched WHERE status != 'banned' ORDER BY date_added DESC LIMIT $1", [safeLimit]);
+  }
+  if (isMgmt && viewer?.memberId) {
+    return query(
+      `SELECT * FROM v_members_enriched 
+       WHERE (id IN (SELECT member_id FROM fn_get_subordinate_member_ids($1)) OR id = $1)
+         AND status != 'banned'
+       ORDER BY date_added DESC LIMIT $2`,
+      [viewer.memberId, safeLimit]
+    );
+  }
+  return query(
+    `SELECT id, first_name, last_name, display_name, work_email, status, role_name, avatar_url, avatar_color, date_added, role_id, teams, projects
+     FROM v_members_enriched 
+     WHERE status = 'active' 
+     ORDER BY first_name LIMIT $1`,
+    [safeLimit]
+  );
 }
 
 /**
@@ -176,4 +229,28 @@ export async function deleteMemberPg(id, actorId) {
 export async function resolveMemberIdForFirebaseUidPg(firebaseUid) {
   const member = await getMemberByFirebaseUidPg(firebaseUid);
   return member ? String(member.id) : "";
+}
+
+/**
+ * Checks if a member has a permission key via role_permissions in PostgreSQL.
+ * @param {string} memberId
+ * @param {string} permKey
+ * @returns {Promise<boolean>}
+ */
+export async function hasMemberPermissionPg(memberId, permKey) {
+  if (!memberId || !permKey) return false;
+  const rows = await query("SELECT fn_member_has_permission($1, $2) AS allowed", [memberId, permKey]);
+  return rows[0]?.allowed === true;
+}
+
+/**
+ * Invalidates all active sessions for a member by changing their security stamp.
+ * @param {string} memberId
+ * @returns {Promise<string>} new security stamp
+ */
+export async function revokeAllMemberSessionsPg(memberId) {
+  if (!memberId) return "";
+  const newStamp = crypto.randomUUID();
+  await query("UPDATE members SET security_stamp = $1, updated_at = now() WHERE id = $2", [newStamp, memberId]);
+  return newStamp;
 }

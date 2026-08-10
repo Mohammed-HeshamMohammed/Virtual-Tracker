@@ -86,7 +86,7 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
  * @param {import("firebase-admin/firestore").Firestore} db
  */
 export async function loadRoleNameById(db) {
-  await isPostgresLookupReady();
+  if (!(await isPostgresLookupReady())) return new Map();
   const data = await getLookupData();
   return new Map(
     data.roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
@@ -105,7 +105,7 @@ export async function loadRoleNameById(db) {
  * @returns {Promise<string[]>}
  */
 export async function resolveRoleIdsWhere(predicate) {
-  await isPostgresLookupReady();
+  if (!(await isPostgresLookupReady())) return [];
   const { roles } = await getLookupData();
   return roles
     .filter((row) => predicate(typeof row.name === "string" ? row.name.trim() : ""))
@@ -361,11 +361,16 @@ export async function cascadeDeleteMemberRelations(db, memberId) {
 export async function enrichMembersWithRoleNames(db, members) {
   if (!members.length) return members;
   const roleNameById = new Map();
-  await isPostgresLookupReady();
-  const { roles } = await getLookupData();
-  for (const row of roles) {
-    const name = typeof row.name === "string" ? row.name.trim() : "";
-    if (row.id != null) roleNameById.set(String(row.id), name);
+  if (await isPostgresLookupReady()) {
+    try {
+      const { roles } = await getLookupData();
+      for (const row of roles) {
+        const name = typeof row.name === "string" ? row.name.trim() : "";
+        if (row.id != null) roleNameById.set(String(row.id), name);
+      }
+    } catch {
+      // Fall back safely if lookup read fails
+    }
   }
   return members.map((member) => {
     const { name, roleId } = pickCanonicalPrimaryRoleName(member, [], roleNameById);
@@ -465,23 +470,33 @@ export async function enrichTeamMembersWithProfiles(db, rows) {
   const profileByMemberId = new Map();
   const roleByMemberId = new Map();
 
-  await isPostgresLookupReady();
-  const { roles } = await getLookupData();
-  const roleNameById = new Map(
-    roles.map((row) => [String(row.id), typeof row.name === "string" ? row.name.trim() : ""]),
-  );
+  const roleNameById = new Map();
+  if (await isPostgresLookupReady()) {
+    try {
+      const { roles } = await getLookupData();
+      for (const row of roles) {
+        if (row.id != null) roleNameById.set(String(row.id), typeof row.name === "string" ? row.name.trim() : "");
+      }
+    } catch {
+      // Fall back safely if lookup read fails
+    }
+  }
 
   if (memberIds.length > 0) {
-    const memberRows = await getMembersByIdsPg(memberIds);
-    for (const data of memberRows) {
-      if (!data || !data.id) continue;
-      profileByMemberId.set(data.id, memberProfileFromDoc(data));
-      const { name } = pickCanonicalPrimaryRoleName(
-        data,
-        [],
-        roleNameById,
-      );
-      if (name) roleByMemberId.set(data.id, name);
+    try {
+      const memberRows = await getMembersByIdsPg(memberIds);
+      for (const data of memberRows) {
+        if (!data || !data.id) continue;
+        profileByMemberId.set(data.id, memberProfileFromDoc(data));
+        const { name } = pickCanonicalPrimaryRoleName(
+          data,
+          [],
+          roleNameById,
+        );
+        if (name) roleByMemberId.set(data.id, name);
+      }
+    } catch {
+      // Fall back safely if members lookup fails
     }
   }
 
@@ -522,10 +537,14 @@ export async function enrichTeamProjectsWithNames(db, rows) {
   ];
   const nameByProjectId = new Map();
   if (projectIds.length > 0) {
-    const projectRows = await pgQuery("SELECT id, name FROM projects WHERE id = ANY($1::uuid[])", [projectIds]);
-    for (const row of projectRows) {
-      const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : null;
-      if (name) nameByProjectId.set(row.id, name);
+    try {
+      const projectRows = await pgQuery("SELECT id, name FROM projects WHERE id = ANY($1::uuid[])", [projectIds]);
+      for (const row of projectRows) {
+        const name = typeof row.name === "string" && row.name.trim() ? row.name.trim() : null;
+        if (name) nameByProjectId.set(row.id, name);
+      }
+    } catch {
+      // Fall back safely if projects lookup fails
     }
   }
 
