@@ -3,6 +3,7 @@ import { sendJson } from "./response.js";
 import { getVisibleMemberIds, getManageableMemberIds } from "../modules/member-relationships/service.js";
 import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { canActorManageTargetRole } from "./role-manage-policy.js";
+import { isPostgresConfigured, query } from "../lib/postgres/client.js";
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -27,6 +28,15 @@ export async function canAccessMember(db, viewerMemberId, viewerRole, targetMemb
 export async function canManageMember(db, viewerMemberId, viewerRole, targetMemberId) {
   if (!viewerMemberId || !targetMemberId) return false;
   if (viewerMemberId === targetMemberId) return true;
+
+  if (isPostgresConfigured()) {
+    try {
+      const rows = await query("SELECT fn_can_actor_manage_target($1, $2) AS allowed", [viewerMemberId, targetMemberId]);
+      if (typeof rows[0]?.allowed === "boolean") return rows[0].allowed;
+    } catch {
+      // Fall back safely to JS evaluation if function is unavailable
+    }
+  }
 
   const targetRoleName = await resolveMemberRoleName(db, targetMemberId);
   if (!canActorManageTargetRole(viewerRole, targetRoleName)) return false;

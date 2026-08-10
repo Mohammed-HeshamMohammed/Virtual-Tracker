@@ -160,11 +160,16 @@ export async function banMember(db, input) {
   };
   const { id: banId } = await createMemberBanRecord(db, banPayload);
 
-  await updateMemberPg(memberId, {
-    status: "banned",
-    updated_at: now.toISOString(),
-    updated_by: input.bannedByMemberId || null,
-  });
+  const { isPostgresConfigured } = await import("../../../lib/postgres/client.js");
+  if (isPostgresConfigured()) {
+    const { updateMemberPg, revokeAllMemberSessionsPg } = await import("../../../lib/postgres/members-postgres.service.js");
+    await updateMemberPg(memberId, {
+      status: "banned",
+      updated_at: now.toISOString(),
+      updated_by: input.bannedByMemberId || null,
+    });
+    await revokeAllMemberSessionsPg(memberId).catch(() => {});
+  }
 
   if (memberIp) {
     try {

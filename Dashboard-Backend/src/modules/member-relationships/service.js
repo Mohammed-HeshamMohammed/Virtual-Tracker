@@ -456,7 +456,6 @@ export async function getMemberParentId(db, memberId) {
  * @returns {Promise<TreeNode[]>}
  */
 export async function getMemberAncestors(db, memberId) {
-  if (!memberId) return [];
   const cache = await getCachedTreeData(db, memberId);
   if (cache?.ancestors) {
     return cache.ancestors;
@@ -501,7 +500,6 @@ export async function getMemberAncestors(db, memberId) {
  * @returns {Promise<TreeNode[]>}
  */
 export async function getMemberDescendants(db, memberId, maxDepth = 10) {
-  if (!memberId) return [];
   const cache = await getCachedTreeData(db, memberId);
   if (cache?.descendants) {
     return cache.descendants;

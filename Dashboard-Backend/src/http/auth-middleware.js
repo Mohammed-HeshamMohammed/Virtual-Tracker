@@ -7,7 +7,7 @@ import { checkHierarchyAccess } from "../modules/hierarchy/hierarchy-access-guar
 import { readIdToken } from "./auth-token.js";
 import { setAuthContext } from "./auth-context.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
-import { getMemberByFirebaseUidPg, getMemberByIdPg } from "../lib/postgres/members-postgres.service.js";
+import { getMemberByFirebaseUidPg, getMemberByIdPg, getMemberAuthContextPg } from "../lib/postgres/members-postgres.service.js";
 
 /** Unauthenticated API routes (no Bearer token required). */
 const PUBLIC_API_ROUTES = [
@@ -100,7 +100,7 @@ export async function authenticateRequest(req, url, db) {
       }
     }
 
-    const memberData = await getMemberByFirebaseUidPg(decoded.uid);
+    const memberData = await getMemberAuthContextPg(decoded.uid);
     const mustChangePassword = memberData?.must_change_password === true;
 
     if (mustChangePassword && !isMustChangePasswordAllowedRoute(req.method ?? "GET", url.pathname)) {
@@ -135,8 +135,8 @@ export async function authenticateRequest(req, url, db) {
       return { ok: false, status: 404, error: "Member profile not found for this account." };
     }
 
-    const memberId = String(memberData.id);
-    const roleName = await resolveMemberRoleNameCached(db, memberId);
+    const memberId = String(memberData.id || memberData.member_id);
+    const roleName = String(memberData.role_name || "Viewer");
     const gov = await enforcePrivilegedRoleGovernanceForMember(db, memberId, {
       requestIp: getRequestIp(req),
     });
@@ -152,6 +152,10 @@ export async function authenticateRequest(req, url, db) {
       uid: decoded.uid,
       memberId,
       roleName,
+      roleId: typeof memberData.role_id === "string" ? memberData.role_id : "",
+      hierarchyLevel: typeof memberData.hierarchy_level === "number" ? memberData.hierarchy_level : 10,
+      isManagement: Boolean(memberData.is_management),
+      securityStamp: typeof memberData.security_stamp === "string" ? memberData.security_stamp : undefined,
       email: typeof decoded.email === "string" ? decoded.email : undefined,
     };
     setAuthContext(req, context);

@@ -32,10 +32,7 @@ export function getPostgresPool() {
  */
 export function isPostgresConfigured() {
   const url = getEnv().postgres.url;
-  if (!url) {
-    throw new Error("PostgreSQL is not configured. Please define the POSTGRES_URL environment variable.");
-  }
-  return true;
+  return Boolean(url);
 }
 
 /**

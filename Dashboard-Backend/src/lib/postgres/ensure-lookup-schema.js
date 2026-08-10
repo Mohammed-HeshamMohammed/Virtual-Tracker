@@ -14,14 +14,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql`,
   `CREATE TABLE IF NOT EXISTS roles (
-  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  name        VARCHAR(60) NOT NULL UNIQUE,
-  description TEXT,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_by  VARCHAR(255),
-  updated_by  VARCHAR(255),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            VARCHAR(60) NOT NULL UNIQUE,
+  description     TEXT,
+  hierarchy_level INTEGER     NOT NULL DEFAULT 10,
+  is_management   BOOLEAN     NOT NULL DEFAULT false,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by      VARCHAR(255),
+  updated_by      VARCHAR(255),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  "ALTER TABLE roles ADD COLUMN IF NOT EXISTS hierarchy_level INTEGER NOT NULL DEFAULT 10",
+  "ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_management BOOLEAN NOT NULL DEFAULT false",
   "CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name)",
   // ─── Member identity (migrated from Firestore) ──────────────────────────
   // The one collection every other migration deliberately deferred (schema.sql
@@ -89,6 +93,166 @@ BEGIN
     ALTER TABLE members ADD CONSTRAINT fk_members_role FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT;
   END IF;
 END $$`,
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS security_stamp UUID DEFAULT gen_random_uuid()",
+  "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE LOWER(name) IN ('superadmin', 'owner')",
+  "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE LOWER(name) = 'admin'",
+  "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE LOWER(name) IN ('supermanager', 'supermanger', 'manager')",
+  "UPDATE roles SET hierarchy_level = 20,  is_management = false WHERE LOWER(name) IN ('employee', 'user')",
+  "UPDATE roles SET hierarchy_level = 10,  is_management = false WHERE LOWER(name) = 'client'",
+  `CREATE TABLE IF NOT EXISTS role_permissions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_id         UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+  permission_key  VARCHAR(100) NOT NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (role_id, permission_key)
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_role_perms_role ON role_permissions (role_id)",
+  `CREATE OR REPLACE VIEW v_members_enriched AS
+SELECT 
+  m.id,
+  m.firebase_uid,
+  m.first_name,
+  m.last_name,
+  m.display_name,
+  m.work_email,
+  m.personal_email,
+  m.status,
+  m.avatar_url,
+  m.avatar_color,
+  m.date_added,
+  m.role_id,
+  m.security_stamp,
+  COALESCE(r.name, 'Viewer') AS role_name,
+  COALESCE(r.hierarchy_level, 10) AS hierarchy_level,
+  COALESCE(r.is_management, false) AS is_management,
+  COALESCE(p.rate, 0) AS pay_rate,
+  COALESCE(p.pay_period, 'None') AS pay_period,
+  l.weekly AS weekly_limit,
+  l.daily AS daily_limit,
+  
+  COALESCE((
+    SELECT json_agg(json_build_object('id', t.id, 'name', t.name, 'is_lead', tm.is_lead))
+    FROM team_members tm
+    JOIN teams t ON t.id = tm.team_id
+    WHERE tm.member_id = m.id
+  ), '[]'::json) AS teams,
+
+  COALESCE((
+    SELECT json_agg(json_build_object('id', pr.id, 'name', pr.name))
+    FROM project_members pm
+    JOIN projects pr ON pr.id = pm.project_id
+    WHERE pm.member_id = m.id
+  ), '[]'::json) AS projects
+
+FROM members m
+LEFT JOIN roles r ON r.id = m.role_id
+LEFT JOIN pay_rates p ON p.member_id = m.id
+LEFT JOIN limits l ON l.member_id = m.id`,
+  `CREATE OR REPLACE VIEW v_team_rosters AS
+SELECT 
+  tm.id,
+  tm.team_id,
+  tm.member_id,
+  tm.is_lead,
+  tm.joined_at,
+  m.display_name AS member_name,
+  m.avatar_url AS member_avatar,
+  m.work_email AS member_email,
+  m.avatar_color AS member_color,
+  COALESCE(r.name, 'Viewer') AS member_role
+FROM team_members tm
+JOIN members m ON m.id = tm.member_id
+LEFT JOIN roles r ON r.id = m.role_id`,
+  `CREATE OR REPLACE FUNCTION fn_get_subordinate_member_ids(viewer_id UUID)
+RETURNS TABLE (member_id UUID, depth INT) AS $$
+WITH RECURSIVE org_tree AS (
+  SELECT child_member_id AS member_id, 1 AS depth
+  FROM member_relationships
+  WHERE parent_member_id = viewer_id
+
+  UNION ALL
+
+  SELECT mr.child_member_id, ot.depth + 1
+  FROM member_relationships mr
+  INNER JOIN org_tree ot ON mr.parent_member_id = ot.member_id
+)
+SELECT DISTINCT member_id, depth FROM org_tree;
+$$ LANGUAGE sql STABLE`,
+  `CREATE OR REPLACE FUNCTION fn_can_actor_manage_target(actor_id UUID, target_id UUID)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_actor_level INT;
+  v_actor_is_mgmt BOOLEAN;
+  v_target_level INT;
+  v_is_subordinate BOOLEAN;
+BEGIN
+  IF actor_id = target_id THEN RETURN TRUE; END IF;
+
+  SELECT r.hierarchy_level, r.is_management 
+  INTO v_actor_level, v_actor_is_mgmt
+  FROM members m JOIN roles r ON r.id = m.role_id WHERE m.id = actor_id;
+
+  IF COALESCE(v_actor_level, 0) >= 80 THEN RETURN TRUE; END IF;
+  IF NOT COALESCE(v_actor_is_mgmt, false) THEN RETURN FALSE; END IF;
+
+  SELECT r.hierarchy_level INTO v_target_level 
+  FROM members m JOIN roles r ON r.id = m.role_id WHERE m.id = target_id;
+
+  IF COALESCE(v_actor_level, 0) <= COALESCE(v_target_level, 0) THEN RETURN FALSE; END IF;
+
+  SELECT EXISTS (
+    SELECT 1 FROM fn_get_subordinate_member_ids(actor_id) WHERE member_id = target_id
+  ) INTO v_is_subordinate;
+
+  RETURN v_is_subordinate;
+END;
+$$ LANGUAGE plpgsql STABLE`,
+  `CREATE OR REPLACE FUNCTION fn_member_has_permission(p_member_id UUID, p_perm_key VARCHAR)
+RETURNS BOOLEAN AS $$
+DECLARE
+  v_has_perm BOOLEAN;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 
+    FROM members m
+    JOIN role_permissions rp ON rp.role_id = m.role_id
+    WHERE m.id = p_member_id 
+      AND (rp.permission_key = p_perm_key OR rp.permission_key = '*')
+  ) INTO v_has_perm;
+
+  RETURN v_has_perm;
+END;
+$$ LANGUAGE plpgsql STABLE`,
+  `CREATE TABLE IF NOT EXISTS audit_logs (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  table_name   VARCHAR(60) NOT NULL,
+  record_id    UUID NOT NULL,
+  action       VARCHAR(20) NOT NULL,
+  old_data     JSONB,
+  new_data     JSONB,
+  performed_by UUID,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_audit_table_record ON audit_logs (table_name, record_id)",
+  "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at DESC)",
+  `CREATE OR REPLACE FUNCTION fn_audit_log_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data)
+  VALUES (
+    TG_TABLE_NAME,
+    COALESCE(NEW.id, OLD.id),
+    TG_OP,
+    CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) ELSE NULL END,
+    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER`,
+  `DROP TRIGGER IF EXISTS trg_audit_members ON members`,
+  `CREATE TRIGGER trg_audit_members AFTER INSERT OR UPDATE OR DELETE ON members FOR EACH ROW EXECUTE FUNCTION fn_audit_log_trigger()`,
+  `DROP TRIGGER IF EXISTS trg_audit_roles ON roles`,
+  `CREATE TRIGGER trg_audit_roles AFTER INSERT OR UPDATE OR DELETE ON roles FOR EACH ROW EXECUTE FUNCTION fn_audit_log_trigger()`,
   // ─── Teams (migrated from Firestore) ─────────────────────────────────────
   // Column set from src/modules/schema/catalog/teams/index.js. team_projects
   // already moved to Postgres earlier; teams/team_members were left in
@@ -1563,6 +1727,27 @@ export async function ensurePostgresLookupSchema() {
         [capability],
       );
     }
+
+    await client.query(`
+      INSERT INTO role_permissions (role_id, permission_key)
+      SELECT id, '*' FROM roles WHERE LOWER(name) IN ('superadmin', 'owner')
+      ON CONFLICT (role_id, permission_key) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO role_permissions (role_id, permission_key)
+      SELECT id, 'members:*' FROM roles WHERE LOWER(name) = 'admin'
+      ON CONFLICT (role_id, permission_key) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO role_permissions (role_id, permission_key)
+      SELECT id, 'teams:*' FROM roles WHERE LOWER(name) = 'admin'
+      ON CONFLICT (role_id, permission_key) DO NOTHING
+    `);
+    await client.query(`
+      INSERT INTO role_permissions (role_id, permission_key)
+      SELECT id, 'projects:*' FROM roles WHERE LOWER(name) = 'admin'
+      ON CONFLICT (role_id, permission_key) DO NOTHING
+    `);
 
     markPostgresLookupReady();
     markPostgresMemberDataReady();

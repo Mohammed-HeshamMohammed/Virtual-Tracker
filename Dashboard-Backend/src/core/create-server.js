@@ -2,6 +2,7 @@ import { createServer as createNodeServer } from "node:http";
 import { handleRequest } from "../app/handle-request.js";
 import { sanitizePathForLog } from "../http/sanitize-log.js";
 import { quotaErrorHttpResponse } from "../http/quota-error.js";
+import { sendJson } from "../http/response.js";
 import { logRequest, logResponse, logError } from "./logger.js";
 
 export function createServer() {
@@ -14,13 +15,18 @@ export function createServer() {
     } catch (err) {
       logError(err, `${req.method} ${sanitizePathForLog(req.url ?? "/")}`);
       if (!res.headersSent) {
+        const origin = req.headers.origin;
         const quota = quotaErrorHttpResponse(err);
         if (quota) {
-          res.writeHead(quota.status, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(quota.body));
+          sendJson(res, origin, quota.status, quota.body, req);
         } else {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ success: false, error: "Internal server error" }));
+          sendJson(
+            res,
+            origin,
+            500,
+            { success: false, error: err instanceof Error ? err.message : "Internal server error" },
+            req,
+          );
         }
       }
     } finally {

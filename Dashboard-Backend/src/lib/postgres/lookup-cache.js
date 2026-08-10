@@ -19,18 +19,23 @@ export async function getLookupData() {
     return cache.data;
   }
 
-  const [roles, lookups, orgOptions] = await Promise.all([
-    query("SELECT id, name, description, created_at, created_by, updated_by, updated_at FROM roles ORDER BY name"),
-    query("SELECT category, id, name, list_ranking, created_at, created_by, updated_by, updated_at FROM lookup_tables ORDER BY category, list_ranking, name"),
-    query("SELECT type, id, label, position, created_at, updated_at, modified_by FROM org_field_options ORDER BY type, position"),
-  ]);
+  try {
+    const [roles, lookups, orgOptions] = await Promise.all([
+      query("SELECT id, name, description, created_at, created_by, updated_by, updated_at FROM roles ORDER BY name"),
+      query("SELECT category, id, name, list_ranking, created_at, created_by, updated_by, updated_at FROM lookup_tables ORDER BY category, list_ranking, name"),
+      query("SELECT type, id, label, position, created_at, updated_at, modified_by FROM org_field_options ORDER BY type, position"),
+    ]);
 
-  cache = {
-    data: { roles, lookups, orgOptions },
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  };
+    cache = {
+      data: { roles, lookups, orgOptions },
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    };
 
-  return cache.data;
+    return cache.data;
+  } catch (err) {
+    if (cache.data) return cache.data;
+    return { roles: [], lookups: [], orgOptions: [] };
+  }
 }
 
 /** Call after admin writes to roles, lookups, or org field options. */
