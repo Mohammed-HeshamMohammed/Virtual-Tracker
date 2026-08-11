@@ -49,6 +49,7 @@ import {
   PROJECT_MEMBER_LIMITS_COMING_SOON_MESSAGE,
   PROJECT_MEMBER_LIMITS_ENABLED,
 } from "@/features/projects/config/project-management-config"
+import { usePermissions } from "@/features/auth/hooks/use-permissions"
 
 const MODAL_BODY_CLASS = cn("min-h-0 flex-1 px-5 py-5", FORM_SCROLL_HIDDEN)
 
@@ -105,34 +106,43 @@ interface AddProjectFormState {
 
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
 export const MEMBERS_TEAMS_TAB_KEY = "members-teams"
+export const LIMITS_TAB_KEY = "limits"
+export const MANAGEMENT_TAB_KEY = "management"
 
 const DEFAULT_ADD_PROJECT_TABS: ProjectFormTab[] = [
   { key: "general", label: "GENERAL" },
   { key: MEMBERS_TEAMS_TAB_KEY, label: "MEMBERS & TEAMS" },
-  { key: "budget", label: "BUDGET & LIMITS" },
+  { key: "budget", label: "BUDGET" },
+  { key: LIMITS_TAB_KEY, label: "LIMITS" },
 ]
 
 function normalizeProjectModalTabs(tabs: ProjectFormTab[]): ProjectFormTab[] {
   const hasMembers = tabs.some((tab) => tab.key === "members")
   const hasTeams = tabs.some((tab) => tab.key === "teams")
-  if (!hasMembers && !hasTeams) return tabs
 
   const normalized: ProjectFormTab[] = []
   let merged = false
   for (const tab of tabs) {
     if (tab.key === "members" || tab.key === "teams") {
-      if (!merged) {
-        normalized.push({ key: MEMBERS_TEAMS_TAB_KEY, label: "MEMBERS & TEAMS" })
-        merged = true
+      if (hasMembers || hasTeams) {
+        if (!merged) {
+          normalized.push({ key: MEMBERS_TEAMS_TAB_KEY, label: "MEMBERS & TEAMS" })
+          merged = true
+        }
+        continue
       }
-      continue
     }
     normalized.push(tab)
+    // Legacy single "budget" tab (label "BUDGET & LIMITS") -> two tabs.
+    // Only formConfig.tabs from an un-updated backend would still carry this;
+    // DEFAULT_ADD_PROJECT_TABS above already ships split.
+    if (tab.key === "budget" && !tabs.some((t) => t.key === LIMITS_TAB_KEY)) {
+      normalized.push({ key: LIMITS_TAB_KEY, label: "LIMITS" })
+    }
   }
   return normalized
 }
 type AddProjectTab = string
-type BudgetLimitsTab = "project-budget" | "member-limits"
 
 function createDefaultAddForm(): AddProjectFormState {
   return {
@@ -378,7 +388,8 @@ export function ProjectModal({
   const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
     isEditMode ? "form" : "type",
   )
-  const [budgetLimitsTab, setBudgetLimitsTab] = useComponentState<BudgetLimitsTab>("project-budget")
+  const { isAdminOrOwner, isSuperManager } = usePermissions()
+  const canManageProjectTracking = isAdminOrOwner || isSuperManager
 
   const [formConfig, setFormConfig] = useComponentState<ProjectFormConfig | null>(null)
   const [formConfigLoading, setFormConfigLoading] = useComponentState(false)
@@ -402,10 +413,11 @@ export function ProjectModal({
 
   const modalContentLoading = isEditMode && editFormLoading
   const formConfigPending = formConfigLoading && !formConfig && !formConfigError
-  const addProjectTabs = useMemo(
-    () => normalizeProjectModalTabs(formConfig?.tabs ?? DEFAULT_ADD_PROJECT_TABS),
-    [formConfig?.tabs],
-  )
+  const addProjectTabs = useMemo(() => {
+    const base = normalizeProjectModalTabs(formConfig?.tabs ?? DEFAULT_ADD_PROJECT_TABS)
+    if (!canManageProjectTracking) return base
+    return [...base, { key: MANAGEMENT_TAB_KEY, label: "MANAGEMENT" }]
+  }, [formConfig?.tabs, canManageProjectTracking])
 
   const teamPickerOptions = useMemo((): Team[] => {
     const map = new Map<string, Team>()
@@ -808,10 +820,10 @@ export function ProjectModal({
   ])
 
   useEffect(() => {
-    if (!PROJECT_MEMBER_LIMITS_ENABLED && budgetLimitsTab === "member-limits") {
-      setBudgetLimitsTab("project-budget")
+    if (!PROJECT_MEMBER_LIMITS_ENABLED && addProjectTab === LIMITS_TAB_KEY) {
+      setAddProjectTab("budget")
     }
-  }, [budgetLimitsTab])
+  }, [addProjectTab])
 
   useEffect(() => {
     if (allTeamMembers.length === 0) return
@@ -847,7 +859,6 @@ export function ProjectModal({
       // looking at.
       if (addProjectTab !== "budget") {
         setAddProjectTab("budget")
-        setBudgetLimitsTab("project-budget")
       }
     }
     const validationError = namesError ?? budgetError
@@ -990,7 +1001,6 @@ export function ProjectModal({
             <ProjectModalSkeleton
               isDark={formTheme.isDark}
               activeTab={addProjectTab}
-              budgetSubTab={budgetLimitsTab}
             />
           ) : (
             <>
@@ -1067,16 +1077,6 @@ export function ProjectModal({
                   label={
                     <>
                       Disable activity
-                      <Info className={cn("h-3.5 w-3.5", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
-                    </>
-                  }
-                />
-                <SettingToggleRow
-                  checked={addForm.allowProjectTracking}
-                  onChange={(next) => setAddForm((p) => ({ ...p, allowProjectTracking: next }))}
-                  label={
-                    <>
-                      Allow project tracking
                       <Info className={cn("h-3.5 w-3.5", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
                     </>
                   }
@@ -1207,46 +1207,6 @@ export function ProjectModal({
               ) : null}
 
               {addProjectTab === "budget" ? (
-            <div className={FORM_STACK}>
-              <div
-                className={cn(
-                  "flex w-full max-w-md rounded-full p-0.5 text-sm font-medium",
-                  formTheme.isDark ? "bg-[#191f31]" : "bg-slate-100",
-                )}
-              >
-                {(["project-budget", "member-limits"] as const).map((key) => {
-                  const isMemberLimits = key === "member-limits"
-                  const disabled = isMemberLimits && !PROJECT_MEMBER_LIMITS_ENABLED
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => {
-                        if (!disabled) setBudgetLimitsTab(key)
-                      }}
-                      className={cn(
-                        "flex flex-1 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-center transition-colors",
-                        disabled && "cursor-not-allowed opacity-60",
-                        !disabled && budgetLimitsTab === key
-                          ? formTheme.isDark
-                            ? "bg-[#2e3447] text-[#dce1fb] shadow-sm"
-                            : "bg-white text-slate-800 shadow-sm"
-                          : formTheme.mutedText,
-                      )}
-                    >
-                      <span>{key === "project-budget" ? "Project budget" : "Member limits"}</span>
-                      {disabled ? (
-                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                          Coming soon
-                        </span>
-                      ) : null}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {budgetLimitsTab === "project-budget" ? (
                 <div className={FORM_STACK}>
                   {budgetFromClientsCount > 0 ? (
                     <p className={cn("text-xs leading-relaxed", formTheme.mutedText)}>
@@ -1562,7 +1522,10 @@ export function ProjectModal({
                     />
                   </BudgetSection>
                 </div>
-              ) : PROJECT_MEMBER_LIMITS_ENABLED ? (
+              ) : null}
+
+              {addProjectTab === LIMITS_TAB_KEY ? (
+                PROJECT_MEMBER_LIMITS_ENABLED ? (
                 <div className={FORM_STACK}>
                   <p className={formTheme.mutedText}>
                     Member limits aim to stop time tracking at the set amount. While uncommon,
@@ -1672,14 +1635,30 @@ export function ProjectModal({
                     + Add member limit
                   </button>
                 </div>
-              ) : (
-                <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
-                  <p className={cn("text-sm leading-relaxed", formTheme.mutedText)}>
-                    {PROJECT_MEMBER_LIMITS_COMING_SOON_MESSAGE}
-                  </p>
+                ) : (
+                  <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
+                    <p className={cn("text-sm leading-relaxed", formTheme.mutedText)}>
+                      {PROJECT_MEMBER_LIMITS_COMING_SOON_MESSAGE}
+                    </p>
+                  </div>
+                )
+              ) : null}
+
+              {addProjectTab === MANAGEMENT_TAB_KEY && canManageProjectTracking ? (
+                <div className={FORM_STACK}>
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <SettingToggleRow
+                      checked={addForm.allowProjectTracking}
+                      onChange={(next) => setAddForm((p) => ({ ...p, allowProjectTracking: next }))}
+                      label={
+                        <>
+                          Allow managers to record time on this project
+                          <Info className={cn("h-3.5 w-3.5", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
+                        </>
+                      }
+                    />
+                  </div>
                 </div>
-              )}
-            </div>
               ) : null}
             </>
           )}
