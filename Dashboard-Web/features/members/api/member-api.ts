@@ -502,7 +502,7 @@ export type MemberProfilePayload = {
     disableTrackingSpecificDays?: boolean
     useShiftsForLimits?: boolean
     workDays?: number[]
-    makeupDays?: { missedDate: string; makeupDate: string }[]
+    makeupDays?: number[]
   }
   settings?: {
     ableToTrack?: boolean

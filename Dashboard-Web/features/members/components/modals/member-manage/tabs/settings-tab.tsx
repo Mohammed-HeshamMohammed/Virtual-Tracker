@@ -177,15 +177,21 @@ export function SettingsTab({
       <section id="member-time-tracking-settings" className="flex-1 space-y-4">
         <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Time tracking</h3>
 
-        <DisabledSetting
-          label="Able to track time"
-          hint="This setting is not yet available."
-        >
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Able to track time</span>
+          </div>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            When off, this member cannot start or resume a timer.
+          </p>
           <div className="flex items-center gap-3">
-            <Toggle checked={state.ableToTrack} onChange={() => {}} disabled />
+            <Toggle
+              checked={state.ableToTrack}
+              onChange={() => setState((s) => ({ ...s, ableToTrack: !s.ableToTrack }))}
+            />
             <span className="text-sm text-slate-600 dark:text-slate-400">Able to track time</span>
           </div>
-        </DisabledSetting>
+        </div>
 
         <DisabledSetting label="Keep idle time" hint="This setting is not yet available.">
           <div className="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 p-0.5">
