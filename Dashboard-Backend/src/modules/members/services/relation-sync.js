@@ -15,7 +15,7 @@ import { deactivationGovernanceForRole } from "../../../http/role-hierarchy.js";
 import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { addProjectMemberPg, listProjectIdsForMemberPg, removeProjectMemberPg } from "../../../lib/postgres/projects-postgres.service.js";
-import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { query as pgQuery, isPostgresConfigured } from "../../../lib/postgres/client.js";
 import { getMemberByIdPg, getMembersByIdsPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
 const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Employee L2", "Employee L1", "Employee L0", "Client", "Viewer"];
