@@ -117,8 +117,8 @@ function buildPayloadForAction(action: MemberEntryAction, formState: MemberFormS
       workLimits: {
         weeklyLimit: formState.weeklyLimit,
         dailyLimit: formState.dailyLimit,
-        disableTrackingSpecificDays: formState.disableTrackingSpecificDays,
         workDays: formState.workDays,
+        makeupDays: formState.makeupDays,
         ...(formState.useShiftsForLimits ? { useShiftsForLimits: true } : {}),
       },
     }

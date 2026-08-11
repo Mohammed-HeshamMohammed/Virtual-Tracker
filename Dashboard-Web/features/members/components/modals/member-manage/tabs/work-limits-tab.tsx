@@ -108,7 +108,6 @@ function LimitInput({
 }
 
 export function WorkLimitsTab({ state, setState }: TabProps) {
-  const disableTracking = state.disableTrackingSpecificDays
   const selectedDays = state.workDays
   const weeklyActive = isActiveHourLimit(state.weeklyLimit)
   const dailyActive = isActiveHourLimit(state.dailyLimit)
@@ -180,7 +179,7 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
         title="Working days"
         description="Select the days this member is expected to work. Double-click a day to flag it red as a recurring makeup day."
       >
-        <div className={cn(disableTracking && "pointer-events-none opacity-40")}>
+        <div>
           <div className="flex flex-wrap gap-2">
             {WEEKDAYS.map((day) => {
               const selected = selectedDays.includes(day.index)
@@ -278,21 +277,6 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
           {WORK_LIMITS_EXCLUSION_HINT}
         </div>
       ) : null}
-
-      <SectionCard title="Tracking restrictions">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">Disable time tracking on specific days</span>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">When enabled, tracking can be blocked on selected days.</p>
-          </div>
-          <Toggle
-            checked={disableTracking}
-            onChange={() =>
-              setState((s) => ({ ...s, disableTrackingSpecificDays: !s.disableTrackingSpecificDays }))
-            }
-          />
-        </div>
-      </SectionCard>
     </div>
   )
 }

@@ -477,7 +477,7 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   async function handleBatchModalConfirm(payload: {
     action: BatchEditAction
     payBill?: { payRate?: string; payPeriod?: string }
-    workLimits?: { weeklyLimit?: string; dailyLimit?: string }
+    workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) {
     if (payload.action === "removeFromTree") {
       const count = selectedMembers.size

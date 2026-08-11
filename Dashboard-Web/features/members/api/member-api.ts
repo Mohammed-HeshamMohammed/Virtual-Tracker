@@ -420,7 +420,7 @@ export async function deleteMember(id: string): Promise<void> {
 
 export type BatchMemberUpdatePayload = {
   payBill?: { payRate?: string; payPeriod?: string }
-  workLimits?: { weeklyLimit?: string; dailyLimit?: string }
+  workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
 }
 
 export async function batchRemoveMembersFromTree(ids: string[]): Promise<{ removed: number }> {
