@@ -7,13 +7,14 @@ import { PAY_PERIODS } from "@/features/members/config/members-config"
 import { SimpleSelect } from "@/shared/ui/simple-select";
 import type { Member } from "@/features/members/models/member"
 import { isOwnerRoleName } from "@/features/auth"
+import { WorkLimitsTab } from "@/features/members/components/modals/member-manage/tabs/work-limits-tab"
+import { initialFormState, type MemberFormState } from "@/features/members/components/modals/member-manage/types"
 
 export type BatchEditAction =
   | "payRate"
   | "billRate"
   | "payPeriod"
-  | "weeklyLimit"
-  | "dailyLimit"
+  | "workTimeLimits"
   | "removeFromTree"
   | "remove"
 
@@ -36,15 +37,10 @@ const ACTION_META: Record<
     description: "Set the pay period for all selected members.",
     submitLabel: "Apply pay period",
   },
-  weeklyLimit: {
-    title: "Manage weekly limit",
-    description: "Set the weekly hour limit for all selected members.",
-    submitLabel: "Apply weekly limit",
-  },
-  dailyLimit: {
-    title: "Manage daily limit",
-    description: "Set the daily hour limit for all selected members.",
-    submitLabel: "Apply daily limit",
+  workTimeLimits: {
+    title: "Work time & limits",
+    description: "Apply working days, makeup days, and hour limits to all selected members.",
+    submitLabel: "Apply work time & limits",
   },
   removeFromTree: {
     title: "Remove from tree",
@@ -80,10 +76,11 @@ export function BatchEditModal({
     action: BatchEditAction
     value?: string
     payBill?: { payRate?: string; payPeriod?: string }
-    workLimits?: { weeklyLimit?: string; dailyLimit?: string }
+    workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) => Promise<void>
 }) {
   const [value, setValue] = useState("")
+  const [workLimitsState, setWorkLimitsState] = useState<MemberFormState>(initialFormState)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -102,6 +99,7 @@ export function BatchEditModal({
   useEffect(() => {
     if (!open) return
     setValue("")
+    setWorkLimitsState(initialFormState)
     setError(null)
     setBusy(false)
   }, [open, action])
@@ -119,7 +117,13 @@ export function BatchEditModal({
       setError("No eligible members selected for this action.")
       return
     }
-    if (action !== "removeFromTree" && action !== "remove" && action !== "payPeriod" && !value.trim()) {
+    if (
+      action !== "removeFromTree" &&
+      action !== "remove" &&
+      action !== "payPeriod" &&
+      action !== "workTimeLimits" &&
+      !value.trim()
+    ) {
       setError("Enter a value to apply.")
       return
     }
@@ -134,10 +138,16 @@ export function BatchEditModal({
         await onConfirm({ action, payBill: { payRate: value.trim() } })
       } else if (action === "payPeriod") {
         await onConfirm({ action, payBill: { payPeriod: value || "None" } })
-      } else if (action === "weeklyLimit") {
-        await onConfirm({ action, workLimits: { weeklyLimit: value.trim() } })
-      } else if (action === "dailyLimit") {
-        await onConfirm({ action, workLimits: { dailyLimit: value.trim() } })
+      } else if (action === "workTimeLimits") {
+        await onConfirm({
+          action,
+          workLimits: {
+            weeklyLimit: workLimitsState.weeklyLimit,
+            dailyLimit: workLimitsState.dailyLimit,
+            workDays: workLimitsState.workDays,
+            makeupDays: workLimitsState.makeupDays,
+          },
+        })
       }
       onClose()
     } catch (err) {
@@ -156,7 +166,8 @@ export function BatchEditModal({
       <form
         onSubmit={(e) => void handleSubmit(e)}
         className={cn(
-          "w-full max-w-md rounded-xl border p-6 shadow-xl",
+          "w-full rounded-xl border p-6 shadow-xl max-h-[90vh] overflow-y-auto",
+          action === "workTimeLimits" ? "max-w-2xl" : "max-w-md",
           isDark ? "border-[#3d4a3d]/40 bg-[#151b2d] text-[#dce1fb]" : "border-slate-200 bg-white text-slate-900",
         )}
         onClick={(e) => e.stopPropagation()}
@@ -210,23 +221,27 @@ export function BatchEditModal({
               portalToBody
             />
           </div>
+        ) : action === "workTimeLimits" ? (
+          <div className="mb-4">
+            <WorkLimitsTab
+              member={selectedMembers[0] as Member}
+              state={workLimitsState}
+              setState={setWorkLimitsState}
+            />
+          </div>
         ) : (
           <div className="mb-4">
             <label
               htmlFor="batch-edit-value"
               className={cn("mb-1 block text-xs font-semibold uppercase tracking-wide", isDark ? "text-[#bccbb9]" : "text-slate-500")}
             >
-              {action === "payRate" || action === "billRate"
-                ? "Hourly rate (USD)"
-                : action === "weeklyLimit"
-                  ? "Weekly limit (hours)"
-                  : "Daily limit (hours)"}
+              Hourly rate (USD)
             </label>
             <input
               id="batch-edit-value"
               type="number"
               min={0}
-              step={action === "payRate" || action === "billRate" ? 0.01 : 0.25}
+              step={0.01}
               value={value}
               onChange={(e) => setValue(e.target.value)}
               className={cn(

@@ -145,6 +145,10 @@ export type MemberLimits = {
   allowedRemainingSeconds: number | null;
   limitReached: boolean;
   assignedToday: AssignedToday;
+  /** Work Time & Limits > "Working days" - false blocks starting/resuming. */
+  workingToday: boolean;
+  /** True when today is only worked because of a flagged makeup day. */
+  isMakeupDay: boolean;
 };
 
 // The viewer's own People-page member record - richer than what's in the

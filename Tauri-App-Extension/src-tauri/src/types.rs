@@ -250,6 +250,19 @@ pub struct MemberLimits {
     /// am I still allowed to work" vs "how much work do I have").
     #[serde(default)]
     pub assigned_today: AssignedToday,
+    /// Work Time & Limits > "Working days" - false blocks starting/resuming
+    /// a timer server-side (People > member > Work Time & Limits). Defaults
+    /// true so older backends without this field never falsely block.
+    #[serde(default = "default_true")]
+    pub working_today: bool,
+    /// True when today is only worked because it's a double-clicked
+    /// "makeup day" flag, not a regular selected working day.
+    #[serde(default)]
+    pub is_makeup_day: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

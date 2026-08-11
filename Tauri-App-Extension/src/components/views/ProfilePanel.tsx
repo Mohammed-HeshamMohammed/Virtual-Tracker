@@ -97,6 +97,15 @@ export function ProfilePanel({
 
         <section className="settings-card">
           <h3 className="settings-section-label">Your work-hour limits</h3>
+          {memberLimits?.isMakeupDay ? (
+            <p className="settings-message settings-message-highlight">
+              Today is a scheduled makeup day — tracking is allowed.
+            </p>
+          ) : memberLimits && !memberLimits.workingToday ? (
+            <p className="settings-message settings-message-warning">
+              Today is not a scheduled working day — tracking is disabled.
+            </p>
+          ) : null}
           {memberLimits?.usesShifts ? (
             <p className="settings-message">Your hours are scheduled by shifts instead of a daily/weekly cap.</p>
           ) : memberLimits ? (

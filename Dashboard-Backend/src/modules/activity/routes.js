@@ -63,6 +63,31 @@ import {
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
+
+/** Monday=0..Sunday=6, matching time_settings.work_days/makeup_days storage. */
+function todayWeekdayIndex() {
+  return (new Date().getDay() + 6) % 7;
+}
+
+/**
+ * Working days gate (People > member > Work Time & Limits): a member can
+ * only start/resume tracking on a selected work_days weekday, or a
+ * double-clicked makeup_days weekday. Shift-scheduled members skip this -
+ * their availability comes from shifts, not this weekday toggle.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} memberId
+ */
+async function getMemberTodayWorkStatus(db, memberId) {
+  if (await memberUsesShiftsForLimits(db, memberId)) {
+    return { workingToday: true, isMakeupDay: false };
+  }
+  const timeSettings = await getSingleByMemberId(db, "time_settings", memberId);
+  const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
+  const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
+  const today = todayWeekdayIndex();
+  const isMakeupDay = makeupDays.includes(today);
+  return { workingToday: isMakeupDay || workDays.includes(today), isMakeupDay };
+}
 import {
   createPgSession,
   fetchPgAppLogs,
@@ -302,12 +327,13 @@ export async function routeActivity(req, res, url, origin) {
       // timerAllowance is the same computation the calling-project start path
       // gates on below, so what the agent displays as "remaining today" and
       // what actually blocks the start button can never disagree.
-      const [dailyHours, weeklyHours, usesShifts, timerAllowance, assignedDemand] = await Promise.all([
+      const [dailyHours, weeklyHours, usesShifts, timerAllowance, assignedDemand, todayWorkStatus] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
         memberUsesShiftsForLimits(db, member.memberId),
         computeMemberTimerAllowance(db, member.memberId),
         computeAssignedTodayDemand(member.memberId),
+        getMemberTodayWorkStatus(db, member.memberId),
       ]);
       // Shift-based members have no daily/weekly cap (loadMemberCapContext
       // zeroes it out), so nothing caps their assigned demand either -
@@ -316,7 +342,15 @@ export async function routeActivity(req, res, url, origin) {
       const assignedToday = applyCapToAssignedTodayDemand(assignedDemand, capLeftToday);
       sendJson(res, origin, 200, {
         success: true,
-        data: { dailyHours, weeklyHours, usesShifts, timerAllowance, assignedToday },
+        data: {
+          dailyHours,
+          weeklyHours,
+          usesShifts,
+          timerAllowance,
+          assignedToday,
+          workingToday: todayWorkStatus.workingToday,
+          isMakeupDay: todayWorkStatus.isMakeupDay,
+        },
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
@@ -397,6 +431,22 @@ export async function routeActivity(req, res, url, origin) {
             error: "Time tracking is disabled for this member.",
           });
           return true;
+        }
+
+        // People > member > Work Time & Limits > "Working days" - same gate,
+        // reusing the timeSettings row already fetched above. Skipped for
+        // shift-scheduled members (their availability comes from shifts).
+        if (!(await memberUsesShiftsForLimits(db, member.memberId))) {
+          const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
+          const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
+          const today = todayWeekdayIndex();
+          if (!workDays.includes(today) && !makeupDays.includes(today)) {
+            sendJson(res, origin, 403, {
+              success: false,
+              error: "Today is not a scheduled working day for this member.",
+            });
+            return true;
+          }
         }
 
         if (effectiveTaskId) {

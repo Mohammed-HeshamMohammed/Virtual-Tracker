@@ -236,6 +236,16 @@ body {
   color: var(--primary);
 }
 
+.settings-message-highlight {
+  color: #d97706;
+  font-weight: 600;
+}
+
+.settings-message-warning {
+  color: #dc2626;
+  font-weight: 600;
+}
+
 /* Explanatory line under a toggle - muted, so it reads as description rather
    than as the save-status message above. */
 .settings-hint {

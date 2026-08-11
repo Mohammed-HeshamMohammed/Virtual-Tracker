@@ -327,6 +327,8 @@ impl ApiClient {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
             assigned_today: parse_assigned_today(data.get("assignedToday")),
+            working_today: data.get("workingToday").and_then(|v| v.as_bool()).unwrap_or(true),
+            is_makeup_day: data.get("isMakeupDay").and_then(|v| v.as_bool()).unwrap_or(false),
         })
     }
 
