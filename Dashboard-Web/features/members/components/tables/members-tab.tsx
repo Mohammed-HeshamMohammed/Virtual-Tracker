@@ -4,6 +4,7 @@
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
 import { ChevronUp, ChevronDown } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
+import { formatDateAdded } from "@/features/members/utils/member-utils"
 import { ALL_MEMBER_COLS } from "@/features/members/config/members-config"
 import type { Member, MemberPatchBody, MemberEntryAction } from "@/features/members/models/member"
 import { isOwnerRoleName } from "@/features/auth"
@@ -435,7 +436,7 @@ export function MembersTab({
                         if (key === "projects") return <td key="projects" className={peopleTableCellClass(cn("truncate px-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{member.projects}</td>
                         if (key === "payment") return <td key="payment" className={peopleTableCellClass(cn("truncate px-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{getDisplayPayment(member.payment)}</td>
                         if (key === "limits") return <td key="limits" className={peopleTableCellClass(cn("truncate px-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{member.limits}</td>
-                        if (key === "date_added") return <td key="date_added" className={peopleTableCellClass(cn("px-4 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{member.dateAdded}</td>
+                        if (key === "date_added") return <td key="date_added" className={peopleTableCellClass(cn("px-4 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{formatDateAdded(member.dateAdded)}</td>
                         if (key === "teams") return <td key="teams" className={peopleTableCellClass(cn("px-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{member.teams ?? 0}</td>
                         if (key === "phone") return <td key="phone" className={peopleTableCellClass(cn("px-4 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600"), rowH)}>{member.phone?.trim() || "—"}</td>
                         return null

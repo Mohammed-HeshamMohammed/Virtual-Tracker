@@ -1,5 +1,13 @@
 import type { Member, MemberEntryAction, MemberManageTab } from "@/features/members/models/member"
 
+/** Formats a member's raw ISO date_added (or any ISO date string) for display; "—" when missing/invalid. */
+export function formatDateAdded(value: string | undefined): string {
+  if (!value) return "—"
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+}
+
 /** True when the signed-in user is viewing their own member record. */
 export function isSameMember(
   member: Member,
