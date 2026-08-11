@@ -150,10 +150,10 @@ export async function processDueTeamWeeklyReports(db) {
 
     processed += 1;
     try {
-      const result = await sendTeamWeeklyReport(db, doc.id, data);
+      const result = await sendTeamWeeklyReport(db, data.id, data);
       if (result.sent > 0) sentTeams += 1;
     } catch (err) {
-      logSafeWarn(`[team-weekly-report] failed for team ${doc.id}:`, err);
+      logSafeWarn(`[team-weekly-report] failed for team ${data.id}:`, err);
     }
   }
 

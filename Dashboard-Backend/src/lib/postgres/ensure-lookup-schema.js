@@ -532,15 +532,19 @@ const MEMBER_DATA_DDL = [
   work_days                       JSONB        NOT NULL DEFAULT '[0, 1, 2, 3, 4]'::jsonb,
   disable_tracking_specific_days  BOOLEAN      NOT NULL DEFAULT false,
   use_shifts_for_limits           BOOLEAN      NOT NULL DEFAULT false,
+  makeup_days                     JSONB        NOT NULL DEFAULT '[]'::jsonb,
   updated_by                      VARCHAR(255),
   updated_at                      TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
+  // Work & Limits tab "Makeup days" redesign: was a date-pair calendar
+  // (member_makeup_days below, now unused); replaced with a recurring
+  // weekday flag (double-click a Working days button) stored alongside
+  // work_days on the same row - same [0-6] indexing, no join needed.
+  "ALTER TABLE time_settings ADD COLUMN IF NOT EXISTS makeup_days JSONB NOT NULL DEFAULT '[]'::jsonb",
   "CREATE INDEX IF NOT EXISTS idx_time_settings_member ON time_settings (member_id)",
-  // Work & Limits tab "makeup days" calendar: a manager marks a future date
-  // the member is expected to miss (missed_date) and a date they'll work
-  // instead (makeup_date). Stored/displayed only, same level as work_days/
-  // disable_tracking_specific_days above - not wired into timer/limit
-  // enforcement (neither is that pair, today).
+  // Superseded by time_settings.makeup_days (weekday flag) above - kept
+  // (not dropped) only because it may hold historical data; no code path
+  // reads or writes it anymore.
   `CREATE TABLE IF NOT EXISTS member_makeup_days (
   id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id     UUID         NOT NULL,

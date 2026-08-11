@@ -286,6 +286,10 @@ export function MemberManageModal({
     const cacheFresh = isMemberProfileSectionFresh(member.id, tab)
     const cached = peekMemberProfileCache(member.id)
 
+    setSaveError((prev) =>
+      prev === "Could not load this tab from the server. Try switching tabs or reopen this dialog." ? null : prev,
+    )
+
     if (cacheFresh && cached?.loadedSections.includes(tab)) {
       setLoadedTabs((prev) => new Set([...prev, tab]))
       setFormState((prev) =>

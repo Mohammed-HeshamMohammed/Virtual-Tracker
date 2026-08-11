@@ -2,8 +2,9 @@
 
 import { getPayRatesBatchPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
 
-export { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-store.js";
+export { fetchWeeklyLimitsForMembers };
 
 const MEMBER_ID_IN_CHUNK = 30;
 

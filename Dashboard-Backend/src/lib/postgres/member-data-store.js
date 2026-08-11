@@ -107,7 +107,7 @@ export async function deleteLimitsDoc(_db, memberId) {
  * (see updateWorkLimitsConditionalPg for why it needs its own path).
  * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} memberId
- * @param {{ weekly: number, daily: number, workDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
+ * @param {{ weekly: number, daily: number, workDays: number[], makeupDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
  * @param {string} actor
  * @param {{ limits?: string, timeSettings?: string }} [expected]
  */

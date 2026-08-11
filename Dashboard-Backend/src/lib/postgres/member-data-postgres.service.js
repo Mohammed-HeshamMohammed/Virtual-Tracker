@@ -148,13 +148,13 @@ export async function deleteLimitsDocPg(memberId) {
  * one DB transaction: a stale token on either table rolls back both writes,
  * so the tab never ends up half-saved.
  *
- * Only touches the three time_settings columns workLimits owns - unlike
+ * Only touches the four time_settings columns workLimits owns - unlike
  * upsertMemberScopedRowPg's full-row overwrite, this never resets the
  * settings tab's able_to_track_time/keep_idle_time/idle_timeout/modify_time/
  * require_approval columns to their defaults.
  *
  * @param {string} memberId
- * @param {{ weekly: number, daily: number, workDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
+ * @param {{ weekly: number, daily: number, workDays: number[], makeupDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
  * @param {string} actor
  * @param {{ limits?: string, timeSettings?: string }} [expected] ISO updated_at
  *   tokens; a missing side is unconditional (first-time create, or no prior
@@ -164,6 +164,7 @@ export async function deleteLimitsDocPg(memberId) {
 export async function updateWorkLimitsConditionalPg(memberId, payload, actor, expected = {}) {
   const actorId = actorIdOrNull(actor) ?? "system";
   const workDaysJson = JSON.stringify(Array.isArray(payload.workDays) ? payload.workDays : [0, 1, 2, 3, 4]);
+  const makeupDaysJson = JSON.stringify(Array.isArray(payload.makeupDays) ? payload.makeupDays : []);
   const disableTrackingSpecificDays = payload.disableTrackingSpecificDays === true;
   const useShiftsForLimits = payload.useShiftsForLimits === true;
   const weekly = Number(payload.weekly) || 0;
@@ -200,9 +201,17 @@ export async function updateWorkLimitsConditionalPg(memberId, payload, actor, ex
           `INSERT INTO time_settings (
             id, member_id, able_to_track_time, keep_idle_time, idle_timeout, modify_time,
             require_approval, work_days, disable_tracking_specific_days, use_shifts_for_limits,
-            updated_by, updated_at
-          ) VALUES ($1, $2, true, 'never', '5 min', 'off', false, $3::jsonb, $4, $5, $6, now())`,
-          [crypto.randomUUID(), memberId, workDaysJson, disableTrackingSpecificDays, useShiftsForLimits, actorId],
+            makeup_days, updated_by, updated_at
+          ) VALUES ($1, $2, true, 'never', '5 min', 'off', false, $3::jsonb, $4, $5, $6::jsonb, $7, now())`,
+          [
+            crypto.randomUUID(),
+            memberId,
+            workDaysJson,
+            disableTrackingSpecificDays,
+            useShiftsForLimits,
+            makeupDaysJson,
+            actorId,
+          ],
         );
       } else {
         if (
@@ -216,9 +225,9 @@ export async function updateWorkLimitsConditionalPg(memberId, payload, actor, ex
         await client.query(
           `UPDATE time_settings
            SET work_days = $2::jsonb, disable_tracking_specific_days = $3, use_shifts_for_limits = $4,
-               updated_by = $5, updated_at = now()
+               makeup_days = $5::jsonb, updated_by = $6, updated_at = now()
            WHERE member_id = $1`,
-          [memberId, workDaysJson, disableTrackingSpecificDays, useShiftsForLimits, actorId],
+          [memberId, workDaysJson, disableTrackingSpecificDays, useShiftsForLimits, makeupDaysJson, actorId],
         );
       }
 
@@ -287,6 +296,7 @@ const TIME_SETTINGS_UPDATABLE_COLUMNS = [
   "work_days",
   "disable_tracking_specific_days",
   "use_shifts_for_limits",
+  "makeup_days",
 ];
 const PAY_RATES_UPDATABLE_COLUMNS = [
   "type",
@@ -352,6 +362,8 @@ function timeSettingsColumnValue(column, payload) {
       return payload.require_approval === true;
     case "work_days":
       return JSON.stringify(Array.isArray(payload.work_days) ? payload.work_days : [0, 1, 2, 3, 4]);
+    case "makeup_days":
+      return JSON.stringify(Array.isArray(payload.makeup_days) ? payload.makeup_days : []);
     case "disable_tracking_specific_days":
       return payload.disable_tracking_specific_days === true;
     case "use_shifts_for_limits":
@@ -388,7 +400,7 @@ async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload,
   const params = [memberId];
   const setClauses = columns.map((column) => {
     params.push(valueFor(column, payload));
-    const cast = column === "work_days" ? "::jsonb" : "";
+    const cast = column === "work_days" || column === "makeup_days" ? "::jsonb" : "";
     return `${column} = $${params.length}${cast}`;
   });
   params.push(actor);
@@ -492,12 +504,13 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
 
   if (collection === "time_settings") {
     const workDays = Array.isArray(payload.work_days) ? payload.work_days : [0, 1, 2, 3, 4];
+    const makeupDays = Array.isArray(payload.makeup_days) ? payload.makeup_days : [];
     await query(
       `INSERT INTO time_settings (
         id, member_id, able_to_track_time, keep_idle_time, idle_timeout, modify_time,
         require_approval, work_days, disable_tracking_specific_days, use_shifts_for_limits,
-        updated_by, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, now())
+        makeup_days, updated_by, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11::jsonb, $12, now())
       ON CONFLICT (member_id) DO UPDATE SET
         able_to_track_time = EXCLUDED.able_to_track_time,
         keep_idle_time = EXCLUDED.keep_idle_time,
@@ -507,6 +520,7 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
         work_days = EXCLUDED.work_days,
         disable_tracking_specific_days = EXCLUDED.disable_tracking_specific_days,
         use_shifts_for_limits = EXCLUDED.use_shifts_for_limits,
+        makeup_days = EXCLUDED.makeup_days,
         updated_by = EXCLUDED.updated_by,
         updated_at = now()`,
       [
@@ -520,6 +534,7 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
         JSON.stringify(workDays),
         payload.disable_tracking_specific_days === true,
         payload.use_shifts_for_limits === true,
+        JSON.stringify(makeupDays),
         actor,
       ],
     );
