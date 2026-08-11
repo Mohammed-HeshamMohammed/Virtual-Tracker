@@ -22,6 +22,10 @@ import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js"
 import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import {
+  listMakeupDaysForMemberPg,
+  syncMemberMakeupDaysPg,
+} from "../../../lib/postgres/member-makeup-days-postgres.service.js";
+import {
   deleteLimitsDoc,
   deleteMemberScopedRows,
   getMemberLimitsDoc,
@@ -150,6 +154,16 @@ function toIsoTimestamp(value) {
   if (typeof value === "string") return value;
   if (typeof value.toDate === "function") return value.toDate().toISOString();
   if (value instanceof Date) return value.toISOString();
+  return "";
+}
+
+/** Postgres DATE columns come back as Date objects (midnight local) via the
+ * pg driver - slice to "YYYY-MM-DD" so a timezone-shift can't roll the
+ * displayed date to the day before/after what was actually stored. */
+function toIsoDate(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
   return "";
 }
 
@@ -314,10 +328,17 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
       }),
     );
   }
+  /** @type {{ id: string, missed_date: string, makeup_date: string }[]} */
+  let makeupDaysRows = [];
   if (want("workLimits")) {
     pending.push(
       getMemberLimitsDoc(db, memberId).then((limitsData) => {
         limitsRow = limitsData || {};
+      }),
+    );
+    pending.push(
+      listMakeupDaysForMemberPg(memberId).then((rows) => {
+        makeupDaysRows = rows || [];
       }),
     );
   }
@@ -380,6 +401,10 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.workDays = Array.isArray(timeSettings.work_days)
       ? timeSettings.work_days.filter((d) => Number.isInteger(d))
       : [0, 1, 2, 3, 4];
+    form.makeupDays = makeupDaysRows.map((row) => ({
+      missedDate: toIsoDate(row.missed_date),
+      makeupDate: toIsoDate(row.makeup_date),
+    }));
     // §6.9 follow-up - one composite token covering both backing tables;
     // see updateWorkLimitsConditionalPg for why a single timestamp can't.
     form.workLimitsUpdatedAt = buildWorkLimitsToken(
@@ -720,6 +745,10 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
     const dailyValue = parseLimitValue(workLimits.dailyLimit);
     await upsertLimitField(db, memberId, "weekly", weeklyValue, actor);
     await upsertLimitField(db, memberId, "daily", dailyValue, actor);
+  }
+
+  if (hasWorkLimits) {
+    await syncMemberMakeupDaysPg(memberId, workLimits.makeupDays, actor);
   }
 
   if (hasInfo || hasEmployment || hasRoles || hasPayBill || hasWorkLimits || hasSettings) {

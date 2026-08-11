@@ -536,6 +536,21 @@ const MEMBER_DATA_DDL = [
   updated_at                      TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_time_settings_member ON time_settings (member_id)",
+  // Work & Limits tab "makeup days" calendar: a manager marks a future date
+  // the member is expected to miss (missed_date) and a date they'll work
+  // instead (makeup_date). Stored/displayed only, same level as work_days/
+  // disable_tracking_specific_days above - not wired into timer/limit
+  // enforcement (neither is that pair, today).
+  `CREATE TABLE IF NOT EXISTS member_makeup_days (
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID         NOT NULL,
+  missed_date   DATE         NOT NULL,
+  makeup_date   DATE         NOT NULL,
+  created_by    UUID,
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  UNIQUE (member_id, missed_date, makeup_date)
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_member_makeup_days_member ON member_makeup_days (member_id)",
   `CREATE TABLE IF NOT EXISTS employment (
   id                   UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id            UUID          NOT NULL UNIQUE,
