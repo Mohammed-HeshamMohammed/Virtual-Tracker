@@ -4,7 +4,6 @@ import { extractRoleFromRecord } from "@/features/auth"
 import { apiPath } from "@/infrastructure/api/path"
 import type { Member, Invite, MemberRole, MemberStatus, InviteListKind, MigratableAuthUser, MigrateResultRow } from "@/features/members/models/member"
 import { extractApiError, apiFetch, fetchJsonWithRetry, readJsonSafe, type RequestOptions } from "@/infrastructure/api/http"
-import { throwIfQuotaExceeded, isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
 import { MANAGE_MODAL_TABS } from "@/features/members/config/members-config"
 import type { MemberManageTab } from "@/features/members/models/member"
 import { writeMemberProfileCache, peekMemberProfileCache } from "@/features/members/services/member-profile-cache"
@@ -44,7 +43,7 @@ function asRecordArray(value: unknown): Array<Record<string, unknown>> {
 }
 
 function asString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback
+  return String(value ?? fallback)
 }
 
 function asNumber(value: unknown, fallback = 0): number {
@@ -214,16 +213,12 @@ export async function fetchCurrentMember(): Promise<Member | null> {
   try {
     const res = await apiFetch(apiPath("/api/members/current"), { cache: "no-store" })
     const json = await readJsonSafe<ApiEnvelope<Member>>(res)
-    if (!res.ok) {
-      throwIfQuotaExceeded(res.status, json?.error, json?.code)
-      return null
-    }
+    if (!res.ok) return null
     if (!json?.success) return null
     const payload = pickPayload(json)
     if (!payload || typeof payload !== "object") return null
     return normalizeMember(payload as unknown as Record<string, unknown>)
-  } catch (err) {
-    if (isFirestoreQuotaExceededError(err)) throw err
+  } catch {
     return null
   }
 }
@@ -308,7 +303,6 @@ export async function getMembersPage(
     throw error
   }
   if (!res.ok) {
-    throwIfQuotaExceeded(res.status, json?.error, json?.code)
     if (res.status === 0 || res.status >= 500) {
       throw new Error(
         json?.error ||

@@ -9,7 +9,7 @@ export type TaskPriority = "low" | "medium" | "high" | "urgent"
 
 // Helper functions
 function asString(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback
+  return String(value ?? fallback)
 }
 
 function asNumber(value: unknown, fallback = 0): number {

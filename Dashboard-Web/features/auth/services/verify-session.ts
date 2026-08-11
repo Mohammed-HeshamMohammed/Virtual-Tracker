@@ -2,7 +2,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
 import { parseAuthSessionErrorCode, type AuthSessionErrorCode } from "@/features/auth/services/auth-session-errors"
 import { handleSuspiciousAuthFailure, isSuspiciousAuthError } from "@/features/auth/services/browser-state-hygiene"
-import { throwIfQuotaExceeded } from "@/features/auth/services/firestore-quota"
 import { ServiceUnavailableError } from "@/features/auth/services/service-unavailable"
 import type { User } from "firebase/auth"
 
@@ -179,7 +178,6 @@ async function verifyIdTokenWithBackendOnce(user: User): Promise<VerifyIdTokenRe
     if (isSuspiciousAuthError(err)) {
       await handleSuspiciousAuthFailure()
     }
-    throwIfQuotaExceeded(verifyRes.status, err, code)
     if (verifyRes.status === 503 || code === "SERVICE_UNAVAILABLE") {
       throw new ServiceUnavailableError(err || "Service temporarily unavailable", code ?? "SERVICE_UNAVAILABLE")
     }
@@ -209,7 +207,6 @@ async function verifyIdTokenWithBackendOnce(user: User): Promise<VerifyIdTokenRe
     if (isSuspiciousAuthError(err)) {
       await handleSuspiciousAuthFailure()
     }
-    throwIfQuotaExceeded(bootstrapRes.status, err, code)
     if (bootstrapRes.status === 503 || code === "SERVICE_UNAVAILABLE") {
       throw new ServiceUnavailableError(err || "Service temporarily unavailable", code ?? "SERVICE_UNAVAILABLE")
     }

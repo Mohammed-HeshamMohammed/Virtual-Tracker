@@ -144,7 +144,7 @@ export function RequestAccessCard({ isDark, isActive, onBackToLogin }: RequestAc
             Share your details so we can follow up about Virtual Tracker.
             <br />
             <span className={cn("text-xs sm:text-sm", u.bodySub)}>
-              Submitted to your workspace API when the Backend and Firestore are configured.
+              Submitted to your workspace once it's set up and reachable.
             </span>
           </p>
         </AuthStaggerItem>
