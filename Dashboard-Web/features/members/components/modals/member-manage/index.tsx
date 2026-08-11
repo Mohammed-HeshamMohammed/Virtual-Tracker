@@ -87,6 +87,7 @@ function buildProfilePayload(
       dailyLimit: formState.dailyLimit,
       disableTrackingSpecificDays: formState.disableTrackingSpecificDays,
       workDays: formState.workDays,
+      makeupDays: formState.makeupDays,
       ...(formState.useShiftsForLimits ? { useShiftsForLimits: true } : {}),
     }
   }

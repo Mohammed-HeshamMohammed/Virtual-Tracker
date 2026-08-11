@@ -76,6 +76,10 @@ export interface MemberFormState {
   useShiftsForLimits: boolean
   workDays: number[]
   dailyLimit: string
+  /** Work & Limits calendar: dates the member is expected to miss, each
+   * paired with the date they'll work instead. Stored/displayed only, not
+   * enforced against timer/limit checks (same as workDays today). */
+  makeupDays: { missedDate: string; makeupDate: string }[]
   /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
    * See MemberProfileForm in member-api.ts for what each is checked
    * against. */
@@ -92,6 +96,9 @@ export function normalizeMemberFormState(state: MemberFormState): MemberFormStat
   const workDays = Array.isArray(state.workDays)
     ? state.workDays.filter((d): d is number => Number.isInteger(d))
     : [0, 1, 2, 3, 4]
+  const makeupDays = Array.isArray(state.makeupDays)
+    ? state.makeupDays.filter((p) => p && typeof p.missedDate === "string" && typeof p.makeupDate === "string")
+    : []
 
   return {
     ...state,
@@ -101,6 +108,7 @@ export function normalizeMemberFormState(state: MemberFormState): MemberFormStat
     weeklyLimit: state.weeklyLimit ?? "",
     dailyLimit: state.dailyLimit ?? "",
     workDays: workDays.length > 0 ? workDays : [0, 1, 2, 3, 4],
+    makeupDays,
   }
 }
 
@@ -146,4 +154,5 @@ export const initialFormState: MemberFormState = {
   useShiftsForLimits: false,
   workDays: [0, 1, 2, 3, 4],
   dailyLimit: "",
+  makeupDays: [],
 }
