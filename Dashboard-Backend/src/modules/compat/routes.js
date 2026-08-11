@@ -63,6 +63,7 @@ import {
   timeRoleChangeStep,
 } from "../members/services/member-role-change.service.js";
 import { ensureMemberLinkedRecordsForUserRecord } from "../members/services/ensure-member-linked-records.js";
+import { generateMemberEmployeeId } from "../members/services/generate-employee-id.service.js";
 import {
   enrichMembersWithPayAndLimitsFromDocs,
   enrichMembersWithPayAndLimits,

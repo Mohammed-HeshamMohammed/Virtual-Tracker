@@ -82,6 +82,12 @@ function MainApp() {
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
   const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
   const [liveWorkedTodaySeconds, setLiveWorkedTodaySeconds] = useState(0);
+  // Main clock view: "day" is the current session's elapsed time (resets
+  // with each new session/day); "task" is the task's cumulative total across
+  // every day it's been worked, so a shift crossing midnight still reads as
+  // one continuous duration instead of resetting at 12am.
+  const [timerViewMode, setTimerViewMode] = useState<"day" | "task">("day");
+  const [liveTaskActiveSeconds, setLiveTaskActiveSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState(false);
@@ -413,6 +419,25 @@ function MainApp() {
     const timer = window.setInterval(() => setLiveActiveSeconds((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
   }, [tracking]);
+
+  // Same reconcile-then-tick pattern, applied to the task's cumulative total
+  // (taskTracking.activeSeconds already spans every day the task's been
+  // worked - see fetch_task_time_tracking - so no backend change needed).
+  useEffect(() => {
+    const next = taskTracking?.activeSeconds ?? 0;
+    setLiveTaskActiveSeconds((s) => (tracking ? Math.max(s, next) : next));
+  }, [taskTracking?.activeSeconds, tracking]);
+
+  useEffect(() => {
+    if (!tracking) return;
+    const timer = window.setInterval(() => setLiveTaskActiveSeconds((s) => s + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [tracking]);
+
+  // Calling projects have no task-level total to switch to.
+  useEffect(() => {
+    if (isCallingProject) setTimerViewMode("day");
+  }, [isCallingProject]);
 
   // Same reconcile-then-tick pattern as liveActiveSeconds above, applied to
   // "Today, all work" - it previously only ever showed the raw 5s-polled
@@ -1255,8 +1280,30 @@ function MainApp() {
             {signedIn && (selectedTaskId || (isCallingProject && selectedProjectId)) ? (
               <>
                 <div className="page-clock page-content-swap">
-                  <span className="page-clock-value">{fmtClock(liveActiveSeconds)}</span>
-                  <span className="page-clock-label">{tracking ? "Elapsed · Tracking" : "Paused"}</span>
+                  <span className="page-clock-value">
+                    {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
+                  </span>
+                  <span className="page-clock-label">
+                    {tracking ? "Elapsed · Tracking" : "Paused"}
+                    {timerViewMode === "task" ? " · whole task" : ""}
+                  </span>
+                  {!isCallingProject && taskTracking ? (
+                    <button
+                      type="button"
+                      className="page-refresh-btn"
+                      title={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
+                      aria-label={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
+                      style={{ marginLeft: "auto", alignSelf: "center" }}
+                      onClick={() => setTimerViewMode((m) => (m === "task" ? "day" : "task"))}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="currentColor"
+                          d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Zm-9 4a9 9 0 1 1 9 9 9 9 0 0 1-9-9Zm9-7a7 7 0 1 0 0 14 7 7 0 0 0 0-14Z"
+                        />
+                      </svg>
+                    </button>
+                  ) : null}
                 </div>
 
                 {/* Your own hours - the only cap a calling project has, and the

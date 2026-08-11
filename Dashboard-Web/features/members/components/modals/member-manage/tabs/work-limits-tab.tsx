@@ -1,7 +1,8 @@
 "use client"
 
-import type { ReactNode } from "react"
+import { useMemo, useState, type ComponentProps, type ReactNode } from "react"
 import { CalendarClock } from "lucide-react"
+import { DayButton } from "react-day-picker"
 import { cn } from "@/shared/utils/utils"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import {
@@ -11,7 +12,23 @@ import {
   WORK_LIMITS_EXCLUSION_HINT,
 } from "@/shared/validation/work-limits"
 import { Toggle } from "@/shared/ui/toggle";
+import { Calendar, CalendarDayButton } from "@/shared/ui/calendar"
 import type { TabProps } from "@/features/members/components/modals/member-manage/types"
+
+/** Local calendar date key (not UTC - toISOString() would shift dates near
+ * midnight in negative-offset timezones). */
+function toDateKey(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
+function formatDisplayDate(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00`)
+  if (Number.isNaN(d.getTime())) return isoDate
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+}
 
 const WEEKDAYS: { label: string; short: string; index: number }[] = [
   { label: "Monday", short: "Mo", index: 0 },
@@ -125,6 +142,54 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
         : [...selectedDays, index],
     }))
 
+  const makeupDays = state.makeupDays
+  const [pendingMissedKey, setPendingMissedKey] = useState<string | null>(null)
+  const missedDateKeys = useMemo(() => new Set(makeupDays.map((p) => p.missedDate)), [makeupDays])
+  const makeupDateKeys = useMemo(() => new Set(makeupDays.map((p) => p.makeupDate)), [makeupDays])
+
+  const handleDayClick = (date: Date) => {
+    const key = toDateKey(date)
+    if (missedDateKeys.has(key) || makeupDateKeys.has(key)) return
+    setPendingMissedKey((prev) => (prev === key ? null : key))
+  }
+
+  const handleDayDoubleClick = (date: Date) => {
+    const key = toDateKey(date)
+    if (!pendingMissedKey || pendingMissedKey === key) return
+    setState((s) => ({
+      ...s,
+      makeupDays: [...s.makeupDays, { missedDate: pendingMissedKey, makeupDate: key }],
+    }))
+    setPendingMissedKey(null)
+  }
+
+  const removeMakeupPair = (index: number) =>
+    setState((s) => ({ ...s, makeupDays: s.makeupDays.filter((_, i) => i !== index) }))
+
+  function MakeupDayButton(props: ComponentProps<typeof DayButton>) {
+    const key = toDateKey(props.day.date)
+    const isMakeup = makeupDateKeys.has(key)
+    const isMissed = missedDateKeys.has(key) || pendingMissedKey === key
+    return (
+      <CalendarDayButton
+        {...props}
+        onClick={(e) => {
+          props.onClick?.(e)
+          handleDayClick(props.day.date)
+        }}
+        onDoubleClick={() => handleDayDoubleClick(props.day.date)}
+        className={cn(
+          props.className,
+          isMakeup &&
+            "bg-red-500 text-white hover:bg-red-500 hover:text-white dark:bg-red-600 dark:hover:bg-red-600",
+          isMissed &&
+            !isMakeup &&
+            "bg-amber-400 text-white hover:bg-amber-400 hover:text-white dark:bg-amber-500 dark:hover:bg-amber-500",
+        )}
+      />
+    )
+  }
+
   return (
     <div className="space-y-5">
       <SectionCard
@@ -202,6 +267,49 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
               <span className="text-slate-400 dark:text-slate-500">No working days selected</span>
             )}
           </p>
+        </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Makeup days"
+        description="Click a date this member is expected to miss, then double-click another date to pick the day they'll work instead."
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+          <Calendar components={{ DayButton: MakeupDayButton }} />
+          <div className="min-w-0 flex-1 space-y-2">
+            {makeupDays.length === 0 ? (
+              <p className="text-sm text-slate-400 dark:text-slate-500">No makeup days set.</p>
+            ) : (
+              makeupDays.map((pair, i) => (
+                <div
+                  key={`${pair.missedDate}-${pair.makeupDate}`}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-sm"
+                >
+                  <span>
+                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                      {formatDisplayDate(pair.missedDate)}
+                    </span>
+                    {" → "}
+                    <span className="font-semibold text-red-600 dark:text-red-400">
+                      {formatDisplayDate(pair.makeupDate)}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeMakeupPair(i)}
+                    className="text-xs font-medium text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))
+            )}
+            {pendingMissedKey ? (
+              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                {formatDisplayDate(pendingMissedKey)} marked as missed — double-click the makeup day.
+              </p>
+            ) : null}
+          </div>
         </div>
       </SectionCard>
 
