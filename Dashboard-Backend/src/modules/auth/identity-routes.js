@@ -22,7 +22,7 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
 import { quotaErrorHttpResponse } from "../../http/quota-error.js";
-import { probeFirestoreReadiness } from "./readiness.js";
+import { probeBackendReadiness } from "./readiness.js";
 import {
   resolveAuthContinueUrl,
   sendEmailVerificationEmail,

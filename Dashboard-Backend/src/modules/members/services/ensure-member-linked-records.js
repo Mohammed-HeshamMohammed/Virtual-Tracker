@@ -1,7 +1,6 @@
 import { ensureEntityDiagramForAuthUser, ensureOrganizationEntities } from "../../../bootstrap/entity-bootstrap.js";
 import { getMemberByFirebaseUidPg, getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { reconcileMemberNamesFromProfile } from "../../auth/profile-settings.js";
-import { dedupeMembersForFirebaseUid } from "./member-dedupe.js";
 import { ensureMemberRowForUserRecord } from "./ensure-member-from-auth.js";
 import { getMemberPresence } from "./member-presence.service.js";
 import { alignMemberRoleTables } from "./relation-sync.js";
@@ -28,7 +27,7 @@ async function hasBootstrapMarker(db, memberId) {
  * Wire up org seeds + member profile rows after login. One Firebase uid → one members row.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {import("firebase-admin/auth").UserRecord} userRecord
- * @returns {Promise<{memberId: string | null, created: string[], skipped?: string, deduped?: string[]}>}
+ * @returns {Promise<{memberId: string | null, created: string[], skipped?: string}>}
  */
 export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   const uid = userRecord.uid;
@@ -44,12 +43,12 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
     }
   }
 
-  const dedupeFirst = await dedupeMembersForFirebaseUid(db, uid);
-
   const ensuredMember = await ensureMemberRowForUserRecord(db, userRecord);
-  const dedupeAfter = await dedupeMembersForFirebaseUid(db, uid);
 
-  let memberId = dedupeAfter.canonicalId ?? dedupeFirst.canonicalId ?? ensuredMember.memberId;
+  // idx_members_firebase_uid is a real DB-level unique constraint now, so a
+  // duplicate member row per firebase_uid can't exist to dedupe against -
+  // ensuredMember.memberId is always the canonical one.
+  let memberId = ensuredMember.memberId;
   let memberData = null;
 
   if (memberId) {
@@ -62,7 +61,6 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
       memberId: null,
       created: [],
       skipped: ensuredMember.skipped || "member_not_found",
-      deduped: [...dedupeFirst.removed, ...dedupeAfter.removed],
     };
   }
 
@@ -74,12 +72,11 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   });
 
   const created = [...org.created, ...member.created];
-  const removed = [...new Set([...dedupeFirst.removed, ...dedupeAfter.removed])];
 
   if (!needsBootstrapMarker && created.length === 0) {
     await alignMemberRoleTables(db, memberId, userRecord.uid || "auth-bootstrap");
     await reconcileMemberNamesSafe(db, uid, memberId);
-    return { memberId, created, skipped: "already_bootstrapped", deduped: removed };
+    return { memberId, created, skipped: "already_bootstrapped" };
   }
 
   await alignMemberRoleTables(db, memberId, userRecord.uid || "auth-bootstrap");
@@ -91,5 +88,5 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
     });
   }
 
-  return { memberId, created, deduped: removed };
+  return { memberId, created };
 }

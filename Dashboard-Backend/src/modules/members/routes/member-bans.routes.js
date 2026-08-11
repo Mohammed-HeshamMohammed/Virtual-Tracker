@@ -10,6 +10,7 @@ import {
   listActiveMemberBans,
   revokeMemberBan,
 } from "../services/member-ban-service.js";
+import { getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -67,8 +68,7 @@ export async function routeMemberBans(req, res, url, origin) {
         sendJson(res, origin, 503, { success: false, error: "Database is not configured." });
         return true;
       }
-      const viewerSnap = await db.collection("members").doc(viewer.memberId).get();
-      const viewerData = viewerSnap.exists ? viewerSnap.data() || {} : {};
+      const viewerData = (await getMemberByIdPg(viewer.memberId)) || {};
       const viewerFirst = typeof viewerData.first_name === "string" ? viewerData.first_name.trim() : "";
       const viewerLast = typeof viewerData.last_name === "string" ? viewerData.last_name.trim() : "";
       const bannedByName =

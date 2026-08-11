@@ -7,6 +7,8 @@ import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
+import { listTeamsPg, listAllTeamMembersPg } from "../../lib/postgres/teams-postgres.service.js";
 
 const LIST_LIMIT = 200;
 
@@ -45,16 +47,6 @@ async function fetchDocsByIds(db, collection, docIds) {
     snaps.push(...(await db.getAll(...batch)));
   }
   return snaps.filter((snap) => snap.exists).map((snap) => normalizeDoc({ id: snap.id, ...snap.data() }));
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {number} limit
- */
-async function fetchCollectionList(db, collection, limit = LIST_LIMIT) {
-  const snap = await db.collection(collection).limit(limit).get();
-  return snap.docs.map((doc) => normalizeDoc({ id: doc.id, ...doc.data() }));
 }
 
 /**
@@ -100,8 +92,8 @@ export async function getBootstrapWarmPayload(db, viewer) {
     fetchPgCollectionList("project_members"),
     fetchPgCollectionList("team_projects"),
     fetchPgCollectionList("project_member_limits"),
-    fetchCollectionList(db, "teams"),
-    fetchCollectionList(db, "team_members"),
+    listTeamsPg().then((rows) => rows.map((row) => normalizeDoc(row))),
+    listAllTeamMembersPg().then((rows) => rows.map((row) => normalizeDoc(row))),
     fetchPgCollectionList("tasks"),
   ]);
 
@@ -138,8 +130,8 @@ export async function getBootstrapWarmPayload(db, viewer) {
 
   let members = [];
   if (visibleIds === null) {
-    const snap = await db.collection("members").orderBy("date_added", "desc").limit(LIST_LIMIT).get();
-    members = snap.docs.map((doc) => normalizeDoc({ id: doc.id, ...doc.data() }));
+    const rows = await listMembersPg({ limit: LIST_LIMIT });
+    members = rows.map((row) => normalizeDoc(row));
     members = await enrichMembersWithRoleNames(db, members);
   } else if (visibleIds.length > 0) {
     members = await fetchDocsByIds(db, "members", visibleIds);
@@ -148,7 +140,8 @@ export async function getBootstrapWarmPayload(db, viewer) {
 
   let invites = null;
   if (management) {
-    invites = await fetchCollectionList(db, "invites");
+    const inviteRows = await pgQuery("SELECT * FROM invites LIMIT $1", [LIST_LIMIT]);
+    invites = inviteRows.map((row) => normalizeDoc(row));
     if (visibleIds !== null && typeof viewer.uid === "string" && viewer.uid) {
       invites = invites.filter((row) => row.created_by_uid === viewer.uid);
     }

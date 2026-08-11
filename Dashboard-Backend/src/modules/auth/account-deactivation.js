@@ -3,10 +3,11 @@ import { revokeAgentDevicesForMember } from "../activity/agent-devices.service.j
 import { deleteMemberProfileData } from "../members/services/member-profile.service.js";
 import { resolveRoleIdsWhere } from "../members/services/relation-sync.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { deleteMemberPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 
 const DEACTIVATION_REQUESTS = "deactivation_requests";
 const MEMBER_AUTH_INDEX = "member_auth_index";
-const PENDING_AUTH = "pending_auth_members";
 
 function normalizeRoleName(role) {
   return String(role || "")
@@ -43,11 +44,11 @@ async function resolveAdminLevelRecipientIds(db, excludeMemberId = "") {
   if (adminRoleIds.size === 0) return [];
 
   const recipients = new Set();
-  const membersSnap = await db.collection("members").limit(2000).get();
-  for (const doc of membersSnap.docs) {
-    if (doc.id === excludeMemberId) continue;
-    const roleId = typeof doc.data()?.role_id === "string" ? doc.data().role_id : "";
-    if (roleId && adminRoleIds.has(roleId)) recipients.add(doc.id);
+  const members = await listMembersPg({ limit: 2000 });
+  for (const data of members) {
+    if (data.id === excludeMemberId) continue;
+    const roleId = typeof data.role_id === "string" ? data.role_id : "";
+    if (roleId && adminRoleIds.has(roleId)) recipients.add(data.id);
   }
 
   return [...recipients];
@@ -185,9 +186,9 @@ export async function deleteViewerSelfAccount(auth, db, uid, memberId, roleName)
   // to it - they must not outlive the account.
   await revokeAgentDevicesForMember(memberId).catch(() => {});
   await deleteMemberProfileData(db, memberId);
-  await db.collection("members").doc(memberId).delete();
+  await deleteMemberPg(memberId, memberId);
   await db.collection(MEMBER_AUTH_INDEX).doc(uid).delete().catch(() => {});
-  await db.collection(PENDING_AUTH).doc(uid).delete().catch(() => {});
+  await pgQuery("DELETE FROM pending_auth_members WHERE firebase_uid = $1", [uid]).catch(() => {});
   await profileRef.delete().catch(() => {});
 
   try {

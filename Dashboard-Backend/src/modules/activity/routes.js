@@ -13,6 +13,7 @@ import {
   getCaptureMinimizationSettings,
   matchesExclusion,
 } from "../compliance/capture-minimization.js";
+import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { computeDHash } from "./perceptual-hash.js";
@@ -143,8 +144,7 @@ function titleFromBrowserPageTitle(pageTitle, appName) {
 async function resolveMember(db, req) {
   const viewer = getAuthContext(req);
   if (!viewer) return null;
-  const snap = await db.collection("members").doc(viewer.memberId).get();
-  const data = snap.exists ? snap.data() || {} : {};
+  const data = (await getMemberByIdPg(viewer.memberId)) || {};
   const first = typeof data.first_name === "string" ? data.first_name : "";
   const last = typeof data.last_name === "string" ? data.last_name : "";
   const name = `${first} ${last}`.trim() || (typeof data.name === "string" ? data.name : "") || "Unknown";
@@ -351,8 +351,7 @@ export async function routeActivity(req, res, url, origin) {
         getActivityCaptureMode() === "agent" &&
         isDesktopAgentEventIngestEnabled()
       ) {
-        const memberSnap = await db.collection("members").doc(member.memberId).get();
-        const memberRow = memberSnap.data() || {};
+        const memberRow = (await getMemberByIdPg(member.memberId)) || {};
         if (!memberRow.desktop_agent_linked_at) {
           sendJson(res, origin, 409, {
             success: false,
@@ -1246,8 +1245,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const memberSnap = await db.collection("members").doc(member.memberId).get();
-      const row = memberSnap.data() || {};
+      const row = (await getMemberByIdPg(member.memberId)) || {};
       sendJson(res, origin, 200, {
         success: true,
         data: {
@@ -1343,11 +1341,10 @@ export async function routeActivity(req, res, url, origin) {
     }
     const memberId = typeof exchanged.data?.memberId === "string" ? exchanged.data.memberId : "";
     if (memberId) {
-      await db.collection("members").doc(memberId).update({
+      await updateMemberPg(memberId, {
         desktop_agent_linked_at: new Date(),
         agent_source: exchanged.data?.agentSource === "python" ? "python" : "electron",
         updated_by: exchanged.data?.agentSource === "python" ? "python" : "agent",
-        updated_at: new Date(),
       });
     }
     sendJson(res, origin, 200, { success: true, data: exchanged.data });
@@ -1437,13 +1434,12 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      const memberSnap = await db.collection("members").doc(verified.memberId).get();
-      if (!memberSnap.exists) {
+      const memberRow = await getMemberByIdPg(verified.memberId);
+      if (!memberRow) {
         await revokeAgentDevice(deviceId);
         sendJson(res, origin, 401, { success: false, error: "This device is no longer linked." });
         return true;
       }
-      const memberRow = memberSnap.data() || {};
 
       const status = String(memberRow.status || "active").toLowerCase();
       if (status === "archived" || status === "inactive" || status === "suspended") {
@@ -1507,7 +1503,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      await db.collection("members").doc(member.memberId).update({
+      await updateMemberPg(member.memberId, {
         ...(body?.source === "web"
           ? { web_capture_linked_at: new Date(), updated_by: "web" }
           : {
@@ -1515,7 +1511,6 @@ export async function routeActivity(req, res, url, origin) {
               agent_source: body?.source === "python" ? "python" : "electron",
               updated_by: body?.source === "python" ? "python" : "agent",
             }),
-        updated_at: new Date(),
       });
       sendJson(res, origin, 200, { success: true, data: { memberId: member.memberId } });
     } catch (e) {

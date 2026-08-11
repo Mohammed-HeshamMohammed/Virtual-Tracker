@@ -1,5 +1,6 @@
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
-import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { recordMemberRelationship, removeMemberParentEdge } from "../member-relationships/service.js";
 import { planOwnerRootSeparationRepairs } from "../member-relationships/relationship-integrity.js";
 import { syncMemberPrimaryRole } from "../members/services/relation-sync.js";
@@ -20,21 +21,21 @@ import { syncMemberHierarchyStatus } from "./hierarchy-sync.js";
  * @returns {Promise<string | null>}
  */
 export async function resolveOrganizationRootMemberId(db) {
-  const membersDocs = await fetchAllDocs(db.collection("members"));
+  const membersDocs = await listMembersPg({ limit: 5000 });
   let fallbackId = null;
   let fallbackRank = -1;
   const rank = { superadmin: 90, admin: 80 };
 
-  for (const doc of membersDocs) {
-    const roleName = await resolveMemberRoleName(db, doc.id);
+  for (const data of membersDocs) {
+    const roleName = await resolveMemberRoleName(db, data.id);
     const key = normalizeRoleKey(roleName);
     if (key === "owner") {
-      return doc.id;
+      return data.id;
     }
     const r = rank[key] ?? -1;
     if (r > fallbackRank) {
       fallbackRank = r;
-      fallbackId = doc.id;
+      fallbackId = data.id;
     }
   }
 
@@ -44,13 +45,12 @@ export async function resolveOrganizationRootMemberId(db) {
 /** Members with invalid hierarchy placement (orphan employees, etc.). */
 export async function findOrphanHierarchyViolations(db) {
   const [membersDocs, relsDocs] = await Promise.all([
-    fetchAllDocs(db.collection("members")),
-    fetchAllDocs(db.collection("member_relationships")),
+    listMembersPg({ limit: 5000 }),
+    pgQuery("SELECT * FROM member_relationships"),
   ]);
 
   const childToParent = new Map();
-  for (const doc of relsDocs) {
-    const d = doc.data() || {};
+  for (const d of relsDocs) {
     if (typeof d.child_member_id === "string" && typeof d.parent_member_id === "string") {
       childToParent.set(d.child_member_id, d.parent_member_id);
     }
@@ -59,9 +59,8 @@ export async function findOrphanHierarchyViolations(db) {
   /** @type {Array<{ member_id: string; role_name: string; parent_member_id: string | null; violation_type: string }>} */
   const violations = [];
 
-  for (const doc of membersDocs) {
-    const data = doc.data() || {};
-    const memberId = doc.id;
+  for (const data of membersDocs) {
+    const memberId = data.id;
     const roleName = await resolveMemberRoleName(db, memberId);
     const parentId = childToParent.get(memberId) ?? null;
     const placement = classifyHierarchyPlacement(roleName, parentId, data);
@@ -215,19 +214,19 @@ export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
 /** Drop hierarchy edges for Client/external roles. */
 export async function cleanupExternalEntityHierarchyEdges(db) {
   const { removeMemberHierarchyRelationships } = await import("../member-relationships/service.js");
-  const membersDocs = await fetchAllDocs(db.collection("members"));
+  const membersDocs = await listMembersPg({ limit: 5000 });
   let removedEdges = 0;
   let membersCleaned = 0;
 
-  for (const doc of membersDocs) {
-    const roleName = await resolveMemberRoleName(db, doc.id);
+  for (const data of membersDocs) {
+    const roleName = await resolveMemberRoleName(db, data.id);
     if (!isExcludedFromHierarchy(roleName)) continue;
-    const count = await removeMemberHierarchyRelationships(db, doc.id);
+    const count = await removeMemberHierarchyRelationships(db, data.id);
     if (count > 0) {
       removedEdges += count;
       membersCleaned += 1;
     }
-    await syncMemberHierarchyStatus(db, doc.id, roleName);
+    await syncMemberHierarchyStatus(db, data.id, roleName);
   }
 
   return { removed_edges: removedEdges, members_cleaned: membersCleaned };
@@ -236,8 +235,7 @@ export async function cleanupExternalEntityHierarchyEdges(db) {
 /** Split nested Owners — remove Owner→Owner edge only; subtree stays under nested Owner. */
 export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
   const dryRun = options.dryRun === true;
-  const relsDocs = await fetchAllDocs(db.collection("member_relationships"));
-  const edges = relsDocs.map((doc) => ({ id: doc.id, ...doc.data() }));
+  const edges = await pgQuery("SELECT * FROM member_relationships");
 
   const memberIds = new Set();
   for (const edge of edges) {

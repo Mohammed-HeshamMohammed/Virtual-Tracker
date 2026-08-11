@@ -8,7 +8,6 @@ import {
 import { initializeMemberRelationships } from "../modules/member-relationships/migrate.js";
 import { ensureUserProfileImageFields } from "../modules/auth/migrate-profile-image-fields.js";
 import { ensureMemberScopedEntities } from "../modules/members/services/member-entity-bootstrap.js";
-import { normalizeLegacyMemberDocumentIds } from "../modules/members/services/normalize-member-doc-ids.js";
 import { ensureDefaultRoles } from "../modules/members/services/relation-sync.js";
 import {
   ENTITY_BOOTSTRAP_VERSION,
@@ -129,13 +128,6 @@ async function runOrganizationMaintenance(db, actor) {
     }
   } catch (err) {
     logSafeWarn("[entity-bootstrap] user profile image field migration failed:", err);
-  }
-
-  try {
-    const migration = await normalizeLegacyMemberDocumentIds(db);
-    if (migration.migrated > 0) created.push("system_meta:member_document_ids");
-  } catch (err) {
-    logSafeWarn("[entity-bootstrap] member id normalization failed:", err);
   }
 
   await setSystemMetaDoc(db, ENTITY_BOOTSTRAP_META_KEY, {

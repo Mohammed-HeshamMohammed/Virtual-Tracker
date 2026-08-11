@@ -8,45 +8,6 @@
         { "fieldPath": "position", "order": "ASCENDING" }
       ]
     },
-    {
-      "collectionGroup": "project_members",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "member_id", "order": "ASCENDING" },
-        { "fieldPath": "project_id", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "project_members",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "project_id", "order": "ASCENDING" },
-        { "fieldPath": "member_id", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "member_relationships",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "parent_member_id", "order": "ASCENDING" },
-        { "fieldPath": "child_member_id", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "limits",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "limit_type", "order": "ASCENDING" },
-        { "fieldPath": "member_id", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "hours",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "user_id", "order": "ASCENDING" }
-      ]
-    }
   ],
   "fieldOverrides": []
 }

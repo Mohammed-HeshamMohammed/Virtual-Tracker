@@ -15,6 +15,7 @@ import {
   getClientAutomationStatePg,
   upsertClientAutomationStatePg,
 } from "../../../lib/postgres/clients-postgres.service.js";
+import { listMembersPg } from "../../../lib/postgres/members-postgres.service.js";
 
 const NOTIFY_TYPE = "client_budget_threshold";
 const MANAGEMENT_ROLES = new Set([
@@ -75,10 +76,10 @@ async function loadManagementMemberIds(db) {
 
   if (managementRoleIds.size === 0) return [];
 
-  const membersSnap = await db.collection("members").limit(500).get();
-  return membersSnap.docs
-    .filter((doc) => managementRoleIds.has(String(doc.data()?.role_id ?? "")))
-    .map((doc) => doc.id);
+  const members = await listMembersPg({ limit: 500 });
+  return members
+    .filter((data) => managementRoleIds.has(String(data.role_id ?? "")))
+    .map((data) => data.id);
 }
 
 /**

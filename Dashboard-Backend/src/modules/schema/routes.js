@@ -59,7 +59,7 @@ import {
   updatePostgresRow,
   deletePostgresRow,
 } from "./services/postgres-crud.service.js";
-import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { isPostgresConfigured, query as pgQuery } from "../../lib/postgres/client.js";
 
 function parsePath(pathname) {
   const match = /^\/api(?:\/v1)?\/([a-z-]+)(?:\/([^/]+))?$/.exec(pathname);
@@ -678,11 +678,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         data = await enrichTeamProjectsWithNames(db, data);
       }
       if (parsed.key === "invites" && requireManagementRole(getAuthContext(req))) {
-        const PENDING_AUTH = "pending_auth_members";
-        const pendingSnap = await db.collection(PENDING_AUTH).limit(200).get();
-        for (const doc of pendingSnap.docs) {
-          const p = doc.data() || {};
-          const uid = doc.id;
+        const pendingRows = await pgQuery("SELECT * FROM pending_auth_members LIMIT 200");
+        for (const p of pendingRows) {
+          const uid = p.firebase_uid;
           const email = typeof p.email === "string" ? p.email : "";
           const roleName =
             (await resolveRoleNameById(db, typeof p.role_id === "string" ? p.role_id : "")) ||

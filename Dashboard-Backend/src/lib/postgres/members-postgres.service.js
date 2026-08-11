@@ -57,6 +57,12 @@ const WRITABLE_COLUMNS = [
   "created_by",
   "created_by_uid",
   "updated_by",
+  "migrated_from_auth",
+  "migrated_at",
+  "migrated_by",
+  "desktop_agent_linked_at",
+  "web_capture_linked_at",
+  "agent_source",
 ];
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);

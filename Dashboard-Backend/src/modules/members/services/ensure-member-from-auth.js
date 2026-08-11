@@ -7,8 +7,6 @@ import { placeholderEmailForUid, resolveEmailFromUserRecord } from "./auth-user-
 import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { sanitizeMemberNamePart } from "./member-display-name.js";
 
-const PENDING_AUTH = "pending_auth_members";
-
 /**
  * Create a members row in Postgres on first sign-in if missing. Skips pending_auth_members (pre-provision flow).
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -24,8 +22,8 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
   const emailRaw = resolveEmailFromUserRecord(userRecord) || placeholderEmailForUid(uid);
   const email = emailRaw.toLowerCase();
 
-  const pend = await db.collection(PENDING_AUTH).doc(uid).get();
-  if (pend.exists) {
+  const pendRows = await pgQuery("SELECT 1 FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
+  if (pendRows.length) {
     return { created: false, memberId: null, linked: false, skipped: "pending_auth" };
   }
 

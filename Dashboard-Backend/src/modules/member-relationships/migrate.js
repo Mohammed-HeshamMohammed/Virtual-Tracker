@@ -1,9 +1,11 @@
 import { getDb } from "../../config/firebase.js";
 import { logSafeError } from "../../http/sanitize-error.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { clearAllMemberTreeCachePg } from "../../lib/postgres/member-data-postgres.service.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { recordMemberRelationship, updateTreeCache } from "./service.js";
 
-/** Seed member_relationships from existing members if the collection is empty. */
+/** Seed member_relationships from existing members if the table is empty. */
 export async function initializeMemberRelationships() {
   const db = getDb();
   if (!db) {
@@ -11,21 +13,22 @@ export async function initializeMemberRelationships() {
     return { success: false, reason: "db_not_available" };
   }
 
-  // Check if there are any existing relationships - if yes, skip
-  const existingRel = await db.collection("member_relationships").limit(1).get();
-  if (!existingRel.empty) {
+  // Check if there are any existing relationships - if yes, skip. (Was a
+  // Firestore emptiness check; member_relationships is Postgres-resident
+  // now, so this must check there instead or it would stay falsely "empty"
+  // forever and re-run its heuristic seeder on every deploy.)
+  const existingRel = await pgQuery("SELECT 1 FROM member_relationships LIMIT 1");
+  if (existingRel.length) {
     return { success: true, alreadyCompleted: true, reason: "relationships_already_exist" };
   }
 
   // Check if there are members to migrate
-  const membersSnap = await db.collection("members").limit(500).get();
-  if (membersSnap.empty) {
+  const members = await listMembersPg({ limit: 500 });
+  if (!members.length) {
     return { success: true, membersProcessed: 0, reason: "no_members" };
   }
 
-  console.log(`[member-relationships-migration] Found ${membersSnap.size} members to process`);
-
-  const members = membersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  console.log(`[member-relationships-migration] Found ${members.length} members to process`);
   const results = {
     processed: 0,
     relationshipsCreated: 0,
@@ -127,12 +130,7 @@ export async function forceReinitializeRelationships() {
   if (!db) return { success: false, reason: "db_not_available" };
 
   // Clear existing relationships
-  const batch = db.batch();
-  const existing = await db.collection("member_relationships").limit(500).get();
-  for (const doc of existing.docs) {
-    batch.delete(doc.ref);
-  }
-  await batch.commit();
+  await pgQuery("DELETE FROM member_relationships");
 
   // Clear tree cache (PostgreSQL)
   await clearAllMemberTreeCachePg();

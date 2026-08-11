@@ -1,5 +1,6 @@
 import { isInviteConsumed, isInviteExpired } from "./invite-lifecycle.js";
 import { findActiveBanByEmail } from "./member-ban-service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 /**
  * @param {string} raw
@@ -69,8 +70,8 @@ export async function assertEmailCanUseMemberInviteOrPreprovision(db, auth, emai
     }
   }
 
-  const memberSnap = await db.collection("members").where("work_email", "==", e).limit(1).get();
-  if (!memberSnap.empty) {
+  const memberRows = await pgQuery("SELECT id FROM members WHERE work_email = $1 LIMIT 1", [e]);
+  if (memberRows.length) {
     return {
       ok: false,
       reason: REASON.MEMBER_RECORD,
@@ -78,8 +79,8 @@ export async function assertEmailCanUseMemberInviteOrPreprovision(db, auth, emai
     };
   }
 
-  const pendingAuth = await db.collection("pending_auth_members").where("email", "==", e).limit(1).get();
-  if (!pendingAuth.empty) {
+  const pendingAuthRows = await pgQuery("SELECT firebase_uid FROM pending_auth_members WHERE email = $1 LIMIT 1", [e]);
+  if (pendingAuthRows.length) {
     return {
       ok: false,
       reason: REASON.PENDING_PREPROVISION,
@@ -87,10 +88,9 @@ export async function assertEmailCanUseMemberInviteOrPreprovision(db, auth, emai
     };
   }
 
-  const inviteSnaps = await db.collection("invites").where("email", "==", e).get();
-  const pendingInvite = inviteSnaps.docs.find((d) => {
-    if (typeof ignoreInviteId === "string" && ignoreInviteId && d.id === ignoreInviteId) return false;
-    const s = d.data();
+  const inviteRows = await pgQuery("SELECT * FROM invites WHERE email = $1", [e]);
+  const pendingInvite = inviteRows.find((s) => {
+    if (typeof ignoreInviteId === "string" && ignoreInviteId && s.id === ignoreInviteId) return false;
     if (typeof s.status !== "string" || s.status !== "pending_signup") return false;
     if (isInviteExpired(s) || isInviteConsumed(s)) return false;
     return true;

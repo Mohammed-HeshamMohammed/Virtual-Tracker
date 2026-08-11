@@ -1,6 +1,8 @@
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors } from "../member-relationships/service.js";
 import { getProjectScopedMemberIds, resolveMemberRoleName } from "./activity-scope.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import {
   fetchLatestPgScreenshot,
   getPgSessionById,
@@ -20,13 +22,12 @@ function normalizeRole(roleName) {
     .replace(/\s+/g, "");
 }
 
-async function getDirectParentIds(db, memberId) {
-  const snap = await db
-    .collection("member_relationships")
-    .where("child_member_id", "==", memberId)
-    .limit(20)
-    .get();
-  return snap.docs.map((d) => d.data()?.parent_member_id).filter(Boolean);
+async function getDirectParentIds(_db, memberId) {
+  const rows = await pgQuery(
+    "SELECT parent_member_id FROM member_relationships WHERE child_member_id = $1 LIMIT 20",
+    [memberId],
+  );
+  return rows.map((r) => r.parent_member_id).filter(Boolean);
 }
 
 /** Leadership on shared projects only (Owner / Super Admin / Admin org roles). */
@@ -107,9 +108,9 @@ export async function maybeAlertMissingScreenshot(db, memberId, sessionId) {
   const lastMs = latest?.captured_at ? new Date(latest.captured_at).getTime() : 0;
   if (lastMs && Date.now() - lastMs < NO_SCREENSHOT_MS) return;
 
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  const name = memberDoc.exists
-    ? `${memberDoc.data()?.first_name || ""} ${memberDoc.data()?.last_name || ""}`.trim() || "Team member"
+  const memberData = await getMemberByIdPg(memberId);
+  const name = memberData
+    ? `${memberData.first_name || ""} ${memberData.last_name || ""}`.trim() || "Team member"
     : "Team member";
 
   await dispatchActivityAlert(
@@ -124,9 +125,9 @@ export async function maybeAlertMissingScreenshot(db, memberId, sessionId) {
 
 export async function maybeAlertLowActivity(db, memberId, sessionId, activityLevel) {
   if (activityLevel >= LOW_ACTIVITY_THRESHOLD) return;
-  const memberDoc = await db.collection("members").doc(memberId).get();
-  const name = memberDoc.exists
-    ? `${memberDoc.data()?.first_name || ""} ${memberDoc.data()?.last_name || ""}`.trim() || "Team member"
+  const memberData = await getMemberByIdPg(memberId);
+  const name = memberData
+    ? `${memberData.first_name || ""} ${memberData.last_name || ""}`.trim() || "Team member"
     : "Team member";
 
   await dispatchActivityAlert(

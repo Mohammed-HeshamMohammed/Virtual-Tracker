@@ -67,8 +67,6 @@ async function resolveInviteCreatorRoleName(db, row) {
   return resolveMemberRoleName(db, String(member.id));
 }
 
-const PENDING_AUTH = "pending_auth_members";
-
 function normalizePathname(pathname) {
   return pathname.replace(/^\/api\/v1\//, "/api/");
 }
@@ -115,15 +113,14 @@ async function findInviteByToken(db, token) {
  * @param {string} uid
  */
 async function promotePendingMemberCore(db, auth, uid) {
-  const pendRef = db.collection(PENDING_AUTH).doc(uid);
-  const pendSnap = await pendRef.get();
-  if (!pendSnap.exists) {
+  const pendRows = await query("SELECT * FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
+  if (!pendRows.length) {
     const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
     await profileRef.set({ must_change_password: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     const userRecord = await auth.getUser(uid);
     return { promoted: false, profile: await upsertProfileFromUserRecord(db, userRecord) };
   }
-  const p = pendSnap.data() || {};
+  const p = pendRows[0];
   const email = typeof p.email === "string" ? p.email : "";
   const displayName = typeof p.display_name === "string" ? p.display_name : "";
   const pendingPhone = typeof p.phone_number === "string" ? p.phone_number.trim() : "";
@@ -195,7 +192,7 @@ async function promotePendingMemberCore(db, auth, uid) {
     }
   }
 
-  await pendRef.delete();
+  await query("DELETE FROM pending_auth_members WHERE firebase_uid = $1", [uid]);
   await deletePendingAuthProjects(db, uid);
   const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   await profileRef.set({ must_change_password: false, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -247,20 +244,19 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "Invalid id" });
       return true;
     }
-    const pendRef = db.collection(PENDING_AUTH).doc(uid);
-    const snap = await pendRef.get();
-    if (!snap.exists) {
+    const pendRows = await query("SELECT * FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
+    if (!pendRows.length) {
       sendJson(res, origin, 404, { success: false, error: "Pending account not found" });
       return true;
     }
     const viewer = getAuthContext(req);
-    const pendingRow = snap.data() ?? {};
+    const pendingRow = pendRows[0];
     if (!(await canViewerManageInvite(db, viewer, pendingRow))) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to cancel this pending account." });
       return true;
     }
     try {
-      await pendRef.delete();
+      await query("DELETE FROM pending_auth_members WHERE firebase_uid = $1", [uid]);
       await deletePendingAuthProjects(db, uid);
       try {
         await auth.deleteUser(uid);
@@ -746,15 +742,14 @@ export async function routeMemberInvites(req, res, url, origin) {
       });
       const uid = userRecord.uid;
       const role_id = await resolveRoleIdByName(db, roleName);
-      await db.collection(PENDING_AUTH).doc(uid).set({
-        email,
-        display_name: name,
-        ...(phone ? { phone_number: phone } : {}),
-        role_id,
-        pay_rate: payRate,
-        created_by_uid: createdByUid,
-        created_at: new Date(),
-      });
+      await query(
+        `INSERT INTO pending_auth_members (firebase_uid, email, display_name, phone_number, role_id, pay_rate, created_by_uid, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (firebase_uid) DO UPDATE SET
+           email = EXCLUDED.email, display_name = EXCLUDED.display_name, phone_number = EXCLUDED.phone_number,
+           role_id = EXCLUDED.role_id, pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
+        [uid, email, name, phone || "", role_id, payRate, createdByUid, new Date()],
+      );
       await db.collection(USER_PROFILES_COLLECTION).doc(uid).set(
         {
           uid,
