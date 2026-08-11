@@ -1,4 +1,4 @@
-import { estimateAssignmentSeconds } from "./task-schedule-math.js";
+import { estimateAssignmentSeconds, computeTaskDailyHours } from "./task-schedule-math.js";
 import { SHIFT_ALLOWANCE_LIMITS_ENABLED } from "../members/services/shift-allowance-feature.js";
 import {
   getMemberLimitHours as getMemberLimitHoursFromStore,
@@ -26,7 +26,7 @@ export async function getMemberLimitHours(db, memberId, limitType) {
 
 // computeTaskDailyHours now lives in task-schedule-math.js (pure, no
 // Postgres/Firestore) - re-exported here for existing callers.
-export { computeTaskDailyHours } from "./task-schedule-math.js";
+export { computeTaskDailyHours };
 
 /** min(task cap, member daily limit); 0 member limit = unlimited */
 export function computeEffectiveDailyCap(taskDailyHours, memberDailyLimit) {

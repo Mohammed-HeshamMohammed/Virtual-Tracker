@@ -121,12 +121,13 @@ export async function routeMemberOnboarding(req, res, url, origin) {
       const byMemberId = new Map(rows.filter((r) => r.memberId).map((r) => [r.memberId, r]));
       const byInviteId = new Map(rows.filter((r) => r.inviteId).map((r) => [r.inviteId, r]));
 
-      for (const member of membersDocs) {
-        if (ownerMemberIds.has(member.id)) continue;
-        if (byMemberId.has(member.id)) continue;
+      for (const member of membersRows) {
+        const memberId = String(member.id);
+        if (ownerMemberIds.has(memberId)) continue;
+        if (byMemberId.has(memberId)) continue;
         rows.push({
-          id: `member:${member.id}`,
-          memberId: member.id,
+          id: `member:${memberId}`,
+          memberId,
           inviteId: null,
           createdAccount: true,
           downloadedApp: false,
@@ -138,15 +139,15 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         });
       }
 
-      for (const invite of invitesDocs) {
-        const d = invite.data() || {};
-        const status = typeof d.status === "string" ? d.status : "";
+      for (const invite of invitesRows) {
+        const inviteId = String(invite.id);
+        const status = typeof invite.status === "string" ? invite.status : "";
         if (status === "completed" || status === "accepted") continue;
-        if (byInviteId.has(invite.id)) continue;
+        if (byInviteId.has(inviteId)) continue;
         rows.push({
-          id: `invite:${invite.id}`,
+          id: `invite:${inviteId}`,
           memberId: null,
-          inviteId: invite.id,
+          inviteId,
           createdAccount: false,
           downloadedApp: false,
           trackedTime: false,

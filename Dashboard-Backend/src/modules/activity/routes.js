@@ -14,6 +14,7 @@ import {
   matchesExclusion,
 } from "../compliance/capture-minimization.js";
 import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
+import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { computeDHash } from "./perceptual-hash.js";
@@ -385,6 +386,18 @@ export async function routeActivity(req, res, url, origin) {
         const effectiveTaskId = taskId || open?.task_id || null;
         const cumulativeActiveSeconds = Math.max(0, Math.floor(activeSeconds ?? 0));
         const viewer = getAuthContext(req);
+
+        // People > member > Settings > "Able to track time" - a hard gate on
+        // starting/resuming, checked before the task/project allowance below
+        // so it can't be bypassed by any timer type.
+        const timeSettings = await getSingleByMemberId(db, "time_settings", member.memberId);
+        if (timeSettings?.able_to_track_time === false) {
+          sendJson(res, origin, 403, {
+            success: false,
+            error: "Time tracking is disabled for this member.",
+          });
+          return true;
+        }
 
         if (effectiveTaskId) {
           const task = await getTaskPg(effectiveTaskId);
