@@ -136,6 +136,14 @@ function titleFromBrowserPageTitle(pageTitle, appName) {
   return title;
 }
 
+const MANAGER_TRACKING_DISABLED_MESSAGE =
+  "Time tracking on this project has been turned off for managers. Contact an admin or owner.";
+
+/** True only for the "Manager" role (not Super Manager/Admin/Owner). */
+function isManagerRoleName(roleName) {
+  return String(roleName || "").trim().toLowerCase().replace(/\s+/g, "") === "manager";
+}
+
 /**
  * Authenticated member from req context (auth middleware).
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -376,11 +384,19 @@ export async function routeActivity(req, res, url, origin) {
       if (action === "start" || action === "resume") {
         const effectiveTaskId = taskId || open?.task_id || null;
         const cumulativeActiveSeconds = Math.max(0, Math.floor(activeSeconds ?? 0));
+        const viewer = getAuthContext(req);
 
         if (effectiveTaskId) {
           const task = await getTaskPg(effectiveTaskId);
           if (task) {
             sessionProjectId = task.project_id ?? sessionProjectId;
+            if (sessionProjectId && isManagerRoleName(viewer?.roleName)) {
+              const gateProject = await getProjectPg(sessionProjectId);
+              if (gateProject && gateProject.allow_project_tracking === false) {
+                sendJson(res, origin, 403, { success: false, error: MANAGER_TRACKING_DISABLED_MESSAGE });
+                return true;
+              }
+            }
             const allowance = await computeTimerAllowance(db, member.memberId, task, {
               currentCumulativeActiveSeconds: cumulativeActiveSeconds,
             });
@@ -417,7 +433,10 @@ export async function routeActivity(req, res, url, origin) {
             });
             return true;
           }
-          const viewer = getAuthContext(req);
+          if (isManagerRoleName(viewer?.roleName) && project.allow_project_tracking === false) {
+            sendJson(res, origin, 403, { success: false, error: MANAGER_TRACKING_DISABLED_MESSAGE });
+            return true;
+          }
           const canTime = await isProjectMemberForTimer(
             db,
             { memberId: member.memberId, roleName: viewer?.roleName ?? "" },
