@@ -86,7 +86,6 @@ import {
   isAmbiguousEmailPasswordFailureCode,
   messageForAccountExistsWithDifferentCredential,
 } from "@/features/auth/services/sign-in-method-guard"
-import { isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
 import { prefetchAuthBootResources } from "@/features/auth/services/auth-boot-prefetch"
 import { checkAllBackendsReady } from "@/features/auth/services/backend-availability"
 import { SCOPE_CHANGED_EVENT } from "@/infrastructure/api/change-events"
@@ -128,7 +127,7 @@ export interface AuthContextType {
   appInitPercent: number
   appInitError: string | null
   retryInit: () => Promise<void>
-  /** Firestore `members` row for the signed-in user (loaded during bootstrap). */
+  /** Postgres `members` row for the signed-in user (loaded during bootstrap). */
   currentMember: Member | null
   /** Primary role name from `members` / `member_roles` (default `User`). */
   memberRole: string
@@ -182,11 +181,7 @@ type SyncBackendResult = {
 }
 
 function isInfrastructureSessionError(error: unknown): boolean {
-  return (
-    isFirestoreQuotaExceededError(error) ||
-    isServiceUnavailableError(error) ||
-    isInfrastructureError(error)
-  )
+  return isServiceUnavailableError(error) || isInfrastructureError(error)
 }
 
 async function syncBackend(
@@ -227,7 +222,6 @@ async function syncBackend(
           isServiceUnavailableError(error) ||
           (isRetriableBackendError(error) &&
             !(error instanceof AuthSessionInvalidatedError) &&
-            !isFirestoreQuotaExceededError(error) &&
             !isInfrastructureError(error)),
         onRetry: (attempt, delayMs, error) => {
           logSafeWarn(`[AuthProvider] Backend verify retry #${attempt} in ${delayMs}ms`, error)

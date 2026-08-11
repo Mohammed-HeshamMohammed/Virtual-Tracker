@@ -48,7 +48,7 @@ export async function checkBackendReadiness(signal?: AbortSignal): Promise<Backe
   }
 }
 
-/** True when Dashboard-Backend and Firestore are reachable for identity bootstrap. */
+/** True when Dashboard-Backend, Firestore, and Postgres are all reachable for identity bootstrap. */
 export async function checkDashboardReadiness(signal?: AbortSignal): Promise<BackendReadiness> {
   try {
     const url = apiPath("/api/readiness")

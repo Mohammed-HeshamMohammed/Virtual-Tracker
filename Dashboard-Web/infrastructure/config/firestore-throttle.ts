@@ -1,4 +1,4 @@
-// Longer refetch intervals in dev to cut Firestore load.
+// Longer refetch intervals in dev to cut backend API load.
 
 const isDev = process.env.NODE_ENV === "development"
 

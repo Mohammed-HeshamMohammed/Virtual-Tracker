@@ -227,28 +227,24 @@ export async function alignMemberRoleTables(db, memberId, assignedBy = "role-ali
  * @param {string[]} projectIds
  * @param {string} [createdBy]
  */
-export async function syncInviteProjects(db, inviteId, projectIds, createdBy = "") {
+export async function syncInviteProjects(_db, inviteId, projectIds, createdBy = "") {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
-  const existing = await db.collection("invite_projects").where("invite_id", "==", inviteId).get();
-  const batch = db.batch();
+  const existingRows = await pgQuery("SELECT id, project_id FROM invite_projects WHERE invite_id = $1", [inviteId]);
   const existingIds = new Set();
-  for (const doc of existing.docs) {
-    const projectId = doc.data()?.project_id;
-    if (typeof projectId !== "string") continue;
-    existingIds.add(projectId);
-    if (!ids.includes(projectId)) batch.delete(doc.ref);
+  for (const row of existingRows) {
+    if (typeof row.project_id !== "string") continue;
+    existingIds.add(row.project_id);
+    if (!ids.includes(row.project_id)) {
+      await pgQuery("DELETE FROM invite_projects WHERE id = $1", [row.id]);
+    }
   }
   for (const projectId of ids) {
     if (existingIds.has(projectId)) continue;
-    const id = crypto.randomUUID();
-    batch.set(db.collection("invite_projects").doc(id), {
-      id,
-      invite_id: inviteId,
-      project_id: projectId,
-      created_by: createdBy,
-    });
+    await pgQuery(
+      "INSERT INTO invite_projects (id, invite_id, project_id, created_by) VALUES ($1,$2,$3,$4)",
+      [crypto.randomUUID(), inviteId, projectId, typeof createdBy === "string" && createdBy.trim() ? createdBy.trim() : null],
+    );
   }
-  if (existing.docs.length > 0 || ids.length > 0) await batch.commit();
 }
 
 /**
@@ -256,28 +252,27 @@ export async function syncInviteProjects(db, inviteId, projectIds, createdBy = "
  * @param {string} pendingUid
  * @param {string[]} projectIds
  */
-export async function syncPendingAuthProjects(db, pendingUid, projectIds) {
+export async function syncPendingAuthProjects(_db, pendingUid, projectIds) {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
-  const existing = await db.collection("pending_auth_projects").where("pending_uid", "==", pendingUid).get();
-  const batch = db.batch();
+  const existingRows = await pgQuery(
+    "SELECT id, project_id FROM pending_auth_projects WHERE firebase_uid = $1",
+    [pendingUid],
+  );
   const existingIds = new Set();
-  for (const doc of existing.docs) {
-    const projectId = doc.data()?.project_id;
-    if (typeof projectId !== "string") continue;
-    existingIds.add(projectId);
-    if (!ids.includes(projectId)) batch.delete(doc.ref);
+  for (const row of existingRows) {
+    if (typeof row.project_id !== "string") continue;
+    existingIds.add(row.project_id);
+    if (!ids.includes(row.project_id)) {
+      await pgQuery("DELETE FROM pending_auth_projects WHERE id = $1", [row.id]);
+    }
   }
   for (const projectId of ids) {
     if (existingIds.has(projectId)) continue;
-    const id = crypto.randomUUID();
-    batch.set(db.collection("pending_auth_projects").doc(id), {
-      id,
-      pending_uid: pendingUid,
-      project_id: projectId,
-      created_at: new Date(),
-    });
+    await pgQuery(
+      "INSERT INTO pending_auth_projects (id, firebase_uid, project_id) VALUES ($1,$2,$3)",
+      [crypto.randomUUID(), pendingUid, projectId],
+    );
   }
-  if (existing.docs.length > 0 || ids.length > 0) await batch.commit();
 }
 
 /**
@@ -285,11 +280,9 @@ export async function syncPendingAuthProjects(db, pendingUid, projectIds) {
  * @param {string} inviteId
  * @returns {Promise<string[]>}
  */
-export async function getInviteProjectIds(db, inviteId) {
-  const snap = await db.collection("invite_projects").where("invite_id", "==", inviteId).get();
-  return snap.docs
-    .map((doc) => doc.data()?.project_id)
-    .filter((id) => typeof id === "string" && id.length > 0);
+export async function getInviteProjectIds(_db, inviteId) {
+  const rows = await pgQuery("SELECT project_id FROM invite_projects WHERE invite_id = $1", [inviteId]);
+  return rows.map((r) => r.project_id).filter((id) => typeof id === "string" && id.length > 0);
 }
 
 /**
@@ -297,11 +290,9 @@ export async function getInviteProjectIds(db, inviteId) {
  * @param {string} pendingUid
  * @returns {Promise<string[]>}
  */
-export async function getPendingAuthProjectIds(db, pendingUid) {
-  const snap = await db.collection("pending_auth_projects").where("pending_uid", "==", pendingUid).get();
-  return snap.docs
-    .map((doc) => doc.data()?.project_id)
-    .filter((id) => typeof id === "string" && id.length > 0);
+export async function getPendingAuthProjectIds(_db, pendingUid) {
+  const rows = await pgQuery("SELECT project_id FROM pending_auth_projects WHERE firebase_uid = $1", [pendingUid]);
+  return rows.map((r) => r.project_id).filter((id) => typeof id === "string" && id.length > 0);
 }
 
 /**
@@ -326,24 +317,16 @@ export async function syncProjectMembersForMember(db, memberId, projectIds, assi
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} inviteId
  */
-export async function deleteInviteProjects(db, inviteId) {
-  const snap = await db.collection("invite_projects").where("invite_id", "==", inviteId).get();
-  if (snap.empty) return;
-  const batch = db.batch();
-  for (const doc of snap.docs) batch.delete(doc.ref);
-  await batch.commit();
+export async function deleteInviteProjects(_db, inviteId) {
+  await pgQuery("DELETE FROM invite_projects WHERE invite_id = $1", [inviteId]);
 }
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} pendingUid
  */
-export async function deletePendingAuthProjects(db, pendingUid) {
-  const snap = await db.collection("pending_auth_projects").where("pending_uid", "==", pendingUid).get();
-  if (snap.empty) return;
-  const batch = db.batch();
-  for (const doc of snap.docs) batch.delete(doc.ref);
-  await batch.commit();
+export async function deletePendingAuthProjects(_db, pendingUid) {
+  await pgQuery("DELETE FROM pending_auth_projects WHERE firebase_uid = $1", [pendingUid]);
 }
 
 /**
@@ -391,13 +374,13 @@ export async function enrichMembersWithRoleNames(db, members) {
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {Array<{ id: string }>} invites
  */
-export async function enrichInvitesWithProjectCounts(db, invites) {
+export async function enrichInvitesWithProjectCounts(_db, invites) {
   if (!invites.length) return invites;
   const inviteIdSet = new Set(invites.map((row) => row.id).filter((id) => !String(id).startsWith("pa_")));
-  const snap = await db.collection("invite_projects").limit(2000).get();
+  const rows = await pgQuery("SELECT invite_id FROM invite_projects LIMIT 2000");
   const countByInvite = new Map();
-  for (const doc of snap.docs) {
-    const inviteId = doc.data()?.invite_id;
+  for (const row of rows) {
+    const inviteId = row.invite_id;
     if (typeof inviteId !== "string" || !inviteIdSet.has(inviteId)) continue;
     countByInvite.set(inviteId, (countByInvite.get(inviteId) || 0) + 1);
   }
@@ -408,9 +391,9 @@ export async function enrichInvitesWithProjectCounts(db, invites) {
     .map((id) => id.slice(3));
   const pendingCountByUid = new Map();
   if (pendingUids.length > 0) {
-    const pendingSnap = await db.collection("pending_auth_projects").limit(2000).get();
-    for (const doc of pendingSnap.docs) {
-      const uid = doc.data()?.pending_uid;
+    const pendingRows = await pgQuery("SELECT firebase_uid FROM pending_auth_projects LIMIT 2000");
+    for (const row of pendingRows) {
+      const uid = row.firebase_uid;
       if (typeof uid !== "string" || !pendingUids.includes(uid)) continue;
       pendingCountByUid.set(uid, (pendingCountByUid.get(uid) || 0) + 1);
     }

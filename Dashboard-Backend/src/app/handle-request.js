@@ -29,7 +29,7 @@ import { routeDashboard } from "../modules/dashboard/routes.js";
 import { routeBootstrap } from "../modules/bootstrap/routes.js";
 import { routeAuthIdentity } from "../modules/auth/identity-routes.js";
 import { isAuthnApiPath } from "../modules/auth/authn-paths.js";
-import { probeFirestoreReadiness } from "../modules/auth/readiness.js";
+import { probeBackendReadiness } from "../modules/auth/readiness.js";
 import { isSessionCookiePath } from "../modules/auth/session-cookie.js";
 
 export async function handleRequest(req, res) {
@@ -85,7 +85,7 @@ export async function handleRequest(req, res) {
 
   if (req.method === "GET" && url.pathname === "/api/readiness") {
     applyCors(res, origin);
-    const readiness = await probeFirestoreReadiness(getDb());
+    const readiness = await probeBackendReadiness(getDb());
     if (readiness.ok) {
       sendJson(res, origin, 200, { success: true, firestore: "ok" });
       return;

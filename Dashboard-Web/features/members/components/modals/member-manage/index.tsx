@@ -173,12 +173,14 @@ export function MemberManageModal({
   const [removeConfirm, setRemoveConfirm] = useComponentState(false)
   const [formState, setFormState] = useComponentState<MemberFormState>(initialFormState)
   const phoneVerifyRef = useRef<PhoneVerifyControlHandle>(null)
-  // Live-guard only (no optimistic concurrency): member profile fields live
-  // across several Firestore collections written by non-transactional
-  // upserts, so there is no single updated_at to condition a write on the
-  // way Projects/Tasks/Clients do against Postgres. This still catches the
-  // two failure modes that matter for an open dialog - editing a member
-  // someone else just deleted, or saving over a change someone else just made.
+  // Live-guard only, not optimistic concurrency: member-api.ts's
+  // updateMemberProfile does support per-section expectedUpdatedAt/409
+  // handling now that member fields are Postgres-resident, but this modal
+  // doesn't wire it in - it relies on the WS live-guard below instead. That
+  // still catches the two failure modes that matter for an open dialog -
+  // editing a member someone else just deleted, or saving over a change
+  // someone else just made - so wiring expectedUpdatedAt in here too is a
+  // deliberate future enhancement, not a gap being worked around.
   const [liveDeleted, setLiveDeleted] = useComponentState(false)
   const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
 

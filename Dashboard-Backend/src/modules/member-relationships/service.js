@@ -1,4 +1,3 @@
-import { FieldValue } from "firebase-admin/firestore";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { canActorManageTargetRole } from "../../http/role-manage-policy.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
@@ -13,6 +12,11 @@ import {
 } from "../../lib/postgres/member-data-store.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import {
+  RelationshipIntegrityError,
+  validateNewRelationshipWithRoles,
+  planRelationshipRepairs,
+} from "./relationship-integrity.js";
 
 export { filterTeamScopeEdges } from "./relationship-integrity.js";
 
@@ -40,9 +44,8 @@ const CACHE_TTL_MS = 2000;
 const INTEGRITY_REPAIR_COOLDOWN_MS = 5 * 60 * 1000;
 const INTEGRITY_REPAIR_MAX_DELETES = 100;
 
-async function loadRelationshipsFromDb(db) {
-  const snap = await db.collection("member_relationships").limit(2000).get();
-  return snap.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+async function loadRelationshipsFromDb(_db) {
+  return pgQuery("SELECT * FROM member_relationships LIMIT 2000");
 }
 
 /**
@@ -71,14 +74,14 @@ export async function repairMemberRelationshipIntegrity(db, options = {}) {
     };
   }
 
-  const batch = db.batch();
   const affectedMemberIds = new Set();
   for (const item of pending) {
-    batch.delete(db.collection("member_relationships").doc(item.id));
     affectedMemberIds.add(item.edge.parent_member_id);
     affectedMemberIds.add(item.edge.child_member_id);
   }
-  await batch.commit();
+  await pgQuery("DELETE FROM member_relationships WHERE id = ANY($1::uuid[])", [
+    pending.map((item) => item.id),
+  ]);
 
   allRelationshipsCache = null;
   lastLoadTime = 0;
@@ -141,43 +144,47 @@ async function getAllRelationships(db) {
  * @param {string} parentMemberId
  * @param {string} childMemberId
  */
-async function loadValidationEdgesForNewRelationship(db, parentMemberId, childMemberId) {
+async function loadValidationEdgesForNewRelationship(_db, parentMemberId, childMemberId) {
   /** @type {Map<string, { id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} */
   const edges = new Map();
 
-  /** @param {import("firebase-admin/firestore").QueryDocumentSnapshot} doc */
-  const addDoc = (doc) => {
-    const data = doc.data() || {};
-    edges.set(doc.id, {
-      id: doc.id,
-      parent_member_id: data.parent_member_id,
-      child_member_id: data.child_member_id,
-      created_at: data.created_at,
+  /** @param {{ id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }} row */
+  const addRow = (row) => {
+    edges.set(row.id, {
+      id: row.id,
+      parent_member_id: row.parent_member_id,
+      child_member_id: row.child_member_id,
+      created_at: row.created_at,
     });
   };
 
-  const [asChildSnap, asParentSnap] = await Promise.all([
-    db.collection("member_relationships").where("child_member_id", "==", childMemberId).limit(20).get(),
-    db.collection("member_relationships").where("parent_member_id", "==", childMemberId).limit(500).get(),
+  const [asChildRows, asParentRows] = await Promise.all([
+    pgQuery("SELECT * FROM member_relationships WHERE child_member_id = $1 LIMIT 20", [childMemberId]),
+    pgQuery("SELECT * FROM member_relationships WHERE parent_member_id = $1 LIMIT 500", [childMemberId]),
   ]);
-  for (const doc of asChildSnap.docs) addDoc(doc);
-  for (const doc of asParentSnap.docs) addDoc(doc);
+  for (const row of asChildRows) addRow(row);
+  for (const row of asParentRows) addRow(row);
 
   /** @type {string[]} */
-  let frontier = asParentSnap.docs
-    .map((doc) => doc.data()?.child_member_id)
+  let frontier = asParentRows
+    .map((row) => row.child_member_id)
     .filter((id) => typeof id === "string" && id);
   const seen = new Set([childMemberId, ...frontier]);
 
+  // Postgres has no 10-item "in" cap the way the old Firestore query did, so
+  // each BFS level is one query instead of chunks of 10.
   while (frontier.length > 0) {
-    const batch = frontier.slice(0, 10);
-    frontier = frontier.slice(10);
-    const snap = await db.collection("member_relationships").where("parent_member_id", "in", batch).get();
+    const batch = frontier;
+    frontier = [];
+    const rows = await pgQuery(
+      "SELECT * FROM member_relationships WHERE parent_member_id = ANY($1::uuid[])",
+      [batch],
+    );
     /** @type {string[]} */
     const next = [];
-    for (const doc of snap.docs) {
-      if (!edges.has(doc.id)) addDoc(doc);
-      const cid = doc.data()?.child_member_id;
+    for (const row of rows) {
+      if (!edges.has(row.id)) addRow(row);
+      const cid = row.child_member_id;
       if (typeof cid === "string" && cid && !seen.has(cid)) {
         seen.add(cid);
         next.push(cid);
@@ -257,27 +264,26 @@ export async function recordMemberRelationship(db, {
   }
 
   // Check if relationship already exists
-  const existing = await db.collection("member_relationships")
-    .where("parent_member_id", "==", parentMemberId)
-    .where("child_member_id", "==", childMemberId)
-    .limit(1)
-    .get();
+  const existingRows = await pgQuery(
+    "SELECT * FROM member_relationships WHERE parent_member_id = $1 AND child_member_id = $2 LIMIT 1",
+    [parentMemberId, childMemberId],
+  );
 
-  if (!existing.empty) {
-    const doc = existing.docs[0];
-    const existingData = doc.data();
+  if (existingRows.length) {
+    const existingData = existingRows[0];
     // Update projects if provided and different
     if (projects.length > 0) {
       const mergedProjects = [...new Set([...(existingData.projects || []), ...projects])];
       if (mergedProjects.length !== (existingData.projects || []).length) {
-        await db.collection("member_relationships").doc(doc.id).update({
-          projects: mergedProjects,
-        });
+        await pgQuery("UPDATE member_relationships SET projects = $1 WHERE id = $2", [
+          JSON.stringify(mergedProjects),
+          existingData.id,
+        ]);
         allRelationshipsCache = null; // Clear cache on update
-        return { id: doc.id, ...existingData, projects: mergedProjects };
+        return { ...existingData, projects: mergedProjects };
       }
     }
-    return { id: doc.id, ...existingData };
+    return existingData;
   }
 
   const id = crypto.randomUUID();
@@ -291,7 +297,24 @@ export async function recordMemberRelationship(db, {
     created_by: createdBy,
   };
 
-  await db.collection("member_relationships").doc(id).set(relationship);
+  // ON CONFLICT DO NOTHING: the table has a real UNIQUE(parent_member_id,
+  // child_member_id) constraint (no Firestore equivalent existed), so a
+  // concurrent duplicate insert must degrade to the existing-edge path
+  // instead of throwing.
+  const insertedRows = await pgQuery(
+    `INSERT INTO member_relationships (id, parent_member_id, child_member_id, relationship_type, projects, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (parent_member_id, child_member_id) DO NOTHING
+     RETURNING *`,
+    [id, parentMemberId, childMemberId, relationshipType, JSON.stringify(projects || []), createdBy],
+  );
+  if (!insertedRows.length) {
+    const rows = await pgQuery(
+      "SELECT * FROM member_relationships WHERE parent_member_id = $1 AND child_member_id = $2 LIMIT 1",
+      [parentMemberId, childMemberId],
+    );
+    return rows[0];
+  }
   allRelationshipsCache = null; // Clear cache on insert
 
   const refreshTreeCache = async () => {
@@ -331,23 +354,20 @@ export async function recordMemberRelationship(db, {
  * @returns {Promise<number>} edges removed
  */
 export async function removeMemberParentEdge(db, memberId) {
-  const asChildSnap = await db
-    .collection("member_relationships")
-    .where("child_member_id", "==", memberId)
-    .limit(50)
-    .get();
+  const rows = await pgQuery(
+    `DELETE FROM member_relationships
+     WHERE id IN (SELECT id FROM member_relationships WHERE child_member_id = $1 LIMIT 50)
+     RETURNING parent_member_id, child_member_id`,
+    [memberId],
+  );
 
-  if (asChildSnap.empty) return 0;
+  if (!rows.length) return 0;
 
-  const batch = db.batch();
   const affected = new Set();
-  for (const doc of asChildSnap.docs) {
-    batch.delete(doc.ref);
-    const d = doc.data() || {};
-    if (d.parent_member_id) affected.add(d.parent_member_id);
-    if (d.child_member_id) affected.add(d.child_member_id);
+  for (const row of rows) {
+    if (row.parent_member_id) affected.add(row.parent_member_id);
+    if (row.child_member_id) affected.add(row.child_member_id);
   }
-  await batch.commit();
 
   allRelationshipsCache = null;
   lastLoadTime = 0;
@@ -356,28 +376,29 @@ export async function removeMemberParentEdge(db, memberId) {
     await invalidateTreeCache(db, id);
   }
 
-  return asChildSnap.size;
+  return rows.length;
 }
 
 /** Strip all hierarchy edges for a member (Client conversion, org exit). */
 export async function removeMemberHierarchyRelationships(db, memberId) {
-  const [asChildSnap, asParentSnap] = await Promise.all([
-    db.collection("member_relationships").where("child_member_id", "==", memberId).limit(50).get(),
-    db.collection("member_relationships").where("parent_member_id", "==", memberId).limit(50).get(),
-  ]);
+  const rows = await pgQuery(
+    `DELETE FROM member_relationships
+     WHERE id IN (
+       SELECT id FROM member_relationships WHERE child_member_id = $1 LIMIT 50
+       UNION
+       SELECT id FROM member_relationships WHERE parent_member_id = $1 LIMIT 50
+     )
+     RETURNING parent_member_id, child_member_id`,
+    [memberId],
+  );
 
-  const refs = [...asChildSnap.docs, ...asParentSnap.docs];
-  if (!refs.length) return 0;
+  if (!rows.length) return 0;
 
-  const batch = db.batch();
   const affected = new Set();
-  for (const doc of refs) {
-    batch.delete(doc.ref);
-    const d = doc.data() || {};
-    if (d.parent_member_id) affected.add(d.parent_member_id);
-    if (d.child_member_id) affected.add(d.child_member_id);
+  for (const row of rows) {
+    if (row.parent_member_id) affected.add(row.parent_member_id);
+    if (row.child_member_id) affected.add(row.child_member_id);
   }
-  await batch.commit();
 
   allRelationshipsCache = null;
   lastLoadTime = 0;
@@ -385,7 +406,7 @@ export async function removeMemberHierarchyRelationships(db, memberId) {
     await invalidateTreeCache(db, id);
   }
 
-  return refs.length;
+  return rows.length;
 }
 
 /**

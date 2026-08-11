@@ -1,5 +1,6 @@
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
-import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import {
   classifyHierarchyPlacement,
   HIERARCHY_STATUS,
@@ -19,13 +20,12 @@ import {
 /** Read-only hierarchy violation scan (no writes). */
 export async function auditHierarchyViolations(db, options = {}) {
   const [membersDocs, relsDocs] = await Promise.all([
-    fetchAllDocs(db.collection("members")),
-    fetchAllDocs(db.collection("member_relationships")),
+    listMembersPg({ limit: 5000 }),
+    pgQuery("SELECT * FROM member_relationships"),
   ]);
 
   const childToParent = new Map();
-  for (const doc of relsDocs) {
-    const data = doc.data();
+  for (const data of relsDocs) {
     if (typeof data.child_member_id === "string" && typeof data.parent_member_id === "string") {
       childToParent.set(data.child_member_id, data.parent_member_id);
     }
@@ -36,9 +36,8 @@ export async function auditHierarchyViolations(db, options = {}) {
   /** @type {Array<{ member_id: string; role_name: string; hierarchy_status: string; parent_member_id: string | null }>} */
   const summary = [];
 
-  for (const doc of membersDocs) {
-    const data = doc.data() || {};
-    const memberId = doc.id;
+  for (const data of membersDocs) {
+    const memberId = data.id;
     const roleName = await resolveMemberRoleName(db, memberId);
     const parentId = childToParent.get(memberId) ?? null;
     const placement = classifyHierarchyPlacement(roleName, parentId, data);

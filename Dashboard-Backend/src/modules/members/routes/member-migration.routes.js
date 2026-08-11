@@ -10,8 +10,9 @@ import { validateRoleAssignment } from "../../../http/role-assignment-guard.js";
 import { resolveRoleIdByName } from "../services/relation-sync.js";
 import { assertMemberNotBanned } from "../services/member-ban-service.js";
 import { promotePendingMemberCore } from "./member-invites.routes.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { getMemberByFirebaseUidPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-const PENDING_AUTH = "pending_auth_members";
 const MEMBER_AUTH_INDEX = "member_auth_index";
 const MOBILE_USERS_COLLECTION = "users";
 const MAX_MIGRATE_BATCH = 100;
@@ -100,12 +101,12 @@ function toMigratableRow(u, profile) {
  * @param {string} uid
  */
 async function isUidAlreadyLinked(db, uid) {
-  const [memberSnap, indexSnap, pendingSnap] = await Promise.all([
-    db.collection("members").where("firebase_uid", "==", uid).limit(1).get(),
+  const [member, indexSnap, pendingRows] = await Promise.all([
+    getMemberByFirebaseUidPg(uid),
     db.collection(MEMBER_AUTH_INDEX).doc(uid).get(),
-    db.collection(PENDING_AUTH).doc(uid).get(),
+    pgQuery("SELECT 1 FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]),
   ]);
-  return !memberSnap.empty || indexSnap.exists || pendingSnap.exists;
+  return Boolean(member) || indexSnap.exists || pendingRows.length > 0;
 }
 
 /**
@@ -248,26 +249,27 @@ export async function routeMemberMigration(req, res, url, origin) {
           continue;
         }
 
-        await db.collection(PENDING_AUTH).doc(uid).set({
-          email,
-          display_name: userRecord.displayName || "",
-          role_id: roleIdByName.get(roleName),
-          pay_rate: 0,
-          created_by_uid: viewer.uid,
-          created_at: new Date(),
-        });
+        await pgQuery(
+          `INSERT INTO pending_auth_members (firebase_uid, email, display_name, role_id, pay_rate, created_by_uid, created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           ON CONFLICT (firebase_uid) DO UPDATE SET
+             email = EXCLUDED.email, display_name = EXCLUDED.display_name, role_id = EXCLUDED.role_id,
+             pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
+          [uid, email, userRecord.displayName || "", roleIdByName.get(roleName), 0, viewer.uid, new Date()],
+        );
 
         try {
           const promoted = await promotePendingMemberCore(db, auth, uid);
           if (promoted.memberId) {
-            await db.collection("members").doc(promoted.memberId).set(
-              { migrated_from_auth: true, migrated_at: new Date(), migrated_by: viewer.memberId },
-              { merge: true },
-            );
+            await updateMemberPg(promoted.memberId, {
+              migrated_from_auth: true,
+              migrated_at: new Date(),
+              migrated_by: viewer.memberId,
+            });
           }
           results.push({ uid, success: true, memberId: promoted.memberId ?? undefined });
         } catch (promoteErr) {
-          await db.collection(PENDING_AUTH).doc(uid).delete().catch(() => {});
+          await pgQuery("DELETE FROM pending_auth_members WHERE firebase_uid = $1", [uid]).catch(() => {});
           throw promoteErr;
         }
       } catch (e) {

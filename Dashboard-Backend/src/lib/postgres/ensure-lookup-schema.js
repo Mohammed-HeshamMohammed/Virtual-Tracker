@@ -94,6 +94,17 @@ BEGIN
   END IF;
 END $$`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS security_stamp UUID DEFAULT gen_random_uuid()",
+  // Mobile-app-account migration provenance (member-migration.routes.js) -
+  // was written as arbitrary Firestore doc fields with no schema; ported
+  // here as real columns rather than dropped, since it's audit-trail data.
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_from_auth BOOLEAN NOT NULL DEFAULT false",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_by UUID",
+  // Desktop/web capture-agent link flags (activity/routes.js) - same story:
+  // written directly onto the member row in Firestore, no Postgres column.
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS desktop_agent_linked_at TIMESTAMPTZ",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS web_capture_linked_at TIMESTAMPTZ",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_source VARCHAR(20)",
   "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE LOWER(name) IN ('superadmin', 'owner')",
   "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE LOWER(name) = 'admin'",
   "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE LOWER(name) IN ('supermanager', 'supermanger', 'manager')",

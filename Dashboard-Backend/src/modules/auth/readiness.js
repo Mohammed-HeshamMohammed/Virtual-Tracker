@@ -5,11 +5,11 @@ const READINESS_COLLECTION = "_meta";
 const READINESS_DOC_ID = "readiness";
 
 /**
- * Quick Firestore ping for login/bootstrap. Missing doc still means DB is up.
+ * Quick Firestore + Postgres ping for login/bootstrap. Missing doc still means DB is up.
  * @param {import("firebase-admin/firestore").Firestore | null | undefined} db
  * @returns {Promise<{ ok: true } | { ok: false, status: number, code: string, error: string }>}
  */
-export async function probeFirestoreReadiness(db) {
+export async function probeBackendReadiness(db) {
   if (!db) {
     return {
       ok: false,

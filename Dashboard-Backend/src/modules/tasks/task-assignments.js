@@ -4,6 +4,7 @@ import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getProjectPg, listProjectIdsForMemberPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getTaskPg, listTasksPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import {
   deleteAssignmentPg,
@@ -109,13 +110,12 @@ function normalizeAssignment(doc) {
   };
 }
 
-async function getDirectParentIds(db, memberId) {
-  const snap = await db
-    .collection("member_relationships")
-    .where("child_member_id", "==", memberId)
-    .limit(20)
-    .get();
-  return snap.docs.map((d) => d.data()?.parent_member_id).filter(Boolean);
+async function getDirectParentIds(_db, memberId) {
+  const rows = await pgQuery(
+    "SELECT parent_member_id FROM member_relationships WHERE child_member_id = $1 LIMIT 20",
+    [memberId],
+  );
+  return rows.map((r) => r.parent_member_id).filter(Boolean);
 }
 
 async function getProjectMemberIds(db, projectId) {

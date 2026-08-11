@@ -6,7 +6,8 @@ import {
   isOrganizationRootRole,
 } from "../../hierarchy/hierarchy-placement.js";
 import { loadRoleNameById, normalizeRoleKey, rolePrivilegeRank } from "./relation-sync.js";
-import { fetchAllDocs } from "../../../lib/firestore/paginate-all.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { listMembersPg } from "../../../lib/postgres/members-postgres.service.js";
 
 const MIN_EMPLOYEE_ID_LENGTH = 2;
 const MAX_EMPLOYEE_ID_LENGTH = 48;
@@ -137,8 +138,8 @@ function buildEmployeeIdCandidate(nameSlug, metrics, attempt, memberId) {
  */
 export async function generateMemberEmployeeId(db, memberId, options = {}) {
   const [memberDocs, relDocs, roleNameById] = await Promise.all([
-    fetchAllDocs(db.collection("members")),
-    fetchAllDocs(db.collection("member_relationships")),
+    listMembersPg({ limit: 5000 }),
+    pgQuery("SELECT * FROM member_relationships"),
     loadRoleNameById(db),
   ]);
 
@@ -149,11 +150,10 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
   /** @type {Set<string>} */
   const takenIds = new Set();
 
-  for (const doc of memberDocs) {
-    const data = doc.data() || {};
-    memberDataById.set(doc.id, data);
-    dateAddedById.set(doc.id, timestampMs(data.date_added));
-    if (doc.id !== memberId) {
+  for (const data of memberDocs) {
+    memberDataById.set(data.id, data);
+    dateAddedById.set(data.id, timestampMs(data.date_added));
+    if (data.id !== memberId) {
       const existing = normalizeForCompare(data.employee_id);
       if (existing) takenIds.add(existing);
     }
@@ -173,13 +173,10 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
   const nameSlug = slugFromFirstName(firstName, `${firstName} ${lastName}`.trim(), workEmail);
 
   let edges = relDocs
-    .map((doc) => {
-      const row = doc.data() || {};
-      return {
-        parent_member_id: typeof row.parent_member_id === "string" ? row.parent_member_id : "",
-        child_member_id: typeof row.child_member_id === "string" ? row.child_member_id : "",
-      };
-    })
+    .map((row) => ({
+      parent_member_id: typeof row.parent_member_id === "string" ? row.parent_member_id : "",
+      child_member_id: typeof row.child_member_id === "string" ? row.child_member_id : "",
+    }))
     .filter((edge) => edge.parent_member_id && edge.child_member_id);
 
   const ownerIds = new Set(

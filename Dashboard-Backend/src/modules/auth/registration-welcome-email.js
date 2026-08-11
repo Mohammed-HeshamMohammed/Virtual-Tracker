@@ -3,22 +3,19 @@ import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { resolveAppPublicUrl } from "./app-public-url.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
-
-const PENDING_AUTH = "pending_auth_members";
+import { query as pgQuery } from "../../lib/postgres/client.js";
+import { getMemberByFirebaseUidPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} uid
  */
-async function shouldSkipRegistrationWelcome(db, uid) {
-  const pending = await db.collection(PENDING_AUTH).doc(uid).get();
-  if (pending.exists) return true;
+async function shouldSkipRegistrationWelcome(_db, uid) {
+  const pendingRows = await pgQuery("SELECT 1 FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
+  if (pendingRows.length) return true;
 
-  const memberSnap = await db.collection("members").where("firebase_uid", "==", uid).limit(1).get();
-  if (!memberSnap.empty) {
-    const createdBy = typeof memberSnap.docs[0].data()?.created_by === "string" ? memberSnap.docs[0].data().created_by : "";
-    if (createdBy === "invite-preprovision") return true;
-  }
+  const member = await getMemberByFirebaseUidPg(uid);
+  if (member && member.created_by === "invite-preprovision") return true;
 
   return false;
 }

@@ -25,34 +25,29 @@ impl ApiClient {
             .map(|s| s.to_string())
     }
 
-    pub fn fetch_project_budgets_map(&mut self) -> std::collections::HashMap<String, bool> {
+    /// Fails loudly (`Err`) rather than silently returning an empty map on
+    /// network/parse failure - an empty map reads downstream as "no project
+    /// has a budget limit," which would fail-open a budget gate on a
+    /// transient blip instead of surfacing the problem.
+    pub fn fetch_project_budgets_map(&mut self) -> Result<std::collections::HashMap<String, bool>, ApiError> {
         let mut map = std::collections::HashMap::new();
-        let auth = match self.authorized() {
-            Some(a) => a,
-            None => return map,
-        };
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/project-budgets", self.api_url);
-        let res = match self
+        let res = self
             .client
             .get(url)
             .header("Authorization", auth)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
-        {
-            Ok(r) => r,
-            Err(_) => return map,
-        };
+            .map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
-            return map;
+            return Err(ApiError::Network);
         }
-        let body: Value = match res.json() {
-            Ok(b) => b,
-            Err(_) => return map,
-        };
-        let list = match body.get("data").and_then(|v| v.as_array()) {
-            Some(l) => l,
-            None => return map,
-        };
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let list = body
+            .get("data")
+            .and_then(|v| v.as_array())
+            .ok_or(ApiError::Network)?;
 
         for item in list {
             let pid = match item.get("project_id").and_then(|v| v.as_str()) {
@@ -80,7 +75,7 @@ impl ApiClient {
             map.insert(pid, limit_reached);
         }
 
-        map
+        Ok(map)
     }
 
     pub fn fetch_viewer_projects(&mut self) -> Result<Vec<crate::types::ProjectInfo>, String> {
@@ -105,7 +100,9 @@ impl ApiClient {
             .cloned()
             .unwrap_or_default();
 
-        let budget_map = self.fetch_project_budgets_map();
+        let budget_map = self
+            .fetch_project_budgets_map()
+            .map_err(|e| format!("Failed to load project budgets: {e}"))?;
 
         let mut projects = Vec::new();
         for item in list {

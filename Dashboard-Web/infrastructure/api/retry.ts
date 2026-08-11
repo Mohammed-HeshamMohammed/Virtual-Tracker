@@ -1,6 +1,5 @@
 /** Shared retry helper for transient backend failures (5xx, network, unavailable). */
 
-import { isFirestoreQuotaExceededError } from "@/features/auth/services/firestore-quota"
 import {
   isInfrastructureError,
   isServiceUnavailableError,
@@ -34,7 +33,6 @@ const DEFAULT_MAX_DELAY_MS = 8_000
 const DEFAULT_BACKOFF_FACTOR = 1.8
 
 export function isRetriableBackendError(error: unknown): boolean {
-  if (isFirestoreQuotaExceededError(error)) return false
   if (isServiceUnavailableError(error)) return true
   if (isInfrastructureError(error)) return false
   if (error instanceof RetriableBackendError) return true

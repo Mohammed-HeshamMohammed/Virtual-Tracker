@@ -5,7 +5,6 @@ import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
 import { readJsonBody } from "../../http/read-json-body.js";
-import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 import {
   recordMemberRelationship,
   getMemberAncestors,
@@ -173,15 +172,14 @@ export async function routeMemberRelationships(req, res, url, origin) {
 
       let [membersRows, relDocs, roleNameById] = await Promise.all([
         listMembersPg({ limit: 5000 }),
-        fetchAllDocs(db.collection("member_relationships")),
+        query("SELECT * FROM member_relationships"),
         loadRoleNameById(db),
       ]);
 
-      const relationshipRows = relDocs.map((doc) => ({ id: doc.id, ...doc.data() }));
-      if (planRelationshipRepairs(relationshipRows).remove.length > 0) {
+      if (planRelationshipRepairs(relDocs).remove.length > 0) {
         const repair = await repairMemberRelationshipIntegrity(db);
         if (repair.repaired) {
-          relDocs = await fetchAllDocs(db.collection("member_relationships"));
+          relDocs = await query("SELECT * FROM member_relationships");
         }
       }
 
@@ -206,15 +204,12 @@ export async function routeMemberRelationships(req, res, url, origin) {
         };
       });
 
-      let edges = relDocs.map((doc) => {
-        const d = doc.data() || {};
-        return {
-          id: doc.id,
-          parent_member_id: typeof d.parent_member_id === "string" ? d.parent_member_id : "",
-          child_member_id: typeof d.child_member_id === "string" ? d.child_member_id : "",
-          relationship_type: typeof d.relationship_type === "string" ? d.relationship_type : "",
-        };
-      }).filter((e) => e.parent_member_id && e.child_member_id);
+      let edges = relDocs.map((d) => ({
+        id: d.id,
+        parent_member_id: typeof d.parent_member_id === "string" ? d.parent_member_id : "",
+        child_member_id: typeof d.child_member_id === "string" ? d.child_member_id : "",
+        relationship_type: typeof d.relationship_type === "string" ? d.relationship_type : "",
+      })).filter((e) => e.parent_member_id && e.child_member_id);
 
       const childToParent = new Map(edges.map((e) => [e.child_member_id, e.parent_member_id]));
       const orphanMemberIds = [];
@@ -555,15 +550,15 @@ export async function routeMemberRelationships(req, res, url, origin) {
   if ((pn === "/api/member-relationships/status" || pn === "/api/v1/member-relationships/status") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const existingRel = await db.collection("member_relationships").limit(1).get();
+      const existingRel = await query("SELECT 1 FROM member_relationships LIMIT 1");
       const countResult = await query("SELECT COUNT(*)::int as count FROM members");
       const memberCount = countResult[0]?.count ?? 0;
 
       sendJson(res, origin, 200, {
         success: true,
         data: {
-          initialized: !existingRel.empty,
-          relationships_exist: !existingRel.empty,
+          initialized: existingRel.length > 0,
+          relationships_exist: existingRel.length > 0,
           member_count: memberCount,
         },
       });

@@ -12,6 +12,7 @@ import { enforceUnauthorizedPrivilegedRole } from "../members/services/privilege
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { validateSessionAuthorization } from "./session-authorization.js";
+import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {import("node:http").IncomingMessage} req
@@ -97,10 +98,7 @@ export async function handleSessionBootstrap(req, res, origin, url) {
         logSafeWarn("[session-bootstrap] member bootstrap incomplete:", memberBootstrap);
       } else if (memberId && !profileMustChange) {
         await alignMemberRoleTables(db, memberId, decoded.uid);
-        const memberSnap = await db.collection("members").doc(memberId).get();
-        if (memberSnap.exists) {
-          memberData = memberSnap.data() || null;
-        }
+        memberData = await getMemberByIdPg(memberId);
 
         if (memberId && memberData) {
           const roleName = await resolveMemberRoleName(db, memberId);

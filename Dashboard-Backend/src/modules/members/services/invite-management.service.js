@@ -2,24 +2,23 @@ import { sendMemberInviteEmail } from "../../auth/invite-email.js";
 import { resolveAppPublicUrl } from "../../auth/app-public-url.js";
 import { isInviteConsumed, isInviteExpired } from "./invite-lifecycle.js";
 import { resolveRoleNameById } from "./relation-sync.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} inviteId
  */
-async function loadInviteForManagement(db, inviteId) {
+async function loadInviteForManagement(inviteId) {
   if (!inviteId || typeof inviteId !== "string") {
     return { ok: false, httpStatus: 400, error: "Invalid invite id." };
   }
   if (inviteId.startsWith("pa_")) {
     return { ok: false, httpStatus: 400, error: "Pre-provisioned accounts use different actions." };
   }
-  const ref = db.collection("invites").doc(inviteId);
-  const doc = await ref.get();
-  if (!doc.exists) {
+  const rows = await pgQuery("SELECT * FROM invites WHERE id = $1 LIMIT 1", [inviteId]);
+  if (!rows.length) {
     return { ok: false, httpStatus: 404, error: "Invite not found." };
   }
-  return { ok: true, ref, row: doc.data() || {} };
+  return { ok: true, row: rows[0] };
 }
 
 /**
@@ -38,7 +37,7 @@ function buildInviteUrl(row, appOrigin) {
  * @param {string | undefined} appOrigin
  */
 export async function getInviteManagementLink(db, inviteId, appOrigin) {
-  const loaded = await loadInviteForManagement(db, inviteId);
+  const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;
 
   const inviteKind = typeof loaded.row.invite_kind === "string" ? loaded.row.invite_kind : "email";
@@ -61,22 +60,21 @@ export async function getInviteManagementLink(db, inviteId, appOrigin) {
  * @param {string} inviteId
  */
 export async function renewInviteForManagement(db, inviteId) {
-  const loaded = await loadInviteForManagement(db, inviteId);
+  const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;
 
   if (isInviteConsumed(loaded.row)) {
     return { ok: false, httpStatus: 410, error: "This invite has already been used." };
   }
 
-  await loaded.ref.update({
-    status: "pending_signup",
-    expires_at: null,
-    sent_at: new Date(),
-    updated_at: new Date(),
-  });
+  const rows = await pgQuery(
+    `UPDATE invites SET status = $1, expires_at = $2, sent_at = $3, updated_at = now()
+     WHERE id = $4
+     RETURNING *`,
+    ["pending_signup", null, new Date(), inviteId],
+  );
 
-  const next = await loaded.ref.get();
-  return { ok: true, row: { id: next.id, ...next.data() } };
+  return { ok: true, row: rows[0] };
 }
 
 /**
@@ -85,7 +83,7 @@ export async function renewInviteForManagement(db, inviteId) {
  * @param {{ appOrigin?: string }} [opts]
  */
 export async function resendInviteEmailForManagement(db, inviteId, opts = {}) {
-  const loaded = await loadInviteForManagement(db, inviteId);
+  const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;
 
   const inviteKind = typeof loaded.row.invite_kind === "string" ? loaded.row.invite_kind : "email";
@@ -101,25 +99,30 @@ export async function resendInviteEmailForManagement(db, inviteId, opts = {}) {
     return { ok: false, httpStatus: 400, error: "Invite has no email address." };
   }
 
-  /** @type {Record<string, unknown>} */
-  const updates = { sent_at: new Date(), updated_at: new Date() };
   const status = typeof loaded.row.status === "string" ? loaded.row.status : "";
-  if (isInviteExpired(loaded.row) || status === "expired") {
-    updates.status = "pending_signup";
-    updates.expires_at = null;
-  }
-  await loaded.ref.update(updates);
+  const expiring = isInviteExpired(loaded.row) || status === "expired";
 
-  const inviteUrl = buildInviteUrl(loaded.row, opts.appOrigin);
+  const rows = await pgQuery(
+    `UPDATE invites SET
+       sent_at = $1,
+       updated_at = now(),
+       status = CASE WHEN $2 THEN $3 ELSE status END,
+       expires_at = CASE WHEN $2 THEN NULL ELSE expires_at END
+     WHERE id = $4
+     RETURNING *`,
+    [new Date(), expiring, "pending_signup", inviteId],
+  );
+  const updatedRow = rows[0];
+
+  const inviteUrl = buildInviteUrl(updatedRow, opts.appOrigin);
   if (!inviteUrl) {
     return { ok: false, httpStatus: 500, error: "Invite link is unavailable." };
   }
 
   const roleName =
-    (await resolveRoleNameById(db, typeof loaded.row.role_id === "string" ? loaded.row.role_id : "")) || "Viewer";
+    (await resolveRoleNameById(db, typeof updatedRow.role_id === "string" ? updatedRow.role_id : "")) || "Viewer";
   const emailResult = await sendMemberInviteEmail({ email, inviteUrl, roleName });
 
-  const next = await loaded.ref.get();
   return {
     ok: true,
     email,
@@ -127,6 +130,6 @@ export async function resendInviteEmailForManagement(db, inviteId, opts = {}) {
     channel: emailResult.channel,
     emailError: typeof emailResult.error === "string" ? emailResult.error : undefined,
     inviteUrl,
-    row: { id: next.id, ...next.data() },
+    row: updatedRow,
   };
 }

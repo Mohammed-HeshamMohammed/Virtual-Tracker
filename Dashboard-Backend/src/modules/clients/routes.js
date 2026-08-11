@@ -24,7 +24,7 @@ import {
 } from "./services/client-service.js";
 import { getClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
-import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 
 function memberLabel(data) {
   const first = typeof data.first_name === "string" ? data.first_name : "";
@@ -72,8 +72,8 @@ export async function routeClients(req, res, url, db, origin) {
   if (pn === "/api/clients/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [membersDocs, projectRows, clientRows] = await Promise.all([
-        fetchAllDocs(db.collection("members")),
+      const [rawMembers, projectRows, clientRows] = await Promise.all([
+        listMembersPg({ limit: 5000 }),
         pgQuery("SELECT id, name, status FROM projects"),
         pgQuery("SELECT member_id FROM clients"),
       ]);
@@ -82,7 +82,6 @@ export async function routeClients(req, res, url, db, origin) {
         clientRows.map((row) => String(row.member_id ?? "").trim()).filter(Boolean),
       );
 
-      const rawMembers = membersDocs.map((doc) => ({ id: doc.id, ...(doc.data() || {}) }));
       const enrichedMembers = await enrichMembersWithRoleNames(db, rawMembers);
 
       const clientMembers = enrichedMembers

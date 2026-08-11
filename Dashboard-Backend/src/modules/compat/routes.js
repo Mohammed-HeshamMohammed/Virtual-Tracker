@@ -343,8 +343,6 @@ async function mapMembersWithProfilePhotos(db, docs, options = {}) {
   });
 }
 
-let hasNormalizedLegacyDocIds = false;
-
 function encodeMemberPageCursor(docId) {
   return Buffer.from(docId, "utf8").toString("base64url");
 }
@@ -544,16 +542,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
   }
   if (membersRoot && req.method === "GET") {
     try {
-      const { normalizeLegacyMemberDocumentIds } = await import("../members/services/normalize-member-doc-ids.js");
-      if (!hasNormalizedLegacyDocIds) {
-        try {
-          await normalizeLegacyMemberDocumentIds(db);
-          hasNormalizedLegacyDocIds = true;
-        } catch (e) {
-          logSafeWarn("[members] legacy id normalize:", e);
-        }
-      }
-
       const fieldsParam = url.searchParams.get("fields");
       const fieldsToSelect = fieldsParam
         ? fieldsParam.split(",").map((f) => f.trim()).filter(Boolean)

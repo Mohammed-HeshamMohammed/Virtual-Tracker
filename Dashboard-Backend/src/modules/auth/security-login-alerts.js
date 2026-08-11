@@ -5,6 +5,7 @@ import {
   resolveSecurityEmailRecipient,
   sendNewSignInAlertEmail,
 } from "./security-notification-emails.js";
+import { updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * @param {string} ip
@@ -112,7 +113,7 @@ export async function syncMemberLastLoginIp(db, memberId, requestIp) {
   const memberKey = typeof memberId === "string" ? memberId.trim() : "";
   const ip = normalizeIp(requestIp);
   if (!memberKey || !ip) return;
-  await db.collection("members").doc(memberKey).set({ ip_address: ip }, { merge: true });
+  await updateMemberPg(memberKey, { ip_address: ip });
 }
 
 /**
