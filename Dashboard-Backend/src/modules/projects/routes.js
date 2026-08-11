@@ -44,6 +44,7 @@ import {
   listProjectIdsForTeamPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { sendToMember } from "../presence/index.js";
 import { schemaByKey } from "../schema/catalog/index.js";
 import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schema-crud.service.js";
