@@ -3,6 +3,7 @@
 import type { ReactNode } from "react"
 import { Info } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
+import { formatDateAdded } from "@/features/members/utils/member-utils"
 import {
   MODAL_INPUT,
   MODAL_LABEL,
@@ -167,7 +168,7 @@ export function PayBillTab({ member, state, setState }: TabProps) {
                   {member.payment === "No rate set" ? "$0.00" : member.payment.replace("/hr", "")}
                 </td>
                 <td className="px-3 py-2.5">Hourly</td>
-                <td className="px-3 py-2.5">{member.dateAdded}</td>
+                <td className="px-3 py-2.5">{formatDateAdded(member.dateAdded)}</td>
                 <td className="px-3 py-2.5 text-slate-400 dark:text-slate-500">—</td>
               </tr>
             </tbody>
