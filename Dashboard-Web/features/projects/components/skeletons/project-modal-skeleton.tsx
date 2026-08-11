@@ -7,7 +7,6 @@ import { FORM_GRID, FORM_STACK } from "@/shared/ui/forms/form-styles"
 interface ProjectModalSkeletonProps {
   isDark?: boolean
   activeTab: string
-  budgetSubTab?: "project-budget" | "member-limits"
 }
 
 function FieldSkeleton({ bone, className }: { bone: string; className?: string }) {
@@ -39,7 +38,6 @@ function isDarkBorder(bone: string) {
 export function ProjectModalSkeleton({
   isDark = false,
   activeTab,
-  budgetSubTab = "project-budget",
 }: ProjectModalSkeletonProps) {
   const bone = isDark ? "bg-[#2e3447]" : "bg-slate-200"
 
@@ -62,11 +60,18 @@ export function ProjectModalSkeleton({
     )
   }
 
-  if (activeTab === "budget") {
+  if (activeTab === "management") {
     return (
       <div className={cn(FORM_STACK, "animate-pulse")} aria-hidden>
-        <Skeleton className={cn("h-10 w-full max-w-md rounded-full", bone)} />
-        {budgetSubTab === "project-budget" ? (
+        <ToggleCardSkeleton bone={bone} />
+      </div>
+    )
+  }
+
+  if (activeTab === "budget" || activeTab === "limits") {
+    return (
+      <div className={cn(FORM_STACK, "animate-pulse")} aria-hidden>
+        {activeTab === "budget" ? (
           <>
             <div className={FORM_GRID}>
               <FieldSkeleton bone={bone} />
