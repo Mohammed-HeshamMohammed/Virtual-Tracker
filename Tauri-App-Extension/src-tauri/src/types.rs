@@ -148,6 +148,11 @@ pub struct SessionInfo {
     pub active_seconds: u64,
     #[serde(default)]
     pub idle_seconds: u64,
+    /// TC-5: the server truncated active_seconds against the task's daily
+    /// cap on this sync - the timer is over its allowance and should be
+    /// stopped, not left running with a number that's no longer advancing.
+    #[serde(default)]
+    pub timer_capped: bool,
 }
 
 /// CF-2: the disclosure notice as shown to the UI, composed server-side from

@@ -604,7 +604,7 @@ impl ActivityTracker {
         if (!state.task_id.is_empty() || !session_project_id.is_empty()) && now >= state.next_sync_at {
             let active_total = state.active_baseline + state.active_elapsed;
             let idle_total = state.idle_baseline + state.idle_elapsed;
-            let _ = self.api.lock().post_session_action(
+            let sync_result = self.api.lock().post_session_action(
                 "sync",
                 Some(state.task_id.as_str()).filter(|id| !id.is_empty()),
                 Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
@@ -612,6 +612,36 @@ impl ActivityTracker {
                 idle_total,
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
+
+            // TC-5: the server already truncated active_seconds against the
+            // task's daily cap on this sync (see activity/routes.js's
+            // timerCapped) - stop here too, same shape as the idle-stop path
+            // above, or the local clock keeps advancing past a number the
+            // server has stopped recording.
+            if matches!(sync_result, Ok(info) if info.timer_capped) {
+                log::info!("Task daily cap reached - stopping timer");
+                let _ = self.api.lock().post_session_action(
+                    "stop",
+                    Some(state.task_id.as_str()).filter(|id| !id.is_empty()),
+                    Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
+                    active_total,
+                    idle_total,
+                );
+                state.was_active = false;
+                state.current_session = String::new();
+                *self.session_id.lock() = None;
+                self.reset_task_progress(
+                    &mut state.task_id,
+                    &mut state.last_tick_at,
+                    &mut state.active_baseline,
+                    &mut state.active_elapsed,
+                    &mut state.idle_baseline,
+                    &mut state.idle_elapsed,
+                    &mut state.idle_time_disabled,
+                    &mut state.idle_threshold_sec_for_project,
+                );
+                self.emit_status("Timer stopped — task's daily hour limit reached");
+            }
         }
     }
 

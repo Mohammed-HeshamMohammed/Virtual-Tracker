@@ -86,6 +86,7 @@ impl ApiClient {
                 idle_stage: 0,
                 active_seconds: 0,
                 idle_seconds: 0,
+                timer_capped: false,
             },
         }
     }
@@ -122,5 +123,9 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
             .and_then(|d| d.get("idleSeconds"))
             .and_then(|v| v.as_u64())
             .unwrap_or(0),
+        timer_capped: data
+            .and_then(|d| d.get("timerCapped"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
     }
 }
