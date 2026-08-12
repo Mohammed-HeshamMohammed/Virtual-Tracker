@@ -294,7 +294,7 @@ function DraggableListRow({
       )}
     >
       <td className="w-8 px-3 py-3" onClick={(e) => e.stopPropagation()}>
-        <Checkbox checked={isChecked} onChange={() => onToggleChecked?.(task.id)} isDark={isDark} />
+        <Checkbox checked={isChecked} onChange={(e) => onToggleChecked?.(task.id, e.shiftKey)} isDark={isDark} />
       </td>
       <td className="w-8 px-2 py-3" onClick={(e) => e.stopPropagation()}>
         <button
@@ -527,7 +527,9 @@ function DroppableListGroup({
                       onSelectTask={onSelectTask}
                       onTaskPreview={onTaskPreview}
                       isChecked={selectedTaskIds?.has(task.id) ?? false}
-                      onToggleChecked={onToggleTaskSelected}
+                      onToggleChecked={(id: string, shiftKey: boolean) =>
+                        onToggleTaskSelected?.(id, shiftKey, items.map((t: any) => t.id))
+                      }
                       editingId={editingId}
                       setEditingId={setEditingId}
                       editTitle={editTitle}

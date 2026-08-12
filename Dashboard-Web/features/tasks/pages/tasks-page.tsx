@@ -49,6 +49,7 @@ import { TaskReviewModal } from "@/features/tasks/components/modals/task-review-
 import { TasksBatchBar } from "@/features/tasks/components/tasks-batch-bar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
+import { useRangeSelect } from "@/shared/hooks/use-range-select"
 
 const EMPTY_PROJECT_MEMBERS: Member[] = []
 
@@ -394,13 +395,9 @@ export function TasksPage() {
     setSelectedTaskIds(new Set())
   }, [selectedProjectId])
 
-  function toggleTaskSelected(id: string) {
-    setSelectedTaskIds((prev) => {
-      const s = new Set(prev)
-      if (s.has(id)) s.delete(id)
-      else s.add(id)
-      return s
-    })
+  const rangeToggleTask = useRangeSelect()
+  function toggleTaskSelected(id: string, shiftKey = false, orderedIds: string[] = []) {
+    rangeToggleTask(id, shiftKey, orderedIds, setSelectedTaskIds)
   }
 
   async function handleBatchStatusChange(status: TaskStatus) {

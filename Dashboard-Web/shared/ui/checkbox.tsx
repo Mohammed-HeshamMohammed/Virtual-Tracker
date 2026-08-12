@@ -1,5 +1,6 @@
 "use client"
 
+import type { MouseEvent } from "react"
 import { cn } from "@/shared/utils/utils"
 import { Check } from "lucide-react"
 
@@ -10,7 +11,7 @@ export function Checkbox({
   isDark = false,
 }: {
   checked: boolean
-  onChange: () => void
+  onChange: (event: MouseEvent<HTMLButtonElement>) => void
   className?: string
   isDark?: boolean
 }) {
