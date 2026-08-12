@@ -109,8 +109,12 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   }
   if (sets.length === 0) return getProjectPg(id);
   sets.push("updated_at = now()");
+  // Postgres's now() has microsecond precision; expectedUpdatedAt round-tripped
+  // through JS Date.toISOString() only has millisecond precision - compare both
+  // sides truncated to milliseconds or this always mismatches (false 409 on
+  // every save, not just real conflicts).
   const where = expectedUpdatedAt
-    ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}`
+    ? `WHERE id = $1 AND date_trunc('milliseconds', updated_at) = $${params.push(expectedUpdatedAt)}::timestamptz`
     : "WHERE id = $1";
   const rows = await query(`UPDATE projects SET ${sets.join(", ")} ${where} RETURNING *`, params);
   if (rows.length === 0 && expectedUpdatedAt) {
@@ -129,7 +133,9 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
  * contract as updateProjectPg (§6.9 case 28: archive racing a rename). */
 export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
   const params = [id, uuidOrNull(actorId)];
-  const where = expectedUpdatedAt ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}` : "WHERE id = $1";
+  const where = expectedUpdatedAt
+    ? `WHERE id = $1 AND date_trunc('milliseconds', updated_at) = $${params.push(expectedUpdatedAt)}::timestamptz`
+    : "WHERE id = $1";
   const rows = await query(
     `UPDATE projects SET status = 'archived', archived_by = $2, archived_at = now(), updated_at = now() ${where} RETURNING *`,
     params,
@@ -237,7 +243,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
          type = $2, based_on = $3, scope = $4, cost = $5, notify_project_members = $6, notify_at_pct = $7,
          who_to_notify = $8, stop_timers_when_reached = $9, stop_timers_at_pct = $10, resets = $11,
          start_date = $12, include_non_billable_time = $13, updated_by = $14, updated_at = now()
-       WHERE project_id = $1 AND updated_at = $15
+       WHERE project_id = $1 AND date_trunc('milliseconds', updated_at) = $15::timestamptz
        RETURNING *`,
       [
         projectId,
