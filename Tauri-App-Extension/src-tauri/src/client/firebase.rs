@@ -128,8 +128,14 @@ impl FirebaseTokenService {
         {
             Ok(res) if res.status().is_success() => {
                 let body: Value = res.json().ok()?;
+                // serverApiKey is unrestricted (or restricted only to Identity
+                // Toolkit) - apiKey is the browser's referrer-restricted key,
+                // which Google 403s for this agent's direct (no-Referer)
+                // calls to securetoken/identitytoolkit. Fall back to apiKey
+                // for older Auth-Backend deployments that predate the field.
                 let key = body
-                    .pointer("/config/apiKey")
+                    .pointer("/config/serverApiKey")
+                    .or_else(|| body.pointer("/config/apiKey"))
                     .and_then(|v| v.as_str())
                     .filter(|k| k.len() > 10)?
                     .to_string();
