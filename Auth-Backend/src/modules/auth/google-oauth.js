@@ -97,12 +97,16 @@ async function exchangeGoogleCodeForFirebaseTokens(code) {
     throw new Error("google_token_exchange_missing_id_token");
   }
 
-  const web = readFirebaseWebConfigFromEnv();
-  if (!web.apiKey) {
+  // Deliberately not `web.apiKey` alone: that key backs Dashboard-Web's
+  // browser-side SDK too and may carry an HTTP-referrer (Websites)
+  // restriction, which a server-to-server fetch() (no Referer header) always
+  // fails against — see the `serverApiKey` doc comment in config/env.js.
+  const serverApiKey = getEnv().googleOAuth.serverApiKey || readFirebaseWebConfigFromEnv().apiKey;
+  if (!serverApiKey) {
     throw new Error("firebase_web_api_key_not_configured");
   }
   const idpRes = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(web.apiKey)}`,
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${encodeURIComponent(serverApiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },

@@ -98,6 +98,7 @@ const envSourceSchema = z
     GOOGLE_OAUTH_CLIENT_SECRET: optionalTrimmedString,
     GOOGLE_OAUTH_REDIRECT_URI: optionalTrimmedString,
     GOOGLE_OAUTH_STATE_SECRET: optionalTrimmedString,
+    GOOGLE_OAUTH_SERVER_API_KEY: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
     const nodeEnvRaw = (data.NODE_ENV || "development").trim();
