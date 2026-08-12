@@ -58,8 +58,13 @@ import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/p
 function validateProjectDomainBody(entityKey, body, isUpdate) {
   const entity = schemaByKey.get(entityKey);
   if (!entity) return;
-  if (isUpdate) buildUpdatePayload(entity, body);
-  else buildCreatePayload(entity, body);
+  // §6.9 optimistic-concurrency token: sent by the client on updates, never
+  // a real column, so the field catalog doesn't (and shouldn't) know about
+  // it - every isUpdate caller needs it whitelisted or it 400s as an
+  // "Unexpected field" before the conditional-write check below ever runs.
+  const options = isUpdate ? { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt"] } : {};
+  if (isUpdate) buildUpdatePayload(entity, body, options);
+  else buildCreatePayload(entity, body, options);
 }
 
 /**
