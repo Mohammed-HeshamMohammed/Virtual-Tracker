@@ -9,7 +9,9 @@ import { getRollingWeekDays, startOfDay } from "../dashboard/dashboard-utils.js"
 import {
   sumDailyMemberActiveSeconds,
   sumDailyMemberTaskActiveSeconds,
+  sumDailyMemberTaskActiveSecondsRange,
 } from "../../lib/postgres/activity-events-postgres.service.js";
+import { getTrackingRowPg } from "../../lib/postgres/task-member-progress.service.js";
 
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
@@ -105,6 +107,36 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
 }
 
 /**
+ * "Today"'s worked-on-task seconds for daily-cap enforcement - or, for a
+ * rolling_hour_cap task with a currently-open session (rolling_session_started_at
+ * set - see its doc comment in ensure-lookup-schema.js), the sum across every
+ * calendar day that session has spanned so far. That's what lets an 8h/day
+ * task's cap survive a midnight rollover as one continuous budget instead of
+ * granting a fresh allowance the moment the day-bucket flips. Falls back to
+ * the plain single-day sum if the task isn't rolling, or has no open session
+ * (e.g. already stopped) - identical to the pre-existing behavior.
+ * @param {string} memberId
+ * @param {string} taskId
+ * @param {Record<string, unknown>} task
+ * @param {string} todayDay
+ */
+async function resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay) {
+  if (!taskId) return 0;
+  if (task?.rolling_hour_cap) {
+    const tracking = await getTrackingRowPg(taskId, memberId);
+    const sessionStart = tracking?.rolling_session_started_at;
+    if (sessionStart) {
+      const sessionStartDay = dayKey(new Date(sessionStart).getTime());
+      return sumDailyMemberTaskActiveSecondsRange(memberId, taskId, {
+        fromDay: sessionStartDay,
+        toDay: todayDay,
+      });
+    }
+  }
+  return sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay);
+}
+
+/**
  * Remaining active seconds for a member on a task (daily caps, limits, time already logged).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
@@ -125,7 +157,7 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
 
   const [ctx, workedTodayOnTaskSeconds] = await Promise.all([
     loadMemberCapContext(db, memberId),
-    taskId ? sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay) : Promise.resolve(0),
+    resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay),
   ]);
 
   if (ctx.usesShifts) {

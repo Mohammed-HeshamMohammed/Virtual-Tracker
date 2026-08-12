@@ -15,6 +15,7 @@ export const taskSchemas = [
       duration_days: "int",
       working_days: "int",
       overtime_hours_per_day: "float",
+      rolling_hour_cap: "boolean",
       assigned_to: "uuid",
       start_date: "timestamp",
       due_date: "timestamp",

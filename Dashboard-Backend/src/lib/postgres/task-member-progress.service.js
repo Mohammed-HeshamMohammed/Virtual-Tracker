@@ -39,6 +39,7 @@ const TRACKING_COLUMNS = [
   "idle_seconds",
   "progress_percentage",
   "last_started_at",
+  "rolling_session_started_at",
   "last_activity_at",
   "session_id",
   "review_notes",
@@ -98,17 +99,29 @@ export async function upsertTrackingRowPg(payload, options = {}) {
   const activeSet = allowDecrease
     ? "EXCLUDED.active_seconds"
     : "GREATEST(task_member_progress.active_seconds, EXCLUDED.active_seconds)";
+  // rolling_session_started_at, unlike last_started_at below, must actually
+  // reset per session for rolling_hour_cap's day-range enforcement to mean
+  // anything: fresh timestamp on a real "start", left alone across
+  // "resume"/"sync" (same INSERT-time value carried through on conflict),
+  // cleared to NULL on "stop" so the next "start" begins a clean window.
   const rows = await query(
     `INSERT INTO task_member_progress (
        task_id, member_id, project_id, active_seconds, idle_seconds, progress_percentage,
-       last_started_at, last_activity_at, session_id, review_notes
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       last_started_at, rolling_session_started_at, last_activity_at, session_id, review_notes
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,
+       CASE $11::text WHEN 'start' THEN $8::timestamptz ELSE NULL END,
+       $8,$9,$10)
      ON CONFLICT (task_id, member_id) DO UPDATE SET
        project_id = EXCLUDED.project_id,
        active_seconds = ${activeSet},
        idle_seconds = GREATEST(task_member_progress.idle_seconds, EXCLUDED.idle_seconds),
        progress_percentage = EXCLUDED.progress_percentage,
        last_started_at = COALESCE(task_member_progress.last_started_at, EXCLUDED.last_started_at),
+       rolling_session_started_at = CASE $11::text
+         WHEN 'start' THEN EXCLUDED.rolling_session_started_at
+         WHEN 'stop' THEN NULL
+         ELSE task_member_progress.rolling_session_started_at
+       END,
        last_activity_at = EXCLUDED.last_activity_at,
        session_id = COALESCE(EXCLUDED.session_id, task_member_progress.session_id),
        updated_at = now()
@@ -124,6 +137,7 @@ export async function upsertTrackingRowPg(payload, options = {}) {
       payload.last_activity_at ?? new Date(),
       payload.session_id ?? null,
       payload.review_notes ?? "",
+      payload.action ?? "",
     ],
   );
   return normalizeTrackingRow(rows[0]);
