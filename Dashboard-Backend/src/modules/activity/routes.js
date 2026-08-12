@@ -63,6 +63,20 @@ import {
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
+import {
+  createPgSession,
+  fetchPgAppLogs,
+  fetchPgScreenshotById,
+  fetchPgScreenshots,
+  fetchPgUrlLogs,
+  findOpenPgSession,
+  getPgSessionById,
+  insertActivityAppLog,
+  insertActivityScreenshot,
+  insertActivityUrlLog,
+  updatePgSession,
+} from "../../lib/postgres/activity-events-postgres.service.js";
+import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
 
 /** Monday=0..Sunday=6, matching time_settings.work_days/makeup_days storage. */
 function todayWeekdayIndex() {
@@ -88,20 +102,32 @@ async function getMemberTodayWorkStatus(db, memberId) {
   const isMakeupDay = makeupDays.includes(today);
   return { workingToday: isMakeupDay || workDays.includes(today), isMakeupDay };
 }
-import {
-  createPgSession,
-  fetchPgAppLogs,
-  fetchPgScreenshotById,
-  fetchPgScreenshots,
-  fetchPgUrlLogs,
-  findOpenPgSession,
-  getPgSessionById,
-  insertActivityAppLog,
-  insertActivityScreenshot,
-  insertActivityUrlLog,
-  updatePgSession,
-} from "../../lib/postgres/activity-events-postgres.service.js";
-import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
+
+/**
+ * Project budget usage vs its stop-timer threshold - shared by the
+ * start/resume hard gate (blocks the request) and the sync tick (reports
+ * budgetCapped so the client can stop an already-running session, the same
+ * TC-5 shape task daily caps use). Returns null when there's nothing to
+ * enforce (no budget row, or stop-on-reach isn't configured).
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} projectId
+ */
+async function checkProjectBudgetCap(db, projectId) {
+  const budget = await getProjectBudgetPg(projectId);
+  if (!budget) return null;
+  const spent = await computeProjectSpentPg(db, projectId, budget);
+  // scope='per_person' rows store hours-per-member in `cost`, not the real
+  // cap - computeProjectBudgetTargetPg is the live total (cost x headcount,
+  // x rate for Cost based). Using raw `cost` here would cap at the
+  // per-person figure instead of the real team-wide budget.
+  const cap = await computeProjectBudgetTargetPg(db, projectId, budget);
+  const usagePct = cap > 0 ? (spent / cap) * 100 : 0;
+  const reached =
+    budget.stop_timers_when_reached === true &&
+    budget.stop_timers_at_pct != null &&
+    usagePct >= Number(budget.stop_timers_at_pct);
+  return { budget, spent, cap, reached };
+}
 
 function toIso(value) {
   if (!value) return null;
@@ -534,30 +560,20 @@ export async function routeActivity(req, res, url, origin) {
         // being persisted since the project was created but nothing ever
         // read it back to actually stop anything - this is that read.
         if (sessionProjectId) {
-          const budget = await getProjectBudgetPg(sessionProjectId);
-          if (budget) {
-            const spent = await computeProjectSpentPg(db, sessionProjectId, budget);
-            // scope='per_person' rows store hours-per-member in `cost`, not
-            // the real cap - computeProjectBudgetTargetPg is the live total
-            // (cost x headcount, x rate for Cost based). Using raw `cost`
-            // here would stop timers at the per-person figure instead of the
-            // real team-wide budget.
-            const cap = await computeProjectBudgetTargetPg(db, sessionProjectId, budget);
-            const usagePct = cap > 0 ? (spent / cap) * 100 : 0;
-            if (
-              budget.stop_timers_when_reached &&
-              budget.stop_timers_at_pct != null &&
-              usagePct >= Number(budget.stop_timers_at_pct)
-            ) {
-              sendJson(res, origin, 403, {
-                success: false,
-                error: "This project's budget has been reached - timers are stopped for this project.",
-              });
-              return true;
-            }
+          const budgetCheck = await checkProjectBudgetCap(db, sessionProjectId);
+          if (budgetCheck?.reached) {
+            sendJson(res, origin, 403, {
+              success: false,
+              error: "This project's budget has been reached - timers are stopped for this project.",
+            });
+            return true;
+          }
+          if (budgetCheck) {
             // Notify is best-effort and never blocks the timer - a failed
             // notification is not a reason to stop someone from working.
-            maybeNotifyProjectBudget(db, sessionProjectId, budget, spent, cap).catch(() => null);
+            maybeNotifyProjectBudget(db, sessionProjectId, budgetCheck.budget, budgetCheck.spent, budgetCheck.cap).catch(
+              () => null,
+            );
           }
         }
       }
@@ -712,9 +728,24 @@ export async function routeActivity(req, res, url, origin) {
         }
       }
 
+      // Same TC-5 shape as timerCapped above, but for the project's own
+      // budget stop-timer threshold (Budget & Limits tab) - that gate was
+      // start/resume-only (see checkProjectBudgetCap's call site above), so
+      // a session already running when the project crossed the threshold
+      // never got stopped. Surfaced here so the sync tick can act on it too.
+      let budgetCapped = false;
+      if (sessionProjectId) {
+        try {
+          const budgetCheck = await checkProjectBudgetCap(db, sessionProjectId);
+          budgetCapped = budgetCheck?.reached === true;
+        } catch (budgetErr) {
+          logSafeError("[activity/session budget sync]", budgetErr);
+        }
+      }
+
       sendJson(res, origin, 200, {
         success: true,
-        data: open ? { ...(await normalizeSession(open.id, open)), timerCapped } : null,
+        data: open ? { ...(await normalizeSession(open.id, open)), timerCapped, budgetCapped } : null,
       });
     } catch (e) {
       logSafeError("[activity/session POST]", e);
