@@ -153,6 +153,10 @@ pub struct SessionInfo {
     /// stopped, not left running with a number that's no longer advancing.
     #[serde(default)]
     pub timer_capped: bool,
+    /// Same as timer_capped, but for the project's own budget stop-timer
+    /// threshold (Budget & Limits tab) instead of a task's daily hour cap.
+    #[serde(default)]
+    pub budget_capped: bool,
 }
 
 /// CF-2: the disclosure notice as shown to the UI, composed server-side from
