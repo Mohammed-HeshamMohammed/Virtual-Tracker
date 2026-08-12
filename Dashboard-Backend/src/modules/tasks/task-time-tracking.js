@@ -200,6 +200,7 @@ export async function syncTaskTimeTracking(db, {
       last_started_at: action === "start" || action === "resume" ? now : null,
       last_activity_at: now,
       session_id: sessionId ?? null,
+      action,
     },
     // Only "stop" may lower active_seconds - the desktop agent's
     // idle-escalation rewind (TC-4).

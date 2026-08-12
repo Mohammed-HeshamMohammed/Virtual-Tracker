@@ -6,6 +6,7 @@ import React, { useCallback, useEffect, useState as useComponentState, useMemo }
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/shared/ui/dialog"
 import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field"
 import { DatePickerField } from "@/shared/ui/forms/date-picker-field"
+import { Toggle } from "@/shared/ui/forms/toggle"
 import { cn } from "@/shared/utils/utils"
 import { parseNonNegativeNumber, validateRequiredText } from "@/shared/validation"
 import { buildScopedAssigneeOptions } from "@/features/tasks/utils/team-assignee-options"
@@ -70,6 +71,7 @@ export function TaskWizardModal({
   const [newTaskDueDate, setNewTaskDueDate] = useComponentState("")
   const [newTaskDurationHoursPerDay, setNewTaskDurationHoursPerDay] = useComponentState("")
   const [newTaskOvertimeHoursPerDay, setNewTaskOvertimeHoursPerDay] = useComponentState("")
+  const [newTaskRollingHourCap, setNewTaskRollingHourCap] = useComponentState(false)
   const [newTaskPosition, setNewTaskPosition] = useComponentState<"Top" | "Bottom">("Top")
 
   const [formAssigneeOptions, setFormAssigneeOptions] = useComponentState<{ value: string; label: string }[]>([])
@@ -124,6 +126,7 @@ export function TaskWizardModal({
       setNewTaskTeamId(task.teamId)
       setNewTaskDurationHoursPerDay(task.durationHoursPerDay !== null ? String(task.durationHoursPerDay) : "")
       setNewTaskOvertimeHoursPerDay(task.overtimeHoursPerDay !== null ? String(task.overtimeHoursPerDay) : "")
+      setNewTaskRollingHourCap(task.rollingHourCap === true)
 
       let cancelled = false
       fetchTaskParticipation(task.id, { manage: true })
@@ -153,6 +156,7 @@ export function TaskWizardModal({
     setNewTaskTeamId(projectTeams.length === 1 ? projectTeams[0]!.id : null)
     setNewTaskDurationHoursPerDay("")
     setNewTaskOvertimeHoursPerDay("")
+    setNewTaskRollingHourCap(false)
     setNewTaskPosition("Top")
   }, [
     open,
@@ -292,6 +296,7 @@ export function TaskWizardModal({
         dueDate: newTaskDueDate,
         durationHoursPerDay: newTaskDurationHoursPerDay,
         overtimeHoursPerDay: newTaskOvertimeHoursPerDay,
+        rollingHourCap: newTaskRollingHourCap,
         position: newTaskPosition,
         expectedUpdatedAt: task?.updatedAt,
       })
@@ -443,6 +448,18 @@ export function TaskWizardModal({
                 isDark ? "border-[#2e3447] bg-[#191f31]" : "border-slate-200 bg-white",
               )}
             />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
+            <div className="space-y-0.5">
+              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
+                Continuous session cap
+              </p>
+              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
+                Count the daily-hour limit against one continuous clock-in-to-clock-out session instead of
+                resetting at midnight - for shifts that cross into the next calendar day.
+              </p>
+            </div>
+            <Toggle checked={newTaskRollingHourCap} onChange={setNewTaskRollingHourCap} />
           </div>
           <div className="space-y-1.5">
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>START DATE</label>

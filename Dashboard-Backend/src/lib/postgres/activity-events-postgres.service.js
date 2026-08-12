@@ -708,6 +708,29 @@ export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
+/**
+ * Sum across [fromDay, toDay] (inclusive) instead of a single day - what
+ * rolling_hour_cap tasks need so a session spanning a midnight rollover
+ * (e.g. 6pm-2am) sums as one continuous stretch instead of just "today"'s
+ * row. Each day's row already reflects only the seconds actually worked on
+ * that calendar day (see recordDailyActiveSecondsDelta), so this has no
+ * midnight-crossing bug of its own - same reasoning as sumDailyMemberActiveSeconds.
+ * @param {string} memberId
+ * @param {string} taskId
+ * @param {{ fromDay: string, toDay: string }} range
+ */
+export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  const tId = taskId ? parseProgressUuid(taskId) : null;
+  if (!id || !tId) return 0;
+  const result = await pgQuery(
+    `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM daily_member_task_active_seconds
+     WHERE member_id = $1 AND task_id = $2 AND day >= $3::date AND day <= $4::date`,
+    [id, tId, fromDay, toDay],
+  );
+  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
+}
+
 /** For the dashboard base loader - a bounded snapshot of session rows. */
 export async function fetchPgSessionsForDashboard(limit = 500) {
   const result = await pgQuery(

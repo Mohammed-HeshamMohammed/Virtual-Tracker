@@ -40,6 +40,10 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
     sumDailyMemberActiveSeconds: async (_id, { fromDay, toDay }) =>
       fromDay === toDay ? stub.workedToday : stub.workedWeek,
     sumDailyMemberTaskActiveSeconds: async () => stub.workedTodayOnTask,
+    // Only exercised for rolling_hour_cap tasks - none of these cases set
+    // that flag, so this stub is never actually reached, just needs to
+    // exist for the static import in timer-limit.service.js to resolve.
+    sumDailyMemberTaskActiveSecondsRange: async () => stub.workedTodayOnTask,
   },
 });
 

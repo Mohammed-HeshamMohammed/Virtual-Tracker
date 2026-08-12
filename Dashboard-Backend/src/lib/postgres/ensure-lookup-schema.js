@@ -1480,6 +1480,12 @@ END $$`,
     ADD COLUMN IF NOT EXISTS not_started_assignees INT,
     ADD COLUMN IF NOT EXISTS participation_percent INT,
     ADD COLUMN IF NOT EXISTS all_assignees_started BOOLEAN NOT NULL DEFAULT false`,
+  // When true, timer-limit.service.js's daily-hour cap is enforced against the
+  // active session's continuous elapsed time (clock-in to clock-out) instead
+  // of resetting at the midnight day-bucket boundary - e.g. a 6pm-2am shift
+  // against an 8h/day task counts as one 8h stretch, not two fresh
+  // allowances split by the calendar-day rollover.
+  `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rolling_hour_cap BOOLEAN NOT NULL DEFAULT false`,
   `CREATE TABLE IF NOT EXISTS task_assignments (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id            UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -1522,6 +1528,16 @@ END $$`,
     ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id),
     ADD COLUMN IF NOT EXISTS session_id VARCHAR(128),
     ADD COLUMN IF NOT EXISTS review_notes TEXT`,
+  // Distinct from last_started_at above, which - via the upsert's
+  // COALESCE(existing, EXCLUDED) - only ever captures the *first* start this
+  // member ever made on this task and is never cleared, making it a
+  // lifetime marker, not a current-session one. rolling_session_started_at
+  // is set fresh on every real "start", left untouched across "resume"/
+  // "sync" (see upsertTrackingRowPg), and cleared to NULL on "stop" - so it
+  // reliably marks "when did the currently-ongoing clock-in begin", which
+  // rolling_hour_cap tasks need to sum daily_member_task_active_seconds
+  // across the session's day range instead of just today's row.
+  `ALTER TABLE task_member_progress ADD COLUMN IF NOT EXISTS rolling_session_started_at TIMESTAMPTZ`,
   // task_member_progress/timer_sessions.task_id had no FK at all until now -
   // couldn't reference tasks(id) when these tables were first created (tasks
   // didn't exist yet). Added here, after tasks

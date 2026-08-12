@@ -101,6 +101,7 @@ function normalizeTask(input: any): Task {
     reviewState: input.reviewState ?? input.review_state ? asString(input.reviewState ?? input.review_state) : null,
     reviewedBy: input.reviewedBy ?? input.reviewed_by ? asString(input.reviewedBy ?? input.reviewed_by) : null,
     reviewedAt: input.reviewedAt ?? input.reviewed_at ? asString(input.reviewedAt ?? input.reviewed_at) : null,
+    rollingHourCap: asBoolean(input.rollingHourCap ?? input.rolling_hour_cap),
   }
 }
 
@@ -130,6 +131,10 @@ export interface Task {
   workingDays?: number | null
   durationDays: number | null
   overtimeHoursPerDay: number | null
+  /** When true, timer-limit.service.js's daily-hour cap for this task sums
+   * the currently-open session's continuous elapsed time (clock-in to
+   * clock-out) instead of resetting at the midnight day-bucket boundary. */
+  rollingHourCap: boolean
   assignedTo: string | null
   assigneeIds?: string[]
   startDate: string | null
@@ -179,6 +184,7 @@ export interface CreateTaskInput {
   workingDays?: number | null
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
+  rollingHourCap?: boolean
   assignedTo?: string | null
   assigneeIds?: string[]
   startDate?: string | null
@@ -197,6 +203,7 @@ export interface UpdateTaskInput {
   workingDays?: number | null
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
+  rollingHourCap?: boolean
   assignedTo?: string | null
   assigneeIds?: string[]
   startDate?: string | null
@@ -342,6 +349,9 @@ export async function createTask(input: CreateTaskInput, options?: RequestOption
   if (input.overtimeHoursPerDay != null && input.overtimeHoursPerDay >= 0) {
     payload.overtime_hours_per_day = input.overtimeHoursPerDay
   }
+  if (input.rollingHourCap !== undefined) {
+    payload.rolling_hour_cap = input.rollingHourCap
+  }
 
   const assigneeIds = input.assigneeIds?.length ? input.assigneeIds : undefined
 
@@ -376,6 +386,7 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
   if (input.workingDays !== undefined) payload.working_days = input.workingDays
   if (input.durationDays !== undefined) payload.duration_days = input.durationDays
   if (input.overtimeHoursPerDay !== undefined) payload.overtime_hours_per_day = input.overtimeHoursPerDay
+  if (input.rollingHourCap !== undefined) payload.rolling_hour_cap = input.rollingHourCap
   if (input.assignedTo !== undefined) payload.assigned_to = input.assignedTo
   if (input.startDate !== undefined) payload.start_date = input.startDate
   if (input.dueDate !== undefined) payload.due_date = input.dueDate
