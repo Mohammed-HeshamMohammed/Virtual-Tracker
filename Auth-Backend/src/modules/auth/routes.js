@@ -6,6 +6,7 @@ import { sendJson } from "../../http/response.js";
 import { validatePassword, getPublicPasswordPolicyResponse } from "../../config/password-policy/index.js";
 import { normalizePasswordInput } from "../../http/password-request-guard.js";
 import { routeGoogleOAuth } from "./google-oauth.js";
+import { getEnv } from "../../config/env.js";
 
 /** Cache-Control overrides for public auth config endpoints. */
 const CACHE_FIREBASE_CONFIG = "public, max-age=3600";
@@ -15,14 +16,14 @@ const CACHE_PASSWORD_POLICY = "public, max-age=0, stale-while-revalidate=3600";
 export async function routeAuth(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
-  if (url.pathname === "/api/auth/password-policy" && req.method === "GET") {
+  if (authPath === "/api/auth/password-policy" && req.method === "GET") {
     sendJson(res, origin, 200, { success: true, ...getPublicPasswordPolicyResponse() }, req, {
       "Cache-Control": CACHE_PASSWORD_POLICY,
     });
     return true;
   }
 
-  if (url.pathname === "/api/auth/readiness" && req.method === "GET") {
+  if (authPath === "/api/auth/readiness" && req.method === "GET") {
     const auth = getAuthAdmin();
     if (!auth) {
       sendJson(res, origin, 503, {
@@ -36,7 +37,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/validate-password" && req.method === "POST") {
+  if (authPath === "/api/auth/validate-password" && req.method === "POST") {
     let body;
     try {
       body = await readJsonBody(req);
@@ -76,7 +77,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/firebase-config" && req.method === "GET") {
+  if (authPath === "/api/auth/firebase-config" && req.method === "GET") {
     const web = readFirebaseWebConfigFromEnv();
     if (!web.apiKey || !web.authDomain || !web.projectId || !web.appId) {
       sendJson(res, origin, 503, {
@@ -86,13 +87,20 @@ export async function routeAuth(req, res, url, origin) {
       });
       return true;
     }
-    sendJson(res, origin, 200, { success: true, config: web }, req, {
+    // web.apiKey is the referrer-restricted "Browser key" - fine for
+    // Dashboard-Web (sends a real Referer), but Google 403s it for anyone
+    // calling Identity Toolkit/Secure Token directly (no browser, no
+    // Referer) - which is exactly what the desktop agent does for its own
+    // token refresh and reauth. serverApiKey is additive: browser callers
+    // keep using apiKey unchanged, the agent picks serverApiKey when present.
+    const serverApiKey = getEnv().googleOAuth.serverApiKey || web.apiKey;
+    sendJson(res, origin, 200, { success: true, config: { ...web, serverApiKey } }, req, {
       "Cache-Control": CACHE_FIREBASE_CONFIG,
     });
     return true;
   }
 
-  if (url.pathname === "/api/auth/verify" && req.method === "POST") {
+  if (authPath === "/api/auth/verify" && req.method === "POST") {
     const auth = getAuthAdmin();
     if (!auth) {
       sendJson(res, origin, 503, { success: false, error: "Firebase Admin is not configured; cannot verify tokens." });
@@ -127,7 +135,7 @@ export async function routeAuth(req, res, url, origin) {
     return true;
   }
 
-  if (url.pathname === "/api/auth/resolve-sign-in-methods" && req.method === "POST") {
+  if (authPath === "/api/auth/resolve-sign-in-methods" && req.method === "POST") {
     let body;
     try {
       body = await readJsonBody(req);
