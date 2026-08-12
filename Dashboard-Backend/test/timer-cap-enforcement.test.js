@@ -12,7 +12,7 @@ import assert from "node:assert/strict";
 
 const HOUR = 3600;
 
-/** @type {{ daily: number, weekly: number, shifts: boolean, workedToday: number, workedWeek: number, workedTodayOnTask: number }} */
+/** @type {{ daily: number, weekly: number, shifts: boolean, workedToday: number, workedWeek: number, workedTodayOnTask: number, taskTrackingRows: Array<{member_id: string, active_seconds: number}>, projectBudget: object | null, memberProjectSpentSeconds: number }} */
 const stub = {
   daily: 0,
   weekly: 0,
@@ -20,6 +20,9 @@ const stub = {
   workedToday: 0,
   workedWeek: 0,
   workedTodayOnTask: 0,
+  taskTrackingRows: [],
+  projectBudget: null,
+  memberProjectSpentSeconds: 0,
 };
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
@@ -47,6 +50,66 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   },
 });
 
+// timer-limit.service.js now imports getTrackingRowPg/getTaskTrackingRowsPg
+// directly (shared_task_budget's sum-across-assignees seam), and
+// task-assignments.js (imported transitively via estimateAssignmentSeconds)
+// needs getAllTrackingRowsPg/updateTrackingFieldsPg to resolve - mock.module
+// replaces the whole namespace, so all four must be present even though only
+// the first two are ever actually exercised by these tests.
+mock.module("../src/lib/postgres/task-member-progress.service.js", {
+  namedExports: {
+    getTrackingRowPg: async () => null,
+    getTaskTrackingRowsPg: async () => stub.taskTrackingRows,
+    getAllTrackingRowsPg: async () => [],
+    updateTrackingFieldsPg: async () => null,
+  },
+});
+
+// projects-postgres.service.js has a wide transitive fan-in (task-assignments.js
+// directly, plus activity-scope.js and members/relation-sync.js pulled in
+// through it) - mock.module replaces the whole namespace, so every export
+// anything in that chain touches must exist here even though only
+// getProjectBudgetPg/getProjectTrackedSecondsPg are ever meaningfully
+// exercised by these tests.
+mock.module("../src/lib/postgres/projects-postgres.service.js", {
+  namedExports: {
+    createProjectPg: async () => null,
+    getProjectPg: async () => null,
+    updateProjectPg: async () => null,
+    archiveProjectPg: async () => null,
+    deleteProjectPg: async () => null,
+    listProjectsPg: async () => [],
+    addProjectMemberPg: async () => null,
+    removeProjectMemberPg: async () => null,
+    listProjectMembersPg: async () => [],
+    listProjectIdsForMemberPg: async () => [],
+    listMemberIdsForProjectsPg: async () => [],
+    countMembersByProjectPg: async () => ({}),
+    getProjectBudgetPg: async () => stub.projectBudget,
+    getAllProjectBudgetsPg: async () => [],
+    upsertProjectBudgetPg: async () => null,
+    getProjectMemberLimitPg: async () => null,
+    listProjectMemberLimitsPg: async () => [],
+    getAllProjectMemberLimitsPg: async () => [],
+    upsertProjectMemberLimitPg: async () => null,
+    linkClientProjectPg: async () => null,
+    unlinkClientProjectPg: async () => null,
+    listClientIdsForProjectPg: async () => [],
+    listProjectIdsForClientPg: async () => [],
+    linkTeamProjectPg: async () => null,
+    unlinkTeamProjectPg: async () => null,
+    deleteTeamProjectsForTeamPg: async () => null,
+    listTeamIdsForProjectPg: async () => [],
+    listProjectIdsForTeamPg: async () => [],
+    getProjectTrackedSecondsPg: async () => stub.memberProjectSpentSeconds,
+    computeProjectSpentCostPg: async () => 0,
+    computeProjectSpentPg: async () => 0,
+    computeProjectSpentForAllPg: async () => new Map(),
+    computeProjectBudgetTargetForAllPg: async () => new Map(),
+    computeProjectBudgetTargetPg: async () => 0,
+  },
+});
+
 const { enforceTimerAllowanceOnSync } = await import(
   "../src/modules/tasks/timer-limit.service.js"
 );
@@ -59,6 +122,9 @@ function reset(patch = {}) {
     workedToday: 0,
     workedWeek: 0,
     workedTodayOnTask: 0,
+    taskTrackingRows: [],
+    projectBudget: null,
+    memberProjectSpentSeconds: 0,
   }, patch);
 }
 
@@ -134,4 +200,70 @@ test("start/resume still throw when the day's rollup has already reached the cap
     () => enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 0, "start"),
     /TIMER_LIMIT_REACHED|Maximum allowed work time/,
   );
+});
+
+test("a shared_task_budget task caps against the whole team's pooled time, not just this member's own", async () => {
+  // 4h total task estimate, teammate "member-2" already logged 3h - only 1h
+  // of pool is left, independent of what member-1 has done so far.
+  reset({ taskTrackingRows: [{ member_id: "member-2", active_seconds: 3 * HOUR }] });
+  const result = await enforceTimerAllowanceOnSync(
+    {},
+    "member-1",
+    { id: "task-1", shared_task_budget: true, duration_hours_per_day: 4, duration_days: 1 },
+    2 * HOUR, // member-1 alone is under the 4h total, but pooled with member-2's 3h it isn't
+    "sync",
+  );
+  assert.equal(result.capped, true);
+  assert.equal(result.activeSeconds, 1 * HOUR);
+});
+
+test("an unshared task ignores other assignees' time entirely (isolation, no regression)", async () => {
+  // Same "member-2 has 3h" data as above, but shared_task_budget is unset -
+  // the 4h estimate must stay this member's own private allotment.
+  reset({ taskTrackingRows: [{ member_id: "member-2", active_seconds: 3 * HOUR }] });
+  const result = await enforceTimerAllowanceOnSync(
+    {},
+    "member-1",
+    { id: "task-1", duration_hours_per_day: 4, duration_days: 1 },
+    3.5 * HOUR,
+    "sync",
+  );
+  assert.equal(result.capped, false);
+  assert.equal(result.activeSeconds, 3.5 * HOUR);
+});
+
+test("a per-person project Hours budget caps a sync independent of the value being checked", async () => {
+  // 3h per-person allotment, this member already spent 2h elsewhere on the
+  // project (per the mocked getProjectTrackedSecondsPg) - 1h of ceiling left.
+  reset({
+    projectBudget: { type: "Hours based", scope: "per_person", cost: 3, include_non_billable_time: true },
+    memberProjectSpentSeconds: 2 * HOUR,
+  });
+  const result = await enforceTimerAllowanceOnSync(
+    {},
+    "member-1",
+    { id: "task-1", project_id: "proj-1" },
+    2 * HOUR,
+    "sync",
+  );
+  assert.equal(result.capped, true);
+  assert.equal(result.activeSeconds, 1 * HOUR);
+});
+
+test("a shared (per_project) project budget does not affect per-member enforcement", async () => {
+  // scope='per_project' is deliberately NOT folded into the per-member
+  // remainder array (it stays a team-wide-only gate elsewhere) - a task on
+  // a shared-budget project must sync through unaffected.
+  reset({
+    projectBudget: { type: "Hours based", scope: "per_project", cost: 3, include_non_billable_time: true },
+    memberProjectSpentSeconds: 0,
+  });
+  const result = await enforceTimerAllowanceOnSync(
+    {},
+    "member-1",
+    { id: "task-1", project_id: "proj-1" },
+    100 * HOUR,
+    "sync",
+  );
+  assert.equal(result.capped, false);
 });

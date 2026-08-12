@@ -11,7 +11,8 @@ import {
   sumDailyMemberTaskActiveSeconds,
   sumDailyMemberTaskActiveSecondsRange,
 } from "../../lib/postgres/activity-events-postgres.service.js";
-import { getTrackingRowPg } from "../../lib/postgres/task-member-progress.service.js";
+import { getTrackingRowPg, getTaskTrackingRowsPg } from "../../lib/postgres/task-member-progress.service.js";
+import { getProjectBudgetPg, getProjectTrackedSecondsPg } from "../../lib/postgres/projects-postgres.service.js";
 
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
@@ -72,19 +73,23 @@ async function loadMemberCapContext(db, memberId) {
 
 /**
  * Remaining active seconds for a member with no task in play (calling
- * projects). Only the member's own daily/weekly caps apply - there is no task
- * estimate or per-task daily cap to enforce, which is the whole point of the
- * "calling" project type.
+ * projects). Only the member's own daily/weekly caps apply, plus - if the
+ * project carries an Hours-based budget scoped 'per_person' - that project's
+ * own per-member allotment. There is no task estimate or per-task daily cap
+ * to enforce, which is the whole point of the "calling" project type.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
- * @param {{ currentCumulativeActiveSeconds?: number }} [options]
+ * @param {{ currentCumulativeActiveSeconds?: number, projectId?: string | null }} [options]
  */
 export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   const currentCumulativeActiveSeconds = Math.max(
     0,
     Math.floor(Number(options.currentCumulativeActiveSeconds ?? 0)),
   );
-  const ctx = await loadMemberCapContext(db, memberId);
+  const [ctx, projectBudgetRemainder] = await Promise.all([
+    loadMemberCapContext(db, memberId),
+    loadPerPersonProjectBudgetRemainderSeconds(options.projectId ?? null, memberId),
+  ]);
 
   const remainders = [];
   if (ctx.memberDailyLimitSeconds > 0) {
@@ -92,6 +97,9 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   }
   if (ctx.memberWeeklyLimitSeconds > 0 && ctx.dailyLimitHours <= 0) {
     remainders.push(Math.max(0, ctx.memberWeeklyLimitSeconds - ctx.workedWeekSeconds));
+  }
+  if (projectBudgetRemainder != null) {
+    remainders.push(projectBudgetRemainder);
   }
 
   return buildAllowanceResult({
@@ -137,6 +145,53 @@ async function resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay)
 }
 
 /**
+ * Sum of every OTHER assignee's currently-persisted active_seconds on a
+ * shared_task_budget task - deliberately excludes the calling member's own
+ * row so combining it with currentCumulativeActiveSeconds (whichever value a
+ * caller passes: their own persisted total, or 0 for the TC-5 ceiling check
+ * below) never double-counts, and the ceiling stays independent of the value
+ * being checked against it - same TC-5 requirement as every other remainder
+ * in this file.
+ * @param {string} taskId
+ * @param {string} memberId
+ */
+export async function sumOtherAssigneesActiveSeconds(taskId, memberId) {
+  if (!taskId) return 0;
+  const rows = await getTaskTrackingRowsPg(taskId);
+  return rows.reduce((sum, row) => {
+    if (row.member_id === memberId) return sum;
+    return sum + Math.max(0, Math.floor(Number(row.active_seconds) || 0));
+  }, 0);
+}
+
+/**
+ * Remaining seconds under a project's *per-person* Hours-based budget for
+ * one member - null when nothing applies (no project, no budget row, a
+ * Cost-based budget, or scope !== 'per_person'), so callers can tell "not a
+ * limit" apart from "limit is 0" the same way every other remainder here
+ * does. Shared/`per_project` scope is deliberately NOT handled here - that
+ * stays a team-wide-only gate via checkProjectBudgetCap in activity/routes.js,
+ * so the same pool is never counted against two different mechanisms at once.
+ * @param {string | null | undefined} projectId
+ * @param {string} memberId
+ */
+async function loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId) {
+  if (!projectId) return null;
+  const budget = await getProjectBudgetPg(projectId);
+  if (!budget || budget.type !== "Hours based" || budget.scope !== "per_person") return null;
+  // scope='per_person' rows store hours-per-member directly in `cost` (see
+  // the identical comment in checkProjectBudgetCap) - no headcount scaling
+  // needed here, unlike computeProjectBudgetTargetPg's team-wide use of it.
+  const capSeconds = Math.floor(Number(budget.cost ?? 0) * 3600);
+  if (capSeconds <= 0) return null;
+  const spentSeconds = await getProjectTrackedSecondsPg(projectId, {
+    memberId,
+    includeNonBillable: budget.include_non_billable_time !== false,
+  });
+  return Math.max(0, capSeconds - spentSeconds);
+}
+
+/**
  * Remaining active seconds for a member on a task (daily caps, limits, time already logged).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
@@ -153,18 +208,34 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const taskDailyCapSeconds = taskDailyHours > 0 ? Math.floor(taskDailyHours * 3600) : 0;
   const totalTaskSeconds = estimateAssignmentSeconds(task);
   const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
+  const projectId = task.project_id ?? task.projectId ?? null;
   const { todayDay } = currentDayRange();
 
-  const [ctx, workedTodayOnTaskSeconds] = await Promise.all([
+  const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder] = await Promise.all([
     loadMemberCapContext(db, memberId),
     resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay),
+    // Only shared_task_budget tasks pool across assignees - skip the extra
+    // query entirely for the (default, common) per-person case.
+    task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
+    loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
   ]);
+  // Per-person (default): 0, so this is a no-op and totalRemain/the
+  // remainder below reduce to exactly what they were before this feature.
+  const totalTaskConsumedSeconds = othersActiveSeconds + currentCumulativeActiveSeconds;
 
   if (ctx.usesShifts) {
-    const totalRemain =
-      totalTaskSeconds != null && totalTaskSeconds > 0
-        ? Math.max(0, totalTaskSeconds - currentCumulativeActiveSeconds)
-        : null;
+    // Shift-based members skip the daily/weekly personal caps below, but a
+    // task total and a project's own per-person budget are distinct limits
+    // that still apply - same reasoning as totalTaskSeconds already did here
+    // before this feature.
+    const shiftRemainders = [];
+    if (totalTaskSeconds != null && totalTaskSeconds > 0) {
+      shiftRemainders.push(Math.max(0, totalTaskSeconds - totalTaskConsumedSeconds));
+    }
+    if (projectBudgetRemainder != null) {
+      shiftRemainders.push(projectBudgetRemainder);
+    }
+    const totalRemain = shiftRemainders.length > 0 ? Math.min(...shiftRemainders) : null;
     return buildAllowanceResult({
       allowedRemainingSeconds: totalRemain,
       currentCumulativeActiveSeconds,
@@ -201,7 +272,11 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   }
 
   if (totalTaskSeconds != null && totalTaskSeconds > 0) {
-    remainders.push(Math.max(0, totalTaskSeconds - currentCumulativeActiveSeconds));
+    remainders.push(Math.max(0, totalTaskSeconds - totalTaskConsumedSeconds));
+  }
+
+  if (projectBudgetRemainder != null) {
+    remainders.push(projectBudgetRemainder);
   }
 
   const allowedRemainingSeconds =

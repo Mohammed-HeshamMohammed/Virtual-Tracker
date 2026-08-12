@@ -539,9 +539,11 @@ export async function routeActivity(req, res, url, origin) {
             return true;
           }
           // No task estimate to enforce (that is the point of a calling
-          // project) - the member's own daily/weekly hour cap still applies.
+          // project) - the member's own daily/weekly hour cap still applies,
+          // plus this project's own per-person budget if it has one.
           const allowance = await computeMemberTimerAllowance(db, member.memberId, {
             currentCumulativeActiveSeconds: cumulativeActiveSeconds,
+            projectId: sessionProjectId,
           });
           if (allowance.limitReached) {
             sendJson(res, origin, 403, {

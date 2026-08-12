@@ -465,6 +465,15 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   if (options.includeNonBillable === false) {
     entryWhere += " AND billable = true";
   }
+  // Per-person project budgets need "just this member's own tracked time",
+  // not the project-wide total every other caller of this function wants -
+  // both subqueries carry member_id, so this is additive, not a rewrite.
+  if (options.memberId) {
+    params.push(options.memberId);
+    sessionWhere += ` AND member_id = $${params.length}`;
+    params.push(options.memberId);
+    entryWhere += ` AND member_id = $${params.length}`;
+  }
 
   const rows = await query(
     `SELECT COALESCE(SUM(secs), 0) AS total_seconds

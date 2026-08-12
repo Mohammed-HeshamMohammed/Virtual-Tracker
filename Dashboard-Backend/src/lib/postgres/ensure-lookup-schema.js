@@ -1486,6 +1486,12 @@ END $$`,
   // against an 8h/day task counts as one 8h stretch, not two fresh
   // allowances split by the calendar-day rollover.
   `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rolling_hour_cap BOOLEAN NOT NULL DEFAULT false`,
+  // When true, the task's estimateAssignmentSeconds total is ONE pool shared
+  // by every assignee combined (remaining = estimate - sum of everyone's
+  // active_seconds), instead of each assignee getting their own full
+  // allotment independently (the default, unchanged behavior). See
+  // resolveWorkedTodayOnTaskSeconds's sibling seam in timer-limit.service.js.
+  `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS shared_task_budget BOOLEAN NOT NULL DEFAULT false`,
   `CREATE TABLE IF NOT EXISTS task_assignments (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id            UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,

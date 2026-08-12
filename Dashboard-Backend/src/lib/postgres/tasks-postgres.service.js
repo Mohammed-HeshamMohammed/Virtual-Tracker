@@ -56,6 +56,7 @@ const TASK_COLUMNS = [
   "working_days",
   "overtime_hours_per_day",
   "rolling_hour_cap",
+  "shared_task_budget",
   "assigned_to",
   "start_date",
   "due_date",
@@ -101,9 +102,9 @@ export async function createTaskPg(payload) {
     `INSERT INTO tasks (
        id, project_id, team_id, title, description, status, priority, order_index,
        duration_hours_per_day, duration_days, working_days, overtime_hours_per_day, rolling_hour_cap,
-       assigned_to, start_date, due_date, review_state, reviewed_by, reviewed_at,
+       shared_task_budget, assigned_to, start_date, due_date, review_state, reviewed_by, reviewed_at,
        created_at, updated_at, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
      RETURNING ${TASK_COLUMNS.join(", ")}`,
     [
       id,
@@ -119,6 +120,7 @@ export async function createTaskPg(payload) {
       payload.working_days ?? null,
       payload.overtime_hours_per_day ?? null,
       payload.rolling_hour_cap === true,
+      payload.shared_task_budget === true,
       payload.assigned_to ?? null,
       dateOnly(payload.start_date),
       dateOnly(payload.due_date),
@@ -203,6 +205,7 @@ export async function updateTaskPg(id, payload, expectedUpdatedAt) {
     working_days: "working_days",
     overtime_hours_per_day: "overtime_hours_per_day",
     rolling_hour_cap: "rolling_hour_cap",
+    shared_task_budget: "shared_task_budget",
     assigned_to: "assigned_to",
     start_date: "start_date",
     due_date: "due_date",

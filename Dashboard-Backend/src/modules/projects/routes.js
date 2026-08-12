@@ -29,8 +29,11 @@ import {
   getProjectBudgetPg,
   getAllProjectBudgetsPg,
   upsertProjectBudgetPg,
+  computeProjectSpentPg,
+  computeProjectBudgetTargetPg,
   computeProjectSpentForAllPg,
   computeProjectBudgetTargetForAllPg,
+  getProjectTrackedSecondsPg,
   listProjectMemberLimitsPg,
   getAllProjectMemberLimitsPg,
   upsertProjectMemberLimitPg,
@@ -261,6 +264,53 @@ export async function routeProjects(req, res, url, db, origin) {
       sendJson(res, origin, 500, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to load project teams",
+      });
+    }
+    return true;
+  }
+
+  // Live remaining-time number for an Hours-based project budget - the
+  // team-wide gate (checkProjectBudgetCap in activity/routes.js) has always
+  // enforced this silently, but never surfaced an actual number for the
+  // desktop agent to show. Cost-based budgets are a dollar unit, not a
+  // countdown - deliberately not handled here, same as a missing budget.
+  const projectBudgetStatusMatch = /^\/api\/projects\/([^/]+)\/budget-status$/.exec(pn);
+  if (projectBudgetStatusMatch && req.method === "GET") {
+    const projectId = projectBudgetStatusMatch[1];
+    if (!(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
+    const viewer = getAuthContext(req);
+    try {
+      const budget = await getProjectBudgetPg(projectId);
+      if (!budget || budget.type !== "Hours based") {
+        sendJson(res, origin, 200, { success: true, data: null });
+        return true;
+      }
+      const perPerson = budget.scope === "per_person";
+      const [capSeconds, spentSeconds] = await Promise.all([
+        perPerson
+          ? Promise.resolve(Math.floor(Number(budget.cost ?? 0) * 3600))
+          : computeProjectBudgetTargetPg(db, projectId, budget).then((hours) => Math.floor(hours * 3600)),
+        perPerson
+          ? getProjectTrackedSecondsPg(projectId, {
+              memberId: viewer.memberId,
+              includeNonBillable: budget.include_non_billable_time !== false,
+            })
+          : computeProjectSpentPg(db, projectId, budget).then((hours) => Math.floor(hours * 3600)),
+      ]);
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          scope: perPerson ? "per_person" : "shared",
+          capSeconds,
+          spentSeconds,
+          remainingSeconds: Math.max(0, capSeconds - spentSeconds),
+        },
+      });
+    } catch (e) {
+      logSafeError("[projects/budget-status]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to load project budget status",
       });
     }
     return true;
