@@ -98,6 +98,16 @@ export function buildEnv(source = process.env) {
       clientSecret: readString(source, "GOOGLE_OAUTH_CLIENT_SECRET"),
       redirectUri: readString(source, "GOOGLE_OAUTH_REDIRECT_URI"),
       stateSecret: readString(source, "GOOGLE_OAUTH_STATE_SECRET"),
+      /** Optional dedicated Firebase Web API key for the server-to-server
+       * accounts:signInWithIdp call in google-oauth.js. Falls back to
+       * FIREBASE_API_KEY (below) when unset. Needs its own key, distinct
+       * from FIREBASE_API_KEY, only if that one has an HTTP-referrer
+       * (Websites) application restriction in Google Cloud Console — a
+       * plain server-to-server fetch() never carries a Referer header, so a
+       * referrer-restricted key always 403s this specific call regardless
+       * of who's asking. Application restrictions: None; API restrictions:
+       * Identity Toolkit API is enough. */
+      serverApiKey: readString(source, "GOOGLE_OAUTH_SERVER_API_KEY"),
     }),
 
     firebase: Object.freeze({
