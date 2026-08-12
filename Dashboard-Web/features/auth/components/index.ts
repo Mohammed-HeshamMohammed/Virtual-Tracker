@@ -2,6 +2,7 @@
 
 export { default as AuthPage1 } from "@/features/auth/pages/login-page"
 export { AgentLinkFlow } from "@/features/auth/components/agent-link-flow"
+export { AgentLinkedSuccessScreen } from "@/features/auth/components/agent-linked-success-screen"
 export { CompleteRegistrationGate } from "@/features/auth/components/complete-registration-gate"
 export { MemberPresenceReporter } from "@/features/auth/components/member-presence-reporter"
 export { AuthSessionLoader } from "@/features/auth/components/auth-session-loader"

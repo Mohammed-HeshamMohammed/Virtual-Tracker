@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
-import { DASHBOARD_PATH, finishAgentLinkSuccess, openDesktopAgentDeepLink } from "@/features/auth/services/navigation"
+import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
+import { useAgentConnectAndAutoClose } from "@/features/auth/services/use-agent-connect"
 import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
 import {
   waitForLocalAgentAuthenticated,
@@ -73,6 +74,9 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
   const displayState: LinkState = isInvalidToken ? "invalid" : state
   const displayMessage = isInvalidToken ? INVALID_LINK_MESSAGE : message
+  const { showFallback: showConnectFallback, connect: connectDesktopAgent } = useAgentConnectAndAutoClose(
+    displayState === "success",
+  )
 
   useEffect(() => {
     if (isInvalidToken) return
@@ -94,7 +98,6 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (alreadyLinked?.authenticated) {
           await finishAgentLinkSuccess()
           if (cancelled || attemptId !== attemptRef.current) return
-          openDesktopAgentDeepLink()
           setState("success")
           return
         }
@@ -145,12 +148,8 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
         await finishAgentLinkSuccess()
         if (cancelled || attemptId !== attemptRef.current) return
-        // Credentials already reached the agent via the poll/loopback exchange
-        // above - this is purely cosmetic, bringing its window back to the
-        // front instead of leaving the user on this tab. Browsers may show a
-        // one-time "Open Virtual Tracker Agent?" prompt for the custom scheme,
-        // and silently no-op if it isn't registered (e.g. agent not installed).
-        openDesktopAgentDeepLink()
+        // Deep-link firing and the auto-close/fallback-reveal logic live in
+        // useAgentConnectAndAutoClose, driven by displayState below.
         setState("success")
       } catch (e) {
         if (cancelled || attemptId !== attemptRef.current) return
@@ -221,26 +220,33 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
           {displayState === "success" && (
             <>
-              <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+              {showConnectFallback ? (
+                <CheckCircle2 className="h-8 w-8 text-emerald-400" />
+              ) : (
+                <Loader2 className="h-8 w-8 animate-spin text-emerald-400" />
+              )}
               <p className="text-sm text-slate-300 font-medium">Agent linked successfully</p>
               <p className="text-sm text-slate-400">
-                This tab should close on its own and Virtual Tracker Agent should come to the front. If it
-                doesn't after a few seconds, use the button below.
+                {showConnectFallback
+                  ? "This tab didn't close on its own. Click below to open Virtual Tracker Agent."
+                  : "Connecting to Virtual Tracker Agent and closing this tab…"}
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  openDesktopAgentDeepLink()
-                  try {
-                    window.close()
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-                className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
-              >
-                Connect to Virtual Tracker Agent
-              </button>
+              {showConnectFallback ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    connectDesktopAgent()
+                    try {
+                      window.close()
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                  className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+                >
+                  Connect to Virtual Tracker Agent
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => router.replace(DASHBOARD_PATH)}
