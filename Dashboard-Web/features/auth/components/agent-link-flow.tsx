@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { useAuth } from "@/shared/providers/app"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
-import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
+import { DASHBOARD_PATH, finishAgentLinkSuccess, openDesktopAgentDeepLink } from "@/features/auth/services/navigation"
 import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
 import {
   waitForLocalAgentAuthenticated,
@@ -21,19 +21,6 @@ type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 
 const INVALID_LINK_MESSAGE =
   "This linking session is invalid or expired. Open Virtual Tracker Agent and click Sign In again."
-
-// An <a> click (rather than window.location.href) so an unregistered scheme
-// doesn't flash a "not found" navigation in the address bar - it's just
-// silently ignored by the browser when no handler is registered.
-function focusDesktopAgent(): void {
-  try {
-    const link = document.createElement("a")
-    link.href = "virtualtracker://link-complete"
-    link.click()
-  } catch {
-    /* ignore - best-effort only, the poll/loopback exchange already did the real work */
-  }
-}
 
 function assertAgentApiHostMatches(health: LocalAgentHealth): void {
   const expectedHost = new URL(getDashboardApiBaseUrl()).host
@@ -107,6 +94,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (alreadyLinked?.authenticated) {
           await finishAgentLinkSuccess()
           if (cancelled || attemptId !== attemptRef.current) return
+          openDesktopAgentDeepLink()
           setState("success")
           return
         }
@@ -162,7 +150,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         // front instead of leaving the user on this tab. Browsers may show a
         // one-time "Open Virtual Tracker Agent?" prompt for the custom scheme,
         // and silently no-op if it isn't registered (e.g. agent not installed).
-        focusDesktopAgent()
+        openDesktopAgentDeepLink()
         setState("success")
       } catch (e) {
         if (cancelled || attemptId !== attemptRef.current) return
@@ -236,11 +224,13 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
               <CheckCircle2 className="h-8 w-8 text-emerald-400" />
               <p className="text-sm text-slate-300 font-medium">Agent linked successfully</p>
               <p className="text-sm text-slate-400">
-                You can close this tab and return to Virtual Tracker Agent.
+                This tab should close on its own and Virtual Tracker Agent should come to the front. If it
+                doesn't after a few seconds, use the button below.
               </p>
               <button
                 type="button"
                 onClick={() => {
+                  openDesktopAgentDeepLink()
                   try {
                     window.close()
                   } catch {
@@ -249,7 +239,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
                 }}
                 className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
               >
-                Close this tab
+                Connect to Virtual Tracker Agent
               </button>
               <button
                 type="button"
