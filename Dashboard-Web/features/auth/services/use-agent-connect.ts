@@ -3,18 +3,25 @@
 import { useEffect, useState } from "react"
 import { openDesktopAgentDeepLink } from "@/features/auth/services/navigation"
 
-const AUTO_CLOSE_GRACE_MS = 400
-const FALLBACK_REVEAL_MS = 2500
+const AUTO_CLOSE_AFTER_MS = 1200
+const FALLBACK_REVEAL_AFTER_MS = 1800
 
 /**
- * Fires the virtualtracker:// deep link once `enabled` turns true. A web page
- * gets no callback for "the custom-scheme handler ran successfully" - the
- * best available signal is the browser tab losing focus shortly after, which
- * happens when the OS actually switches to the desktop agent. On that blur,
- * assume the handoff worked and close this tab. If nothing happens within
- * FALLBACK_REVEAL_MS - no handler registered, or the user dismissed the
- * "Open Virtual Tracker Agent?" prompt - reveal a manual retry instead of
- * leaving the tab looking stuck.
+ * Fires the virtualtracker:// deep link once `enabled` turns true, then tries
+ * to close this tab shortly after, and reveals a manual "Connect" button if
+ * that close attempt didn't actually happen.
+ *
+ * Deliberately timer-based, not focus-based: an earlier version closed only
+ * on the browser tab's `blur` event (the OS switching focus to the agent).
+ * That's unreliable - Windows' focus-stealing prevention frequently lets a
+ * newly-activated window become visible/foreground-looking without ever
+ * actually pulling OS input focus from the browser, so `blur` silently never
+ * fires even though the deep link worked and the agent is right there. A
+ * fixed timer doesn't depend on that. `window.close()` also has no
+ * success/failure callback - if it's blocked (tabs the browser didn't open
+ * via script can't be closed by script), the page is still around when the
+ * fallback timer fires and the button appears; if it succeeded, the
+ * component is unmounted and the timer never has anything to do.
  */
 export function useAgentConnectAndAutoClose(enabled: boolean): {
   showFallback: boolean
@@ -24,29 +31,23 @@ export function useAgentConnectAndAutoClose(enabled: boolean): {
 
   useEffect(() => {
     if (!enabled) return
-    let handled = false
     openDesktopAgentDeepLink()
 
-    function onBlur() {
-      if (handled) return
-      handled = true
-      window.setTimeout(() => {
-        try {
-          window.close()
-        } catch {
-          /* ignore - the fallback button covers this */
-        }
-      }, AUTO_CLOSE_GRACE_MS)
-    }
+    const closeTimer = window.setTimeout(() => {
+      try {
+        window.close()
+      } catch {
+        /* ignore - the fallback button covers this */
+      }
+    }, AUTO_CLOSE_AFTER_MS)
 
-    window.addEventListener("blur", onBlur)
-    const timer = window.setTimeout(() => {
-      if (!handled) setShowFallback(true)
-    }, FALLBACK_REVEAL_MS)
+    const fallbackTimer = window.setTimeout(() => {
+      setShowFallback(true)
+    }, FALLBACK_REVEAL_AFTER_MS)
 
     return () => {
-      window.removeEventListener("blur", onBlur)
-      window.clearTimeout(timer)
+      window.clearTimeout(closeTimer)
+      window.clearTimeout(fallbackTimer)
     }
   }, [enabled])
 
