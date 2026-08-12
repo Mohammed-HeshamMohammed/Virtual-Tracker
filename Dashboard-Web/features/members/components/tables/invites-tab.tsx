@@ -17,6 +17,7 @@ import {
 } from "@/shared/tables/ui"
 import { InviteRowActionsMenu } from "@/features/members/components/menus/invite-row-actions-menu"
 import { Checkbox } from "@/shared/ui/checkbox";
+import { useRangeSelect } from "@/shared/hooks/use-range-select"
 
 function getRoleSortRank(role: string): number {
   const r = role.trim().toLowerCase().replace(/\s+/g, "")
@@ -172,12 +173,9 @@ export function InvitesTab({
     else setSelected(new Set(visibleRows.map((i) => i.id)))
   }
 
-  function toggleOne(id: string) {
-    setSelected((prev) => {
-      const s = new Set(prev)
-      s.has(id) ? s.delete(id) : s.add(id)
-      return s
-    })
+  const rangeToggle = useRangeSelect()
+  function toggleOne(id: string, shiftKey = false) {
+    rangeToggle(id, shiftKey, visibleRows.map((i) => i.id), setSelected)
   }
 
   return (
@@ -254,7 +252,7 @@ export function InvitesTab({
                     className={cn("group transition-colors", isDark ? "hover:bg-[#191f31]/60" : "hover:bg-slate-50/80", selected.has(invite.id) && (isDark ? "bg-[#4be277]/10" : "bg-blue-50/40"))}
                   >
                     <td className={peopleTableCellClass("px-5 w-10", rowH)}>
-                      <Checkbox checked={selected.has(invite.id)} onChange={() => toggleOne(invite.id)} isDark={isDark} />
+                      <Checkbox checked={selected.has(invite.id)} onChange={(e) => toggleOne(invite.id, e.shiftKey)} isDark={isDark} />
                     </td>
                     {colOrder.map((key) => {
                       if (key === "email") {

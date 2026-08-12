@@ -14,6 +14,7 @@ import {
   getProjectsTableMinWidth,
 } from "@/features/projects/constants"
 import { Checkbox } from "@/shared/ui/checkbox";
+import { useRangeSelect } from "@/shared/hooks/use-range-select"
 import { useAutoHiddenTableColumns, usePaginatedTable } from "@/features/members/hooks"
 import {
   TEAMS_TABLE_MAX_ROWS,
@@ -176,13 +177,9 @@ export function ProjectsTab({
     else setSelected(new Set(visibleRows.map((p) => p.id)))
   }
 
-  function toggleOne(id: string) {
-    setSelected((prev) => {
-      const s = new Set(prev)
-      if (s.has(id)) s.delete(id)
-      else s.add(id)
-      return s
-    })
+  const rangeToggle = useRangeSelect()
+  function toggleOne(id: string, shiftKey = false) {
+    rangeToggle(id, shiftKey, visibleRows.map((p) => p.id), setSelected)
   }
 
   function renderCell(key: string, project: ProjectListItem, rowH?: number) {
@@ -367,7 +364,7 @@ export function ProjectsTab({
                     >
                       {canManageProjects ? (
                         <td className={peopleTableCellClass("px-5", rowH)}>
-                          <Checkbox checked={selected.has(project.id)} onChange={() => toggleOne(project.id)} isDark={isDark} />
+                          <Checkbox checked={selected.has(project.id)} onChange={(e) => toggleOne(project.id, e.shiftKey)} isDark={isDark} />
                         </td>
                       ) : null}
                       <td className={peopleTableCellClass("px-4", rowH)}>

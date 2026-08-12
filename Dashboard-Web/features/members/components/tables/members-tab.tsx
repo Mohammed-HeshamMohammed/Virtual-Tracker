@@ -32,6 +32,7 @@ import { Skeleton } from "@/shared/ui/skeleton"
 import { StatusDot } from "@/shared/ui/status-dot";
 import { Checkbox } from "@/shared/ui/checkbox";
 import { MemberRowMenu } from "@/features/members/components/menus/member-row-menu"
+import { useRangeSelect } from "@/shared/hooks/use-range-select"
 
 /* ── Helpers ────────────────────────────────────────────────── */
 
@@ -275,14 +276,11 @@ export function MembersTab({
     if (allSelected) setSelected(new Set())
     else setSelected(new Set(selectableVisibleRows.map((m) => m.id)))
   }
-  function toggleOne(id: string) {
+  const rangeToggle = useRangeSelect()
+  function toggleOne(id: string, shiftKey = false) {
     const member = visibleRows.find((m) => m.id === id)
     if (member && !isBatchSelectable(member)) return
-    setSelected((prev) => {
-      const s = new Set(prev)
-      s.has(id) ? s.delete(id) : s.add(id)
-      return s
-    })
+    rangeToggle(id, shiftKey, selectableVisibleRows.map((m) => m.id), setSelected)
   }
 
   return (
@@ -392,7 +390,7 @@ export function MembersTab({
                           onClick={(e) => e.stopPropagation()}
                         >
                           {isBatchSelectable(member) ? (
-                            <Checkbox checked={selected.has(member.id)} onChange={() => toggleOne(member.id)} isDark={isDark} />
+                            <Checkbox checked={selected.has(member.id)} onChange={(e) => toggleOne(member.id, e.shiftKey)} isDark={isDark} />
                           ) : (
                             <span className="inline-block h-4 w-4" aria-hidden />
                           )}
