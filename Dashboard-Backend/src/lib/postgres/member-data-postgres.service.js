@@ -388,8 +388,8 @@ const SCOPED_COLUMN_SPECS = {
 /**
  * §6.9 conditional-write path for an existing employment/time_settings/
  * pay_rates row. Same shape as project_budgets' equivalent: a plain
- * `WHERE member_id = $1 AND updated_at = $expected` UPDATE, returning true
- * (conflict) on zero rows.
+ * `WHERE member_id = $1 AND date_trunc('milliseconds', updated_at) = $expected`
+ * UPDATE, returning true (conflict) on zero rows.
  * @param {string} collection @param {string} memberId
  * @param {Record<string, unknown>} payload @param {string} actor
  * @param {string} expectedUpdatedAt
@@ -406,9 +406,11 @@ async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload,
   params.push(actor);
   setClauses.push(`updated_by = $${params.length}`);
   params.push(expectedUpdatedAt);
+  // See projects-postgres.service.js's updateProjectPg for why this must be
+  // millisecond-truncated on both sides (now() vs a JS Date round-trip).
   const rows = await query(
     `UPDATE ${collection} SET ${setClauses.join(", ")}, updated_at = now()
-     WHERE member_id = $1 AND updated_at = $${params.length}
+     WHERE member_id = $1 AND date_trunc('milliseconds', updated_at) = $${params.length}::timestamptz
      RETURNING member_id`,
     params,
   );

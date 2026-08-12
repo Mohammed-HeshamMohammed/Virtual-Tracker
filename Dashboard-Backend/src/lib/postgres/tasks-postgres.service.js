@@ -233,7 +233,11 @@ export async function updateTaskPg(id, payload, expectedUpdatedAt) {
   }
   if (sets.length === 0) return getTaskPg(id);
   sets.push("updated_at = now()");
-  const where = expectedUpdatedAt ? `WHERE id = $1 AND updated_at = $${params.push(expectedUpdatedAt)}` : "WHERE id = $1";
+  // See projects-postgres.service.js's updateProjectPg for why this must be
+  // millisecond-truncated on both sides (now() vs a JS Date round-trip).
+  const where = expectedUpdatedAt
+    ? `WHERE id = $1 AND date_trunc('milliseconds', updated_at) = $${params.push(expectedUpdatedAt)}::timestamptz`
+    : "WHERE id = $1";
   const rows = await query(`UPDATE tasks SET ${sets.join(", ")} ${where} RETURNING ${TASK_COLUMNS.join(", ")}`, params);
   if (rows.length === 0 && expectedUpdatedAt) {
     return { conflict: true, current: await getTaskPg(id) };
