@@ -26,6 +26,7 @@ import { PasswordStrengthPanel } from "@/features/auth/components/password-stren
 import { useRegisterEmailAvailability } from "@/features/auth/services/use-register-email-availability"
 import { ServerConnectionOfflineScreen } from "@/features/auth/components/server-connection-offline-screen"
 import { EMAIL_VERIFICATION_REQUIRED_MESSAGE } from "@/features/auth/services/email-verification"
+import { openDesktopAgentDeepLink } from "@/features/auth/services/navigation"
 
 type CardView = "login" | "request"
 
@@ -83,11 +84,13 @@ const AuthPage: React.FC = () => {
   const [workSubmitting, setWorkSubmitting] = useComponentState(false)
   const [loginFormError, setLoginFormError] = useComponentState<string | null>(null)
   const [registerSuccessNotice, setRegisterSuccessNotice] = useComponentState<string | null>(null)
+  const [showAgentConnectButton, setShowAgentConnectButton] = useComponentState(false)
   const searchParams = useSearchParams()
 
   useEffect(() => {
     if (searchParams.get("passwordUpdated") !== "1") return
     setRegisterSuccessNotice("Password updated successfully. Sign in with your new password.")
+    setShowAgentConnectButton(false)
     const url = new URL(window.location.href)
     url.searchParams.delete("passwordUpdated")
     const next = url.pathname + (url.search ? url.search : "")
@@ -97,6 +100,7 @@ const AuthPage: React.FC = () => {
   useEffect(() => {
     if (searchParams.get("signedUp") !== "1") return
     setRegisterSuccessNotice("Account created successfully. Sign in with your email and password.")
+    setShowAgentConnectButton(false)
     const url = new URL(window.location.href)
     url.searchParams.delete("signedUp")
     const next = url.pathname + (url.search ? url.search : "")
@@ -106,6 +110,7 @@ const AuthPage: React.FC = () => {
   useEffect(() => {
     if (searchParams.get("emailVerified") !== "1") return
     setRegisterSuccessNotice("Email verified successfully. Sign in with your email and password.")
+    setShowAgentConnectButton(false)
     const url = new URL(window.location.href)
     url.searchParams.delete("emailVerified")
     const next = url.pathname + (url.search ? url.search : "")
@@ -124,17 +129,24 @@ const AuthPage: React.FC = () => {
     url.searchParams.delete("agentLinkError")
     window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ""))
     if (linked === "1") {
-      setRegisterSuccessNotice("Desktop agent linked. You can close this tab and return to Virtual Tracker Agent.")
+      setRegisterSuccessNotice(
+        "Desktop agent linked. This tab should close and Virtual Tracker Agent should come to the front on its own — if it doesn't after a few seconds, use the button below.",
+      )
+      setShowAgentConnectButton(true)
+      // Best-effort auto handoff: bring the agent window to the front via
+      // its virtualtracker:// deep link, then try to close this tab.
       // Browsers only allow window.close() on tabs opened via script - this
       // tab was opened by the OS (Tauri's ShellExecuteW), so most browsers
-      // silently refuse. Try anyway; the notice above is the fallback for
-      // when they do.
+      // silently refuse. The Connect button above is the fallback for when
+      // either of these silently doesn't happen.
+      openDesktopAgentDeepLink()
       try {
         window.close()
       } catch {
-        /* ignore — notice above covers this */
+        /* ignore — Connect button above covers this */
       }
     } else {
+      setShowAgentConnectButton(false)
       setLoginFormError(
         linkError === "cancelled"
           ? "Google sign-in was cancelled. In the desktop agent, click Sign In and try again."
@@ -270,6 +282,7 @@ const AuthPage: React.FC = () => {
         setRegisterSuccessNotice(
           `Account created. We sent a verification email to ${email}. Verify your email, then sign in.`,
         )
+        setShowAgentConnectButton(false)
       } else {
         await signInWithEmailPassword(identifier.trim(), passcode, rememberMe)
       }
@@ -306,6 +319,7 @@ const AuthPage: React.FC = () => {
     setConfirmPasscode("")
     setLoginFormError(null)
     setRegisterSuccessNotice(null)
+    setShowAgentConnectButton(false)
   }
 
   useEffect(() => {
@@ -389,9 +403,18 @@ const AuthPage: React.FC = () => {
           <section className="flex w-[452px] max-w-full shrink-0 flex-col">
             <div className={cn("flex w-full flex-col rounded-2xl px-6 pb-5 pt-6 transition-all duration-300 sm:px-7", u.card)}>
               <AuthAlertBanner show={Boolean(registerSuccessNotice)} className="mb-3 overflow-hidden">
-                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
-                  {registerSuccessNotice}
-                </p>
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  <p>{registerSuccessNotice}</p>
+                  {showAgentConnectButton ? (
+                    <button
+                      type="button"
+                      onClick={() => openDesktopAgentDeepLink()}
+                      className="mt-2 w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500 dark:bg-emerald-500 dark:text-slate-950 dark:hover:bg-emerald-400"
+                    >
+                      Connect to Virtual Tracker Agent
+                    </button>
+                  ) : null}
+                </div>
               </AuthAlertBanner>
               <AuthAlertBanner show={showVerificationWarning} className="mb-3 overflow-hidden">
                 <div
