@@ -378,7 +378,7 @@ export async function routeProjects(req, res, url, db, origin) {
           memberLimitNotifyMembers: limit
             ? Boolean(limit.notify_project_members ?? limit.notifyProjectMembers ?? true)
             : true,
-          memberLimitMembers: limit ? String(limit.member_id || limit.memberId || "") : "",
+          memberLimitMembers: limit ? String(limit.cost ?? 0) : "",
           budgetSpent: 0,
           // Optimistic-concurrency version token (§6.9) - sent back
           // unchanged on save so a stale-snapshot write can be detected
