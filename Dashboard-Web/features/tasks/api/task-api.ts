@@ -102,6 +102,7 @@ function normalizeTask(input: any): Task {
     reviewedBy: input.reviewedBy ?? input.reviewed_by ? asString(input.reviewedBy ?? input.reviewed_by) : null,
     reviewedAt: input.reviewedAt ?? input.reviewed_at ? asString(input.reviewedAt ?? input.reviewed_at) : null,
     rollingHourCap: asBoolean(input.rollingHourCap ?? input.rolling_hour_cap),
+    sharedTaskBudget: asBoolean(input.sharedTaskBudget ?? input.shared_task_budget),
   }
 }
 
@@ -135,6 +136,10 @@ export interface Task {
    * the currently-open session's continuous elapsed time (clock-in to
    * clock-out) instead of resetting at the midnight day-bucket boundary. */
   rollingHourCap: boolean
+  /** When true, this task's total-hours estimate is one pool shared by every
+   * assignee combined, instead of each assignee getting their own full
+   * allotment independently. */
+  sharedTaskBudget: boolean
   assignedTo: string | null
   assigneeIds?: string[]
   startDate: string | null
@@ -185,6 +190,7 @@ export interface CreateTaskInput {
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
   rollingHourCap?: boolean
+  sharedTaskBudget?: boolean
   assignedTo?: string | null
   assigneeIds?: string[]
   startDate?: string | null
@@ -204,6 +210,7 @@ export interface UpdateTaskInput {
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
   rollingHourCap?: boolean
+  sharedTaskBudget?: boolean
   assignedTo?: string | null
   assigneeIds?: string[]
   startDate?: string | null
@@ -352,6 +359,9 @@ export async function createTask(input: CreateTaskInput, options?: RequestOption
   if (input.rollingHourCap !== undefined) {
     payload.rolling_hour_cap = input.rollingHourCap
   }
+  if (input.sharedTaskBudget !== undefined) {
+    payload.shared_task_budget = input.sharedTaskBudget
+  }
 
   const assigneeIds = input.assigneeIds?.length ? input.assigneeIds : undefined
 
@@ -387,6 +397,7 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
   if (input.durationDays !== undefined) payload.duration_days = input.durationDays
   if (input.overtimeHoursPerDay !== undefined) payload.overtime_hours_per_day = input.overtimeHoursPerDay
   if (input.rollingHourCap !== undefined) payload.rolling_hour_cap = input.rollingHourCap
+  if (input.sharedTaskBudget !== undefined) payload.shared_task_budget = input.sharedTaskBudget
   if (input.assignedTo !== undefined) payload.assigned_to = input.assignedTo
   if (input.startDate !== undefined) payload.start_date = input.startDate
   if (input.dueDate !== undefined) payload.due_date = input.dueDate

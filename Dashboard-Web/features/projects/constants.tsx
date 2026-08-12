@@ -160,6 +160,7 @@ export interface Task {
   durationDays: number | null
   overtimeHoursPerDay: number | null
   rollingHourCap?: boolean
+  sharedTaskBudget?: boolean
   startDate: string | null
   dueDate: string | null
   completed: boolean

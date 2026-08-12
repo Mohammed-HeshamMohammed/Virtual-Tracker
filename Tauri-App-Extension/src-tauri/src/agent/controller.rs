@@ -704,6 +704,16 @@ impl AgentController {
         self.api.lock().fetch_member_limits().ok()
     }
 
+    /// `None` covers both "network/auth error" and "no Hours-based budget
+    /// configured on this project" - the UI treats them identically (no card
+    /// shown), so there's nothing useful to distinguish here.
+    pub fn get_project_budget_status(&self, project_id: &str) -> Option<crate::types::ProjectBudgetStatus> {
+        if project_id.trim().is_empty() {
+            return None;
+        }
+        self.api.lock().fetch_project_budget_status(project_id.trim()).ok().flatten()
+    }
+
     pub fn get_member_profile(&self) -> Option<crate::types::MemberProfile> {
         self.api.lock().fetch_member_profile().ok()
     }

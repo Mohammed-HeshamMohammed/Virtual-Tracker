@@ -282,7 +282,45 @@ impl ApiClient {
                 .map(|s| s.to_string()),
             disable_idle_time: data.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false),
             idle_time_seconds: data.get("idleTimeSeconds").and_then(|v| v.as_u64()).unwrap_or(450),
+            shared_budget: data.get("sharedBudget").and_then(|v| v.as_bool()).unwrap_or(false),
         })
+    }
+
+    /// A project's Hours-based budget remaining, resolved server-side for the
+    /// current viewer (per-person vs shared scope). `Ok(None)` means no
+    /// Hours-based budget is configured on this project at all - not an
+    /// error, just nothing to show.
+    pub fn fetch_project_budget_status(
+        &mut self,
+        project_id: &str,
+    ) -> Result<Option<crate::types::ProjectBudgetStatus>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!(
+            "{}/api/projects/{}/budget-status",
+            self.api_url,
+            urlencoding::encode(project_id)
+        );
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let data = body.get("data");
+        let Some(data) = data.filter(|d| !d.is_null()) else {
+            return Ok(None);
+        };
+        Ok(Some(crate::types::ProjectBudgetStatus {
+            scope: data.get("scope").and_then(|v| v.as_str()).unwrap_or("shared").to_string(),
+            cap_seconds: data.get("capSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+            spent_seconds: data.get("spentSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+            remaining_seconds: data.get("remainingSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+        }))
     }
 
     /// The viewer's own daily/weekly work-hour limits, for the profile view.

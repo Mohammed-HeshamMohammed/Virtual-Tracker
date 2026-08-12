@@ -218,6 +218,12 @@ pub struct TaskTimeTracking {
     pub disable_idle_time: bool,
     #[serde(default = "default_idle_time_seconds")]
     pub idle_time_seconds: u64,
+    /// When true, active_seconds/estimated_seconds above are the whole
+    /// task's pooled total across every assignee combined, not just this
+    /// member's own - see the shared_task_budget column and the identical
+    /// field on the backend's getTaskTimeTracking response.
+    #[serde(default)]
+    pub shared_budget: bool,
 }
 
 /// 450s = 7.5 minutes, the same product default `ensure-lookup-schema.js`
@@ -225,6 +231,21 @@ pub struct TaskTimeTracking {
 /// fallback if a response is ever missing the field.
 fn default_idle_time_seconds() -> u64 {
     450
+}
+
+/// A project's Hours-based budget, resolved for the current viewer -
+/// GET /api/projects/:id/budget-status. `None` (the Tauri command returns
+/// `Option<ProjectBudgetStatus>`) means no Hours-based budget is configured
+/// for this project at all, same as today's silence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectBudgetStatus {
+    /// "per_person": remaining is this viewer's own allotment/spend.
+    /// "shared": remaining is the whole team's pooled allotment/spend.
+    pub scope: String,
+    pub cap_seconds: u64,
+    pub spent_seconds: u64,
+    pub remaining_seconds: u64,
 }
 
 /// The viewer's own daily/weekly work-hour limits (People > member > Limits),

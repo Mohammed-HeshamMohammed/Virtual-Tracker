@@ -263,10 +263,21 @@ export async function syncTaskTimeTracking(db, {
   };
 }
 
+/** Whole-task pool total for a shared_task_budget task - every assignee's
+ * currently-persisted active_seconds summed together, computed fresh (not
+ * from the periodically-recomputed total_active_seconds column, which can
+ * lag). Undefined for a non-shared task; callers fall back to the member's
+ * own activeSeconds in that case, unchanged from before this feature. */
+async function sumAllAssigneesActiveSeconds(taskId) {
+  const rows = await getTaskTrackingRowsPg(taskId);
+  return rows.reduce((sum, row) => sum + Math.max(0, Math.floor(Number(row.active_seconds) || 0)), 0);
+}
+
 export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const assignment = await ensureAssignmentForUser(db, taskId, userId);
   const trackingRow = await getTrackingRowPg(taskId, userId);
   const taskData = (await getTaskPg(taskId)) ?? {};
+  const sharedBudget = taskData.shared_task_budget === true;
   // Always live - see the comment on the identical line in syncTaskTimeTracking above.
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
   const overtimeSeconds = estimateAssignmentOvertimeSeconds(taskData);
@@ -307,9 +318,13 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       ...taskData,
       id: taskId,
     }, { currentCumulativeActiveSeconds: 0 });
+    // Other assignees may already have logged time even though this member
+    // hasn't started yet - a shared pool's "Task budget left" has to reflect
+    // that, not read as if nothing has been spent.
+    const sharedActiveSeconds = sharedBudget ? await sumAllAssigneesActiveSeconds(taskId) : 0;
     return {
       tracking: null,
-      activeSeconds: 0,
+      activeSeconds: sharedBudget ? sharedActiveSeconds : 0,
       idleSeconds: 0,
       taskStatus: taskData.status ?? "todo",
       assignmentStatus: assignment.status,
@@ -327,6 +342,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       timerAllowance,
       disableIdleTime,
       idleTimeSeconds,
+      sharedBudget,
     };
   }
 
@@ -335,10 +351,17 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     ...taskData,
     id: taskId,
   }, { currentCumulativeActiveSeconds: tracking.activeSeconds });
+  const wholeTaskActiveSeconds = sharedBudget
+    ? await sumAllAssigneesActiveSeconds(taskId)
+    : tracking.activeSeconds;
 
   return {
     tracking,
-    activeSeconds: tracking.activeSeconds,
+    // "Today, this task" stays this member's own worked-today figure
+    // (timerAllowance.workedTodayOnTaskSeconds, unaffected by this field) -
+    // this activeSeconds is the whole-task lifetime total that "Task budget
+    // left" is computed from, which the shared pool changes the meaning of.
+    activeSeconds: wholeTaskActiveSeconds,
     idleSeconds: tracking.idleSeconds,
     taskStatus: taskData.status ?? "todo",
     assignmentStatus: assignment.status,
@@ -349,13 +372,14 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     hoursPerDay,
     overtimeHoursPerDay,
     progressPercent: tracking.progressPercent ?? progressPercentFor(tracking.activeSeconds, estimatedSeconds),
-    totalActiveSeconds: taskData.total_active_seconds ?? tracking.activeSeconds,
+    totalActiveSeconds: sharedBudget ? wholeTaskActiveSeconds : (taskData.total_active_seconds ?? tracking.activeSeconds),
     totalIdleSeconds: taskData.total_idle_seconds ?? tracking.idleSeconds,
     aggregatedProgressPercent: taskData.aggregated_progress_percent ?? null,
     memberContributions,
     timerAllowance,
     disableIdleTime,
     idleTimeSeconds,
+    sharedBudget,
   };
 }
 

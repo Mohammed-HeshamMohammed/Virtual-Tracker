@@ -119,6 +119,21 @@ export type TaskTimeTracking = {
   allowedRemainingSeconds?: number | null;
   limitReached: boolean;
   allowanceMessage?: string | null;
+  /** When true, activeSeconds/estimatedSeconds above are the whole task's
+   * pooled total across every assignee combined, not just this member's own. */
+  sharedBudget?: boolean;
+};
+
+/** GET /api/projects/:id/budget-status - a project's Hours-based budget
+ * remaining, resolved for the current viewer. `null` means no Hours-based
+ * budget is configured on this project at all. */
+export type ProjectBudgetStatus = {
+  /** "per_person": remaining is this viewer's own allotment/spend.
+   * "shared": remaining is the whole team's pooled allotment/spend. */
+  scope: "per_person" | "shared";
+  capSeconds: number;
+  spentSeconds: number;
+  remainingSeconds: number;
 };
 
 /** T5 (PLAN-livesyncandagenttimer.md §11) - "how much work is assigned to

@@ -16,6 +16,7 @@ import type {
   MemberProfile,
   MonitoringNoticeView,
   ProfileInfo,
+  ProjectBudgetStatus,
   ProjectInfo,
   ReconnectResult,
   SessionInfo,
@@ -67,6 +68,7 @@ function MainApp() {
   const [view, setView] = useState<"home" | "settings" | "profile">("home");
   const [signingOut, setSigningOut] = useState(false);
   const [memberLimits, setMemberLimits] = useState<MemberLimits | null>(null);
+  const [projectBudget, setProjectBudget] = useState<ProjectBudgetStatus | null>(null);
   const [memberProfile, setMemberProfile] = useState<MemberProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
@@ -265,6 +267,7 @@ function MainApp() {
   const refreshInFlight = useRef(false);
   const trackingInFlight = useRef(false);
   const limitsInFlight = useRef(false);
+  const projectBudgetInFlight = useRef(false);
 
   const refreshGuarded = useCallback(async () => {
     if (refreshInFlight.current) return;
@@ -365,6 +368,37 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [view, refreshMemberLimits]);
 
+  // A project's own Hours-based budget (Budget tab, scope per-person or
+  // shared) - independent of, and stacks with, a task's own estimate. Both
+  // project types can carry one (a calling project has no task estimate at
+  // all, so this may be its only cap besides the member's personal one).
+  const refreshProjectBudget = useCallback(async () => {
+    if (!signedIn || !selectedProjectId) {
+      setProjectBudget(null);
+      return;
+    }
+    if (projectBudgetInFlight.current) return;
+    projectBudgetInFlight.current = true;
+    try {
+      setProjectBudget(
+        await invoke<ProjectBudgetStatus | null>("get_project_budget_status", {
+          projectId: selectedProjectId,
+        }),
+      );
+    } catch {
+      setProjectBudget(null);
+    } finally {
+      projectBudgetInFlight.current = false;
+    }
+  }, [signedIn, selectedProjectId]);
+
+  useEffect(() => {
+    if (view !== "home" && view !== "profile") return;
+    void refreshProjectBudget();
+    const timer = window.setInterval(() => void refreshProjectBudget(), 5000);
+    return () => window.clearInterval(timer);
+  }, [view, refreshProjectBudget]);
+
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
   // agent/live_sync.rs) is down; this just shrinks the gap to sub-second when
@@ -383,10 +417,11 @@ function MainApp() {
       if (!isRelevantChange && !isScopeChanged) return;
       void refreshTaskTracking();
       void refreshMemberLimits();
+      void refreshProjectBudget();
     };
     window.addEventListener("vt-live-changed", onLiveChanged);
     return () => window.removeEventListener("vt-live-changed", onLiveChanged);
-  }, [refreshTaskTracking, refreshMemberLimits]);
+  }, [refreshTaskTracking, refreshMemberLimits, refreshProjectBudget]);
 
   // The People-page member record never changes while the app is open - one
   // fetch when the profile view opens, no polling.
@@ -868,6 +903,39 @@ function MainApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracking, isCallingProject]);
 
+  // Calling-project counterpart to P6/P7 above, for the project's own
+  // per-person budget specifically. Task sessions don't need this
+  // duplicated - computeTimerAllowance on the backend already folds the same
+  // per-person budget into taskTracking.allowedRemainingSeconds, so the
+  // task-scoped P6/P7 above already stops those on time.
+  const localProjectBudgetRemainingRef = useRef<number | null>(null);
+  useEffect(() => {
+    localProjectBudgetRemainingRef.current =
+      tracking && isCallingProject && projectBudget ? projectBudget.remainingSeconds : null;
+  }, [projectBudget, tracking, isCallingProject]);
+
+  useEffect(() => {
+    if (!tracking || !isCallingProject) return;
+    if (projectBudget && projectBudget.remainingSeconds <= 0) {
+      stopForTaskLimit("This project's budget has been reached — timer stopped. Your time is saved.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracking, isCallingProject, projectBudget?.remainingSeconds]);
+
+  useEffect(() => {
+    if (!tracking || !isCallingProject) return;
+    const timer = window.setInterval(() => {
+      if (localProjectBudgetRemainingRef.current == null) return;
+      localProjectBudgetRemainingRef.current -= 1;
+      if (localProjectBudgetRemainingRef.current <= 0) {
+        localProjectBudgetRemainingRef.current = null;
+        stopForTaskLimit("This project's budget has been reached — timer stopped. Your time is saved.");
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracking, isCallingProject]);
+
   const idleStage = session?.idleStage ?? 0;
   const tone = statusTone(link?.status || "", signedIn);
   const displayName = loadingProfile ? "Loading…" : profile?.name || "Not signed in";
@@ -942,8 +1010,19 @@ function MainApp() {
     return parts.join(" · ");
   })();
 
+  // Only rendered when the project actually has an Hours-based budget - no
+  // dash-filled card cluttering the common case of no budget configured.
+  const projectBudgetReached = projectBudget != null && projectBudget.remainingSeconds <= 0;
+  const projectBudgetSubLabel = !projectBudget
+    ? ""
+    : projectBudget.scope === "per_person"
+      ? "your allotment on this project"
+      : "shared across the whole team";
+
   // Rendered under both project types: on its own for a calling project (which
-  // has no task stats at all), and alongside the task cards otherwise.
+  // has no task stats at all), and alongside the task cards otherwise. A
+  // project's own budget is independent of, and stacks with, a task's own
+  // estimate - both can apply to the same task-based session at once.
   const hoursTodayCards = (
     <div className="stat-grid page-content-swap" style={{ animationDelay: "0.04s" }}>
       <div className="stat-card">
@@ -967,6 +1046,15 @@ function MainApp() {
           {dailyCapLeftLabel}
         </span>
       </div>
+      {projectBudget ? (
+        <div className="stat-card">
+          <span className="stat-card-label">Project budget left</span>
+          <span className={`stat-card-value${projectBudgetReached ? " warn" : ""}`}>
+            {fmtHours(projectBudget.remainingSeconds)} left
+          </span>
+          <span className="stat-card-sub">{projectBudgetSubLabel}</span>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -1330,7 +1418,10 @@ function MainApp() {
                           {taskTracking.overtimeHoursPerDay
                             ? ` +${taskTracking.overtimeHoursPerDay}h OT`
                             : ""}
+                          {taskTracking.sharedBudget ? " · shared across the team" : ""}
                         </span>
+                      ) : taskTracking?.sharedBudget ? (
+                        <span className="stat-card-sub">shared across the team</span>
                       ) : null}
                     </div>
                     <div className="stat-card">
@@ -1338,11 +1429,18 @@ function MainApp() {
                       <span className={`stat-card-value${taskTracking?.limitReached ? " warn" : ""}`}>
                         {remainingLabel}
                       </span>
+                      {taskTracking?.sharedBudget ? (
+                        <span className="stat-card-sub">shared across the team</span>
+                      ) : null}
                     </div>
                     <div className="stat-card">
                       <span className="stat-card-label">Task budget left</span>
                       <span className="stat-card-value">{taskBudgetRemainingLabel}</span>
-                      <span className="stat-card-sub">across the whole task, incl. overtime used</span>
+                      <span className="stat-card-sub">
+                        {taskTracking?.sharedBudget
+                          ? "shared across the team, incl. overtime used"
+                          : "across the whole task, incl. overtime used"}
+                      </span>
                     </div>
                   </div>
                 )}
