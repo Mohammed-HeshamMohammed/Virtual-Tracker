@@ -72,6 +72,7 @@ export function TaskWizardModal({
   const [newTaskDurationHoursPerDay, setNewTaskDurationHoursPerDay] = useComponentState("")
   const [newTaskOvertimeHoursPerDay, setNewTaskOvertimeHoursPerDay] = useComponentState("")
   const [newTaskRollingHourCap, setNewTaskRollingHourCap] = useComponentState(false)
+  const [newTaskSharedBudget, setNewTaskSharedBudget] = useComponentState(false)
   const [newTaskPosition, setNewTaskPosition] = useComponentState<"Top" | "Bottom">("Top")
 
   const [formAssigneeOptions, setFormAssigneeOptions] = useComponentState<{ value: string; label: string }[]>([])
@@ -127,6 +128,7 @@ export function TaskWizardModal({
       setNewTaskDurationHoursPerDay(task.durationHoursPerDay !== null ? String(task.durationHoursPerDay) : "")
       setNewTaskOvertimeHoursPerDay(task.overtimeHoursPerDay !== null ? String(task.overtimeHoursPerDay) : "")
       setNewTaskRollingHourCap(task.rollingHourCap === true)
+      setNewTaskSharedBudget(task.sharedTaskBudget === true)
 
       let cancelled = false
       fetchTaskParticipation(task.id, { manage: true })
@@ -157,6 +159,7 @@ export function TaskWizardModal({
     setNewTaskDurationHoursPerDay("")
     setNewTaskOvertimeHoursPerDay("")
     setNewTaskRollingHourCap(false)
+    setNewTaskSharedBudget(false)
     setNewTaskPosition("Top")
   }, [
     open,
@@ -297,6 +300,7 @@ export function TaskWizardModal({
         durationHoursPerDay: newTaskDurationHoursPerDay,
         overtimeHoursPerDay: newTaskOvertimeHoursPerDay,
         rollingHourCap: newTaskRollingHourCap,
+        sharedTaskBudget: newTaskSharedBudget,
         position: newTaskPosition,
         expectedUpdatedAt: task?.updatedAt,
       })
@@ -460,6 +464,18 @@ export function TaskWizardModal({
               </p>
             </div>
             <Toggle checked={newTaskRollingHourCap} onChange={setNewTaskRollingHourCap} />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
+            <div className="space-y-0.5">
+              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
+                Shared team budget
+              </p>
+              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
+                Split this task's total hours as one pool shared by every assignee combined, instead of each
+                assignee getting their own full allotment independently.
+              </p>
+            </div>
+            <Toggle checked={newTaskSharedBudget} onChange={setNewTaskSharedBudget} />
           </div>
           <div className="space-y-1.5">
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>START DATE</label>

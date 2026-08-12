@@ -62,6 +62,7 @@ function mapApiTask(row: any): Task {
     durationDays: Number.isFinite(durationDays) ? durationDays : null,
     overtimeHoursPerDay: Number.isFinite(overtimeHoursPerDay) ? overtimeHoursPerDay : null,
     rollingHourCap: (row.rollingHourCap ?? row.rolling_hour_cap) === true,
+    sharedTaskBudget: (row.sharedTaskBudget ?? row.shared_task_budget) === true,
     startDate: (row.startDate as string) || (row.start_date as string) || null,
     dueDate: (row.dueDate as string) || (row.due_date as string) || null,
     completed: (row.status ?? "todo") === "done",
@@ -242,6 +243,7 @@ export function useTaskMutations({
       durationHoursPerDay: string
       overtimeHoursPerDay: string
       rollingHourCap: boolean
+      sharedTaskBudget: boolean
       position: "Top" | "Bottom"
       /** Optimistic-concurrency token (§6.9) - the task's updatedAt when
        * the form loaded, sent back unchanged so a stale write 409s. */
@@ -286,6 +288,7 @@ export function useTaskMutations({
       | "durationDays"
       | "overtimeHoursPerDay"
       | "rollingHourCap"
+      | "sharedTaskBudget"
     > = {
       startDate,
       dueDate,
@@ -294,6 +297,7 @@ export function useTaskMutations({
       durationDays,
       overtimeHoursPerDay,
       rollingHourCap: formValues.rollingHourCap,
+      sharedTaskBudget: formValues.sharedTaskBudget,
     }
 
     if (editingId) {
