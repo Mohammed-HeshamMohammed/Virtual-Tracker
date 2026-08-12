@@ -59,6 +59,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["virtualtracker"]
+      }
+    },
     "updater": {
       "active": true,
       "endpoints": [

@@ -22,6 +22,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_deep_link::DeepLinkExt;
 
 use crate::agent::controller::AgentController;
 use crate::config::Settings;
@@ -428,6 +429,10 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
+        // Must come right after single-instance: that's what forwards the
+        // virtualtracker:// URL a Windows/Linux second-instance launch was
+        // spawned with into this plugin's on_open_url listener below.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -469,6 +474,25 @@ pub fn run() {
             stop_session,
         ])
         .setup(move |app| {
+            // Dev builds and Linux have no installer to write the OS-level
+            // scheme registration, so the plugin has to do it at runtime.
+            // Release Windows/macOS builds get it from the NSIS/Info.plist
+            // step the `deep-link` config in tauri.conf.json feeds into.
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                let _ = app.deep_link().register_all();
+            }
+
+            // The browser tab that finishes a Google/Apple/email link (see
+            // `AgentLinkFlow::start`) navigates to virtualtracker://link-complete
+            // once it's done. Credentials themselves already arrive via the
+            // existing poll/loopback exchange - this only brings the agent
+            // window to the front so the user isn't left staring at the browser.
+            let deep_link_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |_event| {
+                show_main_window(&deep_link_handle);
+            });
+
             let handle = app.handle().clone();
             let status_controller = Arc::clone(&controller);
             status_controller.add_status_listener(Arc::new(move |text| {

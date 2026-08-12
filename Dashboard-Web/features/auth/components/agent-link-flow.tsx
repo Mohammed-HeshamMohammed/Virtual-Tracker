@@ -22,6 +22,19 @@ type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 const INVALID_LINK_MESSAGE =
   "This linking session is invalid or expired. Open Virtual Tracker Agent and click Sign In again."
 
+// An <a> click (rather than window.location.href) so an unregistered scheme
+// doesn't flash a "not found" navigation in the address bar - it's just
+// silently ignored by the browser when no handler is registered.
+function focusDesktopAgent(): void {
+  try {
+    const link = document.createElement("a")
+    link.href = "virtualtracker://link-complete"
+    link.click()
+  } catch {
+    /* ignore - best-effort only, the poll/loopback exchange already did the real work */
+  }
+}
+
 function assertAgentApiHostMatches(health: LocalAgentHealth): void {
   const expectedHost = new URL(getDashboardApiBaseUrl()).host
   if (!health.apiUrl) return
@@ -144,6 +157,12 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
         await finishAgentLinkSuccess()
         if (cancelled || attemptId !== attemptRef.current) return
+        // Credentials already reached the agent via the poll/loopback exchange
+        // above - this is purely cosmetic, bringing its window back to the
+        // front instead of leaving the user on this tab. Browsers may show a
+        // one-time "Open Virtual Tracker Agent?" prompt for the custom scheme,
+        // and silently no-op if it isn't registered (e.g. agent not installed).
+        focusDesktopAgent()
         setState("success")
       } catch (e) {
         if (cancelled || attemptId !== attemptRef.current) return
