@@ -1,5 +1,8 @@
 {
   "launchAtLogin": true,
   "startHidden": false,
-  "autoSignIn": true
+  "autoSignIn": true,
+  "closeToTray": true,
+  "hasLaunchedBefore": true,
+  "trayNoticeShown": false
 }
