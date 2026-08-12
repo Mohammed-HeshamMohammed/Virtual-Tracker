@@ -541,7 +541,11 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         }
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const payload = buildUpdatePayload(entity, body);
+        // §6.9 optimistic-concurrency token - client-only, never a real
+        // column, so it must be allowlisted here or every entity's PATCH
+        // 400s as an "Unexpected field" before the conditional-write check
+        // (expectedUpdatedAt, read right below) ever runs.
+        const payload = buildUpdatePayload(entity, body, { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt"] });
         if (Object.keys(payload).length === 0) {
           return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
         }
@@ -871,7 +875,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           ? ["members", "member_ids", "memberIds", "lead_ids", "leadIds", "project_ids", "projectIds"]
           : [];
       const payload = buildUpdatePayload(entity, body, {
-        extraAllowedFields: [...inviteExtras, ...teamRosterExtras],
+        extraAllowedFields: [...inviteExtras, ...teamRosterExtras, "expected_updated_at", "expectedUpdatedAt"],
       });
       const hasRosterUpdate =
         parsed.key === "teams" &&
