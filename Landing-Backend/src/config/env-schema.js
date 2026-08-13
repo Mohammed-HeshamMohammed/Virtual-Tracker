@@ -26,6 +26,9 @@ const envSourceSchema = z
     DASHBOARD_BACKEND_URL: optionalTrimmedString,
     NOTIFY_BACKEND_URL: optionalTrimmedString,
     INTERNAL_SERVICE_SECRET: optionalTrimmedString,
+    GITHUB_PAT: optionalTrimmedString,
+    GITHUB_REPO_OWNER: optionalTrimmedString,
+    GITHUB_REPO_NAME: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {

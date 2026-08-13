@@ -82,6 +82,12 @@ export function buildEnv(source = process.env) {
       backendUrl: readString(source, "NOTIFY_BACKEND_URL"),
       internalServiceSecret: readString(source, "INTERNAL_SERVICE_SECRET"),
     }),
+
+    github: Object.freeze({
+      pat: readString(source, "GITHUB_PAT"),
+      repoOwner: readString(source, "GITHUB_REPO_OWNER", "Mohammed-HeshamMohammed"),
+      repoName: readString(source, "GITHUB_REPO_NAME", "Virtual-Tracker"),
+    }),
   });
 }
 
