@@ -13,13 +13,13 @@ export function hasManageEmployeeTeamsPrivilege(memberData) {
   return Boolean(priv && typeof priv === "object" && priv.manage_employee_teams === true);
 }
 
-/** Employee L2+ (below Manager). */
+/** Team Lead+ (below Manager). */
 export function isEmployeeL2OrHigherRole(roleName) {
   const rank = rolePrivilegeRank(roleName);
-  return rank >= ROLE_PRIVILEGE_RANK.employeel2 && rank < ROLE_PRIVILEGE_RANK.manager;
+  return rank >= ROLE_PRIVILEGE_RANK.teamlead && rank < ROLE_PRIVILEGE_RANK.manager;
 }
 
-/** Management roles, or Employee L2+ with manage_employee_teams privilege. */
+/** Management roles, or Team Lead+ with manage_employee_teams privilege. */
 export function canCreateTeams(roleName, memberData = null) {
   if (isManagementRole(roleName)) return true;
   if (!hasManageEmployeeTeamsPrivilege(memberData)) return false;
@@ -66,12 +66,12 @@ export function canAssignMemberToTeam(actorRoleName, targetRoleName) {
 export const TEAM_MEMBER_ASSIGN_DENIED_MESSAGE =
   "Cannot assign a member above your role to this team.";
 
-/** Team lead must be Employee L2+ (management counts). */
+/** Team lead must be Team Lead+ (management counts). */
 export function canBeTeamLead(roleName) {
   const rank = rolePrivilegeRank(roleName);
   if (rank < 0) return false;
-  return rank >= ROLE_PRIVILEGE_RANK.employeel2;
+  return rank >= ROLE_PRIVILEGE_RANK.teamlead;
 }
 
 export const TEAM_LEAD_ROLE_DENIED_MESSAGE =
-  "Employees below Employee L2 cannot be assigned as team leads.";
+  "Employees below Team Lead cannot be assigned as team leads.";

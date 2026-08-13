@@ -508,7 +508,7 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       }
       const targetRoleName = await resolveMemberRoleName(db, memberId);
       if (!isEmployeeL2OrHigherRole(targetRoleName)) {
-        throw new Error("Manage Employee teams is only available for Employee L2 and above.");
+        throw new Error("Manage Employee teams is only available for Team Lead and above.");
       }
       const existingPriv =
         memberData.privileges && typeof memberData.privileges === "object"

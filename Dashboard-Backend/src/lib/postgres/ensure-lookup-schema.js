@@ -511,6 +511,31 @@ END $$`,
   "ALTER TABLE time_entries ALTER COLUMN created_by TYPE VARCHAR(255) USING created_by::text",
   "ALTER TABLE time_entries ALTER COLUMN updated_by TYPE VARCHAR(255) USING updated_by::text",
   "ALTER TABLE timesheets ALTER COLUMN approved_by TYPE VARCHAR(255) USING approved_by::text",
+  // Employee tier relabel: Employee L2/L1/L0 -> Team Lead/Employee/Intern. Renaming
+  // the roles row in place (not inserting new rows) means every members.role_id FK
+  // repoints automatically - no per-member update needed. Must run before the L1
+  // rename below, since a pre-tier legacy bare "Employee" role (rank 30, same as L0)
+  // would otherwise collide with the new name on the UNIQUE roles.name constraint.
+  `DO $$
+DECLARE
+  v_legacy_id UUID;
+  v_l0_id UUID;
+BEGIN
+  SELECT id INTO v_legacy_id FROM roles WHERE LOWER(name) = 'employee' LIMIT 1;
+  SELECT id INTO v_l0_id FROM roles WHERE LOWER(name) = 'employee l0' LIMIT 1;
+  IF v_legacy_id IS NOT NULL AND v_l0_id IS NOT NULL AND v_legacy_id <> v_l0_id THEN
+    UPDATE members SET role_id = v_l0_id WHERE role_id = v_legacy_id;
+    UPDATE invites SET role_id = v_l0_id WHERE role_id = v_legacy_id;
+    UPDATE pending_auth_members SET role_id = v_l0_id WHERE role_id = v_legacy_id;
+    DELETE FROM roles WHERE id = v_legacy_id;
+  END IF;
+END $$`,
+  "UPDATE roles SET name = 'Team Lead' WHERE name = 'Employee L2'",
+  "UPDATE roles SET name = 'Employee' WHERE name = 'Employee L1'",
+  "UPDATE roles SET name = 'Intern' WHERE name = 'Employee L0'",
+  "UPDATE pending_auth_members SET role_name = 'Team Lead' WHERE role_name = 'Employee L2'",
+  "UPDATE pending_auth_members SET role_name = 'Employee' WHERE role_name = 'Employee L1'",
+  "UPDATE pending_auth_members SET role_name = 'Intern' WHERE role_name = 'Employee L0'",
 ];
 
 const MEMBER_DATA_DDL = [

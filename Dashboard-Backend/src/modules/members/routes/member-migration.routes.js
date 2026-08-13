@@ -22,8 +22,8 @@ const FIRESTORE_IN_CHUNK_SIZE = 30;
 
 /** Mobile-app `users/{uid}.role` (lowercased, spaces/underscores collapsed) → app role label. */
 const MOBILE_ROLE_MAP = {
-  agent: "Employee L1",
-  candidate: "Employee L0",
+  agent: "Employee",
+  candidate: "Intern",
   manager: "Manager",
   supermanager: "Super Manager",
   client: "Client",

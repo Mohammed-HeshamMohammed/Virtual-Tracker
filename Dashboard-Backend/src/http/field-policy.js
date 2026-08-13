@@ -1,4 +1,5 @@
 import { isManagementRole } from "./auth-context.js";
+import { isAdminLevelRole } from "./role-hierarchy.js";
 
 /** Fields that must never be returned unless the viewer is authorized. */
 const COMPENSATION_FIELDS = [
@@ -13,6 +14,37 @@ const COMPENSATION_FIELDS = [
   "rate",
   "currency",
 ];
+
+/** Email fields: Owner/Super Admin/Admin only (mirrors frontend member table gating). */
+const EMAIL_FIELDS = ["email", "work_email", "personalEmail", "personal_email"];
+
+/** Emails: self always; Owner/Super Admin/Admin for others. */
+export function canViewEmail(viewer, targetMemberId) {
+  if (!viewer?.memberId) return false;
+  if (targetMemberId && viewer.memberId === targetMemberId) return true;
+  return isAdminLevelRole(viewer.roleName);
+}
+
+/**
+ * @param {Record<string, unknown>} row
+ * @param {import("./auth-context.js").AuthContext | null} viewer
+ * @param {string} [targetMemberId]
+ */
+export function redactEmailFields(row, viewer, targetMemberId) {
+  const memberId =
+    targetMemberId ||
+    (typeof row.id === "string" ? row.id : "") ||
+    (typeof row.member_id === "string" ? row.member_id : "") ||
+    (typeof row.memberId === "string" ? row.memberId : "");
+
+  if (canViewEmail(viewer, memberId)) return row;
+
+  const out = { ...row };
+  for (const field of EMAIL_FIELDS) {
+    delete out[field];
+  }
+  return out;
+}
 
 /** Pay/limits: self always; managers+ for others in scope. */
 export function canViewCompensation(viewer, targetMemberId) {
@@ -48,7 +80,7 @@ export function redactCompensationFields(row, viewer, targetMemberId) {
  */
 export function applyMemberFieldPolicy(rows, viewer) {
   if (!viewer) return [];
-  return rows.map((row) => redactCompensationFields(row, viewer));
+  return rows.map((row) => redactEmailFields(redactCompensationFields(row, viewer), viewer));
 }
 
 /**
