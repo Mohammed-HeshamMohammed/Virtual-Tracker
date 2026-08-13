@@ -89,10 +89,11 @@ export async function clearProfileAvatar(auth, db, uid) {
   const hadGcsAvatar =
     typeof prevData.photoURL === "string" && prevData.photoURL.includes("profile-avatars/");
 
+  const nextPhotoURL = hadGcsAvatar ? null : prevData.photoURL ?? null;
   await profileRef.set(
     {
       uid,
-      photoURL: hadGcsAvatar ? null : prevData.photoURL ?? null,
+      photoURL: nextPhotoURL,
       profileImageData: FieldValue.delete(),
       profileImageMimeType: FieldValue.delete(),
       profileImageUpdatedAt: FieldValue.delete(),

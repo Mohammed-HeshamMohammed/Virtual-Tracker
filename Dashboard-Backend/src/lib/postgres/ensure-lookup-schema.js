@@ -105,6 +105,12 @@ END $$`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS desktop_agent_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS web_capture_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_source VARCHAR(20)",
+  // Owner sign-off flag for Admin/Super Admin (privileged-role-governance.js) -
+  // was never migrated as a real column, so it always read as false/null and
+  // every privileged-role promotion (even by the Owner) got auto-banned on
+  // the next governance check.
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted BOOLEAN",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted_at TIMESTAMPTZ",
   "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE LOWER(name) IN ('superadmin', 'owner')",
   "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE LOWER(name) = 'admin'",
   "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE LOWER(name) IN ('supermanager', 'supermanger', 'manager')",

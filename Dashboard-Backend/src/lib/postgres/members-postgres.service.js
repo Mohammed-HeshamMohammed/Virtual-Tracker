@@ -63,6 +63,8 @@ const WRITABLE_COLUMNS = [
   "desktop_agent_linked_at",
   "web_capture_linked_at",
   "agent_source",
+  "privileged_role_owner_granted",
+  "privileged_role_owner_granted_at",
 ];
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);
