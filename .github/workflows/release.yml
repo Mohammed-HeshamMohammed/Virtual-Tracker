@@ -52,7 +52,7 @@ jobs:
       - name: Bump agent version
         id: version
         env:
-          BUMP: ${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'patch' }}
+          BUMP: ${{ github.event.inputs.bump || 'patch' }}
         run: |
           set -euo pipefail
           CONF="Tauri-App-Extension/src-tauri/tauri.conf.json"
@@ -113,6 +113,9 @@ jobs:
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
+    env:
+      # secrets.* is not allowed inside step `if:` — expose a boolean flag here.
+      HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -138,7 +141,7 @@ jobs:
       # (base64 PFX) + WINDOWS_CERTIFICATE_PASSWORD to enable.
       # https://v2.tauri.app/distribute/sign/windows/
       - name: import Windows Authenticode certificate
-        if: matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE != ''
+        if: matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT == 'true'
         env:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
