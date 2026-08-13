@@ -17,6 +17,7 @@ import {
   type LocalAgentHealth,
 } from "@/features/activity/utils/local-agent"
 import { Monitor, Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { AgentDownloadChoices } from "@/shared/ui/agent-download-choices"
 
 type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 
@@ -279,10 +280,10 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
               >
                 Try again
               </button>
-              <p className="text-xs text-slate-500 mt-2">
-                If the link expired, click <span className="text-slate-400">Re-link Account</span> in the desktop
-                agent, then confirm here again.
-              </p>
+              <div className="mt-6 pt-6 border-t border-slate-800 w-full text-left">
+                <p className="text-xs font-semibold text-slate-400 mb-3">Don't have Virtual Tracker Agent installed?</p>
+                <AgentDownloadChoices compact />
+              </div>
             </>
           )}
         </div>
