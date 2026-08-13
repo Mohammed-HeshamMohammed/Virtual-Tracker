@@ -25,3 +25,11 @@ export function isExternalHref(href: string): boolean {
   const value = safeHref(href, "")
   return value.startsWith("http://") || value.startsWith("https://")
 }
+
+const LANDING_API_URL = process.env.NEXT_PUBLIC_LANDING_API_URL?.trim() ?? ""
+
+export function getAgentDownloadUrl(platform: "windows" | "mac" | "linux" = "windows"): string {
+  const base = LANDING_API_URL || ""
+  return `${base}/api/download?platform=${platform}`
+}
+
