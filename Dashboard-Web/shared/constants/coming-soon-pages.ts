@@ -22,14 +22,13 @@ addPagesFromSection("financials")
 // Shift-style hub reports are all non-Tier-1 (payments, limits, budgets, time-off, invoices, shift attendance).
 Object.keys(SHIFT_STYLE_HUB_REPORTS).forEach((pageId) => COMING_SOON_PAGES.add(pageId))
 
-// Non-Tier-1 individual report pages.
-COMING_SOON_PAGES.add("reports-work-sessions")    // Tier 2 — needs new endpoint
-COMING_SOON_PAGES.add("reports-manual-edits")      // Tier 2 — needs new endpoint
-COMING_SOON_PAGES.add("reports-amounts")           // Tier 3 — blocked on Billing backend
-COMING_SOON_PAGES.add("reports-audit")             // Tier 3 — blocked on audit log infrastructure
-COMING_SOON_PAGES.add("reports-apps-urls")         // No backend — coming soon
-COMING_SOON_PAGES.add("reports-expenses")          // No backend — coming soon
-COMING_SOON_PAGES.add("reports-timesheet-approvals") // No backend — coming soon
+// Non-Tier-1 individual report pages still with no real backend.
+COMING_SOON_PAGES.add("reports-manual-edits") // No backend — coming soon
+COMING_SOON_PAGES.add("reports-expenses")     // No backend — coming soon
+// reports-work-sessions, reports-amounts, reports-audit, reports-apps-urls,
+// and reports-timesheet-approvals are now wired to real Postgres-backed
+// endpoints (activity_sessions, daily_member_active_seconds, audit_logs,
+// activity_app_logs/activity_url_logs, timesheets) — unlocked.
 
 // General dashboard disabled — placeholder only (no API calls).
 COMING_SOON_PAGES.add("general")
@@ -37,8 +36,9 @@ COMING_SOON_PAGES.add("general")
 // Favorites hub is not yet implemented.
 COMING_SOON_PAGES.add("favorites")
 
-// Timesheet approvals setup is not yet implemented.
-COMING_SOON_PAGES.add("timesheets-approvals")
+// timesheets-approvals now has a real pending-approvals queue (approve/reject
+// via the generic timesheets schema CRUD, already management-role-gated
+// server-side) — unlocked.
 
 export function isComingSoonPage(pageId: string): boolean {
   return COMING_SOON_PAGES.has(pageId)

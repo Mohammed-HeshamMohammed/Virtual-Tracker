@@ -1,6 +1,11 @@
 export { ReportEmptyState, StandardReportLayout, TimeAndActivityReport } from "@/features/reports/components/app";
 export { useStandardReportLayout } from "@/features/reports/components/app/standard-report-layout";
 export { ProjectBudgetsReport } from "@/features/reports/components/project-budgets/project-budgets-report";
+export { ClientBudgetsReport } from "@/features/reports/components/client-budgets/client-budgets-report";
+export { WeeklyLimitsReport, DailyLimitsReport } from "@/features/reports/components/limits/limits-report";
+export { TimesheetApprovalsReport } from "@/features/reports/components/timesheet-approvals/timesheet-approvals-report";
+export { PaymentsReport } from "@/features/reports/components/payments/payments-report";
+export { AppsUrlsReport } from "@/features/reports/components/apps-urls/apps-urls-report";
 export { SHIFT_STYLE_HUB_REPORTS, REPORTS_POPULAR, REPORTS_SECTIONS } from "@/features/reports/components/shared/constants";
 export { WorkSessionsReport } from "@/features/reports/components/work-sessions/work-sessions-report";
 export { ManualTimeEditsReport } from "@/features/reports/components/app/manual-time-edits-report";

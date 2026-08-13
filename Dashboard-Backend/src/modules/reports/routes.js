@@ -12,6 +12,24 @@ import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
 import { parseDeliveryTimeLabel } from "./date-range-kind.js";
+import {
+  getMemberDailyAmountRowsPg,
+  getWorkSessionRowsPg,
+  getAuditLogRowsPg,
+  getLimitsUsageRowsPg,
+  getTimesheetApprovalRowsPg,
+  getAppUsageRowsPg,
+  getUrlUsageRowsPg,
+} from "../../lib/postgres/misc-reports-postgres.service.js";
+import {
+  listProjectsPg,
+  getAllProjectBudgetsPg,
+  getProjectTrackedSecondsPg,
+  computeProjectSpentCostPg,
+} from "../../lib/postgres/projects-postgres.service.js";
+import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
+import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
+import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -117,7 +135,7 @@ async function buildReportAttachment(payload, fileType, rangeLbl) {
  */
 export async function routeReports(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
-  if (!pn.startsWith("/api/reports/time-and-activity")) return false;
+  if (!pn.startsWith("/api/reports/")) return false;
 
   if (pn === "/api/reports/time-and-activity" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
@@ -288,6 +306,306 @@ export async function routeReports(req, res, url, origin) {
       }
       logSafeError("[reports/time-and-activity/schedule]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to save schedule." });
+    }
+    return true;
+  }
+
+  // ─── Amounts Owed / Daily Totals / Payments (same "hours x rate" shape) ──
+  if (
+    (pn === "/api/reports/amounts-owed" || pn === "/api/reports/payments") &&
+    req.method === "GET"
+  ) {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const rows = await getMemberDailyAmountRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
+
+      const byDay = new Map();
+      for (const row of rows) {
+        if (!byDay.has(row.day)) byDay.set(row.day, []);
+        const hours = row.activeSeconds / 3600;
+        byDay.get(row.day).push({
+          memberId: row.memberId,
+          name: nameMap.get(row.memberId)?.name ?? "Unknown",
+          activeSeconds: row.activeSeconds,
+          rate: row.rate,
+          rateType: row.rateType,
+          currency: row.currency,
+          amount: Math.round(hours * row.rate * 100) / 100,
+        });
+      }
+      const days = [...byDay.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, members]) => ({ date, members }));
+
+      sendJson(res, origin, 200, { success: true, data: { days } });
+    } catch (e) {
+      logSafeError("[reports/amounts-owed]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Work Sessions ────────────────────────────────────────────────────────
+  if (pn === "/api/reports/work-sessions" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(sessions.map((s) => s.memberId))]);
+
+      const rows = sessions.map((s) => ({
+        ...s,
+        memberName: nameMap.get(s.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { sessions: rows } });
+    } catch (e) {
+      logSafeError("[reports/work-sessions]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Audit Log ────────────────────────────────────────────────────────────
+  if (pn === "/api/reports/audit-log" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Management role required." });
+      return true;
+    }
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const rows = await getAuditLogRowsPg({ fromDay: from, toDay: to });
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/audit-log]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Project Budgets ──────────────────────────────────────────────────────
+  if (pn === "/api/reports/project-budgets" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Management role required." });
+      return true;
+    }
+
+    try {
+      const [projects, budgets] = await Promise.all([listProjectsPg({ limit: 500 }), getAllProjectBudgetsPg()]);
+      const budgetByProject = new Map(budgets.map((b) => [b.project_id, b]));
+
+      const rows = await Promise.all(
+        projects.map(async (project) => {
+          const budget = budgetByProject.get(project.id);
+          const cost = budget ? Number(budget.cost) || 0 : 0;
+          const spentSeconds = await getProjectTrackedSecondsPg(project.id, {});
+          const spentAmount = budget && cost > 0
+            ? await computeProjectSpentCostPg(getDb(), project.id, { basedOn: budget.based_on })
+            : 0;
+          return {
+            projectId: project.id,
+            projectName: project.name,
+            hasBudget: Boolean(budget),
+            budgetType: budget?.type ?? null,
+            cost,
+            spentSeconds,
+            spentAmount,
+            remaining: Math.max(0, cost - spentAmount),
+            pctUsed: cost > 0 ? Math.min(100, Math.round((spentAmount / cost) * 100)) : 0,
+          };
+        }),
+      );
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/project-budgets]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Client Budgets ───────────────────────────────────────────────────────
+  if (pn === "/api/reports/client-budgets" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Management role required." });
+      return true;
+    }
+
+    try {
+      const [clients, budgets] = await Promise.all([listClientsPg({ limit: 500 }), getAllClientBudgetsPg()]);
+      const budgetByClient = new Map(budgets.map((b) => [b.client_id, b]));
+
+      const rows = await Promise.all(
+        clients.map(async (client) => {
+          const rawBudget = budgetByClient.get(client.id);
+          const budget = normalizeBudget(rawBudget);
+          if (!budget) {
+            return {
+              clientId: client.id,
+              clientName: client.name,
+              hasBudget: false,
+              budgetType: null,
+              cap: 0,
+              spentAmount: 0,
+              billableHours: 0,
+              pctUsed: 0,
+            };
+          }
+          const usage = await resolveClientBudgetUsage(getDb(), client.id, budget, {});
+          const evaluation = evaluateBudgetUsage(budget, {
+            spentAmount: usage.spentAmount,
+            projectCount: usage.projectCount,
+          });
+          return {
+            clientId: client.id,
+            clientName: client.name,
+            hasBudget: true,
+            budgetType: budget.type,
+            cap: evaluation.cap,
+            spentAmount: usage.spentAmount,
+            billableHours: usage.billableHours,
+            pctUsed: evaluation.usagePct,
+          };
+        }),
+      );
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/client-budgets]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Weekly Limits / Daily Limits (same table, different threshold column) ─
+  if (
+    (pn === "/api/reports/weekly-limits" || pn === "/api/reports/daily-limits") &&
+    req.method === "GET"
+  ) {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const rows = await getLimitsUsageRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
+
+      const isWeekly = pn === "/api/reports/weekly-limits";
+      const shaped = rows.map((r) => {
+        const limitHours = isWeekly ? r.weeklyLimitHours : r.dailyLimitHours;
+        const periodHours = r.periodSeconds / 3600;
+        return {
+          memberId: r.memberId,
+          name: nameMap.get(r.memberId)?.name ?? "Unknown",
+          limitHours,
+          trackedHours: Math.round(periodHours * 100) / 100,
+          pctUsed: limitHours > 0 ? Math.min(100, Math.round((periodHours / limitHours) * 100)) : 0,
+        };
+      });
+      sendJson(res, origin, 200, { success: true, data: { rows: shaped } });
+    } catch (e) {
+      logSafeError("[reports/limits]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Timesheet Approvals ──────────────────────────────────────────────────
+  if (pn === "/api/reports/timesheet-approvals" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const rows = await getTimesheetApprovalRowsPg({ memberIds, fromDay: from, toDay: to });
+      const ids = new Set(rows.map((r) => r.memberId));
+      for (const r of rows) if (r.approvedBy) ids.add(r.approvedBy);
+      const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
+
+      const shaped = rows.map((r) => ({
+        ...r,
+        memberName: nameMap.get(r.memberId)?.name ?? "Unknown",
+        approvedByName: r.approvedBy ? (nameMap.get(r.approvedBy)?.name ?? "Unknown") : null,
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows: shaped } });
+    } catch (e) {
+      logSafeError("[reports/timesheet-approvals]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Apps & URLs ──────────────────────────────────────────────────────────
+  if (pn === "/api/reports/apps-urls" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const [apps, urls] = await Promise.all([
+        getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
+        getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
+      ]);
+      const ids = new Set([...apps.map((a) => a.memberId), ...urls.map((u) => u.memberId)]);
+      const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
+
+      const shapedApps = apps.map((a) => ({ ...a, memberName: nameMap.get(a.memberId)?.name ?? "Unknown" }));
+      const shapedUrls = urls.map((u) => ({ ...u, memberName: nameMap.get(u.memberId)?.name ?? "Unknown" }));
+      sendJson(res, origin, 200, { success: true, data: { apps: shapedApps, urls: shapedUrls } });
+    } catch (e) {
+      logSafeError("[reports/apps-urls]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;
   }

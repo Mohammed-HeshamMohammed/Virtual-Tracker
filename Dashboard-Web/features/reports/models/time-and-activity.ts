@@ -39,6 +39,7 @@ export interface TimeActivityMemberSubRow {
   totalSpent: string
   trackedHours: number
   manualHours: number
+  projectNames: string[]
 }
 
 export interface TimeActivityCustomFilterRow {

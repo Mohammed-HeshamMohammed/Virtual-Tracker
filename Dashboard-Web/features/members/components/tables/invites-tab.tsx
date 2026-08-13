@@ -26,9 +26,9 @@ function getRoleSortRank(role: string): number {
   if (r === "admin") return 8
   if (r === "supermanager" || r === "supermanger") return 7
   if (r === "manager" || r === "manger") return 6
-  if (r === "employeesl2" || r === "employeel2") return 5
-  if (r === "employeesl1" || r === "employeel1" || r === "l1") return 4
-  if (r === "employeesl0" || r === "employeel0" || r === "l0" || r === "employee") return 3
+  if (r === "teamlead") return 5
+  if (r === "employee") return 4
+  if (r === "intern") return 3
   if (r === "client") return 2
   if (r === "viewer" || r === "user") return 1
   return 0

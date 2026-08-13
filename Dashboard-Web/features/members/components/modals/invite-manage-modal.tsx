@@ -59,7 +59,7 @@ export function InviteManageModal({
   const isPendingAccount = invite.listKind === "pending_account"
 
   const [editEmail, setEditEmail] = useComponentState("")
-  const [role, setRole] = useComponentState<MemberRole>("Employee L0")
+  const [role, setRole] = useComponentState<MemberRole>("Intern")
   const [payRate, setPayRate] = useComponentState("")
   const [weeklyLimit, setWeeklyLimit] = useComponentState("")
   const [paySegment, setPaySegment] = useComponentState<"pay" | "bill">("pay")

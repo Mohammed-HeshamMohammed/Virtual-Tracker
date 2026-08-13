@@ -7,7 +7,7 @@ import { cn } from "@/shared/utils/utils"
 import { formatDateAdded } from "@/features/members/utils/member-utils"
 import { ALL_MEMBER_COLS } from "@/features/members/config/members-config"
 import type { Member, MemberPatchBody, MemberEntryAction } from "@/features/members/models/member"
-import { isOwnerRoleName } from "@/features/auth"
+import { isOwnerRoleName, isAdminLevelRole } from "@/features/auth"
 import { MEMBERS_TABLE_ROWS_PER_PAGE } from "@/features/members/config/ui-config"
 import {
   usePaginatedTable,
@@ -43,9 +43,9 @@ function getRoleSortRank(role: string): number {
   if (r === "admin") return 8
   if (r === "supermanager" || r === "supermanger") return 7
   if (r === "manager" || r === "manger") return 6
-  if (r === "employeesl2" || r === "employeel2") return 5
-  if (r === "employeesl1" || r === "employeel1" || r === "l1") return 4
-  if (r === "employeesl0" || r === "employeel0" || r === "l0" || r === "employee") return 3
+  if (r === "teamlead") return 5
+  if (r === "employee") return 4
+  if (r === "intern") return 3
   if (r === "client") return 2
   if (r === "viewer" || r === "user") return 1
   return 0
@@ -143,6 +143,7 @@ export function MembersTab({
 }) {
   const resolvedShowActionsColumn = showActionsColumn ?? canManage
   const showSelectColumn = canManage && enableBatchSelect
+  const canSeeEmails = isAdminLevelRole(actorRole)
 
   function memberRoleName(member: Member): string {
     return member.role === "User" ? "Viewer" : (member.role_name || member.role || "")
@@ -404,7 +405,9 @@ export function MembersTab({
                           <Avatar initials={member.avatar} color={member.avatarColor} imageUrl={member.avatarUrl} alt={member.name} isDark={isDark} />
                           <div className="min-w-0">
                             <p className={cn("whitespace-nowrap text-sm font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-700")}>{member.name}</p>
-                            <p className={cn("whitespace-nowrap text-xs", isDark ? "text-[#bccbb9]" : "text-slate-400")}>{member.email}</p>
+                            {canSeeEmails && (
+                              <p className={cn("whitespace-nowrap text-xs", isDark ? "text-[#bccbb9]" : "text-slate-400")}>{member.email}</p>
+                            )}
                           </div>
                         </div>
                       </td>

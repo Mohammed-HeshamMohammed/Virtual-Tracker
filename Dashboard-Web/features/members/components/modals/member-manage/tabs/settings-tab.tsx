@@ -237,7 +237,7 @@ export function SettingsTab({
               <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Manage Employee teams</span>
             </div>
             <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-              Allow this member to create teams and assign members at Employee L2 and below.
+              Allow this member to create teams and assign members at Team Lead and below.
             </p>
             <div className="flex items-center gap-3">
               <Toggle

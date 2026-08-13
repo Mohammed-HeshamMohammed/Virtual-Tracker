@@ -1,14 +1,12 @@
 "use client"
 
-import { Fragment, useCallback, useEffect, useMemo } from "react"
-import {
-  PROJECT_BUDGETS_DEMO_SECTIONS,
-  PROJECT_BUDGETS_GROUP_BY_OPTIONS,
-} from "@/features/reports/components/shared/constants"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { PROJECT_BUDGETS_GROUP_BY_OPTIONS } from "@/features/reports/components/shared/constants"
 import { formatDurationHms } from "@/features/reports/utils/format-duration-hms"
-import type { ProjectBudgetRow } from "@/features/reports/models/project-budgets"
+import type { ProjectBudgetRow, ProjectBudgetSection } from "@/features/reports/models/project-budgets"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
+import { fetchProjectBudgetsReport } from "@/features/reports/api/misc-reports-api"
 import { cn } from "@/shared/utils/utils"
 
 function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow }[], dateLabel: string): void {
@@ -41,16 +39,27 @@ function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow 
 function ProjectBudgetsTable() {
   const { isDark } = useTheme()
   const { dateLabel, registerExportHandler } = useStandardReportLayout()
+  const [sections, setSections] = useState<ProjectBudgetSection[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    fetchProjectBudgetsReport().then((data) => {
+      if (!cancelled) setSections(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const flatRows = useMemo(() => {
     const out: { section: string; row: ProjectBudgetRow }[] = []
-    for (const sec of PROJECT_BUDGETS_DEMO_SECTIONS) {
+    for (const sec of sections) {
       for (const row of sec.rows) {
         out.push({ section: sec.label, row })
       }
     }
     return out
-  }, [])
+  }, [sections])
 
   const runExport = useCallback(() => {
     exportProjectBudgetsCsv(flatRows, dateLabel)
@@ -83,7 +92,14 @@ function ProjectBudgetsTable() {
           </tr>
         </thead>
         <tbody>
-          {PROJECT_BUDGETS_DEMO_SECTIONS.map((section) => (
+          {sections.length === 0 ? (
+            <tr>
+              <td colSpan={4} className={cn("px-4 py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-500")}>
+                No projects found.
+              </td>
+            </tr>
+          ) : null}
+          {sections.map((section) => (
             <Fragment key={section.label}>
               <tr>
                 <td

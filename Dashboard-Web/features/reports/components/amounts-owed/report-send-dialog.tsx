@@ -129,9 +129,6 @@ export function ReportSendDialog({
           <Button type="button" variant="outline" className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="button" variant="outline" className="border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-            Send preview
-          </Button>
           <Button
             type="button"
             className="bg-sky-400 dark:bg-sky-500 text-white hover:bg-sky-500 dark:hover:bg-sky-600"

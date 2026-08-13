@@ -7,10 +7,9 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   admin: 80,
   supermanager: 70,
   manager: 60,
-  employeel2: 50,
-  employeel1: 40,
-  employeel0: 30,
-  employee: 30,
+  teamlead: 50,
+  employee: 40,
+  intern: 30,
   client: 20,
   viewer: 10,
 }
@@ -36,11 +35,11 @@ export function hasManageEmployeeTeamsPrivilege(
   return member?.privileges?.manage_employee_teams === true
 }
 
-/** Employee L2 tier only (not Manager or above). */
+/** Team Lead tier only (not Manager or above). */
 export function isEmployeeL2OrHigherRole(role: string): boolean {
   const rank = roleRank(role)
   const managerRank = ROLE_PRIVILEGE_RANK.manager ?? 60
-  const l2Rank = ROLE_PRIVILEGE_RANK.employeel2 ?? 50
+  const l2Rank = ROLE_PRIVILEGE_RANK.teamlead ?? 50
   return rank >= l2Rank && rank < managerRank
 }
 
@@ -81,9 +80,9 @@ export function canAssignMemberToTeam(actorRoleName: string, targetRoleName: str
   return targetRank <= actorRank
 }
 
-/** Team leads must be Employee L2 or higher (management roles included). */
+/** Team leads must be Team Lead or higher (management roles included). */
 export function canBeTeamLead(roleName: string): boolean {
   const rank = roleRank(roleName)
-  const l2Rank = ROLE_PRIVILEGE_RANK.employeel2 ?? 50
+  const l2Rank = ROLE_PRIVILEGE_RANK.teamlead ?? 50
   return rank >= l2Rank
 }

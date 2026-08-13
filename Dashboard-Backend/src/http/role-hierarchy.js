@@ -10,9 +10,9 @@ export const ASSIGNABLE_ROLE_NAMES = [
   "Admin",
   "Super Manager",
   "Manager",
-  "Employee L2",
-  "Employee L1",
-  "Employee L0",
+  "Team Lead",
+  "Employee",
+  "Intern",
   "Client",
   "Viewer",
 ];
@@ -38,12 +38,7 @@ export function isDeactivationApprovalRole(roleName) {
  */
 export function isEmployeeRole(roleName) {
   const key = normalizeRoleKey(roleName);
-  return (
-    key === "employeel0" ||
-    key === "employeel1" ||
-    key === "employeel2" ||
-    key === "employee"
-  );
+  return key === "intern" || key === "employee" || key === "teamlead";
 }
 
 /**

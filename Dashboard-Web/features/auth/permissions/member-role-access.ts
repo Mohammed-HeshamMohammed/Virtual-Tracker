@@ -7,10 +7,9 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   admin: 80,
   supermanager: 70,
   manager: 60,
-  employeel2: 50,
-  employeel1: 40,
-  employeel0: 30,
-  employee: 30, // Legacy fallback: bare "Employee" treated as Employee L0
+  teamlead: 50,
+  employee: 40,
+  intern: 30,
   client: 20,
   viewer: 10,
 }
@@ -20,23 +19,23 @@ export function normalizeMemberRole(role: string): string {
   return role.trim().toLowerCase().replace(/\s+/g, "")
 }
 
-/** Employee L0–L2 (includes legacy bare "Employee"). */
+/** Intern / Employee / Team Lead. */
 export function isEmployeeRole(role: string): boolean {
   const r = normalizeMemberRole(role)
-  return r === "employee" || r === "employeel0" || r === "employeel1" || r === "employeel2"
+  return r === "intern" || r === "employee" || r === "teamlead"
 }
 
-/** Employee L2 and below (L2, L1, L0, Client, Viewer) — self-manage info/settings only. */
+/** Team Lead and below (Team Lead, Employee, Intern, Client, Viewer) — self-manage info/settings only. */
 export function isLimitedSelfManageRole(role: string): boolean {
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
-  return rank <= (ROLE_PRIVILEGE_RANK.employeel2 ?? 50)
+  return rank <= (ROLE_PRIVILEGE_RANK.teamlead ?? 50)
 }
 
-/** Employee L2 tier only (not Manager or above). */
+/** Team Lead tier only (not Manager or above). */
 export function isEmployeeL2OrHigherRole(role: string): boolean {
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
   const managerRank = ROLE_PRIVILEGE_RANK.manager ?? 60
-  const l2Rank = ROLE_PRIVILEGE_RANK.employeel2 ?? 50
+  const l2Rank = ROLE_PRIVILEGE_RANK.teamlead ?? 50
   return rank >= l2Rank && rank < managerRank
 }
 
@@ -59,10 +58,6 @@ function pickHighestPrivilegeRoleName(candidates: string[]): string {
       bestRank = rank
       bestName = trimmed
     }
-  }
-  // Normalize legacy bare "Employee" to "Employee L0"
-  if (bestName && normalizeMemberRole(bestName) === "employee") {
-    bestName = "Employee L0"
   }
   return bestName || "Viewer"
 }
@@ -147,10 +142,10 @@ export function canViewParticipationMetrics(role: string): boolean {
   return canAccessAllSidebarTabs(role)
 }
 
-/** Employee L0+ may see PM tasks section and create tasks (UI hint — server enforces writes). */
+/** Intern+ may see PM tasks section and create tasks (UI hint — server enforces writes). */
 export function canSeePmTasksSection(role: string): boolean {
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
-  return rank >= ROLE_PRIVILEGE_RANK.employeel0
+  return rank >= ROLE_PRIVILEGE_RANK.intern
 }
 
 /** Org roles that may create tasks on any project without a project-manager assignment. */
@@ -270,7 +265,7 @@ function getRestrictedPageIds(role: string): Set<string> {
   }
   const ids = new Set(restrictedPageIdsCache)
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
-  if (rank >= ROLE_PRIVILEGE_RANK.employeel0) {
+  if (rank >= ROLE_PRIVILEGE_RANK.intern) {
     ids.add("pm-tasks")
   }
   return ids

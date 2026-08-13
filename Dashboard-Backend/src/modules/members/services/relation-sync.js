@@ -18,7 +18,7 @@ import { addProjectMemberPg, listProjectIdsForMemberPg, removeProjectMemberPg } 
 import { query as pgQuery, isPostgresConfigured } from "../../../lib/postgres/client.js";
 import { getMemberByIdPg, getMembersByIdsPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Employee L2", "Employee L1", "Employee L0", "Client", "Viewer"];
+const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Team Lead", "Employee", "Intern", "Client", "Viewer"];
 
 /**
  * Role name by id (Postgres lookup).
@@ -132,10 +132,9 @@ export const ROLE_PRIVILEGE_RANK = {
   admin: 80,
   supermanager: 70,
   manager: 60,
-  employeel2: 50,
-  employeel1: 40,
-  employeel0: 30,
-  employee: 30, // Legacy fallback: bare "Employee" treated as Employee L0
+  teamlead: 50,
+  employee: 40,
+  intern: 30,
   client: 20,
   viewer: 10,
 };
@@ -171,10 +170,6 @@ export function pickHighestPrivilegeRoleName(candidates) {
       bestRank = rank;
       bestName = trimmed;
     }
-  }
-  // Normalize legacy bare "Employee" to "Employee L0"
-  if (bestName && normalizeRoleKey(bestName) === "employee") {
-    bestName = "Employee L0";
   }
   return bestName || "Viewer";
 }

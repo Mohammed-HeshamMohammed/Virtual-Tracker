@@ -32,10 +32,9 @@ const CONDITIONAL_ROOT_ROLE_KEYS = new Set(["manager", "supermanager", "superman
 
 /** Roles that must always have a parent unless admin root roles. */
 const REQUIRES_PARENT_ROLE_KEYS = new Set([
-  "employeel0",
-  "employeel1",
-  "employeel2",
+  "intern",
   "employee",
+  "teamlead",
 ]);
 
 /** External entity roles (Client, etc.) */

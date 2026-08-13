@@ -16,10 +16,13 @@ type FilterTab = "filters" | "saved"
 export function AmountsOwedFiltersPanel({
   onClose,
   className,
+  onScheduleReport,
 }: {
   onClose: () => void
   /** Override position (e.g. `absolute right-4 top-32` for in-page overlay). */
   className?: string
+  /** Opens the report's schedule dialog (closes this panel first). */
+  onScheduleReport?: () => void
 }) {
   const [tab, setTab] = useComponentState<FilterTab>("filters")
   const [sumDateRanges, setSumDateRanges] = useComponentState(false)
@@ -46,6 +49,18 @@ export function AmountsOwedFiltersPanel({
 
   function selectAllMembers() {
     setSelectedMemberIds(new Set(AMOUNTS_OWED_MEMBER_OPTIONS.map((m) => m.id)))
+  }
+
+  function clearFilters() {
+    setSumDateRanges(false)
+    setMemberSearch("")
+    setSelectedMemberIds(new Set())
+    setShowOnlySelectedMembers(false)
+  }
+
+  function scheduleReport() {
+    onClose()
+    onScheduleReport?.()
   }
 
   return (
@@ -229,19 +244,14 @@ export function AmountsOwedFiltersPanel({
           <div className="shrink-0 space-y-2 border-t border-slate-100 px-5 py-4">
             <button
               type="button"
+              onClick={scheduleReport}
               className="w-full rounded-xl bg-blue-500 py-3 text-sm font-bold text-white transition-colors hover:bg-blue-600"
             >
               Schedule report
             </button>
             <button
               type="button"
-              className="w-full rounded-xl border-2 border-blue-500 bg-white py-3 text-sm font-bold text-blue-500 transition-colors hover:bg-blue-50"
-            >
-              Save filters
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
+              onClick={clearFilters}
               className="w-full rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-bold text-slate-600 transition-colors hover:bg-slate-50"
             >
               Clear filters

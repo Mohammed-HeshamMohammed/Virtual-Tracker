@@ -2,7 +2,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
-import { ALL_MEMBERS_VALUE, GROUP_BY_OPTIONS, TABLE_METRIC_COLUMNS } from "@/features/reports/components/shared/constants"
+import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE, GROUP_BY_OPTIONS, TABLE_METRIC_COLUMNS } from "@/features/reports/components/shared/constants"
 import { attachForwardWheelToDocument } from "@/features/reports/utils/time-and-activity"
 import {
   buildDisplayDay,
@@ -10,6 +10,8 @@ import {
   comparePeriodRows,
   getFilteredSubRows,
   getMemberFilterOptions,
+  getProjectFilterOptions,
+  type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 
@@ -25,9 +27,31 @@ const DEFAULT_PERIOD_COLS = [
   "total_spent",
 ] as const
 
+const SAVED_VIEW_KEY = "reports:time-and-activity:view"
+
+type SavedView = {
+  groupBy: TimeActivityGroupBy
+  memberFilter: string
+  enabledPeriodCols: string[]
+  enabledMemberCols: string[]
+  projectFilter?: string
+  trackedTimeFilter?: TrackedTimeFilter
+}
+
+function loadSavedView(): SavedView | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = window.localStorage.getItem(SAVED_VIEW_KEY)
+    return raw ? (JSON.parse(raw) as SavedView) : null
+  } catch {
+    return null
+  }
+}
+
 export type UseTimeAndActivityReportParams = TimeActivityReportData
 
 export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivityReportParams) {
+  const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
   )
@@ -45,8 +69,13 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
     })
   }
 
-  const [groupBy, setGroupBy] = useState<TimeActivityGroupBy>("date_per_day")
-  const [memberFilter, setMemberFilter] = useState<string>(ALL_MEMBERS_VALUE)
+  const [groupBy, setGroupBy] = useState<TimeActivityGroupBy>(savedView?.groupBy ?? "date_per_day")
+  const [memberFilter, setMemberFilter] = useState<string>(savedView?.memberFilter ?? ALL_MEMBERS_VALUE)
+  const [projectFilter, setProjectFilter] = useState<string>(savedView?.projectFilter ?? ALL_PROJECTS_VALUE)
+  const [trackedTimeFilter, setTrackedTimeFilter] = useState<TrackedTimeFilter>(
+    savedView?.trackedTimeFilter ?? "all"
+  )
+  const [justSaved, setJustSaved] = useState(false)
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -119,24 +148,28 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
   }, [days])
 
   const [enabledPeriodCols, setEnabledPeriodCols] = useState<Set<string>>(
-    () => new Set([...DEFAULT_PERIOD_COLS])
+    () => new Set(savedView?.enabledPeriodCols ?? DEFAULT_PERIOD_COLS)
   )
   const [enabledMemberCols, setEnabledMemberCols] = useState<Set<string>>(
-    () => new Set([...DEFAULT_PERIOD_COLS])
+    () => new Set(savedView?.enabledMemberCols ?? DEFAULT_PERIOD_COLS)
   )
   const [columnPickerScope, setColumnPickerScope] = useState<"period" | "member">("period")
   const [sortKey, setSortKey] = useState<string>("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
   const memberFilterOptions = useMemo(() => getMemberFilterOptions(memberRows), [memberRows])
+  const projectFilterOptions = useMemo(() => getProjectFilterOptions(memberRows), [memberRows])
 
   const displayRows = useMemo(() => {
-    const filtered =
-      memberFilter === ALL_MEMBERS_VALUE
-        ? days
-        : days.filter((d) => getFilteredSubRows(d.date, memberFilter, memberRows).length > 0)
-    return filtered.map((d) => buildDisplayDay(d, memberFilter, memberRows))
-  }, [memberFilter, days, memberRows])
+    const noFilters =
+      memberFilter === ALL_MEMBERS_VALUE && projectFilter === ALL_PROJECTS_VALUE && trackedTimeFilter === "all"
+    const filtered = noFilters
+      ? days
+      : days.filter(
+          (d) => getFilteredSubRows(d.date, memberFilter, memberRows, projectFilter, trackedTimeFilter).length > 0
+        )
+    return filtered.map((d) => buildDisplayDay(d, memberFilter, memberRows, projectFilter, trackedTimeFilter))
+  }, [memberFilter, projectFilter, trackedTimeFilter, days, memberRows])
 
   const totals = useMemo(() => {
     if (displayRows.length === 0) {
@@ -195,6 +228,29 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
 
   const pickerEnabledCols = columnPickerScope === "period" ? enabledPeriodCols : enabledMemberCols
 
+  function clearFilters() {
+    setProjectFilter(ALL_PROJECTS_VALUE)
+    setTrackedTimeFilter("all")
+  }
+
+  function saveView() {
+    const view: SavedView = {
+      groupBy,
+      memberFilter,
+      enabledPeriodCols: [...enabledPeriodCols],
+      enabledMemberCols: [...enabledMemberCols],
+      projectFilter,
+      trackedTimeFilter,
+    }
+    try {
+      window.localStorage.setItem(SAVED_VIEW_KEY, JSON.stringify(view))
+    } catch {
+      // Storage unavailable (private browsing, quota) - view just won't persist.
+    }
+    setJustSaved(true)
+    setTimeout(() => setJustSaved(false), 1500)
+  }
+
   return {
     chartMetrics,
     toggleChartMetric,
@@ -204,6 +260,12 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
     memberFilter,
     setMemberFilter,
     memberFilterOptions,
+    projectFilter,
+    setProjectFilter,
+    projectFilterOptions,
+    trackedTimeFilter,
+    setTrackedTimeFilter,
+    clearFilters,
     expandedRows,
     toggleRow,
     showColumnPicker,
@@ -231,6 +293,9 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
     toggleCol,
     handleSortClick,
     pickerEnabledCols,
-    getSubRowsForDay: (date: string) => getFilteredSubRows(date, memberFilter, memberRows),
+    getSubRowsForDay: (date: string) =>
+      getFilteredSubRows(date, memberFilter, memberRows, projectFilter, trackedTimeFilter),
+    saveView,
+    justSaved,
   }
 }
