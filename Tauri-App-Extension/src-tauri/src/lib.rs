@@ -191,7 +191,13 @@ fn save_preferences(
     preferences: UserPreferences,
 ) -> Result<crate::prefs::AppSettingsView, String> {
     state.controller.save_preferences(preferences.clone())?;
-    apply_autostart(&app, preferences.launch_at_login)?;
+    // Autostart registration is best-effort here, same as every other caller
+    // of apply_autostart (see lines below) - a registry/OS failure must not
+    // report the whole save as failed when the preference itself was already
+    // written to disk successfully.
+    if let Err(err) = apply_autostart(&app, preferences.launch_at_login) {
+        log::warn!("Could not update autostart registration: {err}");
+    }
     Ok(state.controller.get_app_settings())
 }
 
@@ -513,6 +519,22 @@ pub fn run() {
                     if let Ok(json) = serde_json::to_string(&text) {
                         let _ = window.eval(format!(
                             "window.dispatchEvent(new CustomEvent('vt-status', {{ detail: {json} }}));"
+                        ));
+                    }
+                }
+            }));
+
+            // Same wiring as vt-status above, on its own event - warnings are
+            // the rarer, user-actionable case (e.g. a broken OS credential
+            // store) that's meant to surface as a toast, not folded into the
+            // routine status stream every view already refetches on.
+            let warning_handle = app.handle().clone();
+            let warning_controller = Arc::clone(&controller);
+            warning_controller.add_warning_listener(Arc::new(move |text| {
+                if let Some(window) = warning_handle.get_webview_window("main") {
+                    if let Ok(json) = serde_json::to_string(&text) {
+                        let _ = window.eval(format!(
+                            "window.dispatchEvent(new CustomEvent('vt-warning', {{ detail: {json} }}));"
                         ));
                     }
                 }

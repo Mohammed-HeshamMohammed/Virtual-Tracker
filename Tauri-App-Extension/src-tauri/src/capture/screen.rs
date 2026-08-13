@@ -151,7 +151,90 @@ fn is_session_locked() -> bool {
     }
 }
 
-#[cfg(not(windows))]
+/// Same technique every macOS lock-detection tool uses:
+/// `CGSessionCopyCurrentDictionary()` returns the current console session's
+/// attributes, keyed (among other things) by `CGSSessionScreenIsLocked` -
+/// present and true only while the lock screen is up. Declared by hand
+/// rather than pulling in a crate for it, since it's three C functions and
+/// one framework link.
+///
+/// UNVERIFIED, same caveat as `get_foreground_window_macos` in window.rs:
+/// there is no C toolchain available in this environment (`cargo check
+/// --target aarch64-apple-darwin` fails building Tauri's own
+/// `objc2-exception-helper` with "failed to find tool 'cc'"), so this has
+/// not been type-checked, built, or run on real macOS hardware. Treat as a
+/// first draft to validate there before shipping.
+#[cfg(target_os = "macos")]
+mod macos_lock {
+    use std::os::raw::{c_char, c_void};
+
+    type CFAllocatorRef = *const c_void;
+    type CFDictionaryRef = *const c_void;
+    type CFStringRef = *const c_void;
+    type CFBooleanRef = *const c_void;
+    type CFStringEncoding = u32;
+    type CFIndex = isize;
+    type Boolean = u8;
+    const K_CF_STRING_ENCODING_UTF8: CFStringEncoding = 0x0800_0100;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGSessionCopyCurrentDictionary() -> CFDictionaryRef;
+    }
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFStringCreateWithCString(
+            alloc: CFAllocatorRef,
+            c_str: *const c_char,
+            encoding: CFStringEncoding,
+        ) -> CFStringRef;
+        fn CFDictionaryGetValue(dict: CFDictionaryRef, key: *const c_void) -> *const c_void;
+        fn CFBooleanGetValue(boolean: CFBooleanRef) -> Boolean;
+        fn CFGetTypeID(cf: *const c_void) -> CFIndex;
+        fn CFBooleanGetTypeID() -> CFIndex;
+        fn CFRelease(cf: *const c_void);
+    }
+
+    pub fn is_session_locked() -> bool {
+        unsafe {
+            let dict = CGSessionCopyCurrentDictionary();
+            // No session dictionary at all (headless, SSH, no active GUI
+            // session) means there's no lock screen to hide a capture from -
+            // treated as unlocked, not locked.
+            if dict.is_null() {
+                return false;
+            }
+            let key = CFStringCreateWithCString(
+                std::ptr::null(),
+                b"CGSSessionScreenIsLocked\0".as_ptr() as *const c_char,
+                K_CF_STRING_ENCODING_UTF8,
+            );
+            let locked = if key.is_null() {
+                false
+            } else {
+                let value = CFDictionaryGetValue(dict, key);
+                // Confirm it's actually a CFBoolean before reinterpreting the
+                // pointer as one - a missing key returns null (handled
+                // above), but a type mismatch would otherwise read garbage.
+                let is_locked = !value.is_null()
+                    && CFGetTypeID(value) == CFBooleanGetTypeID()
+                    && CFBooleanGetValue(value) != 0;
+                CFRelease(key);
+                is_locked
+            };
+            CFRelease(dict);
+            locked
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn is_session_locked() -> bool {
+    macos_lock::is_session_locked()
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn is_session_locked() -> bool {
     false
 }

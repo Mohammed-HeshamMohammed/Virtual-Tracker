@@ -64,6 +64,33 @@ function animateWorkedTodayRewind(
   requestAnimationFrame(step);
 }
 
+// Shared shape for refreshTaskTracking/refreshMemberLimits/
+// refreshProjectBudget below: call `fn` immediately, then every
+// `intervalMs`, guarded so a slow/stalled backend can't stack up queued
+// calls (same reasoning refreshGuarded's own comment gives - a 30s stall
+// used to enqueue roughly two dozen). `refreshGuarded` itself stays outside
+// this hook: it also reacts to focus/visibility/vt-status, not just a
+// timer, so folding it in would mean bolting those back on as special
+// cases for one caller instead of simplifying anything.
+function usePolling(enabled: boolean, intervalMs: number, fn: () => Promise<void>) {
+  const inFlight = useRef(false);
+  useEffect(() => {
+    if (!enabled) return;
+    const run = async () => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      try {
+        await fn();
+      } finally {
+        inFlight.current = false;
+      }
+    };
+    void run();
+    const timer = window.setInterval(() => void run(), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [enabled, intervalMs, fn]);
+}
+
 function MainApp() {
   const [view, setView] = useState<"home" | "settings" | "profile">("home");
   const [signingOut, setSigningOut] = useState(false);
@@ -131,16 +158,24 @@ function MainApp() {
     setAvatarError(false);
   }, [profile?.avatarUrl]);
 
-  const checkForUpdate = useCallback(async () => {
+  // manual=true only for the TitleBar button click - the automatic check on
+  // mount (below) must stay silent either way, or a flaky update server would
+  // toast an error on every single app launch.
+  const checkForUpdate = useCallback(async (manual = false) => {
     setCheckingUpdate(true);
     try {
       const update = await check();
       if (update) {
         await update.downloadAndInstall();
         await relaunch();
+      } else if (manual) {
+        toast.message("You're up to date");
       }
     } catch (err) {
       console.error("update check failed", err);
+      if (manual) {
+        toast.error("Couldn't check for updates. Try again later.");
+      }
     } finally {
       setCheckingUpdate(false);
     }
@@ -218,28 +253,18 @@ function MainApp() {
         projectId: selectedProjectId,
       });
 
-      // Strict filtering: check task limits and filter out tasks that reached their budget
-      const taskLimitChecks = await Promise.all(
-        rawTasks.map(async (t) => {
-          try {
-            const tracking = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
-              taskId: t.id,
-            });
-            return { task: t, limitReached: tracking?.limitReached ?? false };
-          } catch {
-            return { task: t, limitReached: false };
-          }
-        })
-      );
-
-      const availableTasks = taskLimitChecks
-        .filter((item) => !item.limitReached)
-        .map((item) => item.task);
-
-      setTasks(availableTasks);
+      // No per-task limit pre-check here anymore - that used to fire one
+      // get_task_time_tracking call per task just to hide over-budget ones
+      // from the picker (N+1 network round-trips on every project switch).
+      // The actual gate already lives downstream: refreshTaskTracking polls
+      // the *selected* task's tracking every 5s, and handleStart / the Start
+      // button both already refuse an over-limit task using that same data
+      // (see taskTracking?.limitReached below). Showing the task here and
+      // explaining why it can't start is more honest than silently hiding it.
+      setTasks(rawTasks);
       setSelectedTaskId((current) => {
-        if (current && availableTasks.some((t) => t.id === current)) return current;
-        return availableTasks[0]?.id || "";
+        if (current && rawTasks.some((t) => t.id === current)) return current;
+        return rawTasks[0]?.id || "";
       });
     } catch {
       setTasks([]);
@@ -255,19 +280,19 @@ function MainApp() {
       await refreshTasks();
     } catch (err) {
       console.error("manual refresh failed", err);
+      toast.error("Couldn't refresh — check your connection.");
     } finally {
       setRefreshingData(false);
     }
   };
 
-  // Every poll below is guarded by an in-flight ref. Without it, a slow or
-  // stalled backend (sleep, fullscreen game, dead network) lets each 5s tick
-  // queue another four invocations that all fire at once on unblock - a 30s
+  // Guarded by an in-flight ref (usePolling handles this for the three
+  // pollers below; refreshGuarded needs its own since it also fires from
+  // focus/visibility/vt-status, not just its own timer). Without it, a slow
+  // or stalled backend (sleep, fullscreen game, dead network) lets each 5s
+  // tick queue another invocation that all fire at once on unblock - a 30s
   // stall used to enqueue roughly two dozen.
   const refreshInFlight = useRef(false);
-  const trackingInFlight = useRef(false);
-  const limitsInFlight = useRef(false);
-  const projectBudgetInFlight = useRef(false);
 
   const refreshGuarded = useCallback(async () => {
     if (refreshInFlight.current) return;
@@ -298,7 +323,17 @@ function MainApp() {
       if (document.visibilityState === "hidden") return;
       void refreshGuarded().catch(console.error);
     };
+    // Rust-side warnings the user should actually notice (e.g. the OS
+    // credential store rejected a sign-in token, so it won't survive a
+    // restart) - see AgentController::on_warning / lib.rs's vt-warning wiring.
+    const onWarning = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail;
+      if (typeof detail === "string" && detail) {
+        toast.warning(detail);
+      }
+    };
     window.addEventListener("vt-status", onStatus);
+    window.addEventListener("vt-warning", onWarning);
     window.addEventListener("focus", onWake);
     document.addEventListener("visibilitychange", onWake);
     const timer = window.setInterval(() => {
@@ -306,6 +341,7 @@ function MainApp() {
     }, 5000);
     return () => {
       window.removeEventListener("vt-status", onStatus);
+      window.removeEventListener("vt-warning", onWarning);
       window.removeEventListener("focus", onWake);
       document.removeEventListener("visibilitychange", onWake);
       window.clearInterval(timer);
@@ -325,8 +361,6 @@ function MainApp() {
       setTaskTracking(null);
       return;
     }
-    if (trackingInFlight.current) return;
-    trackingInFlight.current = true;
     try {
       const next = await invoke<TaskTimeTracking | null>("get_task_time_tracking", {
         taskId: selectedTaskId,
@@ -334,39 +368,25 @@ function MainApp() {
       setTaskTracking(next);
     } catch {
       setTaskTracking(null);
-    } finally {
-      trackingInFlight.current = false;
     }
   }, [selectedTaskId]);
 
-  useEffect(() => {
-    void refreshTaskTracking();
-    const timer = window.setInterval(() => void refreshTaskTracking(), 5000);
-    return () => window.clearInterval(timer);
-  }, [refreshTaskTracking]);
+  usePolling(true, 5000, refreshTaskTracking);
 
   // The personal daily/weekly cap, which is the *only* thing that limits a
   // calling-project timer. Polled on the home view too (not just the profile
   // view, as before) because "Remaining today" has to keep counting down
   // while the clock runs.
   const refreshMemberLimits = useCallback(async () => {
-    if (!signedIn || limitsInFlight.current) return;
-    limitsInFlight.current = true;
+    if (!signedIn) return;
     try {
       setMemberLimits(await invoke<MemberLimits>("get_member_limits"));
     } catch {
       setMemberLimits(null);
-    } finally {
-      limitsInFlight.current = false;
     }
   }, [signedIn]);
 
-  useEffect(() => {
-    if (view !== "home" && view !== "profile") return;
-    void refreshMemberLimits();
-    const timer = window.setInterval(() => void refreshMemberLimits(), 5000);
-    return () => window.clearInterval(timer);
-  }, [view, refreshMemberLimits]);
+  usePolling(view === "home" || view === "profile", 5000, refreshMemberLimits);
 
   // A project's own Hours-based budget (Budget tab, scope per-person or
   // shared) - independent of, and stacks with, a task's own estimate. Both
@@ -377,8 +397,6 @@ function MainApp() {
       setProjectBudget(null);
       return;
     }
-    if (projectBudgetInFlight.current) return;
-    projectBudgetInFlight.current = true;
     try {
       setProjectBudget(
         await invoke<ProjectBudgetStatus | null>("get_project_budget_status", {
@@ -387,17 +405,10 @@ function MainApp() {
       );
     } catch {
       setProjectBudget(null);
-    } finally {
-      projectBudgetInFlight.current = false;
     }
   }, [signedIn, selectedProjectId]);
 
-  useEffect(() => {
-    if (view !== "home" && view !== "profile") return;
-    void refreshProjectBudget();
-    const timer = window.setInterval(() => void refreshProjectBudget(), 5000);
-    return () => window.clearInterval(timer);
-  }, [view, refreshProjectBudget]);
+  usePolling(view === "home" || view === "profile", 5000, refreshProjectBudget);
 
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
@@ -1127,7 +1138,7 @@ function MainApp() {
         onSignUpSubmit={() => void handleSignUp()}
         onForgotEmailChange={(email) => setForgot((f) => ({ ...f, email }))}
         onForgotSubmit={() => void handleForgotPassword()}
-        onCheckUpdate={() => void checkForUpdate()}
+        onCheckUpdate={() => void checkForUpdate(true)}
         checkingUpdate={checkingUpdate}
       />
     );
@@ -1151,7 +1162,7 @@ function MainApp() {
       <TitleBar
         title="Virtual Tracker"
         onClose={() => void invoke("close_window")}
-        onCheckUpdate={() => void checkForUpdate()}
+        onCheckUpdate={() => void checkForUpdate(true)}
         checkingUpdate={checkingUpdate}
       />
 

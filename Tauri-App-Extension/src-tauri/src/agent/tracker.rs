@@ -844,9 +844,14 @@ impl ActivityTracker {
         // all - everything is credited active. Otherwise use this session's
         // own project's threshold (fetched on every task/project transition),
         // never the flat org-wide `self.idle_threshold_sec`.
+        // Same HOOKS_SUPPORTED gate tick_idle_escalation uses above, for the
+        // same reason: off-Windows, idle_seconds() only grows monotonically
+        // from process start and never resets. Without this gate, every tick
+        // past the first idle_threshold_sec on a non-Windows build would be
+        // misclassified as idle forever, even with continuous real input.
         if idle_time_disabled {
             *active_elapsed += delta;
-        } else if self.activity.idle_seconds() >= idle_threshold_sec {
+        } else if ActivityMeter::HOOKS_SUPPORTED && self.activity.idle_seconds() >= idle_threshold_sec {
             *idle_elapsed += delta;
         } else {
             *active_elapsed += delta;

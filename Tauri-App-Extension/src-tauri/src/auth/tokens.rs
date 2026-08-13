@@ -119,7 +119,12 @@ impl TokenStore {
             .map(StoredCredentials::from)
     }
 
-    pub fn save(&self, credentials: &StoredCredentials) {
+    /// Returns whether the credential actually landed in the OS store.
+    /// Callers that already have a channel back to the UI (see
+    /// `AgentController::apply_tokens`) use `false` to warn the user instead
+    /// of letting a broken keyring silently sign them out on next launch with
+    /// no diagnostic anywhere.
+    pub fn save(&self, credentials: &StoredCredentials) -> bool {
         let payload = StorePayload {
             id_token: credentials.id_token.clone(),
             refresh_token: credentials.refresh_token.clone(),
@@ -127,15 +132,17 @@ impl TokenStore {
             agent_secret: credentials.agent_secret.clone(),
         };
         let Ok(json) = serde_json::to_vec(&payload) else {
-            return;
+            return false;
         };
         let Some(entry) = Self::entry() else {
             log::warn!("No OS credential store available; tokens were not persisted");
-            return;
+            return false;
         };
         if let Err(err) = entry.set_secret(&json) {
             log::warn!("Could not write token store to OS credential store: {err}");
+            return false;
         }
+        true
     }
 
     pub fn clear(&self) {

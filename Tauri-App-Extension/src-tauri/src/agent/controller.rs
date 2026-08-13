@@ -32,6 +32,13 @@ pub struct AgentController {
     auth_server: AuthServer,
     status: Arc<Mutex<String>>,
     status_listeners: Arc<Mutex<Vec<StatusCallback>>>,
+    /// Separate from `status_listeners` on purpose: status text is routine
+    /// (shown in the UI's status line, refetched on every change) and would
+    /// be noisy to toast on every update. A warning is the rarer case of
+    /// something the user should actually notice, like a broken OS
+    /// credential store - so it gets its own channel to a toast instead of
+    /// being folded into the routine status stream.
+    warning_listeners: Arc<Mutex<Vec<StatusCallback>>>,
     live_sync_listeners: Arc<Mutex<Vec<LiveSyncCallback>>>,
     activity: Arc<ActivityMeter>,
     /// Consecutive failed connection checks. One blip must not throw a
@@ -66,6 +73,7 @@ impl AgentController {
         let activity = ActivityMeter::new();
         let status = Arc::new(Mutex::new("Not signed in".to_string()));
         let status_listeners = Arc::new(Mutex::new(Vec::new()));
+        let warning_listeners = Arc::new(Mutex::new(Vec::new()));
         let live_sync_listeners = Arc::new(Mutex::new(Vec::new()));
 
         Ok(Arc::new(Self {
@@ -77,6 +85,7 @@ impl AgentController {
             auth_server,
             status,
             status_listeners,
+            warning_listeners,
             live_sync_listeners,
             activity,
             connection_failures: Arc::new(AtomicU32::new(0)),
@@ -85,6 +94,16 @@ impl AgentController {
 
     pub fn add_status_listener(&self, listener: StatusCallback) {
         self.status_listeners.lock().push(listener);
+    }
+
+    pub fn add_warning_listener(&self, listener: StatusCallback) {
+        self.warning_listeners.lock().push(listener);
+    }
+
+    fn on_warning(&self, text: String) {
+        for listener in self.warning_listeners.lock().iter() {
+            listener(text.clone());
+        }
     }
 
     /// PLAN-livesyncandagenttimer.md P10 - `listener` receives the raw JSON
@@ -199,23 +218,38 @@ impl AgentController {
                 api.agent_secret.clone().unwrap_or_default(),
             )
         };
-        self.store.save(&StoredCredentials {
+        let persisted = self.store.save(&StoredCredentials {
             id_token: id_token.clone(),
             refresh_token: refresh_token.clone(),
             device_id: device_id.clone(),
             agent_secret: agent_secret.clone(),
         });
+        if !persisted {
+            self.on_warning(
+                "Could not save your sign-in securely on this device. \
+                 You may need to sign in again after restarting."
+                    .into(),
+            );
+        }
         let store_path = self.settings.store_path.clone();
+        let warn_controller = Arc::clone(self);
         self.api.lock().on_tokens_refreshed = Some(Box::new(move |id, refresh| {
             // Preserve the device credential across token rotations - a
             // plain overwrite here would silently drop it and take in-app
             // recovery with it.
-            TokenStore::new(store_path.clone()).save(&StoredCredentials {
+            let persisted = TokenStore::new(store_path.clone()).save(&StoredCredentials {
                 id_token: id,
                 refresh_token: refresh,
                 device_id: device_id.clone(),
                 agent_secret: agent_secret.clone(),
             });
+            if !persisted {
+                warn_controller.on_warning(
+                    "Could not save your refreshed sign-in securely on this device. \
+                     You may need to sign in again after restarting."
+                        .into(),
+                );
+            }
         }));
         self.api.lock().register_agent();
 

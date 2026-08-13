@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettingsView, UserPreferences } from "../../types";
 import { TitleBar } from "../common/TitleBar";
+import { toast } from "../../Toast";
 
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState<AppSettingsView | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const next = await invoke<AppSettingsView>("get_app_settings");
@@ -17,24 +17,16 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
     void load().catch(console.error);
   }, [load]);
 
-  useEffect(() => {
-    if (!message) return;
-    const timer = window.setTimeout(() => setMessage(null), 2500);
-    return () => window.clearTimeout(timer);
-  }, [message]);
-
   const toggle = async (key: keyof UserPreferences, value: boolean) => {
     if (!settings) return;
     setSaving(true);
-    setMessage(null);
     try {
       const updated = await invoke<AppSettingsView>("save_preferences", {
         preferences: { ...settings.preferences, [key]: value },
       });
       setSettings(updated);
-      setMessage("Saved");
     } catch {
-      setMessage("Could not save");
+      toast.error("Could not save this setting.");
     } finally {
       setSaving(false);
     }
@@ -76,7 +68,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             className="btn btn-secondary"
             type="button"
             disabled={!settings?.logPath}
-            onClick={() => void invoke("open_log_file").catch(() => setMessage("No log file yet"))}
+            onClick={() => void invoke("open_log_file").catch(() => toast.message("No log file yet"))}
           >
             Open log file
           </button>
@@ -136,12 +128,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
             <p className="settings-hint">Tracking keeps running. Use Quit in the tray to stop.</p>
           ) : null}
         </section>
-
-        {message ? (
-          <p className="settings-message" role="status" aria-live="polite">
-            {message}
-          </p>
-        ) : null}
 
         <p className="settings-version">v{settings?.version || "—"}</p>
       </div>
