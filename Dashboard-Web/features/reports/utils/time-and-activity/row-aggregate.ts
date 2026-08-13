@@ -1,4 +1,4 @@
-import { ALL_MEMBERS_VALUE } from "@/features/reports/components/shared/constants"
+import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
 import type { TimeActivityDayRow, TimeActivityMemberSubRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 
 export function parseTimeToSeconds(hms: string): number {
@@ -68,23 +68,36 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
   }
 }
 
+export type TrackedTimeFilter = "all" | "with" | "without"
+
 export function getFilteredSubRows(
   date: string,
   memberFilter: string,
-  memberRows: Record<string, TimeActivityMemberSubRow[]>
+  memberRows: Record<string, TimeActivityMemberSubRow[]>,
+  projectFilter: string = ALL_PROJECTS_VALUE,
+  trackedTimeFilter: TrackedTimeFilter = "all"
 ): TimeActivityMemberSubRow[] {
   const rows = memberRows[date] ?? []
-  if (memberFilter === ALL_MEMBERS_VALUE) return rows
-  return rows.filter((r) => r.name === memberFilter)
+  return rows.filter((r) => {
+    if (memberFilter !== ALL_MEMBERS_VALUE && r.name !== memberFilter) return false
+    if (projectFilter !== ALL_PROJECTS_VALUE && !r.projectNames.includes(projectFilter)) return false
+    if (trackedTimeFilter === "with" && r.trackedHours <= 0) return false
+    if (trackedTimeFilter === "without" && r.trackedHours > 0) return false
+    return true
+  })
 }
 
 export function buildDisplayDay(
   day: TimeActivityDayRow,
   memberFilter: string,
-  memberRows: Record<string, TimeActivityMemberSubRow[]>
+  memberRows: Record<string, TimeActivityMemberSubRow[]>,
+  projectFilter: string = ALL_PROJECTS_VALUE,
+  trackedTimeFilter: TrackedTimeFilter = "all"
 ): TimeActivityDayRow {
-  if (memberFilter === ALL_MEMBERS_VALUE) return day
-  const subs = getFilteredSubRows(day.date, memberFilter, memberRows)
+  if (memberFilter === ALL_MEMBERS_VALUE && projectFilter === ALL_PROJECTS_VALUE && trackedTimeFilter === "all") {
+    return day
+  }
+  const subs = getFilteredSubRows(day.date, memberFilter, memberRows, projectFilter, trackedTimeFilter)
   if (subs.length === 0) {
     return {
       ...day,
@@ -99,10 +112,11 @@ export function buildDisplayDay(
     }
   }
   const agg = aggregateMemberSubRows(subs)
+  const projectCount = new Set(subs.flatMap((s) => s.projectNames)).size
   return {
     ...day,
     memberCount: subs.length,
-    projectCount: 1,
+    projectCount,
     regularHours: agg.regularHours,
     breakTime: agg.breakTime,
     totalHours: agg.totalHours,

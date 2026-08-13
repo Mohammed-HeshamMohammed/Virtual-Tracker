@@ -75,6 +75,21 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
 }
 
+// Backend never assigns members.avatar_color (no writer anywhere in the API) -
+// it's always null, so every member fell back to the same hardcoded blue.
+// Hash the member id into a fixed palette instead, so avatars are visually
+// distinct without needing a schema/backend change.
+const AVATAR_COLOR_PALETTE = [
+  "#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#22c55e",
+  "#06b6d4", "#ef4444", "#eab308", "#6366f1", "#14b8a6",
+]
+
+function colorForMemberId(id: string): string {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+  return AVATAR_COLOR_PALETTE[hash % AVATAR_COLOR_PALETTE.length]!
+}
+
 function sanitizeDisplayNamePart(value: string, workEmail = ""): string {
   const trimmed = value.trim()
   if (!trimmed) return ""
@@ -103,8 +118,9 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
     })()
   const initials =
     name.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "??"
+  const id = asString(input.id)
   return {
-    id: asString(input.id),
+    id,
     memberUid: asString(input.memberUid || input.member_uid || input.id),
     firebaseUid: asString(input.firebaseUid || input.firebase_uid),
     createdBy: asString(input.createdBy || input.created_by),
@@ -117,7 +133,7 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
     avatarUrl,
     lastIp: asString(input.lastIp || input.ip_address || input.last_ip),
     avatar: avatarUrl ? initials : asString(input.avatar) || initials,
-    avatarColor: asString(input.avatarColor || input.avatar_color) || "#3b82f6",
+    avatarColor: asString(input.avatarColor || input.avatar_color) || colorForMemberId(id),
     status: (asString(input.status, "active") as MemberStatus),
     role: extractRoleFromRecord(input) as MemberRole,
     role_name: extractRoleFromRecord(input),

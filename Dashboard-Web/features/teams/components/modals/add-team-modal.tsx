@@ -655,7 +655,7 @@ export function AddTeamModal({
                     }}
                   />
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-                    Only Employee L2 and above can be team leads. At least one member and one team lead are required.
+                    Only Team Lead and above can be team leads. At least one member and one team lead are required.
                   </p>
                 </div>
               </motion.div>

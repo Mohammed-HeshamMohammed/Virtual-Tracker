@@ -1,7 +1,4 @@
-import type { AuditLogRow } from "@/features/reports/models/audit-log"
-import type { ProjectBudgetSection } from "@/features/reports/models/project-budgets"
 import type { TimeActivityColumnPickerSection, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
-import type { WorkSessionRow } from "@/features/reports/models/work-sessions"
 
 // ==========================================
 // 1. Reports Hub Page Constants
@@ -46,11 +43,6 @@ export const REPORTS_SECTIONS: { heading: string; cards: ReportHubCard[] }[] = [
   {
     heading: "General",
     cards: [
-      {
-        title: "Time & activity (Legacy)",
-        description: "See team members' time worked, activity levels, and amounts earned per project or to-do.",
-        navigateTo: "reports-time",
-      },
       {
         title: "Work sessions",
         description: "See the start and stop times for team members.",
@@ -188,11 +180,7 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
   string,
   { title: string; exportFileBaseName: string }
 > = {
-  "reports-payments": { title: "Payments report", exportFileBaseName: "payments" },
   "reports-budgets": { title: "Budgets and limits report", exportFileBaseName: "budgets-limits" },
-  "reports-weekly-limits": { title: "Weekly limits report", exportFileBaseName: "weekly-limits" },
-  "reports-daily-limits": { title: "Daily limits report", exportFileBaseName: "daily-limits" },
-  "reports-client-budgets": { title: "Client budgets report", exportFileBaseName: "client-budgets" },
   "reports-time-off-balances": { title: "Time off balances report", exportFileBaseName: "time-off-balances" },
   "reports-time-off-transactions": {
     title: "Time off transactions report",
@@ -291,8 +279,6 @@ export interface AmountsOwedDayGroup {
   members: AmountsOwedMemberLine[]
 }
 
-export const AMOUNTS_OWED_DEMO_GROUPS: AmountsOwedDayGroup[] = []
-
 export const AMOUNTS_OWED_ABOUT_MEMBER_FIELDS: { key: string; label: string; defaultVisible: boolean }[] = [
   { key: "email", label: "Email", defaultVisible: true },
   { key: "job_title", label: "Job title", defaultVisible: true },
@@ -344,13 +330,9 @@ export const AMOUNTS_OWED_CHART_LABELS = [
 export const AUDIT_LOG_ORG_LABEL = DEFAULT_ORG_LABEL
 export const AUDIT_LOG_TIMEZONE_LABEL = "America/Denver"
 
-export const AUDIT_LOG_DEMO_ROWS: AuditLogRow[] = []
-
 // ==========================================
 // 7. Project Budgets Report
 // ==========================================
-
-export const PROJECT_BUDGETS_DEMO_SECTIONS: ProjectBudgetSection[] = []
 
 export const PROJECT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "month", label: "Month" },
@@ -373,6 +355,8 @@ const TIME_PERIODS = [
 ] as const
 
 export const ALL_MEMBERS_VALUE = "all"
+
+export const ALL_PROJECTS_VALUE = "all"
 
 export const GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "date_per_day", label: "Date per day" },
@@ -430,8 +414,6 @@ export const DATE_RANGE_PRESETS = [
   "This month",
   "Last month",
 ] as const
-
-export const TRACKED_TIME_OPTIONS = ["Members with tracked time", "Members without tracked time"]
 
 export const CUSTOM_FILTER_FIELDS = [
   "Activity %",
@@ -550,40 +532,6 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
-export const FILTERS_PANEL_SECTIONS: { label: string; options: string[] }[] = [
-  {
-    label: "MEMBERS",
-    options: ["All members", "Sarah Johnson", "Mike Chen", "Emily Davis", "Alex Thompson", "Lisa Wang", "Jordan Lee"],
-  },
-  {
-    label: "PROJECTS",
-    options: [
-      "All projects",
-      "Frontend Architecture",
-      "API Development",
-      "UI/UX Design System",
-      "Mobile App",
-      "Backend Services",
-      "Data Pipeline",
-    ],
-  },
-  {
-    label: "TEAMS",
-    options: ["All teams", "Engineering", "Design", "Backend", "Mobile", "DevOps", "Data"],
-  },
-  { label: "CLIENTS", options: ["All clients", "Acme Corporation", "TechStart Inc.", "Global Retail Co."] },
-  {
-    label: "TO-DOS",
-    options: [
-      "All to-dos",
-      "Set up component library",
-      "Design token system",
-      "Responsive grid layout",
-      "Auth middleware",
-      "Rate limiting setup",
-    ],
-  },
-]
 
 // ==========================================
 // 9. Work Sessions Report
@@ -593,5 +541,3 @@ export const WORK_SESSIONS_ME_MEMBER_NAME = "Mahmoud Emad"
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL
 export const WORK_SESSIONS_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
 export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
-
-export const WORK_SESSIONS_DEMO_ROWS: WorkSessionRow[] = []

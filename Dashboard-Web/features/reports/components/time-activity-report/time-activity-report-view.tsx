@@ -49,6 +49,12 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
     memberFilter,
     setMemberFilter,
     memberFilterOptions,
+    projectFilter,
+    setProjectFilter,
+    projectFilterOptions,
+    trackedTimeFilter,
+    setTrackedTimeFilter,
+    clearFilters,
     expandedRows,
     toggleRow,
     showColumnPicker,
@@ -76,6 +82,8 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
     handleSortClick,
     pickerEnabledCols,
     getSubRowsForDay,
+    saveView,
+    justSaved,
   } = useTimeAndActivityReport({ days, memberRows })
 
   const statCards = [
@@ -191,10 +199,11 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
             </button>
             <button
               type="button"
+              onClick={saveView}
               className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
             >
               <Save className="h-3.5 w-3.5" />
-              Save
+              {justSaved ? "Saved" : "Save"}
             </button>
           </div>
         </div>
@@ -394,7 +403,17 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                   onClick={() => setShowFilters(false)}
                   aria-hidden
                 />
-                <ReportFiltersPanel key="ta-filters-panel" onClose={() => setShowFilters(false)} panelStyle={filterPanelLayout} />
+                <ReportFiltersPanel
+                  key="ta-filters-panel"
+                  onClose={() => setShowFilters(false)}
+                  panelStyle={filterPanelLayout}
+                  projectFilter={projectFilter}
+                  setProjectFilter={setProjectFilter}
+                  projectFilterOptions={projectFilterOptions}
+                  trackedTimeFilter={trackedTimeFilter}
+                  setTrackedTimeFilter={setTrackedTimeFilter}
+                  onClearFilters={clearFilters}
+                />
               </>
             )}
           </AnimatePresence>,

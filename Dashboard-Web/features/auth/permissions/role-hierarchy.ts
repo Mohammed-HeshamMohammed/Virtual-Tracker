@@ -8,10 +8,9 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   admin: 80,
   supermanager: 70,
   manager: 60,
-  employeel2: 50,
-  employeel1: 40,
-  employeel0: 30,
-  employee: 30,
+  teamlead: 50,
+  employee: 40,
+  intern: 30,
   client: 20,
   viewer: 10,
 }
@@ -21,9 +20,9 @@ export const ASSIGNABLE_ROLE_NAMES: MemberRole[] = [
   "Admin",
   "Super Manager",
   "Manager",
-  "Employee L2",
-  "Employee L1",
-  "Employee L0",
+  "Team Lead",
+  "Employee",
+  "Intern",
   "Client",
   "Viewer",
 ]
@@ -41,7 +40,7 @@ export function isAdminLevelRole(roleName: string): boolean {
 
 export function isEmployeeRole(roleName: string): boolean {
   const key = normalizeMemberRole(roleName)
-  return key === "employeel0" || key === "employeel1" || key === "employeel2" || key === "employee"
+  return key === "intern" || key === "employee" || key === "teamlead"
 }
 
 export function canCreateMembers(roleName: string): boolean {

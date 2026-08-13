@@ -1,10 +1,7 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
-import {
-  WORK_SESSIONS_DEMO_ROWS,
-  WORK_SESSIONS_GROUP_BY_OPTIONS,
-} from "@/features/reports/components/shared/constants"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { WORK_SESSIONS_GROUP_BY_OPTIONS } from "@/features/reports/components/shared/constants"
 import {
   aggregateWorkSessionTotals,
   buildDailyAvgActivitySeries,
@@ -13,7 +10,13 @@ import {
   groupWorkSessions,
 } from "@/features/reports/utils/work-sessions"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
-import type { WorkSessionColumnKey, WorkSessionGroupBy, WorkSessionScope } from "@/features/reports/models/work-sessions"
+import { fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
+import type {
+  WorkSessionColumnKey,
+  WorkSessionGroupBy,
+  WorkSessionRow,
+  WorkSessionScope,
+} from "@/features/reports/models/work-sessions"
 
 const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
   client: true,
@@ -29,8 +32,13 @@ const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
 
 export function useWorkSessionsReport() {
   const [scope, setScope] = useState<WorkSessionScope>("all")
-  const [rangeStart, setRangeStart] = useState(() => new Date(2026, 3, 6))
-  const [rangeEnd, setRangeEnd] = useState(() => new Date(2026, 3, 12))
+  const [rangeStart, setRangeStart] = useState(() => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() - 6)
+    return d
+  })
+  const [rangeEnd, setRangeEnd] = useState(() => endOfDay(new Date()))
+  const [rows, setRows] = useState<WorkSessionRow[]>([])
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [groupBy, setGroupBy] = useState<WorkSessionGroupBy>("date")
@@ -47,28 +55,40 @@ export function useWorkSessionsReport() {
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
 
+  useEffect(() => {
+    let cancelled = false
+    const from = rangeStart.toISOString().slice(0, 10)
+    const to = rangeEnd.toISOString().slice(0, 10)
+    fetchWorkSessionsReport({ from, to }).then((data) => {
+      if (!cancelled) setRows(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [rangeStart, rangeEnd])
+
   const projectOptions = useMemo(() => {
     const s = new Set<string>()
-    WORK_SESSIONS_DEMO_ROWS.forEach((r) => s.add(r.projectName))
+    rows.forEach((r) => s.add(r.projectName))
     return [...s].sort()
-  }, [])
+  }, [rows])
 
   const memberOptions = useMemo(() => {
     const s = new Set<string>()
-    WORK_SESSIONS_DEMO_ROWS.forEach((r) => s.add(r.memberName))
+    rows.forEach((r) => s.add(r.memberName))
     return [...s].sort()
-  }, [])
+  }, [rows])
 
   const filteredRows = useMemo(
     () =>
-      filterWorkSessions(WORK_SESSIONS_DEMO_ROWS, {
+      filterWorkSessions(rows, {
         scope,
         rangeStart,
         rangeEnd,
         projectNames: projectFilter,
         memberNames: memberFilter,
       }),
-    [scope, rangeStart, rangeEnd, projectFilter, memberFilter]
+    [rows, scope, rangeStart, rangeEnd, projectFilter, memberFilter]
   )
 
   const grouped = useMemo(() => groupWorkSessions(filteredRows, groupBy), [filteredRows, groupBy])

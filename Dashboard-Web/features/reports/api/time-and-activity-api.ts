@@ -56,6 +56,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
     totalSpent: "$0.00",
     trackedHours: member.activeSeconds / 3600,
     manualHours: 0,
+    projectNames: member.projectNames,
   }
 }
 

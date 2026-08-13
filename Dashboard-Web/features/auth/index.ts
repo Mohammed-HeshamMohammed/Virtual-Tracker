@@ -32,6 +32,7 @@ export {
   isLimitedSelfManageRole,
   isManagementRole
 } from "@/features/auth/permissions/member-role-access";
+export { isAdminLevelRole } from "@/features/auth/permissions/role-hierarchy";
 export { registerDashboardPresence, subscribeAgentLinked, broadcastAgentLinked, pingDashboardTab } from "@/features/auth/services/agent-link-broadcast";
 export { broadcastAuthSessionReady, subscribeAuthSessionReady } from "@/features/auth/services/auth-cross-tab-sync";
 export {

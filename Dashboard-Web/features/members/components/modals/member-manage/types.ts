@@ -18,7 +18,7 @@ export interface MemberManageModalProps {
   allowedTabs?: MemberManageTab[]
   canSave?: boolean
   actorRole?: string
-  /** Employee L2 and below managing their own profile — info + reset password only. */
+  /** Team Lead and below managing their own profile — info + reset password only. */
   limitedSelfManage?: boolean
 }
 

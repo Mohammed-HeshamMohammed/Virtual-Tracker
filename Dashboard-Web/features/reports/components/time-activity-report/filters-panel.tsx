@@ -4,24 +4,39 @@
 import { useState, type CSSProperties } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Check, Plus, Trash2, X } from "lucide-react"
-import {
-  CUSTOM_FILTER_FIELDS,
-  CUSTOM_FILTER_OPERATORS,
-  FILTERS_PANEL_SECTIONS,
-  TRACKED_TIME_OPTIONS,
-} from "@/features/reports/components/shared/constants"
+import { CUSTOM_FILTER_FIELDS, CUSTOM_FILTER_OPERATORS } from "@/features/reports/components/shared/constants"
 import { cn } from "@/shared/utils/utils"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { newTimeActivityCustomFilterRow } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityCustomFilterRow } from "@/features/reports/models/time-and-activity"
+import type { TrackedTimeFilter } from "@/features/reports/utils/time-and-activity"
 import { ReportFilterDropdown } from "@/features/reports/components/time-activity-report/filter-dropdown"
+
+const TRACKED_TIME_SELECT_OPTIONS: { value: TrackedTimeFilter; label: string }[] = [
+  { value: "all", label: "All members" },
+  { value: "with", label: "Members with tracked time" },
+  { value: "without", label: "Members without tracked time" },
+]
 
 export function ReportFiltersPanel({
   onClose,
   panelStyle,
+  projectFilter,
+  setProjectFilter,
+  projectFilterOptions,
+  trackedTimeFilter,
+  setTrackedTimeFilter,
+  onClearFilters,
 }: {
   onClose: () => void
   panelStyle?: CSSProperties | null
+  projectFilter: string
+  setProjectFilter: (value: string) => void
+  projectFilterOptions: { value: string; label: string }[]
+  trackedTimeFilter: TrackedTimeFilter
+  setTrackedTimeFilter: (value: TrackedTimeFilter) => void
+  /** Resets project/tracked-time filters on the report (owned by the parent hook). */
+  onClearFilters: () => void
 }) {
   const [includeArchived, setIncludeArchived] = useState(true)
   const [customFilters, setCustomFilters] = useState<TimeActivityCustomFilterRow[]>([])
@@ -39,6 +54,12 @@ export function ReportFiltersPanel({
     patch: Partial<Pick<TimeActivityCustomFilterRow, "field" | "operator" | "value">>
   ) {
     setCustomFilters((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+
+  function clearFilters() {
+    setCustomFilters([])
+    setIncludeArchived(true)
+    onClearFilters()
   }
 
   return (
@@ -64,16 +85,30 @@ export function ReportFiltersPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 scrollbar-hide">
         <div className="space-y-5">
-          {FILTERS_PANEL_SECTIONS.map(({ label, options }) => (
-            <div key={label}>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{label}</div>
-              <ReportFilterDropdown label={options[0]!} options={options} />
-            </div>
-          ))}
+          <div>
+            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">PROJECTS</div>
+            <ReportFilterDropdown
+              label={projectFilterOptions[0]?.label ?? "All projects"}
+              options={projectFilterOptions.map((o) => o.label)}
+              selectedValue={projectFilterOptions.find((o) => o.value === projectFilter)?.label ?? "All projects"}
+              onSelect={(label) => {
+                const opt = projectFilterOptions.find((o) => o.label === label)
+                if (opt) setProjectFilter(opt.value)
+              }}
+            />
+          </div>
 
           <div>
             <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">TRACKED TIME</div>
-            <ReportFilterDropdown label="Members with tracked time" options={TRACKED_TIME_OPTIONS} />
+            <ReportFilterDropdown
+              label="All members"
+              options={TRACKED_TIME_SELECT_OPTIONS.map((o) => o.label)}
+              selectedValue={TRACKED_TIME_SELECT_OPTIONS.find((o) => o.value === trackedTimeFilter)?.label ?? "All members"}
+              onSelect={(label) => {
+                const opt = TRACKED_TIME_SELECT_OPTIONS.find((o) => o.label === label)
+                if (opt) setTrackedTimeFilter(opt.value)
+              }}
+            />
           </div>
         </div>
       </div>
@@ -177,13 +212,14 @@ export function ReportFiltersPanel({
       <div className="shrink-0 space-y-3 px-5 py-4">
         <button
           type="button"
+          onClick={onClose}
           className="w-full rounded-xl bg-blue-400 dark:bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-500 dark:hover:bg-blue-600"
         >
           Apply filters
         </button>
         <button
           type="button"
-          onClick={onClose}
+          onClick={clearFilters}
           className="w-full py-2 text-center text-sm text-slate-500 dark:text-slate-400 transition-colors hover:text-slate-700 dark:hover:text-slate-200"
         >
           Clear filters

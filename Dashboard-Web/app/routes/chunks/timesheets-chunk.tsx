@@ -1,23 +1,14 @@
 "use client"
 
 import { PeopleTeamScopeProvider } from "@/features/members/context/people-team-scope-context"
-import { TimesheetsViewEdit } from "@/features/timesheets"
-import { ReportEmptyState, StandardReportLayout, TimeAndActivityReport } from "@/features/reports"
+import { TimesheetsViewEdit, TimesheetsApprovalsContent } from "@/features/timesheets"
+import { TimeAndActivityReport } from "@/features/reports"
 import type { PageChunkProps } from "@/app/routes/types"
 
-export default function TimesheetsChunk({ pageId, onNavigate }: PageChunkProps) {
+export default function TimesheetsChunk({ pageId, onNavigate: _onNavigate }: PageChunkProps) {
   switch (pageId) {
-    case "reports-timesheet-approvals":
-      return (
-        <StandardReportLayout
-          title="Timesheet approvals report"
-          titleTone="muted"
-          onNavigate={onNavigate}
-          exportFileBaseName="timesheet-approvals"
-        >
-          <ReportEmptyState />
-        </StandardReportLayout>
-      )
+    case "timesheets-approvals":
+      return <TimesheetsApprovalsContent />
     case "timesheets-time-activity":
       return <TimeAndActivityReport />
     case "timesheets-view":

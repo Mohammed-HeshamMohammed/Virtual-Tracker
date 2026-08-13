@@ -1,7 +1,7 @@
 /* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
-import { Fragment, useMemo, useState as useComponentState } from "react"
+import { Fragment, useEffect, useMemo, useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
@@ -13,10 +13,7 @@ import {
   Send,
   SlidersHorizontal,
 } from "lucide-react"
-import {
-  AMOUNTS_OWED_CHART_LABELS,
-  AMOUNTS_OWED_DEMO_GROUPS,
-} from "@/features/reports/components/shared/constants"
+import { AMOUNTS_OWED_CHART_LABELS, type AmountsOwedDayGroup } from "@/features/reports/components/shared/constants"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { formatRangeLabel, formatSecondsAsHMS, parseTimeToSeconds, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
@@ -26,12 +23,35 @@ import { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-o
 import { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amounts-owed/amounts-owed-table-columns-menu"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
+import { fetchAmountsOwedReport } from "@/features/reports/api/misc-reports-api"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
   return formatSecondsAsHMS(sec)
 }
+
+function sumAmountStrings(amountList: string[]): string {
+  const total = amountList.reduce((a, v) => a + (Number.parseFloat(v.replace(/[^0-9.-]/g, "")) || 0), 0)
+  return `$${total.toFixed(2)}`
+}
 const yTicks = [0, 2, 4, 6, 8, 10]
+
+function downloadAmountsOwedCsv(groups: AmountsOwedDayGroup[]): void {
+  const header = ["Date", "Member", "Rate", "Hours", "Amount"]
+  const rows = groups.flatMap((group) =>
+    group.members.map((m) => [group.dateLabel, m.name, m.rateLabel, m.hours, m.amount])
+  )
+  const csv = [header, ...rows]
+    .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+    .join("\n")
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = `amounts-owed-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 function AmountPerDayChart() {
   const labels = AMOUNTS_OWED_CHART_LABELS
@@ -108,15 +128,32 @@ function AmountPerDayChart() {
 
 export function AmountsOwedReport() {
   const [scope, setScope] = useComponentState<"me" | "all">("all")
-  const [rangeStart, setRangeStart] = useComponentState(() => new Date(2026, 2, 10))
-  const [rangeEnd, setRangeEnd] = useComponentState(() => new Date(2026, 3, 10))
+  const [rangeStart, setRangeStart] = useComponentState(() => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() - 6)
+    return d
+  })
+  const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date()))
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
   const [chartVisible, setChartVisible] = useComponentState(true)
   const [sendDialogOpen, setSendDialogOpen] = useComponentState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useComponentState(false)
+  const [groups, setGroups] = useComponentState<AmountsOwedDayGroup[]>([])
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
+
+  useEffect(() => {
+    let cancelled = false
+    const from = rangeStart.toISOString().slice(0, 10)
+    const to = rangeEnd.toISOString().slice(0, 10)
+    fetchAmountsOwedReport({ from, to }).then((data) => {
+      if (!cancelled) setGroups(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [rangeStart, rangeEnd])
 
   function shiftRangeByDays(delta: number) {
     const s = new Date(rangeStart)
@@ -134,9 +171,14 @@ export function AmountsOwedReport() {
   }
 
   const totalHoursSummary = useMemo(() => {
-    const all = AMOUNTS_OWED_DEMO_GROUPS.flatMap((g) => g.members.map((m) => m.hours))
+    const all = groups.flatMap((g) => g.members.map((m) => m.hours))
     return sumHoursStrings(all)
-  }, [])
+  }, [groups])
+
+  const totalAmountSummary = useMemo(() => {
+    const all = groups.flatMap((g) => g.members.map((m) => m.amount))
+    return sumAmountStrings(all)
+  }, [groups])
 
   return (
     <div className="relative isolate min-h-0">
@@ -270,8 +312,8 @@ export function AmountsOwedReport() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-36">
-                  <DropdownMenuItem className="cursor-pointer">To CSV</DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer">To PDF</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => downloadAmountsOwedCsv(groups)}>To CSV</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => window.print()}>To PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="flex items-center border-l border-slate-200 px-1.5">
@@ -288,7 +330,7 @@ export function AmountsOwedReport() {
           </div>
           <div className="min-w-[120px] flex-1">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Amount</div>
-            <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-800">—</div>
+            <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-800">{totalAmountSummary}</div>
           </div>
           <button
             type="button"
@@ -315,7 +357,7 @@ export function AmountsOwedReport() {
                 </tr>
               </thead>
               <tbody>
-                {AMOUNTS_OWED_DEMO_GROUPS.map((group) => (
+                {groups.map((group) => (
                   <Fragment key={group.date}>
                     <tr className="bg-slate-100">
                       <td colSpan={4} className="px-5 py-2 text-sm font-medium text-slate-800">
@@ -341,10 +383,19 @@ export function AmountsOwedReport() {
                       <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
                         {sumHoursStrings(group.members.map((x) => x.hours))}
                       </td>
-                      <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">$0.00</td>
+                      <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
+                        {sumAmountStrings(group.members.map((x) => x.amount))}
+                      </td>
                     </tr>
                   </Fragment>
                 ))}
+                {groups.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-500">
+                      No tracked time in this date range.
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -371,6 +422,7 @@ export function AmountsOwedReport() {
               <AmountsOwedFiltersPanel
                 className="absolute right-4 top-28 z-110 max-h-[calc(100%-9rem)]"
                 onClose={() => setShowFilters(false)}
+                onScheduleReport={() => setScheduleDialogOpen(true)}
               />
             </>
           )}

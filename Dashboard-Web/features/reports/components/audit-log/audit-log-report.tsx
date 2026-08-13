@@ -1,7 +1,7 @@
 /* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
-import { Fragment, useMemo, useState as useComponentState } from "react"
+import { Fragment, useEffect, useMemo, useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
@@ -16,13 +16,14 @@ import { ReportDateRangePicker } from "@/features/reports/components/time-activi
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { Button } from "@/shared/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
-import { AUDIT_LOG_DEMO_ROWS, AUDIT_LOG_ORG_LABEL, AUDIT_LOG_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { AUDIT_LOG_ORG_LABEL, AUDIT_LOG_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 import {
   exportAuditLogToCsv,
   filterAuditRows,
   groupAuditRowsByDate,
 } from "@/features/reports/utils/audit-log"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
 import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/audit-log"
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
@@ -65,8 +66,13 @@ function actionBadgeClass(kind: AuditLogRow["actionKind"]): string {
 
 export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   const { query: search, setQuery: setSearch } = usePageSearch()
-  const [rangeStart, setRangeStart] = useComponentState(() => startOfDay(new Date(2026, 3, 4)))
-  const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date(2026, 3, 11)))
+  const [rangeStart, setRangeStart] = useComponentState(() => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() - 6)
+    return d
+  })
+  const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date()))
+  const [rows, setRows] = useComponentState<AuditLogRow[]>([])
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
   const [groupBy, setGroupBy] = useComponentState<string>("date")
@@ -75,9 +81,21 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
 
+  useEffect(() => {
+    let cancelled = false
+    const from = rangeStart.toISOString().slice(0, 10)
+    const to = rangeEnd.toISOString().slice(0, 10)
+    fetchAuditLogReport({ from, to }).then((data) => {
+      if (!cancelled) setRows(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [rangeStart, rangeEnd])
+
   const filtered = useMemo(
-    () => filterAuditRows(AUDIT_LOG_DEMO_ROWS, { query: search, rangeStart, rangeEnd }),
-    [search, rangeStart, rangeEnd]
+    () => filterAuditRows(rows, { query: search, rangeStart, rangeEnd }),
+    [rows, search, rangeStart, rangeEnd]
   )
 
   const groups = useMemo(() => groupAuditRowsByDate(filtered), [filtered])

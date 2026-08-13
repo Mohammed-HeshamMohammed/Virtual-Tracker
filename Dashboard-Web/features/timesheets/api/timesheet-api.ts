@@ -204,41 +204,31 @@ export async function getTimesheet(id: string): Promise<Timesheet> {
   return toTimesheet(json.data)
 }
 
-export async function submitTimesheet(id: string, submittedBy?: string): Promise<Timesheet> {
-  const res = await apiFetch(apiPath(`/api/timesheets/${id}/submit`), {
-    method: "PUT",
+// submit/approve/reject all go through the generic schema CRUD PATCH
+// (/api/timesheets/:id) rather than bespoke sub-routes - the backend already
+// gates writes to this entity to management roles there (schema/routes.js),
+// and the field-name mapping (status/approved_at/approved_by) is already
+// declared in the timesheets catalog entity, so no new backend route is needed.
+async function patchTimesheet(id: string, body: Record<string, unknown>): Promise<Timesheet> {
+  const res = await apiFetch(apiPath(`/api/timesheets/${id}`), {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ submittedBy }),
+    body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`Failed to submit timesheet: ${res.status}`)
   assertTimesheetsAvailable(res.status)
   const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!json.success) throw new Error(json.error || "Failed to submit timesheet")
+  if (!res.ok || !json.success) throw new Error(json.error || `Failed to update timesheet: ${res.status}`)
   return toTimesheet(json.data)
 }
 
-export async function approveTimesheet(id: string, approvedBy?: string): Promise<Timesheet> {
-  const res = await apiFetch(apiPath(`/api/timesheets/${id}/approve`), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ approvedBy }),
-  })
-  if (!res.ok) throw new Error(`Failed to approve timesheet: ${res.status}`)
-  assertTimesheetsAvailable(res.status)
-  const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!json.success) throw new Error(json.error || "Failed to approve timesheet")
-  return toTimesheet(json.data)
+export function submitTimesheet(id: string): Promise<Timesheet> {
+  return patchTimesheet(id, { status: "submitted", submitted_at: new Date().toISOString() })
 }
 
-export async function rejectTimesheet(id: string, reason?: string, rejectedBy?: string): Promise<Timesheet> {
-  const res = await apiFetch(apiPath(`/api/timesheets/${id}/reject`), {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ reason, rejectedBy }),
-  })
-  if (!res.ok) throw new Error(`Failed to reject timesheet: ${res.status}`)
-  assertTimesheetsAvailable(res.status)
-  const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!json.success) throw new Error(json.error || "Failed to reject timesheet")
-  return toTimesheet(json.data)
+export function approveTimesheet(id: string, approvedBy: string): Promise<Timesheet> {
+  return patchTimesheet(id, { status: "approved", approved_at: new Date().toISOString(), approved_by: approvedBy })
+}
+
+export function rejectTimesheet(id: string, approvedBy: string): Promise<Timesheet> {
+  return patchTimesheet(id, { status: "rejected", approved_at: new Date().toISOString(), approved_by: approvedBy })
 }

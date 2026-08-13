@@ -5,9 +5,9 @@ export type MemberRole =
   | "Admin"
   | "Super Manager"
   | "Manager"
-  | "Employee L2"
-  | "Employee L1"
-  | "Employee L0"
+  | "Team Lead"
+  | "Employee"
+  | "Intern"
   | "Client"
   | "Viewer"
   | string
