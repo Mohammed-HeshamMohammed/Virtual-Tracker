@@ -38,16 +38,38 @@ function LinuxIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-function resolveDownloadUrl(platform: PlatformOption, apiBaseUrl?: string): string {
-  const envBase =
+/**
+ * Agent installers are proxied by Landing-Backend (GitHub release assets),
+ * not by Dashboard-Web / Dashboard-Backend. Same host Landing-Web uses.
+ */
+function resolveLandingApiBase(apiBaseUrl?: string): string {
+  const explicit = apiBaseUrl?.trim()
+  if (explicit) return explicit.replace(/\/$/, "")
+
+  const fromEnv =
     typeof process !== "undefined"
       ? (process.env.NEXT_PUBLIC_LANDING_API_URL?.trim() ?? "")
       : ""
-  const base = (apiBaseUrl ?? envBase).replace(/\/$/, "")
-  if (base) return `${base}/api/download?platform=${platform}`
-  // Fallback: static Windows installer under Dashboard-Web/public/downloads
-  if (platform === "windows") return "/downloads/VirtualTrackerAgent-setup.exe"
-  return `/api/download?platform=${platform}`
+  if (fromEnv) return fromEnv.replace(/\/$/, "")
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname
+    // Production: app.myvirtualtracker.com → api.myvirtualtracker.com (Landing-Backend)
+    if (host === "app.myvirtualtracker.com" || host.endsWith(".myvirtualtracker.com")) {
+      return "https://api.myvirtualtracker.com"
+    }
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "http://127.0.0.1:5714"
+    }
+  }
+
+  // SSR / unknown host — match Landing-Web production default
+  return "https://api.myvirtualtracker.com"
+}
+
+function resolveDownloadUrl(platform: PlatformOption, apiBaseUrl?: string): string {
+  const base = resolveLandingApiBase(apiBaseUrl)
+  return `${base}/api/download?platform=${platform}`
 }
 
 export function AgentDownloadChoices({
