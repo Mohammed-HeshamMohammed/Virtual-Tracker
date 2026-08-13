@@ -1,26 +1,108 @@
 name: release
 
+# Auto-builds the next agent version when Tauri-App-Extension changes land on
+# main (0.4.3 → 0.4.4 …), or when run manually. Landing-Backend serves
+# installers from GitHub `releases/latest`, so a published release is live for
+# /api/download within the backend's ~5 min metadata cache.
 on:
   push:
-    tags:
-      - "agent-v*"
+    branches: [main]
+    paths:
+      # Source / build inputs only — version bumps (package.json, Cargo.toml,
+      # tauri.conf.json) are committed by this workflow and must NOT re-trigger.
+      - "Tauri-App-Extension/src/**"
+      - "Tauri-App-Extension/src-tauri/src/**"
+      - "Tauri-App-Extension/src-tauri/capabilities/**"
+      - "Tauri-App-Extension/src-tauri/icons/**"
+      - "Tauri-App-Extension/src-tauri/build.rs"
+      - "Tauri-App-Extension/scripts/**"
+      - "Tauri-App-Extension/index.html"
+      - "Tauri-App-Extension/vite.config.ts"
+      - "Tauri-App-Extension/tsconfig.json"
+      - "Tauri-App-Extension/tsconfig.node.json"
+      - "Tauri-App-Extension/package-lock.json"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Semver bump type
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+concurrency:
+  group: agent-release
+  cancel-in-progress: false
 
 jobs:
+  bump:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Need a token that can push the version commit + tag back to main.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump agent version
+        id: version
+        env:
+          BUMP: ${{ github.event_name == 'workflow_dispatch' && inputs.bump || 'patch' }}
+        run: |
+          set -euo pipefail
+          CONF="Tauri-App-Extension/src-tauri/tauri.conf.json"
+          PKG="Tauri-App-Extension/package.json"
+          CARGO="Tauri-App-Extension/src-tauri/Cargo.toml"
+
+          current=$(node -p "require('./${PKG}').version")
+          IFS=. read -r major minor patch <<<"$current"
+          case "$BUMP" in
+            major) major=$((major + 1)); minor=0; patch=0 ;;
+            minor) minor=$((minor + 1)); patch=0 ;;
+            patch) patch=$((patch + 1)) ;;
+            *) echo "Unknown bump: $BUMP"; exit 1 ;;
+          esac
+          next="${major}.${minor}.${patch}"
+          tag="agent-v${next}"
+
+          if git rev-parse "$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists — refusing to overwrite"
+            exit 1
+          fi
+
+          echo "Bumping agent $current → $next ($BUMP)"
+
+          node -e "
+            const fs = require('fs');
+            for (const p of ['${PKG}', '${CONF}']) {
+              const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+              j.version = '${next}';
+              fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+            }
+          "
+          # Only the [package] version line — never touch dependency versions.
+          sed -i -E "0,/^version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/s//version = \"${next}\"/" "$CARGO"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$PKG" "$CONF" "$CARGO"
+          git commit -m "chore(tauri-agent): bump version to ${next}"
+          git tag -a "$tag" -m "Agent v${next}"
+          git push origin HEAD:main
+          git push origin "$tag"
+
+          echo "version=${next}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+
   release:
-    # 2026-08: re-reviewed the prior Windows-only restriction (was: adding a
-    # Linux runner re-opens the dismissed RUSTSEC-2024-0429 glib advisory,
-    # Dependabot #43). Re-review found the advisory is real, unpatched
-    # upstream (fixed only in glib >=0.20, which nothing in the wry/tauri/
-    # gtk-rs stack has adopted yet), and unavoidable on Linux regardless of
-    # any Cargo feature - it comes from wry's own webkit2gtk backend, not
-    # just the tray icon. This is a known, accepted, ecosystem-wide gap in
-    # every Tauri 2 Linux app today, not something specific to this repo.
-    # Decision: ship Linux anyway. tray-icon is disabled for the Linux
-    # target (src-tauri/Cargo.toml) as one small mitigation - it removes one
-    # more call site into the advisory (libappindicator's GVariant usage)
-    # for zero functional loss, though it does not remove the advisory
-    # itself. Revisit dropping this note once wry/tauri ship a release built
-    # against glib >=0.20.
+    needs: bump
+    # 2026-08: Linux runner accepted despite RUSTSEC-2024-0429 glib advisory
+    # (ecosystem-wide wry/webkit2gtk gap; tray-icon disabled on Linux).
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +115,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -42,9 +126,6 @@ jobs:
 
       - name: install Linux webview deps
         if: matrix.platform == 'ubuntu-latest'
-        # No libayatana-appindicator3-dev/libgtk-3-dev tray deps here on
-        # purpose - tray-icon is a non-Linux-only feature (see Cargo.toml),
-        # so nothing in the build actually needs them.
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
@@ -53,12 +134,9 @@ jobs:
         working-directory: Tauri-App-Extension
         run: npm ci
 
-      # Authenticode (SmartScreen / Avast). Without a purchased OV/EV code-signing
-      # cert the Windows build ships NotSigned and AV heuristics treat the
-      # screenshot + input-hook agent as PUA. Secrets are optional so forks
-      # without a cert still build; set WINDOWS_CERTIFICATE (base64 PFX) +
-      # WINDOWS_CERTIFICATE_PASSWORD in the repo to enable signing.
-      # See https://v2.tauri.app/distribute/sign/windows/
+      # Authenticode (SmartScreen / Avast). Optional — set WINDOWS_CERTIFICATE
+      # (base64 PFX) + WINDOWS_CERTIFICATE_PASSWORD to enable.
+      # https://v2.tauri.app/distribute/sign/windows/
       - name: import Windows Authenticode certificate
         if: matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE != ''
         env:
@@ -76,7 +154,6 @@ jobs:
           $thumb = $cert.Thumbprint
           Write-Host "Imported certificate thumbprint $thumb"
           $env:THUMB = $thumb
-          # Tauri reads certificateThumbprint from tauri.conf.json.
           node -e "const fs=require('fs');const p='Tauri-App-Extension/src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.bundle=j.bundle||{};j.bundle.windows=j.bundle.windows||{};j.bundle.windows.certificateThumbprint=process.env.THUMB;j.bundle.windows.digestAlgorithm=j.bundle.windows.digestAlgorithm||'sha256';j.bundle.windows.timestampUrl=j.bundle.windows.timestampUrl||'http://timestamp.digicert.com';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
 
       - uses: tauri-apps/tauri-action@v0
@@ -86,8 +163,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: Tauri-App-Extension
-          tagName: agent-v__VERSION__
-          releaseName: "Agent v__VERSION__"
+          tagName: ${{ needs.bump.outputs.tag }}
+          releaseName: "Agent v${{ needs.bump.outputs.version }}"
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
