@@ -4,6 +4,8 @@ import {
   profileImageFieldsFromDoc,
   resolveProfileAvatarUrl,
 } from "./profile-image-resolve.js";
+import { isPostgresConfigured } from "../../lib/postgres/client.js";
+import { resolveMemberIdForFirebaseUidPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
 /**
  * User_profiles payload from Auth user record.
@@ -55,6 +57,14 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
   const merged = await ref.get();
   const row = merged.exists ? merged.data() : null;
   const resolvedPhoto = resolveProfileAvatarUrl(row) || userRecord.photoURL || null;
+
+  // Members list/table reads avatar_url from Postgres, not this Firestore
+  // doc - every login/profile flow routes through here, so this is the one
+  // place that keeps it in sync instead of patching each caller.
+  if (isPostgresConfigured()) {
+    const memberId = await resolveMemberIdForFirebaseUidPg(userRecord.uid);
+    if (memberId) await updateMemberPg(memberId, { avatar_url: resolvedPhoto }).catch(() => {});
+  }
 
   return {
     uid: userRecord.uid,
