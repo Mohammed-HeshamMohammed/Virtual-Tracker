@@ -53,6 +53,32 @@ jobs:
         working-directory: Tauri-App-Extension
         run: npm ci
 
+      # Authenticode (SmartScreen / Avast). Without a purchased OV/EV code-signing
+      # cert the Windows build ships NotSigned and AV heuristics treat the
+      # screenshot + input-hook agent as PUA. Secrets are optional so forks
+      # without a cert still build; set WINDOWS_CERTIFICATE (base64 PFX) +
+      # WINDOWS_CERTIFICATE_PASSWORD in the repo to enable signing.
+      # See https://v2.tauri.app/distribute/sign/windows/
+      - name: import Windows Authenticode certificate
+        if: matrix.platform == 'windows-latest' && secrets.WINDOWS_CERTIFICATE != ''
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path certificate | Out-Null
+          Set-Content -Path certificate/tempCert.txt -Value $env:WINDOWS_CERTIFICATE
+          certutil -decode certificate/tempCert.txt certificate/certificate.pfx
+          Remove-Item certificate/tempCert.txt -Force
+          $secure = ConvertTo-SecureString -String $env:WINDOWS_CERTIFICATE_PASSWORD -Force -AsPlainText
+          $cert = Import-PfxCertificate -FilePath certificate/certificate.pfx -CertStoreLocation Cert:\CurrentUser\My -Password $secure
+          Remove-Item certificate/certificate.pfx -Force
+          $thumb = $cert.Thumbprint
+          Write-Host "Imported certificate thumbprint $thumb"
+          $env:THUMB = $thumb
+          # Tauri reads certificateThumbprint from tauri.conf.json.
+          node -e "const fs=require('fs');const p='Tauri-App-Extension/src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.bundle=j.bundle||{};j.bundle.windows=j.bundle.windows||{};j.bundle.windows.certificateThumbprint=process.env.THUMB;j.bundle.windows.digestAlgorithm=j.bundle.windows.digestAlgorithm||'sha256';j.bundle.windows.timestampUrl=j.bundle.windows.timestampUrl||'http://timestamp.digicert.com';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -53,8 +53,11 @@
       "../scripts/get-browser-url-macos.applescript"
     ],
     "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com",
       "nsis": {
-        "installMode": "perMachine"
+        "installMode": "perMachine",
+        "displayLanguageSelector": false
       }
     }
   },
