@@ -17,6 +17,7 @@ import { getDb } from "./src/config/firebase.js";
 import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
 import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
+import { backfillMemberAvatarUrls } from "./src/modules/auth/avatar-backfill.js";
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
 import { scheduleAbandonedSessionSweep } from "./src/modules/activity/abandoned-session-sweep.service.js";
 import { scheduleReportDeliveries } from "./src/modules/reports/report-schedule-runner.js";
@@ -99,6 +100,7 @@ export async function startServer(port = getEnv().server.port) {
     if (schemaResult.ok === false) {
       logError(new Error(schemaResult.error ?? "Postgres lookup schema ensure failed"), "postgres-lookup-schema");
     }
+    backfillMemberAvatarUrls(db).catch((err) => logError(err, "avatar-backfill"));
     scheduleOrganizationMaintenance(db, "server-startup");
     scheduleTeamWeeklyReports(db);
     scheduleAbandonedSessionSweep();
