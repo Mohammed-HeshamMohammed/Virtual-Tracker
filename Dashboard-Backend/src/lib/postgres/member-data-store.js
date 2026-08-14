@@ -31,8 +31,15 @@ import {
   upsertMemberScopedRowPg,
 } from "./member-data-postgres.service.js";
 
+/**
+ * The only collections this dispatcher ever routes: employment/time_settings/
+ * pay_rates. member_onboarding has its own dedicated Postgres API in
+ * member-data-postgres.service.js (findMemberOnboardingByMemberIdPg,
+ * setMemberOnboardingRowPg, ensureMemberOnboardingRowPg, ...) instead of
+ * going through here - it needs invite_id and no-unique-constraint dedupe
+ * semantics this generic single-row-per-member dispatcher doesn't model.
+ */
 const PG_MEMBER_SCOPED = new Set(["employment", "time_settings", "pay_rates"]);
-const FIRESTORE_MEMBER_SCOPED = new Set(["member_onboarding"]);
 
 async function requireMemberDataPostgres() {
   if (!(await isPostgresMemberDataReady())) {
@@ -57,20 +64,10 @@ function pseudoLimitDoc(row) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").QueryDocumentSnapshot[]} docs
- */
-function pickLatestMemberRow(docs) {
-  if (docs.length === 0) return null;
-  if (docs.length === 1) return docs[0];
-  const toSortMs = (value) => {
-    if (value && typeof value === "object" && "toDate" in value && typeof value.toDate === "function") {
-      return value.toDate().getTime();
-    }
-    if (value instanceof Date) return value.getTime();
-    return 0;
-  };
-  return [...docs].sort((a, b) => toSortMs(b.data()?.updated_at) - toSortMs(a.data()?.updated_at))[0];
+function assertPgMemberScoped(collection) {
+  if (!PG_MEMBER_SCOPED.has(collection)) {
+    throw new Error(`Unsupported member-scoped collection: ${collection}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -127,113 +124,56 @@ export async function fetchWeeklyLimitsForMembers(_db, memberIds) {
 }
 
 // ---------------------------------------------------------------------------
-// employment / time_settings (+ Firestore-only pay_rates / onboarding helpers)
+// employment / time_settings / pay_rates
 // ---------------------------------------------------------------------------
 
-/** @param {import("firebase-admin/firestore").Firestore} db */
-export async function getSingleByMemberId(db, collection, memberId) {
-  if (PG_MEMBER_SCOPED.has(collection)) {
-    await requireMemberDataPostgres();
-    return getMemberScopedRowPg(collection, memberId);
-  }
-  const snap = await db.collection(collection).where("member_id", "==", memberId).get();
-  const doc = pickLatestMemberRow(snap.docs);
-  if (!doc) return null;
-  return { id: doc.id, ...(doc.data() || {}) };
+/** @param {import("firebase-admin/firestore").Firestore} _db */
+export async function getSingleByMemberId(_db, collection, memberId) {
+  assertPgMemberScoped(collection);
+  await requireMemberDataPostgres();
+  return getMemberScopedRowPg(collection, memberId);
 }
 
-/** @param {import("firebase-admin/firestore").Firestore} db */
-export async function upsertSingleByMemberId(db, collection, memberId, payload) {
-  if (PG_MEMBER_SCOPED.has(collection)) {
-    await requireMemberDataPostgres();
-    const existing = await getMemberScopedRowPg(collection, memberId);
-    const id = existing?.id ?? crypto.randomUUID();
-    await upsertMemberScopedRowPg(collection, memberId, { id, member_id: memberId, ...payload });
-    return id;
-  }
-  const snap = await db.collection(collection).where("member_id", "==", memberId).get();
-  if (!snap.empty) {
-    const batch = db.batch();
-    for (const doc of snap.docs) batch.update(doc.ref, payload);
-    await batch.commit();
-    return snap.docs[0].id;
-  }
-  const id = crypto.randomUUID();
-  await db.collection(collection).doc(id).set({ id, member_id: memberId, ...payload });
+/** @param {import("firebase-admin/firestore").Firestore} _db */
+export async function upsertSingleByMemberId(_db, collection, memberId, payload) {
+  assertPgMemberScoped(collection);
+  await requireMemberDataPostgres();
+  const existing = await getMemberScopedRowPg(collection, memberId);
+  const id = existing?.id ?? crypto.randomUUID();
+  await upsertMemberScopedRowPg(collection, memberId, { id, member_id: memberId, ...payload });
   return id;
 }
 
 /**
- * §6.9 - same contract as the Postgres write helpers: only checked when
- * `expectedUpdatedAt` is provided and a row already exists; a first-time
- * create has nothing to conflict with. Returns `{ conflict: true }` instead
- * of the row id on a stale write.
- * @param {import("firebase-admin/firestore").Firestore} db
+ * §6.9 - only checked when `expectedUpdatedAt` is provided and a row already
+ * exists; a first-time create has nothing to conflict with. Returns
+ * `{ conflict: true }` instead of the row id on a stale write.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} collection @param {string} memberId
  * @param {Record<string, unknown>} payload @param {string} [expectedUpdatedAt]
  */
-export async function upsertSingleByMemberIdConditional(db, collection, memberId, payload, expectedUpdatedAt) {
-  if (PG_MEMBER_SCOPED.has(collection)) {
-    await requireMemberDataPostgres();
-    const existing = await getMemberScopedRowPg(collection, memberId);
-    const id = existing?.id ?? crypto.randomUUID();
-    const result = await upsertMemberScopedRowPg(collection, memberId, { id, member_id: memberId, ...payload }, expectedUpdatedAt);
-    if (result && typeof result === "object" && "conflict" in result) return { conflict: true };
-    return id;
-  }
-  if (!expectedUpdatedAt) {
-    return upsertSingleByMemberId(db, collection, memberId, payload);
-  }
-  const snap = await db.collection(collection).where("member_id", "==", memberId).get();
-  if (snap.empty) {
-    // Nothing to conflict with yet - same as the Postgres path's first create.
-    return upsertSingleByMemberId(db, collection, memberId, payload);
-  }
-  const target = pickLatestMemberRow(snap.docs);
-  return db.runTransaction(async (tx) => {
-    const fresh = await tx.get(target.ref);
-    const currentUpdatedAt = fresh.data()?.updated_at;
-    const currentIso =
-      currentUpdatedAt && typeof currentUpdatedAt.toDate === "function"
-        ? currentUpdatedAt.toDate().toISOString()
-        : currentUpdatedAt instanceof Date
-          ? currentUpdatedAt.toISOString()
-          : String(currentUpdatedAt ?? "");
-    if (currentIso !== expectedUpdatedAt) {
-      return { conflict: true };
-    }
-    tx.update(target.ref, { ...payload, updated_at: new Date() });
-    return target.id;
-  });
+export async function upsertSingleByMemberIdConditional(_db, collection, memberId, payload, expectedUpdatedAt) {
+  assertPgMemberScoped(collection);
+  await requireMemberDataPostgres();
+  const existing = await getMemberScopedRowPg(collection, memberId);
+  const id = existing?.id ?? crypto.randomUUID();
+  const result = await upsertMemberScopedRowPg(collection, memberId, { id, member_id: memberId, ...payload }, expectedUpdatedAt);
+  if (result && typeof result === "object" && "conflict" in result) return { conflict: true };
+  return id;
 }
 
-/** @param {import("firebase-admin/firestore").Firestore} db */
-export async function ensureSingleByMemberId(db, collection, memberId, buildPayload) {
-  if (PG_MEMBER_SCOPED.has(collection)) {
-    await requireMemberDataPostgres();
-    return ensureMemberScopedRowPg(collection, memberId, buildPayload);
-  }
-  const existing = await db.collection(collection).where("member_id", "==", memberId).limit(1).get();
-  if (!existing.empty) return { created: false, id: existing.docs[0].id };
-  const id = crypto.randomUUID();
-  const payload = buildPayload();
-  await db.collection(collection).doc(id).set({ id, member_id: memberId, ...payload });
-  return { created: true, id };
+/** @param {import("firebase-admin/firestore").Firestore} _db */
+export async function ensureSingleByMemberId(_db, collection, memberId, buildPayload) {
+  assertPgMemberScoped(collection);
+  await requireMemberDataPostgres();
+  return ensureMemberScopedRowPg(collection, memberId, buildPayload);
 }
 
-/** @param {import("firebase-admin/firestore").Firestore} db */
-export async function deleteMemberScopedRows(db, collection, memberId) {
-  if (PG_MEMBER_SCOPED.has(collection)) {
-    await requireMemberDataPostgres();
-    await deleteMemberScopedRowsPg(collection, memberId);
-    return;
-  }
-  if (!FIRESTORE_MEMBER_SCOPED.has(collection)) return;
-  const snap = await db.collection(collection).where("member_id", "==", memberId).get();
-  if (snap.empty) return;
-  const batch = db.batch();
-  for (const doc of snap.docs) batch.delete(doc.ref);
-  await batch.commit();
+/** @param {import("firebase-admin/firestore").Firestore} _db */
+export async function deleteMemberScopedRows(_db, collection, memberId) {
+  assertPgMemberScoped(collection);
+  await requireMemberDataPostgres();
+  await deleteMemberScopedRowsPg(collection, memberId);
 }
 
 /** @param {import("firebase-admin/firestore").Firestore} _db */

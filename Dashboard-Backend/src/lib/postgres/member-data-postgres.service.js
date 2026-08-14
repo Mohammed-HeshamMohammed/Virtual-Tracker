@@ -1201,6 +1201,19 @@ export async function createMemberOnboardingRowPg(payload) {
 }
 
 /**
+ * Bootstrap helper - same `{ created, id }` contract as ensureMemberScopedRowPg,
+ * for callers (member-entity-bootstrap.js) that don't care about invite_id.
+ * @param {string} memberId @param {() => Record<string, unknown>} buildPayload
+ */
+export async function ensureMemberOnboardingRowPg(memberId, buildPayload) {
+  const existing = await findMemberOnboardingByMemberIdPg(memberId);
+  if (existing) return { created: false, id: existing.id };
+  const id = crypto.randomUUID();
+  await setMemberOnboardingRowPg(id, { id, member_id: memberId, ...buildPayload() });
+  return { created: true, id };
+}
+
+/**
  * member_onboarding has no unique constraint on member_id (a row can also
  * key off invite_id alone with member_id null) - dedupe the same way the
  * Firestore version did: keep the most-recently-updated row per member_id,

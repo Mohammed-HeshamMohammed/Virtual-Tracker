@@ -1,7 +1,10 @@
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { updateTreeCache } from "../../member-relationships/service.js";
 import { resolveRoleNameById, syncMemberPrimaryRole } from "./relation-sync.js";
-import { dedupeMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
+import {
+  dedupeMemberOnboardingByMemberIdPg,
+  ensureMemberOnboardingRowPg,
+} from "../../../lib/postgres/member-data-postgres.service.js";
 import {
   ensureLimitsDoc,
   ensureSingleByMemberId,
@@ -67,7 +70,7 @@ export async function ensureMemberScopedEntities(db, { memberId, memberData = {}
   await syncMemberPrimaryRole(db, memberId, roleName, actor);
 
   if (!(skipOnboardingForOwner && isOwnerRole(roleName))) {
-    const onboarding = await ensureSingleByMemberId(db, "member_onboarding", memberId, () => ({
+    const onboarding = await ensureMemberOnboardingRowPg(memberId, () => ({
       invite_id: null,
       created_account: true,
       created_account_at: now(),
