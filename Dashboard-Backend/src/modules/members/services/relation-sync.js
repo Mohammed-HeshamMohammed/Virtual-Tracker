@@ -125,8 +125,12 @@ function roleNameFromId(roleId, roleNameById) {
   return roleNameById.get(roleId) || "";
 }
 
-/** Higher rank wins when `members.role_id` and `member_roles` disagree (e.g. stale assignments). */
-export const ROLE_PRIVILEGE_RANK = {
+/**
+ * Higher rank wins when `members.role_id` and `member_roles` disagree (e.g. stale assignments).
+ * Prototype-less so a role named "constructor" or "valueOf" misses instead of returning an
+ * Object.prototype member — every lookup here is `TABLE[key] ?? <default>`.
+ */
+export const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
   admin: 80,
@@ -137,13 +141,25 @@ export const ROLE_PRIVILEGE_RANK = {
   intern: 30,
   client: 20,
   viewer: 10,
-};
+});
+
+/**
+ * Misspelled role names that exist in older `roles` rows. Folded onto the canonical
+ * key here so every policy check and `ROLE_PRIVILEGE_RANK` lookup sees one spelling —
+ * without this they fall through to the rank 35 default and lose their privileges.
+ */
+const LEGACY_ROLE_KEY_ALIASES = new Map([
+  ["supermanger", "supermanager"],
+  ["manger", "manager"],
+]);
 
 /**
  * @param {string} roleName
  */
 export function normalizeRoleKey(roleName) {
-  return typeof roleName === "string" ? roleName.trim().toLowerCase().replace(/\s+/g, "") : "";
+  if (typeof roleName !== "string") return "";
+  const key = roleName.trim().toLowerCase().replace(/\s+/g, "");
+  return LEGACY_ROLE_KEY_ALIASES.get(key) ?? key;
 }
 
 /**
