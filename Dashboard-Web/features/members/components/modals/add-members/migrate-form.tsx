@@ -2,7 +2,9 @@
 
 import { Search, Loader2 } from "lucide-react"
 import { Avatar } from "@/shared/ui/avatar"
+import { Checkbox } from "@/shared/ui/checkbox"
 import { cn } from "@/shared/utils/utils"
+import { useTheme } from "@/shared/providers/app"
 import { initialsFromName, memberAvatarColor } from "@/features/members/utils/build-tree"
 import type { MemberRole, MigratableAuthUser } from "@/features/members/models/member"
 
@@ -10,6 +12,8 @@ interface MigrateFormProps {
   users: MigratableAuthUser[]
   selectedUids: Set<string>
   onToggle: (uid: string) => void
+  /** Bulk set for the rows currently shown (respects the active filter). */
+  onToggleMany: (uids: string[], selected: boolean) => void
   filterText: string
   onFilterChange: (val: string) => void
   /** Suggested role for this person, clamped to what the viewer may assign. */
@@ -25,6 +29,7 @@ export function MigrateForm({
   users,
   selectedUids,
   onToggle,
+  onToggleMany,
   filterText,
   onFilterChange,
   resolveRole,
@@ -32,10 +37,14 @@ export function MigrateForm({
   hasMore,
   onLoadMore,
 }: MigrateFormProps) {
+  const { isDark } = useTheme()
   const needle = filterText.trim().toLowerCase()
   const filtered = needle
     ? users.filter((u) => u.email.toLowerCase().includes(needle) || u.displayName.toLowerCase().includes(needle))
     : users
+
+  const selectedInView = filtered.reduce((count, u) => (selectedUids.has(u.uid) ? count + 1 : count), 0)
+  const allInViewSelected = filtered.length > 0 && selectedInView === filtered.length
 
   return (
     <div className="space-y-4">
@@ -58,6 +67,37 @@ export function MigrateForm({
         />
       </div>
 
+      {filtered.length > 0 && (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800/40 px-3 py-2">
+          <div
+            role="button"
+            tabIndex={0}
+            aria-pressed={allInViewSelected}
+            onClick={() => onToggleMany(filtered.map((u) => u.uid), !allInViewSelected)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                onToggleMany(filtered.map((u) => u.uid), !allInViewSelected)
+              }
+            }}
+            className="flex cursor-pointer items-center gap-2.5"
+          >
+            <Checkbox
+              checked={allInViewSelected}
+              isDark={isDark}
+              onChange={(e) => e.stopPropagation()}
+            />
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {allInViewSelected ? "Deselect all" : "Select all"}
+              {needle ? " shown" : ""}
+            </span>
+          </div>
+          <span className="text-[11px] tabular-nums text-slate-400 dark:text-slate-500">
+            {selectedInView} of {filtered.length} selected
+          </span>
+        </div>
+      )}
+
       <div className="max-h-72 overflow-y-auto scrollbar-hide rounded-lg border border-slate-200 dark:border-slate-700">
         {isLoading && users.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-6 text-xs text-slate-400 dark:text-slate-500">
@@ -74,20 +114,28 @@ export function MigrateForm({
             const role = resolveRole(u)
             const checked = selectedUids.has(u.uid)
             return (
-              <label
+              <div
                 key={u.uid}
+                role="button"
+                tabIndex={0}
+                aria-pressed={checked}
+                onClick={() => onToggle(u.uid)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    onToggle(u.uid)
+                  }
+                }}
                 className={cn(
                   "flex cursor-pointer items-center gap-3 border-b border-slate-100 dark:border-slate-800 px-3 py-3 last:border-b-0 transition-colors",
                   checked ? "bg-blue-50/60 dark:bg-emerald-500/10" : "hover:bg-slate-50 dark:hover:bg-slate-800/40",
                 )}
               >
-                <input
-                  id={`migrate-uid-${u.uid}`}
-                  name={`migrate-uid-${u.uid}`}
-                  type="checkbox"
+                <Checkbox
                   checked={checked}
-                  onChange={() => onToggle(u.uid)}
-                  className="h-3.5 w-3.5 shrink-0 rounded border-slate-300 dark:border-slate-600"
+                  isDark={isDark}
+                  // The row already toggles; stop here so one click isn't counted twice.
+                  onChange={(e) => e.stopPropagation()}
                 />
                 <Avatar
                   initials={initialsFromName(displayName)}
@@ -103,7 +151,7 @@ export function MigrateForm({
                 <span className="shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-[10px] font-semibold text-slate-600 dark:text-slate-300">
                   {role}
                 </span>
-              </label>
+              </div>
             )
           })
         )}

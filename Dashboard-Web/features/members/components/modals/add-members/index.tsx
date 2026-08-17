@@ -228,6 +228,17 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     })
   }
 
+  function toggleMigrateUids(uids: string[], selected: boolean) {
+    setMigrateSelectedUids((prev) => {
+      const next = new Set(prev)
+      for (const uid of uids) {
+        if (selected) next.add(uid)
+        else next.delete(uid)
+      }
+      return next
+    })
+  }
+
   function loadMoreMigratable() {
     if (!migrateNextPageToken || migrateLoading) return
     setMigrateLoading(true)
@@ -558,6 +569,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   users={migratableUsers}
                   selectedUids={migrateSelectedUids}
                   onToggle={toggleMigrateUid}
+                  onToggleMany={toggleMigrateUids}
                   filterText={migrateFilterText}
                   onFilterChange={setMigrateFilterText}
                   resolveRole={resolveMigrateRole}

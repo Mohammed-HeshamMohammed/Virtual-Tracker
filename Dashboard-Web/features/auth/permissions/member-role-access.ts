@@ -1,7 +1,11 @@
 import { NAV_SECTIONS } from "@/shared/ui/layout"
 
-/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js */
-const ROLE_PRIVILEGE_RANK: Record<string, number> = {
+/**
+ * Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js.
+ * Prototype-less so a role named "constructor" or "valueOf" misses instead of returning an
+ * Object.prototype member — every lookup here is `ROLE_PRIVILEGE_RANK[key] ?? <default>`.
+ */
+const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
   admin: 80,
@@ -12,11 +16,22 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   intern: 30,
   client: 20,
   viewer: 10,
-}
+})
+
+/**
+ * Misspelled role names that exist in older records — folded onto the canonical key
+ * so every policy check and rank lookup sees one spelling. Mirrors Backend
+ * `LEGACY_ROLE_KEY_ALIASES` in relation-sync.js.
+ */
+const LEGACY_ROLE_KEY_ALIASES = new Map([
+  ["supermanger", "supermanager"],
+  ["manger", "manager"],
+])
 
 /** Normalize role string for comparisons (lowercase, no spaces). */
 export function normalizeMemberRole(role: string): string {
-  return role.trim().toLowerCase().replace(/\s+/g, "")
+  const key = role.trim().toLowerCase().replace(/\s+/g, "")
+  return LEGACY_ROLE_KEY_ALIASES.get(key) ?? key
 }
 
 /** Intern / Employee / Team Lead. */
