@@ -22,7 +22,7 @@ import type { ProjectType } from "@/features/projects/api/project-api"
 import { ProjectTypePicker } from "@/features/projects/components/modals/project-type-picker"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
-import { getTeamMembers } from "@/features/teams/api/team-api"
+import { getTeamMembers, getTeams } from "@/features/teams/api/team-api"
 import {
   FORM_GRID,
   FORM_STACK,
@@ -37,7 +37,6 @@ import { SelectField } from "@/shared/ui/forms/select-field"
 import { Toggle } from "@/shared/ui/forms/toggle"
 import { AddProjectDynamicFields } from "@/features/projects/components/add-project-dynamic-fields"
 import { ProjectNamesPreviewButton } from "@/features/projects/components/project-names-preview-button"
-import { fetchUserTeams } from "@/features/projects/services/fetch-user-teams"
 import { ProjectModalSkeleton } from "@/features/projects/components/skeletons/project-modal-skeleton"
 import { getProjectBudgetFieldErrors, validateProjectBudgetFields, validateProjectNames, type ProjectBudgetFieldErrors } from "@/shared/validation/project-form"
 import { filterProjectFormMemberIds } from "@/features/projects/utils/project-form-member-filter"
@@ -496,7 +495,7 @@ export function ProjectModal({
   useEffect(() => {
     let cancelled = false
     const load = () => {
-      fetchUserTeams(user?.uid, user?.email ?? undefined)
+      getTeams()
         .then((teams) => {
           if (!cancelled) setAvailableTeams(teams)
         })

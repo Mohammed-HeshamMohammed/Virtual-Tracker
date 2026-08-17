@@ -1,8 +1,8 @@
 import type { MemberRole } from "@/features/members/models/member"
 import { normalizeMemberRole } from "@/features/auth/permissions/member-role-access"
 
-/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js */
-const ROLE_PRIVILEGE_RANK: Record<string, number> = {
+/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js (prototype-less — see that file). */
+const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
   admin: 80,
@@ -13,7 +13,7 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   intern: 30,
   client: 20,
   viewer: 10,
-}
+})
 
 export const ASSIGNABLE_ROLE_NAMES: MemberRole[] = [
   "Super Admin",

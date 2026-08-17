@@ -6,12 +6,16 @@ import { canCreateTransferRequests } from "../hierarchy/hierarchy-placement.js";
 import { hasHierarchyAssignmentRestriction } from "../hierarchy/hierarchy-placement.js";
 import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { enforcePrivilegedRoleGovernanceForMember } from "../members/services/privileged-role-governance.js";
+import { normalizeRoleKey } from "../members/services/relation-sync.js";
 
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 const ORG_TASK_CREATE_ROLES = new Set(["owner", "superadmin", "admin", "supermanager", "supermanger"]);
 
-/** Mirrors frontend ROLE_PRIVILEGE_RANK in member-role-access.ts */
-const ROLE_PRIVILEGE_RANK = {
+/**
+ * Mirrors frontend ROLE_PRIVILEGE_RANK in member-role-access.ts.
+ * Prototype-less — see `ROLE_PRIVILEGE_RANK` in relation-sync.js.
+ */
+const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
   admin: 80,
@@ -22,16 +26,15 @@ const ROLE_PRIVILEGE_RANK = {
   intern: 30,
   client: 20,
   viewer: 10,
-};
+});
 
 /**
+ * Delegates to the shared normalizer so legacy misspellings ("supermanger") fold onto
+ * the canonical key here too.
  * @param {string} roleName
  */
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  return normalizeRoleKey(String(roleName || ""));
 }
 
 /**
