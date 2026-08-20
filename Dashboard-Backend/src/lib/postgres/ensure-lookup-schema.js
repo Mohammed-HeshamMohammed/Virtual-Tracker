@@ -111,11 +111,18 @@ END $$`,
   // the next governance check.
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted BOOLEAN",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted_at TIMESTAMPTZ",
-  "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE LOWER(name) IN ('superadmin', 'owner')",
-  "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE LOWER(name) = 'admin'",
-  "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE LOWER(name) IN ('supermanager', 'supermanger', 'manager')",
-  "UPDATE roles SET hierarchy_level = 20,  is_management = false WHERE LOWER(name) IN ('employee', 'user')",
-  "UPDATE roles SET hierarchy_level = 10,  is_management = false WHERE LOWER(name) = 'client'",
+  // REGEXP_REPLACE(..., '\s+', '', 'g') strips whitespace before comparing -
+  // "Super Admin"/"Super Manager" have a space, so a plain LOWER(name) = 'superadmin'
+  // never matched them and these two roles sat at the hierarchy_level=10/is_management=false
+  // schema defaults forever. Every JS-side role check normalizes the same way
+  // (normalizeRoleKey), which is why this only broke SQL-native checks that read
+  // hierarchy_level/is_management straight from the DB (fn_can_actor_manage_target)
+  // while everything going through JS-side role-string logic looked fine.
+  "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') IN ('superadmin', 'owner')",
+  "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') = 'admin'",
+  "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') IN ('supermanager', 'supermanger', 'manager')",
+  "UPDATE roles SET hierarchy_level = 20,  is_management = false WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') IN ('employee', 'user')",
+  "UPDATE roles SET hierarchy_level = 10,  is_management = false WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') = 'client'",
   `CREATE TABLE IF NOT EXISTS role_permissions (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_id         UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
