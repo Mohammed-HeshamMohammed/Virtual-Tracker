@@ -38,6 +38,12 @@ export function isAdminLevelRole(roleName: string): boolean {
   return key === "admin" || key === "superadmin" || key === "owner"
 }
 
+/** Confidential-data gate (member emails): Owner/Super Admin only. Mirrors Backend field-policy.js. */
+export function isOwnerOrSuperAdminRole(roleName: string): boolean {
+  const key = normalizeMemberRole(roleName)
+  return key === "owner" || key === "superadmin"
+}
+
 export function isEmployeeRole(roleName: string): boolean {
   const key = normalizeMemberRole(roleName)
   return key === "intern" || key === "employee" || key === "teamlead"

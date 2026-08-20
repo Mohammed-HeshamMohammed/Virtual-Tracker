@@ -7,7 +7,7 @@ import { cn } from "@/shared/utils/utils"
 import { formatDateAdded } from "@/features/members/utils/member-utils"
 import { ALL_MEMBER_COLS } from "@/features/members/config/members-config"
 import type { Member, MemberPatchBody, MemberEntryAction } from "@/features/members/models/member"
-import { isOwnerRoleName, isAdminLevelRole } from "@/features/auth"
+import { isOwnerRoleName, isOwnerOrSuperAdminRole } from "@/features/auth"
 import { MEMBERS_TABLE_ROWS_PER_PAGE } from "@/features/members/config/ui-config"
 import {
   usePaginatedTable,
@@ -143,7 +143,7 @@ export function MembersTab({
 }) {
   const resolvedShowActionsColumn = showActionsColumn ?? canManage
   const showSelectColumn = canManage && enableBatchSelect
-  const canSeeEmails = isAdminLevelRole(actorRole)
+  const canSeeEmails = isOwnerOrSuperAdminRole(actorRole)
 
   function memberRoleName(member: Member): string {
     return member.role === "User" ? "Viewer" : (member.role_name || member.role || "")
