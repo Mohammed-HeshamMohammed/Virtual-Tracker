@@ -85,7 +85,10 @@ export function MigrateForm({
             <Checkbox
               checked={allInViewSelected}
               isDark={isDark}
-              onChange={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                e.stopPropagation()
+                onToggleMany(filtered.map((u) => u.uid), !allInViewSelected)
+              }}
             />
             <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               {allInViewSelected ? "Deselect all" : "Select all"}
@@ -134,8 +137,12 @@ export function MigrateForm({
                 <Checkbox
                   checked={checked}
                   isDark={isDark}
-                  // The row already toggles; stop here so one click isn't counted twice.
-                  onChange={(e) => e.stopPropagation()}
+                  // Row div also toggles on click; stop the bubble so a click on
+                  // the box itself doesn't toggle here and then again via the row.
+                  onChange={(e) => {
+                    e.stopPropagation()
+                    onToggle(u.uid)
+                  }}
                 />
                 <Avatar
                   initials={initialsFromName(displayName)}
