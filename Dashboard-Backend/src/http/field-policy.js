@@ -1,5 +1,5 @@
 import { isManagementRole } from "./auth-context.js";
-import { isAdminLevelRole } from "./role-hierarchy.js";
+import { isOwnerOrSuperAdminRole } from "./role-hierarchy.js";
 
 /** Fields that must never be returned unless the viewer is authorized. */
 const COMPENSATION_FIELDS = [
@@ -15,14 +15,14 @@ const COMPENSATION_FIELDS = [
   "currency",
 ];
 
-/** Email fields: Owner/Super Admin/Admin only (mirrors frontend member table gating). */
+/** Email fields: confidential — Owner/Super Admin only (mirrors frontend member table gating). */
 const EMAIL_FIELDS = ["email", "work_email", "personalEmail", "personal_email"];
 
-/** Emails: self always; Owner/Super Admin/Admin for others. */
+/** Emails: self always; Owner/Super Admin only for others. */
 export function canViewEmail(viewer, targetMemberId) {
   if (!viewer?.memberId) return false;
   if (targetMemberId && viewer.memberId === targetMemberId) return true;
-  return isAdminLevelRole(viewer.roleName);
+  return isOwnerOrSuperAdminRole(viewer.roleName);
 }
 
 /**

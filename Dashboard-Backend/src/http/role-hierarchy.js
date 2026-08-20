@@ -28,6 +28,14 @@ export function isAdminLevelRole(roleName) {
 /**
  * @param {string} roleName
  */
+export function isOwnerOrSuperAdminRole(roleName) {
+  const key = normalizeRoleKey(roleName);
+  return key === "owner" || key === "superadmin";
+}
+
+/**
+ * @param {string} roleName
+ */
 export function isDeactivationApprovalRole(roleName) {
   return isAdminLevelRole(roleName);
 }
