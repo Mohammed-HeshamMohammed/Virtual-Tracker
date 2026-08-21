@@ -182,7 +182,7 @@ export function AmountsOwedReport() {
 
   return (
     <div className="relative isolate min-h-0">
-      <div className="relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
+      <div className="report-print-area relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-x-4 lg:gap-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <div

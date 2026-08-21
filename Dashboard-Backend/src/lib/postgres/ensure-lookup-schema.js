@@ -105,6 +105,10 @@ END $$`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS desktop_agent_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS web_capture_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_source VARCHAR(20)",
+  // Edit-account page's "Time zone" field (profile-settings.js's
+  // syncMemberTimezoneForUid) - written straight to this column with no
+  // schema migration, so every save threw "column timezone does not exist".
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)",
   // Owner sign-off flag for Admin/Super Admin (privileged-role-governance.js) -
   // was never migrated as a real column, so it always read as false/null and
   // every privileged-role promotion (even by the Owner) got auto-banned on

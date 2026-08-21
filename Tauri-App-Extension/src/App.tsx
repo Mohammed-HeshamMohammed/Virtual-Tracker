@@ -108,6 +108,7 @@ function MainApp() {
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
+  const [paused, setPaused] = useState(false);
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
   const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
   const [liveWorkedTodaySeconds, setLiveWorkedTodaySeconds] = useState(0);
@@ -190,9 +191,15 @@ function MainApp() {
   const tracking =
     (session?.status || "").toLowerCase() === "active" ||
     (link?.status || "").toLowerCase().includes("active");
+  // A paused session reports status "idle" server-side (see handlePause), so
+  // `tracking` alone can't tell "on a break" apart from "no session at all" -
+  // this keeps the session's own UI (dropdowns, Start vs Pause/Resume) aware
+  // one is still open without letting active-time effects that key off
+  // `tracking` keep crediting active seconds through the break.
+  const sessionOpen = tracking || paused;
 
   const refresh = useCallback(async () => {
-    const [nextProfile, nextLink, nextSession, nextConnection, nextNotice] = await Promise.all([
+    const [nextProfile, nextLink, nextSession, nextConnection, nextNotice, nextPaused] = await Promise.all([
       invoke<ProfileInfo>("get_profile"),
       invoke<LinkStatus>("get_link_status"),
       invoke<SessionInfo>("get_session").catch(() => null),
@@ -202,10 +209,12 @@ function MainApp() {
       // one cycle. A failed fetch leaves the previous value in place rather
       // than clearing it - a network blip must not be read as "acknowledged".
       invoke<MonitoringNoticeView | null>("get_monitoring_notice").catch(() => undefined),
+      invoke<boolean>("is_session_paused").catch(() => false),
     ]);
     setProfile(nextProfile);
     setLink(nextLink);
     setConnection(nextConnection);
+    setPaused(nextPaused);
     if (nextSession) {
       setSession(nextSession);
       if (nextSession.taskId) {
@@ -851,9 +860,59 @@ function MainApp() {
         setSession(result.session);
         toast.message("Tracking session paused");
       }
+      setPaused(false);
       await refresh();
     } catch {
       const msg = "Could not stop session";
+      setActionError(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Break, not stop - the backend keeps the session's accumulated totals
+  // (mirrors handleStop's "idle" action but never resets/re-baselines them),
+  // and the tracker only credits idle time locally until handleResume.
+  const handlePause = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await invoke<ActionResult>("pause_session");
+      if (!result.success) {
+        const msg = result.error || "Could not pause session";
+        setActionError(msg);
+        toast.error(msg);
+      } else {
+        setPaused(true);
+        toast.message("On a break — time is now counting as idle");
+      }
+      await refresh();
+    } catch {
+      const msg = "Could not pause session";
+      setActionError(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleResume = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await invoke<ActionResult>("resume_session");
+      if (!result.success) {
+        const msg = result.error || "Could not resume session";
+        setActionError(msg);
+        toast.error(msg);
+      } else {
+        setPaused(false);
+        toast.success("Back to tracking");
+      }
+      await refresh();
+    } catch {
+      const msg = "Could not resume session";
       setActionError(msg);
       toast.error(msg);
     } finally {
@@ -1103,7 +1162,7 @@ function MainApp() {
   // token was rejected and there is no device credential, so get_profile still
   // renders the old user from JWT claims while every real call 401s. Without
   // this branch the home view looked normal and nothing offered a way out.
-  if ((connection === "disconnected" || staleSession) && !tracking && view === "home") {
+  if ((connection === "disconnected" || staleSession) && !sessionOpen && view === "home") {
     return (
       <WelcomeBackPanel
         profile={profile}
@@ -1223,13 +1282,15 @@ function MainApp() {
               <p className="signal-text">
                 {loadingProfile
                   ? "Checking your session…"
-                  : tracking
-                    ? `Tracking${trackingLabel ? ` · ${trackingLabel}` : ""}`
-                    : signedIn
-                      ? isCallingProject
-                        ? "Start when you’re ready"
-                        : "Select a task and start when you’re ready"
-                      : "Sign in to link this PC to your account"}
+                  : paused
+                    ? "On a break — time is counting as idle"
+                    : tracking
+                      ? `Tracking${trackingLabel ? ` · ${trackingLabel}` : ""}`
+                      : signedIn
+                        ? isCallingProject
+                          ? "Start when you’re ready"
+                          : "Select a task and start when you’re ready"
+                        : "Sign in to link this PC to your account"}
               </p>
             </div>
           </section>
@@ -1256,7 +1317,7 @@ function MainApp() {
                     options={projects.map((project) => ({ id: project.id, label: project.name }))}
                     placeholder="Select a project"
                     emptyLabel={projectsFailed ? "Couldn't load projects" : "No projects"}
-                    disabled={busy || tracking}
+                    disabled={busy || sessionOpen}
                     onChange={setSelectedProjectId}
                   />
                 </section>
@@ -1277,7 +1338,7 @@ function MainApp() {
                       options={tasks.map((task) => ({ id: task.id, label: task.title }))}
                       placeholder="Select a task"
                       emptyLabel="No assigned tasks"
-                      disabled={busy || tracking}
+                      disabled={busy || sessionOpen}
                       onChange={setSelectedTaskId}
                     />
                   </section>
@@ -1285,14 +1346,23 @@ function MainApp() {
               </div>
 
               <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
-                {tracking ? (
+                {paused ? (
                   <button
-                    className="btn btn-danger"
+                    className="btn btn-primary"
                     type="button"
                     disabled={busy}
-                    onClick={() => void handleStop()}
+                    onClick={() => void handleResume()}
                   >
-                    Stop tracking
+                    Resume tracking
+                  </button>
+                ) : tracking ? (
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handlePause()}
+                  >
+                    Take a break
                   </button>
                 ) : (
                   <button
@@ -1307,6 +1377,16 @@ function MainApp() {
                     onClick={() => void handleStart()}
                   >
                     Start tracking
+                  </button>
+                )}
+                {sessionOpen && (
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void handleStop()}
+                  >
+                    Stop tracking
                   </button>
                 )}
                 <button
@@ -1383,7 +1463,7 @@ function MainApp() {
                     {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
                   </span>
                   <span className="page-clock-label">
-                    {tracking ? "Elapsed · Tracking" : "Paused"}
+                    {tracking ? "Elapsed · Tracking" : paused ? "On a break" : "Paused"}
                     {timerViewMode === "task" ? " · whole task" : ""}
                   </span>
                   {!isCallingProject && taskTracking ? (

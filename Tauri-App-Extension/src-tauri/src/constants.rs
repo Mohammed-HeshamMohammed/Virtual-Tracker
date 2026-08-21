@@ -87,9 +87,13 @@ pub const IDLE_FLAG_STOP_SEC: u64 = 15 * 60;
 
 pub const TOKEN_REFRESH_BUFFER_MS: i64 = 120_000;
 
-/// Consecutive failed connection checks before the agent shows its recovery
-/// screen. Two, so a single dropped request never takes over the window.
-pub const CONNECTION_FAILURE_GRACE: u32 = 2;
+/// Consecutive failed connection checks (polled every 5s, see App.tsx) before
+/// the agent shows its recovery screen. Was 2 (~10s) - flipped to
+/// "Disconnected" on a single brief hiccup in the same token-refresh path
+/// that also (independently) stalls session syncs, showing the user a scary
+/// screen for something that was resolving itself within a few more seconds.
+/// 5 (~25s) still catches a real outage promptly.
+pub const CONNECTION_FAILURE_GRACE: u32 = 5;
 pub const MIN_TOKEN_LENGTH: usize = 20;
 
 pub const HTTP_TIMEOUT_SEC: u64 = 15;

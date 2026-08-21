@@ -5,10 +5,9 @@ import { CalendarClock } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import {
-  isActiveHourLimit,
   SHIFT_ALLOWANCE_COMING_SOON_MESSAGE,
   SHIFT_ALLOWANCE_LIMITS_ENABLED,
-  WORK_LIMITS_EXCLUSION_HINT,
+  validateWorkLimitsCombo,
 } from "@/shared/validation/work-limits"
 import { Toggle } from "@/shared/ui/toggle";
 import type { TabProps } from "@/features/members/components/modals/member-manage/types"
@@ -109,9 +108,12 @@ function LimitInput({
 
 export function WorkLimitsTab({ state, setState }: TabProps) {
   const selectedDays = state.workDays
-  const weeklyActive = isActiveHourLimit(state.weeklyLimit)
-  const dailyActive = isActiveHourLimit(state.dailyLimit)
-  const bothActive = weeklyActive && dailyActive
+  const comboError = validateWorkLimitsCombo(
+    state.weeklyLimit,
+    state.dailyLimit,
+    selectedDays.length,
+    state.useShiftsForLimits,
+  )
   const shiftsComingSoon = !SHIFT_ALLOWANCE_LIMITS_ENABLED
 
   const selectedDayLabels = WEEKDAYS.filter((d) => selectedDays.includes(d.index)).map((d) => d.label)
@@ -245,12 +247,8 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             suffix="hrs/wk"
             placeholder="No limit"
             value={state.weeklyLimit}
-            disabled={dailyActive && !weeklyActive}
             onChange={(weeklyLimit) => setState((s) => ({ ...s, weeklyLimit }))}
           />
-          {dailyActive && !weeklyActive ? (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{WORK_LIMITS_EXCLUSION_HINT}</p>
-          ) : null}
         </SectionCard>
 
         <SectionCard
@@ -263,18 +261,14 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             suffix="hrs/day"
             placeholder="No limit"
             value={state.dailyLimit}
-            disabled={weeklyActive && !dailyActive}
             onChange={(dailyLimit) => setState((s) => ({ ...s, dailyLimit }))}
           />
-          {weeklyActive && !dailyActive ? (
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">{WORK_LIMITS_EXCLUSION_HINT}</p>
-          ) : null}
         </SectionCard>
       </div>
 
-      {bothActive ? (
+      {comboError ? (
         <div className="rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-4 py-3 text-sm text-red-800 dark:text-red-300" role="alert">
-          {WORK_LIMITS_EXCLUSION_HINT}
+          {comboError}
         </div>
       ) : null}
     </div>

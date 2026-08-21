@@ -10,7 +10,7 @@ import {
   validatePayRate,
   validatePhoneField,
 } from "@/shared/validation"
-import { validateWorkLimitsMutualExclusion } from "@/shared/validation/work-limits"
+import { validateWorkLimitsCombo } from "@/shared/validation/work-limits"
 
 export type MemberFormValidationContext = {
   /** Saved role from member record (not in-form draft). */
@@ -62,9 +62,10 @@ export function validateMemberFormStateForTabs(
     allow.has("roles") && !state.role?.trim() ? "Role is required." : null,
     allow.has("roles") ? validateOwnerRoleChange(memberRole, state.role) : null,
     allow.has("workLimits")
-      ? validateWorkLimitsMutualExclusion(
+      ? validateWorkLimitsCombo(
           state.weeklyLimit,
           state.dailyLimit,
+          state.workDays.length,
           state.useShiftsForLimits,
         )
       : null,

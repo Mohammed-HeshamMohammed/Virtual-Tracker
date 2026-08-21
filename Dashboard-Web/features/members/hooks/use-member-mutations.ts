@@ -84,7 +84,11 @@ export function useMemberMutations({
     }
     if (payload.mode === "invites") {
       const result = await createInvitesBulk(
-        payload.rows.map((row) => ({ email: row.email, payRate: Number(row.payRate || 0) || undefined })),
+        payload.rows.map((row) => ({
+          email: row.email,
+          payRate: Number(row.payRate || 0) || undefined,
+          currency: row.currency || "USD",
+        })),
         payload.role as any,
         { appOrigin: typeof window !== "undefined" ? window.location.origin : undefined, createdByUid: user?.uid },
       )

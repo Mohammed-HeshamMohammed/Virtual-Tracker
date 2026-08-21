@@ -413,7 +413,7 @@ export async function routeProjects(req, res, url, db, origin) {
               : budget && budget.stopTimersAtPct != null
                 ? String(budget.stopTimersAtPct)
                 : "",
-          budgetStartDate: budget ? toIso(budget.start_date || budget.startDate) : "",
+          budgetStartDate: budget ? toIso(budget.start_date || budget.startDate).slice(0, 10) : "",
           budgetIncludeNonBillable: budget
             ? Boolean(budget.include_non_billable_time ?? budget.includeNonBillableTime ?? true)
             : true,
@@ -423,7 +423,7 @@ export async function routeProjects(req, res, url, db, origin) {
           memberLimitType: limit ? String(limit.type || "") : "",
           memberLimitBasedOn: limit ? String(limit.based_on || limit.basedOn || "") : "",
           memberLimitResets: limit ? String(limit.resets || "Never") : "Never",
-          memberLimitStartDate: limit ? toIso(limit.start_date || limit.startDate) : "",
+          memberLimitStartDate: limit ? toIso(limit.start_date || limit.startDate).slice(0, 10) : "",
           memberLimitNotifyAt:
             limit && limit.notify_at_pct != null
               ? String(limit.notify_at_pct)
@@ -964,7 +964,9 @@ export async function routeProjects(req, res, url, db, origin) {
             body.stop_timers_when_reached ?? body.stopTimersWhenReached ?? current?.stop_timers_when_reached,
           stopTimersAtPct: body.stop_timers_at_pct ?? body.stopTimersAtPct ?? current?.stop_timers_at_pct,
           resets: body.resets ?? current?.resets,
-          startDate: body.start_date ?? body.startDate ?? current?.start_date,
+          // "start_date" in body (not ??) - an explicit null means "clear
+          // it", which ?? can't distinguish from "key wasn't sent at all".
+          startDate: "start_date" in body ? body.start_date : body.startDate ?? current?.start_date,
           includeNonBillableTime:
             body.include_non_billable_time ?? body.includeNonBillableTime ?? current?.include_non_billable_time,
         },

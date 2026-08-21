@@ -868,12 +868,19 @@ impl AgentController {
     }
 
     pub fn stop_session(&self) -> ActionResult {
-        let (task_id, active_seconds, idle_seconds) = self
-            .tracker
-            .lock()
+        let tracker = self.tracker.lock();
+        let (task_id, active_seconds, idle_seconds) = tracker
             .as_ref()
             .map(|t| t.current_task_progress())
             .unwrap_or((None, 0, 0));
+        // TC-Y: this posts "stop" straight to the API, bypassing the tick
+        // loop entirely - without this flag the next tick finds the session
+        // gone and try_recover_lost_session (agent/tracker.rs) mistakes the
+        // user's own Stop for a server-side abandonment and resumes it.
+        if let Some(tracker) = tracker.as_ref() {
+            tracker.note_stop_requested();
+        }
+        drop(tracker);
         match self
             .api
             .lock()
@@ -893,6 +900,35 @@ impl AgentController {
                 session: None,
             },
         }
+    }
+
+    /// The break button: marks the session idle (preserving its accumulated
+    /// totals, unlike `stop_session`) and tells the tick loop to stop
+    /// counting active time until `resume_session`.
+    pub fn pause_session(&self) -> ActionResult {
+        let tracker = self.tracker.lock();
+        let Some(tracker) = tracker.as_ref() else {
+            return ActionResult { success: false, error: Some("No active session".into()), session: None };
+        };
+        match tracker.pause() {
+            Ok(()) => ActionResult { success: true, error: None, session: None },
+            Err(error) => ActionResult { success: false, error: Some(error), session: None },
+        }
+    }
+
+    pub fn resume_session(&self) -> ActionResult {
+        let tracker = self.tracker.lock();
+        let Some(tracker) = tracker.as_ref() else {
+            return ActionResult { success: false, error: Some("No active session".into()), session: None };
+        };
+        match tracker.resume() {
+            Ok(()) => ActionResult { success: true, error: None, session: None },
+            Err(error) => ActionResult { success: false, error: Some(error), session: None },
+        }
+    }
+
+    pub fn is_session_paused(&self) -> bool {
+        self.tracker.lock().as_ref().is_some_and(|t| t.is_paused())
     }
 
     /// Whether closing the window should hide it instead of quitting.

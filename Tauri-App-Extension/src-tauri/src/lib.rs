@@ -294,6 +294,24 @@ async fn stop_session(state: tauri::State<'_, AppState>) -> Result<ActionResult,
     Ok(run_blocking(move || controller.stop_session()).await)
 }
 
+#[tauri::command]
+async fn pause_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.pause_session()).await)
+}
+
+#[tauri::command]
+async fn resume_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.resume_session()).await)
+}
+
+#[tauri::command]
+async fn is_session_paused(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.is_session_paused()).await)
+}
+
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
@@ -488,6 +506,9 @@ pub fn run() {
             get_connection_state,
             reconnect,
             stop_session,
+            pause_session,
+            resume_session,
+            is_session_paused,
         ])
         .setup(move |app| {
             // Dev builds and Linux have no installer to write the OS-level

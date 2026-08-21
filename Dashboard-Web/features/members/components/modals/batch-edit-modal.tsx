@@ -9,6 +9,9 @@ import type { Member } from "@/features/members/models/member"
 import { isOwnerRoleName } from "@/features/auth"
 import { WorkLimitsTab } from "@/features/members/components/modals/member-manage/tabs/work-limits-tab"
 import { initialFormState, type MemberFormState } from "@/features/members/components/modals/member-manage/types"
+import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
+
+const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 
 export type BatchEditAction =
   | "payRate"
@@ -75,11 +78,12 @@ export function BatchEditModal({
   onConfirm: (payload: {
     action: BatchEditAction
     value?: string
-    payBill?: { payRate?: string; payPeriod?: string }
+    payBill?: { payRate?: string; currency?: string; payPeriod?: string }
     workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) => Promise<void>
 }) {
   const [value, setValue] = useState("")
+  const [currency, setCurrency] = useState("USD")
   const [workLimitsState, setWorkLimitsState] = useState<MemberFormState>(initialFormState)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -99,6 +103,7 @@ export function BatchEditModal({
   useEffect(() => {
     if (!open) return
     setValue("")
+    setCurrency("USD")
     setWorkLimitsState(initialFormState)
     setError(null)
     setBusy(false)
@@ -135,7 +140,7 @@ export function BatchEditModal({
         return
       }
       if (action === "payRate" || action === "billRate") {
-        await onConfirm({ action, payBill: { payRate: value.trim() } })
+        await onConfirm({ action, payBill: { payRate: value.trim(), currency } })
       } else if (action === "payPeriod") {
         await onConfirm({ action, payBill: { payPeriod: value || "None" } })
       } else if (action === "workTimeLimits") {
@@ -235,23 +240,28 @@ export function BatchEditModal({
               htmlFor="batch-edit-value"
               className={cn("mb-1 block text-xs font-semibold uppercase tracking-wide", isDark ? "text-[#bccbb9]" : "text-slate-500")}
             >
-              Hourly rate (USD)
+              Hourly rate
             </label>
-            <input
-              id="batch-edit-value"
-              type="number"
-              min={0}
-              step={0.01}
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2",
-                isDark
-                  ? "border-[#3d4a3d]/40 bg-[#191f31] text-[#dce1fb] focus:ring-[#4be277]/40"
-                  : "border-slate-200 bg-white text-slate-900 focus:ring-blue-500/30",
-              )}
-              disabled={busy}
-            />
+            <div className="flex gap-2">
+              <input
+                id="batch-edit-value"
+                type="number"
+                min={0}
+                step={0.01}
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className={cn(
+                  "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2",
+                  isDark
+                    ? "border-[#3d4a3d]/40 bg-[#191f31] text-[#dce1fb] focus:ring-[#4be277]/40"
+                    : "border-slate-200 bg-white text-slate-900 focus:ring-blue-500/30",
+                )}
+                disabled={busy}
+              />
+              <div className="w-24 shrink-0">
+                <SimpleSelect value={currency} onChange={setCurrency} options={PAY_RATE_CURRENCY_VALUES} disabled={busy} />
+              </div>
+            </div>
           </div>
         )}
 

@@ -82,14 +82,16 @@ export const ALL_PROJECT_COLS = [
   { key: "members", label: "Members" },
   { key: "todos", label: "To-dos" },
   { key: "budget", label: "Budget" },
+  { key: "remaining", label: "Remaining" },
+  { key: "spent", label: "Spent" },
   { key: "member_limits", label: "Member limits" },
 ] as const
 
 export const DEFAULT_PROJECT_COL_ORDER = ALL_PROJECT_COLS.map((c) => c.key)
 export const DEFAULT_ENABLED_PROJECT_COLS = new Set<string>(DEFAULT_PROJECT_COL_ORDER)
 
-export const PROJECT_COL_AUTO_HIDE_PRIORITY = ["member_limits", "budget", "todos", "members", "teams"] as const
-export const PROJECT_COL_MIN_WIDTH: Record<string, number> = { teams: 120, members: 96, todos: 96, budget: 140, member_limits: 120 }
+export const PROJECT_COL_AUTO_HIDE_PRIORITY = ["member_limits", "spent", "remaining", "budget", "todos", "members", "teams"] as const
+export const PROJECT_COL_MIN_WIDTH: Record<string, number> = { teams: 120, members: 96, todos: 96, budget: 140, remaining: 110, spent: 110, member_limits: 120 }
 export const PROJECT_NAME_COL_MIN_WIDTH = 260
 export const PROJECT_SELECT_COL_WIDTH = 52
 export const PROJECT_ACTIONS_COL_WIDTH = 52

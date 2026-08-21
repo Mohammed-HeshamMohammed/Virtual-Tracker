@@ -3,7 +3,10 @@
 import { X } from "lucide-react"
 import { MAX_INVITES_PER_SUBMIT } from "@/features/members/config/members-config"
 import { SimpleSelect } from "@/shared/ui/simple-select";
+import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
 import type { MemberRole, InviteFormRow } from "@/features/members/models/member"
+
+const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 
 interface InviteFormProps {
   inviteRows: InviteFormRow[]
@@ -11,7 +14,7 @@ interface InviteFormProps {
   roleOptions: MemberRole[]
   onAddRow: () => void
   onRemoveRow: (index: number) => void
-  onUpdateRow: (i: number, field: "email" | "payRate", val: string) => void
+  onUpdateRow: (i: number, field: "email" | "payRate" | "currency", val: string) => void
   onRoleChange: (role: MemberRole) => void
 }
 
@@ -48,7 +51,7 @@ export function InviteForm({
                 className={inputCls}
               />
             </div>
-            <div className="w-[152px] shrink-0">
+            <div className="w-[180px] shrink-0">
               {i === 0 && (
                 <label htmlFor={`invite-pay-rate-${i}`} className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1.5 block">
                   PAY RATE
@@ -65,9 +68,14 @@ export function InviteForm({
                   aria-label={i === 0 ? undefined : "Pay rate"}
                   className="peer flex-1 min-w-0 px-2.5 py-2 border border-r-0 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-l-lg text-xs placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-400 dark:focus:border-emerald-500 transition-colors"
                 />
-                <span className="px-2.5 py-2 bg-slate-100 dark:bg-slate-700 border-l-0 border border-slate-200 dark:border-slate-700 rounded-r-lg text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap peer-focus:border-blue-400 dark:peer-focus:border-emerald-500 peer-focus:border-l-0 transition-colors">
-                  USD/hr
-                </span>
+                <div className="w-20 shrink-0">
+                  <SimpleSelect
+                    value={row.currency || "USD"}
+                    onChange={(v) => onUpdateRow(i, "currency", v)}
+                    options={PAY_RATE_CURRENCY_VALUES}
+                    className="rounded-l-none"
+                  />
+                </div>
               </div>
             </div>
             <div className="w-8 shrink-0">

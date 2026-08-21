@@ -34,6 +34,17 @@ pub struct ActivityTracker {
     progress: ProgressStore,
     on_status: Option<StatusCallback>,
     stop: Arc<AtomicBool>,
+    /// Set by `pause()`/cleared by `resume()`. While true, `tick()` skips its
+    /// normal fetch_session/status handling entirely (see `tick_paused`) -
+    /// crediting only idle time and periodically re-syncing to keep the
+    /// paused session from being swept up as abandoned.
+    paused: Arc<AtomicBool>,
+    /// Set by `note_stop_requested()` (called from `AppController::stop_session`,
+    /// which posts "stop" straight to the API without going through the tick
+    /// loop). Consumed once by the next `session is None` tick so a
+    /// user-initiated stop is never mistaken for the server abandoning the
+    /// session out from under the agent - see `try_recover_lost_session`.
+    expect_stop: Arc<AtomicBool>,
     session_id: Arc<Mutex<Option<String>>>,
     /// Task currently being tracked plus the cumulative active/idle seconds
     /// worked on it so far (server baseline at session/task start + elapsed
@@ -99,6 +110,11 @@ struct TickState {
     current_session: String,
     next_flush_at: Instant,
     task_id: String,
+    /// Last-seen project id for a task-less (calling project) session - not
+    /// carried on the session JSON when it goes missing, so this is the only
+    /// way a recovery resume (see try_recover_lost_session) knows what to
+    /// resume against.
+    last_project_id: String,
     active_baseline: u64,
     active_elapsed: u64,
     idle_baseline: u64,
@@ -135,6 +151,7 @@ impl TickState {
             current_session: String::new(),
             next_flush_at: now,
             task_id: String::new(),
+            last_project_id: String::new(),
             active_baseline: 0,
             active_elapsed: 0,
             idle_baseline: 0,
@@ -177,6 +194,8 @@ impl ActivityTracker {
             progress: ProgressStore::new(settings.progress_path.clone()),
             on_status,
             stop: Arc::new(AtomicBool::new(false)),
+            paused: Arc::new(AtomicBool::new(false)),
+            expect_stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
             idle_stage: Arc::new(Mutex::new(0)),
@@ -227,6 +246,44 @@ impl ActivityTracker {
         // process exit.
         self.activity.stop();
         *self.session_id.lock() = None;
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::SeqCst)
+    }
+
+    /// Call right before/after telling the backend to stop the session
+    /// outside the tick loop (e.g. the Stop button), so the next tick's
+    /// now-missing session reads as an intentional stop, not an abandonment
+    /// to recover from.
+    pub fn note_stop_requested(&self) {
+        self.expect_stop.store(true, Ordering::SeqCst);
+    }
+
+    /// The break button: marks the session idle server-side, preserving its
+    /// accumulated active/idle totals (never resets to 0 the way clicking
+    /// Stop then Start again used to). Nothing is tracked while paused - see
+    /// `tick_paused` for how the idle time itself gets credited and synced.
+    pub fn pause(&self) -> Result<(), String> {
+        let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
+        let task_id = task_id.filter(|id| !id.is_empty());
+        self.api
+            .lock()
+            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds)?;
+        self.paused.store(true, Ordering::SeqCst);
+        self.emit_status("Timer paused — on a break");
+        Ok(())
+    }
+
+    pub fn resume(&self) -> Result<(), String> {
+        let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
+        let task_id = task_id.filter(|id| !id.is_empty());
+        self.api
+            .lock()
+            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds)?;
+        self.paused.store(false, Ordering::SeqCst);
+        self.emit_status("Task session active");
+        Ok(())
     }
 
     /// The session currently being tracked, if any — used to cleanly close it
@@ -346,6 +403,14 @@ impl ActivityTracker {
             return;
         }
 
+        // Break in progress: skip fetch_session/status handling entirely so
+        // the server's "idle" status (set by `pause()`) never gets read back
+        // as "session over" and reset - see `tick_paused`.
+        if self.paused.load(Ordering::SeqCst) {
+            self.tick_paused(state);
+            return;
+        }
+
         // Bound to a `let` on purpose, same reasoning as
         // `AgentController::sign_in_with_password`'s `session_bootstrap` call:
         // a temporary `MutexGuard` created inside a `match` scrutinee lives
@@ -394,6 +459,20 @@ impl ActivityTracker {
             }
         };
         let Some(session) = session else {
+            // TC-X: the server can close a session out from under the agent
+            // (abandoned-session sweep, ~90s of missed syncs - see
+            // Dashboard-Backend's agent-heartbeat.js) after a brief
+            // auth/network hiccup that has nothing to do with the user
+            // actually stopping. tick_progress runs off wall-clock, not the
+            // network, so the local counters kept climbing the whole time -
+            // discarding them here (the old behavior) silently threw away
+            // real, worked, tracked time. Try to resume with the local total
+            // carried forward before giving up.
+            let stop_was_requested = self.expect_stop.swap(false, Ordering::SeqCst);
+            if !stop_was_requested && self.try_recover_lost_session(state) {
+                self.emit_status("Task session active");
+                return;
+            }
             if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
@@ -561,6 +640,9 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        if !session_project_id.is_empty() {
+            state.last_project_id = session_project_id.clone();
+        }
 
         if self.tick_idle_escalation(
             &mut state.idle_watch,
@@ -882,6 +964,85 @@ impl ActivityTracker {
                 active_seconds,
                 idle_seconds,
             });
+        }
+    }
+
+    /// While paused, credits the whole wall-clock delta to idle (a break is
+    /// not activity) and periodically re-syncs so the paused session's
+    /// `updated_at` stays fresh enough to survive the abandoned-session sweep
+    /// (SESSION_STALE_MS in Dashboard-Backend's agent-heartbeat.js) through a
+    /// long break. Does not touch `status` — `pause()` already set it to
+    /// "idle" server-side; a bare "sync" here just keeps the timestamp alive.
+    fn tick_paused(&self, state: &mut TickState) {
+        let now = Instant::now();
+        let delta = Self::credited_seconds(now.duration_since(state.last_tick_at));
+        state.last_tick_at = now;
+        state.idle_elapsed += delta;
+        self.set_task_progress(
+            &state.task_id,
+            state.active_baseline + state.active_elapsed,
+            state.idle_baseline + state.idle_elapsed,
+        );
+        if now >= state.next_sync_at {
+            let task_id = (!state.task_id.is_empty()).then(|| state.task_id.as_str());
+            let project_id = (!state.last_project_id.is_empty()).then(|| state.last_project_id.as_str());
+            let _ = self.api.lock().post_session_action(
+                "sync",
+                task_id,
+                project_id,
+                state.active_baseline + state.active_elapsed,
+                state.idle_baseline + state.idle_elapsed,
+            );
+            state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
+        }
+    }
+
+    /// Attempts to resume a session the server closed as abandoned, carrying
+    /// the local unsynced total (baseline + elapsed) forward as the new
+    /// session's starting point instead of losing it. Returns false (caller
+    /// falls back to a full reset) when there is nothing local worth saving,
+    /// or the resume call itself fails - a network blip here just means the
+    /// next tick's fetch_session() finds still-no-session and tries again
+    /// naturally, rather than this method needing its own retry loop.
+    fn try_recover_lost_session(&self, state: &mut TickState) -> bool {
+        if !state.was_active || state.current_session.is_empty() {
+            return false;
+        }
+        let has_task = !state.task_id.is_empty();
+        let has_project = !state.last_project_id.is_empty();
+        if !has_task && !has_project {
+            return false;
+        }
+        let active_total = state.active_baseline + state.active_elapsed;
+        let idle_total = state.idle_baseline + state.idle_elapsed;
+        if active_total == 0 && idle_total == 0 {
+            return false;
+        }
+        let task_id = has_task.then(|| state.task_id.as_str());
+        let project_id = has_project.then(|| state.last_project_id.as_str());
+        match self
+            .api
+            .lock()
+            .post_session_action("start", task_id, project_id, active_total, idle_total)
+        {
+            Ok(info) => {
+                log::warn!(
+                    "Recovered a session the server closed as abandoned - resumed with {active_total}s active / {idle_total}s idle carried forward"
+                );
+                state.current_session = info.id.unwrap_or_default();
+                *self.session_id.lock() = Some(state.current_session.clone());
+                state.active_baseline = active_total;
+                state.active_elapsed = 0;
+                state.idle_baseline = idle_total;
+                state.idle_elapsed = 0;
+                state.last_tick_at = Instant::now();
+                state.next_sync_at = Instant::now() + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
+                true
+            }
+            Err(err) => {
+                log::warn!("Could not recover abandoned session (will retry next tick): {err}");
+                false
+            }
         }
     }
 

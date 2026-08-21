@@ -18,6 +18,7 @@ type AccountFormProps = {
   onPhoneVerificationChange: (token: string | null, verified: boolean) => void
   phoneInitiallyVerified: boolean
   payRateDisplay: string
+  payRateCurrency?: string
   isDark: boolean
   emailInputRef: RefObject<HTMLInputElement | null>
   phoneVerifyRef: RefObject<PhoneVerifyControlHandle | null>
@@ -36,6 +37,7 @@ export function AccountForm({
   onPhoneVerificationChange,
   phoneInitiallyVerified,
   payRateDisplay,
+  payRateCurrency = "USD",
   isDark,
   emailInputRef,
   phoneVerifyRef,
@@ -142,7 +144,7 @@ export function AccountForm({
                 isDark ? "border-white/10 text-[#bccbb9]" : "border-slate-200 text-slate-500",
               )}
             >
-              USD/hr
+              {payRateCurrency}/hr
             </span>
           </div>
           <p className={cn("mt-1.5 text-xs", muted)}>Set by your manager — not editable here.</p>

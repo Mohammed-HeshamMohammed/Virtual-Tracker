@@ -87,11 +87,11 @@ export interface OnboardingMember {
   trackedTime: boolean
 }
 
-export type InviteFormRow = { email: string; payRate: string }
+export type InviteFormRow = { email: string; payRate: string; currency: string }
 /** Sent to API (member display name). */
-export type AccountFormRow = { name: string; email: string; payRate: string }
+export type AccountFormRow = { name: string; email: string; payRate: string; currency: string }
 /** Local fields for create-account modal. */
-export type AccountFormFields = { firstName: string; lastName: string; email: string; payRate: string }
+export type AccountFormFields = { firstName: string; lastName: string; email: string; payRate: string; currency: string }
 
 /** Firebase Auth user not yet linked to a `members` row (Migrate tab candidate). Joined with their mobile-app Firestore profile. */
 export type MigratableAuthUser = {
@@ -169,6 +169,6 @@ export type MemberEntryAction =
   | "remove-from-tree"
   | "remove-member"
 
-export type InvitePatchBody = { email?: string; payRate?: number; weeklyLimit?: string; role?: MemberRole }
+export type InvitePatchBody = { email?: string; payRate?: number; currency?: string; weeklyLimit?: string; role?: MemberRole }
 
 export type InviteRowAction = "resend-email" | "copy-link" | "renew" | "edit" | "delete"

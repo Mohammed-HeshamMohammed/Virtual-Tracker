@@ -19,7 +19,7 @@ export function formatHoursLabel(totalHours: number): string {
 export function formatProjectBudget(n: number, type: "hours" | "cost" = "cost") {
   if (type === "hours") return formatHoursLabel(n)
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
-  return `$${n}`
+  return `$${n.toFixed(2)}`
 }
 
 export function BudgetBar({

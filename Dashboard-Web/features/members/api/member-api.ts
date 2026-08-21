@@ -8,6 +8,7 @@ import { MANAGE_MODAL_TABS } from "@/features/members/config/members-config"
 import type { MemberManageTab } from "@/features/members/models/member"
 import { writeMemberProfileCache, peekMemberProfileCache } from "@/features/members/services/member-profile-cache"
 import { isEmailLikeNamePart } from "@/shared/validation/person-name"
+import { formatPayRateDisplay } from "@/features/members/config/pay-currencies"
 
 
 /** Make invite URLs absolute for clipboard/share (backend may return path-only). */
@@ -54,9 +55,11 @@ function formatPaymentFromRecord(input: Record<string, unknown>): string {
   if (typeof input.payment === "string" && input.payment.trim()) return input.payment
   const rate = asNumber(input.pay_rate ?? input.payRate)
   const period = asString(input.pay_period ?? input.payPeriod)
+  const currency = asString(input.currency, "USD") || "USD"
   if (rate <= 0) return ""
-  if (period && period !== "None") return `$${rate} (${period})`
-  return `$${rate}/hr`
+  const amount = currency === "USD" ? `$${rate}` : `${rate} ${currency}`
+  if (period && period !== "None") return `${amount} (${period})`
+  return `${amount}/hr`
 }
 
 function formatLimitsFromRecord(input: Record<string, unknown>): string {
@@ -212,7 +215,11 @@ function normalizeInvite(input: Partial<Invite> & Record<string, unknown>): Invi
     role: role || (asString(input.role, "User") as MemberRole),
     teams: asString(input.teams) || "",
     projects: projectCount,
-    payment: asString(input.payment) || (typeof pay === "number" ? `$${pay}/hr` : "$0/hr"),
+    payment:
+      asString(input.payment) ||
+      (typeof pay === "number" && pay > 0
+        ? formatPayRateDisplay(pay, asString(input.currency, "USD") || "USD")
+        : "$0/hr"),
     weeklyLimit: asString(input.weeklyLimit || input.weekly_limit) || "",
     status,
     listKind,
@@ -435,7 +442,7 @@ export async function deleteMember(id: string): Promise<void> {
 }
 
 export type BatchMemberUpdatePayload = {
-  payBill?: { payRate?: string; payPeriod?: string }
+  payBill?: { payRate?: string; currency?: string; payPeriod?: string }
   workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
 }
 
@@ -511,7 +518,7 @@ export type MemberProfilePayload = {
   }
   employment?: Record<string, unknown>
   roles?: { role?: MemberRole }
-  payBill?: { paySegment?: string; payRate?: string; payPeriod?: string }
+  payBill?: { paySegment?: string; payRate?: string; currency?: string; payPeriod?: string }
   workLimits?: {
     weeklyLimit?: string
     dailyLimit?: string
@@ -547,6 +554,7 @@ export type MemberProfileForm = MemberProfilePayload["info"] &
     lastIp: string
     role: MemberRole
     payRate: string
+    currency: string
     paySegment: "pay" | "bill"
     payPeriod: string
     weeklyLimit: string
@@ -750,6 +758,7 @@ export interface CreateInviteInput {
   role: MemberRole
   projects?: string[]
   payRate?: number
+  currency?: string
   weeklyLimit?: string
 }
 
@@ -759,6 +768,7 @@ async function createInvite(data: CreateInviteInput, createdBy?: string): Promis
     role: data.role,
     projects: data.projects || [],
     payRate: data.payRate,
+    currency: data.currency,
     weeklyLimit: data.weeklyLimit,
     createdBy,
   }
@@ -782,6 +792,7 @@ export async function updateInvite(id: string, data: Partial<CreateInviteInput>,
     payload.role = data.role
   }
   if (data.payRate !== undefined) payload.pay_rate = data.payRate
+  if (data.currency !== undefined) payload.currency = data.currency
   if (data.weeklyLimit !== undefined) payload.weekly_limit = data.weeklyLimit
 
   const res = await apiFetch(apiPath(`/api/invites/${id}`), {
@@ -813,7 +824,7 @@ export type CreateInvitesBulkResult = {
 }
 
 export async function createInvitesBulk(
-  rows: Array<{ email: string; payRate?: number }>,
+  rows: Array<{ email: string; payRate?: number; currency?: string }>,
   role: MemberRole,
   options: CreateInvitesBulkOptions = {},
 ): Promise<CreateInvitesBulkResult> {

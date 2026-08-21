@@ -13,6 +13,9 @@ import { SimpleDatePicker } from "@/shared/ui/simple-date-picker";
 import { SimpleSelect } from "@/shared/ui/simple-select";
 import { Toggle } from "@/shared/ui/toggle";
 import type { TabProps } from "@/features/members/components/modals/member-manage/types"
+import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
+
+const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 
 function SectionCard({
   title,
@@ -83,10 +86,17 @@ export function PayBillTab({ member, state, setState }: TabProps) {
                   className={cn(MODAL_INPUT, "rounded-r-none border-r-0", !isPay && "bg-slate-50 dark:bg-slate-800/60")}
                   aria-label={isPay ? "Pay rate" : "Bill rate"}
                 />
-                <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-3 text-xs font-medium text-slate-500 dark:text-slate-400">
-                  USD/hr
-                </span>
+                <div className="w-24 shrink-0">
+                  <SimpleSelect
+                    value={state.currency || "USD"}
+                    onChange={(v) => setState((s) => ({ ...s, currency: v }))}
+                    options={PAY_RATE_CURRENCY_VALUES}
+                    disabled={!isPay}
+                    className="rounded-l-none"
+                  />
+                </div>
               </div>
+              <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">Rate is hourly.</p>
             </div>
             <div>
               <span className={MODAL_LABEL}>Pay period</span>
