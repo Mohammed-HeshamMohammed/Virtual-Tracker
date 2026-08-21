@@ -6,7 +6,7 @@ import { motion } from "framer-motion"
 import { cn } from "@/shared/utils/utils"
 
 export function fmt$(n: number) {
-  return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n}`
+  return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(2)}`
 }
 
 export function fmtBudget(n: number, type: "hours" | "cost" = "cost") {

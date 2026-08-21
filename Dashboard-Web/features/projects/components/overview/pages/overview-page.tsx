@@ -71,7 +71,7 @@ export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: st
         {/* Above the fold: stats + projects table fill viewport */}
         <section className="flex min-h-full flex-col gap-4">
           <motion.div className="shrink-0" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-            <SummaryStats summary={core.summary} isDark={isDark} />
+            <SummaryStats summary={core.summary} isDark={isDark} onNavigate={onNavigate} />
           </motion.div>
 
           <motion.div

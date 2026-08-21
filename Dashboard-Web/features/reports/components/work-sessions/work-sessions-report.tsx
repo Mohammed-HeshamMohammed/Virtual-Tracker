@@ -224,8 +224,8 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
 
   return (
     <div className="relative isolate min-h-0">
-      <div className="relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
-        
+      <div className="report-print-area relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
+
         <h1 className="text-2xl font-semibold text-slate-800">Work sessions report</h1>
 
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-x-4">

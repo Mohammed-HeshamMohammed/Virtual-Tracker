@@ -14,6 +14,7 @@ import {
   type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
+import { getMembers } from "@/features/members/api/member-api"
 
 const DEFAULT_PERIOD_COLS = [
   "client",
@@ -157,7 +158,23 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
   const [sortKey, setSortKey] = useState<string>("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
-  const memberFilterOptions = useMemo(() => getMemberFilterOptions(memberRows), [memberRows])
+  const [rosterNames, setRosterNames] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    getMembers({ fields: ["name"], singlePage: true, limit: 500 })
+      .then((members) => {
+        if (cancelled) return
+        setRosterNames(members.map((m) => m.name).filter(Boolean))
+      })
+      .catch(() => {
+        // Filter falls back to whoever has activity in-range - not fatal.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const memberFilterOptions = useMemo(() => getMemberFilterOptions(memberRows, rosterNames), [memberRows, rosterNames])
   const projectFilterOptions = useMemo(() => getProjectFilterOptions(memberRows), [memberRows])
 
   const displayRows = useMemo(() => {

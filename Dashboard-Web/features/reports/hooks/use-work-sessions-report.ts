@@ -11,6 +11,7 @@ import {
 } from "@/features/reports/utils/work-sessions"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
 import { fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
+import { getMembers } from "@/features/members/api/member-api"
 import type {
   WorkSessionColumnKey,
   WorkSessionGroupBy,
@@ -73,11 +74,29 @@ export function useWorkSessionsReport() {
     return [...s].sort()
   }, [rows])
 
+  const [rosterNames, setRosterNames] = useState<string[]>([])
+  useEffect(() => {
+    let cancelled = false
+    getMembers({ fields: ["name"], singlePage: true, limit: 500 })
+      .then((members) => {
+        if (cancelled) return
+        setRosterNames(members.map((m) => m.name).filter(Boolean))
+      })
+      .catch(() => {
+        // Filter falls back to whoever has sessions in-range - not fatal.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Union with the roster: rows alone miss anyone with zero sessions in the
+  // selected date range, leaving nothing to pick in the dropdown.
   const memberOptions = useMemo(() => {
-    const s = new Set<string>()
+    const s = new Set<string>(rosterNames)
     rows.forEach((r) => s.add(r.memberName))
     return [...s].sort()
-  }, [rows])
+  }, [rows, rosterNames])
 
   const filteredRows = useMemo(
     () =>

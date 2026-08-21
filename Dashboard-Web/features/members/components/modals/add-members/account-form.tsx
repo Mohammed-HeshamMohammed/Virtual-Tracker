@@ -2,7 +2,10 @@
 
 import { SimpleSelect } from "@/shared/ui/simple-select";
 import { Toggle } from "@/shared/ui/toggle";
+import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
 import type { MemberRole, AccountFormFields } from "@/features/members/models/member"
+
+const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 
 interface AccountFormProps {
   form: AccountFormFields
@@ -74,17 +77,26 @@ export function AccountForm({
         </div>
         <div>
           <label htmlFor="add-member-pay-rate" className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-            PAY RATE (USD/HR)
+            PAY RATE (PER HOUR)
           </label>
-          <input
-            id="add-member-pay-rate"
-            name="payRate"
-            type="number"
-            value={form.payRate}
-            onChange={(e) => onUpdateField("payRate", e.target.value)}
-            placeholder="0.00"
-            className={inputCls}
-          />
+          <div className="flex gap-2">
+            <input
+              id="add-member-pay-rate"
+              name="payRate"
+              type="number"
+              value={form.payRate}
+              onChange={(e) => onUpdateField("payRate", e.target.value)}
+              placeholder="0.00"
+              className={inputCls}
+            />
+            <div className="w-24 shrink-0">
+              <SimpleSelect
+                value={form.currency || "USD"}
+                onChange={(v) => onUpdateField("currency", v)}
+                options={PAY_RATE_CURRENCY_VALUES}
+              />
+            </div>
+          </div>
         </div>
       </div>
 

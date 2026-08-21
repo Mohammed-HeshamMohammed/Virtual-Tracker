@@ -153,7 +153,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   }, [handleClose])
 
   // Send invites state
-  const [inviteRows, setInviteRows] = useComponentState<InviteFormRow[]>([{ email: "", payRate: "" }])
+  const [inviteRows, setInviteRows] = useComponentState<InviteFormRow[]>([{ email: "", payRate: "", currency: "USD" }])
   const [inviteRole, setInviteRole] = useComponentState<MemberRole>(defaultRole)
 
   // Create accounts state
@@ -162,6 +162,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     lastName: "",
     email: "",
     payRate: "",
+    currency: "USD",
   })
   const [accountRole, setAccountRole] = useComponentState<MemberRole>(defaultRole)
   const [sendWelcomeEmail, setSendWelcomeEmail] = useComponentState(true)
@@ -258,14 +259,16 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   }
 
   function addInviteRow() {
-    setInviteRows((prev) => (prev.length >= MAX_INVITES_PER_SUBMIT ? prev : [...prev, { email: "", payRate: "" }]))
+    setInviteRows((prev) =>
+      prev.length >= MAX_INVITES_PER_SUBMIT ? prev : [...prev, { email: "", payRate: "", currency: "USD" }],
+    )
   }
 
   function removeInviteRow(index: number) {
     setInviteRows((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
   }
 
-  function updateInviteRow(i: number, field: "email" | "payRate", val: string) {
+  function updateInviteRow(i: number, field: "email" | "payRate" | "currency", val: string) {
     setInviteRows((prev) => prev.map((e, idx) => (idx === i ? { ...e, [field]: val } : e)))
   }
 
@@ -315,7 +318,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     if (mode === "invites") {
 // eslint-disable-next-line react-doctor/js-flatmap-filter
       const rows = inviteRows
-        .map((row) => ({ email: row.email.trim(), payRate: row.payRate.trim() }))
+        .map((row) => ({ email: row.email.trim(), payRate: row.payRate.trim(), currency: row.currency || "USD" }))
         .filter((row) => row.email.length > 0)
         .slice(0, MAX_INVITES_PER_SUBMIT)
       if (rows.length === 0) return
@@ -420,7 +423,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
         })
         return
       }
-      const rows = [{ name, email, payRate: accountForm.payRate.trim() }]
+      const rows = [{ name, email, payRate: accountForm.payRate.trim(), currency: accountForm.currency }]
       const payload: AddMembersSubmission = {
         mode: "accounts",
         rows,

@@ -8,6 +8,7 @@ import { useAuth } from "@/shared/providers/app"
 import { patchProfileSettingsWithBackend } from "@/features/auth/api/profile-settings-api"
 import { phoneNumbersMatch } from "@/features/auth/services/phone-verification-api"
 import { parseUsdHrPayment, splitMemberDisplayName } from "@/features/members/utils/member-utils"
+import { parsePayRateDisplay } from "@/features/members/config/pay-currencies"
 import { validateEmailField, validatePersonName, validatePhoneField } from "@/shared/validation"
 import { SidebarSection } from "@/features/profile/components/sidebar-section"
 import { AccountForm } from "@/features/profile/components/account-form"
@@ -110,6 +111,7 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
     const parsed = parseUsdHrPayment(payment)
     return parsed || payment.replace(/\/hr$/i, "").replace(/^\$/, "")
   })()
+  const payRateCurrency = parsePayRateDisplay(currentMember?.payment).currency
 
   const phoneChanged = Boolean(phone.trim() && !phoneNumbersMatch(phone, baseline.phone))
   const phoneAlreadyVerified =
@@ -312,6 +314,7 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
             onPhoneVerificationChange={handlePhoneVerificationChange}
             phoneInitiallyVerified={phoneAlreadyVerified}
             payRateDisplay={payRateDisplay}
+            payRateCurrency={payRateCurrency}
             isDark={isDark}
           />
 

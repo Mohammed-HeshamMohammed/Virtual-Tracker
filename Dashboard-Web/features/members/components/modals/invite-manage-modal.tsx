@@ -20,6 +20,9 @@ import { SimpleSelect } from "@/shared/ui/simple-select";
 import { Toggle } from "@/shared/ui/toggle";
 import type { Invite, InvitePatchBody, MemberEntryAction, MemberManageTab, MemberRole } from "@/features/members/models/member"
 import { inviteWeeklyLimitPayloadFromInput, memberEntryToTab, parseUsdHrPayment, weeklyLimitInputFromStored } from "@/features/members/utils/member-utils"
+import { PAY_RATE_CURRENCIES, parsePayRateDisplay } from "@/features/members/config/pay-currencies"
+
+const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 import { validateEmailField, validatePayRate } from "@/shared/validation"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
 import { useAuth } from "@/shared/providers/app"
@@ -61,6 +64,7 @@ export function InviteManageModal({
   const [editEmail, setEditEmail] = useComponentState("")
   const [role, setRole] = useComponentState<MemberRole>("Intern")
   const [payRate, setPayRate] = useComponentState("")
+  const [currency, setCurrency] = useComponentState("USD")
   const [weeklyLimit, setWeeklyLimit] = useComponentState("")
   const [paySegment, setPaySegment] = useComponentState<"pay" | "bill">("pay")
   const [payPeriod, setPayPeriod] = useComponentState("None")
@@ -82,6 +86,7 @@ export function InviteManageModal({
       setEditEmail(invite.email)
       setRole(invite.role)
       setPayRate(parseUsdHrPayment(invite.payment))
+      setCurrency(parsePayRateDisplay(invite.payment).currency)
       setWeeklyLimit(weeklyLimitInputFromStored(invite.weeklyLimit))
       setPaySegment("pay")
       setPayPeriod("None")
@@ -104,6 +109,8 @@ export function InviteManageModal({
     const curStr = parseUsdHrPayment(invite.payment)
     const curNum = curStr === "" ? 0 : Number(curStr)
     if (Number.isFinite(pr) && pr >= 0 && pr !== curNum) body.payRate = pr
+    const curCurrency = parsePayRateDisplay(invite.payment).currency
+    if (currency && currency !== curCurrency) body.currency = currency
     const nextWeekly = inviteWeeklyLimitPayloadFromInput(weeklyLimit)
     const prevWeekly = inviteWeeklyLimitPayloadFromInput(weeklyLimitInputFromStored(invite.weeklyLimit))
     if (nextWeekly !== prevWeekly) body.weeklyLimit = nextWeekly
@@ -314,7 +321,15 @@ export function InviteManageModal({
                           readOnly={isPendingAccount}
                           disabled={isPendingAccount}
                         />
-                        <span className="flex items-center rounded-r-lg border border-l-0 border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-700 px-3 text-xs text-slate-500 dark:text-slate-400">USD/hr</span>
+                        <div className="w-24 shrink-0">
+                          <SimpleSelect
+                            value={currency}
+                            onChange={setCurrency}
+                            options={PAY_RATE_CURRENCY_VALUES}
+                            disabled={isPendingAccount}
+                            className="rounded-l-none"
+                          />
+                        </div>
                       </div>
                     </div>
                     <div>

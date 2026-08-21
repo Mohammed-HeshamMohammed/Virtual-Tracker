@@ -242,6 +242,30 @@ export function ProjectsTab({
             )}
           </td>
         )
+      case "remaining":
+        return (
+          <td key="remaining" className={cellClass} style={cellStyle}>
+            {project.budget?.total ? (
+              <span className={cn("text-xs", t.tableCellMuted)}>
+                {formatProjectBudget(Math.max(0, project.budget.total - project.budget.spent), project.budget.type)}
+              </span>
+            ) : (
+              <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>
+            )}
+          </td>
+        )
+      case "spent":
+        return (
+          <td key="spent" className={cellClass} style={cellStyle}>
+            {project.budget ? (
+              <span className={cn("text-xs", t.tableCellMuted)}>
+                {formatProjectBudget(project.budget.spent, project.budget.type)}
+              </span>
+            ) : (
+              <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>
+            )}
+          </td>
+        )
       case "member_limits":
         return (
           <td key="member_limits" className={cellClass} style={cellStyle}>

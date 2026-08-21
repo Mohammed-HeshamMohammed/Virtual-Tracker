@@ -2,9 +2,16 @@ import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/compon
 import type { TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
 
 export function getMemberFilterOptions(
-  memberRows: Record<string, TimeActivityMemberSubRow[]>
+  memberRows: Record<string, TimeActivityMemberSubRow[]>,
+  rosterNames: string[] = [],
 ): { value: string; label: string }[] {
-  const names = Array.from(new Set(Object.values(memberRows).flatMap((rows) => rows.map((r) => r.name)))).sort()
+  // Activity-derived names alone miss anyone with zero tracked time in the
+  // selected date range - union with the full (visibility-scoped) roster so
+  // the dropdown always has someone to pick, not just whoever already has
+  // hours logged this week.
+  const names = Array.from(
+    new Set([...rosterNames, ...Object.values(memberRows).flatMap((rows) => rows.map((r) => r.name))]),
+  ).sort()
   return [{ value: ALL_MEMBERS_VALUE, label: "All members" }, ...names.map((name) => ({ value: name, label: name }))]
 }
 

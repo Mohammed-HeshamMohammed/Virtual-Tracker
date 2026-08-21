@@ -45,6 +45,7 @@ export interface MemberFormState {
   employeeId: string
   role: Member["role"]
   payRate: string
+  currency: string
   weeklyLimit: string
   paySegment: "pay" | "bill"
   payPeriod: string
@@ -104,6 +105,7 @@ export function normalizeMemberFormState(state: MemberFormState): MemberFormStat
     ...state,
     role: (typeof state.role === "string" ? state.role : "Viewer") as MemberFormState["role"],
     payRate: state.payRate == null ? "" : String(state.payRate),
+    currency: state.currency || "USD",
     payPeriod: state.payPeriod || "None",
     weeklyLimit: state.weeklyLimit ?? "",
     dailyLimit: state.dailyLimit ?? "",
@@ -123,6 +125,7 @@ export const initialFormState: MemberFormState = {
   employeeId: "",
   role: "Viewer",
   payRate: "",
+  currency: "USD",
   weeklyLimit: "",
   paySegment: "pay",
   payPeriod: "None",

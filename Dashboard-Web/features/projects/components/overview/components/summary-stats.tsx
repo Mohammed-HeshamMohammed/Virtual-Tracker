@@ -10,9 +10,10 @@ import { fmt$ } from "@/features/projects/components/overview/components/budget-
 interface SummaryStatsProps {
   summary: ProjectOverviewCore["summary"]
   isDark?: boolean
+  onNavigate?: (id: string) => void
 }
 
-export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
+export function SummaryStats({ summary, isDark = false, onNavigate }: SummaryStatsProps) {
   const { activeProjects, onTrack, tasksDone, tasksTotal, budgetSpent, budgetTotal, teamMembers } = summary
 
   const stats = [
@@ -23,6 +24,7 @@ export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
       value: String(activeProjects),
       sub: `${onTrack} on track`,
       trend: "up" as const,
+      target: "pm-projects",
     },
     {
       icon: <CheckCircle2 className="w-5 h-5" />,
@@ -31,6 +33,7 @@ export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
       value: `${tasksDone}/${tasksTotal}`,
       sub: tasksTotal > 0 ? `${Math.round((tasksDone / tasksTotal) * 100)}% completion` : "0% completion",
       trend: "up" as const,
+      target: "pm-tasks",
     },
     {
       icon: <DollarSign className="w-5 h-5" />,
@@ -39,6 +42,7 @@ export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
       value: fmt$(budgetSpent),
       sub: `of ${fmt$(budgetTotal)} total`,
       trend: "up" as const,
+      target: "pm-projects",
     },
     {
       icon: <Users className="w-5 h-5" />,
@@ -47,6 +51,7 @@ export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
       value: String(teamMembers),
       sub: `across ${activeProjects} projects`,
       trend: "up" as const,
+      target: "pm-projects",
     },
   ]
 
@@ -58,8 +63,17 @@ export function SummaryStats({ summary, isDark = false }: SummaryStatsProps) {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: i * 0.06 }}
+          onClick={() => onNavigate?.(s.target)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              onNavigate?.(s.target)
+            }
+          }}
           className={cn(
-            "rounded-2xl p-5 border shadow-sm",
+            "rounded-2xl p-5 border shadow-sm cursor-pointer transition-shadow hover:shadow-md",
             isDark ? "bg-[#0c1324] border-[#3d4a3d]/40" : "bg-white border-slate-100",
           )}
         >

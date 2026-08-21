@@ -18,6 +18,7 @@ import {
 import { MANAGE_MODAL_TABS } from "@/features/members/config/members-config"
 import type { Member, MemberEntryAction, MemberManageTab } from "@/features/members/models/member"
 import { memberEntryToTab, splitMemberDisplayName, parseUsdHrPayment, weeklyLimitInputFromStored } from "@/features/members/utils/member-utils"
+import { parsePayRateDisplay } from "@/features/members/config/pay-currencies"
 import { validateMemberFormStateForTabs } from "@/shared/validation/member-form"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
 import { Avatar } from "@/shared/ui/avatar";
@@ -78,6 +79,7 @@ function buildProfilePayload(
     payload.payBill = {
       paySegment: formState.paySegment,
       payRate: formState.payRate,
+      currency: formState.currency,
       payPeriod: formState.payPeriod,
     }
   }
@@ -134,6 +136,7 @@ function buildFormFromProfileResponse(
     phoneVerificationToken: form.phoneVerificationToken ?? "",
     role: prevRole !== fallbackRole ? prevRole : ((form.role as Member["role"]) ?? loadedMember.role ?? currentMember.role),
     payRate: String(form.payRate ?? parseUsdHrPayment(loadedMember.payment || currentMember.payment) ?? ""),
+    currency: form.currency ?? parsePayRateDisplay(loadedMember.payment || currentMember.payment).currency,
     weeklyLimit:
       form.weeklyLimit ??
       weeklyLimitInputFromStored(loadedMember.weeklyLimit || loadedMember.limits || currentMember.limits),
@@ -228,6 +231,7 @@ export function MemberManageModal({
     phoneVerificationToken: "",
     role: member.role,
     payRate: parseUsdHrPayment(member.payment),
+    currency: parsePayRateDisplay(member.payment).currency,
     weeklyLimit: weeklyLimitInputFromStored(member.weeklyLimit || member.limits),
     ableToTrack: openEntry === "disable-tracking" ? false : member.trackingStatus !== "offline",
     lastIp: member.lastIp ?? "",
