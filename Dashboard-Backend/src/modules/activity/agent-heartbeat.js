@@ -7,12 +7,18 @@ const HEARTBEAT_TTL_SEC = 15;
 
 // How stale activity_sessions.updated_at must be before a session is treated
 // as abandoned. The agent syncs every SESSION_SYNC_INTERVAL_SEC (20s), so
-// this is ~4 missed syncs - generous on purpose. This is the correctness
-// signal (TC-1): it is durable, needs no second store, and - unlike the Redis
-// heartbeat below - cannot report "abandoned" just because a cache restarted.
-// A Redis outage or unset REDIS_URL used to close every active agent session
-// within 5s (the agent's own poll interval); this makes that impossible.
-const SESSION_STALE_MS = 90_000;
+// 90s (~4 missed syncs) sounded generous but wasn't: a laptop sleep, a wifi
+// roam/VPN reconnect, or a brief backend blip routinely runs past it while
+// the employee is still genuinely working (tracker.rs keeps ticking off
+// wall-clock the whole time, independent of the network) - closing the
+// session this fast turned ordinary hiccups into "abandoned" far too often.
+// 5 minutes (~15 missed syncs) still catches a real crash/kill in a
+// reasonable window for reporting/limits purposes, while giving normal
+// transient gaps room to recover on their own. The agent's own
+// try_recover_lost_session (agent/tracker.rs) is the real backstop now if a
+// session does get closed out from under it - this constant only controls
+// how often that recovery path has to run at all.
+const SESSION_STALE_MS = 5 * 60_000;
 
 function key(memberId) {
   return `agent:heartbeat:${memberId}`;

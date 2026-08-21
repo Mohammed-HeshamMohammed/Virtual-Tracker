@@ -95,7 +95,11 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   if (ctx.memberDailyLimitSeconds > 0) {
     remainders.push(Math.max(0, ctx.memberDailyLimitSeconds - ctx.workedTodaySeconds));
   }
-  if (ctx.memberWeeklyLimitSeconds > 0 && ctx.dailyLimitHours <= 0) {
+  // Both a daily and a weekly cap can be set together now (validated at
+  // save time so daily x working days never exceeds weekly) - push both
+  // remainders and let Math.min below apply whichever is tighter, instead
+  // of only ever honoring one.
+  if (ctx.memberWeeklyLimitSeconds > 0) {
     remainders.push(Math.max(0, ctx.memberWeeklyLimitSeconds - ctx.workedWeekSeconds));
   }
   if (projectBudgetRemainder != null) {
@@ -267,7 +271,9 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
     remainders.push(Math.max(0, memberDailyLimitSeconds - workedTodaySeconds));
   }
 
-  if (memberWeeklyLimitSeconds > 0 && dailyLimitHours <= 0) {
+  // Same relaxation as computeMemberTimerAllowance above - both caps can be
+  // active at once, Math.min below picks whichever is tighter.
+  if (memberWeeklyLimitSeconds > 0) {
     remainders.push(Math.max(0, memberWeeklyLimitSeconds - workedWeekSeconds));
   }
 

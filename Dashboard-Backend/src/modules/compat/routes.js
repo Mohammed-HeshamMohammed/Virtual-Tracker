@@ -573,8 +573,19 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
 
       if (isPostgresConfigured()) {
-        const enrichedRows = await listMembersEnrichedPg({ viewer, limit: pageLimit ?? 500 });
+        // Non-management roles (Viewer/Client/Employee) must be scoped to
+        // what they're actually allowed to see - listMembersEnrichedPg's own
+        // super/management branches already narrow correctly, but its
+        // fallback used to return every active member org-wide regardless
+        // of viewer role. null here (Owner/Admin/management) is a no-op:
+        // those branches ignore visibleIds entirely.
+        const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+        const enrichedRows = await listMembersEnrichedPg({ viewer, limit: pageLimit ?? 500, visibleIds });
         let members = enrichedRows.map((row) => normalizeDoc(row));
+        if (needsPresence) {
+          const { enrichMembersWithPresenceBatch } = await import("../members/services/member-presence.service.js");
+          members = await enrichMembersWithPresenceBatch(db, members);
+        }
         members = applyMemberFieldPolicy(members, viewer);
         const roleFilter = parseCsvQueryParam(url.searchParams.get("roles"));
         const projectFilter = parseCsvQueryParam(url.searchParams.get("project_ids"));
@@ -719,7 +730,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     }
     if (typeof body.payRate === "number" && !Number.isNaN(body.payRate)) {
       const { upsertMemberPayRate } = await import("../members/services/member-profile.service.js");
-      await upsertMemberPayRate(db, payload.id, body.payRate, actorId);
+      await upsertMemberPayRate(db, payload.id, body.payRate, actorId, typeof body.currency === "string" ? body.currency : "USD");
     }
     const projectIds = Array.isArray(body.projects) ? body.projects.filter((x) => typeof x === "string") : [];
     if (projectIds.length > 0) {
@@ -1178,7 +1189,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     }
     if (typeof body.payRate === "number") {
       const { upsertMemberPayRate } = await import("../members/services/member-profile.service.js");
-      await upsertMemberPayRate(db, id, body.payRate, actorId);
+      await upsertMemberPayRate(db, id, body.payRate, actorId, typeof body.currency === "string" ? body.currency : "USD");
     }
     if (body.weeklyLimit !== undefined) {
       const { upsertMemberWeeklyLimit } = await import("../members/services/member-profile.service.js");
@@ -1243,7 +1254,9 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
     }
-    const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" ? body.roleId : "", pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId ?? "", created_by_uid: viewer?.uid ?? "", updated_by: "" };
+    // role_id/created_by/updated_by are real UUID columns - "" fails the
+    // ?? null mapping below and Postgres rejects "" as an invalid uuid.
+    const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" && body.roleId.trim() ? body.roleId : null, pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId || null, created_by_uid: viewer?.uid ?? "", updated_by: null };
     const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
     const colList = INVITE_COLS.join(", ");
     const phList = INVITE_COLS.map((_, i) => `$${i + 1}`).join(", ");
@@ -1345,13 +1358,15 @@ export async function routeCompatibility(req, res, url, db, origin) {
         invite_kind: inviteKind,
         role_id,
         pay_rate,
-        currency: "USD",
+        currency: typeof row?.currency === "string" && row.currency.trim() ? row.currency.trim().toUpperCase() : "USD",
         status: "pending_signup",
         sent_at: new Date(),
         accepted_at: null,
-        created_by: viewer?.memberId ?? "",
+        // created_by/updated_by are real UUID columns - "" (not null/undefined)
+        // fails ?? null below and Postgres rejects "" as an invalid uuid.
+        created_by: viewer?.memberId || null,
         created_by_uid: viewer?.uid ?? "",
-        updated_by: "",
+        updated_by: null,
         ...(inviteKind === "open_link" ? shareLinkInviteFields() : {}),
       };
       const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
@@ -1470,6 +1485,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       const updates = {};
       if (typeof body.status === "string") updates.status = body.status;
       if (typeof body.pay_rate === "number") updates.pay_rate = body.pay_rate;
+      if (typeof body.currency === "string" && body.currency.trim()) updates.currency = body.currency.trim().toUpperCase();
       if (typeof body.role_id === "string") updates.role_id = body.role_id;
       if (Object.keys(updates).length === 0) return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
       const setClauses = Object.keys(updates).map((k, i) => `${k} = $${i + 2}`).join(", ");

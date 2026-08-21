@@ -150,9 +150,15 @@ export async function listMembersPg(options = {}) {
 }
 
 /**
- * @param {{ viewer: any, limit?: number }} options
+ * @param {{ viewer: any, limit?: number, visibleIds?: string[] | null }} options
+ *   visibleIds - the caller's getVisibleMemberIds(...) result for
+ *   non-management roles (Viewer/Client/Employee): null means "not computed
+ *   / see everyone" (the super/mgmt branches below already cover their own
+ *   scoping), an array is the exact set of member ids this viewer may see.
+ *   Without this, every non-management role fell through to "every active
+ *   member org-wide" - a Viewer or Client saw the whole org.
  */
-export async function listMembersEnrichedPg({ viewer, limit = 500 }) {
+export async function listMembersEnrichedPg({ viewer, limit = 500, visibleIds = null }) {
   const safeLimit = Math.min(Math.max(limit, 1), 2000);
   const isMgmt = viewer?.isManagement === true || (typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 50);
   const isSuper = typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 80;
@@ -162,19 +168,29 @@ export async function listMembersEnrichedPg({ viewer, limit = 500 }) {
   }
   if (isMgmt && viewer?.memberId) {
     return query(
-      `SELECT * FROM v_members_enriched 
+      `SELECT * FROM v_members_enriched
        WHERE (id IN (SELECT member_id FROM fn_get_subordinate_member_ids($1)) OR id = $1)
          AND status != 'banned'
        ORDER BY date_added DESC LIMIT $2`,
       [viewer.memberId, safeLimit]
     );
   }
+  if (Array.isArray(visibleIds)) {
+    if (visibleIds.length === 0) return [];
+    return query(
+      `SELECT id, first_name, last_name, display_name, work_email, status, role_name, avatar_url, avatar_color, date_added, role_id, teams, projects
+       FROM v_members_enriched
+       WHERE status = 'active' AND id = ANY($1::uuid[])
+       ORDER BY first_name LIMIT $2`,
+      [visibleIds, safeLimit]
+    );
+  }
   return query(
     `SELECT id, first_name, last_name, display_name, work_email, status, role_name, avatar_url, avatar_color, date_added, role_id, teams, projects
-     FROM v_members_enriched 
-     WHERE status = 'active' 
-     ORDER BY first_name LIMIT $1`,
-    [safeLimit]
+     FROM v_members_enriched
+     WHERE status = 'active' AND id = $1
+     ORDER BY first_name LIMIT $2`,
+    [viewer?.memberId ?? null, safeLimit]
   );
 }
 

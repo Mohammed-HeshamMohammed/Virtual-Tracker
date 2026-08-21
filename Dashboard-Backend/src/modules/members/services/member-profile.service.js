@@ -87,13 +87,13 @@ export async function upsertMemberWeeklyLimit(db, memberId, weeklyLimit, updated
   await upsertLimitField(db, memberId, "weekly", value, updatedBy || "system");
 }
 
-export async function upsertMemberPayRate(db, memberId, rate, updatedBy = "") {
+export async function upsertMemberPayRate(db, memberId, rate, updatedBy = "", currency = "USD") {
   const actor = updatedBy || "system";
   const now = new Date();
   await upsertSingleByMemberId(db, "pay_rates", memberId, {
     type: "hourly",
     rate,
-    currency: "USD",
+    currency: typeof currency === "string" && currency.trim() ? currency.trim().toUpperCase() : "USD",
     pay_period: "None",
     effective_date: now,
     status: "active",
@@ -168,12 +168,21 @@ function splitWorkLimitsToken(token) {
   return { limits: limits || undefined, timeSettings: timeSettings || undefined };
 }
 
-export function validateWorkLimitsMutualExclusion(weeklyLimitRaw, dailyLimitRaw, useShiftsForLimits = false) {
+/**
+ * Weekly and daily limits can both be set at once - the only thing that
+ * must hold is that a daily cap, spread across the selected working days,
+ * can't add up to more than the weekly cap (mirrors
+ * shared/validation/work-limits.ts's validateWorkLimitsCombo on the client).
+ */
+export function validateWorkLimitsMutualExclusion(weeklyLimitRaw, dailyLimitRaw, useShiftsForLimits = false, workDaysCount = 7) {
   if (useShiftsForLimits) return null;
   const weeklyValue = parseLimitValue(weeklyLimitRaw);
   const dailyValue = parseLimitValue(dailyLimitRaw);
-  if (weeklyValue > 0 && dailyValue > 0) {
-    return "Choose either a weekly limit or a daily limit, not both.";
+  if (weeklyValue <= 0 || dailyValue <= 0) return null;
+  const days = workDaysCount > 0 ? workDaysCount : 7;
+  const dailyTotal = dailyValue * days;
+  if (dailyTotal > weeklyValue) {
+    return `Daily limit x ${days} working day${days === 1 ? "" : "s"} (${dailyTotal}h) can't exceed the weekly limit (${weeklyValue}h).`;
   }
   return null;
 }
@@ -616,7 +625,7 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       {
         type: "hourly",
         rate: payRate,
-        currency: "USD",
+        currency: typeof payBill.currency === "string" && payBill.currency.trim() ? payBill.currency.trim().toUpperCase() : "USD",
         pay_period: typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None",
         ...(hasSettings ? { require_timesheet_approval: settings.requireApproval === true } : {}),
         effective_date: now,
@@ -674,12 +683,13 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   } else if (hasWorkLimits) {
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 
-    const limitsErr = validateWorkLimitsMutualExclusion(workLimits.weeklyLimit, workLimits.dailyLimit, false);
-    if (limitsErr) throw new Error(limitsErr);
-
     const workDays = Array.isArray(workLimits.workDays)
       ? workLimits.workDays.filter((d) => Number.isInteger(d))
       : [0, 1, 2, 3, 4];
+
+    const limitsErr = validateWorkLimitsMutualExclusion(workLimits.weeklyLimit, workLimits.dailyLimit, false, workDays.length);
+    if (limitsErr) throw new Error(limitsErr);
+
     const makeupDays = Array.isArray(workLimits.makeupDays)
       ? workLimits.makeupDays.filter((d) => Number.isInteger(d))
       : [];
@@ -721,7 +731,15 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
     // still needs writing, unconditionally, same as before this fix.
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 
-    const limitsErr = validateWorkLimitsMutualExclusion(workLimits.weeklyLimit, workLimits.dailyLimit, false);
+    const combinedWorkDaysCount = Array.isArray(workLimits.workDays)
+      ? workLimits.workDays.filter((d) => Number.isInteger(d)).length
+      : 5;
+    const limitsErr = validateWorkLimitsMutualExclusion(
+      workLimits.weeklyLimit,
+      workLimits.dailyLimit,
+      false,
+      combinedWorkDaysCount,
+    );
     if (limitsErr) throw new Error(limitsErr);
 
     const weeklyValue = parseLimitValue(workLimits.weeklyLimit);

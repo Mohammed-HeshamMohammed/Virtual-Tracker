@@ -643,13 +643,15 @@ export async function routeMemberInvites(req, res, url, origin) {
       invite_kind: "open_link",
       role_id,
       pay_rate: payRate,
-      currency: "USD",
+      currency: typeof body.currency === "string" && body.currency.trim() ? body.currency.trim().toUpperCase() : "USD",
       status: "pending_signup",
       sent_at: new Date(),
       accepted_at: null,
-      created_by: typeof body.createdBy === "string" ? body.createdBy : viewer?.memberId ?? "open-link",
+      // created_by/updated_by are real UUID columns - "" and the literal
+      // "open-link" both fail as invalid uuid input, not just missing values.
+      created_by: (typeof body.createdBy === "string" && body.createdBy.trim()) || viewer?.memberId || null,
       created_by_uid: typeof body.createdByUid === "string" ? body.createdByUid : viewer?.uid ?? "",
-      updated_by: "",
+      updated_by: null,
       ...shareLinkInviteFields(),
     };
     const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
