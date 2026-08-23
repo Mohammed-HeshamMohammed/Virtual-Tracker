@@ -24,7 +24,19 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
     return null;
   }
 
-  return await listProjectIdsForMemberPg(viewerMemberId);
+  // Union with projects the viewer created but was never added as a
+  // project_members row for (createProjectPg only stamps created_by, it
+  // doesn't also insert a membership row) - every other visibility check in
+  // the codebase (schema/visibility.js's "projects"/"tasks" filters,
+  // viewerCanWriteProject below) already falls back to created_by; this was
+  // the one place that didn't, which made a non-admin's own newly-created
+  // projects (and their tasks) invisible to the two Overview endpoints that
+  // scope purely off this function's return value.
+  const [memberProjectIds, createdRows] = await Promise.all([
+    listProjectIdsForMemberPg(viewerMemberId),
+    query("SELECT id FROM projects WHERE created_by = $1", [viewerMemberId]),
+  ]);
+  return [...new Set([...memberProjectIds, ...createdRows.map((r) => r.id)])];
 }
 
 const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
@@ -34,6 +46,12 @@ const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
   "supermanager",
   "supermanger",
 ]);
+
+/** Owner/Super Admin/Admin/Super Manager - same org-admin set task-creation
+ * already uses. Also gates client budget figures (financial data). */
+export function isOrgProjectAdminRole(roleName) {
+  return ORG_PROJECT_TASK_ADMIN_ROLES.has(normalizeRole(roleName));
+}
 
 function normalizeProjectRole(role) {
   const value = String(role || "")

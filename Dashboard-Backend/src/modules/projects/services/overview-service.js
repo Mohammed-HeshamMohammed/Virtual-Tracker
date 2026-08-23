@@ -47,6 +47,23 @@ function calculateHealth(status, tasksTotal, tasksDone) {
   return "stalled";
 }
 
+/** Calling projects have no completable tasks by design (see
+ * project-type-picker.tsx) - the single auto-created "Cold Calling" task is
+ * a time-tracking anchor, not a unit of work, so task-completion health
+ * would rate every calling project "stalled" forever regardless of how much
+ * real work is happening. Budget usage is the actual work signal there:
+ * same 100%/85% thresholds BudgetBar already uses (red/amber/green), just
+ * inverted from calculateHealth's sense - high *usage* is the risk here,
+ * not low completion. */
+function calculateCallingHealth(status, spent, budgetTotal) {
+  if (status === "archived") return "stalled";
+  if (!(budgetTotal > 0)) return "no_tasks";
+  const usedRatio = spent / budgetTotal;
+  if (usedRatio >= 1) return "stalled";
+  if (usedRatio >= 0.85) return "at_risk";
+  return "on_track";
+}
+
 // Single indexed query: replaces 5 parallel Firestore-style capped reads
 // (200/200/2000/200/500) + in-app Map joins with one Postgres aggregate.
 // No arbitrary row ceiling - GROUP BY has no cap by construction.
@@ -69,7 +86,7 @@ member_limit_agg AS (
   GROUP BY project_id
 )
 SELECT
-  p.id, p.name, p.status,
+  p.id, p.name, p.status, p.type,
   COALESCE(tc.tasks_total, 0) AS tasks_total,
   COALESCE(tc.tasks_done, 0)  AS tasks_done,
   COALESCE(mc.member_count, 0) AS member_count,
@@ -151,9 +168,9 @@ export async function getOverviewCore(db, options = {}) {
     const id = row.id;
     const status = (str(row, "status") || "active").toLowerCase();
     const isActive = status !== "archived";
+    const isCalling = String(row.type) === "calling";
     const total = Number(row.tasks_total ?? 0);
     const done = Number(row.tasks_done ?? 0);
-    const health = calculateHealth(status, total, done);
 
     const rawBudgetTotal = num(row, "budget_total");
     const hasBudget = rawBudgetTotal > 0;
@@ -168,6 +185,16 @@ export async function getOverviewCore(db, options = {}) {
         : rawBudgetTotal;
     const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
     const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
+
+    // Calling projects have no completable tasks (see calculateCallingHealth
+    // above) - both health and the "Progress" column use budget usage
+    // instead, via the same {d,t} ratio shape the frontend already renders
+    // task-progress from, so the Progress bar and the Budget bar agree
+    // instead of Progress reading a permanent, contradictory 0%.
+    const health = isCalling
+      ? calculateCallingHealth(status, spent, budgetTotal)
+      : calculateHealth(status, total, done);
+    const progress = isCalling ? { d: Math.round(spent), t: Math.round(budgetTotal) } : { d: done, t: total };
 
     const members = Number(row.member_count ?? 0);
     const memberLimit = row.member_limit_cost != null ? Number(row.member_limit_cost) : null;
@@ -186,7 +213,7 @@ export async function getOverviewCore(db, options = {}) {
       n: str(row, "name") || "Untitled project",
       s: isActive ? "active" : "archived",
       h: health,
-      p: { d: done, t: total },
+      p: progress,
       b: budgetTotal > 0 ? { sp: spent, tot: budgetTotal, ty: budgetType } : null,
       // Real member count, including 0 - a "1" fallback here used to make
       // an empty project look staffed both in this row and in the summary
@@ -215,14 +242,15 @@ export async function getOverviewCore(db, options = {}) {
 /**
  * Deferred panels: tasks breakdown, per-project activity, client budgets.
  * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ taskLimit?: number, allowedProjectIds?: Set<string> | null }} [options]
+ * @param {{ taskLimit?: number, allowedProjectIds?: Set<string> | null, includeClientBudgets?: boolean }} [options]
  */
 export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
   const allowedArray = allowed !== null ? [...allowed] : null;
+  const includeClientBudgets = options.includeClientBudgets === true;
 
-  const [taskRows, projectRows, clientRows, budgetRows, clientProjectRows, memberRows] = await Promise.all([
+  const [taskRows, projectRows, clientRows, clientProjectRows, memberRows] = await Promise.all([
     // Scoped + ordered at the SQL level so LIMIT caps the *visible* set, not
     // an arbitrary org-wide slice that a restricted viewer's rows might not
     // even land in (see allowed filter below - this used to run in JS after
@@ -238,9 +266,8 @@ export async function getOverviewPanels(db, options = {}) {
     // two different colors across panels (and it could change per request,
     // since an unordered query has no stable row order).
     pgQuery("SELECT id, name FROM projects ORDER BY created_at"),
-    pgQuery("SELECT id, status, name, email_addresses FROM clients ORDER BY id LIMIT 2000"),
-    pgQuery("SELECT client_id, cost FROM client_budgets ORDER BY client_id LIMIT 2000"),
-    pgQuery("SELECT client_id, project_id FROM client_projects"),
+    includeClientBudgets ? pgQuery("SELECT id, status, name, email_addresses FROM clients ORDER BY id LIMIT 2000") : [],
+    includeClientBudgets ? pgQuery("SELECT client_id, project_id FROM client_projects") : [],
     pgQuery("SELECT id, first_name, last_name, display_name FROM members ORDER BY id"),
   ]);
 
@@ -302,14 +329,6 @@ export async function getOverviewPanels(db, options = {}) {
     });
   }
 
-  const budgetByClient = new Map();
-  for (const row of budgetRows) {
-    const cid = str(row, "client_id", "clientId");
-    if (cid && !budgetByClient.has(cid)) {
-      budgetByClient.set(cid, num(row, "cost"));
-    }
-  }
-
   const projectsByClient = new Map();
   for (const row of clientProjectRows) {
     const cid = row.client_id;
@@ -319,26 +338,44 @@ export async function getOverviewPanels(db, options = {}) {
     projectsByClient.get(cid).push(pid);
   }
 
-  // Real spend across each client's linked projects, computed the same way
-  // project-level budgets are (computeProjectSpentForAllPg) - this used to
-  // be a hard-coded `budgetTotal * 0.6`, i.e. every client's "used" figure
-  // was fabricated and had no relationship to actual tracked time/cost.
+  // A client's budget total/used is the SUM of its linked projects' own
+  // budgets, not the separate `client_budgets` table (which used to be a
+  // disconnected, independently-configured number with no relationship to
+  // what those projects were actually budgeted or spending). Real spend is
+  // computed the same way project-level budgets are
+  // (computeProjectSpentForAllPg); real total mirrors getOverviewCore's own
+  // per_person scaling so a per-person project budget contributes its true
+  // scaled amount, not the raw per-member rate.
   const clientLinkedProjectIds = [...new Set(clientProjectRows.map((r) => r.project_id).filter(Boolean))];
   const clientProjectBudgetRows = clientLinkedProjectIds.length
     ? await pgQuery(
-        `SELECT project_id, cost, type, based_on, include_non_billable_time
+        `SELECT project_id, cost, type, based_on, scope, include_non_billable_time
          FROM project_budgets WHERE project_id = ANY($1::uuid[]) AND cost > 0`,
         [clientLinkedProjectIds],
       )
     : [];
-  const spentByClientProject = await computeProjectSpentForAllPg(
-    db,
-    clientProjectBudgetRows.map((r) => ({
-      id: r.project_id,
-      type: r.type,
-      based_on: r.based_on,
-      include_non_billable_time: r.include_non_billable_time,
-    })),
+  const [spentByClientProject, targetByClientProject] = await Promise.all([
+    computeProjectSpentForAllPg(
+      db,
+      clientProjectBudgetRows.map((r) => ({
+        id: r.project_id,
+        type: r.type,
+        based_on: r.based_on,
+        include_non_billable_time: r.include_non_billable_time,
+      })),
+    ),
+    computeProjectBudgetTargetForAllPg(
+      db,
+      clientProjectBudgetRows
+        .filter((r) => r.scope === "per_person")
+        .map((r) => ({ id: r.project_id, type: r.type, based_on: r.based_on, scope: r.scope, cost: num(r, "cost") })),
+    ),
+  ]);
+  const budgetTotalByProject = new Map(
+    clientProjectBudgetRows.map((r) => [
+      r.project_id,
+      r.scope === "per_person" ? targetByClientProject.get(r.project_id) || num(r, "cost") : num(r, "cost"),
+    ]),
   );
 
   const clients = clientRows
@@ -347,7 +384,7 @@ export async function getOverviewPanels(db, options = {}) {
       const linkedProjectIds = projectsByClient.get(row.id) ?? [];
       const scopedProjectIds =
         allowed === null ? linkedProjectIds : linkedProjectIds.filter((pid) => allowed.has(pid));
-      const budgetTotal = budgetByClient.get(row.id) ?? 0;
+      const budgetTotal = linkedProjectIds.reduce((sum, pid) => sum + (budgetTotalByProject.get(pid) ?? 0), 0);
       const used = linkedProjectIds.reduce((sum, pid) => sum + (spentByClientProject.get(pid) ?? 0), 0);
       return {
         id: row.id,
