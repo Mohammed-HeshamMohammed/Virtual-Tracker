@@ -34,9 +34,13 @@ function num(row, ...keys) {
   return 0;
 }
 
+/** "no_tasks" is neutral, not a health verdict - a fresh project with zero
+ * tasks has no evidence either way, so it shouldn't inflate the "on track"
+ * count. Frontend HEALTH_CONFIG has no entry for it and falls back to a
+ * plain "—" (see project-health-grid.tsx). */
 function calculateHealth(status, tasksTotal, tasksDone) {
   if (status === "archived") return "stalled";
-  if (!tasksTotal) return "on_track";
+  if (!tasksTotal) return "no_tasks";
   const progress = tasksDone / tasksTotal;
   if (progress >= 0.7) return "on_track";
   if (progress >= 0.3) return "at_risk";
@@ -90,12 +94,21 @@ ORDER BY p.created_at`;
 export async function getOverviewCore(db, options = {}) {
   const allowed = options.allowedProjectIds ?? null;
   const allowedArray = allowed !== null ? [...allowed] : null;
-  // Org-wide totals, deliberately unscoped by `allowed` - matches the prior
-  // behavior where the summary card showed global counts while only the
-  // per-project cards below were visibility-filtered.
-  const [projectRows, [globalTaskTotals]] = await Promise.all([
+  // Summary totals are scoped by `allowed`, same as the per-project rows -
+  // they used to be computed org-wide, which meant a restricted viewer saw
+  // "Active Projects: 15" above a table listing only the 2 they can see.
+  // teamMembers is a separate DISTINCT count (not summed from per-project
+  // member_count) because the same person on 2 projects must count once.
+  const [projectRows, [teamMembersRow]] = await Promise.all([
     pgQuery(OVERVIEW_CORE_SQL, [allowedArray]),
-    pgQuery("SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status = 'done')::int AS done FROM tasks"),
+    pgQuery(
+      `SELECT COUNT(DISTINCT pm.member_id)::int AS n
+       FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id
+       WHERE p.status != 'archived'
+         AND ($1::uuid[] IS NULL OR p.id = ANY($1::uuid[]))`,
+      [allowedArray],
+    ),
   ]);
 
   // One batched spend computation for every project with a budget, instead
@@ -128,7 +141,8 @@ export async function getOverviewCore(db, options = {}) {
   const projects = [];
   let budgetSpentSum = 0;
   let budgetTotalSum = 0;
-  let teamMembersSum = 0;
+  let tasksDoneSum = 0;
+  let tasksTotalSum = 0;
   let activeProjects = 0;
   let onTrack = 0;
 
@@ -143,8 +157,15 @@ export async function getOverviewCore(db, options = {}) {
 
     const rawBudgetTotal = num(row, "budget_total");
     const hasBudget = rawBudgetTotal > 0;
+    // A per-person budget with 0 current members computes a $0 target - that
+    // reads as "no budget configured" (the `b: null` gate below), which is
+    // wrong: a real per-person rate exists, it just hasn't been multiplied
+    // by anyone yet. Fall back to the configured rate itself rather than
+    // hiding the budget entirely.
     const budgetTotal =
-      hasBudget && row.budget_scope === "per_person" ? targetByProject.get(id) ?? 0 : rawBudgetTotal;
+      hasBudget && row.budget_scope === "per_person"
+        ? targetByProject.get(id) || rawBudgetTotal
+        : rawBudgetTotal;
     const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
     const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
 
@@ -154,10 +175,11 @@ export async function getOverviewCore(db, options = {}) {
     if (isActive) {
       activeProjects += 1;
       if (health === "on_track") onTrack += 1;
+      tasksTotalSum += total;
+      tasksDoneSum += done;
+      budgetSpentSum += spent;
+      budgetTotalSum += budgetTotal;
     }
-    budgetSpentSum += spent;
-    budgetTotalSum += budgetTotal;
-    teamMembersSum += members > 0 ? members : 1;
 
     projects.push({
       id,
@@ -166,7 +188,10 @@ export async function getOverviewCore(db, options = {}) {
       h: health,
       p: { d: done, t: total },
       b: budgetTotal > 0 ? { sp: spent, tot: budgetTotal, ty: budgetType } : null,
-      m: members > 0 ? members : 1,
+      // Real member count, including 0 - a "1" fallback here used to make
+      // an empty project look staffed both in this row and in the summary
+      // Team Members total below.
+      m: members,
       ml: memberLimit,
       c: colorIndex % 10,
     });
@@ -177,11 +202,11 @@ export async function getOverviewCore(db, options = {}) {
     summary: {
       activeProjects,
       onTrack,
-      tasksDone: globalTaskTotals?.done ?? 0,
-      tasksTotal: globalTaskTotals?.total ?? 0,
+      tasksDone: tasksDoneSum,
+      tasksTotal: tasksTotalSum,
       budgetSpent: budgetSpentSum,
       budgetTotal: budgetTotalSum,
-      teamMembers: teamMembersSum,
+      teamMembers: teamMembersRow?.n ?? 0,
     },
     projects,
   };
@@ -195,14 +220,28 @@ export async function getOverviewCore(db, options = {}) {
 export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
+  const allowedArray = allowed !== null ? [...allowed] : null;
 
   const [taskRows, projectRows, clientRows, budgetRows, clientProjectRows, memberRows] = await Promise.all([
-    pgQuery("SELECT id, project_id, status, title, priority, assigned_to FROM tasks LIMIT $1", [taskLimit]),
-    pgQuery("SELECT id, name FROM projects"),
-    pgQuery("SELECT id, status, name, email_addresses FROM clients LIMIT 100"),
-    pgQuery("SELECT client_id, cost FROM client_budgets LIMIT 100"),
+    // Scoped + ordered at the SQL level so LIMIT caps the *visible* set, not
+    // an arbitrary org-wide slice that a restricted viewer's rows might not
+    // even land in (see allowed filter below - this used to run in JS after
+    // the LIMIT had already thrown rows away).
+    pgQuery(
+      `SELECT id, project_id, status, title, priority, assigned_to FROM tasks
+       WHERE ($2::uuid[] IS NULL OR project_id = ANY($2::uuid[]))
+       ORDER BY created_at DESC LIMIT $1`,
+      [taskLimit, allowedArray],
+    ),
+    // Same ordering as OVERVIEW_CORE_SQL's project list, so colorIndex here
+    // lines up with getOverviewCore's - otherwise the same project can get
+    // two different colors across panels (and it could change per request,
+    // since an unordered query has no stable row order).
+    pgQuery("SELECT id, name FROM projects ORDER BY created_at"),
+    pgQuery("SELECT id, status, name, email_addresses FROM clients ORDER BY id LIMIT 2000"),
+    pgQuery("SELECT client_id, cost FROM client_budgets ORDER BY client_id LIMIT 2000"),
     pgQuery("SELECT client_id, project_id FROM client_projects"),
-    pgQuery("SELECT id, first_name, last_name, display_name FROM members LIMIT 200"),
+    pgQuery("SELECT id, first_name, last_name, display_name FROM members ORDER BY id"),
   ]);
 
   const projectNameById = new Map();
@@ -223,9 +262,8 @@ export async function getOverviewPanels(db, options = {}) {
   }
 
   const tasksByProject = new Map();
-  const tasks = taskRows.flatMap((row) => {
+  const tasks = taskRows.map((row) => {
     const projectId = str(row, "project_id", "projectId");
-    if (allowed !== null && projectId && !allowed.has(projectId)) return [];
     const status = str(row, "status") || "todo";
     const item = {
       id: row.id,
@@ -239,7 +277,7 @@ export async function getOverviewPanels(db, options = {}) {
       if (!tasksByProject.has(projectId)) tasksByProject.set(projectId, []);
       tasksByProject.get(projectId).push({ status });
     }
-    return [item];
+    return item;
   });
 
   const projectActivity = [];
@@ -281,6 +319,28 @@ export async function getOverviewPanels(db, options = {}) {
     projectsByClient.get(cid).push(pid);
   }
 
+  // Real spend across each client's linked projects, computed the same way
+  // project-level budgets are (computeProjectSpentForAllPg) - this used to
+  // be a hard-coded `budgetTotal * 0.6`, i.e. every client's "used" figure
+  // was fabricated and had no relationship to actual tracked time/cost.
+  const clientLinkedProjectIds = [...new Set(clientProjectRows.map((r) => r.project_id).filter(Boolean))];
+  const clientProjectBudgetRows = clientLinkedProjectIds.length
+    ? await pgQuery(
+        `SELECT project_id, cost, type, based_on, include_non_billable_time
+         FROM project_budgets WHERE project_id = ANY($1::uuid[]) AND cost > 0`,
+        [clientLinkedProjectIds],
+      )
+    : [];
+  const spentByClientProject = await computeProjectSpentForAllPg(
+    db,
+    clientProjectBudgetRows.map((r) => ({
+      id: r.project_id,
+      type: r.type,
+      based_on: r.based_on,
+      include_non_billable_time: r.include_non_billable_time,
+    })),
+  );
+
   const clients = clientRows
     .map((row) => {
       const status = (str(row, "status") || "active").toLowerCase();
@@ -288,7 +348,7 @@ export async function getOverviewPanels(db, options = {}) {
       const scopedProjectIds =
         allowed === null ? linkedProjectIds : linkedProjectIds.filter((pid) => allowed.has(pid));
       const budgetTotal = budgetByClient.get(row.id) ?? 0;
-      const used = budgetTotal > 0 ? Math.round(budgetTotal * 0.6) : 0;
+      const used = linkedProjectIds.reduce((sum, pid) => sum + (spentByClientProject.get(pid) ?? 0), 0);
       return {
         id: row.id,
         n: str(row, "name") || "Client",

@@ -1,11 +1,9 @@
 import crypto from "node:crypto";
-import { getDb } from "../../config/firebase.js";
 import { assertManagementRole, assertOrgAdminRole } from "../../http/authorization.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { sendJson } from "../../http/response.js";
-import { fetchAllDocs } from "../../lib/firestore/paginate-all.js";
 import {
   findMemberOnboardingByInviteIdPg,
   findMemberOnboardingByMemberIdPg,
@@ -16,6 +14,7 @@ import {
 } from "../../lib/postgres/member-data-postgres.service.js";
 import { getMemberByIdPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { query } from "../../lib/postgres/client.js";
+import { sendOnboardingReminderEmail } from "../auth/onboarding-reminder-email.js";
 
 function asBool(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
@@ -88,18 +87,26 @@ function buildTimestampsPatch(body) {
 }
 
 export async function routeMemberOnboarding(req, res, url, origin) {
-  const db = getDb();
-  if (!db) return false;
   const pn = url.pathname;
 
   if ((pn === "/api/member-onboarding" || pn === "/api/v1/member-onboarding") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
-      const [onboardingRows, membersRows, invitesRows] = await Promise.all([
+      const [onboardingRows, membersRows, invitesRows, trackedRows] = await Promise.all([
         listMemberOnboardingRowsPg(),
         listMembersPg({ limit: 2000 }),
         query("SELECT * FROM invites ORDER BY sent_at DESC LIMIT 2000", []),
+        query("SELECT DISTINCT member_id FROM activity_sessions WHERE active_seconds > 0", []),
       ]);
+
+      // "Downloaded app" / "Tracked time" are read live off the desktop-agent
+      // link timestamp and activity_sessions, not off downloaded_app/tracked_time
+      // in the onboarding row - nothing ever PATCHes those columns, so they'd
+      // otherwise stay false forever and the checklist could never complete.
+      const linkedMemberIds = new Set(
+        membersRows.filter((d) => d.desktop_agent_linked_at).map((d) => String(d.id)),
+      );
+      const trackedMemberIds = new Set(trackedRows.map((r) => String(r.member_id)));
 
       const memberById = new Map();
       const ownerMemberIds = new Set();
@@ -162,6 +169,8 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         .filter((row) => !row.memberId || !ownerMemberIds.has(row.memberId))
         .map((row) => ({
           ...row,
+          downloadedApp: row.downloadedApp || (row.memberId ? linkedMemberIds.has(row.memberId) : false),
+          trackedTime: row.trackedTime || (row.memberId ? trackedMemberIds.has(row.memberId) : false),
           email: computeEmail(row, memberById, inviteById),
           source: computeSource(row),
         }))
@@ -295,7 +304,12 @@ export async function routeMemberOnboarding(req, res, url, origin) {
           updated_by: updatedBy,
         });
       }
-      sendJson(res, origin, 200, { success: true, data: normalizeOnboardingDoc(next.id, next) });
+      const emailResult = await sendReminderEmailFor(next);
+      sendJson(res, origin, 200, {
+        success: true,
+        data: normalizeOnboardingDoc(next.id, next),
+        emailSent: emailResult.sent,
+      });
     } catch (e) {
       logSafeError("[member-onboarding/reminder]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to send reminder" });
@@ -368,6 +382,38 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   }
 
   return false;
+}
+
+/**
+ * Emails the member/invitee a nudge for whichever onboarding step they're
+ * actually stuck on. Best-effort - a delivery failure must not fail the
+ * reminder request itself (the timestamp is already recorded).
+ * @param {Record<string, unknown>} row - the just-updated onboarding row
+ * @returns {Promise<{ sent: boolean }>}
+ */
+async function sendReminderEmailFor(row) {
+  try {
+    if (row.member_id) {
+      const member = await getMemberByIdPg(String(row.member_id));
+      const email = member?.work_email || member?.email;
+      if (!email) return { sent: false };
+      const displayName = [member.first_name, member.last_name].filter(Boolean).join(" ");
+      const step = row.downloaded_app ? "track_time" : "download_app";
+      const result = await sendOnboardingReminderEmail({ email, displayName, step });
+      return { sent: result.sent === true };
+    }
+    if (row.invite_id) {
+      const inviteRows = await query("SELECT email FROM invites WHERE id = $1 LIMIT 1", [row.invite_id]);
+      const email = inviteRows[0]?.email;
+      if (!email) return { sent: false };
+      const result = await sendOnboardingReminderEmail({ email, step: "download_app" });
+      return { sent: result.sent === true };
+    }
+    return { sent: false };
+  } catch (e) {
+    logSafeError("[member-onboarding/reminder-email]", e);
+    return { sent: false };
+  }
 }
 
 /**

@@ -14,6 +14,7 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { listClientsEnriched } from "../clients/services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { getOverviewCore, getOverviewPanels } from "./services/overview-service.js";
+import { createTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { PROJECT_FORM_FIELDS, PROJECT_FORM_TABS } from "./form-config.js";
 import { memberDisplayLabel } from "../members/services/member-display-name.js";
 import {
@@ -104,6 +105,19 @@ function memberLabel(data) {
 }
 
 export const PROJECT_TYPES = ["normal", "calling"];
+
+/** "Banna Estate" -> "B.E." Falls back to the first two letters for a single-word name. */
+function projectInitials(name) {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return "";
+  if (words.length === 1) return `${words[0].slice(0, 2).toUpperCase()}.`;
+  return `${words.map((w) => w[0].toUpperCase()).join(".")}.`;
+}
+
+function coldCallingTaskTitle(projectName) {
+  const initials = projectInitials(projectName);
+  return initials ? `${initials} Cold Calling` : "Cold Calling";
+}
 
 /** Throws on an unrecognized value; message becomes the 400 response. */
 function normalizeProjectType(value) {
@@ -613,6 +627,14 @@ export async function routeProjects(req, res, url, db, origin) {
         endDate: body.end_date ?? body.endDate,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
+      if (project.type === "calling") {
+        await createTaskPg({
+          project_id: project.id,
+          title: coldCallingTaskTitle(project.name),
+          status: "todo",
+          created_by: viewer.memberId,
+        });
+      }
       sendJson(res, origin, 200, { success: true, data: project });
     } catch (e) {
       logSafeError("[projects POST]", e);
