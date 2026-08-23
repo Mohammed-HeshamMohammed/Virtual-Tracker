@@ -1,4 +1,4 @@
-export type OverviewProjectHealth = "on_track" | "at_risk" | "stalled"
+export type OverviewProjectHealth = "on_track" | "at_risk" | "stalled" | "no_tasks"
 
 export type OverviewSortableProject = {
   id: string

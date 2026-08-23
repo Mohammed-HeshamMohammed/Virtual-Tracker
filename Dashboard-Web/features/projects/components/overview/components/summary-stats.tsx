@@ -2,7 +2,7 @@
 "use client"
 
 import { motion } from "framer-motion"
-import { Folder, CheckCircle2, DollarSign, Users, ArrowUpRight, ArrowDownRight } from "lucide-react"
+import { Folder, CheckCircle2, DollarSign, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { ProjectOverviewCore } from "@/features/projects/api/project-overview-api"
 import { fmt$ } from "@/features/projects/components/overview/components/budget-bar"
@@ -23,7 +23,6 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
       label: "Active Projects",
       value: String(activeProjects),
       sub: `${onTrack} on track`,
-      trend: "up" as const,
       target: "pm-projects",
     },
     {
@@ -32,7 +31,6 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
       label: "Tasks Completed",
       value: `${tasksDone}/${tasksTotal}`,
       sub: tasksTotal > 0 ? `${Math.round((tasksDone / tasksTotal) * 100)}% completion` : "0% completion",
-      trend: "up" as const,
       target: "pm-tasks",
     },
     {
@@ -41,7 +39,6 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
       label: "Budget Used",
       value: fmt$(budgetSpent),
       sub: `of ${fmt$(budgetTotal)} total`,
-      trend: "up" as const,
       target: "pm-projects",
     },
     {
@@ -50,7 +47,6 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
       label: "Team Members",
       value: String(teamMembers),
       sub: `across ${activeProjects} projects`,
-      trend: "up" as const,
       target: "pm-projects",
     },
   ]
@@ -81,11 +77,6 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
             <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center text-white", s.bg)}>
               {s.icon}
             </div>
-            {s.trend === "up" ? (
-              <ArrowUpRight className="w-4 h-4 text-emerald-500" />
-            ) : (
-              <ArrowDownRight className="w-4 h-4 text-red-400" />
-            )}
           </div>
           <p className="text-2xl font-bold text-slate-800">{s.value}</p>
           <p className="text-sm text-slate-500 mt-0.5">{s.label}</p>

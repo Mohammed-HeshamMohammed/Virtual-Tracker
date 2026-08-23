@@ -26,7 +26,6 @@ export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: st
     core,
     panels,
     isCoreLoading,
-    isPanelsLoading,
     panelsError,
     loadPanels,
     belowFoldRef,
@@ -93,7 +92,7 @@ export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: st
           isDark={isDark}
           onNavigate={onNavigate}
           belowFoldRef={belowFoldRef}
-          isPanelsLoading={isPanelsLoading}
+          hasPanels={panels !== null}
           panelsError={panelsError}
           onRetryPanels={() => void loadPanels()}
           tasks={panelTasks}
