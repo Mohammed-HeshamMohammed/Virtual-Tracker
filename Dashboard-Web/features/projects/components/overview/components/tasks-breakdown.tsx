@@ -84,9 +84,12 @@ export function TasksBreakdown({
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {/* Status filter pills */}
-          <div className="flex items-center gap-1.5">
-            {statusKeys.map((s) => {
+          {/* Status filter pills - only statuses with at least one task, so
+              the row doesn't waste space on permanently-zero bubbles; flex
+              `gap` (not justify-between) keeps spacing equal regardless of
+              how many end up visible. */}
+          <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
+            {statusKeys.filter((s) => (grouped[s]?.length || 0) > 0).map((s) => {
               const cfg = STATUS_CONFIG[s]
               const isActive = activeStatus === s
               return (
@@ -94,7 +97,7 @@ export function TasksBreakdown({
                   key={s}
                   onClick={() => setActiveStatus(isActive ? null : s)}
                   className={cn(
-                    "flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all",
+                    "flex shrink-0 items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all",
                     isActive
                       ? `${cfg.bg} ${cfg.color}`
                       : isDark

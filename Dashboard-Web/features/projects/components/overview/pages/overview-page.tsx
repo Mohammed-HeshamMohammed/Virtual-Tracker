@@ -3,7 +3,8 @@
 
 import { useMemo } from "react"
 import { motion } from "framer-motion"
-import { useTheme } from "@/shared/providers/app"
+import { useTheme, useAuth } from "@/shared/providers/app"
+import { canSeeClientBudgets } from "@/features/auth/permissions/member-role-access"
 import { OverviewSkeleton } from "@/features/projects/components/overview/skeletons/overview-skeleton"
 import { sortProjectsForOverview } from "@/features/projects/utils/overview-sort"
 import {
@@ -21,6 +22,8 @@ import { BelowFoldPanels } from "@/features/projects/components/overview/compone
 
 export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: string) => void }) {
   const { isDark } = useTheme()
+  const { memberRole } = useAuth()
+  const showClientBudgets = canSeeClientBudgets(memberRole)
 
   const {
     core,
@@ -100,6 +103,7 @@ export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: st
           assigneeNames={assigneeNames}
           activity={panelActivity}
           clients={panelClients}
+          showClientBudgets={showClientBudgets}
         />
       </div>
     </motion.div>
