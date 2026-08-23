@@ -51,6 +51,7 @@ export type OverviewPanelActivity = {
   bl: number
   dn: number
   tot: number
+  b: { sp: number; tot: number } | null
 }
 
 export type OverviewPanelClient = {
