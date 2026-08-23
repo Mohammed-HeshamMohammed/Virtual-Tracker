@@ -101,6 +101,7 @@ export type ProjectActivityRow = {
   blocked: number
   done: number
   total: number
+  budget: { spent: number; total: number } | null
 }
 
 export function mapPanelActivity(row: OverviewPanelActivity): ProjectActivityRow {
@@ -114,5 +115,6 @@ export function mapPanelActivity(row: OverviewPanelActivity): ProjectActivityRow
     blocked: row.bl,
     done: row.dn,
     total: row.tot,
+    budget: row.b ? { spent: row.b.sp, total: row.b.tot } : null,
   }
 }

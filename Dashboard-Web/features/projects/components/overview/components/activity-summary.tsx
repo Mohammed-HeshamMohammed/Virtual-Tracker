@@ -42,6 +42,14 @@ export function ActivitySummary({ activity, isDark = false, className }: Activit
             </div>
           ) : (
             projectActivity.map((p, i) => {
+              // Same rule the Overview table's Progress column uses: a
+              // budget means real spend is the progress signal, not the
+              // task checklist (a task can have real logged time long
+              // before it's marked "done") - without this the bar here
+              // could read empty/0% while the table right above it showed
+              // real budget-based progress, looking like a contradiction.
+              const budgetPct = p.budget && p.budget.total > 0 ? Math.min(Math.round((p.budget.spent / p.budget.total) * 100), 100) : null
+              const budgetBarColor = budgetPct !== null && budgetPct >= 100 ? "bg-red-500" : budgetPct !== null && budgetPct >= 85 ? "bg-amber-500" : "bg-emerald-500"
               return (
                 <motion.div key={p.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.06 }}>
                   <div className="flex items-center justify-between mb-1.5">
@@ -51,27 +59,42 @@ export function ActivitySummary({ activity, isDark = false, className }: Activit
                         {p.name}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                      <span className="text-emerald-600 font-semibold">{p.done} done</span>
-                      <span>·</span>
-                      <span>{p.total} total</span>
+                    {budgetPct !== null ? (
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                        <span className="font-semibold text-slate-600">{budgetPct}% of budget</span>
+                        <span>·</span>
+                        <span>{p.total} task{p.total === 1 ? "" : "s"}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                        <span className="text-emerald-600 font-semibold">{p.done} done</span>
+                        <span>·</span>
+                        <span>{p.total} total</span>
+                      </div>
+                    )}
+                  </div>
+                  {budgetPct !== null ? (
+                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div className={cn("h-full rounded-full", budgetBarColor)} style={{ width: `${budgetPct}%` }} />
                     </div>
-                  </div>
-                  {/* Stacked bar */}
-                  <div className="flex h-2 rounded-full overflow-hidden gap-px">
-                    {p.done > 0 && <div className="bg-emerald-400" style={{ width: `${(p.done / p.total) * 100}%` }} />}
-                    {p.in_progress > 0 && <div className="bg-blue-400" style={{ width: `${(p.in_progress / p.total) * 100}%` }} />}
-                    {p.in_review > 0 && <div className="bg-amber-400" style={{ width: `${(p.in_review / p.total) * 100}%` }} />}
-                    {p.blocked > 0 && <div className="bg-red-400" style={{ width: `${(p.blocked / p.total) * 100}%` }} />}
-                    {p.todo > 0 && <div className="bg-slate-200" style={{ width: `${(p.todo / p.total) * 100}%` }} />}
-                  </div>
+                  ) : (
+                    <div className="flex h-2 rounded-full overflow-hidden gap-px">
+                      {p.done > 0 && <div className="bg-emerald-400" style={{ width: `${(p.done / p.total) * 100}%` }} />}
+                      {p.in_progress > 0 && <div className="bg-blue-400" style={{ width: `${(p.in_progress / p.total) * 100}%` }} />}
+                      {p.in_review > 0 && <div className="bg-amber-400" style={{ width: `${(p.in_review / p.total) * 100}%` }} />}
+                      {p.blocked > 0 && <div className="bg-red-400" style={{ width: `${(p.blocked / p.total) * 100}%` }} />}
+                      {p.todo > 0 && <div className="bg-slate-200" style={{ width: `${(p.todo / p.total) * 100}%` }} />}
+                    </div>
+                  )}
                 </motion.div>
               )
             })
           )}
         </div>
-        {/* Legend */}
-        {projectActivity.length > 0 && (
+        {/* Legend - only meaningful for rows still using the task-status
+            bar; hidden entirely once every visible project is budgeted and
+            showing the budget-usage bar instead. */}
+        {projectActivity.some((p) => !p.budget || p.budget.total <= 0) && (
           <div className="flex items-center gap-4 pt-3 mt-auto">
             {[
               { color: "bg-emerald-400", label: "Done" },
