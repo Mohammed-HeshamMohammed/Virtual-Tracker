@@ -505,6 +505,41 @@ export async function sendMemberBanEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[ban-email]" });
 }
 
+// ── Team onboarding reminder ───────────────────────────────────────────────────
+
+/** @param {{ email: string; displayName?: string; step: "download_app" | "track_time"; appUrl?: string }} input */
+export async function sendOnboardingReminderEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  if (!email) return { sent: false, channel: "skipped" };
+
+  const name = greeting(input.displayName);
+  const appUrl = typeof input.appUrl === "string" && input.appUrl.trim() ? input.appUrl.trim() : appSignInUrl();
+  const isDownload = input.step !== "track_time";
+  const subject = isDownload
+    ? "Reminder: download the Virtual Tracker desktop app"
+    : "Reminder: start tracking your time";
+  const actionLine = isDownload
+    ? "Download and sign in to the Virtual Tracker desktop app to finish setting up your account."
+    : "You're signed in — start your first timer to finish setting up your account.";
+  const text = [`Hi ${name},`, "", actionLine, "", appUrl].join("\n");
+
+  const html = buildAuthBrandedEmailHtml({
+    title: "Finish setting up Virtual Tracker",
+    subtitle: isDownload ? "Download the desktop app to get started" : "Start your first tracked session",
+    badge: "Onboarding reminder",
+    badgeVariant: "invite",
+    preheader: actionLine,
+    bodyHtml: `
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(name)},</p>
+      <p style="margin:0 0 14px;">${escapeHtml(actionLine)}</p>
+      ${linkFallbackHtml(appUrl)}
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail()),
+  });
+
+  return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[onboarding-reminder-email]" });
+}
+
 // ── Landing page contact inquiry ──────────────────────────────────────────────
 
 /** @param {{ to: string; name: string; fromEmail: string; topic?: string; teamSize?: string; message: string }} input */

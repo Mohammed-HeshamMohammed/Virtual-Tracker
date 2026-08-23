@@ -14,6 +14,7 @@ import {
   sendTeamWeeklyReportEmail,
   sendContactInquiryEmail,
   sendReportDeliveryEmail,
+  sendOnboardingReminderEmail,
 } from "./email-builders.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
@@ -29,6 +30,7 @@ const ALLOWED_TEMPLATES = new Set([
   "team-weekly-report",
   "contact-inquiry",
   "report-delivery",
+  "onboarding-reminder",
 ]);
 
 /**
@@ -191,6 +193,14 @@ async function dispatchEmailTemplate(template, body) {
         message: body.message,
         reportName: body.reportName,
         attachment: body.attachment,
+      });
+
+    case "onboarding-reminder":
+      return sendOnboardingReminderEmail({
+        email: body.email,
+        displayName: body.displayName,
+        step: body.step,
+        appUrl: body.appUrl,
       });
 
     case "contact-inquiry":
