@@ -266,8 +266,19 @@ export async function getOverviewPanels(db, options = {}) {
     // Same ordering as OVERVIEW_CORE_SQL's project list, so colorIndex here
     // lines up with getOverviewCore's - otherwise the same project can get
     // two different colors across panels (and it could change per request,
-    // since an unordered query has no stable row order).
-    pgQuery("SELECT id, name FROM projects ORDER BY created_at"),
+    // since an unordered query has no stable row order). Budget columns are
+    // pulled here too so "Tasks per Project" can show the same budget-usage
+    // bar the main table's Progress column does (see projectBudgetById
+    // below) - without this it fell back to a task-status stacked bar,
+    // which for a budgeted project reads 0%/empty until a task is literally
+    // checked "done", contradicting the Progress column right above it.
+    pgQuery(
+      `SELECT p.id, p.name, pb.cost AS budget_total, pb.type AS budget_type,
+              pb.based_on, pb.scope AS budget_scope, pb.include_non_billable_time
+       FROM projects p
+       LEFT JOIN project_budgets pb ON pb.project_id = p.id
+       ORDER BY p.created_at`,
+    ),
     includeClientBudgets ? pgQuery("SELECT id, status, name, email_addresses FROM clients ORDER BY id LIMIT 2000") : [],
     includeClientBudgets ? pgQuery("SELECT client_id, project_id FROM client_projects") : [],
     pgQuery("SELECT id, first_name, last_name, display_name FROM members ORDER BY id"),
@@ -288,6 +299,40 @@ export async function getOverviewPanels(db, options = {}) {
     const last = str(row, "last_name");
     const full = `${first} ${last}`.trim() || str(row, "display_name") || "Member";
     memberNameById.set(row.id, full);
+  }
+
+  // Same spent/target computation getOverviewCore does for the main table's
+  // Progress column - kept here too so "Tasks per Project" can show the
+  // identical budget-usage ratio instead of a task-status bar.
+  const budgetedProjectRows = projectRows.filter((row) => num(row, "budget_total") > 0);
+  const [spentByProject, targetByProject] = await Promise.all([
+    computeProjectSpentForAllPg(
+      db,
+      budgetedProjectRows.map((row) => ({
+        id: row.id,
+        type: row.budget_type,
+        based_on: row.based_on,
+        include_non_billable_time: row.include_non_billable_time,
+      })),
+    ),
+    computeProjectBudgetTargetForAllPg(
+      db,
+      budgetedProjectRows
+        .filter((row) => row.budget_scope === "per_person")
+        .map((row) => ({
+          id: row.id,
+          type: row.budget_type,
+          based_on: row.based_on,
+          scope: row.budget_scope,
+          cost: num(row, "budget_total"),
+        })),
+    ),
+  ]);
+  const projectBudgetById = new Map();
+  for (const row of budgetedProjectRows) {
+    const raw = num(row, "budget_total");
+    const tot = row.budget_scope === "per_person" ? targetByProject.get(row.id) || raw : raw;
+    if (tot > 0) projectBudgetById.set(row.id, { sp: spentByProject.get(row.id) ?? 0, tot });
   }
 
   const tasksByProject = new Map();
@@ -328,6 +373,7 @@ export async function getOverviewPanels(db, options = {}) {
       bl: counts.blocked,
       dn: counts.done,
       tot: total,
+      b: projectBudgetById.get(pid) ?? null,
     });
   }
 
