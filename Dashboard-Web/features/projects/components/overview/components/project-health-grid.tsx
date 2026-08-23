@@ -1,6 +1,7 @@
 /* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
+import { useLayoutEffect, useMemo, useRef, useState } from "react"
 import { motion } from "framer-motion"
 import { Folder, ExternalLink } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
@@ -26,7 +27,35 @@ export function ProjectHealthGrid({
   onNavigate,
   className,
 }: ProjectHealthGridProps) {
-  const activeProjects = projects.slice(0, 7)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const firstRowRef = useRef<HTMLTableRowElement>(null)
+  // Guess before the first real measurement so mount doesn't flash a single
+  // row; corrected (grown or shrunk) below before paint via useLayoutEffect.
+  const [visibleCount, setVisibleCount] = useState(() => Math.min(projects.length, 7))
+
+  useLayoutEffect(() => {
+    const container = containerRef.current
+    const row = firstRowRef.current
+    if (!container || !row || projects.length === 0) return
+
+    const compute = () => {
+      const rowHeight = row.getBoundingClientRect().height
+      if (!rowHeight) return
+      const headerHeight = container.querySelector("thead")?.getBoundingClientRect().height ?? 0
+      const fit = Math.max(1, Math.floor((container.clientHeight - headerHeight) / rowHeight))
+      setVisibleCount((prev) => {
+        const next = Math.min(fit, projects.length)
+        return prev === next ? prev : next
+      })
+    }
+
+    compute()
+    const ro = new ResizeObserver(compute)
+    ro.observe(container)
+    return () => ro.disconnect()
+  }, [projects.length])
+
+  const activeProjects = useMemo(() => projects.slice(0, visibleCount), [projects, visibleCount])
 
   return (
     <div
@@ -49,7 +78,7 @@ export function ProjectHealthGrid({
           All projects <ExternalLink className="w-3 h-3" />
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto scrollbar-hide">
+      <div ref={containerRef} className="min-h-0 flex-1 overflow-hidden">
         <table className="w-full h-full">
           <colgroup>
             <col className="w-[34%]" />
@@ -74,6 +103,7 @@ export function ProjectHealthGrid({
               return (
                 <motion.tr
                   key={p.id}
+                  ref={i === 0 ? firstRowRef : undefined}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.05 + i * 0.05 }}

@@ -8,16 +8,29 @@ export type OverviewSortableProject = {
   budget: { spent: number; total: number | null; type: "hours" | "cost" } | null
 }
 
-/** Higher = better health for descending sort. */
+/** Higher = better for descending sort. "no_tasks" (nothing to judge yet)
+ * ranks above "stalled" (confirmed struggling) but below any project with
+ * real, healthy evidence. */
 function healthRank(health: OverviewProjectHealth): number {
-  if (health === "on_track") return 3
-  if (health === "at_risk") return 2
+  if (health === "on_track") return 4
+  if (health === "at_risk") return 3
+  if (health === "no_tasks") return 2
   return 1
 }
 
-/** Overview table sort: budget headroom → progress → health. */
+/** Overview table sort: health → progress → budget headroom, so the
+ * best-performing projects surface first instead of merely-unspent ones (a
+ * brand new project with 100% of its budget untouched used to outrank one
+ * that's actually on track and mostly done). */
 export function sortProjectsForOverview<T extends OverviewSortableProject>(projects: T[]): T[] {
   return projects.toSorted((a, b) => {
+    const healthDiff = healthRank(b.health) - healthRank(a.health)
+    if (healthDiff !== 0) return healthDiff
+
+    const aProgress = a.todos.total > 0 ? a.todos.done / a.todos.total : 0
+    const bProgress = b.todos.total > 0 ? b.todos.done / b.todos.total : 0
+    if (bProgress !== aProgress) return bProgress - aProgress
+
     const aHasBudget = a.budget?.total != null && a.budget.total > 0
     const bHasBudget = b.budget?.total != null && b.budget.total > 0
     if (aHasBudget !== bHasBudget) return aHasBudget ? -1 : 1
@@ -29,12 +42,6 @@ export function sortProjectsForOverview<T extends OverviewSortableProject>(proje
     const aRemainingRatio = aTotal > 0 ? (aTotal - aSpent) / aTotal : 0
     const bRemainingRatio = bTotal > 0 ? (bTotal - bSpent) / bTotal : 0
     if (bRemainingRatio !== aRemainingRatio) return bRemainingRatio - aRemainingRatio
-    if (bTotal !== aTotal) return bTotal - aTotal
-
-    const aProgress = a.todos.total > 0 ? a.todos.done / a.todos.total : 0
-    const bProgress = b.todos.total > 0 ? b.todos.done / b.todos.total : 0
-    if (bProgress !== aProgress) return bProgress - aProgress
-
-    return healthRank(b.health) - healthRank(a.health)
+    return bTotal - aTotal
   })
 }
