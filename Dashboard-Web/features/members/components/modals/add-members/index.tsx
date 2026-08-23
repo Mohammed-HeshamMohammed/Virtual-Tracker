@@ -461,7 +461,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
       exit={{ opacity: 0 }}
       transition={modalTransition}
       className={cn(
-        "fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6",
+        "fixed inset-0 z-70 flex items-start justify-center overflow-y-auto bg-black/50 p-6 pt-[8vh]",
         isClosing && "pointer-events-none",
       )}
       onClick={handleClose}
@@ -477,7 +477,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
         animate={{ scale: 1, y: 0, opacity: 1 }}
         exit={reduceMotion ? undefined : { scale: 0.97, y: 10, opacity: 0 }}
         transition={modalTransition}
-        className="flex max-h-[88vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl"
+        className="flex max-h-[80vh] w-full max-w-[500px] flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-slate-100 dark:border-slate-800 shrink-0">
@@ -521,8 +521,12 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           </div>
         </div>
 
-        <div className="relative grid min-h-0 flex-1 grid-cols-1 grid-rows-1 overflow-hidden">
-          <AnimatePresence initial={false} custom={tabDirection}>
+        <motion.div
+          layout={!reduceMotion}
+          transition={paneTransition}
+          className="relative grid min-h-0 flex-1 grid-cols-1 grid-rows-1 overflow-hidden"
+        >
+          <AnimatePresence initial={false} custom={tabDirection} mode="popLayout">
             <motion.div
               key={mode}
               custom={tabDirection}
@@ -583,7 +587,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
               )}
             </motion.div>
           </AnimatePresence>
-        </div>
+        </motion.div>
 
         <div className="flex shrink-0 items-center justify-between border-t border-slate-100 dark:border-slate-800 px-6 py-4">
           <div className="min-h-8 min-w-38">

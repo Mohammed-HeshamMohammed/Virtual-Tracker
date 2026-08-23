@@ -117,10 +117,10 @@ export function ProjectHealthGrid({
                     )}
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="text-sm text-slate-600">
-                      {p.members}
-                      {p.memberLimit && <span className="text-slate-300">/{p.memberLimit}</span>}
-                    </span>
+                    {/* memberLimit is a per-member cost/hour cap, not a
+                        headcount - showing it as members/memberLimit read
+                        as "3 of 5 seats used" when it isn't. */}
+                    <span className="text-sm text-slate-600">{p.members}</span>
                   </td>
                 </motion.tr>
               )
@@ -128,6 +128,18 @@ export function ProjectHealthGrid({
           </tbody>
         </table>
       </div>
+      {projects.length > activeProjects.length && (
+        <button
+          onClick={() => onNavigate?.("pm-projects")}
+          className={cn(
+            "shrink-0 border-t px-6 py-2.5 text-left text-xs font-semibold text-green-700 hover:underline",
+            isDark ? "border-[#3d4a3d]/40" : "border-slate-50",
+          )}
+          type="button"
+        >
+          +{projects.length - activeProjects.length} more project{projects.length - activeProjects.length === 1 ? "" : "s"}
+        </button>
+      )}
     </div>
   )
 }

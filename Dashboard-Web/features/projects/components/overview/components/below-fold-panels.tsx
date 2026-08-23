@@ -13,7 +13,7 @@ interface BelowFoldPanelsProps {
   isDark: boolean
   onNavigate?: (id: string) => void
   belowFoldRef: (node: HTMLElement | null) => void
-  isPanelsLoading: boolean
+  hasPanels: boolean
   panelsError: Error | null
   onRetryPanels: () => void
   tasks: OverviewTaskCard[]
@@ -27,7 +27,7 @@ export function BelowFoldPanels({
   isDark,
   onNavigate,
   belowFoldRef,
-  isPanelsLoading,
+  hasPanels,
   panelsError,
   onRetryPanels,
   tasks,
@@ -36,7 +36,12 @@ export function BelowFoldPanels({
   activity,
   clients,
 }: BelowFoldPanelsProps) {
-  if (isPanelsLoading && tasks.length === 0) {
+  // Covers both "actively fetching" and "hasn't scrolled into view yet, so
+  // the fetch hasn't even started" - without hasPanels, that second window
+  // read as isPanelsLoading=false + tasks=[], which fell through to each
+  // panel's own genuine "no data" empty state and flashed it before real
+  // data ever had a chance to load.
+  if (!hasPanels && !panelsError) {
     return (
       <section ref={belowFoldRef} className="mt-6 flex flex-col items-center justify-center gap-3 py-16">
         <Loader2 className="h-8 w-8 animate-spin text-slate-400" />

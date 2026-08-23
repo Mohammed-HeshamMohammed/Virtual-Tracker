@@ -4,7 +4,7 @@ import { extractApiError, fetchJsonWithRetry, type RequestOptions } from "@/infr
 
 type Envelope<T> = { success?: boolean; error?: string; data?: T }
 
-export type OverviewHealth = "on_track" | "at_risk" | "stalled"
+export type OverviewHealth = "on_track" | "at_risk" | "stalled" | "no_tasks"
 
 /** Compact project row from GET /api/projects/overview */
 export type OverviewCoreProject = {

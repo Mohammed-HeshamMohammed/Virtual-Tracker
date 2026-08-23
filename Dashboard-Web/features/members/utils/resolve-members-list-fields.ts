@@ -16,6 +16,11 @@ export const MEMBERS_LIST_CORE_API_FIELDS = [
   "role",
   "role_name",
   "tracking_status",
+  // Always fetched (not gated on the Projects filter being active) so
+  // applying that filter never has to wait on a refetch first - without
+  // this, every member's projectIds is [] until the field arrives, and the
+  // filter matches nothing for one render, flashing an empty table.
+  "project_ids",
 ] as const
 
 /** Optional table columns → API / enrichment fields. */

@@ -22,7 +22,7 @@ interface BudgetBarProps {
 }
 
 export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBarProps) {
-  const pct = Math.min(Math.round((used / total) * 100), 100)
+  const pct = total > 0 ? Math.min(Math.round((used / total) * 100), 100) : 0
   const color = pct >= 100 ? "bg-red-500" : pct >= 85 ? "bg-amber-500" : "bg-emerald-500"
 
   return (

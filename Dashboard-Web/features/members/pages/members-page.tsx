@@ -399,11 +399,11 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   }, [visibleMembers, canSeeAllMembers, scopedVisibleIds])
 
   const organizationScopedMembers = useMemo(() => {
-    if (!canToggleMyTeam || !myTeamOnly) return visibleMembers
-    if (teamMemberIdsLoading) return visibleMembers
+    if (!canToggleMyTeam || !myTeamOnly) return membersInViewerTree
+    if (teamMemberIdsLoading) return membersInViewerTree
     if (teamMemberIds.size === 0) return []
-    return visibleMembers.filter((member) => teamMemberIds.has(member.id))
-  }, [visibleMembers, canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
+    return membersInViewerTree.filter((member) => teamMemberIds.has(member.id))
+  }, [membersInViewerTree, canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
 
   const membersForRoleFilters = useMemo(() => {
     if (canToggleMyTeam && myTeamOnly) return organizationScopedMembers
