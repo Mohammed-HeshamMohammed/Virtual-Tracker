@@ -21,6 +21,7 @@ interface BelowFoldPanelsProps {
   assigneeNames: Record<string, string>
   activity: ProjectActivityRow[]
   clients: OverviewClientRow[]
+  showClientBudgets: boolean
 }
 
 export function BelowFoldPanels({
@@ -35,6 +36,7 @@ export function BelowFoldPanels({
   assigneeNames,
   activity,
   clients,
+  showClientBudgets,
 }: BelowFoldPanelsProps) {
   // Covers both "actively fetching" and "hasn't scrolled into view yet, so
   // the fetch hasn't even started" - without hasPanels, that second window
@@ -75,9 +77,11 @@ export function BelowFoldPanels({
         <ActivitySummary activity={activity} isDark={isDark} className="h-full" />
       </motion.div>
 
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-        <ClientBudgets clients={clients} isDark={isDark} onNavigate={onNavigate} />
-      </motion.div>
+      {showClientBudgets && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+          <ClientBudgets clients={clients} isDark={isDark} onNavigate={onNavigate} />
+        </motion.div>
+      )}
     </section>
   )
 }

@@ -176,6 +176,11 @@ export function canCreateTasksByOrgRole(role: string): boolean {
   return ORG_TASK_CREATE_ROLES.has(normalizeMemberRole(role))
 }
 
+/** Client budget figures are financial - Owner/Super Admin/Admin/Super Manager only. */
+export function canSeeClientBudgets(role: string): boolean {
+  return ORG_TASK_CREATE_ROLES.has(normalizeMemberRole(role))
+}
+
 export function isProjectManagerRole(projectRole: string): boolean {
   return normalizeMemberRole(projectRole) === "manager"
 }

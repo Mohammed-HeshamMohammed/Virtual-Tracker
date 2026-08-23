@@ -3,6 +3,7 @@ import { getAuthContext, requireManagementRole } from "../../http/auth-context.j
 import {
   assertProjectAccessible,
   getViewerProjectIds,
+  isOrgProjectAdminRole,
   toAllowedProjectSet,
   viewerCanWriteProject,
 } from "../../http/project-access.js";
@@ -186,7 +187,11 @@ export async function routeProjects(req, res, url, db, origin) {
         ? toAllowedProjectSet(await getViewerProjectIds(db, viewer.memberId, viewer.roleName))
         : null;
       const taskLimit = Number.parseInt(url.searchParams.get("task_limit") ?? "80", 10);
-      const data = await getOverviewPanels(db, { taskLimit, allowedProjectIds: allowed });
+      // Client budgets are financial data - Owner/Admin/Super Admin/Super
+      // Manager only. Gated here (not just hidden in the UI) so a Manager
+      // can't just read the response to see figures they shouldn't.
+      const includeClientBudgets = Boolean(viewer && isOrgProjectAdminRole(viewer.roleName));
+      const data = await getOverviewPanels(db, { taskLimit, allowedProjectIds: allowed, includeClientBudgets });
       sendJson(res, origin, 200, { success: true, data }, req);
     } catch (e) {
       logSafeError("[projects/overview/panels]", e);
