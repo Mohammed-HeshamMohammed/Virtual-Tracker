@@ -64,7 +64,7 @@ export function TasksPage() {
   const [view, setView] = useComponentState<ViewMode>("list")
   const [selectedProjectId, setSelectedProjectId] = useComponentState<string>("")
   const [projectMemberLinks, setProjectMemberLinks] = useComponentState<ProjectMember[]>([])
-  const canAddTask = useMemo(
+  const canAddTaskByRole = useMemo(
     () => canCreateTasksInProject(memberRole, currentMemberId, selectedProjectId, projectMemberLinks),
     [memberRole, currentMemberId, selectedProjectId, projectMemberLinks],
   )
@@ -274,16 +274,27 @@ export function TasksPage() {
   }, [selectedProjectId])
 
   const projectList = useMemo(() => {
-    // "calling" projects have no tasks by design - keeping them out of the
-    // picker gates this whole page (board, list, add task, wizard) at once.
-    const taskProjects = rawProjectList.filter((p: any) => p.type !== "calling")
+    // Calling projects now auto-get exactly one "Cold Calling" task on
+    // creation (see Dashboard-Backend routes.js) - they belong in the picker
+    // like any other project so that task is actually reachable here. What
+    // they still don't get is more tasks added manually (see canAddTask
+    // below, which blocks that specifically for calling projects).
     const privilegedRoles = new Set(["owner", "superadmin", "admin"])
-    if (privilegedRoles.has(normalizedRole)) return taskProjects
-    if (!currentMemberId) return taskProjects
-    return taskProjects.filter((p: any) =>
+    if (privilegedRoles.has(normalizedRole)) return rawProjectList
+    if (!currentMemberId) return rawProjectList
+    return rawProjectList.filter((p: any) =>
       p.members.some((m: Member) => m.id === currentMemberId)
     )
   }, [rawProjectList, normalizedRole, currentMemberId])
+
+  const isCallingProject = useMemo(
+    () => projectList.some((p: any) => p.id === selectedProjectId && p.type === "calling"),
+    [projectList, selectedProjectId],
+  )
+  // Calling projects keep exactly one task (the auto-created "Cold Calling"
+  // anchor) - viewable now that they're back in the picker, but still not a
+  // target for manually adding more tasks.
+  const canAddTask = canAddTaskByRole && !isCallingProject
 
   useEffect(() => {
     if (projectList.length === 0) return
