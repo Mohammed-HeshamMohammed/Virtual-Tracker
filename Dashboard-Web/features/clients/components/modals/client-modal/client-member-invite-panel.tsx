@@ -23,7 +23,7 @@ export type ClientMemberDraft = {
 export const emptyClientMemberDraft = (): ClientMemberDraft => ({
   mode: "invites",
   inviteEmail: "",
-  accountForm: { firstName: "", lastName: "", email: "", payRate: "" },
+  accountForm: { firstName: "", lastName: "", email: "", payRate: "", currency: "USD" },
   sendWelcomeEmail: true,
 })
 
