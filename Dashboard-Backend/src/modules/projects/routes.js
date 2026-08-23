@@ -15,8 +15,6 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { listClientsEnriched } from "../clients/services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { getOverviewCore, getOverviewPanels } from "./services/overview-service.js";
-import { createTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
-import { coldCallingTaskTitle } from "./cold-calling-task.js";
 import { PROJECT_FORM_FIELDS, PROJECT_FORM_TABS } from "./form-config.js";
 import { memberDisplayLabel } from "../members/services/member-display-name.js";
 import {
@@ -620,14 +618,6 @@ export async function routeProjects(req, res, url, db, origin) {
         endDate: body.end_date ?? body.endDate,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
-      if (project.type === "calling") {
-        await createTaskPg({
-          project_id: project.id,
-          title: coldCallingTaskTitle(project.name),
-          status: "todo",
-          created_by: viewer.memberId,
-        });
-      }
       sendJson(res, origin, 200, { success: true, data: project });
     } catch (e) {
       logSafeError("[projects POST]", e);
