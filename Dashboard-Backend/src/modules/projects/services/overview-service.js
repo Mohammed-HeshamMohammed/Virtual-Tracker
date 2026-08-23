@@ -47,15 +47,16 @@ function calculateHealth(status, tasksTotal, tasksDone) {
   return "stalled";
 }
 
-/** Calling projects have no completable tasks by design (see
- * project-type-picker.tsx) - the single auto-created "Cold Calling" task is
- * a time-tracking anchor, not a unit of work, so task-completion health
- * would rate every calling project "stalled" forever regardless of how much
- * real work is happening. Budget usage is the actual work signal there:
- * same 100%/85% thresholds BudgetBar already uses (red/amber/green), just
- * inverted from calculateHealth's sense - high *usage* is the risk here,
- * not low completion. */
-function calculateCallingHealth(status, spent, budgetTotal) {
+/** Budget usage as the health/progress signal, used whenever a project has
+ * a budget - task checkboxes and dollars/hours actually spent are two
+ * different things (a task can have real logged time against it long
+ * before anyone flips it to "done"), so task-completion could read 0%
+ * while the budget bar next to it was genuinely moving, which looked like
+ * a contradiction (or like tracking wasn't working at all). Same 100%/85%
+ * thresholds BudgetBar already uses (red/amber/green), just inverted from
+ * calculateHealth's sense - high *usage* is the risk here, not low
+ * completion. */
+function calculateBudgetHealth(status, spent, budgetTotal) {
   if (status === "archived") return "stalled";
   if (!(budgetTotal > 0)) return "no_tasks";
   const usedRatio = spent / budgetTotal;
@@ -168,7 +169,6 @@ export async function getOverviewCore(db, options = {}) {
     const id = row.id;
     const status = (str(row, "status") || "active").toLowerCase();
     const isActive = status !== "archived";
-    const isCalling = String(row.type) === "calling";
     const total = Number(row.tasks_total ?? 0);
     const done = Number(row.tasks_done ?? 0);
 
@@ -186,15 +186,17 @@ export async function getOverviewCore(db, options = {}) {
     const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
     const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
 
-    // Calling projects have no completable tasks (see calculateCallingHealth
-    // above) - both health and the "Progress" column use budget usage
-    // instead, via the same {d,t} ratio shape the frontend already renders
-    // task-progress from, so the Progress bar and the Budget bar agree
-    // instead of Progress reading a permanent, contradictory 0%.
-    const health = isCalling
-      ? calculateCallingHealth(status, spent, budgetTotal)
+    // Whenever a budget exists, health and the "Progress" column both use
+    // budget usage rather than task completion - money/hours actually spent
+    // is the more reliable "is real work happening" signal, and it keeps
+    // Progress from ever contradicting the Budget bar right next to it.
+    // Task completion is the fallback only for projects with no budget at
+    // all to measure against (calling projects almost always have one; a
+    // budgetless normal project falls back to its real task ratio).
+    const health = hasBudget
+      ? calculateBudgetHealth(status, spent, budgetTotal)
       : calculateHealth(status, total, done);
-    const progress = isCalling ? { d: Math.round(spent), t: Math.round(budgetTotal) } : { d: done, t: total };
+    const progress = hasBudget ? { d: Math.round(spent), t: Math.round(budgetTotal) } : { d: done, t: total };
 
     const members = Number(row.member_count ?? 0);
     const memberLimit = row.member_limit_cost != null ? Number(row.member_limit_cost) : null;

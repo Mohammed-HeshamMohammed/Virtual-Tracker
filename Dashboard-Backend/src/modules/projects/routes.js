@@ -16,6 +16,7 @@ import { listClientsEnriched } from "../clients/services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { getOverviewCore, getOverviewPanels } from "./services/overview-service.js";
 import { createTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { coldCallingTaskTitle } from "./cold-calling-task.js";
 import { PROJECT_FORM_FIELDS, PROJECT_FORM_TABS } from "./form-config.js";
 import { memberDisplayLabel } from "../members/services/member-display-name.js";
 import {
@@ -106,19 +107,6 @@ function memberLabel(data) {
 }
 
 export const PROJECT_TYPES = ["normal", "calling"];
-
-/** "Banna Estate" -> "B.E." Falls back to the first two letters for a single-word name. */
-function projectInitials(name) {
-  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "";
-  if (words.length === 1) return `${words[0].slice(0, 2).toUpperCase()}.`;
-  return `${words.map((w) => w[0].toUpperCase()).join(".")}.`;
-}
-
-function coldCallingTaskTitle(projectName) {
-  const initials = projectInitials(projectName);
-  return initials ? `${initials} Cold Calling` : "Cold Calling";
-}
 
 /** Throws on an unrecognized value; message becomes the 400 response. */
 function normalizeProjectType(value) {
