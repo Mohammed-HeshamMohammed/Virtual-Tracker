@@ -5,6 +5,7 @@ import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getProjectPg, listProjectIdsForMemberPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getTaskPg, listTasksPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import {
   deleteAssignmentPg,
@@ -144,7 +145,32 @@ async function notifyRecipients(db, recipientIds, payload) {
   );
 }
 
-async function notifyAssignmentStatusChange(db, { task, assigneeId, previousStatus, nextStatus, actorName }) {
+/**
+ * Best-effort by design. Every one of the six call sites persists the status
+ * change BEFORE calling this, and several go on to do essential work after it
+ * (recomputeTaskStatus, updateTrackingFieldsPg) - including the timer
+ * start/resume path in task-time-tracking.js. Letting a notification failure
+ * propagate therefore aborted that follow-up work and reported an already-
+ * applied status change as failed, inviting the caller to retry it.
+ *
+ * A notification is not the operation it describes; the recipient lookups
+ * alone (member_relationships, project tables) are enough DB surface to fail
+ * independently. Same rule maybeNotifyProjectBudget already follows in
+ * activity/routes.js: "a failed notification is not a reason to stop someone
+ * from working".
+ */
+async function notifyAssignmentStatusChange(db, params) {
+  try {
+    await dispatchAssignmentStatusNotification(db, params);
+  } catch (err) {
+    logSafeWarn("[task-assignments] assignment status notification failed", err);
+  }
+}
+
+async function dispatchAssignmentStatusNotification(
+  db,
+  { task, assigneeId, previousStatus, nextStatus, actorName },
+) {
   const taskTitle = task.title || "Task";
   const projectId = task.project_id ?? task.projectId ?? null;
   const link = projectId ? `pm-tasks?project=${projectId}` : "pm-tasks";

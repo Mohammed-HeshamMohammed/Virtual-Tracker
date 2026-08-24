@@ -7,7 +7,7 @@ import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
 /** @type {{ task: Record<string, unknown>, assignment: Record<string, unknown>, assignments: Record<string, unknown>[], patchedAssignment: Record<string, unknown> | null, patchedTask: Record<string, unknown> | null }} */
-const stub = { task: {}, assignment: {}, assignments: [], patchedAssignment: null, patchedTask: null };
+const stub = { task: {}, assignment: {}, assignments: [], patchedAssignment: null, patchedTask: null, failNotifyLookup: false };
 
 mock.module("../src/lib/postgres/tasks-postgres.service.js", {
   namedExports: {
@@ -57,7 +57,12 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
 // empty-recipient case the Firestore stub produced.
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    query: async () => [],
+    query: async () => {
+      // The only thing reaching the raw client on this path is
+      // getDirectParentIds, i.e. the notification recipient lookup.
+      if (stub.failNotifyLookup) throw new Error("member_relationships unavailable");
+      return [];
+    },
     withTransaction: async (fn) => fn({ query: async () => [] }),
     isPostgresConfigured: () => true,
     getPostgresPool: () => null,
@@ -100,6 +105,7 @@ function setUp({ taskStatus, myStatus, coAssigneeStatus }) {
   stub.assignments = assignments;
   stub.patchedAssignment = null;
   stub.patchedTask = null;
+  stub.failNotifyLookup = false;
 }
 
 test("blocking myself from todo sets my assignment to blocked", async () => {
@@ -141,4 +147,21 @@ test("a done assignment cannot be blocked", async () => {
   const result = await blockTaskForUser(fakeDb, { taskId: "t1", userId: "m1", userName: "Me" });
   assert.equal(result.assignmentStatus, "done");
   assert.equal(stub.patchedAssignment, null);
+});
+
+// The status change is persisted BEFORE the notification is sent, and
+// recomputeTaskStatus runs after it. When the notify path was allowed to
+// throw, a hiccup in the recipient lookup skipped that recompute and made an
+// already-applied block report as failed - so the caller would retry
+// something that had already happened. Notification is best-effort now.
+test("a failing notification does not undo or fail the block", async () => {
+  setUp({ taskStatus: "todo", myStatus: "todo" });
+  stub.failNotifyLookup = true;
+
+  const result = await blockTaskForUser(fakeDb, { taskId: "t1", userId: "m1", userName: "Me" });
+
+  assert.equal(result.assignmentStatus, "blocked");
+  assert.equal(stub.patchedAssignment?.status, "blocked");
+  // Proves the post-notification work still ran rather than being skipped.
+  assert.equal(stub.patchedTask?.status, "blocked");
 });
