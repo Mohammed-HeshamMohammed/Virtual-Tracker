@@ -505,10 +505,11 @@ export async function routeActivity(req, res, url, origin) {
             }
           }
         } else {
-          // Task-less timer. Only "calling" projects work this way, and only
-          // for their own members - the project-membership check here is the
-          // equivalent of the task-assignment check a normal timer gets via
-          // canAccessTask below.
+          // Task-less timer. "calling" projects always work this way, and a
+          // normal project can opt in via require_task_to_track = false -
+          // only for their own members, so the project-membership check here
+          // is the equivalent of the task-assignment check a normal timer
+          // gets via canAccessTask below.
           if (!sessionProjectId) {
             sendJson(res, origin, 400, {
               success: false,
@@ -521,7 +522,12 @@ export async function routeActivity(req, res, url, origin) {
             sendJson(res, origin, 404, { success: false, error: "Project not found" });
             return true;
           }
-          if (String(project.type || "normal") !== "calling") {
+          // Strict `=== false`: an un-migrated row reads undefined here and
+          // must fall back to requiring a task, not to allowing everything.
+          const allowsTaskLessTimer =
+            String(project.type || "normal") === "calling" ||
+            project.require_task_to_track === false;
+          if (!allowsTaskLessTimer) {
             sendJson(res, origin, 400, {
               success: false,
               error: "This project tracks time against tasks - select a task to start the timer.",
