@@ -11,6 +11,7 @@ import { query } from "./client.js";
 import { getSingleByMemberId } from "./member-data-store.js";
 import { getClientBudgetPg } from "./clients-postgres.service.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
+import { syncManagementParentsOfProject } from "../../modules/projects/management-rollup.service.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -182,20 +183,25 @@ export async function listProjectsPg(options = {}) {
 export async function addProjectMemberPg(projectId, memberId, options = {}) {
   const id = crypto.randomUUID();
   const rows = await query(
-    `INSERT INTO project_members (id, project_id, member_id, project_role, assigned_by, updated_by)
-     VALUES ($1,$2,$3,$4,$5,$5)
+    `INSERT INTO project_members (id, project_id, member_id, project_role, source, assigned_by, updated_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$6)
      ON CONFLICT (project_id, member_id) DO UPDATE SET project_role = EXCLUDED.project_role, updated_by = EXCLUDED.updated_by
      RETURNING *`,
-    [id, projectId, memberId, options.role ?? null, uuidOrNull(options.actorId)],
+    [id, projectId, memberId, options.role ?? null, options.source ?? "manual", uuidOrNull(options.actorId)],
   );
   const row = rows[0] ?? null;
   if (row) void publishChange("project-members", projectId, "updated", uuidOrNull(options.actorId) ?? undefined);
+  // Continuous roll-up: if this project sits under any management project,
+  // that project's member list is derived from this one and must follow.
+  // Deliberately not awaited - see syncManagementParentsOfProject's contract.
+  void syncManagementParentsOfProject(projectId, uuidOrNull(options.actorId));
   return row;
 }
 
 export async function removeProjectMemberPg(projectId, memberId, actorId) {
   await query("DELETE FROM project_members WHERE project_id = $1 AND member_id = $2", [projectId, memberId]);
   void publishChange("project-members", projectId, "updated", uuidOrNull(actorId) ?? undefined);
+  void syncManagementParentsOfProject(projectId, uuidOrNull(actorId));
 }
 
 export async function listProjectMembersPg(projectId) {

@@ -1223,7 +1223,7 @@ GROUP BY task_id`,
   managers_notes          TEXT,
   users_notes             TEXT,
   viewers_notes           TEXT,
-  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support')),
+  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support', 'management')),
   end_date                DATE,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1241,7 +1241,7 @@ GROUP BY task_id`,
   // and keeps the allowed set in one place (project-types.js is the source of
   // truth; this list must stay in step with it).
   `ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_type_check`,
-  `ALTER TABLE projects ADD CONSTRAINT projects_type_check CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support'))`,
+  `ALTER TABLE projects ADD CONSTRAINT projects_type_check CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support', 'management'))`,
   // Optional, informational only (item 5 of the budget fixes plan) - not
   // required, nothing archives on it. Deliberately no start_date: created_at
   // already answers "when did this project start".
@@ -1281,6 +1281,31 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members (project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pm_member ON project_members (member_id)`,
+  // 'manual' (somebody picked this person) or 'rolled_up' (they are here
+  // because they manage a linked sub-project of a management project). The
+  // distinction is what lets the roll-up prune its own stale rows without
+  // ever deleting someone a human added by hand. Defaults to 'manual' so
+  // every pre-existing row keeps behaving exactly as before.
+  `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'manual'`,
+  // Management projects sit above other projects. Deliberately not a
+  // parent_id column on projects: a sub-project can answer to more than one
+  // management project, and this keeps projects itself free of a self-FK.
+  // ON DELETE CASCADE both ways - deleting either end drops the link, never
+  // the other project.
+  `CREATE TABLE IF NOT EXISTS project_subprojects (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  parent_project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  child_project_id   UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  linked_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  linked_by          UUID,
+  UNIQUE (parent_project_id, child_project_id),
+  -- A project cannot be its own sub-project. Deeper cycles are prevented in
+  -- application code (only non-management projects may be children, so a
+  -- chain of management projects cannot form).
+  CHECK (parent_project_id <> child_project_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_psp_parent ON project_subprojects (parent_project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_psp_child ON project_subprojects (child_project_id)`,
   // type/based_on/resets etc. exist in the live Firestore doc today but were never
   // read by overview-service.js - that omission is the root cause of the budget-type
   // display bug (see proposal doc "Related Bug" section). Carrying them forward here.

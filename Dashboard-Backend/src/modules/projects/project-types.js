@@ -14,11 +14,14 @@
 //                     non-billable work that has no rate at all.
 //   billable        - default only; editable per project on the General tab.
 //   defaultResets   - default only; editable on the Budget Limits tab.
+//   membersRoleFilter - restricts who may be assigned at all. null = anyone.
+//   hasSubProjects  - whether the project can group other projects beneath
+//                     it, rolling their managers up into its own member list.
 //
 // requiresTask and billable are DEFAULTS seeded into the create form. hasTasks
 // and forcesHours are INVARIANTS of the type and are enforced server-side.
 
-/** @typedef {{ hasTasks: boolean, requiresTask: boolean, forcesHours: boolean, billable: boolean, defaultResets: string, label: string }} ProjectTypeDef */
+/** @typedef {{ hasTasks: boolean, requiresTask: boolean, forcesHours: boolean, billable: boolean, defaultResets: string, label: string, membersRoleFilter: string | null, hasSubProjects: boolean }} ProjectTypeDef */
 
 /** @type {Record<string, ProjectTypeDef>} */
 export const PROJECT_TYPE_DEFS = {
@@ -29,6 +32,8 @@ export const PROJECT_TYPE_DEFS = {
     forcesHours: false,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   calling: {
     label: "Calling",
@@ -37,6 +42,8 @@ export const PROJECT_TYPE_DEFS = {
     forcesHours: true,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   retainer: {
     label: "Retainer",
@@ -48,6 +55,8 @@ export const PROJECT_TYPE_DEFS = {
     billable: true,
     // The whole point of a retainer: the allowance refills each month.
     defaultResets: "Monthly",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   fixed_price: {
     label: "Fixed price",
@@ -58,6 +67,8 @@ export const PROJECT_TYPE_DEFS = {
     // The budget is the agreed contract value. Resetting it monthly would
     // silently re-grant the entire scope, so this one must not roll over.
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   internal: {
     label: "Internal",
@@ -68,6 +79,8 @@ export const PROJECT_TYPE_DEFS = {
     forcesHours: true,
     billable: false,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   support: {
     label: "Support",
@@ -78,6 +91,25 @@ export const PROJECT_TYPE_DEFS = {
     forcesHours: true,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
+  },
+  management: {
+    label: "Management",
+    // Oversight work: coordination time is real and worth tracking, but it
+    // is not organized as a deliverable list, so a task is never required.
+    hasTasks: true,
+    requiresTask: false,
+    // No per-task rate anchor for coordination work - hours is the only
+    // coherent denomination, same reasoning as calling/support.
+    forcesHours: true,
+    billable: true,
+    defaultResets: "Never",
+    // The whole point: a management project is where managers coordinate, so
+    // employees have no place on it. Enforced server-side, not just filtered
+    // in the picker.
+    membersRoleFilter: "manager_and_above",
+    hasSubProjects: true,
   },
 };
 
@@ -97,4 +129,14 @@ export function isTaskLessProjectType(type) {
 /** True for types that reject a Cost based budget. */
 export function projectTypeForcesHours(type) {
   return projectTypeDef(type).forcesHours;
+}
+
+/** True for types that can group other projects (management). */
+export function projectTypeHasSubProjects(type) {
+  return projectTypeDef(type).hasSubProjects;
+}
+
+/** Role filter applied to who may be assigned, or null when anyone may be. */
+export function projectTypeMembersRoleFilter(type) {
+  return projectTypeDef(type).membersRoleFilter;
 }
