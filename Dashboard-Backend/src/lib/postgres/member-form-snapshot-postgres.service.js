@@ -47,3 +47,8 @@ export async function upsertMemberFormSnapshotPg(memberId, formData, modifiedBy 
   );
   return rows[0]?.id;
 }
+
+/** @param {string} memberId */
+export async function deleteMemberFormSnapshotPg(memberId) {
+  await query("DELETE FROM members_field_data WHERE form_key = $1 AND member_id = $2", [FORM_KEY, memberId]);
+}

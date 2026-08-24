@@ -36,6 +36,11 @@ mock.module("../src/lib/postgres/client.js", {
         const [formKey] = params;
         return stub.rows.filter((r) => r.form_key === formKey);
       }
+      if (sql.startsWith("DELETE FROM members_field_data")) {
+        const [formKey, memberId] = params;
+        stub.rows = stub.rows.filter((r) => !(r.form_key === formKey && r.member_id === memberId));
+        return [];
+      }
       throw new Error(`unexpected query: ${sql}`);
     },
     withTransaction: async (fn) => fn({ query: async () => [] }),
@@ -46,7 +51,7 @@ mock.module("../src/lib/postgres/client.js", {
   },
 });
 
-const { upsertMemberFormSnapshotPg, listMemberFormSnapshotsPg } = await import(
+const { upsertMemberFormSnapshotPg, listMemberFormSnapshotsPg, deleteMemberFormSnapshotPg } = await import(
   "../src/lib/postgres/member-form-snapshot-postgres.service.js"
 );
 
@@ -91,4 +96,19 @@ test("no modifiedBy is stored as null, not the string 'undefined'", async () => 
   await upsertMemberFormSnapshotPg("m1", { firstName: "Sarah" });
   const [row] = await listMemberFormSnapshotsPg("m1");
   assert.equal(row.modifiedBy, "");
+});
+
+// Guards the specific regression this test file was updated to catch:
+// deleteMemberProfileData (member-profile.service.js, run on member
+// deletion/deactivation) queried Firestore for these rows after the data
+// itself had already moved to Postgres - the query always found nothing,
+// so a deleted member's snapshot was silently orphaned forever instead of
+// being cleaned up.
+test("deleting a member's snapshot removes only that member's row", async () => {
+  reset();
+  await upsertMemberFormSnapshotPg("m1", { firstName: "Sarah" });
+  await upsertMemberFormSnapshotPg("m2", { firstName: "Ahmed" });
+  await deleteMemberFormSnapshotPg("m1");
+  assert.equal((await listMemberFormSnapshotsPg("m1")).length, 0);
+  assert.equal((await listMemberFormSnapshotsPg("m2")).length, 1, "deleting m1 must not touch m2's row");
 });
