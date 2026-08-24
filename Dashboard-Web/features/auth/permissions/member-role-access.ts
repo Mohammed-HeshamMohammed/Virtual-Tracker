@@ -190,6 +190,10 @@ export function canCreateTasksInProject(
   memberId: string | null | undefined,
   projectId: string | null | undefined,
   projectMembers: ReadonlyArray<{ projectId: string; memberId: string; projectRole: string }>,
+  /** The project's `restrictTaskCreation` setting. Defaults to true, which is
+   * the manager-only rule this function has always enforced unconditionally.
+   * false lets any assigned member of that project create tasks in it. */
+  restrictTaskCreation = true,
 ): boolean {
   if (canCreateTasksByOrgRole(orgRole)) return true
   if (!memberId) return false
@@ -197,12 +201,11 @@ export function canCreateTasksInProject(
     (row) => row.memberId === memberId && isProjectManagerRole(row.projectRole),
   )
   if (!projectId) return managesAnyProject
-  return projectMembers.some(
-    (row) =>
-      row.projectId === projectId &&
-      row.memberId === memberId &&
-      isProjectManagerRole(row.projectRole),
+  const rowsForProject = projectMembers.filter(
+    (row) => row.projectId === projectId && row.memberId === memberId,
   )
+  if (!restrictTaskCreation) return rowsForProject.length > 0
+  return rowsForProject.some((row) => isProjectManagerRole(row.projectRole))
 }
 
 /** Roles that may create tasks in the tasks UI (org admins only — project managers resolved per project). */

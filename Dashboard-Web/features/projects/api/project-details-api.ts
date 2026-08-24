@@ -18,6 +18,17 @@ import {
 } from "@/features/projects/api/project-api"
 
 
+/** One member's project-level limit - a tightening measure applied on top of
+ * that member's own daily/weekly cap, never a replacement for it. */
+export interface ProjectMemberLimitEntry {
+  memberId: string
+  type: string
+  basedOn: string
+  cost: string
+  resets: string
+  startDate: string
+}
+
 /** Payload mirroring the Desktop add-project form (all tabs). */
 export interface CreateProjectFormPayload {
   name: string
@@ -25,6 +36,9 @@ export interface CreateProjectFormPayload {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  requireTaskToTrack: boolean
+  restrictTaskCreation: boolean
+  requireStopNote: boolean
   disableIdleTime: boolean
   /** Total idle-time threshold in seconds (hours+minutes in the UI, stored as
    * seconds on the wire) - how long without activity before time on this
@@ -38,6 +52,13 @@ export interface CreateProjectFormPayload {
   userIds: string[]
   viewerIds: string[]
   memberLimitMemberIds: string[]
+  /** One independent limit per member. Replaces the old single shared block,
+   * which could only ever describe one member even though the table is keyed
+   * (project_id, member_id). */
+  memberLimits: ProjectMemberLimitEntry[]
+  /** Each member's OWN daily/weekly hour cap, read-only - shown next to the
+   * project field so it's visible a project limit tightens on top of it. */
+  memberOwnLimits: Record<string, { daily: number; weekly: number }>
   /** Whether timers stop once the budget cap is reached - not "does this
    * project have a budget" (every project always does, see item 6). */
   budgetStopTimers: boolean
@@ -54,10 +75,6 @@ export interface CreateProjectFormPayload {
   budgetStartDate: string
   budgetIncludeNonBillable: boolean
   budgetNotifyMembers: boolean
-  memberLimitType: string
-  memberLimitBasedOn: string
-  memberLimitResets: string
-  memberLimitStartDate: string
   memberLimitNotifyAt: string
   memberLimitNotifyMembers: boolean
   memberLimitMembers: string
@@ -536,6 +553,8 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     userIds: data.userIds ?? [],
     viewerIds: data.viewerIds ?? [],
     memberLimitMemberIds: data.memberLimitMemberIds ?? [],
+    memberLimits: data.memberLimits ?? [],
+    memberOwnLimits: data.memberOwnLimits ?? {},
   }
 }
 
@@ -665,37 +684,56 @@ async function addProjectMembersFast(
   await Promise.all(desired.map((link) => addProjectMember(projectId, link.memberId, link.role, actorMemberId)))
 }
 
-async function createProjectMemberLimitsFast(
+/** Upserts one row per member and deletes rows for members no longer listed.
+ * Each member carries independent values, so this can't be a single shared
+ * write - the table is keyed (project_id, member_id) and POST upserts on that
+ * key. Notify-at / notify-members stay project-wide, matching the UI. */
+async function syncProjectMemberLimits(
   projectId: string,
   payload: CreateProjectFormPayload,
   actorMemberId?: string,
 ): Promise<void> {
-  if (
-    payload.memberLimitMemberIds.length === 0 ||
-    !payload.memberLimitType.trim() ||
-    !payload.memberLimitBasedOn.trim()
-  ) {
-    return
-  }
-  const limitCost = parseOptionalNumber(String(payload.budgetSpent)) ?? 0
-  await Promise.all(
-    filterValidUuids(payload.memberLimitMemberIds).map((memberId) =>
+  const rows = (payload.memberLimits ?? []).filter(
+    (row) => isValidUuid(row.memberId) && row.type.trim() && row.basedOn.trim(),
+  )
+  const keep = new Set(rows.map((row) => row.memberId))
+  const existing = await getProjectMemberLimits(projectId).catch(() => [])
+
+  await Promise.all([
+    ...rows.map((row) =>
       createProjectMemberLimit({
         projectId,
-        memberId,
-        type: payload.memberLimitType,
-        basedOn: payload.memberLimitBasedOn,
-        cost: limitCost,
-        resets: payload.memberLimitResets || "Never",
-        startDate: payload.memberLimitStartDate,
+        memberId: row.memberId,
+        type: row.type,
+        basedOn: row.basedOn,
+        cost: parseOptionalNumber(row.cost) ?? 0,
+        resets: row.resets || "Never",
+        startDate: row.startDate,
         notifyAtPct: parseOptionalNumber(payload.memberLimitNotifyAt),
         notifyProjectMembers: payload.memberLimitNotifyMembers,
         ...(actorMemberId ? { createdBy: actorMemberId } : {}),
       }).catch((err) => {
-        console.warn("project-member-limits failed", err)
+        console.warn("project-member-limits upsert failed", err)
       }),
     ),
+    ...existing
+      .filter((row) => row.memberId && !keep.has(row.memberId))
+      .map((row) =>
+        deleteProjectMemberLimit(projectId, row.memberId).catch((err) => {
+          console.warn("project-member-limits delete failed", err)
+        }),
+      ),
+  ])
+}
+
+async function deleteProjectMemberLimit(projectId: string, memberId: string): Promise<void> {
+  const res = await apiFetch(
+    apiPath(
+      `/api/project-member-limits?project_id=${encodeURIComponent(projectId)}&member_id=${encodeURIComponent(memberId)}`,
+    ),
+    { method: "DELETE" },
   )
+  if (!res.ok) throw new Error("Failed to remove project member limit")
 }
 
 /** Updates project + budget, member links, and team links. */
@@ -723,6 +761,12 @@ export async function updateProjectWithDetails(
       billable: payload.billable,
       disableActivity: payload.disableActivity,
       allowProjectTracking: payload.allowProjectTracking,
+    requireTaskToTrack: payload.requireTaskToTrack,
+    restrictTaskCreation: payload.restrictTaskCreation,
+    requireStopNote: payload.requireStopNote,
+      requireTaskToTrack: payload.requireTaskToTrack,
+      restrictTaskCreation: payload.restrictTaskCreation,
+      requireStopNote: payload.requireStopNote,
       disableIdleTime: payload.disableIdleTime,
       idleTimeSeconds: payload.idleTimeSeconds,
       endDate: payload.endDate,
@@ -736,6 +780,9 @@ export async function updateProjectWithDetails(
     shouldPersistBudget(payload)
       ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId, options?.expectedBudgetUpdatedAt)
       : Promise.resolve(),
+    // Edits used to skip member limits entirely (create-only), so any change
+    // made on the Members Limits tab in edit mode was silently discarded.
+    syncProjectMemberLimits(projectId, payload, actorMemberId),
   ])
 
   return updated
@@ -783,6 +830,9 @@ export async function createProjectWithDetails(
     billable: payload.billable,
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
+    requireTaskToTrack: payload.requireTaskToTrack,
+    restrictTaskCreation: payload.restrictTaskCreation,
+    requireStopNote: payload.requireStopNote,
     disableIdleTime: payload.disableIdleTime,
     idleTimeSeconds: payload.idleTimeSeconds,
     endDate: payload.endDate,
@@ -808,7 +858,7 @@ export async function createProjectWithDetails(
     linkClientsFast(created.id, clientIds, actorMemberId),
     addProjectMembersFast(created.id, memberPayload, actorMemberId),
     linkTeamsFast(created.id, payload.teamIds, actorMemberId),
-    createProjectMemberLimitsFast(created.id, payload, actorMemberId),
+    syncProjectMemberLimits(created.id, payload, actorMemberId),
   ])
 
   return created
