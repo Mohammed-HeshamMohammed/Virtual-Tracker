@@ -204,8 +204,16 @@ export async function getOverviewCore(db, options = {}) {
     if (isActive) {
       activeProjects += 1;
       if (health === "on_track") onTrack += 1;
-      tasksTotalSum += total;
-      tasksDoneSum += done;
+      // Calling projects have no real task rows by design (the project
+      // itself is the unit of work, see calling-project-task-cleanup.js) -
+      // count each as one virtual task, done once its budget is fully
+      // spent, so "Tasks Completed" isn't blind to an entire project type
+      // the way a straight sum of real `tasks` rows would be.
+      const isCalling = str(row, "type") === "calling";
+      const virtualTotal = isCalling ? 1 : total;
+      const virtualDone = isCalling ? (hasBudget && spent / budgetTotal >= 1 ? 1 : 0) : done;
+      tasksTotalSum += virtualTotal;
+      tasksDoneSum += virtualDone;
       budgetSpentSum += spent;
       budgetTotalSum += budgetTotal;
     }
@@ -355,9 +363,11 @@ export async function getOverviewPanels(db, options = {}) {
   });
 
   const projectActivity = [];
+  const projectsWithActivity = new Set();
   for (const [pid, list] of tasksByProject) {
     if (allowed !== null && !allowed.has(pid)) continue;
     if (!list.length) continue;
+    projectsWithActivity.add(pid);
     const counts = { todo: 0, in_progress: 0, in_review: 0, blocked: 0, done: 0 };
     for (const t of list) {
       if (counts[t.status] !== undefined) counts[t.status] += 1;
@@ -374,6 +384,30 @@ export async function getOverviewPanels(db, options = {}) {
       dn: counts.done,
       tot: total,
       b: projectBudgetById.get(pid) ?? null,
+    });
+  }
+  // Calling projects (and any other type) with a budget but zero task rows
+  // never show up above - that's the whole reason this panel used to omit
+  // them entirely. Append them with all-zero task counts so the
+  // budget-usage bar (same one the main table's Progress column renders)
+  // has somewhere to show.
+  for (const row of projectRows) {
+    const pid = row.id;
+    if (projectsWithActivity.has(pid)) continue;
+    if (allowed !== null && !allowed.has(pid)) continue;
+    const budget = projectBudgetById.get(pid);
+    if (!budget) continue;
+    projectActivity.push({
+      id: pid,
+      n: projectNameById.get(pid) ?? "Project",
+      c: projectColorById.get(pid) ?? 0,
+      td: 0,
+      ip: 0,
+      ir: 0,
+      bl: 0,
+      dn: 0,
+      tot: 0,
+      b: budget,
     });
   }
 
