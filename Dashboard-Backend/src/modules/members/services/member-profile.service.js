@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
-import { upsertMemberFormSnapshotPg } from "../../../lib/postgres/member-form-snapshot-postgres.service.js";
+import {
+  upsertMemberFormSnapshotPg,
+  deleteMemberFormSnapshotPg,
+} from "../../../lib/postgres/member-form-snapshot-postgres.service.js";
 import { publishChange } from "../../realtime/change-bus.js";
 import { ensureMemberScopedEntities } from "./member-entity-bootstrap.js";
 import { enrichMemberWithPresence } from "./member-presence.service.js";
@@ -784,16 +787,7 @@ export async function deleteMemberProfileData(db, memberId) {
     await batch.commit();
   }
   await deleteLimitsDoc(db, memberId);
-  const snapshotSnap = await db
-    .collection("members_field_data")
-    .where("type", "==", "memberFormSnapshot")
-    .where("memberDocId", "==", memberId)
-    .get();
-  if (!snapshotSnap.empty) {
-    const batch = db.batch();
-    for (const doc of snapshotSnap.docs) batch.delete(doc.ref);
-    await batch.commit();
-  }
+  await deleteMemberFormSnapshotPg(memberId);
 }
 
 /**
