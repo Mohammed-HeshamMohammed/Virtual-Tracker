@@ -798,6 +798,22 @@ export function ProjectModal({
     }))
   }
 
+  /** Copies one member's limit onto every other selected member. Each row
+   * keeps its own memberId - the table is keyed (project_id, member_id), so
+   * reusing the source id would collapse them all onto one row. */
+  function copyMemberLimitToAll(sourceMemberId: string) {
+    setAddForm((prev) => {
+      const source = prev.memberLimitRows[sourceMemberId]
+      if (!source) return prev
+      const nextRows = { ...prev.memberLimitRows }
+      for (const memberId of prev.memberLimitMembers) {
+        if (memberId === sourceMemberId) continue
+        nextRows[memberId] = { ...source, memberId }
+      }
+      return { ...prev, memberLimitRows: nextRows }
+    })
+  }
+
   /** Drops the member from the limits list entirely - both the selection the
    * picker drives and any values already typed, so a half-filled row can't
    * linger invisibly after the member is removed. */
@@ -1638,6 +1654,7 @@ export function ProjectModal({
                     memberLabels={memberLabelById}
                     onChange={updateMemberLimitRow}
                     onRemove={removeMemberLimit}
+                    onCopyToAll={copyMemberLimitToAll}
                   />
                 </div>
                 ) : (
