@@ -91,7 +91,9 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     getProjectBudgetPg: async () => stub.projectBudget,
     getAllProjectBudgetsPg: async () => [],
     upsertProjectBudgetPg: async () => null,
-    getProjectMemberLimitPg: async () => null,
+    getProjectMemberLimitPg: async () => stub.projectMemberLimit ?? null,
+    deleteProjectMemberLimitPg: async () => true,
+    resolveMemberHourlyRatePg: async () => stub.memberHourlyRate ?? 0,
     listProjectMemberLimitsPg: async () => [],
     getAllProjectMemberLimitsPg: async () => [],
     upsertProjectMemberLimitPg: async () => null,
@@ -128,6 +130,8 @@ function reset(patch = {}) {
     taskTrackingRows: [],
     projectBudget: null,
     memberProjectSpentSeconds: 0,
+    projectMemberLimit: null,
+    memberHourlyRate: 0,
     _callToggle: false,
   }, patch);
 }
@@ -230,4 +234,136 @@ test("a shared_task_budget task pools estimatedSeconds across every assignee for
   // 8h total, 5h already used by member-2, 3h left for the pool regardless
   // of member-1's own (zero) contribution so far.
   assert.equal(allowance.allowedRemainingSeconds, 3 * HOUR);
+});
+
+// ---------------------------------------------------------------------------
+// Per-member project limits (project_member_limits - the "Members Limits" tab)
+//
+// These rows were written by the UI for a long time while nothing read them,
+// so the risk here is twofold: that they go back to being inert, and that
+// they REPLACE the member's own cap instead of tightening it. Every case
+// below pins the tightening contract - the limit joins the same Math.min
+// list, so whichever cap is smaller wins, and a limit that cannot be
+// converted into time must not block tracking outright.
+// ---------------------------------------------------------------------------
+
+test("member limit: an hours limit caps what is left on the project", async () => {
+  reset({
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 4 * HOUR,
+  });
+  const allowance = await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" });
+  assert.equal(allowance.allowedRemainingSeconds, 6 * HOUR);
+  assert.equal(allowance.limitReached, false);
+});
+
+test("member limit: exhausting it blocks the timer", async () => {
+  reset({
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 10 * HOUR,
+  });
+  const allowance = await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" });
+  assert.equal(allowance.allowedRemainingSeconds, 0);
+  assert.equal(allowance.limitReached, true);
+});
+
+test("member limit tightens the personal cap, never loosens it", async () => {
+  // Personal cap leaves 2h today; the project limit leaves 6h. The tighter
+  // one (personal) must win - the project limit must not raise the ceiling.
+  reset({
+    daily: 8,
+    workedToday: 6 * HOUR,
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 4 * HOUR,
+  });
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" })).allowedRemainingSeconds,
+    2 * HOUR,
+  );
+
+  // Flip it: the project limit is now the tighter of the two and must win.
+  reset({
+    daily: 8,
+    workedToday: 1 * HOUR,
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 9.5 * HOUR,
+  });
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" })).allowedRemainingSeconds,
+    0.5 * HOUR,
+  );
+});
+
+test("member limit: an amount limit converts through the member's rate", async () => {
+  // $200 cap at $50/h = 4h of allowance, 1h of which is already spent.
+  reset({
+    projectMemberLimit: { cost: 200, type: "Total cost", based_on: "Pay rate", resets: "Never" },
+    memberHourlyRate: 50,
+    memberProjectSpentSeconds: 1 * HOUR,
+  });
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" })).allowedRemainingSeconds,
+    3 * HOUR,
+  );
+});
+
+test("member limit: an amount limit with no rate configured does not block tracking", async () => {
+  // Nothing can convert $200 into time here. Blocking would make the project
+  // untrackable because someone forgot to set a rate - it must read as "no
+  // limit", not "zero limit".
+  reset({
+    projectMemberLimit: { cost: 200, type: "Total cost", based_on: "Pay rate", resets: "Never" },
+    memberHourlyRate: 0,
+    memberProjectSpentSeconds: 0,
+  });
+  const allowance = await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" });
+  assert.equal(allowance.allowedRemainingSeconds, null);
+  assert.equal(allowance.limitReached, false);
+});
+
+test("member limit: a zero/absent cap is not a limit", async () => {
+  reset({ projectMemberLimit: { cost: 0, type: "Hours limit", resets: "Never" } });
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" })).allowedRemainingSeconds,
+    null,
+  );
+});
+
+test("member limit: one whose start date is still in the future is not enforced yet", async () => {
+  const nextYear = new Date();
+  nextYear.setFullYear(nextYear.getFullYear() + 1);
+  reset({
+    projectMemberLimit: {
+      cost: 10,
+      type: "Hours limit",
+      resets: "Never",
+      start_date: nextYear.toISOString().slice(0, 10),
+    },
+    memberProjectSpentSeconds: 100 * HOUR,
+  });
+  const allowance = await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" });
+  assert.equal(allowance.allowedRemainingSeconds, null);
+  assert.equal(allowance.limitReached, false);
+});
+
+test("member limit: no project in play means it cannot apply", async () => {
+  reset({
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 100 * HOUR,
+  });
+  // No projectId - a task-less timer with nothing to scope the limit to.
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1")).allowedRemainingSeconds,
+    null,
+  );
+});
+
+test("member limit also applies to task-anchored timers, not just task-less ones", async () => {
+  reset({
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never" },
+    memberProjectSpentSeconds: 9 * HOUR,
+  });
+  const task = { id: "t1", project_id: "p1", duration_hours: 40 };
+  const allowance = await computeTimerAllowance({}, "member-1", task);
+  assert.equal(allowance.allowedRemainingSeconds, 1 * HOUR);
 });

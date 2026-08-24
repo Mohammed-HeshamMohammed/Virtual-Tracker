@@ -429,6 +429,14 @@ function MainApp() {
 
   usePolling(view === "home" || view === "profile", 5000, refreshProjectBudget);
 
+  // Projects used to be fetched only on sign-in and manual refresh, so a
+  // manager toggling this project's settings (require a task to track,
+  // require a stop note) wouldn't reach an already-open tracker until the
+  // member restarted it - the timer would keep enforcing the old rules.
+  // Slower than the 5s polls above because these settings change rarely and
+  // this refetches the whole list.
+  usePolling(view === "home" || view === "profile", 30000, refreshProjects);
+
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
   // agent/live_sync.rs) is down; this just shrinks the gap to sub-second when

@@ -12,7 +12,12 @@ import {
   sumDailyMemberTaskActiveSecondsRange,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { getTrackingRowPg, getTaskTrackingRowsPg } from "../../lib/postgres/task-member-progress.service.js";
-import { getProjectBudgetPg, getProjectTrackedSecondsPg } from "../../lib/postgres/projects-postgres.service.js";
+import {
+  getProjectBudgetPg,
+  getProjectTrackedSecondsPg,
+  getProjectMemberLimitPg,
+  resolveMemberHourlyRatePg,
+} from "../../lib/postgres/projects-postgres.service.js";
 
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
@@ -86,9 +91,10 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
     0,
     Math.floor(Number(options.currentCumulativeActiveSeconds ?? 0)),
   );
-  const [ctx, projectBudgetRemainder] = await Promise.all([
+  const [ctx, projectBudgetRemainder, memberLimitRemainder] = await Promise.all([
     loadMemberCapContext(db, memberId),
     loadPerPersonProjectBudgetRemainderSeconds(options.projectId ?? null, memberId),
+    loadProjectMemberLimitRemainderSeconds(db, options.projectId ?? null, memberId, currentDayRange()),
   ]);
 
   const remainders = [];
@@ -104,6 +110,9 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   }
   if (projectBudgetRemainder != null) {
     remainders.push(projectBudgetRemainder);
+  }
+  if (memberLimitRemainder != null) {
+    remainders.push(memberLimitRemainder);
   }
 
   return buildAllowanceResult({
@@ -196,6 +205,83 @@ async function loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId) {
 }
 
 /**
+ * First day of the window a per-member project limit is measured over, as
+ * 'YYYY-MM-DD', or null for "count everything ever logged".
+ *
+ * `resets` picks the period; `start_date` (when set) clips it, so a limit
+ * configured mid-month never counts time logged before it existed. A
+ * start_date in the future means the limit hasn't begun - signalled with
+ * `notStarted` rather than a date, since there is no window to sum yet.
+ */
+function memberLimitWindow(limit, todayDay, weekStartDay) {
+  const startDate = limit.start_date ? toDayKey(limit.start_date) : null;
+  if (startDate && startDate > todayDay) return { notStarted: true, fromDay: null };
+
+  const resets = String(limit.resets || "Never").toLowerCase();
+  let periodStart = null;
+  if (resets === "weekly") {
+    periodStart = weekStartDay;
+  } else if (resets === "monthly") {
+    const now = new Date();
+    periodStart = toDayKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  }
+
+  // Whichever is later: a limit that resets weekly but only started on
+  // Wednesday must not count Monday and Tuesday.
+  if (periodStart && startDate) return { notStarted: false, fromDay: periodStart > startDate ? periodStart : startDate };
+  return { notStarted: false, fromDay: periodStart ?? startDate };
+}
+
+function toDayKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return dayKey(date.getTime());
+}
+
+/**
+ * Remaining seconds under this project's per-member limit
+ * (project_member_limits - the "Members Limits" tab) for one member. This is
+ * a tightening measure layered on top of the member's own daily/weekly cap,
+ * never a replacement for it: it joins the same Math.min remainder list as
+ * every other limit, so whichever is tighter wins.
+ *
+ * null when nothing applies - no row, no positive cap, not started yet, or an
+ * amount-denominated limit with no rate configured to convert it into time.
+ * That last case deliberately does NOT block: failing to configure a rate
+ * should not make the project untrackable, and returning 0 would.
+ *
+ * @param {import("firebase-admin/firestore").Firestore} db
+ */
+async function loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange) {
+  if (!projectId || !memberId) return null;
+  const limit = await getProjectMemberLimitPg(projectId, memberId);
+  if (!limit) return null;
+  const cap = Number(limit.cost ?? 0);
+  if (!(cap > 0)) return null;
+
+  const { notStarted, fromDay } = memberLimitWindow(limit, dayRange.todayDay, dayRange.weekStartDay);
+  if (notStarted) return null;
+
+  // "Hours limit" is already denominated in time. "Total cost"/"Amount limit"
+  // are dollar caps, so they need the member's rate to become a time budget.
+  let capSeconds;
+  if (String(limit.type || "").toLowerCase().includes("hour")) {
+    capSeconds = Math.floor(cap * 3600);
+  } else {
+    const rate = await resolveMemberHourlyRatePg(db, projectId, memberId, limit.based_on ?? limit.basedOn);
+    if (!(rate > 0)) return null;
+    capSeconds = Math.floor((cap / rate) * 3600);
+  }
+  if (capSeconds <= 0) return null;
+
+  const spentSeconds = await getProjectTrackedSecondsPg(projectId, {
+    memberId,
+    ...(fromDay ? { fromDate: fromDay } : {}),
+  });
+  return Math.max(0, capSeconds - spentSeconds);
+}
+
+/**
  * Remaining active seconds for a member on a task (daily caps, limits, time already logged).
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
@@ -215,14 +301,16 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const projectId = task.project_id ?? task.projectId ?? null;
   const { todayDay } = currentDayRange();
 
-  const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder] = await Promise.all([
-    loadMemberCapContext(db, memberId),
-    resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay),
-    // Only shared_task_budget tasks pool across assignees - skip the extra
-    // query entirely for the (default, common) per-person case.
-    task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
-    loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
-  ]);
+  const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder, memberLimitRemainder] =
+    await Promise.all([
+      loadMemberCapContext(db, memberId),
+      resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay),
+      // Only shared_task_budget tasks pool across assignees - skip the extra
+      // query entirely for the (default, common) per-person case.
+      task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
+      loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
+      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, currentDayRange()),
+    ]);
   // Per-person (default): 0, so this is a no-op and totalRemain/the
   // remainder below reduce to exactly what they were before this feature.
   const totalTaskConsumedSeconds = othersActiveSeconds + currentCumulativeActiveSeconds;
@@ -238,6 +326,12 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
     }
     if (projectBudgetRemainder != null) {
       shiftRemainders.push(projectBudgetRemainder);
+    }
+    // A project-level per-member limit is not a personal daily/weekly cap, so
+    // it survives the shift-scheduled exemption the same way the task total
+    // and the project budget above do.
+    if (memberLimitRemainder != null) {
+      shiftRemainders.push(memberLimitRemainder);
     }
     const totalRemain = shiftRemainders.length > 0 ? Math.min(...shiftRemainders) : null;
     return buildAllowanceResult({
@@ -283,6 +377,10 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
 
   if (projectBudgetRemainder != null) {
     remainders.push(projectBudgetRemainder);
+  }
+
+  if (memberLimitRemainder != null) {
+    remainders.push(memberLimitRemainder);
   }
 
   const allowedRemainingSeconds =
