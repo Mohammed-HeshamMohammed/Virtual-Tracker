@@ -27,6 +27,8 @@ import {
   derivedLimitType,
 } from "@/features/projects/components/modals/member-limits-editor"
 import { projectTypeDef } from "@/features/projects/config/project-types"
+import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
+import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers, getTeams } from "@/features/teams/api/team-api"
@@ -70,6 +72,8 @@ interface AddProjectFormState {
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
+  /** Management projects only: projects grouped beneath this one. */
+  subProjectIds: string[]
   disableIdleTime: boolean
   /** Decimal minutes as a string (e.g. "7.5") - the hours+minutes inputs in
    * the General tab both read/write this one field. */
@@ -178,6 +182,7 @@ function createDefaultAddForm(): AddProjectFormState {
     requireTaskToTrack: true,
     restrictTaskCreation: true,
     requireStopNote: false,
+    subProjectIds: [],
     disableIdleTime: false,
     // Matches ID-1's server-side default (450s) - shown up front on a new
     // project, not silently inferred after the fact.
@@ -345,6 +350,9 @@ function formStateToPayload(
     requireTaskToTrack: addForm.requireTaskToTrack,
     restrictTaskCreation: addForm.restrictTaskCreation,
     requireStopNote: addForm.requireStopNote,
+    // Only meaningful for types that group projects; sending [] otherwise
+    // keeps the server from having to special-case an absent field.
+    subProjectIds: projectTypeDef(addForm.type).hasSubProjects ? addForm.subProjectIds : [],
     disableIdleTime: addForm.disableIdleTime,
     idleTimeSeconds: Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60)),
     endDate: addForm.endDate,
@@ -461,6 +469,43 @@ export function ProjectModal({
     () => Object.fromEntries((formConfig?.options.members ?? []).map((m) => [m.id, m.label])),
     [formConfig?.options.members],
   )
+
+  // Candidate sub-projects for a management project, plus who manages each -
+  // shown so it is visible which people linking will pull in. Loaded only for
+  // types that can group projects, so every other type pays nothing.
+  const [subProjectOptions, setSubProjectOptions] = useComponentState<SubProjectOption[]>([])
+  const [managerNamesByProject, setManagerNamesByProject] = useComponentState<Record<string, string[]>>({})
+
+  const canHaveSubProjects = projectTypeDef(addForm.type).hasSubProjects
+
+  useEffect(() => {
+    if (!canHaveSubProjects) return
+    let cancelled = false
+    void Promise.all([getProjects(), getProjectMembers()])
+      .then(([projects, links]) => {
+        if (cancelled) return
+        const candidates = projects
+          .filter((p) => !projectTypeDef(p.type).hasSubProjects && p.id !== projectId)
+          .map((p) => ({ id: p.id, name: p.name, type: String(p.type ?? "normal") }))
+        setSubProjectOptions(candidates)
+
+        const byProject: Record<string, string[]> = {}
+        for (const link of links) {
+          if (String(link.projectRole ?? "").toLowerCase() !== "manager") continue
+          const label = memberLabelById[link.memberId]
+          if (!label) continue
+          ;(byProject[link.projectId] ??= []).push(label)
+        }
+        setManagerNamesByProject(byProject)
+      })
+      .catch(() => {
+        if (!cancelled) setSubProjectOptions([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canHaveSubProjects, projectId, memberLabelById])
+
 
   const teamPickerOptions = useMemo((): Team[] => {
     const map = new Map<string, Team>()
@@ -645,6 +690,7 @@ export function ProjectModal({
           requireTaskToTrack: payload.requireTaskToTrack,
           restrictTaskCreation: payload.restrictTaskCreation,
           requireStopNote: payload.requireStopNote,
+          subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
           // Real stored value in edit mode - the "7.5" default above is
           // create-mode-only and never overwrites an existing project's saved seconds.
@@ -1270,7 +1316,15 @@ export function ProjectModal({
                 formConfig ? (
                   <div className={FORM_STACK}>
                     <AddProjectDynamicFields
-                      fields={formConfig.fields}
+                      fields={
+                        // Manager-only types (management) have no place for an
+                        // Employees picker - the server rejects those members
+                        // anyway, so offering the field would only produce a
+                        // confusing 400 on save.
+                        projectTypeDef(addForm.type).membersRoleFilter === "manager_and_above"
+                          ? formConfig.fields.filter((f) => f.roleFilter !== "employee")
+                          : formConfig.fields
+                      }
                       tab="members"
                       values={addForm}
                       onChange={handleProjectFormChange}
@@ -1688,6 +1742,26 @@ export function ProjectModal({
 
               {addProjectTab === MANAGEMENT_TAB_KEY && canManageProjectTracking ? (
                 <div className={FORM_STACK}>
+                  {canHaveSubProjects ? (
+                    <div className="flex flex-col gap-2">
+                      <p className={cn("text-sm font-semibold", formTheme.modal.title)}>
+                        Projects this one oversees
+                      </p>
+                      <SubProjectsPicker
+                        options={subProjectOptions}
+                        selectedIds={addForm.subProjectIds}
+                        managerNamesByProject={managerNamesByProject}
+                        onToggle={(id) =>
+                          setAddForm((p) => ({
+                            ...p,
+                            subProjectIds: p.subProjectIds.includes(id)
+                              ? p.subProjectIds.filter((x) => x !== id)
+                              : [...p.subProjectIds, id],
+                          }))
+                        }
+                      />
+                    </div>
+                  ) : null}
                   <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
                     <SettingToggleRow
                       checked={addForm.allowProjectTracking}

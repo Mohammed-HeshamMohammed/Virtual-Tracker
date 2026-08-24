@@ -1,4 +1,13 @@
-import { ListChecks, PhoneCall, RefreshCw, FileCheck2, Building2, LifeBuoy, type LucideIcon } from "lucide-react"
+import {
+  ListChecks,
+  PhoneCall,
+  RefreshCw,
+  FileCheck2,
+  Building2,
+  LifeBuoy,
+  Network,
+  type LucideIcon,
+} from "lucide-react"
 
 /**
  * Mirror of Dashboard-Backend/src/modules/projects/project-types.js. The
@@ -25,6 +34,11 @@ export type ProjectTypeDef = {
   billable: boolean
   /** Default for the Budget Limits tab's Resets field. */
   defaultResets: string
+  /** Restricts who may be assigned at all. null = anyone. Enforced server-side. */
+  membersRoleFilter: "manager_and_above" | null
+  /** Whether this project can group other projects beneath it, rolling their
+   * managers up into its own member list. */
+  hasSubProjects: boolean
 }
 
 export type ProjectType =
@@ -34,6 +48,7 @@ export type ProjectType =
   | "fixed_price"
   | "internal"
   | "support"
+  | "management"
 
 export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
   {
@@ -47,6 +62,8 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: false,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   {
     value: "calling",
@@ -59,6 +76,8 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: true,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   {
     value: "retainer",
@@ -71,6 +90,8 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: false,
     billable: true,
     defaultResets: "Monthly",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   {
     value: "fixed_price",
@@ -83,6 +104,8 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: false,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   {
     value: "internal",
@@ -95,6 +118,8 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: true,
     billable: false,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
   },
   {
     value: "support",
@@ -107,6 +132,22 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     forcesHours: true,
     billable: true,
     defaultResets: "Never",
+    membersRoleFilter: null,
+    hasSubProjects: false,
+  },
+  {
+    value: "management",
+    label: "Management",
+    blurb: "Oversees other projects and their managers",
+    hover: "Managers only — link sub-projects and their managers roll up into this one automatically",
+    Icon: Network,
+    hasTasks: true,
+    requiresTask: false,
+    forcesHours: true,
+    billable: true,
+    defaultResets: "Never",
+    membersRoleFilter: "manager_and_above",
+    hasSubProjects: true,
   },
 ]
 
@@ -129,4 +170,9 @@ export function normalizeProjectType(type: string | null | undefined): ProjectTy
 /** True for types whose timers never have a task (calling, support). */
 export function isTaskLessProjectType(type: string | null | undefined): boolean {
   return !projectTypeDef(type).hasTasks
+}
+
+/** True for types that group other projects beneath them (management). */
+export function projectTypeHasSubProjects(type: string | null | undefined): boolean {
+  return projectTypeDef(type).hasSubProjects
 }

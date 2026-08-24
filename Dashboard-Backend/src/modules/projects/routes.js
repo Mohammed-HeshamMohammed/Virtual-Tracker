@@ -1,5 +1,6 @@
 import { assertManagementRole, canAccessMember } from "../../http/authorization.js";
-import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
+import { getAuthContext, isManagementRole, requireManagementRole } from "../../http/auth-context.js";
+import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import {
   assertProjectAccessible,
   getViewerProjectIds,
@@ -56,6 +57,7 @@ import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schem
 import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/project-budget-capacity.js";
 import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
+import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
 
 /** Field-type coercion + unknown-field rejection, reusing the same catalog
  * validation the old generic Firestore path used (schema/catalog/projects) -
@@ -69,7 +71,12 @@ function validateProjectDomainBody(entityKey, body, isUpdate) {
   // a real column, so the field catalog doesn't (and shouldn't) know about
   // it - every isUpdate caller needs it whitelisted or it 400s as an
   // "Unexpected field" before the conditional-write check below ever runs.
-  const options = isUpdate ? { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt"] } : {};
+  // sub_project_ids is a management-project link list, not a projects column,
+  // so the field catalog has no entry for it and would reject the whole body.
+  const SUB_PROJECT_FIELDS = ["sub_project_ids", "subProjectIds"];
+  const options = isUpdate
+    ? { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt", ...SUB_PROJECT_FIELDS] }
+    : { extraAllowedFields: SUB_PROJECT_FIELDS };
   if (isUpdate) buildUpdatePayload(entity, body, options);
   else buildCreatePayload(entity, body, options);
 }
@@ -422,6 +429,11 @@ export async function routeProjects(req, res, url, db, origin) {
           restrictTaskCreation: Boolean(project.restrict_task_creation ?? project.restrictTaskCreation ?? true),
           requireStopNote: Boolean(project.require_stop_note ?? project.requireStopNote ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
+          // Only management projects can have these; an empty array for every
+          // other type keeps the response shape uniform for the client.
+          subProjectIds: projectTypeDef(project.type).hasSubProjects
+            ? await listSubProjectIdsPg(projectId)
+            : [],
           clientIds,
           teamIds,
           managerIds,
@@ -666,6 +678,13 @@ export async function routeProjects(req, res, url, db, origin) {
         requireStopNote: body.require_stop_note ?? body.requireStopNote,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
+      // Management projects group other projects; linking also rolls those
+      // projects' managers into this one's member list (see
+      // management-rollup.service.js).
+      const subProjectIds = body.sub_project_ids ?? body.subProjectIds;
+      if (project && Array.isArray(subProjectIds) && projectTypeDef(project.type).hasSubProjects) {
+        await setSubProjectsPg(project.id, subProjectIds, viewer.memberId);
+      }
       sendJson(res, origin, 200, { success: true, data: project });
     } catch (e) {
       logSafeError("[projects POST]", e);
@@ -777,6 +796,12 @@ export async function routeProjects(req, res, url, db, origin) {
           sendJson(res, origin, 404, { success: false, error: "Project not found" });
           return true;
         }
+        // Applied after the conditional-write check so a stale-write 409
+        // cannot leave the links updated for a project edit that was rejected.
+        const nextSubProjectIds = body.sub_project_ids ?? body.subProjectIds;
+        if (Array.isArray(nextSubProjectIds) && projectTypeDef(project.type).hasSubProjects) {
+          await setSubProjectsPg(projectId, nextSubProjectIds, viewer.memberId);
+        }
         sendJson(res, origin, 200, { success: true, data: project });
       } catch (e) {
         logSafeError("[projects/:id PATCH]", e);
@@ -825,6 +850,21 @@ export async function routeProjects(req, res, url, db, origin) {
       }
       const viewer = await assertProjectDomainWrite(projectId, memberId);
       if (!viewer) return true;
+      // Types can restrict who may be assigned at all (management projects are
+      // manager-and-above only). Enforced here rather than only filtering the
+      // picker, since the picker is not the only way to reach this endpoint.
+      const targetProject = await getProjectPg(projectId);
+      const roleFilter = projectTypeDef(targetProject?.type).membersRoleFilter;
+      if (roleFilter === "manager_and_above") {
+        const memberRole = await resolveMemberRoleNameCached(db, memberId);
+        if (!isManagementRole(memberRole)) {
+          sendJson(res, origin, 400, {
+            success: false,
+            error: `${projectTypeDef(targetProject?.type).label} projects can only include managers and above.`,
+          });
+          return true;
+        }
+      }
       const row = await addProjectMemberPg(projectId, memberId, {
         role: body.project_role ?? body.projectRole,
         actorId: body.assigned_by ?? body.assignedBy ?? viewer.memberId,

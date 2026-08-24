@@ -47,6 +47,9 @@ function toProjectPayload(
   if (input.requireTaskToTrack !== undefined) out.require_task_to_track = input.requireTaskToTrack
   if (input.restrictTaskCreation !== undefined) out.restrict_task_creation = input.restrictTaskCreation
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
+  // Management-project links. Sent only when present so a normal project's
+  // update body stays exactly as it was.
+  if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
   if (input.idleTimeSeconds !== undefined) out.idle_time_seconds = input.idleTimeSeconds
   if (input.endDate !== undefined) out.end_date = input.endDate || undefined
@@ -125,6 +128,7 @@ export interface CreateProjectInput {
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
+  subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
   endDate?: string
@@ -144,6 +148,7 @@ export interface UpdateProjectInput {
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
+  subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
   endDate?: string

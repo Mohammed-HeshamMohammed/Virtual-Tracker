@@ -47,6 +47,10 @@ export interface CreateProjectFormPayload {
   idleTimeSeconds: number
   /** Optional, informational only - see item 5 of the budget fixes plan. */
   endDate: string
+  /** Management projects only: the projects grouped beneath this one. Linking
+   * one also rolls its managers into this project's members (server-side, in
+   * management-rollup.service.js). Empty for every other type. */
+  subProjectIds: string[]
   clientIds: string[]
   teamIds: string[]
   managerIds: string[]
@@ -550,6 +554,7 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     // Was `type === "calling" ? "calling" : "normal"`, which silently
     // rewrote every other type into "normal" on load.
     type: normalizeProjectType(data.type),
+    subProjectIds: Array.isArray(data.subProjectIds) ? (data.subProjectIds as string[]) : [],
     clientIds: filterValidUuids(rawClientIds.map((id) => String(id))),
     teamIds: (data.teamIds ?? []).filter((id) => id.trim().length > 0),
     managerIds: data.managerIds ?? [],
@@ -775,6 +780,7 @@ export async function updateProjectWithDetails(
       requireTaskToTrack: payload.requireTaskToTrack,
       restrictTaskCreation: payload.restrictTaskCreation,
       requireStopNote: payload.requireStopNote,
+      subProjectIds: payload.subProjectIds,
       disableIdleTime: payload.disableIdleTime,
       idleTimeSeconds: payload.idleTimeSeconds,
       endDate: payload.endDate,
@@ -841,6 +847,7 @@ export async function createProjectWithDetails(
     requireTaskToTrack: payload.requireTaskToTrack,
     restrictTaskCreation: payload.restrictTaskCreation,
     requireStopNote: payload.requireStopNote,
+    subProjectIds: payload.subProjectIds,
     disableIdleTime: payload.disableIdleTime,
     idleTimeSeconds: payload.idleTimeSeconds,
     endDate: payload.endDate,
