@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { ChevronDown, Check, CircleDashed, X } from "lucide-react"
+import { ChevronDown, Check, CircleDashed, Copy, X } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { FORM_GRID, useClientFormTheme } from "@/shared/ui/forms/form-styles"
 import { DatePickerField } from "@/shared/ui/forms/date-picker-field"
@@ -51,6 +51,7 @@ interface MemberLimitsEditorProps {
   memberLabels: Record<string, string>
   onChange: (memberId: string, patch: Partial<ProjectMemberLimitEntry>) => void
   onRemove: (memberId: string) => void
+  onCopyToAll: (memberId: string) => void
 }
 
 /**
@@ -68,6 +69,7 @@ export function MemberLimitsEditor({
   memberLabels,
   onChange,
   onRemove,
+  onCopyToAll,
 }: MemberLimitsEditorProps) {
   const theme = useClientFormTheme()
   // Opening the first unconfigured member on mount would fight the user's own
@@ -230,6 +232,37 @@ export function MemberLimitsEditor({
                       />
                     </FormField>
                   </div>
+
+                  {/* Filling five fields per member by hand does not scale
+                      past a few people. Only offered once this row is
+                      actually complete - copying a half-filled row would
+                      spread the same gap everywhere. */}
+                  {memberIds.length > 1 ? (
+                    <div className="mt-3 flex items-center justify-end">
+                      <button
+                        type="button"
+                        disabled={!complete}
+                        onClick={() => onCopyToAll(memberId)}
+                        title={
+                          complete
+                            ? `Give the other ${memberIds.length - 1} member${memberIds.length === 2 ? "" : "s"} these same values, replacing anything already set for them`
+                            : "Fill in this member's limit first"
+                        }
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                          complete
+                            ? theme.isDark
+                              ? "text-[#4be277] hover:bg-[#4be277]/10"
+                              : "text-emerald-700 hover:bg-emerald-50"
+                            : cn(theme.mutedText, "cursor-not-allowed opacity-50"),
+                        )}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Apply to the other {memberIds.length - 1} member
+                        {memberIds.length === 2 ? "" : "s"}
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               </ExpandCollapse>
             </div>
