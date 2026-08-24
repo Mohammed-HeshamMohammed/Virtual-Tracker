@@ -55,6 +55,7 @@ import { schemaByKey } from "../schema/catalog/index.js";
 import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schema-crud.service.js";
 import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/project-budget-capacity.js";
 import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
+import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
 
 /** Field-type coercion + unknown-field rejection, reusing the same catalog
  * validation the old generic Firestore path used (schema/catalog/projects) -
@@ -106,7 +107,7 @@ function memberLabel(data) {
   return memberDisplayLabel(data);
 }
 
-export const PROJECT_TYPES = ["normal", "calling"];
+export { PROJECT_TYPES };
 
 /** Throws on an unrecognized value; message becomes the 400 response. */
 function normalizeProjectType(value) {
@@ -623,7 +624,16 @@ export async function routeProjects(req, res, url, db, origin) {
       const projectIdFilter = url.searchParams.get("project_id");
       let rows = projectIdFilter ? [await getProjectPg(projectIdFilter)].filter(Boolean) : await listProjectsPg({ limit: 500 });
       rows = await scopedRows(rows, "id");
-      sendJson(res, origin, 200, { success: true, data: rows });
+      // has_tasks is derived, not stored - it is a property of the type (see
+      // project-types.js). Sending it means the desktop agent decides whether
+      // to show a task picker from one boolean instead of carrying its own
+      // copy of which type names are task-less, which would need an agent
+      // release every time a type is added.
+      const withDerived = rows.map((row) => ({
+        ...row,
+        has_tasks: projectTypeDef(row.type).hasTasks,
+      }));
+      sendJson(res, origin, 200, { success: true, data: withDerived });
     } catch (e) {
       logSafeError("[projects GET]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to load projects" });
@@ -916,10 +926,10 @@ export async function routeProjects(req, res, url, db, origin) {
       // only Hours based is coherent (item 2 of the budget fixes plan). The
       // UI already forces this; this is the real gate.
       const project = await getProjectPg(projectId);
-      if (project && String(project.type || "normal") === "calling" && String(body.type) !== "Hours based") {
+      if (project && projectTypeForcesHours(project.type) && String(body.type) !== "Hours based") {
         sendJson(res, origin, 400, {
           success: false,
-          error: "Calling projects only support Hours based budgets.",
+          error: `${projectTypeDef(project.type).label} projects only support Hours based budgets.`,
         });
         return true;
       }
@@ -980,10 +990,10 @@ export async function routeProjects(req, res, url, db, origin) {
       }
       const effectiveType = String(body.type ?? current?.type);
       const project = await getProjectPg(existing.project_id);
-      if (project && String(project.type || "normal") === "calling" && effectiveType !== "Hours based") {
+      if (project && projectTypeForcesHours(project.type) && effectiveType !== "Hours based") {
         sendJson(res, origin, 400, {
           success: false,
-          error: "Calling projects only support Hours based budgets.",
+          error: `${projectTypeDef(project.type).label} projects only support Hours based budgets.`,
         });
         return true;
       }

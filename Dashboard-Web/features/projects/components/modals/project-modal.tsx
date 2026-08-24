@@ -26,6 +26,7 @@ import {
   derivedBasedOn,
   derivedLimitType,
 } from "@/features/projects/components/modals/member-limits-editor"
+import { projectTypeDef } from "@/features/projects/config/project-types"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers, getTeams } from "@/features/teams/api/team-api"
@@ -1064,13 +1065,19 @@ export function ProjectModal({
             >
               <ProjectTypePicker
                 onSelect={(type) => {
+                  const def = projectTypeDef(type)
                   setAddForm((p) => ({
                     ...p,
                     type,
-                    // Calling projects have no tasks and no per-task bill/pay-rate
-                    // anchor, so a Cost based budget has nothing coherent to
-                    // multiply (item 2 of the budget fixes plan) - force Hours based.
-                    ...(type === "calling" ? { budgetType: "Hours based", budgetBasedOn: "" } : {}),
+                    // Seed the type's preset. billable/requireTaskToTrack/resets
+                    // are defaults the creator can still change; forcesHours is
+                    // an invariant the backend also enforces, so it is applied
+                    // here rather than offered - a Cost based budget on a type
+                    // with no rate anchor has nothing coherent to multiply.
+                    billable: def.billable,
+                    requireTaskToTrack: def.requiresTask,
+                    budgetResets: def.defaultResets,
+                    ...(def.forcesHours ? { budgetType: "Hours based", budgetBasedOn: "" } : {}),
                   }))
                   setAddProjectStep("form")
                 }}
@@ -1310,10 +1317,10 @@ export function ProjectModal({
                   >
                     <div className={FORM_GRID}>
                       <FormField label="Type" required className="sm:col-span-2">
-                        {addForm.type === "calling" ? (
-                          // Calling projects have no tasks and no per-task bill/pay-rate
-                          // anchor to multiply a Cost based budget against - Hours based
-                          // is the only coherent option, so this isn't a choice here.
+                        {projectTypeDef(addForm.type).forcesHours ? (
+                          // Types with no rate anchor - no tasks to price, or
+                          // non-billable work with no rate at all - can only be
+                          // measured in hours, so this isn't a choice here.
                           <div
                             className={cn(
                               "flex h-9 items-center rounded-lg border px-3 text-sm",
@@ -1697,7 +1704,7 @@ export function ProjectModal({
                   {/* These two loosen rules that are otherwise enforced
                       everywhere. Both default ON, so an existing project keeps
                       behaving exactly as before until someone opts out here. */}
-                  {addForm.type === "calling" ? null : (
+                  {!projectTypeDef(addForm.type).hasTasks ? null : (
                     <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
                       <SettingToggleRow
                         checked={addForm.requireTaskToTrack}

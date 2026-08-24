@@ -5,6 +5,7 @@ import { resolveCurrentMemberId } from "@/features/members/services/current-memb
 import { getClients } from "@/features/clients/api/client-api"
 import { getProjectOverviewCore } from "@/features/projects/api/project-overview-api"
 import { filterValidUuids, isValidUuid } from "@/shared/utils/uuid"
+import { normalizeProjectType } from "@/features/projects/config/project-types"
 import {
   addProjectMember,
   createProject,
@@ -546,7 +547,9 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
       : []
   return {
     ...data,
-    type: data.type === "calling" ? "calling" : "normal",
+    // Was `type === "calling" ? "calling" : "normal"`, which silently
+    // rewrote every other type into "normal" on load.
+    type: normalizeProjectType(data.type),
     clientIds: filterValidUuids(rawClientIds.map((id) => String(id))),
     teamIds: (data.teamIds ?? []).filter((id) => id.trim().length > 0),
     managerIds: data.managerIds ?? [],

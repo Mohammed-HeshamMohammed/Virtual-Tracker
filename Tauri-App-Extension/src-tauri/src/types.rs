@@ -126,10 +126,15 @@ pub struct ReconnectResult {
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
-    /// "normal" (work is tracked against tasks) or "calling" (no tasks - the
-    /// timer runs against the project itself).
+    /// The server's project type name. Deliberately not an enum: the backend
+    /// owns the set (project-types.js) and the agent only needs has_tasks.
     #[serde(default)]
     pub project_type: String,
+    /// Whether this project has a task list at all. Server-derived from the
+    /// type. Defaults to true so an older backend that does not send it keeps
+    /// the previous task-based behavior rather than hiding the task picker.
+    #[serde(default = "default_true")]
+    pub has_tasks: bool,
     /// Whether a task must be selected before a timer can start. Defaults to
     /// true (the previous unconditional behavior for normal projects); false
     /// lets a normal project track against the project itself.

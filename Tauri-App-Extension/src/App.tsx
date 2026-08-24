@@ -249,7 +249,9 @@ function MainApp() {
   }, [signedIn]);
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
-  const isCallingProject = selectedProject?.projectType === "calling";
+  // "This project has no task list", not "this project is type X" - the
+  // server decides which types those are, so a new one needs no agent change.
+  const isCallingProject = selectedProject ? selectedProject.hasTasks === false : false;
   // Only a picked, task-based project has tasks to choose from.
   const showTaskPicker = Boolean(selectedProjectId) && !isCallingProject;
   // Normal projects require a task before tracking unless a manager turned

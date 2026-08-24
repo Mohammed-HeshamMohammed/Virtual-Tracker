@@ -3,6 +3,7 @@
 import { useMemo, useState as useComponentState } from "react"
 import { AnimatePresence } from "framer-motion"
 import { FolderOpen } from "lucide-react"
+import { isTaskLessProjectType, normalizeProjectType } from "@/features/projects/config/project-types"
 import { cn } from "@/shared/utils/utils"
 import {
   fetchEnrichedProjects,
@@ -47,7 +48,9 @@ function mapApiProject(
   const teams = ctx.teamNamesByProject.get(id) ?? []
   const members = ctx.memberCountByProject.get(id) ?? 0
   const memberLimit = ctx.memberLimitByProject.get(id) ?? null
-  const type = p.type === "calling" ? "calling" : "normal"
+  // Was `p.type === "calling" ? "calling" : "normal"`, which flattened every
+  // other type into "normal" before it ever reached the table.
+  const type = normalizeProjectType(p.type)
 
   return {
     id,
@@ -58,9 +61,10 @@ function mapApiProject(
     teams,
     members,
     memberLimit,
-    // Real counts from the server-side aggregate. Calling projects have no
-    // tasks at all, so they get null rather than a misleading 0/0.
-    todos: type === "calling" ? null : ctx.taskCountsByProject.get(id) ?? { done: 0, total: 0 },
+    // Real counts from the server-side aggregate. Task-less types (calling,
+    // support) have no tasks at all, so they get null rather than a
+    // misleading 0/0.
+    todos: isTaskLessProjectType(type) ? null : ctx.taskCountsByProject.get(id) ?? { done: 0, total: 0 },
     // spent is now real - computed server-side from tracked time x rate
     // (see computeProjectSpentPg in Dashboard-Backend), not fabricated.
     budget: budgetRow

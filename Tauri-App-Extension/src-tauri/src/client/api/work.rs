@@ -139,10 +139,16 @@ impl ApiClient {
                 .or_else(|| item.get("require_stop_note"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let has_tasks = item
+                .get("hasTasks")
+                .or_else(|| item.get("has_tasks"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             projects.push(crate::types::ProjectInfo {
                 id,
                 name,
                 project_type,
+                has_tasks,
                 require_task_to_track,
                 require_stop_note,
             });

@@ -73,11 +73,12 @@ function toProjectPayload(
 }
 
 /**
- * "calling" projects track time straight against the project with no task -
- * tasks are what performance is calculated from, and calling work has none.
- * Set at creation only; the backend rejects changing it afterwards.
+ * Set at creation only; the backend rejects changing it afterwards. The full
+ * set and what each type means live in config/project-types.ts, which mirrors
+ * the backend's project-types.js.
  */
-export type ProjectType = "normal" | "calling"
+import type { ProjectType } from "@/features/projects/config/project-types"
+export type { ProjectType }
 
 export interface Project {
   id: string

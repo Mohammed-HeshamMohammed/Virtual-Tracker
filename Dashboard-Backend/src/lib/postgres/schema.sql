@@ -491,7 +491,7 @@ CREATE TABLE IF NOT EXISTS projects (
   managers_notes          TEXT,
   users_notes             TEXT,
   viewers_notes           TEXT,
-  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
+  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support')),
   require_task_to_track   BOOLEAN NOT NULL DEFAULT true,
   restrict_task_creation  BOOLEAN NOT NULL DEFAULT true,
   require_stop_note       BOOLEAN NOT NULL DEFAULT false,

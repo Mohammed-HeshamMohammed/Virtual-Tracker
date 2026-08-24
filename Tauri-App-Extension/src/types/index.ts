@@ -67,8 +67,14 @@ export type AgentTask = {
 export type ProjectInfo = {
   id: string;
   name: string;
-  // "calling" projects have no tasks — the timer runs against the project.
-  projectType: "normal" | "calling";
+  // Free-form on purpose: the backend owns the set of project types
+  // (project-types.js) and the agent only cares whether this one has tasks,
+  // which hasTasks answers directly. Pinning a union here meant every new
+  // type needed an agent release just to be recognized.
+  projectType: string;
+  // Whether the project has a task list at all. False for calling/support,
+  // where the timer runs against the project itself.
+  hasTasks: boolean;
   // Per-project override: false lets a normal project track without picking
   // a task, the way a calling project already does.
   requireTaskToTrack: boolean;

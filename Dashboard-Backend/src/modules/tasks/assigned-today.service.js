@@ -3,6 +3,7 @@
 // am I still allowed to work". Both matter and both are reported alongside
 // each other; this module only computes the demand side.
 import { query } from "../../lib/postgres/client.js";
+import { PROJECT_TYPES, isTaskLessProjectType } from "../projects/project-types.js";
 import {
   estimateAssignmentSeconds,
   workingDaysForTask,
@@ -41,9 +42,10 @@ export function computeAssignmentDueToday(row, today = new Date()) {
   const outstanding = Math.max(0, expected - worked);
   if (outstanding <= 0) return { due: 0, rollover: 0 };
 
-  // Rule 1: the whole outstanding amount on a calling project is due today,
-  // not a per-day slice - there is no daily schedule concept for it.
-  if (row.project_type === "calling") return { due: outstanding, rollover: 0 };
+  // Rule 1: on a task-less project type (calling, support) the whole
+  // outstanding amount is due today, not a per-day slice - there is no daily
+  // schedule concept for work that isn't organized into tasks.
+  if (isTaskLessProjectType(row.project_type)) return { due: outstanding, rollover: 0 };
 
   const dailyHours = computeTaskDailyHours(row);
   if (dailyHours <= 0) return { due: outstanding, rollover: 0 };
@@ -89,7 +91,10 @@ export async function computeAssignedTodayDemand(memberId) {
   let demandSeconds = 0;
   let rolloverSeconds = 0;
   let taskCount = 0;
-  const byProjectType = { normal: 0, calling: 0 };
+  // One bucket per known type. Previously only normal/calling existed and
+  // everything else fell into "normal", which would have silently folded the
+  // newer types into the wrong total.
+  const byProjectType = Object.fromEntries(PROJECT_TYPES.map((t) => [t, 0]));
 
   for (const row of rows) {
     const { due, rollover } = computeAssignmentDueToday(row, today);
@@ -97,7 +102,8 @@ export async function computeAssignedTodayDemand(memberId) {
     demandSeconds += due;
     rolloverSeconds += rollover;
     taskCount += 1;
-    byProjectType[row.project_type === "calling" ? "calling" : "normal"] += due;
+    const bucket = PROJECT_TYPES.includes(row.project_type) ? row.project_type : "normal";
+    byProjectType[bucket] += due;
   }
 
   return { demandSeconds, rolloverSeconds, taskCount, byProjectType };
