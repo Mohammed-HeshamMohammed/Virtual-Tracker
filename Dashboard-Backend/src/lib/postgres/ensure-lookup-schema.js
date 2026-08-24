@@ -1223,7 +1223,7 @@ GROUP BY task_id`,
   managers_notes          TEXT,
   users_notes             TEXT,
   viewers_notes           TEXT,
-  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
+  type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support')),
   end_date                DATE,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1234,6 +1234,14 @@ GROUP BY task_id`,
 )`,
   // Pre-existing databases created before project types existed.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'normal'`,
+  // The CHECK is part of the column definition above, so a database created
+  // before retainer/fixed_price/internal/support existed still carries the
+  // old two-value constraint and would reject them. Constraints have no
+  // "IF NOT EXISTS" for redefinition - drop then re-add, which is idempotent
+  // and keeps the allowed set in one place (project-types.js is the source of
+  // truth; this list must stay in step with it).
+  `ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_type_check`,
+  `ALTER TABLE projects ADD CONSTRAINT projects_type_check CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support'))`,
   // Optional, informational only (item 5 of the budget fixes plan) - not
   // required, nothing archives on it. Deliberately no start_date: created_at
   // already answers "when did this project start".

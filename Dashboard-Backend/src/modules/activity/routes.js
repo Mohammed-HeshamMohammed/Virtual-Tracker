@@ -61,6 +61,7 @@ import {
   computeProjectBudgetTargetPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
+import { isTaskLessProjectType } from "../projects/project-types.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
@@ -525,8 +526,7 @@ export async function routeActivity(req, res, url, origin) {
           // Strict `=== false`: an un-migrated row reads undefined here and
           // must fall back to requiring a task, not to allowing everything.
           const allowsTaskLessTimer =
-            String(project.type || "normal") === "calling" ||
-            project.require_task_to_track === false;
+            isTaskLessProjectType(project.type) || project.require_task_to_track === false;
           if (!allowsTaskLessTimer) {
             sendJson(res, origin, 400, {
               success: false,

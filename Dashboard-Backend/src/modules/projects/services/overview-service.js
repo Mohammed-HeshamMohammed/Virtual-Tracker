@@ -1,6 +1,7 @@
 // Project overview aggregates — minimal fields, server-side joins.
 
 import { query as pgQuery } from "../../../lib/postgres/client.js";
+import { isTaskLessProjectType } from "../project-types.js";
 import {
   computeProjectSpentForAllPg,
   computeProjectBudgetTargetForAllPg,
@@ -204,14 +205,14 @@ export async function getOverviewCore(db, options = {}) {
     if (isActive) {
       activeProjects += 1;
       if (health === "on_track") onTrack += 1;
-      // Calling projects have no real task rows by design (the project
-      // itself is the unit of work, see calling-project-task-cleanup.js) -
-      // count each as one virtual task, done once its budget is fully
-      // spent, so "Tasks Completed" isn't blind to an entire project type
-      // the way a straight sum of real `tasks` rows would be.
-      const isCalling = str(row, "type") === "calling";
-      const virtualTotal = isCalling ? 1 : total;
-      const virtualDone = isCalling ? (hasBudget && spent / budgetTotal >= 1 ? 1 : 0) : done;
+      // Task-less project types (calling, support) have no real task rows by
+      // design - the project itself is the unit of work, see
+      // calling-project-task-cleanup.js. Count each as one virtual task, done
+      // once its budget is fully spent, so "Tasks Completed" isn't blind to
+      // them the way a straight sum of real `tasks` rows would be.
+      const taskLess = isTaskLessProjectType(str(row, "type"));
+      const virtualTotal = taskLess ? 1 : total;
+      const virtualDone = taskLess ? (hasBudget && spent / budgetTotal >= 1 ? 1 : 0) : done;
       tasksTotalSum += virtualTotal;
       tasksDoneSum += virtualDone;
       budgetSpentSum += spent;
