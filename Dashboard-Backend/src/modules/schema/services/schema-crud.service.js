@@ -111,24 +111,19 @@ export function applyTeamWriteMetadata(entityKey, payload, memberId, isCreate = 
   return payload;
 }
 
-async function assertTeamLinkedToProject(db, projectId, teamId) {
+async function assertTeamLinkedToProject(projectId, teamId) {
   // team_projects moved to Postgres with the rest of the projects domain
-  // (unconditional, no flag - see the projects migration) - Firestore's copy
-  // is stale for anything linked after that cutover.
-  if (isPostgresConfigured()) {
-    const rows = await query("SELECT 1 FROM team_projects WHERE project_id = $1 AND team_id = $2 LIMIT 1", [
-      projectId,
-      teamId,
-    ]);
-    if (!rows.length) throw new Error("team_id must be a team assigned to this project");
-    return;
-  }
-  const snap = await db.collection("team_projects").where("project_id", "==", projectId).limit(200).get();
-  const linked = snap.docs.some((doc) => {
-    const row = doc.data() || {};
-    return String(row.team_id || row.teamId || "") === String(teamId);
-  });
-  if (!linked) throw new Error("team_id must be a team assigned to this project");
+  // (unconditional, no flag - see the projects migration). The Firestore
+  // fallback this used to have only ran when isPostgresConfigured() was
+  // false, which - like every other Postgres-first route in this backend -
+  // is never actually false in any environment this app runs in. Removed
+  // rather than kept "just in case": a branch nothing can reach isn't a
+  // safety net, it's untested code pretending to be one.
+  const rows = await query("SELECT 1 FROM team_projects WHERE project_id = $1 AND team_id = $2 LIMIT 1", [
+    projectId,
+    teamId,
+  ]);
+  if (!rows.length) throw new Error("team_id must be a team assigned to this project");
 }
 
 export async function validateForeignKeys(db, payload, options = {}) {
@@ -154,7 +149,7 @@ export async function validateForeignKeys(db, payload, options = {}) {
   const teamId = payload.team_id;
   // Tasks must reference a team already linked to the project; team-projects creates that link.
   if (teamId && projectId && options.entityKey === "tasks") {
-    await assertTeamLinkedToProject(db, projectId, teamId);
+    await assertTeamLinkedToProject(projectId, teamId);
   }
 }
 

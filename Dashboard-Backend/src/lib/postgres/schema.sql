@@ -312,7 +312,9 @@ CREATE TABLE IF NOT EXISTS access_requests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',
   name          VARCHAR(250) NOT NULL DEFAULT '',
+  phone         VARCHAR(40) NOT NULL DEFAULT '',
   message       TEXT NOT NULL DEFAULT '',
+  source        VARCHAR(60) NOT NULL DEFAULT '',
   status        VARCHAR(20) NOT NULL DEFAULT 'pending',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
