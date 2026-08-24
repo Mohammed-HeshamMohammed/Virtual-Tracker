@@ -336,6 +336,29 @@ export async function getAllProjectMemberLimitsPg() {
   return query("SELECT * FROM project_member_limits");
 }
 
+/**
+ * The hourly rate in dollars that applies to one member on one project - the
+ * single-member counterpart to the batched resolution inside
+ * computeProjectBudgetTargetForAllPg, following the same two rules:
+ *   based_on "Pay rate": that member's own pay_rates.rate.
+ *   based_on anything else (default "Bill rate"): the project's first linked
+ *     client's hourly rate (client_budgets.cost), shared by every member.
+ * Returns 0 when no rate is configured. Callers must read that as "cannot
+ * convert an amount into time", NOT as a zero-dollar rate - dividing by it
+ * would otherwise produce an infinite (or zero) cap.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ */
+export async function resolveMemberHourlyRatePg(db, projectId, memberId, basedOn) {
+  if (String(basedOn || "").toLowerCase().includes("pay")) {
+    const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
+    return Math.max(0, Number(payRate?.rate ?? 0));
+  }
+  const clientIds = await listClientIdsForProjectPg(projectId);
+  if (!clientIds.length) return 0;
+  const clientBudget = await getClientBudgetPg(clientIds[0]);
+  return Math.max(0, Number(clientBudget?.cost ?? 0));
+}
+
 export async function deleteProjectMemberLimitPg(projectId, memberId) {
   const rows = await query(
     "DELETE FROM project_member_limits WHERE project_id = $1 AND member_id = $2 RETURNING id",
