@@ -49,13 +49,19 @@ test("a session with no updated_at yet is not abandoned", async () => {
   assert.equal(await isSessionAbandoned(agentSession({ updated_at: null })), false);
 });
 
+// SESSION_STALE_MS is 5 minutes (agent-heartbeat.js). This deliberately sits
+// well clear of it: at exactly 5 minutes the comparison is `> SESSION_STALE_MS`
+// against a difference of exactly SESSION_STALE_MS, so the case came down to
+// whether a single millisecond elapsed between building the timestamp and
+// reading the clock - it asserted "well past the interval" while actually
+// testing the boundary, and failed whenever the test ran fast enough.
 test("a session stale well past the sync interval is abandoned", async () => {
-  const staleAt = new Date(Date.now() - 5 * 60_000).toISOString(); // 5 minutes
+  const staleAt = new Date(Date.now() - 10 * 60_000).toISOString(); // 10 minutes
   assert.equal(await isSessionAbandoned(agentSession({ updated_at: staleAt })), true);
 });
 
 test("a session just inside the staleness window is not abandoned", async () => {
-  const recentAt = new Date(Date.now() - 30_000).toISOString(); // 30s - well under 90s
+  const recentAt = new Date(Date.now() - 30_000).toISOString(); // 30s - well under 5 min
   assert.equal(await isSessionAbandoned(agentSession({ updated_at: recentAt })), false);
 });
 

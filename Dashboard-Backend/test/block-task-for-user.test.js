@@ -49,10 +49,27 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
   },
 });
 
+// getDirectParentIds used to read the manager chain from Firestore, which the
+// `fakeDb` stub below satisfied. It was since migrated to a direct
+// `query(...)` against member_relationships, so these tests started reaching
+// the real Postgres client and dying on "POSTGRES_URL is not configured" -
+// nothing to do with what they actually assert. No relationships is the same
+// empty-recipient case the Firestore stub produced.
+mock.module("../src/lib/postgres/client.js", {
+  namedExports: {
+    query: async () => [],
+    withTransaction: async (fn) => fn({ query: async () => [] }),
+    isPostgresConfigured: () => true,
+    getPostgresPool: () => null,
+    probePostgresReadiness: async () => true,
+    __closePostgresPoolForTests: async () => {},
+  },
+});
+
 // Mocked directly (not just their Postgres deps) so their own transitive
 // imports (relation-sync.js etc.) never load - notifyAssignmentStatusChange's
-// recipient lookups (getDirectParentIds via db.collection, getProjectLeadershipIds
-// via these two) end up empty either way, so there's nothing left to notify.
+// recipient lookups (getDirectParentIds, getProjectLeadershipIds via these
+// two) end up empty either way, so there's nothing left to notify.
 mock.module("../src/modules/member-relationships/service.js", {
   namedExports: { getMemberAncestors: async () => [], getVisibleMemberIds: async () => [] },
 });
