@@ -21,6 +21,7 @@ import {
 } from "@/infrastructure/api"
 import type { ProjectType } from "@/features/projects/api/project-api"
 import { ProjectTypePicker } from "@/features/projects/components/modals/project-type-picker"
+import { MemberLimitsEditor } from "@/features/projects/components/modals/member-limits-editor"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers, getTeams } from "@/features/teams/api/team-api"
@@ -444,6 +445,11 @@ export function ProjectModal({
     return [...base, { key: MANAGEMENT_TAB_KEY, label: "MANAGEMENT" }]
   }, [formConfig?.tabs, canManageProjectTracking])
 
+  const memberLabelById = useMemo(
+    () => Object.fromEntries((formConfig?.options.members ?? []).map((m) => [m.id, m.label])),
+    [formConfig?.options.members],
+  )
+
   const teamPickerOptions = useMemo((): Team[] => {
     const map = new Map<string, Team>()
     for (const team of availableTeams) map.set(team.id, team)
@@ -790,6 +796,21 @@ export function ProjectModal({
         [memberId]: { ...(prev.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)), ...patch },
       },
     }))
+  }
+
+  /** Drops the member from the limits list entirely - both the selection the
+   * picker drives and any values already typed, so a half-filled row can't
+   * linger invisibly after the member is removed. */
+  function removeMemberLimit(memberId: string) {
+    setAddForm((prev) => {
+      const nextRows = { ...prev.memberLimitRows }
+      delete nextRows[memberId]
+      return {
+        ...prev,
+        memberLimitMembers: prev.memberLimitMembers.filter((id) => id !== memberId),
+        memberLimitRows: nextRows,
+      }
+    })
   }
 
   function handleProjectFormChange<K extends keyof AddProjectFormState>(
@@ -1610,90 +1631,14 @@ export function ProjectModal({
                     />
                   ) : null}
 
-                  {addForm.memberLimitMembers.length === 0 ? (
-                    <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
-                      <p className={cn("text-sm leading-relaxed", formTheme.mutedText)}>
-                        Select members above to set a limit for each of them.
-                      </p>
-                    </div>
-                  ) : (
-                    addForm.memberLimitMembers.map((memberId) => {
-                      const row = addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)
-                      const own = addForm.memberOwnLimits[memberId]
-                      const memberLabel =
-                        formConfig?.options.members.find((m) => m.id === memberId)?.label ?? "Member"
-                      const ownLabel =
-                        own && (own.daily > 0 || own.weekly > 0)
-                          ? [
-                              own.daily > 0 ? `${own.daily}h/day` : null,
-                              own.weekly > 0 ? `${own.weekly}h/week` : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : "no personal cap set"
-                      return (
-                        <div key={memberId} className={cn("rounded-xl border p-4", formTheme.card)}>
-                          <div className="mb-3">
-                            <p className={cn("text-sm font-semibold", formTheme.modal.title)}>{memberLabel}</p>
-                            <p className={cn("mt-0.5 text-xs", formTheme.mutedText)}>
-                              Own limit: {ownLabel} — the project limit below only tightens it.
-                            </p>
-                          </div>
-                          <div className={FORM_GRID}>
-                            <FormField label="Type" required>
-                              <ProjectModalSelect
-                                value={row.type}
-                                onChange={(value) => updateMemberLimitRow(memberId, { type: value })}
-                                placeholder="Select a type"
-                                options={["Total cost", "Hours limit", "Amount limit"]}
-                              />
-                            </FormField>
-                            <FormField label="Based on" required>
-                              <ProjectModalSelect
-                                value={row.basedOn}
-                                onChange={(value) => updateMemberLimitRow(memberId, { basedOn: value })}
-                                placeholder="Select a rate"
-                                options={["Bill rate", "Pay rate"]}
-                              />
-                            </FormField>
-                            <FormField label="Cost" required className="sm:col-span-2">
-                              <div className="relative">
-                                <span
-                                  className={cn(
-                                    "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
-                                    formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                                  )}
-                                >
-                                  $
-                                </span>
-                                <input
-                                  type="number"
-                                  min={0}
-                                  value={row.cost}
-                                  onChange={(e) => updateMemberLimitRow(memberId, { cost: e.target.value })}
-                                  className={cn(formTheme.control, "pl-7")}
-                                />
-                              </div>
-                            </FormField>
-                            <FormField label="Resets" required>
-                              <ProjectModalSelect
-                                value={row.resets}
-                                onChange={(value) => updateMemberLimitRow(memberId, { resets: value })}
-                                options={["Never", "Weekly", "Monthly"]}
-                              />
-                            </FormField>
-                            <FormField label="Start date">
-                              <DatePickerField
-                                value={row.startDate}
-                                onChange={(date) => updateMemberLimitRow(memberId, { startDate: date })}
-                                placeholder="Select date"
-                              />
-                            </FormField>
-                          </div>
-                        </div>
-                      )
-                    })
-                  )}
+                  <MemberLimitsEditor
+                    memberIds={addForm.memberLimitMembers}
+                    rows={addForm.memberLimitRows}
+                    ownLimits={addForm.memberOwnLimits}
+                    memberLabels={memberLabelById}
+                    onChange={updateMemberLimitRow}
+                    onRemove={removeMemberLimit}
+                  />
                 </div>
                 ) : (
                   <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
