@@ -398,6 +398,16 @@ END $$`,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL`,
+  // Table existed with no reader or writer at all until now - the one live
+  // consumer (member form snapshots, one JSON blob per member) still wrote
+  // straight to Firestore's members_field_data collection instead. A real
+  // uniqueness guarantee (not just an index) is what makes the upsert in
+  // member-form-snapshot-postgres.service.js a plain ON CONFLICT instead of
+  // the Firestore version's check-then-write, which raced two concurrent
+  // saves for the same member into two separate rows.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_members_field_data_member_form
+     ON members_field_data (member_id, form_key) WHERE member_id IS NOT NULL`,
+  `ALTER TABLE members_field_data ADD COLUMN IF NOT EXISTS modified_by UUID`,
   `CREATE TABLE IF NOT EXISTS access_requests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',

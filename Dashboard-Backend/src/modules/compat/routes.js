@@ -3,6 +3,7 @@ import { getAuthAdmin } from "../../config/firebase.js";
 import { isPostgresConfigured, query } from "../../lib/postgres/client.js";
 import { isPostgresLookupReady } from "../../lib/postgres/lookup-availability.js";
 import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
+import { listMemberFormSnapshotsPg } from "../../lib/postgres/member-form-snapshot-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
@@ -494,7 +495,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       const updatedBy = viewer.memberId;
       for (const id of limitedIds) {
         await updateMemberProfile(db, id, profilePatch, updatedBy);
-        await upsertMemberFormSnapshot(db, id, profilePatch, updatedBy);
+        await upsertMemberFormSnapshot(id, profilePatch, updatedBy);
       }
       sendJson(res, origin, 200, { success: true, data: { updated: limitedIds.length } });
     } catch (error) {
@@ -1012,7 +1013,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
           }
           throw e;
         }
-        void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
+        void upsertMemberFormSnapshot(id, body, updatedBy).catch((e) => {
           logSafeWarn("[members] form snapshot upsert:", e);
         });
         const member = await buildLightSectionMemberResponse(db, id, viewer, singleSection);
@@ -1048,7 +1049,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
         }
         throw e;
       }
-      void upsertMemberFormSnapshot(db, id, body, updatedBy).catch((e) => {
+      void upsertMemberFormSnapshot(id, body, updatedBy).catch((e) => {
         logSafeWarn("[members] form snapshot upsert:", e);
       });
       const updatedRow = await getMemberByIdPg(id);
@@ -1529,15 +1530,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
         }
       }
       if (type === "memberFormSnapshot") {
-        let queryRef = db.collection("members_field_data").where("type", "==", type);
-        if (memberDocId) queryRef = queryRef.where("memberDocId", "==", memberDocId);
-        let snapshot;
-        try {
-          snapshot = await queryRef.orderBy("position", "asc").limit(200).get();
-        } catch {
-          snapshot = await queryRef.limit(200).get();
-        }
-        const options = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        const options = await listMemberFormSnapshotsPg(memberDocId || undefined);
         sendJson(res, origin, 200, { success: true, data: options, options });
         return true;
       }
@@ -1586,7 +1579,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
         }
         const modifiedBy = viewer?.memberId ?? "";
         const formData = body.formData && typeof body.formData === "object" ? body.formData : {};
-        const snapshotId = await upsertMemberFormSnapshot(db, memberDocId, formData, modifiedBy);
+        const snapshotId = await upsertMemberFormSnapshot(memberDocId, formData, modifiedBy);
         sendJson(res, origin, 200, { success: true, data: { id: snapshotId, memberDocId, type } });
         return true;
       }

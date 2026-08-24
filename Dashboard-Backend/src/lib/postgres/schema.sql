@@ -308,6 +308,11 @@ CREATE TABLE IF NOT EXISTS members_field_data (
 
 CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_members_field_data_member_form
+     ON members_field_data (member_id, form_key) WHERE member_id IS NOT NULL;
+
+ALTER TABLE members_field_data ADD COLUMN IF NOT EXISTS modified_by UUID;
+
 CREATE TABLE IF NOT EXISTS access_requests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',
