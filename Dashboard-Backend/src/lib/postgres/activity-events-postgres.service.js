@@ -595,6 +595,7 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   if (patch.endedAt !== undefined) add("ended_at", patch.endedAt);
   if (patch.taskId !== undefined) add("task_id", patch.taskId ? parseProgressUuid(patch.taskId) : null);
   if (patch.projectId !== undefined) add("project_id", patch.projectId ? parseProgressUuid(patch.projectId) : null);
+  if (patch.stopNote !== undefined) add("stop_note", patch.stopNote || null);
   if (wantsActive) add("active_seconds", effectiveActive);
   if (wantsIdle) add("idle_seconds", effectiveIdle);
   add("updated_at", patch.updatedAt ?? new Date());

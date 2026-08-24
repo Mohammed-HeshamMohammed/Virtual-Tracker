@@ -36,8 +36,9 @@ export async function createProjectPg(data) {
   const rows = await query(
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
-       idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
+       idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
+       require_task_to_track, restrict_task_creation, require_stop_note, created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)
      RETURNING *`,
     [
       id,
@@ -56,6 +57,9 @@ export async function createProjectPg(data) {
       data.viewersNotes ?? null,
       data.type ?? "normal",
       dateOrNull(data.endDate),
+      data.requireTaskToTrack ?? true,
+      data.restrictTaskCreation ?? true,
+      data.requireStopNote ?? false,
       uuidOrNull(data.createdBy),
     ],
   );
@@ -90,6 +94,9 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     usersNotes: "users_notes",
     viewersNotes: "viewers_notes",
     endDate: "end_date",
+    requireTaskToTrack: "require_task_to_track",
+    restrictTaskCreation: "restrict_task_creation",
+    requireStopNote: "require_stop_note",
     updatedBy: "updated_by",
   };
   const sets = [];
@@ -327,6 +334,14 @@ export async function listProjectMemberLimitsPg(projectId) {
 
 export async function getAllProjectMemberLimitsPg() {
   return query("SELECT * FROM project_member_limits");
+}
+
+export async function deleteProjectMemberLimitPg(projectId, memberId) {
+  const rows = await query(
+    "DELETE FROM project_member_limits WHERE project_id = $1 AND member_id = $2 RETURNING id",
+    [projectId, memberId],
+  );
+  return rows.length > 0;
 }
 
 export async function upsertProjectMemberLimitPg(projectId, memberId, data, actorId) {

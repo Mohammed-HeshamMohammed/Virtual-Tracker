@@ -897,6 +897,9 @@ GROUP BY task_id`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
   // Calling-project sessions have no task to derive a project from.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS project_id UUID`,
+  // What the member said they worked on, captured when the project has
+  // require_stop_note on. Nullable - most sessions never carry one.
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stop_note TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
@@ -1240,6 +1243,21 @@ GROUP BY task_id`,
   // default for free (metadata-only since PG11) - every pre-existing project
   // reads 450s/7.5min same as a newly created one, no separate UPDATE needed.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS idle_time_seconds INTEGER NOT NULL DEFAULT 450`,
+  // Per-project escape hatches for two rules that were previously hardcoded
+  // org-wide. Defaults preserve exactly the old behavior, so an existing
+  // project behaves identically until someone opts out on purpose:
+  //   require_task_to_track - normal projects can only start a timer with a
+  //     task selected (Tauri App.tsx gates the Start button on it). false
+  //     lets a normal project track against the project itself, the way a
+  //     calling project already does.
+  //   restrict_task_creation - only project managers and org admins may
+  //     create tasks (canCreateTasksInProject). false opens it to any
+  //     assigned member of this project.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_task_to_track BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_task_creation BOOLEAN NOT NULL DEFAULT true`,
+  // Prompts for a short note when a member stops their timer on this
+  // project. Default false - opt-in, adds friction to every stop.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_stop_note BOOLEAN NOT NULL DEFAULT false`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,

@@ -436,6 +436,7 @@ CREATE TABLE IF NOT EXISTS activity_sessions (
   active_seconds INTEGER NOT NULL DEFAULT 0,
   idle_seconds   INTEGER NOT NULL DEFAULT 0,
   source         VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent')),
+  stop_note      TEXT,
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -491,6 +492,9 @@ CREATE TABLE IF NOT EXISTS projects (
   users_notes             TEXT,
   viewers_notes           TEXT,
   type                    VARCHAR(20) NOT NULL DEFAULT 'normal' CHECK (type IN ('normal', 'calling')),
+  require_task_to_track   BOOLEAN NOT NULL DEFAULT true,
+  restrict_task_creation  BOOLEAN NOT NULL DEFAULT true,
+  require_stop_note       BOOLEAN NOT NULL DEFAULT false,
   created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_by              UUID,

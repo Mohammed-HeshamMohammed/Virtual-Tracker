@@ -399,6 +399,12 @@ export async function routeActivity(req, res, url, origin) {
     const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId.trim() : null;
     const bodyProjectId =
       typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : null;
+    // Free-text, member-supplied - capped so a runaway client can't write an
+    // unbounded blob into the row.
+    const stopNote =
+      typeof body.stopNote === "string" && body.stopNote.trim()
+        ? body.stopNote.trim().slice(0, 1000)
+        : null;
     if (!idToken) {
       sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
       return true;
@@ -679,6 +685,7 @@ export async function routeActivity(req, res, url, origin) {
               status: "stopped",
               endedAt: now,
               updatedAt: now,
+              ...(stopNote ? { stopNote } : {}),
               ...(activeSeconds !== undefined ? { activeSeconds } : {}),
               ...(idleSeconds !== undefined ? { idleSeconds } : {}),
             },
