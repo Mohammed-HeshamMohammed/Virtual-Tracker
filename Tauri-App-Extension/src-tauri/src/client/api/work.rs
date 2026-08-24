@@ -129,10 +129,22 @@ impl ApiClient {
                 .and_then(|v| v.as_str())
                 .unwrap_or("normal")
                 .to_string();
+            let require_task_to_track = item
+                .get("requireTaskToTrack")
+                .or_else(|| item.get("require_task_to_track"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let require_stop_note = item
+                .get("requireStopNote")
+                .or_else(|| item.get("require_stop_note"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             projects.push(crate::types::ProjectInfo {
                 id,
                 name,
                 project_type,
+                require_task_to_track,
+                require_stop_note,
             });
         }
         projects.sort_by_key(|p| p.name.to_lowercase());

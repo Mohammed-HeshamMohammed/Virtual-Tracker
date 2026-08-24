@@ -36,6 +36,9 @@ export interface CreateProjectFormPayload {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  requireTaskToTrack: boolean
+  restrictTaskCreation: boolean
+  requireStopNote: boolean
   disableIdleTime: boolean
   /** Total idle-time threshold in seconds (hours+minutes in the UI, stored as
    * seconds on the wire) - how long without activity before time on this
@@ -758,6 +761,12 @@ export async function updateProjectWithDetails(
       billable: payload.billable,
       disableActivity: payload.disableActivity,
       allowProjectTracking: payload.allowProjectTracking,
+    requireTaskToTrack: payload.requireTaskToTrack,
+    restrictTaskCreation: payload.restrictTaskCreation,
+    requireStopNote: payload.requireStopNote,
+      requireTaskToTrack: payload.requireTaskToTrack,
+      restrictTaskCreation: payload.restrictTaskCreation,
+      requireStopNote: payload.requireStopNote,
       disableIdleTime: payload.disableIdleTime,
       idleTimeSeconds: payload.idleTimeSeconds,
       endDate: payload.endDate,
@@ -821,6 +830,9 @@ export async function createProjectWithDetails(
     billable: payload.billable,
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
+    requireTaskToTrack: payload.requireTaskToTrack,
+    restrictTaskCreation: payload.restrictTaskCreation,
+    requireStopNote: payload.requireStopNote,
     disableIdleTime: payload.disableIdleTime,
     idleTimeSeconds: payload.idleTimeSeconds,
     endDate: payload.endDate,

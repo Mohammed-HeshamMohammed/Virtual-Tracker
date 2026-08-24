@@ -417,6 +417,9 @@ export async function routeProjects(req, res, url, db, origin) {
           ),
           disableIdleTime: Boolean(project.disable_idle_time ?? project.disableIdleTime),
           idleTimeSeconds: Number(project.idle_time_seconds ?? project.idleTimeSeconds ?? 450),
+          requireTaskToTrack: Boolean(project.require_task_to_track ?? project.requireTaskToTrack ?? true),
+          restrictTaskCreation: Boolean(project.restrict_task_creation ?? project.restrictTaskCreation ?? true),
+          requireStopNote: Boolean(project.require_stop_note ?? project.requireStopNote ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           clientIds,
           teamIds,
@@ -648,6 +651,9 @@ export async function routeProjects(req, res, url, db, origin) {
         viewersNotes: body.viewers_notes ?? body.viewersNotes,
         type: normalizeProjectType(body.type),
         endDate: body.end_date ?? body.endDate,
+        requireTaskToTrack: body.require_task_to_track ?? body.requireTaskToTrack,
+        restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
+        requireStopNote: body.require_stop_note ?? body.requireStopNote,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       sendJson(res, origin, 200, { success: true, data: project });
@@ -729,6 +735,9 @@ export async function routeProjects(req, res, url, db, origin) {
           usersNotes: body.users_notes ?? body.usersNotes,
           viewersNotes: body.viewers_notes ?? body.viewersNotes,
           endDate: body.end_date ?? body.endDate,
+          requireTaskToTrack: body.require_task_to_track ?? body.requireTaskToTrack,
+          restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
+          requireStopNote: body.require_stop_note ?? body.requireStopNote,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {

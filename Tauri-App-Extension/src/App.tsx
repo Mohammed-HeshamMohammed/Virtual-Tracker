@@ -250,6 +250,14 @@ function MainApp() {
   const isCallingProject = selectedProject?.projectType === "calling";
   // Only a picked, task-based project has tasks to choose from.
   const showTaskPicker = Boolean(selectedProjectId) && !isCallingProject;
+  // Normal projects require a task before tracking unless a manager turned
+  // that off for this specific project. Calling projects never require one.
+  const taskRequired = !isCallingProject && selectedProject?.requireTaskToTrack !== false;
+  // "This session has no task in play" - always true for calling projects,
+  // and true for a task-optional normal project until a task is picked. Every
+  // task-anchored limit, stat and label below keys off this rather than the
+  // project type, since none of them have a task to work with either way.
+  const taskLessSession = isCallingProject || (!taskRequired && !selectedTaskId);
 
   const refreshTasks = useCallback(async () => {
     if (!signedIn || !selectedProjectId || isCallingProject) {
@@ -489,10 +497,10 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [tracking]);
 
-  // Calling projects have no task-level total to switch to.
+  // A task-less session has no task-level total to switch to.
   useEffect(() => {
-    if (isCallingProject) setTimerViewMode("day");
-  }, [isCallingProject]);
+    if (taskLessSession) setTimerViewMode("day");
+  }, [taskLessSession]);
 
   // Same reconcile-then-tick pattern as liveActiveSeconds above, applied to
   // "Today, all work" - it previously only ever showed the raw 5s-polled
@@ -780,8 +788,8 @@ function MainApp() {
   };
 
   const handleStart = async () => {
-    if (isCallingProject) {
-      await startCallingSession();
+    if (taskLessSession) {
+      await startProjectSession();
       return;
     }
     if (!selectedTaskId) {
@@ -822,7 +830,10 @@ function MainApp() {
 
   // Calling projects have no task to pick, so the timer runs against the
   // project itself. The backend enforces the member's own hour cap there.
-  const startCallingSession = async () => {
+  // Task-less start. Not calling-specific: start_project_session runs the
+  // timer against the project itself, which is also what a task-optional
+  // normal project needs when no task is picked.
+  const startProjectSession = async () => {
     setBusy(true);
     setActionError(null);
     try {
@@ -942,12 +953,12 @@ function MainApp() {
   // from another device or an admin adjustment - anything the local estimate
   // below can't see coming - the next time the 5s poll reports limitReached.
   useEffect(() => {
-    if (!tracking || isCallingProject) return;
+    if (!tracking || taskLessSession) return;
     if (taskTracking?.limitReached) {
       stopForTaskLimit(taskTracking.allowanceMessage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking, isCallingProject, taskTracking?.limitReached, taskTracking?.allowanceMessage]);
+  }, [tracking, taskLessSession, taskTracking?.limitReached, taskTracking?.allowanceMessage]);
 
   // P6 - local, to-the-second stop. allowedRemainingSeconds is known as of
   // the last poll; ticking it down locally between polls stops the timer at
@@ -956,11 +967,11 @@ function MainApp() {
   const localTaskRemainingRef = useRef<number | null>(null);
   useEffect(() => {
     localTaskRemainingRef.current =
-      tracking && !isCallingProject ? taskTracking?.allowedRemainingSeconds ?? null : null;
-  }, [taskTracking?.allowedRemainingSeconds, tracking, isCallingProject]);
+      tracking && !taskLessSession ? taskTracking?.allowedRemainingSeconds ?? null : null;
+  }, [taskTracking?.allowedRemainingSeconds, tracking, taskLessSession]);
 
   useEffect(() => {
-    if (!tracking || isCallingProject) return;
+    if (!tracking || taskLessSession) return;
     const timer = window.setInterval(() => {
       if (localTaskRemainingRef.current == null) return;
       localTaskRemainingRef.current -= 1;
@@ -971,9 +982,9 @@ function MainApp() {
     }, 1000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking, isCallingProject]);
+  }, [tracking, taskLessSession]);
 
-  // Calling-project counterpart to P6/P7 above, for the project's own
+  // Task-less counterpart to P6/P7 above, for the project's own
   // per-person budget specifically. Task sessions don't need this
   // duplicated - computeTimerAllowance on the backend already folds the same
   // per-person budget into taskTracking.allowedRemainingSeconds, so the
@@ -981,19 +992,19 @@ function MainApp() {
   const localProjectBudgetRemainingRef = useRef<number | null>(null);
   useEffect(() => {
     localProjectBudgetRemainingRef.current =
-      tracking && isCallingProject && projectBudget ? projectBudget.remainingSeconds : null;
-  }, [projectBudget, tracking, isCallingProject]);
+      tracking && taskLessSession && projectBudget ? projectBudget.remainingSeconds : null;
+  }, [projectBudget, tracking, taskLessSession]);
 
   useEffect(() => {
-    if (!tracking || !isCallingProject) return;
+    if (!tracking || !taskLessSession) return;
     if (projectBudget && projectBudget.remainingSeconds <= 0) {
       stopForTaskLimit("This project's budget has been reached — timer stopped. Your time is saved.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking, isCallingProject, projectBudget?.remainingSeconds]);
+  }, [tracking, taskLessSession, projectBudget?.remainingSeconds]);
 
   useEffect(() => {
-    if (!tracking || !isCallingProject) return;
+    if (!tracking || !taskLessSession) return;
     const timer = window.setInterval(() => {
       if (localProjectBudgetRemainingRef.current == null) return;
       localProjectBudgetRemainingRef.current -= 1;
@@ -1004,7 +1015,7 @@ function MainApp() {
     }, 1000);
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracking, isCallingProject]);
+  }, [tracking, taskLessSession]);
 
   const idleStage = session?.idleStage ?? 0;
   const tone = statusTone(link?.status || "", signedIn);
@@ -1012,8 +1023,8 @@ function MainApp() {
   const firstName =
     signedIn && profile?.name ? profile.name.trim().split(/\s+/)[0] : displayName;
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
-  // Calling sessions have no task title to show, so the project names the run.
-  const trackingLabel = isCallingProject
+  // A task-less session has no task title to show, so the project names the run.
+  const trackingLabel = taskLessSession
     ? selectedProject?.name ?? ""
     : selectedTask?.title ?? "";
 
@@ -1287,7 +1298,7 @@ function MainApp() {
                     : tracking
                       ? `Tracking${trackingLabel ? ` · ${trackingLabel}` : ""}`
                       : signedIn
-                        ? isCallingProject
+                        ? !taskRequired
                           ? "Start when you’re ready"
                           : "Select a task and start when you’re ready"
                         : "Sign in to link this PC to your account"}
@@ -1370,7 +1381,7 @@ function MainApp() {
                     type="button"
                     disabled={
                       busy ||
-                      (isCallingProject ? !selectedProjectId : !selectedTaskId) ||
+                      (taskRequired ? !selectedTaskId : !selectedProjectId) ||
                       Boolean(taskTracking?.limitReached)
                     }
                     title={taskTracking?.limitReached ? taskTracking.allowanceMessage || "Maximum allowed work time reached." : undefined}
@@ -1456,7 +1467,7 @@ function MainApp() {
               </button>
             </div>
 
-            {signedIn && (selectedTaskId || (isCallingProject && selectedProjectId)) ? (
+            {signedIn && (selectedTaskId || (taskLessSession && selectedProjectId)) ? (
               <>
                 <div className="page-clock page-content-swap">
                   <span className="page-clock-value">
@@ -1466,7 +1477,7 @@ function MainApp() {
                     {tracking ? "Elapsed · Tracking" : paused ? "On a break" : "Paused"}
                     {timerViewMode === "task" ? " · whole task" : ""}
                   </span>
-                  {!isCallingProject && taskTracking ? (
+                  {!taskLessSession && taskTracking ? (
                     <button
                       type="button"
                       className="page-refresh-btn"
@@ -1491,8 +1502,8 @@ function MainApp() {
                 {hoursTodayCards}
 
                 {/* Task estimates, progress and budget are what performance is
-                    measured from - a calling project has none of it by design. */}
-                {isCallingProject ? null : (
+                    measured from - a task-less session has none of it. */}
+                {taskLessSession ? null : (
                   <div className="stat-grid page-content-swap" style={{ animationDelay: "0.08s" }}>
                     <div className="stat-card">
                       <span className="stat-card-label">Today, this task</span>

@@ -69,6 +69,11 @@ export type ProjectInfo = {
   name: string;
   // "calling" projects have no tasks — the timer runs against the project.
   projectType: "normal" | "calling";
+  // Per-project override: false lets a normal project track without picking
+  // a task, the way a calling project already does.
+  requireTaskToTrack: boolean;
+  // Prompts for a short note when the member stops their timer.
+  requireStopNote: boolean;
 };
 
 export type SessionInfo = {

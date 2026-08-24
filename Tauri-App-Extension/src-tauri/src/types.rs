@@ -130,6 +130,14 @@ pub struct ProjectInfo {
     /// timer runs against the project itself).
     #[serde(default)]
     pub project_type: String,
+    /// Whether a task must be selected before a timer can start. Defaults to
+    /// true (the previous unconditional behavior for normal projects); false
+    /// lets a normal project track against the project itself.
+    #[serde(default = "default_true")]
+    pub require_task_to_track: bool,
+    /// Whether stopping a timer on this project prompts for a note.
+    #[serde(default)]
+    pub require_stop_note: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

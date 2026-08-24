@@ -64,11 +64,6 @@ export function TasksPage() {
   const [view, setView] = useComponentState<ViewMode>("list")
   const [selectedProjectId, setSelectedProjectId] = useComponentState<string>("")
   const [projectMemberLinks, setProjectMemberLinks] = useComponentState<ProjectMember[]>([])
-  const canAddTask = useMemo(
-    () => canCreateTasksInProject(memberRole, currentMemberId, selectedProjectId, projectMemberLinks),
-    [memberRole, currentMemberId, selectedProjectId, projectMemberLinks],
-  )
-
   const [selectedTaskId, setSelectedTaskId] = useComponentState<string | null>(null)
   const [selectedTaskIds, setSelectedTaskIds] = useComponentState<Set<string>>(new Set())
   const [batchBusy, setBatchBusy] = useComponentState(false)
@@ -129,6 +124,20 @@ export function TasksPage() {
   const setTasks = (value: Task[] | ((prev: Task[]) => Task[])): void => {
     setTasksListData("tasks", value)
   }
+
+  // Declared after rawProjectList - the project's own restrictTaskCreation
+  // setting decides whether "manager only" applies here at all.
+  const canAddTask = useMemo(
+    () =>
+      canCreateTasksInProject(
+        memberRole,
+        currentMemberId,
+        selectedProjectId,
+        projectMemberLinks,
+        rawProjectList.find((p: any) => p.id === selectedProjectId)?.restrictTaskCreation ?? true,
+      ),
+    [memberRole, currentMemberId, selectedProjectId, projectMemberLinks, rawProjectList],
+  )
 
   // Mutations Hook
   const {

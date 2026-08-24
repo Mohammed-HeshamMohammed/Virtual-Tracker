@@ -59,6 +59,11 @@ interface AddProjectFormState {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  /** Per-project escape hatches for rules otherwise enforced everywhere.
+   * Both default true, preserving the prior unconditional behavior. */
+  requireTaskToTrack: boolean
+  restrictTaskCreation: boolean
+  requireStopNote: boolean
   disableIdleTime: boolean
   /** Decimal minutes as a string (e.g. "7.5") - the hours+minutes inputs in
    * the General tab both read/write this one field. */
@@ -164,6 +169,9 @@ function createDefaultAddForm(): AddProjectFormState {
     billable: true,
     disableActivity: false,
     allowProjectTracking: true,
+    requireTaskToTrack: true,
+    restrictTaskCreation: true,
+    requireStopNote: false,
     disableIdleTime: false,
     // Matches ID-1's server-side default (450s) - shown up front on a new
     // project, not silently inferred after the fact.
@@ -328,6 +336,9 @@ function formStateToPayload(
     billable: addForm.billable,
     disableActivity: addForm.disableActivity,
     allowProjectTracking: addForm.allowProjectTracking,
+    requireTaskToTrack: addForm.requireTaskToTrack,
+    restrictTaskCreation: addForm.restrictTaskCreation,
+    requireStopNote: addForm.requireStopNote,
     disableIdleTime: addForm.disableIdleTime,
     idleTimeSeconds: Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60)),
     endDate: addForm.endDate,
@@ -613,6 +624,9 @@ export function ProjectModal({
           billable: payload.billable,
           disableActivity: payload.disableActivity,
           allowProjectTracking: payload.allowProjectTracking,
+          requireTaskToTrack: payload.requireTaskToTrack,
+          restrictTaskCreation: payload.restrictTaskCreation,
+          requireStopNote: payload.requireStopNote,
           disableIdleTime: payload.disableIdleTime,
           // Real stored value in edit mode - the "7.5" default above is
           // create-mode-only and never overwrites an existing project's saved seconds.
@@ -1703,6 +1717,41 @@ export function ProjectModal({
                         </>
                       }
                     />
+                  </div>
+
+                  {/* These two loosen rules that are otherwise enforced
+                      everywhere. Both default ON, so an existing project keeps
+                      behaving exactly as before until someone opts out here. */}
+                  {addForm.type === "calling" ? null : (
+                    <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                      <SettingToggleRow
+                        checked={addForm.requireTaskToTrack}
+                        onChange={(next) => setAddForm((p) => ({ ...p, requireTaskToTrack: next }))}
+                        label="Require a task to start tracking"
+                      />
+                      <p className={cn("text-xs", formTheme.mutedText)}>
+                        Off lets members run the timer against the project itself, with no task selected.
+                      </p>
+                      <SettingToggleRow
+                        checked={addForm.restrictTaskCreation}
+                        onChange={(next) => setAddForm((p) => ({ ...p, restrictTaskCreation: next }))}
+                        label="Only managers can create tasks"
+                      />
+                      <p className={cn("text-xs", formTheme.mutedText)}>
+                        Off lets any assigned member of this project add tasks to it.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <SettingToggleRow
+                      checked={addForm.requireStopNote}
+                      onChange={(next) => setAddForm((p) => ({ ...p, requireStopNote: next }))}
+                      label="Require a note when stopping the timer"
+                    />
+                    <p className={cn("text-xs", formTheme.mutedText)}>
+                      Members are asked what they worked on before their timer stops.
+                    </p>
                   </div>
                 </div>
               ) : null}
