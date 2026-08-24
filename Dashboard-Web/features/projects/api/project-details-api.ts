@@ -716,10 +716,14 @@ async function syncProjectMemberLimits(
         console.warn("project-member-limits upsert failed", err)
       }),
     ),
+    // memberId is nullable on the row; narrowing it to string here (rather
+    // than filtering whole rows) is what lets deleteProjectMemberLimit take a
+    // plain string instead of re-checking for null.
     ...existing
-      .filter((row) => row.memberId && !keep.has(row.memberId))
-      .map((row) =>
-        deleteProjectMemberLimit(projectId, row.memberId).catch((err) => {
+      .map((row) => row.memberId)
+      .filter((memberId): memberId is string => !!memberId && !keep.has(memberId))
+      .map((memberId) =>
+        deleteProjectMemberLimit(projectId, memberId).catch((err) => {
           console.warn("project-member-limits delete failed", err)
         }),
       ),
@@ -761,9 +765,6 @@ export async function updateProjectWithDetails(
       billable: payload.billable,
       disableActivity: payload.disableActivity,
       allowProjectTracking: payload.allowProjectTracking,
-    requireTaskToTrack: payload.requireTaskToTrack,
-    restrictTaskCreation: payload.restrictTaskCreation,
-    requireStopNote: payload.requireStopNote,
       requireTaskToTrack: payload.requireTaskToTrack,
       restrictTaskCreation: payload.restrictTaskCreation,
       requireStopNote: payload.requireStopNote,
