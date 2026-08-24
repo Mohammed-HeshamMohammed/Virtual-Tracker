@@ -21,7 +21,11 @@ import {
 } from "@/infrastructure/api"
 import type { ProjectType } from "@/features/projects/api/project-api"
 import { ProjectTypePicker } from "@/features/projects/components/modals/project-type-picker"
-import { MemberLimitsEditor } from "@/features/projects/components/modals/member-limits-editor"
+import {
+  MemberLimitsEditor,
+  derivedBasedOn,
+  derivedLimitType,
+} from "@/features/projects/components/modals/member-limits-editor"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
 import type { Team } from "@/features/teams/api/team-api"
 import { getTeamMembers, getTeams } from "@/features/teams/api/team-api"
@@ -364,9 +368,16 @@ function formStateToPayload(
     // Only members still selected contribute a row - a member removed from
     // the picker must not keep a stale limit, and syncProjectMemberLimits
     // deletes whatever isn't in this list.
-    memberLimits: memberLimitMemberIds.map((memberId) =>
-      addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId),
-    ),
+    //
+    // type/basedOn are stamped from the budget here rather than stored per
+    // row, so they cannot drift: switching the project from Hours based to
+    // Cost based after limits were entered re-denominates every row on save
+    // instead of leaving hours rows behind a cost budget.
+    memberLimits: memberLimitMemberIds.map((memberId) => ({
+      ...(addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)),
+      type: derivedLimitType(addForm.budgetType),
+      basedOn: derivedBasedOn(addForm.budgetType, addForm.budgetBasedOn),
+    })),
     memberOwnLimits: addForm.memberOwnLimits,
     memberLimitNotifyAt: addForm.memberLimitNotifyAt,
     memberLimitNotifyMembers: addForm.memberLimitNotifyMembers,
@@ -1652,6 +1663,8 @@ export function ProjectModal({
                     rows={addForm.memberLimitRows}
                     ownLimits={addForm.memberOwnLimits}
                     memberLabels={memberLabelById}
+                    budgetType={addForm.budgetType}
+                    budgetBasedOn={addForm.budgetBasedOn}
                     onChange={updateMemberLimitRow}
                     onRemove={removeMemberLimit}
                     onCopyToAll={copyMemberLimitToAll}

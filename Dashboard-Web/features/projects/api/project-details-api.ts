@@ -693,8 +693,12 @@ async function syncProjectMemberLimits(
   payload: CreateProjectFormPayload,
   actorMemberId?: string,
 ): Promise<void> {
+  // A positive amount is what makes a row a limit at all. Type/basedOn are
+  // derived from the project budget upstream and are always populated, so an
+  // amount-less member is simply "not capped" rather than a 0 row the backend
+  // would read back as "no limit" anyway.
   const rows = (payload.memberLimits ?? []).filter(
-    (row) => isValidUuid(row.memberId) && row.type.trim() && row.basedOn.trim(),
+    (row) => isValidUuid(row.memberId) && row.type.trim() && row.basedOn.trim() && Number(row.cost) > 0,
   )
   const keep = new Set(rows.map((row) => row.memberId))
   const existing = await getProjectMemberLimits(projectId).catch(() => [])
