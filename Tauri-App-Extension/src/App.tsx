@@ -107,6 +107,8 @@ function MainApp() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  const [stopNoteOpen, setStopNoteOpen] = useState(false);
+  const [stopNoteDraft, setStopNoteDraft] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [paused, setPaused] = useState(false);
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
@@ -858,11 +860,11 @@ function MainApp() {
     }
   };
 
-  const handleStop = async () => {
+  const handleStop = async (stopNote?: string) => {
     setBusy(true);
     setActionError(null);
     try {
-      const result = await invoke<ActionResult>("stop_session");
+      const result = await invoke<ActionResult>("stop_session", { stopNote: stopNote ?? null });
       if (!result.success) {
         const msg = result.error || "Could not stop session";
         setActionError(msg);
@@ -872,6 +874,8 @@ function MainApp() {
         toast.message("Tracking session paused");
       }
       setPaused(false);
+      setStopNoteOpen(false);
+      setStopNoteDraft("");
       await refresh();
     } catch {
       const msg = "Could not stop session";
@@ -880,6 +884,19 @@ function MainApp() {
     } finally {
       setBusy(false);
     }
+  };
+
+  // The Stop button when the project asks for a note: opens the prompt
+  // instead of stopping straight away. Automatic stops (idle rewind, limit
+  // reached) deliberately bypass this - nobody is there to type anything, and
+  // blocking on a dialog would leave the timer running.
+  const handleStopClick = () => {
+    if (selectedProject?.requireStopNote && tracking) {
+      setStopNoteDraft("");
+      setStopNoteOpen(true);
+      return;
+    }
+    void handleStop();
   };
 
   // Break, not stop - the backend keeps the session's accumulated totals
@@ -1395,7 +1412,7 @@ function MainApp() {
                     className="btn btn-danger"
                     type="button"
                     disabled={busy}
-                    onClick={() => void handleStop()}
+                    onClick={handleStopClick}
                   >
                     Stop tracking
                   </button>
@@ -1424,6 +1441,44 @@ function MainApp() {
               <button type="button" disabled={reconnecting} onClick={() => void handleReconnect()}>
                 {reconnecting ? "Reconnecting…" : "Reconnect"}
               </button>
+            </div>
+          ) : null}
+
+          {stopNoteOpen ? (
+            <div className="stop-note-backdrop">
+              <div className="stop-note-card" role="dialog" aria-modal="true" aria-label="What did you work on?">
+                <h3 className="stop-note-title">What did you work on?</h3>
+                <p className="stop-note-sub">
+                  This project asks for a short note before the timer stops.
+                </p>
+                <textarea
+                  className="stop-note-input"
+                  autoFocus
+                  rows={3}
+                  maxLength={1000}
+                  value={stopNoteDraft}
+                  placeholder="e.g. Called 12 leads, 3 follow-ups booked"
+                  onChange={(e) => setStopNoteDraft(e.target.value)}
+                />
+                <div className="stop-note-actions">
+                  <button
+                    className="btn btn-secondary"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setStopNoteOpen(false)}
+                  >
+                    Keep tracking
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    type="button"
+                    disabled={busy || !stopNoteDraft.trim()}
+                    onClick={() => void handleStop(stopNoteDraft.trim())}
+                  >
+                    {busy ? "Stopping…" : "Stop tracking"}
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
 

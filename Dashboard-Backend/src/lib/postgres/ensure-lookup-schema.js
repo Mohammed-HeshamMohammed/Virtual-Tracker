@@ -897,6 +897,9 @@ GROUP BY task_id`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
   // Calling-project sessions have no task to derive a project from.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS project_id UUID`,
+  // What the member said they worked on, captured when the project has
+  // require_stop_note on. Nullable - most sessions never carry one.
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stop_note TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,

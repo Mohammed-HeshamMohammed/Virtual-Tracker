@@ -269,7 +269,7 @@ impl ActivityTracker {
         let task_id = task_id.filter(|id| !id.is_empty());
         self.api
             .lock()
-            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds)?;
+            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds, None)?;
         self.paused.store(true, Ordering::SeqCst);
         self.emit_status("Timer paused — on a break");
         Ok(())
@@ -280,7 +280,7 @@ impl ActivityTracker {
         let task_id = task_id.filter(|id| !id.is_empty());
         self.api
             .lock()
-            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds)?;
+            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds, None)?;
         self.paused.store(false, Ordering::SeqCst);
         self.emit_status("Task session active");
         Ok(())
@@ -392,6 +392,7 @@ impl ActivityTracker {
                     Some(pending.project_id.as_str()).filter(|id| !id.is_empty()),
                     pending.active_seconds,
                     pending.idle_seconds,
+                    None,
                 )
                 .is_ok();
             if delivered {
@@ -692,6 +693,7 @@ impl ActivityTracker {
                 Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
                 active_total,
                 idle_total,
+                None,
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
 
@@ -714,6 +716,7 @@ impl ActivityTracker {
                     Some(session_project_id.as_str()).filter(|id| !id.is_empty()),
                     active_total,
                     idle_total,
+                    None,
                 );
                 state.was_active = false;
                 state.current_session = String::new();
@@ -848,6 +851,7 @@ impl ActivityTracker {
                     Some(project_id).filter(|id| !id.is_empty()),
                     rewound,
                     idle_total,
+                    None,
                 )
                 .is_ok();
             if !delivered {
@@ -992,6 +996,7 @@ impl ActivityTracker {
                 project_id,
                 state.active_baseline + state.active_elapsed,
                 state.idle_baseline + state.idle_elapsed,
+                None,
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
         }
@@ -1023,7 +1028,7 @@ impl ActivityTracker {
         match self
             .api
             .lock()
-            .post_session_action("start", task_id, project_id, active_total, idle_total)
+            .post_session_action("start", task_id, project_id, active_total, idle_total, None)
         {
             Ok(info) => {
                 log::warn!(

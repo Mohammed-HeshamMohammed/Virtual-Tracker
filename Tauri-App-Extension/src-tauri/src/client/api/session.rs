@@ -34,6 +34,7 @@ impl ApiClient {
         project_id: Option<&str>,
         active_seconds: u64,
         idle_seconds: u64,
+        stop_note: Option<&str>,
     ) -> Result<crate::types::SessionInfo, String> {
         let auth = self
             .authorized()
@@ -51,6 +52,10 @@ impl ApiClient {
         // session to the project it belongs to.
         if let Some(pid) = project_id {
             payload["projectId"] = json!(pid);
+        }
+        // Only "stop" carries one, and only when the project asks for it.
+        if let Some(note) = stop_note.map(str::trim).filter(|n| !n.is_empty()) {
+            payload["stopNote"] = json!(note);
         }
         let res = self
             .client

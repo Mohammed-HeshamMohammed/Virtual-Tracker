@@ -289,9 +289,12 @@ async fn start_project_session(state: tauri::State<'_, AppState>, project_id: St
 }
 
 #[tauri::command]
-async fn stop_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
+async fn stop_session(
+    state: tauri::State<'_, AppState>,
+    stop_note: Option<String>,
+) -> Result<ActionResult, String> {
     let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.stop_session()).await)
+    Ok(run_blocking(move || controller.stop_session(stop_note.as_deref())).await)
 }
 
 #[tauri::command]

@@ -152,6 +152,7 @@ impl AgentController {
                     None,
                     active_seconds,
                     idle_seconds,
+                    None,
                 );
                 log::info!("Closed session {session_id} on {reason} ({active_seconds}s active)");
             }
@@ -813,6 +814,7 @@ impl AgentController {
             None,
             active_baseline,
             idle_baseline,
+            None,
         ) {
             Ok(session) => {
                 self.on_status_changed("Task session active".into());
@@ -849,7 +851,7 @@ impl AgentController {
         match self
             .api
             .lock()
-            .post_session_action("start", None, Some(project_id), 0, 0)
+            .post_session_action("start", None, Some(project_id), 0, 0, None)
         {
             Ok(session) => {
                 self.on_status_changed("Task session active".into());
@@ -867,7 +869,11 @@ impl AgentController {
         }
     }
 
-    pub fn stop_session(&self) -> ActionResult {
+    /// `stop_note` carries what the member said they worked on, when the
+    /// project has require_stop_note on. Every other stop in this codebase is
+    /// automatic (idle rewind, cap reached, shutdown) and passes None - there
+    /// is no user present to ask.
+    pub fn stop_session(&self, stop_note: Option<&str>) -> ActionResult {
         let tracker = self.tracker.lock();
         let (task_id, active_seconds, idle_seconds) = tracker
             .as_ref()
@@ -884,7 +890,7 @@ impl AgentController {
         match self
             .api
             .lock()
-            .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds)
+            .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds, stop_note)
         {
             Ok(session) => {
                 self.on_status_changed("Signed in — waiting for timer".into());
