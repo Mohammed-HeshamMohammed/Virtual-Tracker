@@ -402,10 +402,20 @@ END $$`,
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',
   name          VARCHAR(250) NOT NULL DEFAULT '',
+  phone         VARCHAR(40) NOT NULL DEFAULT '',
   message       TEXT NOT NULL DEFAULT '',
+  source        VARCHAR(60) NOT NULL DEFAULT '',
   status        VARCHAR(20) NOT NULL DEFAULT 'pending',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // The table shipped before the public "request access" form (POST
+  // /api/auth/access-request) was ever pointed at it - that route wrote
+  // straight to a Firestore access_requests collection unconditionally,
+  // and this table sat unused. Columns below fill the gap now that the
+  // route writes here for real: it collects phone (no message field), and
+  // tags where the request came from.
+  `ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS phone VARCHAR(40) NOT NULL DEFAULT ''`,
+  `ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS source VARCHAR(60) NOT NULL DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS lookup_tables (
   id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   category     VARCHAR(20) NOT NULL CHECK (category IN (

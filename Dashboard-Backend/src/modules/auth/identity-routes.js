@@ -1,4 +1,5 @@
 import { getAuthAdmin, getDb, readFirebaseWebConfigFromEnv } from "../../config/firebase.js";
+import { query as pgQuery, isPostgresConfigured } from "../../lib/postgres/client.js";
 import { getEnv } from "../../config/env.js";
 import { requireManagementRole } from "../../http/auth-context.js";
 import { authenticateRequest } from "../../http/auth-middleware.js";
@@ -613,8 +614,12 @@ export async function routeAuthIdentity(req, res, url, origin) {
   }
 
   if (authPath === "/api/auth/access-request" && req.method === "POST") {
-    const db = getDb();
-    if (!db) {
+    // Was an unconditional Firestore .add() into "access_requests" even
+    // though a Postgres table of that exact name already existed - the
+    // table shipped ahead of this route ever being pointed at it. Nothing
+    // reads this data back yet (no admin UI consumes it), so there was no
+    // reader to keep in sync when moving the write.
+    if (!isPostgresConfigured()) {
       sendJson(res, origin, 503, { success: false, error: "Database is not configured" });
       return true;
     }
@@ -636,15 +641,11 @@ export async function routeAuthIdentity(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "name and email are required" });
       return true;
     }
-    const doc = {
-      name,
-      email,
-      phone,
-      createdAt: new Date(),
-      source: "virtual-tracker-app",
-    };
-    const ref = await db.collection("access_requests").add(doc);
-    sendJson(res, origin, 201, { success: true, data: { id: ref.id } });
+    const rows = await pgQuery(
+      `INSERT INTO access_requests (name, email, phone, source) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [name, email, phone, "virtual-tracker-app"],
+    );
+    sendJson(res, origin, 201, { success: true, data: { id: rows[0]?.id } });
     return true;
   }
 
