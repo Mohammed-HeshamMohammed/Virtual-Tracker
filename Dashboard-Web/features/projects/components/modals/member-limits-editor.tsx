@@ -12,8 +12,6 @@ import type { ProjectMemberLimitEntry } from "@/features/projects/api/project-de
 
 export type MemberOwnLimit = { daily: number; weekly: number }
 
-const LIMIT_TYPES = ["Total cost", "Hours limit", "Amount limit"]
-const RATE_OPTIONS = ["Bill rate", "Pay rate"]
 const RESET_OPTIONS = ["Never", "Weekly", "Monthly"]
 
 /** "Hours limit" is denominated in time; the other two are money. The backend
@@ -23,11 +21,31 @@ export function isHoursLimit(type: string): boolean {
   return type.toLowerCase().includes("hour")
 }
 
+/**
+ * A member limit only tightens the project's own budget, so it has to be
+ * denominated the same way that budget is - an hours-based project budget
+ * cannot be capped in dollars, and a cost-based one has to use the same
+ * rate the budget itself is computed from. Both therefore come from the
+ * Budget Limits tab rather than being picked per member.
+ */
+export function derivedLimitType(budgetType: string): string {
+  return budgetType === "Hours based" ? "Hours limit" : "Total cost"
+}
+
+/** Cost-based budgets carry a rate; Hours based clears it (see the Budget
+ * tab, which hides "Based on" entirely for hours). Falling back to Bill rate
+ * keeps a cost row saveable if the budget somehow has none. */
+export function derivedBasedOn(budgetType: string, budgetBasedOn: string): string {
+  if (budgetType === "Hours based") return "Bill rate"
+  return budgetBasedOn.trim() || "Bill rate"
+}
+
 /** A row only reaches the server once it has the fields the API requires -
- * syncProjectMemberLimits silently drops anything short of this, so the list
- * has to show which members are actually configured. */
+ * syncProjectMemberLimits silently drops anything short of this. Type and
+ * basedOn are derived now, so the only thing a person can leave blank is the
+ * amount. */
 export function isLimitComplete(row: ProjectMemberLimitEntry): boolean {
-  return Boolean(row.type.trim() && row.basedOn.trim() && Number(row.cost) > 0)
+  return Number(row.cost) > 0
 }
 
 function ownLimitLabel(own: MemberOwnLimit | undefined): string {
@@ -37,11 +55,11 @@ function ownLimitLabel(own: MemberOwnLimit | undefined): string {
     .join(" · ")
 }
 
-function summarize(row: ProjectMemberLimitEntry): string {
-  if (!isLimitComplete(row)) return "No limit set"
-  const amount = isHoursLimit(row.type) ? `${row.cost}h` : `$${row.cost}`
-  const resets = row.resets && row.resets !== "Never" ? `, ${row.resets.toLowerCase()}` : ""
-  return `${amount} · ${row.basedOn}${resets}`
+function summarize(row: ProjectMemberLimitEntry, hours: boolean): string {
+  if (!isLimitComplete(row)) return "Not capped"
+  const amount = hours ? `${row.cost}h` : `$${row.cost}`
+  const resets = row.resets && row.resets !== "Never" ? ` · ${row.resets.toLowerCase()}` : ""
+  return `${amount}${resets}`
 }
 
 interface MemberLimitsEditorProps {
@@ -49,6 +67,10 @@ interface MemberLimitsEditorProps {
   rows: Record<string, ProjectMemberLimitEntry>
   ownLimits: Record<string, MemberOwnLimit>
   memberLabels: Record<string, string>
+  /** From the Budget Limits tab - "Cost based" | "Hours based". */
+  budgetType: string
+  /** From the Budget Limits tab - "Bill rate" | "Pay rate", blank for hours. */
+  budgetBasedOn: string
   onChange: (memberId: string, patch: Partial<ProjectMemberLimitEntry>) => void
   onRemove: (memberId: string) => void
   onCopyToAll: (memberId: string) => void
@@ -67,11 +89,15 @@ export function MemberLimitsEditor({
   rows,
   ownLimits,
   memberLabels,
+  budgetType,
+  budgetBasedOn,
   onChange,
   onRemove,
   onCopyToAll,
 }: MemberLimitsEditorProps) {
   const theme = useClientFormTheme()
+  const hours = budgetType === "Hours based"
+  const basedOn = derivedBasedOn(budgetType, budgetBasedOn)
   // Opening the first unconfigured member on mount would fight the user's own
   // clicks as they fill rows in; start collapsed and let them choose.
   const [openId, setOpenId] = useState<string | null>(null)
@@ -90,9 +116,31 @@ export function MemberLimitsEditor({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* A member limit only tightens the project budget, so it is measured
+          in the same unit and off the same rate. Stating that here is what
+          replaces the per-member Type/Based-on pickers that used to let the
+          two contradict each other. */}
+      <div
+        className={cn(
+          "rounded-lg border px-3 py-2 text-xs",
+          theme.isDark ? "border-[#3d4a3d]/40 bg-[#191f31]" : "border-slate-200 bg-slate-50",
+        )}
+      >
+        <span className={theme.mutedText}>
+          Measured in <span className={cn("font-semibold", theme.modal.title)}>{hours ? "hours" : "cost"}</span>
+          {hours ? null : (
+            <>
+              {" "}
+              at each member&apos;s <span className={cn("font-semibold", theme.modal.title)}>{basedOn}</span>
+            </>
+          )}
+          , following this project&apos;s budget. Change it on the Budget Limits tab.
+        </span>
+      </div>
+
       <div className="flex items-center justify-between">
         <span className={cn("text-xs font-medium", theme.mutedText)}>
-          {configuredCount} of {memberIds.length} member{memberIds.length === 1 ? "" : "s"} configured
+          {configuredCount} of {memberIds.length} member{memberIds.length === 1 ? "" : "s"} capped
         </span>
         {configuredCount < memberIds.length ? (
           <span className={cn("text-xs", theme.hint)}>Members without a limit are simply not capped.</span>
@@ -103,15 +151,14 @@ export function MemberLimitsEditor({
         {memberIds.map((memberId) => {
           const row = rows[memberId] ?? {
             memberId,
-            type: "",
-            basedOn: "",
+            type: derivedLimitType(budgetType),
+            basedOn,
             cost: "",
             resets: "Never",
             startDate: "",
           }
           const isOpen = openId === memberId
           const complete = isLimitComplete(row)
-          const hours = isHoursLimit(row.type)
 
           return (
             <div key={memberId}>
@@ -141,7 +188,7 @@ export function MemberLimitsEditor({
                       {memberLabels[memberId] ?? "Member"}
                     </span>
                     <span className={cn("block truncate text-xs", theme.mutedText)}>
-                      {summarize(row)} · own: {ownLimitLabel(ownLimits[memberId])}
+                      {summarize(row, hours)} · own: {ownLimitLabel(ownLimits[memberId])}
                     </span>
                   </span>
                   <ChevronDown
@@ -173,28 +220,8 @@ export function MemberLimitsEditor({
                     that on this project — it can never raise it.
                   </p>
                   <div className={FORM_GRID}>
-                    <FormField label="Type" required>
-                      <SelectField
-                        value={row.type}
-                        onChange={(value) => onChange(memberId, { type: value })}
-                        options={[
-                          { value: "", label: "Select a type" },
-                          ...LIMIT_TYPES.map((t) => ({ value: t, label: t })),
-                        ]}
-                      />
-                    </FormField>
-                    <FormField label="Based on" required>
-                      <SelectField
-                        value={row.basedOn}
-                        onChange={(value) => onChange(memberId, { basedOn: value })}
-                        options={[
-                          { value: "", label: "Select a rate" },
-                          ...RATE_OPTIONS.map((r) => ({ value: r, label: r })),
-                        ]}
-                      />
-                    </FormField>
                     <FormField
-                      label={hours ? "Hours" : "Amount"}
+                      label={hours ? "Hours on this project" : "Amount on this project"}
                       required
                       className="sm:col-span-2"
                     >
