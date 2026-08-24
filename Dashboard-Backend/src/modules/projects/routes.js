@@ -38,6 +38,7 @@ import {
   listProjectMemberLimitsPg,
   getAllProjectMemberLimitsPg,
   upsertProjectMemberLimitPg,
+  deleteProjectMemberLimitPg,
   linkClientProjectPg,
   unlinkClientProjectPg,
   listClientIdsForProjectPg,
@@ -53,6 +54,7 @@ import { sendToMember } from "../presence/index.js";
 import { schemaByKey } from "../schema/catalog/index.js";
 import { buildCreatePayload, buildUpdatePayload } from "../schema/services/schema-crud.service.js";
 import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/project-budget-capacity.js";
+import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 
 /** Field-type coercion + unknown-field rejection, reusing the same catalog
  * validation the old generic Firestore path used (schema/catalog/projects) -
@@ -362,6 +364,37 @@ export async function routeProjects(req, res, url, db, origin) {
       const budget = budgetRows[0] ?? null;
       const limit = limitRows[0] ?? null;
 
+      // Every per-member limit row, not just limitRows[0] - the modal edits
+      // one independent limit per member, so returning a single row made
+      // every member past the first silently unreadable (and unsavable) in
+      // edit mode.
+      const memberLimits = limitRows
+        .map((row) => ({
+          memberId: String(row.member_id || row.memberId || ""),
+          type: String(row.type || ""),
+          basedOn: String(row.based_on || row.basedOn || ""),
+          cost: String(row.cost ?? ""),
+          resets: String(row.resets || "Never"),
+          startDate: toIso(row.start_date || row.startDate).slice(0, 10),
+        }))
+        .filter((row) => row.memberId);
+
+      // The member's OWN daily/weekly hour cap, shown read-only next to the
+      // project-level field so it's visible that a project limit tightens on
+      // top of it rather than replacing it. Same source the timer allowance
+      // enforces against (see timer-limit.service.js).
+      const limitMemberIds = [...new Set([...managerIds, ...userIds, ...viewerIds])];
+      const ownLimitEntries = await Promise.all(
+        limitMemberIds.map(async (memberId) => [
+          memberId,
+          {
+            daily: await getMemberLimitHours(db, memberId, "daily"),
+            weekly: await getMemberLimitHours(db, memberId, "weekly"),
+          },
+        ]),
+      );
+      const memberOwnLimits = Object.fromEntries(ownLimitEntries);
+
       const clientIdsFromLinks = clientIdRows.map((id) => String(id || "").trim()).filter(Boolean);
 
       const primaryClientId = String(project.client_id || project.clientId || "").trim();
@@ -390,10 +423,9 @@ export async function routeProjects(req, res, url, db, origin) {
           managerIds,
           userIds,
           viewerIds,
-          memberLimitMemberIds:
-            limit && (limit.member_id || limit.memberId)
-              ? [String(limit.member_id || limit.memberId)]
-              : [],
+          memberLimitMemberIds: memberLimits.map((row) => row.memberId),
+          memberLimits,
+          memberOwnLimits,
           budgetStopTimers: budget
             ? Boolean(budget.stop_timers_when_reached ?? budget.stopTimersWhenReached ?? true)
             : true,
@@ -1041,6 +1073,28 @@ export async function routeProjects(req, res, url, db, origin) {
       sendJson(res, origin, 400, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to create project member limit",
+      });
+    }
+    return true;
+  }
+
+  if (pn === "/api/project-member-limits" && req.method === "DELETE") {
+    try {
+      const projectId = String(url.searchParams.get("project_id") || "").trim();
+      const memberId = String(url.searchParams.get("member_id") || "").trim();
+      if (!projectId || !memberId) {
+        sendJson(res, origin, 400, { success: false, error: "project_id and member_id are required" });
+        return true;
+      }
+      const viewer = await assertProjectDomainWrite(projectId, memberId);
+      if (!viewer) return true;
+      const removed = await deleteProjectMemberLimitPg(projectId, memberId);
+      sendJson(res, origin, 200, { success: true, data: { removed } });
+    } catch (e) {
+      logSafeError("[project-member-limits DELETE]", e);
+      sendJson(res, origin, 400, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to remove project member limit",
       });
     }
     return true;

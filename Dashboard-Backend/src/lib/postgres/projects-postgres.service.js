@@ -329,6 +329,14 @@ export async function getAllProjectMemberLimitsPg() {
   return query("SELECT * FROM project_member_limits");
 }
 
+export async function deleteProjectMemberLimitPg(projectId, memberId) {
+  const rows = await query(
+    "DELETE FROM project_member_limits WHERE project_id = $1 AND member_id = $2 RETURNING id",
+    [projectId, memberId],
+  );
+  return rows.length > 0;
+}
+
 export async function upsertProjectMemberLimitPg(projectId, memberId, data, actorId) {
   const id = crypto.randomUUID();
   const rows = await query(

@@ -14,6 +14,7 @@ import {
   getProjectFormConfig,
   getProjectTeams,
   type CreateProjectFormPayload,
+  type ProjectMemberLimitEntry,
   type ProjectFormConfig,
   type ProjectFormTab,
   type ProjectTeamOption,
@@ -94,10 +95,12 @@ interface AddProjectFormState {
   memberLimitNotifyAt: string
   memberLimitNotifyMembers: boolean
   memberLimitMembers: string[]
-  memberLimitType: string
-  memberLimitBasedOn: string
-  memberLimitResets: string
-  memberLimitStartDate: string
+  /** One independent limit per selected member, keyed by memberId. The old
+   * single shared Type/Based-on/Cost block could only ever describe one
+   * member, even though the row is keyed (project_id, member_id). */
+  memberLimitRows: Record<string, ProjectMemberLimitEntry>
+  /** Each member's own daily/weekly hour cap, loaded read-only in edit mode. */
+  memberOwnLimits: Record<string, { daily: number; weekly: number }>
   includeNonBillableTime: boolean
   budgetSpent: number
   budgetTotal: string
@@ -107,6 +110,10 @@ const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6
 export const MEMBERS_TEAMS_TAB_KEY = "members-teams"
 export const LIMITS_TAB_KEY = "limits"
 export const MANAGEMENT_TAB_KEY = "management"
+
+function emptyMemberLimitRow(memberId: string): ProjectMemberLimitEntry {
+  return { memberId, type: "", basedOn: "", cost: "", resets: "Never", startDate: "" }
+}
 
 const TAB_LABEL_OVERRIDES: Record<string, string> = {
   budget: "BUDGET LIMITS",
@@ -183,10 +190,8 @@ function createDefaultAddForm(): AddProjectFormState {
     memberLimitNotifyAt: "80",
     memberLimitNotifyMembers: true,
     memberLimitMembers: [],
-    memberLimitType: "",
-    memberLimitBasedOn: "",
-    memberLimitResets: "Never",
-    memberLimitStartDate: "",
+    memberLimitRows: {},
+    memberOwnLimits: {},
     includeNonBillableTime: true,
     budgetSpent: 0,
     budgetTotal: "5000",
@@ -344,10 +349,13 @@ function formStateToPayload(
     budgetStartDate: addForm.budgetStartDate,
     budgetIncludeNonBillable: addForm.budgetIncludeNonBillable,
     budgetNotifyMembers: addForm.budgetNotifyMembers,
-    memberLimitType: addForm.memberLimitType,
-    memberLimitBasedOn: addForm.memberLimitBasedOn,
-    memberLimitResets: addForm.memberLimitResets,
-    memberLimitStartDate: addForm.memberLimitStartDate,
+    // Only members still selected contribute a row - a member removed from
+    // the picker must not keep a stale limit, and syncProjectMemberLimits
+    // deletes whatever isn't in this list.
+    memberLimits: memberLimitMemberIds.map((memberId) =>
+      addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId),
+    ),
+    memberOwnLimits: addForm.memberOwnLimits,
     memberLimitNotifyAt: addForm.memberLimitNotifyAt,
     memberLimitNotifyMembers: addForm.memberLimitNotifyMembers,
     memberLimitMembers: addForm.memberLimit,
@@ -633,10 +641,10 @@ export function ProjectModal({
           budgetNotifyMembers: payload.budgetNotifyMembers,
           memberLimitNotifyAt: payload.memberLimitNotifyAt,
           memberLimitNotifyMembers: payload.memberLimitNotifyMembers,
-          memberLimitType: payload.memberLimitType,
-          memberLimitBasedOn: payload.memberLimitBasedOn,
-          memberLimitResets: payload.memberLimitResets,
-          memberLimitStartDate: payload.memberLimitStartDate,
+          memberLimitRows: Object.fromEntries(
+            (payload.memberLimits ?? []).map((row) => [row.memberId, row]),
+          ),
+          memberOwnLimits: payload.memberOwnLimits ?? {},
           includeNonBillableTime: payload.budgetIncludeNonBillable,
           budgetSpent: payload.budgetSpent,
           budgetTotal: payload.budgetTotal,
@@ -758,6 +766,16 @@ export function ProjectModal({
       setBudgetFieldErrors(getProjectBudgetFieldErrors(next))
       return next
     })
+  }
+
+  function updateMemberLimitRow(memberId: string, patch: Partial<ProjectMemberLimitEntry>) {
+    setAddForm((prev) => ({
+      ...prev,
+      memberLimitRows: {
+        ...prev.memberLimitRows,
+        [memberId]: { ...(prev.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)), ...patch },
+      },
+    }))
   }
 
   function handleProjectFormChange<K extends keyof AddProjectFormState>(
@@ -1578,68 +1596,90 @@ export function ProjectModal({
                     />
                   ) : null}
 
-                  <div className={cn("rounded-xl border p-4", formTheme.card)}>
-                    <div className={FORM_GRID}>
-                      <FormField label="Type" required>
-                        <ProjectModalSelect
-                          value={addForm.memberLimitType}
-                          onChange={(value) => setAddForm((p) => ({ ...p, memberLimitType: value }))}
-                          placeholder="Select a type"
-                          options={["Total cost", "Hours limit", "Amount limit"]}
-                        />
-                      </FormField>
-                      <FormField label="Based on" required>
-                        <ProjectModalSelect
-                          value={addForm.memberLimitBasedOn}
-                          onChange={(value) => setAddForm((p) => ({ ...p, memberLimitBasedOn: value }))}
-                          placeholder="Select a rate"
-                          options={["Bill rate", "Pay rate"]}
-                        />
-                      </FormField>
-                      <FormField label="Cost" required className="sm:col-span-2">
-                        <div className="relative">
-                          <span
-                            className={cn(
-                              "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
-                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                            )}
-                          >
-                            $
-                          </span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={addForm.budgetSpent}
-                            onChange={(e) =>
-                              setAddForm((p) => ({ ...p, budgetSpent: Number(e.target.value) }))
-                            }
-                            className={cn(formTheme.control, "pl-7")}
-                          />
-                        </div>
-                      </FormField>
-                      <FormField label="Resets" required>
-                        <ProjectModalSelect
-                          value={addForm.memberLimitResets}
-                          onChange={(value) => setAddForm((p) => ({ ...p, memberLimitResets: value }))}
-                          options={["Never", "Weekly", "Monthly"]}
-                        />
-                      </FormField>
-                      <FormField label="Start date">
-                        <DatePickerField
-                          value={addForm.memberLimitStartDate}
-                          onChange={(date) => setAddForm((p) => ({ ...p, memberLimitStartDate: date }))}
-                          placeholder="Select date"
-                        />
-                      </FormField>
+                  {addForm.memberLimitMembers.length === 0 ? (
+                    <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
+                      <p className={cn("text-sm leading-relaxed", formTheme.mutedText)}>
+                        Select members above to set a limit for each of them.
+                      </p>
                     </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    className={cn("text-sm font-medium hover:underline", formTheme.accent.link)}
-                  >
-                    + Add member limit
-                  </button>
+                  ) : (
+                    addForm.memberLimitMembers.map((memberId) => {
+                      const row = addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)
+                      const own = addForm.memberOwnLimits[memberId]
+                      const memberLabel =
+                        formConfig?.options.members.find((m) => m.id === memberId)?.label ?? "Member"
+                      const ownLabel =
+                        own && (own.daily > 0 || own.weekly > 0)
+                          ? [
+                              own.daily > 0 ? `${own.daily}h/day` : null,
+                              own.weekly > 0 ? `${own.weekly}h/week` : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : "no personal cap set"
+                      return (
+                        <div key={memberId} className={cn("rounded-xl border p-4", formTheme.card)}>
+                          <div className="mb-3">
+                            <p className={cn("text-sm font-semibold", formTheme.modal.title)}>{memberLabel}</p>
+                            <p className={cn("mt-0.5 text-xs", formTheme.mutedText)}>
+                              Own limit: {ownLabel} — the project limit below only tightens it.
+                            </p>
+                          </div>
+                          <div className={FORM_GRID}>
+                            <FormField label="Type" required>
+                              <ProjectModalSelect
+                                value={row.type}
+                                onChange={(value) => updateMemberLimitRow(memberId, { type: value })}
+                                placeholder="Select a type"
+                                options={["Total cost", "Hours limit", "Amount limit"]}
+                              />
+                            </FormField>
+                            <FormField label="Based on" required>
+                              <ProjectModalSelect
+                                value={row.basedOn}
+                                onChange={(value) => updateMemberLimitRow(memberId, { basedOn: value })}
+                                placeholder="Select a rate"
+                                options={["Bill rate", "Pay rate"]}
+                              />
+                            </FormField>
+                            <FormField label="Cost" required className="sm:col-span-2">
+                              <div className="relative">
+                                <span
+                                  className={cn(
+                                    "absolute left-3 top-1/2 -translate-y-1/2 text-sm",
+                                    formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                                  )}
+                                >
+                                  $
+                                </span>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={row.cost}
+                                  onChange={(e) => updateMemberLimitRow(memberId, { cost: e.target.value })}
+                                  className={cn(formTheme.control, "pl-7")}
+                                />
+                              </div>
+                            </FormField>
+                            <FormField label="Resets" required>
+                              <ProjectModalSelect
+                                value={row.resets}
+                                onChange={(value) => updateMemberLimitRow(memberId, { resets: value })}
+                                options={["Never", "Weekly", "Monthly"]}
+                              />
+                            </FormField>
+                            <FormField label="Start date">
+                              <DatePickerField
+                                value={row.startDate}
+                                onChange={(date) => updateMemberLimitRow(memberId, { startDate: date })}
+                                placeholder="Select date"
+                              />
+                            </FormField>
+                          </div>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
                 ) : (
                   <div className={cn("rounded-xl border px-4 py-5", formTheme.card)}>
