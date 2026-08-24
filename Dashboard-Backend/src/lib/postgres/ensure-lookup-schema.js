@@ -345,13 +345,6 @@ END $$`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites (invite_token) WHERE invite_token <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_invites_email ON invites (email)`,
   `CREATE INDEX IF NOT EXISTS idx_invites_status ON invites (status)`,
-  `CREATE TABLE IF NOT EXISTS invite_projects (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  invite_id     UUID NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
-  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  created_by    UUID
-)`,
-  `CREATE INDEX IF NOT EXISTS idx_invite_projects_invite ON invite_projects (invite_id)`,
   // ─── Pre-auth staging (migrated from Firestore) ──────────────────────────
   // Short-lived rows: created when an admin preprovisions a member before
   // they ever sign in, consumed by promotePendingMemberCore once they do.
@@ -366,13 +359,6 @@ END $$`,
   created_by_uid    VARCHAR(128) NOT NULL DEFAULT '',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  `CREATE TABLE IF NOT EXISTS pending_auth_projects (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  firebase_uid      VARCHAR(128) NOT NULL REFERENCES pending_auth_members(firebase_uid) ON DELETE CASCADE,
-  project_id        UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  created_by        UUID
-)`,
-  `CREATE INDEX IF NOT EXISTS idx_pending_auth_projects_uid ON pending_auth_projects (firebase_uid)`,
   // ─── Member relationships / hierarchy graph (migrated from Firestore) ───
   // member_tree_cache (the derived, fast-read version of this graph) was
   // already Postgres-resident (member-data-postgres.service.js) - this is
@@ -1269,6 +1255,27 @@ GROUP BY task_id`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,
+  // Moved here from just after `invites`/`pending_auth_members` - both
+  // reference projects(id), which does not exist yet at that point in this
+  // array. On a genuinely fresh database (this array runs top-to-bottom,
+  // in order, against an empty schema) that ordering threw
+  // "relation \"projects\" does not exist" and aborted the whole migration.
+  // It only ever worked in practice because every real deployment's
+  // `projects` table predates this file's current statement order.
+  `CREATE TABLE IF NOT EXISTS invite_projects (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invite_id     UUID NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
+  project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by    UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_invite_projects_invite ON invite_projects (invite_id)`,
+  `CREATE TABLE IF NOT EXISTS pending_auth_projects (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  firebase_uid      VARCHAR(128) NOT NULL REFERENCES pending_auth_members(firebase_uid) ON DELETE CASCADE,
+  project_id        UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  created_by        UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_pending_auth_projects_uid ON pending_auth_projects (firebase_uid)`,
   `CREATE TABLE IF NOT EXISTS project_members (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
