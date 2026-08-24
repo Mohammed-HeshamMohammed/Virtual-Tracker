@@ -16,6 +16,7 @@ import { getMembers } from "@/features/members/api/member-api"
 import { getTeams } from "@/features/teams/api/team-api"
 import { useAuth } from "@/shared/providers/app"
 import { canCreateTasksInProject, canViewParticipationMetrics, isManagementRole, normalizeMemberRole } from "@/features/auth"
+import { isTaskLessProjectType } from "@/features/projects/config/project-types"
 import { getProjectMembers, type ProjectMember } from "@/features/projects/api/project-api"
 import { blockTaskAssignment, startTaskAssignment } from "@/features/tasks/api/task-assignments-api"
 import { useTheme } from "@/shared/providers/app"
@@ -288,7 +289,7 @@ export function TasksPage() {
     // needed, and the Tasks page has nothing to show or let anyone edit for
     // one. Keeping them out of the picker gates this whole page (board,
     // list, add task, wizard) at once.
-    const taskProjects = rawProjectList.filter((p: any) => p.type !== "calling")
+    const taskProjects = rawProjectList.filter((p: any) => !isTaskLessProjectType(p.type))
     const privilegedRoles = new Set(["owner", "superadmin", "admin"])
     if (privilegedRoles.has(normalizedRole)) return taskProjects
     if (!currentMemberId) return taskProjects
