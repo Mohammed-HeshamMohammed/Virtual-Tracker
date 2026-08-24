@@ -398,6 +398,16 @@ END $$`,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL`,
+  // Table existed with no reader or writer at all until now - the one live
+  // consumer (member form snapshots, one JSON blob per member) still wrote
+  // straight to Firestore's members_field_data collection instead. A real
+  // uniqueness guarantee (not just an index) is what makes the upsert in
+  // member-form-snapshot-postgres.service.js a plain ON CONFLICT instead of
+  // the Firestore version's check-then-write, which raced two concurrent
+  // saves for the same member into two separate rows.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_members_field_data_member_form
+     ON members_field_data (member_id, form_key) WHERE member_id IS NOT NULL`,
+  `ALTER TABLE members_field_data ADD COLUMN IF NOT EXISTS modified_by UUID`,
   `CREATE TABLE IF NOT EXISTS access_requests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',
@@ -1635,6 +1645,63 @@ BEGIN
 END $$`,
   `CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_task_assignments_project ON task_assignments (project_id)`,
+  // ─── Task child entities (migrated from Firestore tasks/{taskId}/*) ─────
+  // The one deliberate holdout task-subcollections.js called out - comments,
+  // subtasks, attachments, and per-member hours still lived as Firestore
+  // subcollections while the parent task record itself had already moved.
+  // task_id REFERENCES tasks(id) ON DELETE CASCADE replaces
+  // deleteTaskWithChildren's manual Firestore batch-delete of these four
+  // subcollections - deleting the Postgres tasks row now does it for free,
+  // the same way task_assignments' own cascade already does.
+  `CREATE TABLE IF NOT EXISTS task_comments (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  body          TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments (task_id)`,
+  `CREATE TABLE IF NOT EXISTS task_subtasks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  title         VARCHAR(500) NOT NULL DEFAULT '',
+  completed     BOOLEAN NOT NULL DEFAULT false,
+  order_index   INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id)`,
+  `CREATE TABLE IF NOT EXISTS task_attachments (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  file_url      TEXT NOT NULL DEFAULT '',
+  file_name     VARCHAR(500) NOT NULL DEFAULT '',
+  uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  uploaded_by   UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments (task_id)`,
+  // user_id (not member_id) is deliberate here, matching the schema
+  // catalog's existing task-hours field name (schema/catalog/tasks/index.js)
+  // rather than the member_id convention task_assignments was just renamed
+  // to above - renaming this too would mean also updating the catalog and
+  // every request body sending user_id, which is a separate cleanup from
+  // moving the store.
+  `CREATE TABLE IF NOT EXISTS task_hours (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL,
+  hours_spent   NUMERIC(8, 2) NOT NULL DEFAULT 0,
+  status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+  submitted_at  TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_hours_task ON task_hours (task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_hours_user ON task_hours (user_id)`,
   // task_member_progress already exists (added earlier for the activity-data
   // migration) - extend it to cover the remaining Firestore time_tracking
   // fields instead of creating a separate table. New columns are nullable, so

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { upsertMemberFormSnapshotPg } from "../../../lib/postgres/member-form-snapshot-postgres.service.js";
 import { publishChange } from "../../realtime/change-bus.js";
 import { ensureMemberScopedEntities } from "./member-entity-bootstrap.js";
 import { enrichMemberWithPresence } from "./member-presence.service.js";
@@ -796,35 +797,10 @@ export async function deleteMemberProfileData(db, memberId) {
 }
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
  * @param {Record<string, unknown>} formData
  * @param {string} [modifiedBy]
  */
-export async function upsertMemberFormSnapshot(db, memberId, formData, modifiedBy = "") {
-  const existing = await db
-    .collection("members_field_data")
-    .where("type", "==", "memberFormSnapshot")
-    .where("memberDocId", "==", memberId)
-    .limit(1)
-    .get();
-
-  const payload = {
-    type: "memberFormSnapshot",
-    recordType: "memberFormSnapshot",
-    memberDocId: memberId,
-    modifiedBy,
-    formData,
-    updated_at: new Date(),
-  };
-
-  if (!existing.empty) {
-    const ref = existing.docs[0].ref;
-    await ref.set({ ...payload, created_at: existing.docs[0].data()?.created_at ?? new Date() }, { merge: true });
-    return ref.id;
-  }
-
-  const ref = db.collection("members_field_data").doc();
-  await ref.set({ ...payload, created_at: new Date(), position: 0, label: "" });
-  return ref.id;
+export async function upsertMemberFormSnapshot(memberId, formData, modifiedBy = "") {
+  return upsertMemberFormSnapshotPg(memberId, formData, modifiedBy);
 }

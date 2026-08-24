@@ -22,15 +22,13 @@ import {
   syncTaskAssignments,
 } from "./task-assignments.js";
 import {
-  taskChildCollectionRef,
-  taskChildDocRef,
-} from "../../lib/firestore/task-subcollections.js";
-import {
   enrichTaskIds,
   getEnrichedTaskById,
   listTasksForAssignee,
 } from "./task-assignee-api.js";
 import { getTaskPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import crypto from "node:crypto";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getInReviewAssignmentsForTaskPg, hasAssignmentPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
@@ -632,11 +630,7 @@ export async function routeTasks(req, res, url, db, origin) {
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
     if (!access) return true;
     try {
-      const hoursSnap = await taskChildCollectionRef(db, taskId, "task-hours").get();
-      const data = hoursSnap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const data = await pgQuery("SELECT * FROM task_hours WHERE task_id = $1 ORDER BY created_at ASC", [taskId]);
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[tasks/hours]", e);
@@ -663,13 +657,10 @@ export async function routeTasks(req, res, url, db, origin) {
       return true;
     }
     try {
-      const hoursSnap = await taskChildCollectionRef(db, taskId, "task-hours")
-        .where("user_id", "==", userId)
-        .get();
-      const data = hoursSnap.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
+      const data = await pgQuery(
+        "SELECT * FROM task_hours WHERE task_id = $1 AND user_id = $2 ORDER BY created_at ASC",
+        [taskId, userId],
+      );
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[tasks/hours/user]", e);
@@ -697,24 +688,15 @@ export async function routeTasks(req, res, url, db, origin) {
 
       const viewer = access.viewer;
       const userId = viewer.memberId;
-      const newHoursRef = taskChildCollectionRef(db, taskId, "task-hours").doc();
-      const now = new Date().toISOString();
-
-      await newHoursRef.set({
-        id: newHoursRef.id,
-        task_id: taskId,
-        user_id: userId,
-        hours_spent: Number(hoursSpent),
-        status: "submitted",
-        submitted_at: now,
-        created_at: now,
-        updated_at: now,
-        created_by: userId,
-        updated_by: userId,
-      });
-
-      const doc = await newHoursRef.get();
-      sendJson(res, origin, 201, { success: true, data: { id: doc.id, ...doc.data() } });
+      const id = crypto.randomUUID();
+      const rows = await pgQuery(
+        `INSERT INTO task_hours
+          (id, task_id, user_id, hours_spent, status, submitted_at, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, 'submitted', now(), $5, $5)
+         RETURNING *`,
+        [id, taskId, userId, Number(hoursSpent), userId],
+      );
+      sendJson(res, origin, 201, { success: true, data: rows[0] });
     } catch (e) {
       logSafeError("[tasks/hours/create]", e);
       sendJson(res, origin, 500, {
@@ -738,21 +720,14 @@ export async function routeTasks(req, res, url, db, origin) {
       const hoursSpent = body.hours_spent ?? body.hoursSpent;
       const status = body.status;
 
-      const hoursRef = taskChildDocRef(db, taskId, "task-hours", hoursId);
-      const hoursDoc = await hoursRef.get();
+      const existingRows = await pgQuery("SELECT * FROM task_hours WHERE id = $1 LIMIT 1", [hoursId]);
+      const row = existingRows[0];
 
-      if (!hoursDoc.exists) {
+      if (!row || (row.task_id && row.task_id !== taskId)) {
         sendJson(res, origin, 404, { success: false, error: "Not found." });
         return true;
       }
-
-      const row = hoursDoc.data() || {};
-      const hoursTaskId = typeof row.task_id === "string" ? row.task_id : "";
-      if (hoursTaskId && hoursTaskId !== taskId) {
-        sendJson(res, origin, 404, { success: false, error: "Not found." });
-        return true;
-      }
-      const ownerId = typeof row.user_id === "string" ? row.user_id : "";
+      const ownerId = row.user_id ?? "";
       const viewer = access.viewer;
       const canEdit =
         ownerId === viewer.memberId || isManagementRole(viewer.roleName) || isReviewCenterRole(viewer.roleName);
@@ -761,19 +736,18 @@ export async function routeTasks(req, res, url, db, origin) {
         return true;
       }
 
-      const now = new Date().toISOString();
-      const updateData = { updated_at: now, updated_by: viewer.memberId };
-
-      if (hoursSpent !== undefined) updateData.hours_spent = Number(hoursSpent);
-      if (status !== undefined) {
-        updateData.status = status;
-        if (status === "submitted") updateData.submitted_at = now;
-      }
-
-      await hoursRef.update(updateData);
-
-      const updatedDoc = await hoursRef.get();
-      sendJson(res, origin, 200, { success: true, data: { id: updatedDoc.id, ...updatedDoc.data() } });
+      const nextHoursSpent = hoursSpent !== undefined ? Number(hoursSpent) : row.hours_spent;
+      const nextStatus = status !== undefined ? status : row.status;
+      const rows = await pgQuery(
+        `UPDATE task_hours SET
+           hours_spent = $2, status = $3,
+           submitted_at = CASE WHEN $3 = 'submitted' THEN now() ELSE submitted_at END,
+           updated_at = now(), updated_by = $4
+         WHERE id = $1
+         RETURNING *`,
+        [hoursId, nextHoursSpent, nextStatus, viewer.memberId],
+      );
+      sendJson(res, origin, 200, { success: true, data: rows[0] });
     } catch (e) {
       logSafeError("[tasks/hours/update]", e);
       sendJson(res, origin, 500, {

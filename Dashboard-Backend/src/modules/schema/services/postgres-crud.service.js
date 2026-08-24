@@ -95,6 +95,10 @@ export const POSTGRES_ENTITY_KEYS = new Set([
   "timesheets",
   "tasks",
   "task-assignments",
+  "task-comments",
+  "task-subtasks",
+  "task-attachments",
+  "task-hours",
   "projects",
   "project-members",
   "project-budgets",
@@ -155,6 +159,69 @@ const TIMESHEET_COLUMNS = [
   "updated_at",
 ];
 
+/** One config per task child entity - simple enough (a handful of columns,
+ * no cross-table business logic like timesheets' hours computation) that one
+ * generic column-driven implementation covers all four, instead of four
+ * near-identical hand-written branches the way every other entity above does
+ * it. task_id is intentionally excluded from `columns` for UPDATE - it's
+ * set once at creation and never reassigned. */
+const TASK_CHILD_TABLES = {
+  "task-comments": { table: "task_comments", columns: ["id", "task_id", "body", "created_at", "created_by", "updated_by"] },
+  "task-subtasks": { table: "task_subtasks", columns: ["id", "task_id", "title", "completed", "order_index", "created_at", "created_by", "updated_by"] },
+  "task-attachments": { table: "task_attachments", columns: ["id", "task_id", "file_url", "file_name", "uploaded_at", "uploaded_by"] },
+  "task-hours": { table: "task_hours", columns: ["id", "task_id", "user_id", "hours_spent", "status", "submitted_at", "created_at", "updated_at", "created_by", "updated_by"] },
+};
+
+function isTaskChildPostgresEntityKey(entityKey) {
+  return Object.prototype.hasOwnProperty.call(TASK_CHILD_TABLES, entityKey);
+}
+
+async function listTaskChildRowsPg(entityKey, url) {
+  const { table, columns } = TASK_CHILD_TABLES[entityKey];
+  const taskId = url.searchParams.get("task_id") ?? url.searchParams.get("taskId");
+  const rows = taskId
+    ? await query(`SELECT ${columns.join(", ")} FROM ${table} WHERE task_id = $1 ORDER BY created_at ASC LIMIT 500`, [taskId])
+    : await query(`SELECT ${columns.join(", ")} FROM ${table} ORDER BY created_at DESC LIMIT 500`);
+  return rows.map(normalizePgRow);
+}
+
+async function getTaskChildRowPg(entityKey, id) {
+  const { table, columns } = TASK_CHILD_TABLES[entityKey];
+  const rows = await query(`SELECT ${columns.join(", ")} FROM ${table} WHERE id = $1 LIMIT 1`, [id]);
+  return rows[0] ? normalizePgRow(rows[0]) : null;
+}
+
+async function createTaskChildRowPg(entityKey, payload) {
+  const { table, columns } = TASK_CHILD_TABLES[entityKey];
+  // Only columns actually present in payload are inserted, so an omitted
+  // field (e.g. "completed" on a new subtask) falls through to the table's
+  // own DEFAULT instead of this call having to know or repeat it.
+  const cols = columns.filter((c) => payload[c] !== undefined);
+  const rows = await query(
+    `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")})
+     RETURNING ${columns.join(", ")}`,
+    cols.map((c) => payload[c]),
+  );
+  return normalizePgRow(rows[0]);
+}
+
+async function updateTaskChildRowPg(entityKey, id, payload, existing) {
+  const { table, columns } = TASK_CHILD_TABLES[entityKey];
+  const merged = { ...existing, ...payload, id };
+  const writable = columns.filter((c) => c !== "id" && c !== "task_id");
+  const rows = await query(
+    `UPDATE ${table} SET ${writable.map((c, i) => `${c} = $${i + 2}`).join(", ")}
+     WHERE id = $1 RETURNING ${columns.join(", ")}`,
+    [id, ...writable.map((c) => merged[c] ?? null)],
+  );
+  return normalizePgRow(rows[0]);
+}
+
+async function deleteTaskChildRowPg(entityKey, id) {
+  const { table } = TASK_CHILD_TABLES[entityKey];
+  await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+}
+
 /**
  * @param {Record<string, unknown>} row
  * @returns {Record<string, unknown>}
@@ -183,6 +250,9 @@ function normalizePgRow(row) {
  * @returns {Promise<Record<string, unknown>[]>}
  */
 export async function listPostgresRows(entityKey, url) {
+  if (isTaskChildPostgresEntityKey(entityKey)) {
+    return listTaskChildRowsPg(entityKey, url);
+  }
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return listMemberDataSchemaRows(entityKey, url);
   }
@@ -340,6 +410,9 @@ export async function listPostgresRows(entityKey, url) {
  * @param {string} id
  */
 export async function getPostgresRow(entityKey, id) {
+  if (isTaskChildPostgresEntityKey(entityKey)) {
+    return getTaskChildRowPg(entityKey, id);
+  }
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return getMemberDataSchemaRow(entityKey, id);
   }
@@ -419,6 +492,9 @@ export async function getPostgresRow(entityKey, id) {
  * @param {Record<string, unknown>} payload
  */
 export async function createPostgresRow(entityKey, payload) {
+  if (isTaskChildPostgresEntityKey(entityKey)) {
+    return createTaskChildRowPg(entityKey, payload);
+  }
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return createMemberDataSchemaRow(entityKey, payload);
   }
@@ -574,6 +650,9 @@ export async function createPostgresRow(entityKey, payload) {
  * @param {Record<string, unknown>} existing
  */
 export async function updatePostgresRow(entityKey, id, payload, existing, expectedUpdatedAt) {
+  if (isTaskChildPostgresEntityKey(entityKey)) {
+    return updateTaskChildRowPg(entityKey, id, payload, existing);
+  }
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return updateMemberDataSchemaRow(entityKey, id, payload, existing);
   }
@@ -693,6 +772,9 @@ export async function updatePostgresRow(entityKey, id, payload, existing, expect
  * @param {string} id
  */
 export async function deletePostgresRow(entityKey, id) {
+  if (isTaskChildPostgresEntityKey(entityKey)) {
+    return deleteTaskChildRowPg(entityKey, id);
+  }
   if (isMemberDataPostgresEntityKey(entityKey)) {
     return deleteMemberDataSchemaRow(entityKey, id);
   }

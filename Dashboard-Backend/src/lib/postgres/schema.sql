@@ -308,6 +308,11 @@ CREATE TABLE IF NOT EXISTS members_field_data (
 
 CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_members_field_data_member_form
+     ON members_field_data (member_id, form_key) WHERE member_id IS NOT NULL;
+
+ALTER TABLE members_field_data ADD COLUMN IF NOT EXISTS modified_by UUID;
+
 CREATE TABLE IF NOT EXISTS access_requests (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email         VARCHAR(255) NOT NULL DEFAULT '',
@@ -1215,6 +1220,58 @@ CREATE TABLE IF NOT EXISTS task_assignments (
 CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (member_id);
 
 CREATE INDEX IF NOT EXISTS idx_task_assignments_project ON task_assignments (project_id);
+
+CREATE TABLE IF NOT EXISTS task_comments (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  body          TEXT NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments (task_id);
+
+CREATE TABLE IF NOT EXISTS task_subtasks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  title         VARCHAR(500) NOT NULL DEFAULT '',
+  completed     BOOLEAN NOT NULL DEFAULT false,
+  order_index   INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks (task_id);
+
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  file_url      TEXT NOT NULL DEFAULT '',
+  file_name     VARCHAR(500) NOT NULL DEFAULT '',
+  uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  uploaded_by   UUID
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments (task_id);
+
+CREATE TABLE IF NOT EXISTS task_hours (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL,
+  hours_spent   NUMERIC(8, 2) NOT NULL DEFAULT 0,
+  status        VARCHAR(20) NOT NULL DEFAULT 'pending',
+  submitted_at  TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_by    UUID,
+  updated_by    UUID
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_hours_task ON task_hours (task_id);
+
+CREATE INDEX IF NOT EXISTS idx_task_hours_user ON task_hours (user_id);
 
 ALTER TABLE task_member_progress
     ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id),
