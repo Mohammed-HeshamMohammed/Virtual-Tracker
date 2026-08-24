@@ -869,7 +869,12 @@ function MainApp() {
         const msg = result.error || "Could not stop session";
         setActionError(msg);
         toast.error(msg);
-      } else if (result.session) {
+        // Deliberately leaves the prompt open with the draft intact - the
+        // timer is still running, and discarding what they typed would mean
+        // retyping it just to retry.
+        return;
+      }
+      if (result.session) {
         setSession(result.session);
         toast.message("Tracking session paused");
       }
