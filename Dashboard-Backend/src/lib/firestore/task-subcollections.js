@@ -17,13 +17,6 @@ export const TASK_CHILD_URL_SEGMENTS = Object.freeze({
   hours: "task-hours",
 });
 
-export const TASK_CHILD_SUBCOLLECTION_NAMES = Object.freeze([
-  "comments",
-  "subtasks",
-  "attachments",
-  "hours",
-]);
-
 /**
  * @param {string} entityKey
  * @returns {boolean}
@@ -62,23 +55,17 @@ export function taskChildDocRef(db, taskId, entityKey, docId) {
 }
 
 /**
- * Deletes the Firestore child subcollections (comments/subtasks/attachments/
- * hours - still Firestore-resident, out of scope for the Postgres migration)
- * and the vestigial Firestore `tasks` doc mirror.
- * task_assignments is NOT touched here anymore - it's fully Postgres now
- * (task-assignments-postgres.service.js), and its `task_id` FK is
- * `ON DELETE CASCADE`, so deleting the Postgres `tasks` row (deleteTaskPg,
- * called by the schema/routes.js DELETE handler right after this) already
- * cascade-deletes its task_assignments rows with no extra call needed.
+ * Deletes the vestigial Firestore `tasks` doc mirror. comments/subtasks/
+ * attachments/hours used to need their own manual batch-delete here - now
+ * real Postgres tables (task_comments etc.,
+ * ensure-lookup-schema.js), each with `task_id ... ON DELETE CASCADE`, the
+ * same way task_assignments already worked before this change. Deleting the
+ * Postgres `tasks` row (deleteTaskPg, called by the schema/routes.js DELETE
+ * handler right after this) cascades all five child tables with no extra
+ * call needed - same pattern as team_members/team_projects on team delete.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} taskId
  */
 export async function deleteTaskWithChildren(db, taskId) {
-  const batch = db.batch();
-  for (const sub of TASK_CHILD_SUBCOLLECTION_NAMES) {
-    const snap = await db.collection("tasks").doc(taskId).collection(sub).get();
-    for (const doc of snap.docs) batch.delete(doc.ref);
-  }
-  batch.delete(db.collection("tasks").doc(taskId));
-  await batch.commit();
+  await db.collection("tasks").doc(taskId).delete();
 }

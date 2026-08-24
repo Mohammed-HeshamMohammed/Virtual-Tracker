@@ -515,6 +515,13 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           if (!timeEntryOk) return true;
         }
         const payload = buildCreatePayload(entity, body);
+        // Mirrors the Firestore fallback's own injection below - the client
+        // reaches this via /api/tasks/:taskId/comments (etc), not by putting
+        // task_id in the body, so without this every task-child create 400s
+        // on a NOT NULL task_id it was never given a chance to send.
+        if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
+          payload.task_id = taskParentId;
+        }
         validateRequiredFields(parsed.key, payload);
         await validateBusinessRules(parsed.key, payload, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
@@ -588,10 +595,10 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         if (parsed.key === "tasks") {
-          // task_assignments/comments/subtasks/attachments/hours are still Firestore-
-          // resident (not migrated yet - see implementation.md Phase 2), so a task
-          // delete has to clean those up too, not just the new Postgres tasks row,
-          // or they're orphaned with a task_id that no longer resolves anywhere.
+          // task_assignments/comments/subtasks/attachments/hours are all real
+          // Postgres tables now with task_id ON DELETE CASCADE, so deleting
+          // the tasks row below cleans those up for free - this only needs
+          // to delete the vestigial Firestore tasks doc mirror.
           await deleteTaskWithChildren(db, parsed.id);
         }
         await deletePostgresRow(parsed.key, parsed.id);
