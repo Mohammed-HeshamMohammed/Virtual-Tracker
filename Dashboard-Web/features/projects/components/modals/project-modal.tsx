@@ -108,11 +108,16 @@ export const MEMBERS_TEAMS_TAB_KEY = "members-teams"
 export const LIMITS_TAB_KEY = "limits"
 export const MANAGEMENT_TAB_KEY = "management"
 
+const TAB_LABEL_OVERRIDES: Record<string, string> = {
+  budget: "BUDGET LIMITS",
+  [LIMITS_TAB_KEY]: "MEMBERS LIMITS",
+}
+
 const DEFAULT_ADD_PROJECT_TABS: ProjectFormTab[] = [
   { key: "general", label: "GENERAL" },
   { key: MEMBERS_TEAMS_TAB_KEY, label: "MEMBERS & TEAMS" },
-  { key: "budget", label: "BUDGET" },
-  { key: LIMITS_TAB_KEY, label: "LIMITS" },
+  { key: "budget", label: "BUDGET LIMITS" },
+  { key: LIMITS_TAB_KEY, label: "MEMBERS LIMITS" },
 ]
 
 function normalizeProjectModalTabs(tabs: ProjectFormTab[]): ProjectFormTab[] {
@@ -131,12 +136,14 @@ function normalizeProjectModalTabs(tabs: ProjectFormTab[]): ProjectFormTab[] {
         continue
       }
     }
-    normalized.push(tab)
-    // Legacy single "budget" tab (label "BUDGET & LIMITS") -> two tabs.
-    // Only formConfig.tabs from an un-updated backend would still carry this;
-    // DEFAULT_ADD_PROJECT_TABS above already ships split.
+    // Label comes from this file, not the server, so an un-updated backend
+    // can't put a stale name ("BUDGET & LIMITS") back on the tab.
+    normalized.push({ ...tab, label: TAB_LABEL_OVERRIDES[tab.key] ?? tab.label })
+    // Legacy single "budget" tab -> two tabs. Only formConfig.tabs from an
+    // un-updated backend would still carry this; DEFAULT_ADD_PROJECT_TABS
+    // above already ships split.
     if (tab.key === "budget" && !tabs.some((t) => t.key === LIMITS_TAB_KEY)) {
-      normalized.push({ key: LIMITS_TAB_KEY, label: "LIMITS" })
+      normalized.push({ key: LIMITS_TAB_KEY, label: "MEMBERS LIMITS" })
     }
   }
   return normalized

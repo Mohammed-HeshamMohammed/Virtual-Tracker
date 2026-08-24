@@ -2,7 +2,8 @@
 export const PROJECT_FORM_TABS = [
   { key: "general", label: "GENERAL" },
   { key: "members-teams", label: "MEMBERS & TEAMS" },
-  { key: "budget", label: "BUDGET & LIMITS" },
+  { key: "budget", label: "BUDGET LIMITS" },
+  { key: "limits", label: "MEMBERS LIMITS" },
 ];
 
 export const PROJECT_FORM_FIELDS = [
