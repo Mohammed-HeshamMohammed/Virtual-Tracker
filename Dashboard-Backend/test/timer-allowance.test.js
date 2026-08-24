@@ -150,19 +150,32 @@ test("member cap: hitting the daily limit blocks the timer", async () => {
   assert.equal(allowance.limitReached, true);
 });
 
-test("member cap: weekly limit only applies when no daily limit is set", async () => {
+// Weekly used to be ignored entirely whenever a daily cap was also set;
+// 40499f7 ("combined weekly+daily work") made both apply, with the tighter
+// one winning. This test asserted the old single-cap behavior and was never
+// updated with that change, so it has been failing ever since.
+test("member cap: daily and weekly both apply, whichever is tighter", async () => {
+  // Weekly alone still governs when it is the only cap set.
   reset({ weekly: 40, workedWeek: 39 * HOUR });
   assert.equal(
     (await computeMemberTimerAllowance({}, "member-1")).allowedRemainingSeconds,
     1 * HOUR,
   );
 
-  // With a daily limit present, the daily one governs and weekly is ignored -
-  // preserving the pre-refactor behavior of computeTimerAllowance.
+  // Both set, week is tighter: 7h left today but only 1h left this week.
+  // Ignoring weekly here used to hand someone 7 more hours on the last day
+  // of an almost-exhausted week.
   reset({ daily: 8, weekly: 40, workedToday: 1 * HOUR, workedWeek: 39 * HOUR });
   assert.equal(
     (await computeMemberTimerAllowance({}, "member-1")).allowedRemainingSeconds,
-    7 * HOUR,
+    1 * HOUR,
+  );
+
+  // Both set, day is tighter: 2h left today against 10h left this week.
+  reset({ daily: 8, weekly: 40, workedToday: 6 * HOUR, workedWeek: 30 * HOUR });
+  assert.equal(
+    (await computeMemberTimerAllowance({}, "member-1")).allowedRemainingSeconds,
+    2 * HOUR,
   );
 });
 
