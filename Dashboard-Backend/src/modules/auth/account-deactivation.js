@@ -5,6 +5,7 @@ import { resolveRoleIdsWhere } from "../members/services/relation-sync.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { deleteMemberPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 const DEACTIVATION_REQUESTS = "deactivation_requests";
 const DEACTIVATION_COLUMNS =
@@ -32,10 +33,9 @@ function normalizeDeactivationRow(row) {
 }
 
 function normalizeRoleName(role) {
-  return String(role || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(role);
 }
 
 export function isViewerRole(roleName) {

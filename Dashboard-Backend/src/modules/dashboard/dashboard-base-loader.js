@@ -6,6 +6,7 @@ import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-da
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { fetchPgSessionsForDashboard } from "../../lib/postgres/activity-events-postgres.service.js";
 import { listTasksPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { computeProjectSpentForAllPg } from "../../lib/postgres/projects-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
 /** Postgres rows -> the same {id, data} shape serializeDoc() produces for
@@ -71,7 +72,9 @@ async function fetchFreshBase(db) {
 
   const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
-    pgQuery("SELECT id, project_id, cost, type FROM project_budgets LIMIT 300"),
+    pgQuery(
+      "SELECT id, project_id, cost, type, based_on, include_non_billable_time FROM project_budgets LIMIT 300",
+    ),
     pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
     listTasksPg({ limit: 800 }),
   ]);
@@ -103,9 +106,32 @@ async function fetchFreshBase(db) {
     },
   }));
 
+  // Real budget spend, same batched computation the Projects Overview page
+  // uses. Without this every dashboard budget stat reported 0% forever:
+  // budgetSpent() had no field to read but a Firestore-era seed fixture one
+  // (_seedBudgetSpentPct), which no Postgres row has ever carried.
+  const spentByProject = await computeProjectSpentForAllPg(
+    db,
+    budgetRows
+      .filter((row) => row.project_id)
+      .map((row) => ({
+        id: String(row.project_id),
+        type: row.type,
+        based_on: row.based_on,
+        include_non_billable_time: row.include_non_billable_time,
+      })),
+  ).catch((err) => {
+    logSafeWarn("[dashboard-base-loader] budget spend computation failed:", err);
+    return new Map();
+  });
+  const budgetRowsWithSpend = budgetRows.map((row) => ({
+    ...row,
+    spent: spentByProject.get(String(row.project_id)) ?? 0,
+  }));
+
   return {
     projects: pgRowsToSerialized(projectRows),
-    budgets: pgRowsToSerialized(budgetRows),
+    budgets: pgRowsToSerialized(budgetRowsWithSpend),
     projectMembers: pgRowsToSerialized(projectMemberRows),
     tasks: pgRowsToSerialized(taskRows),
     timeEntries,

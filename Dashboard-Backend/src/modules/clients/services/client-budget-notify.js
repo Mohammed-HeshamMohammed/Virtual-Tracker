@@ -16,6 +16,7 @@ import {
   upsertClientAutomationStatePg,
 } from "../../../lib/postgres/clients-postgres.service.js";
 import { listMembersPg } from "../../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../../http/role-key.js";
 
 const NOTIFY_TYPE = "client_budget_threshold";
 const MANAGEMENT_ROLES = new Set([
@@ -40,10 +41,9 @@ function readBudgetFromDoc(doc) {
 }
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 function formatMoney(amount) {

@@ -3,6 +3,7 @@ import { getMemberAncestors } from "../member-relationships/service.js";
 import { getProjectScopedMemberIds, resolveMemberRoleName } from "./activity-scope.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 import {
   fetchLatestPgScreenshot,
   getPgSessionById,
@@ -16,10 +17,9 @@ const NO_SCREENSHOT_MS = 15 * 60 * 1000;
 const LOW_ACTIVITY_THRESHOLD = 30;
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 async function getDirectParentIds(_db, memberId) {

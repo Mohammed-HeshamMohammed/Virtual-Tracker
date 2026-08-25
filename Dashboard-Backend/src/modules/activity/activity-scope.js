@@ -3,16 +3,16 @@ import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/se
 import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
-import { getMemberByIdPg, getMembersByIdsPg } from "../../lib/postgres/members-postgres.service.js";
+import { getMemberByIdPg, getMembersByIdsPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 export async function resolveMemberRoleName(db, memberId) {
@@ -61,9 +61,14 @@ function memberMetaFromRow(row) {
 export async function buildMemberMetaMap(db, allowedIds) {
   const meta = new Map();
   if (allowedIds === null) {
-    const memberRows = await getMembersByIdsPg([]);
+    // null means "unrestricted - every member", which is what Owner/Super
+    // Admin/Admin get. This used to call getMembersByIdsPg([]), but that
+    // short-circuits an empty id list to [], so "everyone" silently resolved
+    // to nobody and blanked the General Dashboard's presence panel for
+    // exactly the roles meant to see the whole org.
+    const memberRows = await listMembersPg({ limit: 5000 });
     for (const row of memberRows) {
-      if (row.id) meta.set(row.id, memberMetaFromRow(row));
+      if (row.id) meta.set(String(row.id), memberMetaFromRow(row));
     }
     return meta;
   }

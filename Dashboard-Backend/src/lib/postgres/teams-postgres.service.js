@@ -81,10 +81,32 @@ export async function deleteTeamPg(id) {
 // team_members
 // ---------------------------------------------------------------------------
 
+// Roster reads carry the display fields the Teams page needs (member_name /
+// _avatar / _color / _role) - without them every team renders a blank "Lead:"
+// line and "UN" placeholder avatars. Deliberately NOT the v_team_rosters view:
+// that view omits assigned_by/updated_by, and selects work_email, which is
+// Owner/Super Admin-only under field-policy.js and has no business riding
+// along on a roster read.
+const TEAM_MEMBER_ENRICHED_SELECT = `
+  SELECT tm.*,
+         NULLIF(
+           COALESCE(
+             NULLIF(TRIM(m.display_name), ''),
+             NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), '')
+           ),
+           ''
+         )               AS member_name,
+         m.avatar_url    AS member_avatar_url,
+         m.avatar_color  AS member_color,
+         COALESCE(r.name, 'Viewer') AS member_role
+  FROM team_members tm
+  LEFT JOIN members m ON m.id = tm.member_id
+  LEFT JOIN roles r ON r.id = m.role_id`;
+
 /** @param {string} teamId */
 export async function listTeamMembersPg(teamId) {
   if (!teamId) return [];
-  return query("SELECT * FROM team_members WHERE team_id = $1", [teamId]);
+  return query(`${TEAM_MEMBER_ENRICHED_SELECT} WHERE tm.team_id = $1`, [teamId]);
 }
 
 /** @param {string} memberId */
@@ -94,7 +116,7 @@ export async function listTeamMembershipsForMemberPg(memberId) {
 }
 
 export async function listAllTeamMembersPg() {
-  return query("SELECT * FROM team_members");
+  return query(TEAM_MEMBER_ENRICHED_SELECT);
 }
 
 /** @param {{ team_id: string, member_id: string, is_lead?: boolean, assigned_by?: string, updated_by?: string }} data */

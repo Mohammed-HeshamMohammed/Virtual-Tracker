@@ -24,6 +24,7 @@ import {
   updateTrackingFieldsPg,
 } from "../../lib/postgres/task-member-progress.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 const REVIEW_CENTER_ROLES = new Set([
   "owner",
@@ -64,10 +65,9 @@ export function computeParticipationStats(assignments) {
 }
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 // Pure scheduling math (working-day counting, seconds estimation) now lives

@@ -22,7 +22,7 @@ import {
   resolveClientInvoicingSettings,
   updateClientWithDetails,
 } from "./services/client-service.js";
-import { getClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
+import { getClientPg, updateClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 
@@ -252,6 +252,65 @@ export async function routeClients(req, res, url, db, origin) {
       }
       const status = e instanceof Error && e.message === "Client not found" ? 404 : 400;
       sendJson(res, origin, status, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to update client",
+      });
+    }
+    return true;
+  }
+
+  // Plain column update, same "own handler" reasoning as the DELETE below.
+  // Phase 9 removed `clients` from the generic entity catalog, but the client
+  // row menu's Archive/Unarchive still PUTs here with a status-only body -
+  // with no handler that fell through every router to the 404 at the end, so
+  // archiving a client silently failed. updateClientPg keys its patch in
+  // camelCase while the client sends snake_case, so map explicitly rather
+  // than forwarding the body and silently dropping half the fields.
+  const clientIdUpdateMatch = /^\/api\/clients\/([^/]+)$/.exec(pn);
+  if (clientIdUpdateMatch && (req.method === "PUT" || req.method === "PATCH")) {
+    if (!assertManagementRole(req, res, origin)) return true;
+    const clientId = clientIdUpdateMatch[1];
+    try {
+      const body = await readJsonBody(req);
+      const pick = (...keys) => keys.find((key) => body[key] !== undefined);
+      const patch = {};
+      const assign = (target, ...keys) => {
+        const key = pick(...keys);
+        if (key !== undefined) patch[target] = body[key];
+      };
+      assign("name", "name");
+      assign("memberId", "member_id", "memberId");
+      assign("streetAddress", "street_address", "streetAddress");
+      assign("city", "city");
+      assign("state", "state");
+      assign("zip", "zip");
+      assign("country", "country");
+      assign("phoneNumber", "phone_number", "phoneNumber");
+      assign("emailAddresses", "email_addresses", "emailAddresses");
+      assign("status", "status");
+      patch.updatedBy = getAuthContext(req)?.memberId ?? null;
+
+      const existing = await getClientPg(clientId);
+      if (!existing) {
+        sendJson(res, origin, 404, { success: false, error: "Client not found" });
+        return true;
+      }
+      const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
+      const updated = await updateClientPg(clientId, patch, expectedUpdatedAt);
+      if (updated && typeof updated === "object" && "conflict" in updated) {
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "stale_write",
+          error: "Someone else changed this client while you were editing. Reload to see their changes.",
+          data: updated.current,
+        });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: updated });
+    } catch (e) {
+      logSafeError("[clients PUT]", e);
+      if (sendPgConstraintError(res, origin, e, req)) return true;
+      sendJson(res, origin, 400, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to update client",
       });

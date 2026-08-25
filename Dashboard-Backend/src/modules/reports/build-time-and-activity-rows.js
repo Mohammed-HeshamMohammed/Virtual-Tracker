@@ -59,14 +59,26 @@ function splitSessionByLocalDay(session, timeZone) {
  * @param {Map<string, string>} memberTimezones memberId -> IANA zone, "UTC" fallback assumed by caller
  * @param {string} fromDay 'YYYY-MM-DD' - segments outside [fromDay, toDay] are dropped (the SQL window is widened)
  * @param {string} toDay
+ * @param {Map<string, number>} [memberRates] memberId -> hourly rate; omit/empty to report 0 cost
  * @returns {{
  *   days: Array<{
  *     date: string,
- *     members: Array<{ memberId: string, name: string, activeSeconds: number, idleSeconds: number, projectNames: string[] }>,
+ *     members: Array<{ memberId: string, name: string, activeSeconds: number, idleSeconds: number, spentAmount: number, projectNames: string[] }>,
  *   }>,
  * }}
  */
-export function buildTimeAndActivityReportPayload(rawRows, memberNameMap, memberTimezones, fromDay, toDay) {
+function round2(value) {
+  return Math.round(value * 100) / 100;
+}
+
+export function buildTimeAndActivityReportPayload(
+  rawRows,
+  memberNameMap,
+  memberTimezones,
+  fromDay,
+  toDay,
+  memberRates = new Map(),
+) {
   /** @type {Map<string, Map<string, { activeSeconds: number, idleSeconds: number, projectNames: Set<string> }>>} */
   const byDay = new Map();
 
@@ -98,6 +110,11 @@ export function buildTimeAndActivityReportPayload(rawRows, memberNameMap, member
         name: memberNameMap.get(memberId)?.name ?? "Unknown",
         activeSeconds: entry.activeSeconds,
         idleSeconds: entry.idleSeconds,
+        // Tracked cost for the report's money columns. 0 when the caller
+        // passed no rates (viewer not allowed to see compensation, or the
+        // member has no pay rate set) - the frontend used to hardcode
+        // "$0.00" here regardless, so every dollar figure read zero.
+        spentAmount: round2((entry.activeSeconds / 3600) * (memberRates.get(memberId) ?? 0)),
         projectNames: [...entry.projectNames],
       })),
     }));

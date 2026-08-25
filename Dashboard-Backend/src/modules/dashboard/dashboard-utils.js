@@ -1,14 +1,14 @@
 /** Shared helpers for dashboard aggregation services. */
 
 import { getViewerProjectIds } from "../../http/project-access.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 export function str(row, ...keys) {
@@ -83,6 +83,13 @@ export function buildTrendPaths(values) {
 }
 
 export function budgetSpent(total, row) {
+  // `spent` is the real figure, computed by computeProjectSpentForAllPg in
+  // dashboard-base-loader.js (same source the Projects Overview page uses).
+  // The _seedBudgetSpentPct fallback below is a Firestore-era demo fixture
+  // field; it was the ONLY thing read here, so every dashboard budget stat
+  // sat at 0% for any real org.
+  const spent = num(row, "spent");
+  if (spent > 0) return spent;
   const pct = num(row, "_seedBudgetSpentPct", "seedBudgetSpentPct");
   if (pct > 0 && total > 0) return Math.round(total * Math.min(pct, 1));
   return 0;

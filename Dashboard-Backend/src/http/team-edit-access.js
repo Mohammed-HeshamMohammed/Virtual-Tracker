@@ -2,6 +2,7 @@ import { normalizeRoleKey, resolveRoleIdsWhere } from "../modules/members/servic
 import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { getManageableMemberIds, getVisibleMemberIds } from "../modules/member-relationships/service.js";
 import { isEmployeeRole } from "./role-hierarchy.js";
+import { canViewEmail } from "./field-policy.js";
 import { canAccessMember } from "./authorization.js";
 import { canBeTeamMember } from "./team-member-assign-policy.js";
 import { listTeamIdsForProjectPg } from "../lib/postgres/projects-postgres.service.js";
@@ -97,7 +98,10 @@ export async function getTeamStaffableMemberSummaries(db, memberId, roleName) {
       id: m.id,
       first_name: m.first_name || "",
       last_name: m.last_name || "",
-      work_email: m.work_email || "",
+      // Owner/Super Admin only, self excepted - same gate the members list
+      // applies via applyMemberFieldPolicy. Team staffing is Manager+, so
+      // without this the team picker shows emails the members table hides.
+      work_email: canViewEmail({ memberId, roleName }, String(m.id)) ? m.work_email || "" : "",
       role_name: memberRoleName,
       avatar: m.avatar || "",
       avatar_color: m.avatar_color || "",
