@@ -7,6 +7,7 @@ import {
   resolveMemberRoleName,
 } from "../activity/activity-scope.js";
 import { fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.service.js";
+import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import {
   budgetSpent,
@@ -183,7 +184,12 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
   const isOwner = roleKey === "owner";
-  const allowedProjectIds = isOwner ? null : await getMemberProjectIds(db, viewerMemberId);
+  // Owner, Super Admin, Admin and Super Manager all see the whole org here -
+  // the same set getViewerProjectIds returns null for. Keying the org-wide
+  // view off `isOwner` alone was what left an Admin looking at "No projects
+  // yet" on a populated org.
+  const seesAllProjects = isOrgProjectAdminRole(roleName);
+  const allowedProjectIds = await getMemberProjectIds(db, viewerMemberId, roleName);
 
   const base = await loadDashboardBase(db);
   const projectsSnap = { docs: pseudoDocsFromSerialized(base.projects) };
@@ -268,9 +274,12 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       ? allTasks
       : allTasks.filter((task) => allowedProjectIdList.includes(task.projectId));
 
-  const scope = await resolveActivityFeedScope(db, viewerMemberId, { memberId: "all", projectScopeOnly: !isOwner });
+  const scope = await resolveActivityFeedScope(db, viewerMemberId, {
+    memberId: "all",
+    projectScopeOnly: !seesAllProjects,
+  });
   let activityMemberIds = scope.targetMemberIds;
-  if (!isOwner && allowedProjectIdList?.length) {
+  if (!seesAllProjects && allowedProjectIdList?.length) {
     const projectMemberIds = await getProjectScopedMemberIds(db, viewerMemberId);
     activityMemberIds =
       activityMemberIds === null
@@ -348,7 +357,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
 
     return {
       id: projectId ?? "all",
-      name: projectId ? aggregateRow?.name || "Project" : isOwner ? "All Projects" : "All My Projects",
+      name: projectId ? aggregateRow?.name || "Project" : seesAllProjects ? "All Projects" : "All My Projects",
       colorIndex: projectId ? aggregateRow?.colorIndex ?? 0 : 0,
       stats: buildStats(aggregateRow, scopedTasks, projectId, activityPanel),
       chartPath,
@@ -360,7 +369,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   }
 
   const projects = [];
-  if (projectRows.length > 1 || isOwner) {
+  if (projectRows.length > 1 || seesAllProjects) {
     projects.push(mapProjectPayload(null, null));
   }
   for (const row of projectRows) {
@@ -370,7 +379,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   return {
     roleName,
     isOwner,
-    canSeeAllProjects: isOwner,
+    canSeeAllProjects: seesAllProjects,
     globalActivityFeed,
     projects,
   };

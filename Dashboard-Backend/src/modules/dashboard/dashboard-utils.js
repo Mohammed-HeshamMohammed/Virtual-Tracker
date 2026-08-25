@@ -1,6 +1,6 @@
 /** Shared helpers for dashboard aggregation services. */
 
-import { listProjectIdsForMemberPg } from "../../lib/postgres/projects-postgres.service.js";
+import { getViewerProjectIds } from "../../http/project-access.js";
 
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -99,9 +99,22 @@ export function calculateHealth(status, tasksForProject) {
 }
 
 /**
+ * Projects a dashboard viewer may see, or null for "every project".
+ *
+ * This used to read project_members directly and hand back null only for the
+ * Owner, so a Super Admin, Admin or Super Manager - none of whom are normally
+ * rows in project_members - resolved to an empty set and got "No projects yet"
+ * on a fully populated org. It also missed projects the viewer created without
+ * a membership row (createProjectPg only stamps created_by). getViewerProjectIds
+ * is the codebase's answer to both, and is what every other project-scoped
+ * endpoint already uses; the dashboards were the outlier.
+ *
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} memberId
+ * @param {string} roleName
+ * @returns {Promise<Set<string> | null>}
  */
-export async function getMemberProjectIds(db, memberId) {
-  return new Set(await listProjectIdsForMemberPg(memberId));
+export async function getMemberProjectIds(db, memberId, roleName) {
+  const ids = await getViewerProjectIds(db, memberId, roleName);
+  return ids === null ? null : new Set(ids);
 }
