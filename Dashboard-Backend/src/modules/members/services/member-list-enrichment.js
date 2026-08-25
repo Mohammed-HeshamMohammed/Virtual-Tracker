@@ -6,8 +6,6 @@ import { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-s
 
 export { fetchWeeklyLimitsForMembers };
 
-const MEMBER_ID_IN_CHUNK = 30;
-
 /**
  * @param {number | string | null | undefined} rate
  * @param {string} [payPeriod]
@@ -34,42 +32,9 @@ export function formatMemberLimitsDisplay(weeklyLimit) {
 }
 
 /**
- * @param {string[]} memberIds
- * @param {number} [chunkSize]
- */
-export function chunkMemberIds(memberIds, chunkSize = MEMBER_ID_IN_CHUNK) {
-  const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
-  const chunks = [];
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    chunks.push(unique.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string[]} memberIds
- * @param {(query: import("firebase-admin/firestore").Query) => import("firebase-admin/firestore").Query} [applyFilter]
- */
-async function fetchDocsByMemberIdChunks(db, collection, memberIds, applyFilter) {
-  const chunks = chunkMemberIds(memberIds);
-  if (!chunks.length) return [];
-
-  const docs = [];
-  for (const chunk of chunks) {
-    let query = db.collection(collection).where("member_id", "in", chunk);
-    if (applyFilter) query = applyFilter(query);
-    const snap = await query.get();
-    docs.push(...snap.docs);
-  }
-  return docs;
-}
-
-/**
  * pay_rates is Postgres-backed (member-data-store.js's PG_MEMBER_SCOPED) -
- * `db` stays unused here only to keep this call-compatible with its sibling
- * fetch functions below, which are still Firestore.
+ * `db` stays unused here only to keep the call signature its callers already
+ * pass; every sibling fetch in this file is Postgres too now.
  * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string[]} memberIds
  */

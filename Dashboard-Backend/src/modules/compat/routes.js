@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { getAuthAdmin } from "../../config/firebase.js";
 import { isPostgresConfigured, query } from "../../lib/postgres/client.js";
-import { isPostgresLookupReady } from "../../lib/postgres/lookup-availability.js";
 import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
 import { listMemberFormSnapshotsPg } from "../../lib/postgres/member-form-snapshot-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
@@ -1534,20 +1533,12 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: options, options });
         return true;
       }
-      if (await isPostgresLookupReady()) {
-        const options = await listOrgFieldOptionsPg(type);
-        sendJson(res, origin, 200, { success: true, data: options, options });
-        return true;
-      }
-      let query = db.collection("members_field_data").where("type", "==", type);
-      if (memberDocId) query = query.where("memberDocId", "==", memberDocId);
-      let snapshot;
-      try {
-        snapshot = await query.orderBy("position", "asc").limit(200).get();
-      } catch {
-        snapshot = await query.limit(200).get();
-      }
-      const options = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // The Firestore branch that used to follow ran only when
+      // isPostgresLookupReady() was false, reading members_field_data - a
+      // collection that has taken no writes since these options moved to
+      // org_field_options. It could not return a current option, only an
+      // empty list or a stale one, which is worse than failing.
+      const options = await listOrgFieldOptionsPg(type);
       sendJson(res, origin, 200, { success: true, data: options, options });
       return true;
     }
@@ -1589,20 +1580,22 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
       const label = typeof body.label === "string" ? body.label : "";
       const position = Number.isInteger(body.position) ? body.position : 0;
-      if ((await isPostgresLookupReady()) && ORG_FIELD_OPTION_TYPES.has(type)) {
-        const created = await createOrgFieldOptionPg({
-          type,
-          label,
-          position,
-          modified_by: getAuthContext(req)?.memberId ?? null,
-        });
-        sendJson(res, origin, 201, { success: true, data: created });
+      // validTypes and ORG_FIELD_OPTION_TYPES hold the same eight option types
+      // (memberFormSnapshot aside, handled above), so this rejects only if the
+      // two drift apart later. It used to fall through to a Firestore write
+      // into members_field_data instead - a row nothing reads back, since the
+      // GET above serves org_field_options.
+      if (!ORG_FIELD_OPTION_TYPES.has(type)) {
+        sendJson(res, origin, 400, { success: false, error: "Invalid type" });
         return true;
       }
-      const payload = { type, label, position, created_at: new Date() };
-      const ref = db.collection("members_field_data").doc();
-      await ref.set(payload);
-      sendJson(res, origin, 201, { success: true, data: { id: ref.id, ...payload } });
+      const created = await createOrgFieldOptionPg({
+        type,
+        label,
+        position,
+        modified_by: getAuthContext(req)?.memberId ?? null,
+      });
+      sendJson(res, origin, 201, { success: true, data: created });
       return true;
     }
   }

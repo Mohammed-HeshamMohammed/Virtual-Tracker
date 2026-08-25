@@ -1,5 +1,5 @@
 import { validateAssigneeWorkLimits } from "./task-workload-validation.js";
-import { toIso } from "./task-schedule-math.js";
+import { estimateAssignmentSeconds, toIso } from "./task-schedule-math.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
@@ -407,6 +407,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
 
   const existingRows = await getTaskAssignmentsPg(taskId);
   const existingByUser = new Map(existingRows.map((row) => [row.member_id, row]));
+  const newlyAssigned = [];
 
   for (const userId of ids) {
     const existing = existingByUser.get(userId);
@@ -428,6 +429,7 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
         created_at: now,
         updated_at: now,
       });
+      newlyAssigned.push(userId);
     }
   }
 
@@ -444,6 +446,23 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
       await updateTaskPg(taskId, { assigned_to: primary });
     }
   }
+
+  // "New Task Assigned" used to fire from the generic Firestore CRUD fallback
+  // on assigned_to changes, so it went dead when tasks moved to Postgres and
+  // was deleted with that fallback. Restored here instead: this is the single
+  // choke point every real assignment flows through (task create with
+  // assignees, the assign button, reassignment), and it fires per newly added
+  // assignee rather than only for the primary one. Best-effort, like every
+  // other notify call in this file - see notifyRecipients.
+  // Link format matches dispatchAssignmentStatusNotification, not the dead
+  // code's `/tasks/:id`: the bell passes notification.link straight to
+  // onNavigate(pageId), so a URL path there navigates nowhere.
+  await notifyRecipients(db, newlyAssigned, {
+    type: "task_assigned",
+    title: "New Task Assigned",
+    message: `You have been assigned to task: ${task.title || "Unknown"}`,
+    link: projectId ? `pm-tasks?project=${projectId}` : "pm-tasks",
+  });
 
   await recomputeTaskStatus(db, taskId);
   return getTaskAssignments(db, taskId);

@@ -4,25 +4,18 @@ import { assertCanBeTeamMemberRole } from "../../../http/team-member-assign-poli
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { isManagementRole } from "../../tasks/task-assignments.js";
 import { rejectUnknownEntityFields } from "../../../http/validate-body.js";
-import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { lookupRowExistsInPostgres } from "../../../lib/postgres/lookup-postgres.service.js";
-import { query, isPostgresConfigured } from "../../../lib/postgres/client.js";
+import { query } from "../../../lib/postgres/client.js";
 import { foreignKeyCollectionByField, generateUUID, now, schemaRulesByKey } from "../catalog/index.js";
 
 const LOOKUP_FK_COLLECTIONS = new Set(["roles", "job_titles", "departments", "job_types", "tax_types"]);
-// project_id/task_id used to mean "check Firestore" via foreignKeyCollectionByField
-// (COLLECTIONS.projects / "tasks"), but both domains are now Postgres-resident -
-// projects unconditionally (direct cutover, no flag), tasks as of this change.
-// Checking the old Firestore collections here would reject every reference to a
-// project/task created after each domain's cutover, since new rows never land
-// in Firestore anymore. See implementation.md Phase 2.
-//
-// member_id/assigned_to/team_id/invite_id/client_id joined this list for the
-// same reason, all at once, during the members-domain migration: without
-// this, the fallback branch below checks db.collection("members")/("teams")/
-// ("invites")/("clients") - collections that are empty now that those
-// domains are Postgres-resident - and validateForeignKeys would reject every
-// valid reference as "missing", not just ones actually deleted.
+// Every non-lookup FK field, mapped to the Postgres table that owns it.
+// foreignKeyCollectionByField still names Firestore collections (they are the
+// error-message wording and nothing more) - checking those collections would
+// reject every reference created after each domain's cutover, since new rows
+// have not landed in Firestore since. Both maps together cover all 12 FK
+// fields in the catalog, so an unmapped field is a mistake, not a fallback
+// case: it throws below rather than silently skipping validation.
 const POSTGRES_FK_TABLE_BY_FIELD = {
   project_id: "projects",
   task_id: "tasks",
@@ -126,23 +119,25 @@ async function assertTeamLinkedToProject(projectId, teamId) {
   if (!rows.length) throw new Error("team_id must be a team assigned to this project");
 }
 
-export async function validateForeignKeys(db, payload, options = {}) {
+/** `_db` is unused - every foreign key resolves against Postgres now. */
+export async function validateForeignKeys(_db, payload, options = {}) {
   for (const [field, value] of Object.entries(payload)) {
     const collection = foreignKeyCollectionByField[field];
     if (!collection || !value) continue;
-    if ((await isPostgresLookupReady()) && LOOKUP_FK_COLLECTIONS.has(collection)) {
+    if (LOOKUP_FK_COLLECTIONS.has(collection)) {
       const exists = await lookupRowExistsInPostgres(collection, String(value));
       if (!exists) throw new Error(`${field} references missing ${collection}`);
       continue;
     }
     const pgTable = POSTGRES_FK_TABLE_BY_FIELD[field];
-    if (pgTable && isPostgresConfigured()) {
-      const rows = await query(`SELECT 1 FROM ${pgTable} WHERE id = $1 LIMIT 1`, [String(value)]);
-      if (!rows.length) throw new Error(`${field} references missing ${collection}`);
-      continue;
-    }
-    const doc = await db.collection(collection).doc(value).get();
-    if (!doc.exists) throw new Error(`${field} references missing ${collection}`);
+    // The Firestore per-field fallback that used to sit here checked
+    // db.collection(collection).doc(value) - against collections that no
+    // longer receive writes, so it either rejected valid references or, when
+    // the Postgres readiness checks above returned false, quietly downgraded
+    // real validation to a lookup that always missed.
+    if (!pgTable) throw new Error(`${field} has no foreign-key table mapping`);
+    const rows = await query(`SELECT 1 FROM ${pgTable} WHERE id = $1 LIMIT 1`, [String(value)]);
+    if (!rows.length) throw new Error(`${field} references missing ${collection}`);
   }
 
   const projectId = payload.project_id ?? options.projectId;
