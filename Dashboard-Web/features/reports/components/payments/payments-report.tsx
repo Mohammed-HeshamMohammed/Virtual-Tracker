@@ -103,7 +103,7 @@ function PaymentsTable() {
 
 export function PaymentsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Payments report" onNavigate={onNavigate} exportFileBaseName="payments">
+    <StandardReportLayout title="Payments report" onNavigate={onNavigate} exportFileBaseName="payments" showScopeTabs={false} showGroupBy={false}>
       <PaymentsTable />
     </StandardReportLayout>
   )

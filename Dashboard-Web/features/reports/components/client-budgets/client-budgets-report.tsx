@@ -115,6 +115,12 @@ export function ClientBudgetsReport({ onNavigate }: { onNavigate: (id: string) =
       exportFileBaseName="client-budgets"
       titleTone="emphasis"
       orgLayout="stacked-subtle"
+      // Client budget usage derives its own period from the budget's reset
+      // cadence (client-budget-usage.js), so an arbitrary date range has no
+      // meaning here and the backend never accepted one.
+      showDateRange={false}
+      showScopeTabs={false}
+      showGroupBy={false}
     >
       <ClientBudgetsTable />
     </StandardReportLayout>

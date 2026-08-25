@@ -111,7 +111,7 @@ function LimitsTable({ kind }: { kind: "weekly" | "daily" }) {
 
 export function WeeklyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Weekly limits report" onNavigate={onNavigate} exportFileBaseName="weekly-limits">
+    <StandardReportLayout title="Weekly limits report" onNavigate={onNavigate} exportFileBaseName="weekly-limits" showScopeTabs={false} showGroupBy={false}>
       <LimitsTable kind="weekly" />
     </StandardReportLayout>
   )
@@ -119,7 +119,7 @@ export function WeeklyLimitsReport({ onNavigate }: { onNavigate: (id: string) =>
 
 export function DailyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Daily limits report" onNavigate={onNavigate} exportFileBaseName="daily-limits">
+    <StandardReportLayout title="Daily limits report" onNavigate={onNavigate} exportFileBaseName="daily-limits" showScopeTabs={false} showGroupBy={false}>
       <LimitsTable kind="daily" />
     </StandardReportLayout>
   )

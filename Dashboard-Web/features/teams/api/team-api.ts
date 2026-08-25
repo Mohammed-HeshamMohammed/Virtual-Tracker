@@ -20,8 +20,7 @@ export interface TeamMember {
   assigned_by?: string
   updated_by?: string
   member_name?: string
-  member_avatar?: string
-  member_email?: string
+  member_avatar_url?: string
   member_color?: string
   member_role?: string
 }
@@ -46,17 +45,11 @@ function normalizeTeamMember(input: unknown): TeamMember {
         : typeof row.memberName === "string"
           ? row.memberName
           : undefined,
-    member_avatar:
-      typeof row.member_avatar === "string"
-        ? row.member_avatar
-        : typeof row.memberAvatar === "string"
-          ? row.memberAvatar
-          : undefined,
-    member_email:
-      typeof row.member_email === "string"
-        ? row.member_email
-        : typeof row.memberEmail === "string"
-          ? row.memberEmail
+    member_avatar_url:
+      typeof row.member_avatar_url === "string"
+        ? row.member_avatar_url
+        : typeof row.memberAvatarUrl === "string"
+          ? row.memberAvatarUrl
           : undefined,
     member_color:
       typeof row.member_color === "string"
@@ -155,7 +148,7 @@ export async function getTeamMembers(
     "member_id",
     "is_lead",
     "member_name",
-    "member_avatar",
+    "member_avatar_url",
     "member_color",
     "member_role",
   ]

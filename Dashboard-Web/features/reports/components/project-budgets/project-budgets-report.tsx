@@ -184,6 +184,12 @@ export function ProjectBudgetsReport({ onNavigate }: { onNavigate: (id: string) 
       orgLayout="stacked-subtle"
       groupByOptions={PROJECT_BUDGETS_GROUP_BY_OPTIONS}
       defaultGroupBy="month"
+      // Budget figures are scoped to the budget's own period (and its reset
+      // cadence), not an arbitrary picked range - the backend has no from/to
+      // for them. Hidden rather than left as controls that change nothing.
+      showDateRange={false}
+      showScopeTabs={false}
+      showGroupBy={false}
     >
       <ProjectBudgetsTable />
     </StandardReportLayout>

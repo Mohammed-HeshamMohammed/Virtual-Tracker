@@ -75,14 +75,26 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
   }))
 }
 
-export async function fetchAmountsOwedReport(range: { from: string; to: string }): Promise<AmountsOwedDayGroup[]> {
+/** `memberId` scopes to one member (the "ME" tab); the backend rejects ids
+ *  outside the viewer's visible set, so this is a filter, not a trust point. */
+export async function fetchAmountsOwedReport(range: {
+  from: string
+  to: string
+  memberId?: string | null
+}): Promise<AmountsOwedDayGroup[]> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
+  if (range.memberId) params.set("memberId", range.memberId)
   const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/amounts-owed?${params.toString()}`)
   return data ? mapAmountsDays(data.days) : []
 }
 
-export async function fetchPaymentsReport(range: { from: string; to: string }): Promise<AmountsOwedDayGroup[]> {
+export async function fetchPaymentsReport(range: {
+  from: string
+  to: string
+  memberId?: string | null
+}): Promise<AmountsOwedDayGroup[]> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
+  if (range.memberId) params.set("memberId", range.memberId)
   const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/payments?${params.toString()}`)
   return data ? mapAmountsDays(data.days) : []
 }
@@ -91,6 +103,7 @@ export async function fetchPaymentsReport(range: { from: string; to: string }): 
 
 interface RawWorkSession {
   id: string
+  memberId: string
   memberName: string
   projectName: string
   taskTitle: string
@@ -124,6 +137,7 @@ export async function fetchWorkSessionsReport(range: { from: string; to: string 
       projectName,
       projectLetter: (projectName[0] ?? "?").toUpperCase(),
       projectColor: colorForProject(projectName),
+      memberId: s.memberId,
       memberName: s.memberName,
       memberInitials: initialsFor(s.memberName),
       todoJob: s.taskTitle || "",

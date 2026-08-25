@@ -138,6 +138,9 @@ export function StandardReportLayout({
   exportFileBaseName,
   titleTone = "emphasis",
   orgLayout = "default",
+  showDateRange = true,
+  showScopeTabs = true,
+  showGroupBy = true,
   children,
 }: {
   title: string
@@ -150,6 +153,16 @@ export function StandardReportLayout({
   titleTone?: "emphasis" | "muted"
   /** stacked-subtle = org name + smaller timezone (project budgets mock); default follows titleTone */
   orgLayout?: "default" | "stacked-subtle"
+  // A report that never reads `rangeStart`/`rangeEnd`, `scope`, or `groupBy`
+  // out of this layout's context must hide the matching control rather than
+  // render a dead one. Several reports used to show all three and consume
+  // none, so clicking them visibly did nothing.
+  /** Date nav (prev / picker / next / Today). Off for period-scoped reports. */
+  showDateRange?: boolean
+  /** ME / ALL scope tabs. */
+  showScopeTabs?: boolean
+  /** "Group by:" dropdown. */
+  showGroupBy?: boolean
   children: ReactNode
 }) {
   const { isDark } = useTheme()
@@ -163,8 +176,10 @@ export function StandardReportLayout({
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
 
   const exportHandlerRef = useRef<(() => void) | null>(null)
+  const [canExport, setCanExport] = useComponentState(false)
   const registerExportHandler = useCallback((fn: (() => void) | null) => {
     exportHandlerRef.current = fn
+    setCanExport(Boolean(fn))
   }, [])
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
@@ -197,20 +212,10 @@ export function StandardReportLayout({
   }
 
   function runExport() {
-    const fn = exportHandlerRef.current
-    if (fn) {
-      fn()
-      return
-    }
-    const base = exportFileBaseName ?? title.toLowerCase().replace(/\s+/g, "-")
-    const csv = "Report,Range\nDemo," + dateLabel.replace(/"/g, '""')
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `${base}-${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    // Only a child-registered handler can export real rows. There used to be
+    // a fallback here writing a literal "Demo,<range>" CSV, which looked like
+    // a genuine (if empty) export of the report the user was looking at.
+    exportHandlerRef.current?.()
   }
 
   const panel =
@@ -234,6 +239,8 @@ export function StandardReportLayout({
               {title}
             </h1>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-1">
+              {showDateRange ? (
+                <>
               <button
                 type="button"
                 onClick={() => shiftRangeByDays(-1)}
@@ -303,6 +310,8 @@ export function StandardReportLayout({
               >
                 Today
               </button>
+                </>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowFilters(true)}
@@ -321,7 +330,7 @@ export function StandardReportLayout({
               isDark ? "border-white/10" : "border-slate-200"
             )}
           >
-            {(["me", "all"] as const).map((v) => (
+            {(showScopeTabs ? (["me", "all"] as const) : ([] as const)).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -373,17 +382,19 @@ export function StandardReportLayout({
                   </div>
                 </>
               )}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <Menu className={cn("h-4 w-4", isDark ? "text-white/40" : "text-slate-500")} />
-                <span className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>Group by:</span>
-                <ReportSimpleDropdown
-                  value={groupBy}
-                  onChange={setGroupBy}
-                  options={groupByOptions}
-                  width="w-40"
-                  accentBar={false}
-                />
-              </div>
+              {showGroupBy ? (
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <Menu className={cn("h-4 w-4", isDark ? "text-white/40" : "text-slate-500")} />
+                  <span className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>Group by:</span>
+                  <ReportSimpleDropdown
+                    value={groupBy}
+                    onChange={setGroupBy}
+                    options={groupByOptions}
+                    width="w-40"
+                    accentBar={false}
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap items-center gap-4 lg:gap-5">
@@ -423,7 +434,9 @@ export function StandardReportLayout({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={runExport}>To CSV</DropdownMenuItem>
+                  {canExport ? (
+                    <DropdownMenuItem onClick={runExport}>To CSV</DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem onClick={() => window.print()}>Print / PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

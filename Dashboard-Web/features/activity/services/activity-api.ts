@@ -185,6 +185,18 @@ export async function fetchActivityScreenshotImage(screenshotId: string): Promis
   }
 }
 
+/** Management-only; the backend re-checks the role and the viewer's scope. */
+export async function deleteActivityScreenshot(screenshotId: string): Promise<void> {
+  if (!screenshotId) throw new Error("Screenshot id is required")
+  const res = await apiFetch(apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}`), {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw new Error(json?.error || "Failed to delete screenshot")
+  }
+}
+
 const FEED_TIMEOUT_MS = 90_000
 
 type FeedCacheEntry = { at: number; value: ActivityFeedResult<unknown> }

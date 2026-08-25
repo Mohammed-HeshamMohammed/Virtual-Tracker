@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAuth } from "@/shared/providers/app"
 import { WORK_SESSIONS_GROUP_BY_OPTIONS } from "@/features/reports/components/shared/constants"
 import {
   aggregateWorkSessionTotals,
@@ -32,6 +33,7 @@ const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
 }
 
 export function useWorkSessionsReport() {
+  const { memberId } = useAuth()
   const [scope, setScope] = useState<WorkSessionScope>("all")
   const [rangeStart, setRangeStart] = useState(() => {
     const d = startOfDay(new Date())
@@ -106,8 +108,9 @@ export function useWorkSessionsReport() {
         rangeEnd,
         projectNames: projectFilter,
         memberNames: memberFilter,
+        viewerMemberId: memberId ?? null,
       }),
-    [rows, scope, rangeStart, rangeEnd, projectFilter, memberFilter]
+    [rows, scope, rangeStart, rangeEnd, projectFilter, memberFilter, memberId]
   )
 
   const grouped = useMemo(() => groupWorkSessions(filteredRows, groupBy), [filteredRows, groupBy])

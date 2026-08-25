@@ -108,7 +108,7 @@ function AppsUrlsTables() {
 
 export function AppsUrlsReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Apps & URLs report" titleTone="muted" onNavigate={onNavigate} exportFileBaseName="apps-urls">
+    <StandardReportLayout title="Apps & URLs report" titleTone="muted" onNavigate={onNavigate} exportFileBaseName="apps-urls" showScopeTabs={false} showGroupBy={false}>
       <AppsUrlsTables />
     </StandardReportLayout>
   )

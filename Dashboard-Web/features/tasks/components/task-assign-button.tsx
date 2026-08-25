@@ -26,8 +26,10 @@ function displayNameForMember(
   row: TeamMember,
 ): string {
   if (fromLookup?.name?.trim()) return fromLookup.name.trim()
+  // No email fallback: member emails are Owner/Super Admin only
+  // (field-policy.js) and the roster read no longer returns one. member_name
+  // is already display_name-or-first+last, resolved server-side.
   if (row.member_name?.trim()) return row.member_name.trim()
-  if (row.member_email?.trim()) return row.member_email.trim()
   return "Unknown member"
 }
 
@@ -37,7 +39,8 @@ function avatarForMember(
   name: string,
 ): string {
   if (fromLookup?.avatar?.trim()) return fromLookup.avatar.trim()
-  if (row.member_avatar?.trim()) return row.member_avatar.trim()
+  // member_avatar_url is a photo URL, not initials - deliberately not used
+  // here, since this slot renders as text.
   return (
     name
       .split(/\s+/)

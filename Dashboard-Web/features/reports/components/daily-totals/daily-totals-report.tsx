@@ -24,6 +24,7 @@ import { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amoun
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { fetchAmountsOwedReport } from "@/features/reports/api/misc-reports-api"
+import { useAuth } from "@/shared/providers/app"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
@@ -127,6 +128,7 @@ function DailyTotalsPerDayChart() {
 }
 
 export function DailyTotalsReport() {
+  const { memberId } = useAuth()
   const [scope, setScope] = useComponentState<"me" | "all">("all")
   const [rangeStart, setRangeStart] = useComponentState(() => {
     const d = startOfDay(new Date())
@@ -147,13 +149,15 @@ export function DailyTotalsReport() {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchAmountsOwedReport({ from, to }).then((data) => {
+    // scope "me" filters to the signed-in member server-side; without it in
+    // the dep list (and in the request) the ME tab showed everyone.
+    fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null }).then((data) => {
       if (!cancelled) setGroups(data)
     })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, scope, memberId])
 
   function shiftRangeByDays(delta: number) {
     const s = new Date(rangeStart)
