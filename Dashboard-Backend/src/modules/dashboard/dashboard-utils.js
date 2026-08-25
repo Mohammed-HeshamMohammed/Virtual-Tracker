@@ -1,14 +1,14 @@
 /** Shared helpers for dashboard aggregation services. */
 
 import { getViewerProjectIds } from "../../http/project-access.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 export function str(row, ...keys) {

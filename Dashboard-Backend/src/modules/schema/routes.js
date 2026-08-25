@@ -24,10 +24,31 @@ import {
   TEAM_MEMBER_ASSIGN_DENIED_MESSAGE,
 } from "../../http/team-member-assign-policy.js";
 import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-budget-notify.js";
+import { createTeamInitialRoster, parseTeamRosterInput, syncTeamRoster, validateTeamRoster } from "../teams/team-roster.service.js";
 import { isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
+
+// Roster/link arrays the team wizard posts alongside the `teams` row itself.
+// They are not `teams` columns, so without allowlisting them here
+// rejectUnknownEntityFields 400s the whole create/edit ("Unexpected field:
+// member_ids"). They are consumed by team-roster.service.js, which writes
+// team_members / team_projects after the team row lands.
+const TEAM_ROSTER_INPUT_FIELDS = [
+  "member_ids",
+  "memberIds",
+  "lead_ids",
+  "leadIds",
+  "project_ids",
+  "projectIds",
+  "members",
+];
+
+/** True when a teams PATCH body carries roster/link work, not just columns. */
+function hasTeamRosterInput(body) {
+  return TEAM_ROSTER_INPUT_FIELDS.some((field) => Array.isArray(body?.[field]));
+}
 import {
   shouldRouteEntityToPostgres,
   listPostgresRows,
@@ -517,9 +538,19 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, undefined);
           if (!timeEntryOk) return true;
         }
-        const payload = buildCreatePayload(entity, body);
+        const payload = buildCreatePayload(entity, body, {
+          extraAllowedFields: parsed.key === "teams" ? TEAM_ROSTER_INPUT_FIELDS : [],
+        });
         if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
           payload.task_id = taskParentId;
+        }
+        // Validate the roster before inserting the team row, so an invalid
+        // roster 400s instead of leaving an empty team behind.
+        let teamRoster = null;
+        if (parsed.key === "teams") {
+          teamRoster = parseTeamRosterInput(body);
+          const rosterError = validateTeamRoster(teamRoster.memberIds, [...teamRoster.leadIds]);
+          if (rosterError) return sendJson(res, origin, 400, { success: false, error: rosterError }), true;
         }
         const taskCreateOk = await assertTaskCreateAuthorized(req, res, origin, db, parsed.key, payload, body);
         if (!taskCreateOk) return true;
@@ -529,6 +560,17 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         });
         await validateForeignKeys(db, payload, { entityKey: parsed.key });
         const created = await createPostgresRow(parsed.key, payload);
+        if (teamRoster && created?.id) {
+          // Roster writes enforce their own per-member/per-project permission
+          // checks and can throw - drop the just-created team rather than
+          // leaving a memberless orphan the wizard can't reach again.
+          try {
+            await createTeamInitialRoster(db, getAuthContext(req), String(created.id), teamRoster);
+          } catch (rosterErr) {
+            await deletePostgresRow(parsed.key, String(created.id)).catch(() => {});
+            throw rosterErr;
+          }
+        }
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
           const projectId = typeof payload.project_id === "string" ? payload.project_id : "";
           if (projectId) await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
@@ -555,8 +597,23 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         // column, so it must be allowlisted here or every entity's PATCH
         // 400s as an "Unexpected field" before the conditional-write check
         // (expectedUpdatedAt, read right below) ever runs.
-        const payload = buildUpdatePayload(entity, body, { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt"] });
-        if (Object.keys(payload).length === 0) {
+        const payload = buildUpdatePayload(entity, body, {
+          extraAllowedFields: [
+            "expected_updated_at",
+            "expectedUpdatedAt",
+            ...(parsed.key === "teams" ? TEAM_ROSTER_INPUT_FIELDS : []),
+          ],
+        });
+        // A roster-only edit (membership/leads/projects changed, team name
+        // untouched) yields an empty column payload - that is a valid edit
+        // here, so only reject when there is no roster work either.
+        const teamRosterPatch =
+          parsed.key === "teams" && hasTeamRosterInput(body) ? parseTeamRosterInput(body) : null;
+        if (teamRosterPatch) {
+          const rosterError = validateTeamRoster(teamRosterPatch.memberIds, [...teamRosterPatch.leadIds]);
+          if (rosterError) return sendJson(res, origin, 400, { success: false, error: rosterError }), true;
+        }
+        if (Object.keys(payload).length === 0 && !teamRosterPatch) {
           return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
         }
         await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
@@ -565,7 +622,13 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         // §6.9 - optional; only forwarded to the "tasks" branch of
         // updatePostgresRow today (see that function's comment for scope).
         const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
-        const updated = await updatePostgresRow(parsed.key, parsed.id, payload, existing, expectedUpdatedAt);
+        if (teamRosterPatch) {
+          await syncTeamRoster(db, getAuthContext(req), String(parsed.id), teamRosterPatch);
+        }
+        const updated =
+          Object.keys(payload).length === 0
+            ? await getPostgresRow(parsed.key, parsed.id)
+            : await updatePostgresRow(parsed.key, parsed.id, payload, existing, expectedUpdatedAt);
         if (updated && typeof updated === "object" && "conflict" in updated) {
           sendJson(res, origin, 409, {
             success: false,

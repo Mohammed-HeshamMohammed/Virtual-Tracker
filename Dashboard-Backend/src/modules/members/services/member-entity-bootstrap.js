@@ -5,6 +5,7 @@ import {
   dedupeMemberOnboardingByMemberIdPg,
   ensureMemberOnboardingRowPg,
 } from "../../../lib/postgres/member-data-postgres.service.js";
+import { normalizeRoleKey } from "../../../http/role-key.js";
 import {
   ensureLimitsDoc,
   ensureSingleByMemberId,
@@ -25,8 +26,9 @@ export const MEMBER_SCOPED_DELETE_COLLECTIONS = [
 ];
 
 function normalizeRole(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase().replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(value);
 }
 
 function isOwnerRole(value) {

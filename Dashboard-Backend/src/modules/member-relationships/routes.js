@@ -1,5 +1,6 @@
 import { getDb } from "../../config/firebase.js";
 import { getAuthContext } from "../../http/auth-context.js";
+import { canViewEmail } from "../../http/field-policy.js";
 import { assertManagementRole, assertMemberAccessible, assertOrgAdminRole } from "../../http/authorization.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
@@ -33,10 +34,12 @@ import { getTeamStaffableMemberIds, getTeamStaffableMemberSummaries } from "../.
 import { loadRoleNameById } from "../members/services/relation-sync.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { query } from "../../lib/postgres/client.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 function normalizeRole(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase().replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(value);
 }
 
 async function requireOrgTreeRole(req, res, origin) {
@@ -190,12 +193,22 @@ export async function routeMemberRelationships(req, res, url, origin) {
         const id = String(d.id);
         const first = typeof d.first_name === "string" ? d.first_name : "";
         const last = typeof d.last_name === "string" ? d.last_name : "";
-        const name = `${first} ${last}`.trim() || (typeof d.work_email === "string" ? d.work_email : "Unnamed member");
+        // Name falls back to the email only for viewers allowed to see it -
+        // otherwise a member with no first/last name would leak their address
+        // through the name slot, around the email gate below.
+        const emailVisible = canViewEmail(authz, id);
+        const name =
+          `${first} ${last}`.trim() ||
+          (emailVisible && typeof d.work_email === "string" ? d.work_email : "Unnamed member");
         const roleId = typeof d.role_id === "string" ? d.role_id : "";
         return {
           id,
           name,
-          email: typeof d.work_email === "string" ? d.work_email : "",
+          // Emails are Owner/Super Admin only (field-policy.js canViewEmail),
+          // self always excepted - this endpoint builds nodes by hand instead
+          // of going through applyMemberFieldPolicy, so the gate has to be
+          // applied here too or the tree leaks what the members table hides.
+          email: emailVisible && typeof d.work_email === "string" ? d.work_email : "",
           role: roleNameById.get(roleId) || "User",
           hierarchy_status: typeof d.hierarchy_status === "string" ? d.hierarchy_status : "",
           ...(includeFirebaseUid

@@ -49,7 +49,7 @@ export const TEAM_MEMBERS_LIST_API_FIELDS = [
   "member_id",
   "is_lead",
   "member_name",
-  "member_avatar",
+  "member_avatar_url",
   "member_color",
   "member_role",
 ] as const

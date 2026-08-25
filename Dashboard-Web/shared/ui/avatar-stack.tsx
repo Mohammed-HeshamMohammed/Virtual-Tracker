@@ -4,6 +4,7 @@ import type { TeamMember } from "@/features/teams/models/team"
 
 import { cn } from "@/shared/utils/utils"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
+import { UserAvatarImage } from "@/shared/ui/user-avatar-image"
 
 interface AvatarStackProps {
   members: TeamMember[]
@@ -19,16 +20,31 @@ export function AvatarStack({ members, max = 4, isDark = false }: AvatarStackPro
     <div className="flex items-center">
       {visible.map((m, i) => (
         <IconTooltip key={m.id || `${m.name}-${i}`} text={m.name} placement="top">
-          <div
-            className={cn("w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold text-white shrink-0", isDark ? "border-[#151b2d]" : "border-white")}
-            style={{
-              backgroundColor: m.color,
-              marginLeft: i === 0 ? 0 : -8,
-              zIndex: visible.length - i,
-            }}
-          >
-            {m.avatar}
-          </div>
+          {m.avatarUrl ? (
+            <div
+              className="shrink-0"
+              style={{ marginLeft: i === 0 ? 0 : -8, zIndex: visible.length - i }}
+            >
+              <UserAvatarImage
+                src={m.avatarUrl}
+                alt={m.name}
+                fallbackInitials={m.avatar}
+                fallbackColor={m.color}
+                className={cn("w-7 h-7 rounded-full border-2 object-cover", isDark ? "border-[#151b2d]" : "border-white")}
+              />
+            </div>
+          ) : (
+            <div
+              className={cn("w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold text-white shrink-0", isDark ? "border-[#151b2d]" : "border-white")}
+              style={{
+                backgroundColor: m.color,
+                marginLeft: i === 0 ? 0 : -8,
+                zIndex: visible.length - i,
+              }}
+            >
+              {m.avatar}
+            </div>
+          )}
         </IconTooltip>
       ))}
       {extra > 0 && (

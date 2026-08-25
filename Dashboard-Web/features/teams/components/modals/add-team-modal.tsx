@@ -347,15 +347,25 @@ export function AddTeamModal({
       .then((rows) => {
         if (cancelled) return
         setFetchedRoster(
-          rows.map((row) => ({
-            id: row.member_id,
-            name: row.member_name || "Unknown",
-            avatar: row.member_avatar,
-            avatarUrl: undefined,
-            color: row.member_color,
-            role: row.member_role,
-            is_lead: row.is_lead,
-          })),
+          rows.map((row) => {
+            const name = row.member_name || "Unknown"
+            return {
+              id: row.member_id,
+              name,
+              // `avatar` is the initials text slot; the photo URL goes to avatarUrl.
+              avatar:
+                name
+                  .split(/\s+/)
+                  .map((part) => part[0])
+                  .join("")
+                  .slice(0, 2)
+                  .toUpperCase() || "?",
+              avatarUrl: row.member_avatar_url || undefined,
+              color: row.member_color,
+              role: row.member_role,
+              is_lead: row.is_lead,
+            }
+          }),
         )
       })
       .catch((err) => {

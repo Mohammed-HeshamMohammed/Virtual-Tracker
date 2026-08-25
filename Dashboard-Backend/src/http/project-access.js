@@ -2,12 +2,12 @@ import { getAuthContext } from "./auth-context.js";
 import { sendJson } from "./response.js";
 import { getProjectPg, listProjectIdsForMemberPg } from "../lib/postgres/projects-postgres.service.js";
 import { query } from "../lib/postgres/client.js";
+import { normalizeRoleKey } from "./role-key.js";
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 /** Project ids viewer can access; null = all (Owner). */

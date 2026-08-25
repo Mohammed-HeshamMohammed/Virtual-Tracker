@@ -4,15 +4,15 @@ import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
 import { getMemberByIdPg, getMembersByIdsPg } from "../../lib/postgres/members-postgres.service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 
 function normalizeRole(roleName) {
-  return String(roleName || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(roleName);
 }
 
 export async function resolveMemberRoleName(db, memberId) {

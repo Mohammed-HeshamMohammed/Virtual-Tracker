@@ -5,6 +5,7 @@ import {
   resetPostgresLookupReadyCache,
 } from "../../../lib/postgres/lookup-availability.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
+import { normalizeRoleKey } from "../../../http/role-key.js";
 import {
   ensureDefaultRolesPg,
   resolveRoleIdByNamePg,
@@ -143,24 +144,10 @@ export const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   viewer: 10,
 });
 
-/**
- * Misspelled role names that exist in older `roles` rows. Folded onto the canonical
- * key here so every policy check and `ROLE_PRIVILEGE_RANK` lookup sees one spelling —
- * without this they fall through to the rank 35 default and lose their privileges.
- */
-const LEGACY_ROLE_KEY_ALIASES = new Map([
-  ["supermanger", "supermanager"],
-  ["manger", "manager"],
-]);
-
-/**
- * @param {string} roleName
- */
-export function normalizeRoleKey(roleName) {
-  if (typeof roleName !== "string") return "";
-  const key = roleName.trim().toLowerCase().replace(/\s+/g, "");
-  return LEGACY_ROLE_KEY_ALIASES.get(key) ?? key;
-}
+// Canonical implementation now lives in http/role-key.js (a leaf module, so
+// every policy module can import it without cycling back through here).
+// Re-exported for the existing call sites that import it from relation-sync.
+export { normalizeRoleKey };
 
 /**
  * @param {string} roleName

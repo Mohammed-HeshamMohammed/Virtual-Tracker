@@ -15,6 +15,7 @@ import {
 import { getMemberByIdPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { query } from "../../lib/postgres/client.js";
 import { sendOnboardingReminderEmail } from "../auth/onboarding-reminder-email.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 
 function asBool(value, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
@@ -59,8 +60,9 @@ function computeSource(item) {
 }
 
 function normalizeRole(value) {
-  if (typeof value !== "string") return "";
-  return value.trim().toLowerCase().replace(/\s+/g, "");
+  // Delegates to the canonical normalizer - a local copy here would
+  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
+  return normalizeRoleKey(value);
 }
 
 function isOwnerRole(value) {

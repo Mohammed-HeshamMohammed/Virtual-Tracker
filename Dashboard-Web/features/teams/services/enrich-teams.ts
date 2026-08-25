@@ -56,16 +56,26 @@ export async function fetchEnrichedTeams(): Promise<EnrichedTeam[]> {
 
     const members = memberRelations.map((mr) => {
       const apiName = typeof mr.member_name === "string" ? mr.member_name : ""
-      const apiAvatar = typeof mr.member_avatar === "string" ? mr.member_avatar : undefined
+      // member_avatar_url is a photo URL, not initials - `avatar` feeds
+      // AvatarStack's text slot, so initials are always derived from the name
+      // and the URL rides in avatarUrl for the image to render from.
+      const apiAvatarUrl = typeof mr.member_avatar_url === "string" ? mr.member_avatar_url : undefined
       const apiColor = typeof mr.member_color === "string" ? mr.member_color : undefined
       const apiRole = typeof mr.member_role === "string" ? mr.member_role : ""
       const displayName = apiName || "Unknown"
+      const initials =
+        displayName
+          .split(/\s+/)
+          .map((part) => part[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase() || "?"
       return {
         id: mr.member_id,
         name: displayName,
-        avatar: apiAvatar || displayName.slice(0, 2).toUpperCase() || "?",
+        avatar: initials,
         color: apiColor || "#6366f1",
-        avatarUrl: undefined,
+        avatarUrl: apiAvatarUrl || undefined,
         role: apiRole,
         is_lead: mr.is_lead,
       }
