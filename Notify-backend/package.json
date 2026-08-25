@@ -11,7 +11,7 @@
     "dev": "node --use-system-ca --env-file-if-exists=.env --watch index.js"
   },
   "dependencies": {
-    "firebase-admin": "^14.1.0",
+    "firebase-admin": "^14.3.0",
     "libphonenumber-js": "^1.13.7",
     "nodemailer": "^9.0.1",
     "pg": "^8.13.3",
