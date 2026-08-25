@@ -539,4 +539,8 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
 
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL
 export const WORK_SESSIONS_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
-export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
+// No "Client": /api/reports/work-sessions returns no client for a session, so
+// grouping by it collapsed every row into one blank-labelled group.
+export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
+  (option) => option.value !== "client",
+)

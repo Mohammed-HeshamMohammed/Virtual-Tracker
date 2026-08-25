@@ -7,7 +7,7 @@ import { useActivityShell, useActivityShellRegistration } from "@/features/activ
 import { useAuth } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity, canManageActivityData } from "@/features/auth"
 import { motion } from "framer-motion"
-import { Globe, ExternalLink, Tag, TrendingUp, TrendingDown, Eye, EyeOff } from "lucide-react"
+import { Globe, ExternalLink, Tag, TrendingUp, TrendingDown, Eye } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   ActivityDayEmptyState,
@@ -302,9 +302,9 @@ export function ActivityURLsContent() {
                                   <ExternalLink className="h-4 w-4 text-slate-300 dark:text-slate-700" />
                                 </button>
                               )}
-                              <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800">
-                                <EyeOff className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                              </button>
+                              {/* URL blocking has no backing table or endpoint yet, so the
+                                  button is not rendered - it previously looked actionable
+                                  (permission-gated, hover state) and did nothing on click. */}
                             </div>
                           </td>
                         ) : null}

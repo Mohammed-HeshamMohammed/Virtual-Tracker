@@ -7,6 +7,7 @@ import {
   getCachedScreenshotImage,
   loadScreenshotImage,
 } from "@/features/activity/utils/screenshot-image-cache"
+import { deleteActivityScreenshot } from "@/features/activity/services/activity-api"
 import { ActivityEmptyState } from "@/features/activity/components/activity-empty-state"
 import {
   ActivityDayEmptyState,
@@ -412,6 +413,33 @@ export function ActivityScreenshots() {
   })
   const [modalImageData, setModalImageData] = useState<string | null>(null)
   const [modalImageLoading, setModalImageLoading] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const handleDeleteScreenshot = useCallback(
+    async (screenshotId: string) => {
+      if (!screenshotId || deletingId) return
+      setDeletingId(screenshotId)
+      try {
+        await deleteActivityScreenshot(screenshotId)
+        setSelectedScreenshot((current) => (current?.id === screenshotId ? null : current))
+        await reload({ force: true })
+      } catch (err) {
+        console.error("Failed to delete screenshot:", err)
+      } finally {
+        setDeletingId(null)
+      }
+    },
+    [deletingId, reload],
+  )
+
+  /** Modal already holds the decoded data URL, so download needs no extra fetch. */
+  const handleDownloadScreenshot = useCallback((imageData: string | null, screenshotId: string) => {
+    if (!imageData) return
+    const a = document.createElement("a")
+    a.href = imageData
+    a.download = `screenshot-${screenshotId}.webp`
+    a.click()
+  }, [])
 
   useActivityShellRegistration({
     onRefresh: () => {
@@ -673,7 +701,16 @@ export function ActivityScreenshots() {
                         <button type="button" onClick={(e) => { e.stopPropagation(); setSelectedScreenshot(screenshot) }} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
                           <Maximize2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         </button>
-                        <button type="button" onClick={(e) => e.stopPropagation()} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleDeleteScreenshot(screenshot.id)
+                          }}
+                          disabled={deletingId === screenshot.id}
+                          aria-label="Delete screenshot"
+                          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-40"
+                        >
                           <Trash2 className="w-4 h-4 text-slate-500 dark:text-slate-400" />
                         </button>
                       </div>
@@ -808,13 +845,23 @@ export function ActivityScreenshots() {
                 </div>
                 {canManage ? (
                   <div className="flex items-center gap-2">
-                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadScreenshot(modalImageData, selectedScreenshot.id)}
+                      disabled={!modalImageData}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-40"
+                    >
                       <Download className="w-4 h-4" />
                       Download
                     </button>
-                    <button type="button" className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-lg transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteScreenshot(selectedScreenshot.id)}
+                      disabled={deletingId === selectedScreenshot.id}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-lg transition-colors disabled:opacity-40"
+                    >
                       <Trash2 className="w-4 h-4" />
-                      Delete
+                      {deletingId === selectedScreenshot.id ? "Deleting…" : "Delete"}
                     </button>
                   </div>
                 ) : null}

@@ -20,7 +20,8 @@ import { getActivityScoringSettings, setActivityScoringSettings } from "./scorin
 import { computeDHash } from "./perceptual-hash.js";
 import { getSessionIntegritySummary, getMemberIntegrityFlags, contestIntegrityFlag } from "./integrity-score.js";
 import { getAuthAdmin, getDb } from "../../config/firebase.js";
-import { getAuthContext } from "../../http/auth-context.js";
+import { getAuthContext, isManagementRole } from "../../http/auth-context.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { readIdToken } from "../../http/auth-token.js";
 import { readJsonBody, MAX_ACTIVITY_EVENTS_BODY_BYTES } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
@@ -1106,6 +1107,58 @@ export async function routeActivity(req, res, url, origin) {
       });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Screenshot load failed" });
+    }
+    return true;
+  }
+
+  // Backs the Delete action on the Screenshots page, which was a permission-
+  // gated button with no endpoint behind it at all (canManageActivityData's
+  // own comment said "when backed by API" - it wasn't).
+  if (pn.startsWith("/api/activity/screenshot/") && req.method === "DELETE") {
+    const idToken = readIdToken(req, url);
+    const screenshotId = pn.slice("/api/activity/screenshot/".length).split("/")[0];
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    if (!screenshotId) {
+      sendJson(res, origin, 400, { success: false, error: "Screenshot id is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      // Deleting monitoring evidence is a management action, not something a
+      // member may do to their own captures - hence a role check on top of
+      // the same visibility scope the read path uses.
+      if (!isManagementRole(getAuthContext(req)?.roleName ?? "")) {
+        sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to delete screenshots." });
+        return true;
+      }
+
+      const pgRow = await fetchPgScreenshotById(screenshotId);
+      if (!pgRow) {
+        sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
+        return true;
+      }
+      const ownerId = String(pgRow.member_id ?? "");
+      const scope = await resolveActivityFeedScope(db, member.memberId, { memberId: ownerId });
+      if (scope.forbidden) {
+        sendJson(res, origin, 403, { success: false, error: "Not allowed to manage this screenshot" });
+        return true;
+      }
+
+      await pgQuery("DELETE FROM activity_screenshots WHERE id = $1", [String(pgRow.id ?? screenshotId)]);
+      sendJson(res, origin, 200, { success: true, data: { id: String(pgRow.id ?? screenshotId) } });
+    } catch (e) {
+      logSafeError("[activity/screenshot DELETE]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Screenshot delete failed",
+      });
     }
     return true;
   }
