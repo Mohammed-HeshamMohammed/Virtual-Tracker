@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "firebase-admin": "^13.8.0",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "overrides": {
     "protobufjs": ">=8.7.1",
