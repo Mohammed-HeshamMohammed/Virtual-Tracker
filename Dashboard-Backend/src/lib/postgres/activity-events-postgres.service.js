@@ -252,26 +252,37 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
   let where = "WHERE 1=1";
   if (ids !== null) {
     params.push(ids);
-    where += ` AND member_id = ANY($${params.length}::uuid[])`;
+    where += ` AND sc.member_id = ANY($${params.length}::uuid[])`;
   }
   if (dayFilter) {
     params.push(dayFilter);
-    where += ` AND captured_at::date = $${params.length}::date`;
+    where += ` AND sc.captured_at::date = $${params.length}::date`;
   } else if (options.sinceDay) {
     // Range bound (e.g. a multi-day sparkline window) instead of an exact-day
     // match - callers needing "last N days" must pass this, not rely on a
     // plain recency LIMIT, which silently starves older days once a single
     // recent day alone exceeds `limit` rows.
     params.push(options.sinceDay);
-    where += ` AND captured_at::date >= $${params.length}::date`;
+    where += ` AND sc.captured_at::date >= $${params.length}::date`;
   }
   params.push(limit);
+  // project_name comes along so a capture taken while tracking a project with
+  // no task still says which project it belongs to. Two paths to it: the
+  // task's own project, or - for task-less sessions, which is the case that
+  // used to render as "No task linked" - the session's project_id.
+  // activity_screenshots.session_id is VARCHAR, activity_sessions.id is UUID,
+  // hence the cast rather than a plain equality join.
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, task_id, task_title, screenshot_url,
-            app_name, page_title, activity_level, captured_at, source
-     FROM activity_screenshots
+    `SELECT sc.id, sc.member_id, sc.session_id, sc.task_id, sc.task_title, sc.screenshot_url,
+            sc.app_name, sc.page_title, sc.activity_level, sc.captured_at, sc.source,
+            COALESCE(pt.name, ps.name) AS project_name
+     FROM activity_screenshots sc
+     LEFT JOIN tasks t ON t.id = sc.task_id
+     LEFT JOIN projects pt ON pt.id = t.project_id
+     LEFT JOIN activity_sessions s ON s.id::text = sc.session_id
+     LEFT JOIN projects ps ON ps.id = s.project_id
      ${where}
-     ORDER BY captured_at DESC
+     ORDER BY sc.captured_at DESC
      LIMIT $${params.length}`,
     params,
   );

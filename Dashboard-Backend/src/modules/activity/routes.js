@@ -63,6 +63,7 @@ import {
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { isTaskLessProjectType } from "../projects/project-types.js";
 import { getTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { getAllCategories } from "../classification/activity-categories.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "../../lib/postgres/member-data-store.js";
 import {
   createPgSession,
@@ -155,6 +156,34 @@ function readActivitySignal(ev) {
     mouseDistancePx: ev.mouseDistancePx,
     injectedEventCount: ev.injectedEventCount,
     activeSecondsInWindow: ev.activeSecondsInWindow,
+  };
+}
+
+/**
+ * app/domain -> configured category, for the Apps and URLs feeds. Returns
+ * "unclassified" for anything with no row, which is what the classify dialog
+ * lists as still needing a decision - never "neutral", which is a deliberate
+ * choice someone made.
+ * @returns {Promise<(matchType: "app" | "domain", pattern: string) => string>}
+ */
+async function buildCategoryLookup() {
+  /** @type {Map<string, string>} */
+  const byKey = new Map();
+  try {
+    for (const row of await getAllCategories()) {
+      const pattern = typeof row.pattern === "string" ? row.pattern.trim().toLowerCase() : "";
+      if (!pattern) continue;
+      byKey.set(`${row.matchType}:${pattern}`, row.category || "unclassified");
+    }
+  } catch (err) {
+    // A classification read failing must not take the whole feed down with
+    // it - the feed's own numbers are still correct without labels.
+    logSafeWarn("[activity/feed] classification lookup failed", err);
+  }
+  return (matchType, pattern) => {
+    const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
+    if (!key) return "unclassified";
+    return byKey.get(`${matchType}:${key}`) ?? "unclassified";
   };
 }
 
@@ -1148,14 +1177,21 @@ export async function routeActivity(req, res, url, origin) {
           const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
           const captured = toIso(d.captured_at);
           const date = captured ? new Date(captured) : new Date();
-          const taskTitle =
-            (typeof d.task_title === "string" && d.task_title.trim()) || "No task linked";
+          // A session tracking a project directly (no task) used to render as
+          // "Task: No task linked". It has a project, so say which one -
+          // contextLabel tells the client which of the two it is looking at.
+          const taskTitle = (typeof d.task_title === "string" && d.task_title.trim()) || "";
+          const projectName = (typeof d.project_name === "string" && d.project_name.trim()) || "";
+          const contextLabel = taskTitle ? "Task" : projectName ? "Project" : "Task";
+          const contextValue = taskTitle || projectName || "No task linked";
           return {
             id: String(d.id),
             memberId,
             member: meta.name,
             avatar: meta.initials,
-            project: taskTitle,
+            project: contextValue,
+            projectName,
+            contextLabel,
             taskTitle,
             capturedAt: captured || date.toISOString(),
             timestamp: date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
@@ -1176,6 +1212,13 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
+      // Both feeds used to report every row as "neutral" regardless of what
+      // was actually configured in activity_categories, so the classification
+      // an admin set never showed up anywhere. One read per feed request,
+      // keyed the same way the table's unique index is (match_type + lowered
+      // pattern).
+      const categoryLookup = await buildCategoryLookup();
+
       if (feedType === "apps") {
         const byApp = new Map();
         const byMember = new Map();
@@ -1191,8 +1234,16 @@ export async function routeActivity(req, res, url, origin) {
           appRow.sessions += 1;
           if (startedIso && startedIso > (appRow.lastActivityAt || "")) appRow.lastActivityAt = startedIso;
           byApp.set(appName, appRow);
-          const memRow = byMember.get(memberIdKey) || { member: meta.name, avatar: meta.initials, totalSeconds: 0, apps: new Map() };
+          const memRow = byMember.get(memberIdKey) || {
+            member: meta.name,
+            avatar: meta.initials,
+            totalSeconds: 0,
+            apps: new Map(),
+            categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
+          };
           memRow.totalSeconds += dur;
+          const category = categoryLookup("app", appName);
+          memRow.categorySeconds[category] = (memRow.categorySeconds[category] ?? 0) + dur;
           const appDur = memRow.apps.get(appName) || 0;
           memRow.apps.set(appName, appDur + dur);
           byMember.set(memberIdKey, memRow);
@@ -1219,7 +1270,7 @@ export async function routeActivity(req, res, url, origin) {
           .map((r, i) => ({
             id: String(i + 1),
             name: r.name,
-            category: "neutral",
+            category: categoryLookup("app", r.name),
             totalTime: formatDur(r.totalSeconds),
             percentage: Math.round((r.totalSeconds / totalAll) * 100),
             trend: "neutral",
@@ -1237,14 +1288,22 @@ export async function routeActivity(req, res, url, origin) {
               topApp = app;
             }
           }
+          // Was hardcoded to "100% productive, 0 neutral, 0 unproductive" for
+          // everyone, which made the member table say the same thing no matter
+          // what anyone actually ran. Split by the configured classification;
+          // unclassified time counts as neutral here rather than inventing a
+          // fourth column the UI has no room for.
+          const byCategory = r.categorySeconds ?? { productive: 0, neutral: 0, distracting: 0, unclassified: 0 };
+          const neutralSeconds = byCategory.neutral + byCategory.unclassified;
+          const totalSeconds = r.totalSeconds || 1;
           return {
             memberId: id,
             member: r.member,
             avatar: r.avatar,
-            productiveTime: formatDur(r.totalSeconds),
-            productivePercent: 100,
-            neutralTime: "0m",
-            unproductiveTime: "0m",
+            productiveTime: formatDur(byCategory.productive),
+            productivePercent: Math.round((byCategory.productive / totalSeconds) * 100),
+            neutralTime: formatDur(neutralSeconds),
+            unproductiveTime: formatDur(byCategory.distracting),
             topApp,
           };
         });
@@ -1341,7 +1400,7 @@ export async function routeActivity(req, res, url, origin) {
             id: String(i + 1),
             domain: r.domain,
             url: r.url,
-            category: "neutral",
+            category: categoryLookup("domain", r.domain),
             totalTime: formatDur(r.totalSeconds),
             visits: r.visits,
             avgTime: formatDur(Math.round(r.totalSeconds / Math.max(1, r.visits))),

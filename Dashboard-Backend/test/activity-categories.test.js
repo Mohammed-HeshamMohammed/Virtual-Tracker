@@ -67,6 +67,7 @@ const {
 
 const ADMIN = { memberId: "admin-1", roleName: "Admin" };
 const EMPLOYEE = { memberId: "employee-1", roleName: "Employee" };
+const MANAGER = { memberId: "manager-1", roleName: "Manager" };
 
 function reset() {
   unclassifiedApps = [];
@@ -121,9 +122,23 @@ test("a non-management actor cannot change classification", async () => {
   reset();
   await assert.rejects(
     () => setCategory({ matchType: "domain", pattern: "youtube.com", category: "productive" }, EMPLOYEE),
-    /FORBIDDEN|management/i,
+    /Owner, Super Admin, or Admin/i,
   );
   assert.equal(await categorize("domain", "youtube.com"), "distracting", "must survive the rejected write");
+});
+
+// Narrower than isManagementRole on purpose: a Manager is management for
+// approvals and scheduling, but classification is an org-wide policy call
+// that moves everyone's reported focused time.
+test("a Manager is management elsewhere but still cannot classify", async () => {
+  reset();
+  await assert.rejects(
+    () => setCategory({ matchType: "domain", pattern: "youtube.com", category: "productive" }, MANAGER),
+    /Owner, Super Admin, or Admin/i,
+  );
+  const target = (await getAllCategories()).find((c) => c.pattern === "code.exe");
+  await assert.rejects(() => removeCategory(target.id, MANAGER), /Owner, Super Admin, or Admin/i);
+  assert.equal(await categorize("app", "code.exe"), "productive", "the rejected delete changed nothing");
 });
 
 test("management can override a seeded default in place - one authoritative row, not a shadow", async () => {

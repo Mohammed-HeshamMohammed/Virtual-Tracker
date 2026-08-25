@@ -10,6 +10,7 @@ import { buildOpenSessionIndex } from "../activity/activity-session-status.js";
 import { fetchPgAppLogs, fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.service.js";
 import { resolveEffectivePresence, timestampMs as presenceTimestampMs } from "../members/services/presence-status.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
+import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import {
   budgetSpent,
   getMemberProjectIds,
@@ -361,9 +362,12 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const isOwner = roleKey === "owner";
   const canAccessAllView = isOwner || ["superadmin", "admin", "supermanager", "manager"].includes(roleKey);
 
+  // Same widening as the Command Center: the org-admin set, not the Owner
+  // alone, sees org-wide data here.
+  const seesAllProjects = isOrgProjectAdminRole(roleName);
   const scope = await resolveActivityFeedScope(db, viewerMemberId, {
     memberId: "all",
-    projectScopeOnly: !isOwner,
+    projectScopeOnly: !seesAllProjects,
   });
 
   const allMemberIds = scope.targetMemberIds;
@@ -391,9 +395,7 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const budgetsSnap = { docs: pseudoDocsFromSerialized(base.budgets) };
   const projectMembersSnap = { docs: pseudoDocsFromSerialized(base.projectMembers) };
 
-  const allowedProjectIds = isOwner
-    ? null
-    : await getMemberProjectIds(db, viewerMemberId);
+  const allowedProjectIds = await getMemberProjectIds(db, viewerMemberId, roleName);
 
   const memberCountByProject = new Map();
   for (const doc of projectMembersSnap.docs) {
