@@ -140,7 +140,7 @@ function TimesheetApprovalsTable() {
 
 export function TimesheetApprovalsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Timesheet approvals report" onNavigate={onNavigate} exportFileBaseName="timesheet-approvals">
+    <StandardReportLayout title="Timesheet approvals report" onNavigate={onNavigate} exportFileBaseName="timesheet-approvals" showScopeTabs={false} showGroupBy={false}>
       <TimesheetApprovalsTable />
     </StandardReportLayout>
   )

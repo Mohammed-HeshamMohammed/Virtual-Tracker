@@ -28,6 +28,8 @@ import {
   computeProjectSpentCostPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
+import { canViewCompensation } from "../../http/field-policy.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
@@ -76,14 +78,30 @@ async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
  * @param {string} from
  * @param {string} to
  */
-export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to) {
+export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null) {
   const rawRows = await getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to });
   const memberIdsInResult = [...new Set(rawRows.map((r) => r.member_id))];
   const [nameMap, tzMap] = await Promise.all([
     buildMemberMetaMap(db, memberIdsInResult),
     getMemberTimezones(db, memberIdsInResult),
   ]);
-  return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to);
+  // Money columns are compensation data - only populate them for a viewer
+  // allowed to see each member's rate, same gate the rest of the app uses.
+  // Without a viewer (internal callers) rates stay empty and cost reports 0.
+  const rateMap = new Map();
+  if (viewer && memberIdsInResult.length > 0) {
+    const visibleRateMemberIds = memberIdsInResult.filter((id) => canViewCompensation(viewer, id));
+    if (visibleRateMemberIds.length > 0) {
+      const rateRows = await pgQuery(
+        "SELECT member_id, rate FROM pay_rates WHERE member_id = ANY($1::uuid[])",
+        [visibleRateMemberIds],
+      );
+      for (const row of rateRows) {
+        rateMap.set(String(row.member_id), Math.max(0, Number(row.rate) || 0));
+      }
+    }
+  }
+  return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap);
 }
 
 /**
@@ -95,7 +113,7 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
  */
 async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to }) {
   const memberIds = await resolveMemberIdsFilter(db, viewer, requestedMemberId);
-  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to);
+  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer);
 }
 
 function rangeLabel(from, to) {

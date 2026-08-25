@@ -8,6 +8,8 @@ interface RawMemberDay {
   name: string
   activeSeconds: number
   idleSeconds: number
+  /** Tracked cost; 0 when the viewer may not see this member's pay rate. */
+  spentAmount?: number
   projectNames: string[]
 }
 
@@ -18,6 +20,10 @@ interface RawReportDay {
 
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
+}
+
+function formatMoney(amount: number | undefined): string {
+  return `$${(amount ?? 0).toFixed(2)}`
 }
 
 function initialsFor(name: string): string {
@@ -53,7 +59,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
       : 0,
     idlePct: pctString(member.idleSeconds, member.activeSeconds),
     idleHr: formatSecondsAsHMS(member.idleSeconds),
-    totalSpent: "$0.00",
+    totalSpent: formatMoney(member.spentAmount),
     trackedHours: member.activeSeconds / 3600,
     manualHours: 0,
     projectNames: member.projectNames,
@@ -80,7 +86,7 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
     idlePct: pctString(totalIdle, totalActive),
     idleHr: formatSecondsAsHMS(totalIdle),
-    totalSpent: "$0.00",
+    totalSpent: formatMoney(day.members.reduce((sum, m) => sum + (m.spentAmount ?? 0), 0)),
     trackedHours: totalActive / 3600,
     manualHours: 0,
   }
