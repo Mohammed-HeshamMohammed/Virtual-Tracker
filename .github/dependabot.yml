@@ -1,0 +1,70 @@
+# To get started with Dependabot version updates, you'll need to specify which
+# package ecosystems to update and where the package manifests are located.
+# Please see the documentation for all configuration options:
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # npm
+  - package-ecosystem: "npm"
+    directory: "/Auth-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Dashboard-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Dashboard-Web"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Landing-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Landing-Web"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Notify-backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "npm"
+    directory: "/Tauri-App-Extension"
+    schedule:
+      interval: "weekly"
+
+  # Docker
+  - package-ecosystem: "docker"
+    directory: "/Auth-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Dashboard-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Dashboard-Web"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Landing-Backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/Landing-Web"
+    schedule:
+      interval: "weekly"
+
+  # Tauri / Rust
+  - package-ecosystem: "cargo"
+    directory: "/Tauri-App-Extension/src-tauri"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
