@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import {
   upsertMemberFormSnapshotPg,
   deleteMemberFormSnapshotPg,
@@ -12,7 +11,6 @@ import { validateOwnerRoleChange } from "../../../http/role-owner-policy.js";
 import { resolveMemberRoleName } from "../../activity/activity-scope.js";
 import { isManagementRole } from "../../../http/auth-context.js";
 import { isEmployeeL2OrHigherRole } from "../../../http/team-member-assign-policy.js";
-import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { lookupNameByIdPg, resolveLookupIdByNamePg } from "../../../lib/postgres/lookup-postgres.service.js";
 import {
   assertShiftAllowanceAllowed,
@@ -24,6 +22,7 @@ import { assertValidPhone } from "../../../http/validate-body.js";
 import { syncUserProfilePhoneForUid } from "../../auth/profile-settings.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
 import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
+import { query as pgQuery } from "../../../lib/postgres/client.js";
 import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import {
   deleteLimitsDoc,
@@ -48,22 +47,14 @@ const LOOKUP_COLLECTIONS = {
  * @param {string} collection
  * @param {string} name
  */
-async function resolveLookupIdByName(db, collection, name) {
+async function resolveLookupIdByName(_db, collection, name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
   if (!trimmed) return "";
-  if (await isPostgresLookupReady()) return resolveLookupIdByNamePg(collection, trimmed);
-  const exact = await db.collection(collection).where("name", "==", trimmed).limit(1).get();
-  if (!exact.empty) return exact.docs[0].id;
-  const id = crypto.randomUUID();
-  await db.collection(collection).doc(id).set({
-    id,
-    name: trimmed,
-    list_ranking: "",
-    created_at: new Date(),
-    created_by: "",
-    updated_by: "",
-  });
-  return id;
+  // The Firestore fallback here did not just read - on a miss it created a
+  // job_titles/departments/job_types/tax_types doc, so an unready-Postgres
+  // moment would mint lookup rows in a collection nothing reads back, and
+  // hand the member a lookup id no Postgres row answers to.
+  return resolveLookupIdByNamePg(collection, trimmed);
 }
 
 /**
@@ -71,13 +62,9 @@ async function resolveLookupIdByName(db, collection, name) {
  * @param {string} collection
  * @param {string} id
  */
-async function lookupNameById(db, collection, id) {
+async function lookupNameById(_db, collection, id) {
   if (!id || typeof id !== "string") return "";
-  if (await isPostgresLookupReady()) return lookupNameByIdPg(collection, id);
-  const doc = await db.collection(collection).doc(id).get();
-  if (!doc.exists) return "";
-  const name = doc.data()?.name;
-  return typeof name === "string" ? name : "";
+  return lookupNameByIdPg(collection, id);
 }
 
 /**
@@ -778,13 +765,13 @@ export async function deleteMemberProfileData(db, memberId) {
     await deleteMemberScopedRows(db, collection, memberId);
   }
   await deleteMemberOnboardingByMemberIdPg(memberId);
-  const fkCollections = ["team_members", "project_members"];
-  for (const collection of fkCollections) {
-    const snap = await db.collection(collection).where("member_id", "==", memberId).get();
-    if (snap.empty) continue;
-    const batch = db.batch();
-    for (const doc of snap.docs) batch.delete(doc.ref);
-    await batch.commit();
+  // Same defect the memberFormSnapshot cleanup had: these two ran as Firestore
+  // queries against collections that stopped receiving writes when teams and
+  // projects moved to Postgres, so they matched nothing and every deleted
+  // member left their roster rows behind. Neither table has an FK on
+  // member_id (only team_id/project_id cascade), so nothing else removes them.
+  for (const table of ["team_members", "project_members"]) {
+    await pgQuery(`DELETE FROM ${table} WHERE member_id = $1`, [memberId]);
   }
   await deleteLimitsDoc(db, memberId);
   await deleteMemberFormSnapshotPg(memberId);

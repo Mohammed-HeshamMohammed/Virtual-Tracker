@@ -29,24 +29,16 @@ async function fetchPgCollectionList(table) {
 }
 
 /**
+ * "members" is the only collection any caller passes, and it resolves through
+ * Postgres. The generic Firestore tail that used to follow - chunked
+ * db.getAll() over db.collection(collection).doc(id) - had no reachable caller
+ * and would have read collections that no longer take writes.
  * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
  * @param {string[]} docIds
  */
-async function fetchDocsByIds(db, collection, docIds) {
-  if (collection === "members") {
-    return fetchMemberDocsByIds(db, docIds).then((snaps) =>
-      snaps.map((snap) => normalizeDoc({ id: snap.id, ...snap.data() })),
-    );
-  }
-  if (!docIds.length) return [];
-  const unique = [...new Set(docIds.filter(Boolean))];
-  const snaps = [];
-  for (let i = 0; i < unique.length; i += 10) {
-    const batch = unique.slice(i, i + 10).map((id) => db.collection(collection).doc(id));
-    snaps.push(...(await db.getAll(...batch)));
-  }
-  return snaps.filter((snap) => snap.exists).map((snap) => normalizeDoc({ id: snap.id, ...snap.data() }));
+async function fetchMemberDocs(db, docIds) {
+  const snaps = await fetchMemberDocsByIds(db, docIds);
+  return snaps.map((snap) => normalizeDoc({ id: snap.id, ...snap.data() }));
 }
 
 /**
@@ -134,7 +126,7 @@ export async function getBootstrapWarmPayload(db, viewer) {
     members = rows.map((row) => normalizeDoc(row));
     members = await enrichMembersWithRoleNames(db, members);
   } else if (visibleIds.length > 0) {
-    members = await fetchDocsByIds(db, "members", visibleIds);
+    members = await fetchMemberDocs(db, visibleIds);
     members = await enrichMembersWithRoleNames(db, members);
   }
 
