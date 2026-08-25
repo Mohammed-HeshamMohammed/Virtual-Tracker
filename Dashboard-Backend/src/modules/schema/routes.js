@@ -10,22 +10,8 @@ import { sendPgConstraintError } from "../../http/api-error.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { assertRowVisible, applyVisibilityFilter } from "./visibility.js";
 import { schemaByKey, schemaEntities } from "./catalog/index.js";
-import { buildCreatePayload, buildUpdatePayload, normalizeDoc, validateBusinessRules, validateForeignKeys, validateRequiredFields, applyTeamWriteMetadata } from "./services/schema-crud.service.js";
-import {
-  deleteInviteProjects,
-  deletePendingAuthProjects,
-  enrichInvitesWithProjectCounts,
-  enrichTeamMembersWithProfiles,
-  enrichTeamProjectsWithNames,
-  alignMemberRoleTables,
-  resolveRoleIdByName,
-  resolveRoleNameById,
-} from "../members/services/relation-sync.js";
-import {
-  isInviteExpired,
-  shouldHideInviteFromActiveList,
-} from "../members/services/invite-lifecycle.js";
-import { canEditTeam, isMemberOnTeam, resolveTeamIdFromWrite, teamHasMembers, isProjectOnTeam, canAssignMemberToTeamRoster } from "../../http/team-edit-access.js";
+import { buildCreatePayload, buildUpdatePayload, validateBusinessRules, validateForeignKeys, validateRequiredFields } from "./services/schema-crud.service.js";
+import { canEditTeam, resolveTeamIdFromWrite, teamHasMembers, isProjectOnTeam, canAssignMemberToTeamRoster } from "../../http/team-edit-access.js";
 import {
   canAssignMemberToTeam,
   canBeTeamLead,
@@ -37,21 +23,12 @@ import {
   TEAM_LEAD_ROLE_DENIED_MESSAGE,
   TEAM_MEMBER_ASSIGN_DENIED_MESSAGE,
 } from "../../http/team-member-assign-policy.js";
-import { createTeamInitialRoster, parseTeamRosterInput, syncTeamRoster, validateTeamRoster } from "../teams/team-roster.service.js";
 import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-budget-notify.js";
-import { syncProjectBudgetFromClients } from "../projects/services/project-budget-from-clients.js";
 import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
-import { deleteTeamPg, getTeamByIdPg } from "../../lib/postgres/teams-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
 import {
-  parseTaskChildPath,
-  resolveEntityCollectionRef,
-  resolveEntityDocRef,
-  resolveTaskParentIdFromQuery,
-} from "./collection-ref.js";
-import {
-  POSTGRES_ENTITY_KEYS,
   shouldRouteEntityToPostgres,
   listPostgresRows,
   getPostgresRow,
@@ -59,29 +36,10 @@ import {
   updatePostgresRow,
   deletePostgresRow,
 } from "./services/postgres-crud.service.js";
-import { isPostgresConfigured, query as pgQuery } from "../../lib/postgres/client.js";
 
 function parsePath(pathname) {
   const match = /^\/api(?:\/v1)?\/([a-z-]+)(?:\/([^/]+))?$/.exec(pathname);
   return match ? { key: match[1], id: match[2] ?? null } : null;
-}
-
-function resolveTaskAssigneeId(payload, existingData) {
-  const fromPayload = String(payload?.assigned_to ?? payload?.assignedTo ?? payload?.assignee_id ?? "").trim();
-  if (fromPayload) return fromPayload;
-  return String(existingData?.assigned_to ?? existingData?.assignedTo ?? existingData?.assignee_id ?? "").trim() || null;
-}
-
-async function notifyTaskAssignee(db, recipientId, taskId, title) {
-  if (!recipientId) return;
-  const { createNotification } = await import("../notifications/service.js");
-  await createNotification(db, {
-    recipient_id: recipientId,
-    type: "task_assigned",
-    title: "New Task Assigned",
-    message: `You have been assigned to task: ${title || "Unknown"}`,
-    link: `/tasks/${taskId}`,
-  });
 }
 
 const MANAGEMENT_WRITE_KEYS = new Set([
@@ -376,37 +334,74 @@ async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existi
   return true;
 }
 
-const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-
-function fieldValue(row, field) {
-  if (Object.prototype.hasOwnProperty.call(row, field)) return row[field];
-  const camel = snakeToCamel(field);
-  if (Object.prototype.hasOwnProperty.call(row, camel)) return row[camel];
-  return undefined;
+/**
+ * Every write gate the generic Firestore fallback used to apply, in the same
+ * order it applied them.
+ *
+ * These were only ever wired into that fallback path. As each entity moved to
+ * Postgres it started short-circuiting into the Postgres branch above, which
+ * checked none of them - so the gates silently stopped running, one entity at
+ * a time, as a side effect of migrations rather than any deliberate decision.
+ * The result was that an authenticated non-management user could POST
+ * /api/teams, PATCH /api/employment/:id, or write task comments on a task they
+ * cannot see, because nothing between authentication and the SQL write ever
+ * asked. Applied here so the gates follow the entity, not the storage engine.
+ *
+ * @param {{ method?: string, resourceId?: string }} [options]
+ * @returns {Promise<boolean>} false when a response has already been sent.
+ */
+async function assertGenericWriteAuthorized(
+  req,
+  res,
+  origin,
+  db,
+  entityKey,
+  body,
+  existingData,
+  options = {},
+) {
+  if (requiresManagementWriteGate(entityKey) && !requireManagementRole(getAuthContext(req))) {
+    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+    return false;
+  }
+  if (!(await assertTaskChildWritable(req, res, origin, db, entityKey, body, existingData))) return false;
+  if (!(await assertTeamWriteAuthorized(req, res, origin, db, entityKey, body, existingData, options))) return false;
+  if (
+    !(await assertProjectWriteAuthorized(req, res, origin, db, entityKey, body, existingData, options.resourceId))
+  ) {
+    return false;
+  }
+  return true;
 }
 
-function timestampMs(value) {
-  if (!value) return 0;
-  if (typeof value?.toDate === "function") return value.toDate().getTime();
-  if (value instanceof Date) return value.getTime();
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? ms : 0;
-}
-
-/** Avoid Firestore composite indexes when filters are combined with orderBy. */
-function sortRowsByField(rows, field, direction = "desc") {
-  const mul = direction === "desc" ? -1 : 1;
-  return [...rows].sort((a, b) => {
-    const av = fieldValue(a, field);
-    const bv = fieldValue(b, field);
-    const am = timestampMs(av);
-    const bm = timestampMs(bv);
-    if (am !== bm) return (am - bm) * mul;
-    const as = String(av ?? "");
-    const bs = String(bv ?? "");
-    if (as !== bs) return as.localeCompare(bs) * mul;
-    return String(a.id ?? "").localeCompare(String(b.id ?? "")) * mul;
-  });
+/**
+ * "Only project managers can create tasks for this project" - same check the
+ * Firestore fallback ran on task creation. POST /api/tasks is not handled by
+ * routeTasks (it only serves GET), so without this the generic Postgres path
+ * was the one creating tasks, with no project-scope check at all.
+ * @returns {Promise<boolean>} false when a response has already been sent.
+ */
+async function assertTaskCreateAuthorized(req, res, origin, db, entityKey, payload, body) {
+  if (entityKey !== "tasks") return true;
+  const viewer = getAuthContext(req);
+  const projectId =
+    (typeof payload.project_id === "string" && payload.project_id) ||
+    (typeof body?.projectId === "string" && body.projectId) ||
+    "";
+  if (!viewer || !projectId) return true;
+  const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
+  if (allowed !== null && !allowed.includes(projectId)) {
+    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this project." });
+    return false;
+  }
+  if (!(await viewerCanCreateProjectTasks(db, viewer, projectId))) {
+    sendJson(res, origin, 403, {
+      success: false,
+      error: "Only project managers can create tasks for this project.",
+    });
+    return false;
+  }
+  return true;
 }
 
 export async function routeSchemaCrud(req, res, url, db, origin) {
@@ -506,22 +501,28 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         return true;
       }
       if (req.method === "POST" && !parsed.id) {
-        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
-          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-        }
         const body = await readJsonBody(req);
+        // task_id has to be injected before the gates, not after: the client
+        // reaches task children via /api/tasks/:taskId/comments rather than
+        // putting task_id in the body, and assertTaskChildWritable resolves
+        // the task to check access from exactly that field.
+        if (isTaskChildEntityKey(parsed.key) && taskParentId && !body.task_id) {
+          body.task_id = taskParentId;
+        }
+        const writeOk = await assertGenericWriteAuthorized(req, res, origin, db, parsed.key, body, undefined, {
+          method: "POST",
+        });
+        if (!writeOk) return true;
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
           const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, undefined);
           if (!timeEntryOk) return true;
         }
         const payload = buildCreatePayload(entity, body);
-        // Mirrors the Firestore fallback's own injection below - the client
-        // reaches this via /api/tasks/:taskId/comments (etc), not by putting
-        // task_id in the body, so without this every task-child create 400s
-        // on a NOT NULL task_id it was never given a chance to send.
         if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
           payload.task_id = taskParentId;
         }
+        const taskCreateOk = await assertTaskCreateAuthorized(req, res, origin, db, parsed.key, payload, body);
+        if (!taskCreateOk) return true;
         validateRequiredFields(parsed.key, payload);
         await validateBusinessRules(parsed.key, payload, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
@@ -536,12 +537,14 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         return true;
       }
       if ((req.method === "PUT" || req.method === "PATCH") && parsed.id) {
-        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
-          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-        }
         const existing = await getPostgresRow(parsed.key, parsed.id);
         if (!existing) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
         const body = await readJsonBody(req);
+        const writeOk = await assertGenericWriteAuthorized(req, res, origin, db, parsed.key, body, existing, {
+          method: req.method,
+          resourceId: parsed.id,
+        });
+        if (!writeOk) return true;
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
           const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, existing);
           if (!timeEntryOk) return true;
@@ -580,14 +583,18 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         return true;
       }
       if (req.method === "DELETE" && parsed.id) {
-        if (parsed.key === "timesheets" && !requireManagementRole(getAuthContext(req))) {
-          return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-        }
+        // "tasks" is deliberately not in MANAGEMENT_WRITE_KEYS (project
+        // managers may create them), so deletion needs its own gate.
         if (parsed.key === "tasks" && !requireManagementRole(getAuthContext(req))) {
           return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
         }
         const existing = await getPostgresRow(parsed.key, parsed.id);
         if (!existing) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
+        const writeOk = await assertGenericWriteAuthorized(req, res, origin, db, parsed.key, {}, existing, {
+          method: "DELETE",
+          resourceId: parsed.id,
+        });
+        if (!writeOk) return true;
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
           const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, {}, existing);
           if (!timeEntryOk) return true;
@@ -607,6 +614,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       }
     }
 
+    // The task-child guard stays: reaching here with no resolvable parent
+    // task means the client used the flat /api/task-comments form without a
+    // task_id, which the Postgres branch above cannot answer either.
     if (isTaskChildEntityKey(parsed.key) && !taskParentId) {
       sendJson(res, origin, 400, {
         success: false,
@@ -615,444 +625,19 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       return true;
     }
 
-    if (req.method === "GET" && !parsed.id) {
-      let query = resolveEntityCollectionRef(db, entity, taskParentId);
-      let hasFilters = false;
-      for (const field of Object.keys(entity.fields)) {
-        const queryValue = url.searchParams.get(field) ?? url.searchParams.get(snakeToCamel(field));
-        if (queryValue !== null) {
-          query = query.where(field, "==", queryValue);
-          hasFilters = true;
-        }
-      }
-
-      const fieldsParam = url.searchParams.get("fields");
-      if (fieldsParam) {
-        const fieldsToSelect = fieldsParam
-          .split(",")
-          .map((f) => f.trim())
-          .filter(Boolean)
-          .filter((field) => Object.prototype.hasOwnProperty.call(entity.fields, field));
-        if (fieldsToSelect.length > 0) {
-          // In Firestore, if you use select() and also orderBy(), you must include the orderBy field in the select fields
-          const orderByField = entity.defaultOrderBy ?? (entity.fields.created_at ? "created_at" : "id");
-          if (!fieldsToSelect.includes(orderByField)) {
-            fieldsToSelect.push(orderByField);
-          }
-          query = query.select(...fieldsToSelect);
-        }
-      }
-
-      const orderBy = entity.defaultOrderBy ?? (entity.fields.created_at ? "created_at" : "id");
-      const fetchLimit = hasFilters ? 500 : 200;
-      let snapshot;
-      if (hasFilters) {
-        snapshot = await query.limit(fetchLimit).get();
-      } else {
-        try {
-          snapshot = await query.orderBy(orderBy, "desc").limit(fetchLimit).get();
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          if (!message.includes("index")) throw error;
-          snapshot = await query.limit(fetchLimit).get();
-        }
-      }
-      let rows = snapshot.docs.map((doc) => normalizeDoc({ id: doc.id, ...doc.data() }));
-      if (parsed.key === "members") {
-        rows = rows.filter((row) => row.status !== "banned");
-      }
-      rows = sortRowsByField(rows, orderBy, "desc").slice(0, 200);
-
-      if (parsed.key === "invites") {
-        rows = rows
-          .filter((row) => !shouldHideInviteFromActiveList(row))
-          .map((row) => {
-            if (typeof row.status === "string" && row.status === "pending_signup" && isInviteExpired(row)) {
-              return { ...row, status: "expired" };
-            }
-            return row;
-          });
-      }
-
-      rows = await applyVisibilityFilter(req, db, parsed.key, rows);
-      let data =
-        parsed.key === "invites"
-          ? rows.map((row) => {
-              const { invite_token: _t, inviteToken: _t2, ...rest } = row;
-              return rest;
-            })
-          : rows;
-      if (parsed.key === "team-members") {
-        data = await enrichTeamMembersWithProfiles(db, data);
-      }
-      if (parsed.key === "team-projects") {
-        data = await enrichTeamProjectsWithNames(db, data);
-      }
-      if (parsed.key === "invites" && requireManagementRole(getAuthContext(req))) {
-        const pendingRows = await pgQuery("SELECT * FROM pending_auth_members LIMIT 200");
-        for (const p of pendingRows) {
-          const uid = p.firebase_uid;
-          const email = typeof p.email === "string" ? p.email : "";
-          const roleName =
-            (await resolveRoleNameById(db, typeof p.role_id === "string" ? p.role_id : "")) ||
-            (typeof p.role_name === "string" && p.role_name ? p.role_name : "Viewer");
-          const payRate = typeof p.pay_rate === "number" && !Number.isNaN(p.pay_rate) ? p.pay_rate : 0;
-          const createdAt = p.created_at;
-          data.push({
-            id: `pa_${uid}`,
-            email,
-            display_name: typeof p.display_name === "string" ? p.display_name : "",
-            role_id: typeof p.role_id === "string" ? p.role_id : "",
-            role_name: roleName,
-            pay_rate: payRate,
-            status: "pending_auth",
-            invite_kind: "preprovision",
-            sent_at: createdAt,
-            accepted_at: null,
-            created_by: "",
-            updated_by: "",
-            currency: "USD",
-          });
-        }
-        const rowTimeMs = (r) => {
-          const t = r.sent_at;
-          if (t && typeof t.toDate === "function") return t.toDate().getTime();
-          if (t instanceof Date) return t.getTime();
-          if (typeof t === "string") {
-            const n = Date.parse(t);
-            return Number.isFinite(n) ? n : 0;
-          }
-          return 0;
-        };
-        data = [...data].sort((a, b) => rowTimeMs(b) - rowTimeMs(a));
-        data = await enrichInvitesWithProjectCounts(db, data);
-      }
-      sendJson(res, origin, 200, { success: true, data });
-      return true;
-    }
-    if (req.method === "GET" && parsed.id) {
-      const doc = await resolveEntityDocRef(db, entity, parsed.id, taskParentId).get();
-      if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      let row = normalizeDoc({ id: doc.id, ...doc.data() });
-      const visible = await assertRowVisible(req, db, parsed.key, row);
-      if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      if (parsed.key === "team-members") {
-        const [enriched] = await enrichTeamMembersWithProfiles(db, [row]);
-        row = enriched;
-      }
-      if (parsed.key === "team-projects") {
-        const [enriched] = await enrichTeamProjectsWithNames(db, [row]);
-        row = enriched;
-      }
-      if (parsed.key === "invites") {
-        const { invite_token: _t, inviteToken: _t2, ...rest } = row;
-        row = rest;
-      }
-      const [filtered] = await applyVisibilityFilter(req, db, parsed.key, [row]);
-      sendJson(res, origin, 200, { success: true, data: filtered ?? row });
-      return true;
-    }
-    if (req.method === "POST" && !parsed.id) {
-      if (requiresManagementWriteGate(parsed.key) && !requireManagementRole(getAuthContext(req))) {
-        return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-      }
-      const body = await readJsonBody(req);
-      const taskChildOk = await assertTaskChildWritable(req, res, origin, db, parsed.key, body, undefined);
-      if (!taskChildOk) return true;
-      const teamWriteOk = await assertTeamWriteAuthorized(req, res, origin, db, parsed.key, body, undefined, {
-        method: "POST",
-      });
-      if (!teamWriteOk) return true;
-      const projectWriteOk = await assertProjectWriteAuthorized(req, res, origin, db, parsed.key, body, undefined, undefined);
-      if (!projectWriteOk) return true;
-      if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-        const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, undefined);
-        if (!timeEntryOk) return true;
-      }
-      const inviteExtras = parsed.key === "invites" ? ["role", "roleName", "payRate", "weeklyLimit"] : [];
-      const teamRosterExtras =
-        parsed.key === "teams"
-          ? ["members", "member_ids", "memberIds", "lead_ids", "leadIds", "project_ids", "projectIds"]
-          : [];
-      const payload = buildCreatePayload(entity, body, {
-        extraAllowedFields: [...inviteExtras, ...teamRosterExtras],
-      });
-      const viewer = getAuthContext(req);
-      if (viewer?.memberId && TEAM_WRITE_KEYS.has(parsed.key)) {
-        applyTeamWriteMetadata(parsed.key, payload, viewer.memberId, true);
-      }
-      validateRequiredFields(parsed.key, payload);
-      if (parsed.key === "tasks") {
-        const projectId =
-          typeof payload.project_id === "string"
-            ? payload.project_id
-            : typeof body.projectId === "string"
-              ? body.projectId
-              : "";
-        if (viewer && projectId) {
-          const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
-          if (allowed !== null && !allowed.includes(projectId)) {
-            sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this project." });
-            return true;
-          }
-          const canCreate = await viewerCanCreateProjectTasks(db, viewer, projectId);
-          if (!canCreate) {
-            sendJson(res, origin, 403, {
-              success: false,
-              error: "Only project managers can create tasks for this project.",
-            });
-            return true;
-          }
-        }
-      }
-      await validateBusinessRules(parsed.key, payload, db, {
-        actorRoleName: getAuthContext(req)?.roleName ?? "",
-      });
-      await validateForeignKeys(db, payload, { entityKey: parsed.key });
-      if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
-        payload.task_id = taskParentId;
-      }
-      await resolveEntityDocRef(db, entity, payload.id, taskParentId).set(payload);
-      if (parsed.key === "teams" && viewer?.memberId) {
-        try {
-          const roster = parseTeamRosterInput(body);
-          const rosterError = validateTeamRoster(roster.memberIds, [...roster.leadIds]);
-          if (rosterError) {
-            const err = new Error(rosterError);
-            err.statusCode = 400;
-            throw err;
-          }
-          await createTeamInitialRoster(db, viewer, payload.id, roster);
-        } catch (err) {
-          await resolveEntityDocRef(db, entity, payload.id, taskParentId).delete().catch(() => {});
-          const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 400;
-          sendJson(res, origin, statusCode, {
-            success: false,
-            error: err instanceof Error ? err.message : "Failed to create team roster.",
-          });
-          return true;
-        }
-      }
-      if (parsed.key === "members") {
-        await alignMemberRoleTables(db, payload.id, "schema-create");
-      }
-
-      // Trigger notification if task is created with an assignee
-      if (parsed.key === "tasks") {
-        const assigneeId = resolveTaskAssigneeId(payload, undefined);
-        if (assigneeId) {
-          await notifyTaskAssignee(db, assigneeId, payload.id, payload.title);
-        }
-      }
-
-      if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-        const projectId = typeof payload.project_id === "string" ? payload.project_id : "";
-        if (projectId) {
-          await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
-        }
-      }
-
-      if (parsed.key === "client-projects") {
-        const projectId = String(payload.project_id ?? payload.projectId ?? "").trim();
-        if (projectId) {
-          await syncProjectBudgetFromClients(db, projectId).catch(() => null);
-          await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
-        }
-      }
-
-      sendJson(res, origin, 201, { success: true, data: normalizeDoc(payload) });
-      return true;
-    }
-    if ((req.method === "PUT" || req.method === "PATCH") && parsed.id) {
-      if (requiresManagementWriteGate(parsed.key) && !requireManagementRole(getAuthContext(req))) {
-        return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-      }
-      let body = await readJsonBody(req);
-      if (parsed.key === "invites") {
-        if (typeof body.role === "string" && body.role_name === undefined) body.role_name = body.role;
-        if (typeof body.payRate === "number" && body.pay_rate === undefined) body.pay_rate = body.payRate;
-        if (typeof body.weeklyLimit === "string" && body.weekly_limit === undefined) body.weekly_limit = body.weeklyLimit;
-        if (typeof body.role_name === "string" && body.role_id === undefined) {
-          body.role_id = await resolveRoleIdByName(db, body.role_name);
-        }
-      }
-      const inviteExtras = parsed.key === "invites" ? ["role", "roleName", "payRate", "weeklyLimit"] : [];
-      const teamRosterExtras =
-        parsed.key === "teams"
-          ? ["members", "member_ids", "memberIds", "lead_ids", "leadIds", "project_ids", "projectIds"]
-          : [];
-      const payload = buildUpdatePayload(entity, body, {
-        extraAllowedFields: [...inviteExtras, ...teamRosterExtras, "expected_updated_at", "expectedUpdatedAt"],
-      });
-      const hasRosterUpdate =
-        parsed.key === "teams" &&
-        (Array.isArray(body.member_ids) ||
-          Array.isArray(body.memberIds) ||
-          Array.isArray(body.lead_ids) ||
-          Array.isArray(body.leadIds) ||
-          Array.isArray(body.project_ids) ||
-          Array.isArray(body.projectIds) ||
-          Array.isArray(body.members));
-      if (Object.keys(payload).length === 0 && !hasRosterUpdate) {
-        return sendJson(res, origin, 400, { success: false, error: "No valid fields to update" }), true;
-      }
-      const viewer = getAuthContext(req);
-      if (viewer?.memberId && TEAM_WRITE_KEYS.has(parsed.key)) {
-        applyTeamWriteMetadata(parsed.key, payload, viewer.memberId, false);
-      }
-      await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
-        actorRoleName: getAuthContext(req)?.roleName ?? "",
-      });
-      const ref = resolveEntityDocRef(db, entity, parsed.id, taskParentId);
-      const exists = await ref.get();
-      if (!exists.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      const existingData = exists.data() || {};
-      const taskChildOk = await assertTaskChildWritable(req, res, origin, db, parsed.key, body, existingData);
-      if (!taskChildOk) return true;
-      const teamWriteOk = await assertTeamWriteAuthorized(req, res, origin, db, parsed.key, body, existingData, {
-        method: req.method,
-        resourceId: parsed.id,
-      });
-      if (!teamWriteOk) return true;
-      const projectWriteOk = await assertProjectWriteAuthorized(req, res, origin, db, parsed.key, body, existingData, parsed.id);
-      if (!projectWriteOk) return true;
-      if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-        const timeEntryOk = await assertTimeEntryWriteAuthorized(req, res, origin, db, body, existingData);
-        if (!timeEntryOk) return true;
-      }
-      if (TEAM_WRITE_KEYS.has(parsed.key)) {
-        const visible = await assertRowVisible(req, db, parsed.key, { id: parsed.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      }
-      if (PROJECT_WRITE_KEYS.has(parsed.key)) {
-        const visible = await assertRowVisible(req, db, parsed.key, { id: parsed.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      }
-      if (parsed.key === TIME_ENTRY_WRITE_KEY || parsed.key === "timesheets") {
-        const visible = await assertRowVisible(req, db, parsed.key, { id: parsed.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      }
-      if (parsed.key === "tasks") {
-        const visible = await assertRowVisible(req, db, "tasks", { id: parsed.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      }
-      const projectIdForFk = payload.project_id ?? existingData.project_id;
-      await validateForeignKeys(db, payload, { projectId: projectIdForFk, entityKey: parsed.key });
-      if (Object.keys(payload).length > 0) {
-        await ref.update(payload);
-      } else if (parsed.key === "teams" && viewer?.memberId) {
-        await ref.update({ updated_by: viewer.memberId });
-      }
-      if (parsed.key === "teams" && viewer?.memberId && hasRosterUpdate) {
-        try {
-          const roster = parseTeamRosterInput(body);
-          await syncTeamRoster(db, viewer, parsed.id, roster);
-        } catch (err) {
-          const statusCode = typeof err?.statusCode === "number" ? err.statusCode : 400;
-          sendJson(res, origin, statusCode, {
-            success: false,
-            error: err instanceof Error ? err.message : "Failed to update team roster.",
-          });
-          return true;
-        }
-      }
-      if (parsed.key === "members") {
-        await alignMemberRoleTables(db, parsed.id, "schema-update");
-      }
-      
-      // Trigger notification if task is assigned to a new person
-      if (parsed.key === "tasks") {
-        const nextAssignee = resolveTaskAssigneeId(payload, existingData);
-        const prevAssignee = resolveTaskAssigneeId(existingData, undefined);
-        if (nextAssignee && nextAssignee !== prevAssignee) {
-          await notifyTaskAssignee(
-            db,
-            nextAssignee,
-            parsed.id,
-            payload.title || existingData.title,
-          );
-        }
-      }
-
-      if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-        const projectId = String(
-          payload.project_id ?? existingData.project_id ?? existingData.projectId ?? "",
-        ).trim();
-        if (projectId) {
-          await maybeNotifyClientBudgetsForProject(db, projectId).catch(() => null);
-        }
-      }
-
-      const next = await ref.get();
-      sendJson(res, origin, 200, { success: true, data: normalizeDoc({ id: next.id, ...next.data() }) });
-      return true;
-    }
-    if (req.method === "DELETE" && parsed.id) {
-      if (requiresManagementWriteGate(parsed.key) && !requireManagementRole(getAuthContext(req))) {
-        return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
-      }
-      if (parsed.key === "teams") {
-        const teamId = parsed.id;
-        const team = await getTeamByIdPg(teamId);
-        if (!team) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const visible = await assertRowVisible(req, db, "teams", team);
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        // Both team_members.team_id and team_projects.team_id are real FKs
-        // with ON DELETE CASCADE now that `teams` exists in Postgres (see
-        // fk_tp_team in ensure-lookup-schema.js) - deleting the team row is
-        // enough, no explicit child cleanup needed on either side anymore.
-        await deleteTeamPg(teamId);
-        sendJson(res, origin, 200, { success: true, data: { id: teamId, deleted: true } });
-        return true;
-      }
-      // Project deletion is handled by routeProjects (DELETE /api/projects/:id,
-      // deleteProjectPg) before requests ever reach here - projects are fully
-      // Postgres-resident now, so there is deliberately no "projects" branch below.
-      // Task deletion now handled above, inside the shouldRouteEntityToPostgres(tasks)
-      // branch - deleteTaskWithChildren() moved there since tasks are Postgres-resident
-      // now and this generic Firestore fallback path is no longer reached for "tasks".
-      if (parsed.key === "invites") {
-        await deleteInviteProjects(db, parsed.id);
-      }
-      if (TEAM_WRITE_KEYS.has(parsed.key) && parsed.key !== "teams") {
-        const doc = await db.collection(entity.collection).doc(parsed.id).get();
-        if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const existingData = doc.data() || {};
-        const visible = await assertRowVisible(req, db, parsed.key, { id: doc.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const teamWriteOk = await assertTeamWriteAuthorized(req, res, origin, db, parsed.key, {}, existingData, {
-          method: "DELETE",
-          resourceId: parsed.id,
-        });
-        if (!teamWriteOk) return true;
-      }
-      if (PROJECT_WRITE_KEYS.has(parsed.key)) {
-        const doc = await db.collection(entity.collection).doc(parsed.id).get();
-        if (!doc.exists) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const existingData = doc.data() || {};
-        const visible = await assertRowVisible(req, db, parsed.key, { id: doc.id, ...existingData });
-        if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        const projectWriteOk = await assertProjectWriteAuthorized(req, res, origin, db, parsed.key, {}, existingData, parsed.id);
-        if (!projectWriteOk) return true;
-      }
-      if (parsed.key === TIME_ENTRY_WRITE_KEY || parsed.key === "timesheets") {
-        return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-      }
-      let projectIdToResyncBudget = null;
-      if (parsed.key === "client-projects") {
-        const linkDoc = await db.collection(entity.collection).doc(parsed.id).get();
-        if (linkDoc.exists) {
-          const row = linkDoc.data() || {};
-          projectIdToResyncBudget = String(row.project_id ?? row.projectId ?? "").trim() || null;
-        }
-      }
-      await resolveEntityDocRef(db, entity, parsed.id, taskParentId).delete();
-      if (projectIdToResyncBudget) {
-        await syncProjectBudgetFromClients(db, projectIdToResyncBudget).catch(() => null);
-      }
-      sendJson(res, origin, 200, { success: true, data: { id: parsed.id, deleted: true } });
-      return true;
-    }
+    // Everything below this point used to be a generic Firestore CRUD
+    // implementation - list/get/create/update/delete against
+    // db.collection(entity.collection) - serving whichever entities had not
+    // been migrated yet. All 32 catalog entities now resolve before it: 29
+    // route to Postgres above, invite-projects is managed entirely through
+    // relation-sync.js with no caller for the flat path, and
+    // member-relationships and member-transfer-requests are each fully
+    // handled by their own dedicated routers mounted earlier in
+    // handle-request.js. Nothing could reach it, so it is gone rather than
+    // left as an unreachable second implementation of every write path -
+    // which is exactly how the authorization gates above came to be skipped
+    // in the first place: they lived only here, and each migration quietly
+    // routed around them.
     sendJson(res, origin, 405, { success: false, error: "Method not allowed" });
     return true;
   } catch (error) {
