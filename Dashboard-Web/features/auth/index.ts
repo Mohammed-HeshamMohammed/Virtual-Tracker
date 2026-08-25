@@ -18,6 +18,7 @@ export {
   canSeePmTasksSection,
   canExportActivity,
   canManageActivityData,
+  canClassifyActivity,
   canManageClients,
   canManageProjects,
   isOwnerRoleName,
