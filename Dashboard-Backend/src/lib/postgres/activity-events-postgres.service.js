@@ -239,6 +239,28 @@ export async function insertActivityUrlLog(row) {
   }
 }
 
+// Day-boundary attribution.
+//
+// The pool pins every connection to UTC (see client.js), which makes `::date`
+// deterministic but attributes a capture to its *UTC* day. The Activity page's
+// day picker is built from the browser's local calendar day, so for any member
+// outside UTC a capture near local midnight landed on the wrong day tab - a
+// 11:30pm PST screenshot showed up under the next day.
+//
+// A tracked event belongs to the day it was *worked*, which is the day in the
+// tracked member's own timezone, not the viewer's and not UTC. members.timezone
+// already exists and is written by the Edit-account "Time zone" field
+// (profile-settings.js syncMemberTimezoneForUid); this joins it per row so a
+// feed spanning members in different zones still buckets each one correctly.
+// Members with no timezone set keep the previous UTC behaviour.
+/**
+ * Local-day expression for a timestamptz column, in the row member's timezone.
+ * @param {string} tsColumn e.g. "sc.captured_at"
+ */
+function localDay(tsColumn) {
+  return `(${tsColumn} AT TIME ZONE COALESCE(NULLIF(m_tz.timezone, ''), 'UTC'))::date`;
+}
+
 /**
  * @param {string[] | null | undefined} memberIds
  * @param {string} dayFilter
@@ -256,14 +278,14 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
   }
   if (dayFilter) {
     params.push(dayFilter);
-    where += ` AND sc.captured_at::date = $${params.length}::date`;
+    where += ` AND ${localDay("sc.captured_at")} = $${params.length}::date`;
   } else if (options.sinceDay) {
     // Range bound (e.g. a multi-day sparkline window) instead of an exact-day
     // match - callers needing "last N days" must pass this, not rely on a
     // plain recency LIMIT, which silently starves older days once a single
     // recent day alone exceeds `limit` rows.
     params.push(options.sinceDay);
-    where += ` AND sc.captured_at::date >= $${params.length}::date`;
+    where += ` AND ${localDay("sc.captured_at")} >= $${params.length}::date`;
   }
   params.push(limit);
   // project_name comes along so a capture taken while tracking a project with
@@ -281,6 +303,7 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
      LEFT JOIN projects pt ON pt.id = t.project_id
      LEFT JOIN activity_sessions s ON s.id::text = sc.session_id
      LEFT JOIN projects ps ON ps.id = s.project_id
+     LEFT JOIN members m_tz ON m_tz.id = sc.member_id
      ${where}
      ORDER BY sc.captured_at DESC
      LIMIT $${params.length}`,
@@ -302,10 +325,10 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) 
   }
   if (dayFilter) {
     params.push(dayFilter);
-    where += ` AND l.started_at::date = $${params.length}::date`;
+    where += ` AND ${localDay("l.started_at")} = $${params.length}::date`;
   } else if (options.sinceDay) {
     params.push(options.sinceDay);
-    where += ` AND l.started_at::date >= $${params.length}::date`;
+    where += ` AND ${localDay("l.started_at")} >= $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(
@@ -313,6 +336,7 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) 
             l.started_at, l.duration_seconds, l.source
      FROM activity_app_logs l
      JOIN apps a ON a.id = l.app_id
+     LEFT JOIN members m_tz ON m_tz.id = l.member_id
      ${where}
      ORDER BY l.started_at DESC
      LIMIT $${params.length}`,
@@ -330,19 +354,20 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
   let where = "WHERE 1=1";
   if (ids !== null) {
     params.push(ids);
-    where += ` AND member_id = ANY($${params.length}::uuid[])`;
+    where += ` AND u.member_id = ANY($${params.length}::uuid[])`;
   }
   if (dayFilter) {
     params.push(dayFilter);
-    where += ` AND visited_at::date = $${params.length}::date`;
+    where += ` AND ${localDay("u.visited_at")} = $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(
-    `SELECT id, member_id, session_id, task_id, task_title, url, domain, page_title,
-            visited_at, duration_seconds, source
-     FROM activity_url_logs
+    `SELECT u.id, u.member_id, u.session_id, u.task_id, u.task_title, u.url, u.domain, u.page_title,
+            u.visited_at, u.duration_seconds, u.source
+     FROM activity_url_logs u
+     LEFT JOIN members m_tz ON m_tz.id = u.member_id
      ${where}
-     ORDER BY visited_at DESC
+     ORDER BY u.visited_at DESC
      LIMIT $${params.length}`,
     params,
   );

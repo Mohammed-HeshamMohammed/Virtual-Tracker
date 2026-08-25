@@ -4,12 +4,8 @@
 import { useMemo, useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Check, ChevronDown, Search, User, X, XCircle } from "lucide-react"
-import {
-  AMOUNTS_OWED_MEMBER_OPTIONS,
-  AMOUNTS_OWED_PROJECT_OPTIONS,
-} from "@/features/reports/components/shared/constants"
 import { cn } from "@/shared/utils/utils"
-import { ReportFilterDropdown } from "@/features/reports/components/time-activity-report/filter-dropdown"
+import type { ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 
 type FilterTab = "filters" | "saved"
 
@@ -17,45 +13,61 @@ export function AmountsOwedFiltersPanel({
   onClose,
   className,
   onScheduleReport,
+  options,
+  selectedMemberIds,
+  onSelectedMemberIdsChange,
+  selectedProjectIds,
+  onSelectedProjectIdsChange,
 }: {
   onClose: () => void
   /** Override position (e.g. `absolute right-4 top-32` for in-page overlay). */
   className?: string
   /** Opens the report's schedule dialog (closes this panel first). */
   onScheduleReport?: () => void
+  /** Real members/projects the viewer may filter by. */
+  options: ReportFilterOptions
+  selectedMemberIds: Set<string>
+  onSelectedMemberIdsChange: (next: Set<string>) => void
+  selectedProjectIds: Set<string>
+  onSelectedProjectIdsChange: (next: Set<string>) => void
 }) {
   const [tab, setTab] = useComponentState<FilterTab>("filters")
-  const [sumDateRanges, setSumDateRanges] = useComponentState(false)
   const [membersOpen, setMembersOpen] = useComponentState(false)
+  const [projectsOpen, setProjectsOpen] = useComponentState(false)
   const [memberSearch, setMemberSearch] = useComponentState("")
-  const [selectedMemberIds, setSelectedMemberIds] = useComponentState<Set<string>>(() => new Set())
   const [showOnlySelectedMembers, setShowOnlySelectedMembers] = useComponentState(false)
 
   const filteredMembers = useMemo(() => {
     const q = memberSearch.trim().toLowerCase()
-    let list = AMOUNTS_OWED_MEMBER_OPTIONS
+    let list = options.members
     if (q) list = list.filter((m) => m.name.toLowerCase().includes(q))
     if (showOnlySelectedMembers) list = list.filter((m) => selectedMemberIds.has(m.id))
     return list
-  }, [memberSearch, showOnlySelectedMembers, selectedMemberIds])
+  }, [options.members, memberSearch, showOnlySelectedMembers, selectedMemberIds])
 
   function toggleMember(id: string) {
-    setSelectedMemberIds((prev) => {
-      const s = new Set(prev)
-      s.has(id) ? s.delete(id) : s.add(id)
-      return s
-    })
+    const next = new Set(selectedMemberIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectedMemberIdsChange(next)
+  }
+
+  function toggleProject(id: string) {
+    const next = new Set(selectedProjectIds)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onSelectedProjectIdsChange(next)
   }
 
   function selectAllMembers() {
-    setSelectedMemberIds(new Set(AMOUNTS_OWED_MEMBER_OPTIONS.map((m) => m.id)))
+    onSelectedMemberIdsChange(new Set(options.members.map((m) => m.id)))
   }
 
   function clearFilters() {
-    setSumDateRanges(false)
     setMemberSearch("")
-    setSelectedMemberIds(new Set())
     setShowOnlySelectedMembers(false)
+    onSelectedMemberIdsChange(new Set())
+    onSelectedProjectIdsChange(new Set())
   }
 
   function scheduleReport() {
@@ -112,9 +124,59 @@ export function AmountsOwedFiltersPanel({
         <>
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 scrollbar-hide">
             <div className="space-y-5">
-              <div>
+              <div className="relative">
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Projects</div>
-                <ReportFilterDropdown label="All projects" options={AMOUNTS_OWED_PROJECT_OPTIONS} />
+                <button
+                  type="button"
+                  onClick={() => setProjectsOpen((o) => !o)}
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-lg border bg-white px-3 py-2.5 text-left text-sm text-slate-500 transition-colors",
+                    projectsOpen ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"
+                  )}
+                >
+                  <span>
+                    {selectedProjectIds.size === 0
+                      ? "All projects"
+                      : `${selectedProjectIds.size} project${selectedProjectIds.size === 1 ? "" : "s"} selected`}
+                  </span>
+                  <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", projectsOpen && "rotate-180")} />
+                </button>
+                <AnimatePresence>
+                  {projectsOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="absolute left-0 right-0 top-full z-20 mt-1 max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-sm scrollbar-hide"
+                    >
+                      {options.projects.length === 0 ? (
+                        <p className="px-4 py-3 text-sm text-slate-500">No projects available</p>
+                      ) : (
+                        options.projects.map((proj) => {
+                          const on = selectedProjectIds.has(proj.id)
+                          return (
+                            <button
+                              key={proj.id}
+                              type="button"
+                              onClick={() => toggleProject(proj.id)}
+                              className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors hover:bg-slate-50"
+                            >
+                              <span
+                                className={cn(
+                                  "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                                  on ? "border-blue-500 bg-blue-500" : "border-slate-300 bg-white"
+                                )}
+                              >
+                                {on ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                              </span>
+                              <span className="truncate text-slate-800">{proj.name}</span>
+                            </button>
+                          )
+                        })
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               <div className="relative">
@@ -127,7 +189,11 @@ export function AmountsOwedFiltersPanel({
                     membersOpen ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 hover:border-slate-300"
                   )}
                 >
-                  <span>Select members</span>
+                  <span>
+                    {selectedMemberIds.size === 0
+                      ? "All members"
+                      : `${selectedMemberIds.size} member${selectedMemberIds.size === 1 ? "" : "s"} selected`}
+                  </span>
                   <ChevronDown className={cn("h-4 w-4 text-slate-400 transition-transform", membersOpen && "rotate-180")} />
                 </button>
                 <AnimatePresence>
@@ -218,26 +284,7 @@ export function AmountsOwedFiltersPanel({
                 </AnimatePresence>
               </div>
 
-              <label className="flex cursor-pointer items-center gap-3">
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={sumDateRanges}
-                  onClick={() => setSumDateRanges((v) => !v)}
-                  className={cn(
-                    "relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors",
-                    sumDateRanges ? "bg-blue-500" : "bg-slate-200"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "pointer-events-none inline-block h-5 w-5 translate-x-0 transform rounded-full bg-white shadow ring-0 transition-transform",
-                      sumDateRanges ? "translate-x-5" : "translate-x-0.5"
-                    )}
-                  />
-                </button>
-                <span className="text-sm font-semibold text-slate-800">Sum date ranges</span>
-              </label>
+
             </div>
           </div>
 

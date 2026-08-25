@@ -65,6 +65,10 @@ const WRITABLE_COLUMNS = [
   "agent_source",
   "privileged_role_owner_granted",
   "privileged_role_owner_granted_at",
+  // Drives per-member local-day attribution in the Activity feeds, so it has
+  // to be writable through the normal member-update path and not only via
+  // profile-settings.js's own raw UPDATE.
+  "timezone",
 ];
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);

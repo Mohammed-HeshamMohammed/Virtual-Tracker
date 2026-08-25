@@ -248,22 +248,20 @@ export const REPORT_EMAIL_DEFAULT_MESSAGE =
 // 5. Amounts Owed Report
 // ==========================================
 
-export const AMOUNTS_OWED_PROJECT_OPTIONS = [
-  "All projects",
-  "Amina with Amplified",
-  "Bana Properties",
-  "Frontend Architecture",
-  "API Development",
-  "Mobile App",
+/** Columns the Amounts Owed / Daily Totals table can hide. "Member" is always
+ *  shown - a row with no member is meaningless. These are the columns the
+ *  report genuinely renders; the previous list offered member profile fields
+ *  (email, job title, tax info, ...) that neither the table nor the endpoint
+ *  has. */
+export type AmountsOwedColumnKey = "rate" | "hours" | "amount"
+
+export const AMOUNTS_OWED_TOGGLEABLE_COLUMNS: { key: AmountsOwedColumnKey; label: string }[] = [
+  { key: "rate", label: "Current rate" },
+  { key: "hours", label: "Total hours" },
+  { key: "amount", label: "Amount" },
 ]
 
-export const AMOUNTS_OWED_MEMBER_OPTIONS: { id: string; name: string; initials: string }[] = [
-  { id: "1", name: "Bella Jeffery", initials: "BJ" },
-  { id: "2", name: "Joe Abraham", initials: "JA" },
-  { id: "3", name: "Mahmoud Emad", initials: "ME" },
-  { id: "4", name: "mazen salah", initials: "MS" },
-  { id: "5", name: "Amina Moner", initials: "AM" },
-]
+export const AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS: AmountsOwedColumnKey[] = ["rate", "hours", "amount"]
 
 export interface AmountsOwedMemberLine {
   name: string
@@ -279,49 +277,6 @@ export interface AmountsOwedDayGroup {
   members: AmountsOwedMemberLine[]
 }
 
-export const AMOUNTS_OWED_ABOUT_MEMBER_FIELDS: { key: string; label: string; defaultVisible: boolean }[] = [
-  { key: "email", label: "Email", defaultVisible: true },
-  { key: "job_title", label: "Job title", defaultVisible: true },
-  { key: "job_type", label: "Job type", defaultVisible: true },
-  { key: "employee_id", label: "Employee ID", defaultVisible: true },
-  { key: "tax_info", label: "Tax info", defaultVisible: true },
-  { key: "location", label: "Location", defaultVisible: true },
-  { key: "member_timezone", label: "Member's timezone", defaultVisible: true },
-  { key: "date_added", label: "Date added", defaultVisible: true },
-  { key: "date_removed", label: "Date removed", defaultVisible: false },
-]
-
-export const AMOUNTS_OWED_CHART_LABELS = [
-  "Mar 10",
-  "Mar 11",
-  "Mar 12",
-  "Mar 13",
-  "Mar 14",
-  "Mar 15",
-  "Mar 16",
-  "Mar 17",
-  "Mar 18",
-  "Mar 19",
-  "Mar 20",
-  "Mar 21",
-  "Mar 22",
-  "Mar 23",
-  "Mar 24",
-  "Mar 25",
-  "Mar 26",
-  "Mar 27",
-  "Mar 28",
-  "Mar 29",
-  "Mar 30",
-  "Mar 31",
-  "Apr 01",
-  "Apr 02",
-  "Apr 03",
-  "Apr 04",
-  "Apr 05",
-  "Apr 06",
-  "Apr 07",
-]
 
 // ==========================================
 // 6. Audit Log Report

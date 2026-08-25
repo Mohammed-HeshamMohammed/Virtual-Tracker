@@ -75,15 +75,31 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
   }))
 }
 
-/** `memberId` scopes to one member (the "ME" tab); the backend rejects ids
- *  outside the viewer's visible set, so this is a filter, not a trust point. */
+export interface ReportFilterOptions {
+  members: { id: string; name: string; initials: string }[]
+  projects: { id: string; name: string }[]
+}
+
+/** Real members/projects the viewer may filter by, for the report filter panels. */
+export async function fetchReportFilterOptions(): Promise<ReportFilterOptions> {
+  const data = await getJson<ReportFilterOptions>("/api/reports/filter-options")
+  return { members: data?.members ?? [], projects: data?.projects ?? [] }
+}
+
+/** `memberId` scopes to one member (the "ME" tab); `memberIds`/`projectIds` back
+ *  the filter panel's multi-selects. The backend rejects ids outside the
+ *  viewer's visible scope, so these are filters, not a trust point. */
 export async function fetchAmountsOwedReport(range: {
   from: string
   to: string
   memberId?: string | null
+  memberIds?: string[]
+  projectIds?: string[]
 }): Promise<AmountsOwedDayGroup[]> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
   if (range.memberId) params.set("memberId", range.memberId)
+  if (range.memberIds?.length) params.set("memberIds", range.memberIds.join(","))
+  if (range.projectIds?.length) params.set("projectIds", range.projectIds.join(","))
   const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/amounts-owed?${params.toString()}`)
   return data ? mapAmountsDays(data.days) : []
 }

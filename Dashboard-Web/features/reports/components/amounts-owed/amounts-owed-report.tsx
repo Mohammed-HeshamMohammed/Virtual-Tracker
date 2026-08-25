@@ -13,7 +13,11 @@ import {
   Send,
   SlidersHorizontal,
 } from "lucide-react"
-import { AMOUNTS_OWED_CHART_LABELS, type AmountsOwedDayGroup } from "@/features/reports/components/shared/constants"
+import {
+  AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS,
+  type AmountsOwedColumnKey,
+  type AmountsOwedDayGroup,
+} from "@/features/reports/components/shared/constants"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { formatRangeLabel, formatSecondsAsHMS, parseTimeToSeconds, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
@@ -23,7 +27,7 @@ import { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-o
 import { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amounts-owed/amounts-owed-table-columns-menu"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
-import { fetchAmountsOwedReport } from "@/features/reports/api/misc-reports-api"
+import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
 
 function sumHoursStrings(hmsList: string[]): string {
@@ -54,21 +58,44 @@ function downloadAmountsOwedCsv(groups: AmountsOwedDayGroup[]): void {
   URL.revokeObjectURL(url)
 }
 
-function AmountPerDayChart() {
-  const labels = AMOUNTS_OWED_CHART_LABELS
-  const n = labels.length
+function parseMoney(label: string): number {
+  const n = Number(String(label).replace(/[^0-9.-]/g, ""))
+  return Number.isFinite(n) ? n : 0
+}
+
+/** Total amount per day, plotted from the report's own rows. */
+function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
+  const series = groups.map((g) => ({
+    label: g.dateLabel,
+    value: g.members.reduce((sum, m) => sum + parseMoney(m.amount), 0),
+  }))
+  const n = series.length
   const CHART_H = 220
-  const padL = 36
+  const padL = 44
   const padR = 12
   const padT = 16
   const padB = 28
   const vbW = 960
   const plotW = vbW - padL - padR
   const plotH = CHART_H - padT - padB
-  const yMax = 10
+  const rawMax = Math.max(0, ...series.map((s) => s.value))
+  // Round the axis up to something readable instead of ending on a stray value.
+  const yMax = rawMax <= 0 ? 10 : Math.ceil(rawMax / 4) * 4
   const xAt = (i: number) => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW)
   const yAt = (v: number) => padT + plotH - (v / yMax) * plotH
-  const points = labels.map((_, i) => `${xAt(i)},${yAt(0)}`).join(" ")
+  const yTicks = [0, yMax / 4, yMax / 2, (yMax * 3) / 4, yMax]
+  const points = series.map((s, i) => `${xAt(i)},${yAt(s.value)}`).join(" ")
+
+  if (n === 0) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+        <div className="border-b border-slate-50 px-6 py-3">
+          <h3 className="text-base font-semibold text-slate-800">Total amount per day</h3>
+        </div>
+        <div className="px-6 py-10 text-center text-sm text-slate-500">No data in this range</div>
+      </div>
+    )
+  }
 
   return (
     <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
@@ -90,7 +117,7 @@ function AmountPerDayChart() {
                 <g key={t}>
                   <line x1={padL} x2={vbW - padR} y1={yy} y2={yy} stroke="#f1f5f9" strokeWidth={1} />
                   <text x={padL - 8} y={yy + 4} textAnchor="end" fill="#94a3b8" style={{ fontSize: 10 }}>
-                    {t}
+                    {Math.round(t)}
                   </text>
                 </g>
               )
@@ -103,22 +130,24 @@ function AmountPerDayChart() {
               strokeLinecap="round"
               points={points}
             />
-            {labels.map((lab, i) => (
+            {series.map((s, i) => (
               <circle
-                key={`${i}-${lab}`}
+                key={`${i}-${s.label}`}
                 cx={xAt(i)}
-                cy={yAt(0)}
+                cy={yAt(s.value)}
                 r={3}
                 fill="white"
                 stroke="rgb(37 99 235)"
                 strokeWidth={2}
-              />
+              >
+                <title>{`${s.label}: ${s.value.toFixed(2)}`}</title>
+              </circle>
             ))}
             <text x={padL} y={CHART_H - 6} fill="#94a3b8" style={{ fontSize: 9 }}>
-              {labels[0]}
+              {series[0]?.label ?? ""}
             </text>
             <text x={vbW - padR} y={CHART_H - 6} textAnchor="end" fill="#94a3b8" style={{ fontSize: 9 }}>
-              {labels[n - 1]}
+              {series[n - 1]?.label ?? ""}
             </text>
           </svg>
         </div>
@@ -142,6 +171,22 @@ export function AmountsOwedReport() {
   const [sendDialogOpen, setSendDialogOpen] = useComponentState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useComponentState(false)
   const [groups, setGroups] = useComponentState<AmountsOwedDayGroup[]>([])
+  const [filterOptions, setFilterOptions] = useComponentState<ReportFilterOptions>({ members: [], projects: [] })
+  const [selectedMemberIds, setSelectedMemberIds] = useComponentState<Set<string>>(() => new Set())
+  const [selectedProjectIds, setSelectedProjectIds] = useComponentState<Set<string>>(() => new Set())
+  const [visibleColumns, setVisibleColumns] = useComponentState<Set<AmountsOwedColumnKey>>(
+    () => new Set(AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS)
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    void fetchReportFilterOptions().then((opts) => {
+      if (!cancelled) setFilterOptions(opts)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
 
@@ -151,13 +196,16 @@ export function AmountsOwedReport() {
     const to = rangeEnd.toISOString().slice(0, 10)
     // scope "me" filters to the signed-in member server-side; without it in
     // the dep list (and in the request) the ME tab showed everyone.
-    fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null }).then((data) => {
+    fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null,
+      memberIds: [...selectedMemberIds],
+      projectIds: [...selectedProjectIds],
+    }).then((data) => {
       if (!cancelled) setGroups(data)
     })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, scope, memberId])
+  }, [rangeStart, rangeEnd, scope, memberId, selectedMemberIds, selectedProjectIds])
 
   function shiftRangeByDays(delta: number) {
     const s = new Date(rangeStart)
@@ -321,7 +369,7 @@ export function AmountsOwedReport() {
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="flex items-center border-l border-slate-200 px-1.5">
-                <AmountsOwedTableColumnsMenu />
+                <AmountsOwedTableColumnsMenu visible={visibleColumns} onVisibleChange={setVisibleColumns} />
               </div>
             </div>
           </div>
@@ -347,7 +395,7 @@ export function AmountsOwedReport() {
           </button>
         </div>
 
-        {chartVisible ? <AmountPerDayChart /> : null}
+        {chartVisible ? <AmountPerDayChart groups={groups} /> : null}
 
         <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
           <div className="overflow-x-auto">
@@ -355,16 +403,22 @@ export function AmountsOwedReport() {
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="w-[36%] px-5 py-3 text-left text-sm font-semibold text-slate-700">Member</th>
-                  <th className="w-[22%] px-4 py-3 text-center text-sm font-semibold text-slate-700">Current rate</th>
-                  <th className="w-[20%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Total hours</th>
-                  <th className="w-[22%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Amount</th>
+                  {visibleColumns.has("rate") ? (
+                    <th className="w-[22%] px-4 py-3 text-center text-sm font-semibold text-slate-700">Current rate</th>
+                  ) : null}
+                  {visibleColumns.has("hours") ? (
+                    <th className="w-[20%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Total hours</th>
+                  ) : null}
+                  {visibleColumns.has("amount") ? (
+                    <th className="w-[22%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Amount</th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => (
                   <Fragment key={group.date}>
                     <tr className="bg-slate-100">
-                      <td colSpan={4} className="px-5 py-2 text-sm font-medium text-slate-800">
+                      <td colSpan={1 + visibleColumns.size} className="px-5 py-2 text-sm font-medium text-slate-800">
                         {group.dateLabel}
                       </td>
                     </tr>
@@ -376,26 +430,36 @@ export function AmountsOwedReport() {
                             <span className="text-sm text-slate-800">{m.name}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-center text-sm text-slate-500">{m.rateLabel}</td>
-                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.hours}</td>
-                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.amount}</td>
+                        {visibleColumns.has("rate") ? (
+                          <td className="px-4 py-3 text-center text-sm text-slate-500">{m.rateLabel}</td>
+                        ) : null}
+                        {visibleColumns.has("hours") ? (
+                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.hours}</td>
+                        ) : null}
+                        {visibleColumns.has("amount") ? (
+                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.amount}</td>
+                        ) : null}
                       </tr>
                     ))}
                     <tr className="border-t-2 border-slate-200 bg-white font-semibold">
                       <td className="px-5 py-3 text-sm text-slate-900">Total</td>
-                      <td className="px-4 py-3" aria-label="Interactive control" />
-                      <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
-                        {sumHoursStrings(group.members.map((x) => x.hours))}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
-                        {sumAmountStrings(group.members.map((x) => x.amount))}
-                      </td>
+                      {visibleColumns.has("rate") ? <td className="px-4 py-3" /> : null}
+                      {visibleColumns.has("hours") ? (
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
+                          {sumHoursStrings(group.members.map((x) => x.hours))}
+                        </td>
+                      ) : null}
+                      {visibleColumns.has("amount") ? (
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
+                          {sumAmountStrings(group.members.map((x) => x.amount))}
+                        </td>
+                      ) : null}
                     </tr>
                   </Fragment>
                 ))}
                 {groups.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-4 py-12 text-center text-sm text-slate-500">
+                    <td colSpan={1 + visibleColumns.size} className="px-4 py-12 text-center text-sm text-slate-500">
                       No tracked time in this date range.
                     </td>
                   </tr>
@@ -427,6 +491,11 @@ export function AmountsOwedReport() {
                 className="absolute right-4 top-28 z-110 max-h-[calc(100%-9rem)]"
                 onClose={() => setShowFilters(false)}
                 onScheduleReport={() => setScheduleDialogOpen(true)}
+                options={filterOptions}
+                selectedMemberIds={selectedMemberIds}
+                onSelectedMemberIdsChange={setSelectedMemberIds}
+                selectedProjectIds={selectedProjectIds}
+                onSelectedProjectIdsChange={setSelectedProjectIds}
               />
             </>
           )}
