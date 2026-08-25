@@ -2,7 +2,14 @@ import { requireAuthContext, isManagementRole } from "../../http/auth-context.js
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { logSafeError } from "../../http/sanitize-error.js";
-import { getAllCategories, setCategory, removeCategory, getUnclassifiedReviewQueue } from "./activity-categories.js";
+import {
+  getAllCategories,
+  setCategory,
+  removeCategory,
+  getUnclassifiedReviewQueue,
+  canClassifyActivity,
+  CLASSIFY_DENIED_MESSAGE,
+} from "./activity-categories.js";
 import { getFocusedTimeSummary } from "./focused-time.js";
 
 const ERROR_STATUS = {
@@ -72,8 +79,8 @@ export async function routeClassification(req, res, url, origin) {
   if (pn === "/api/classification/categories" && req.method === "POST") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    if (!isManagementRole(viewer.roleName)) {
-      sendJson(res, origin, 403, { success: false, error: "Only management may change app/domain classification." });
+    if (!canClassifyActivity(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: CLASSIFY_DENIED_MESSAGE });
       return true;
     }
     let body;
@@ -109,8 +116,8 @@ export async function routeClassification(req, res, url, origin) {
   if (pn.startsWith("/api/classification/categories/") && req.method === "DELETE") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    if (!isManagementRole(viewer.roleName)) {
-      sendJson(res, origin, 403, { success: false, error: "Only management may change app/domain classification." });
+    if (!canClassifyActivity(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: CLASSIFY_DENIED_MESSAGE });
       return true;
     }
     const id = pn.slice("/api/classification/categories/".length).split("/")[0];
@@ -134,8 +141,10 @@ export async function routeClassification(req, res, url, origin) {
   if (pn === "/api/classification/review-queue" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    if (!isManagementRole(viewer.roleName)) {
-      sendJson(res, origin, 403, { success: false, error: "Only management may view the classification review queue." });
+    // Same set as the writes: this list exists to feed the classify dialog,
+    // and there is no point showing it to someone who cannot act on it.
+    if (!canClassifyActivity(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: CLASSIFY_DENIED_MESSAGE });
       return true;
     }
     const sinceDays = Number(url.searchParams.get("sinceDays")) || undefined;

@@ -1,12 +1,12 @@
 "use client"
 
-import { useCallback, useMemo, useRef } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
-import { canExportActivity } from "@/features/auth"
+import { canClassifyActivity, canExportActivity } from "@/features/auth"
 import { motion } from "framer-motion"
-import { Clock, Monitor, TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Clock, Monitor, Tag, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
 import {
@@ -15,6 +15,14 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { ClassificationDialog } from "@/features/activity/components/classification-dialog"
+import {
+  activityCategoryBadgeClass,
+  activityCategoryColor,
+  activityCategoryLabel,
+  normalizeActivityCategory,
+  type ActivityCategory,
+} from "@/features/activity/utils/activity-categories"
 import { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
 import { TablePagination } from "@/shared/tables/ui"
 
@@ -23,7 +31,7 @@ const ACTIVITY_TABLE_ROWS_PER_PAGE = 10
 interface AppUsage {
   id: string
   name: string
-  category: "productive" | "neutral" | "unproductive"
+  category: ActivityCategory
   totalTime: string
   percentage: number
   trend: "up" | "down" | "neutral"
@@ -42,23 +50,20 @@ interface MemberAppUsage {
   topApp: string
 }
 
-const getCategoryColor = (category: string) => {
-  if (category === "productive") return "bg-emerald-500"
-  if (category === "neutral") return "bg-slate-400"
-  return "bg-rose-500"
-}
-
-const getCategoryBgColor = (category: string) => {
-  if (category === "productive") return "bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80"
-  if (category === "neutral") return "bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80"
-  return "bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/80"
-}
+// Category styling now lives in activity-categories.ts, shared with the URLs
+// page and the classify dialog - these three used to disagree about what an
+// unclassified row looks like, and about whether "not productive" is called
+// "unproductive" or "distracting".
+const getCategoryColor = activityCategoryColor
+const getCategoryBgColor = activityCategoryBadgeClass
 
 type AppsFeed = { apps: AppUsage[]; members: MemberAppUsage[] }
 
 export function ActivityAppsContent() {
   const { memberRole } = useAuth()
   const canExport = canExportActivity(memberRole)
+  const canClassify = canClassifyActivity(memberRole)
+  const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, sortOrder } = useActivityShell()
   const { data: feed, loading, reload } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
 
@@ -67,6 +72,9 @@ export function ActivityAppsContent() {
       (feed?.apps ?? []).map((app) => ({
         ...app,
         name: formatActivityAppName(app.name),
+        /** Raw name is what activity_categories keys on; `name` is prettified. */
+        pattern: app.name,
+        category: normalizeActivityCategory(app.category),
       })),
     [feed?.apps],
   )
@@ -100,7 +108,7 @@ export function ActivityAppsContent() {
     const sessionCount = appsSource.reduce((sum, app) => sum + app.sessions, 0)
     const productive = appsSource.filter((a) => a.category === "productive").length
     const neutral = appsSource.filter((a) => a.category === "neutral").length
-    const unproductive = appsSource.filter((a) => a.category === "unproductive").length
+    const unproductive = appsSource.filter((a) => a.category === "distracting").length
     return { appCount: appsSource.length, sessionCount, productive, neutral, unproductive }
   }, [appsSource])
 
@@ -182,6 +190,18 @@ export function ActivityAppsContent() {
 
   return (
     <>
+      {canClassify ? (
+        <ClassificationDialog
+          open={classifyOpen}
+          onOpenChange={setClassifyOpen}
+          matchType="app"
+          items={appsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category }))}
+          onSaved={() => {
+            void reload({ force: true })
+          }}
+        />
+      ) : null}
+
       {loading ? <ActivityLoadingState label="Loading app activity…" /> : null}
 
       {!loading && showDayEmpty ? (
@@ -197,6 +217,18 @@ export function ActivityAppsContent() {
           <ActivitySection
             title="Application records"
             description={`${filteredApps.length} app${filteredApps.length !== 1 ? "s" : ""} tracked for ${day.selectedDayLabel}`}
+            action={
+              canClassify ? (
+                <button
+                  type="button"
+                  onClick={() => setClassifyOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+                >
+                  <Tag className="h-3.5 w-3.5" />
+                  Classify apps
+                </button>
+              ) : null
+            }
           >
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -255,11 +287,11 @@ export function ActivityAppsContent() {
                         <td className="px-5 py-4">
                           <span
                             className={cn(
-                              "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize tracking-tight",
+                              "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold tracking-tight",
                               getCategoryBgColor(app.category),
                             )}
                           >
-                            {app.category}
+                            {activityCategoryLabel(app.category)}
                           </span>
                         </td>
                       </motion.tr>

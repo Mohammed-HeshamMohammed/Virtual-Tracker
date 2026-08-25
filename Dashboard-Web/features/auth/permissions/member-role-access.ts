@@ -257,6 +257,19 @@ export function canManageActivityData(role: string): boolean {
   return isManagementRole(role)
 }
 
+/**
+ * Owner, Super Admin and Admin may label apps and URLs as productive or not.
+ * Deliberately narrower than `canManageActivityData` — a Manager is management
+ * for approvals and scheduling, but classification is an org-wide policy call
+ * that moves everyone's reported focused time. Mirrors Backend
+ * `canClassifyActivity` in modules/classification/activity-categories.js, which
+ * enforces it; this only decides whether the button is worth showing.
+ */
+export function canClassifyActivity(role: string): boolean {
+  const key = normalizeMemberRole(role)
+  return key === "owner" || key === "superadmin" || key === "admin"
+}
+
 /** Default landing page after sign-in — dashboard first for every role. */
 export function defaultNavItemForRole(_role: string): string {
   return "command-center"

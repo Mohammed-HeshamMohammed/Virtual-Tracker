@@ -1,4 +1,4 @@
-import { isManagementRole } from "../../http/auth-context.js";
+import { normalizeRoleKey } from "../members/services/relation-sync.js";
 import {
   getAllCategoriesPg,
   getCategoryPg,
@@ -12,6 +12,22 @@ import {
 
 export const CATEGORIES = Object.freeze(["productive", "neutral", "distracting", "unclassified"]);
 export const MATCH_TYPES = Object.freeze(["app", "domain"]);
+
+/**
+ * Who may label an app or domain. Narrower than isManagementRole on purpose:
+ * Manager and Super Manager are management for scheduling and approvals, but
+ * "is this app productive" is an org-wide policy call that changes everyone's
+ * reported focused time, so it stays with Owner, Super Admin and Admin -
+ * the same set canMigrateMembers uses.
+ * @param {string} roleName
+ */
+export function canClassifyActivity(roleName) {
+  const key = normalizeRoleKey(roleName);
+  return key === "owner" || key === "superadmin" || key === "admin";
+}
+
+export const CLASSIFY_DENIED_MESSAGE =
+  "Only Owner, Super Admin, or Admin can classify apps and URLs.";
 
 function normalizeRow(row) {
   return {
@@ -59,8 +75,8 @@ export async function setCategory(input, actor) {
     err.code = "UNKNOWN_CATEGORY";
     throw err;
   }
-  if (!isManagementRole(actor?.roleName)) {
-    const err = new Error("Only management may change app/domain classification.");
+  if (!canClassifyActivity(actor?.roleName)) {
+    const err = new Error(CLASSIFY_DENIED_MESSAGE);
     err.code = "FORBIDDEN";
     throw err;
   }
@@ -77,8 +93,8 @@ export async function setCategory(input, actor) {
 
 /** @param {string} id @param {{ memberId: string, roleName: string }} actor */
 export async function removeCategory(id, actor) {
-  if (!isManagementRole(actor?.roleName)) {
-    const err = new Error("Only management may change app/domain classification.");
+  if (!canClassifyActivity(actor?.roleName)) {
+    const err = new Error(CLASSIFY_DENIED_MESSAGE);
     err.code = "FORBIDDEN";
     throw err;
   }
