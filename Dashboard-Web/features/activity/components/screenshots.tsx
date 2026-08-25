@@ -44,7 +44,12 @@ export interface Screenshot {
   id: string
   member: string
   avatar: string
+  /** Task title when the session tracked a task, else the project name. */
   project: string
+  /** "Task" or "Project" - which of the two `project` holds. */
+  contextLabel?: string
+  taskTitle?: string
+  projectName?: string
   capturedAt?: string
   timestamp: string
   time: string
@@ -592,7 +597,7 @@ export function ActivityScreenshots() {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    Task: {screenshot.project}
+                    {screenshot.contextLabel ?? "Task"}: {screenshot.project}
                   </span>
                   <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">
                     {formatActivityAppName(screenshot.activeApp)}
@@ -628,7 +633,7 @@ export function ActivityScreenshots() {
           <table className="w-full">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-100 dark:border-slate-800">
-                {["Member", "Time", "Task", "App", "Activity"].map((h) => (
+                {["Member", "Time", "Task / Project", "App", "Activity"].map((h) => (
                   <th key={h} className="text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider px-5 py-3">{h}</th>
                 ))}
                 {canManage ? (
