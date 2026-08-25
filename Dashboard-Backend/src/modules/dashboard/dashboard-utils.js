@@ -83,6 +83,13 @@ export function buildTrendPaths(values) {
 }
 
 export function budgetSpent(total, row) {
+  // `spent` is the real figure, computed by computeProjectSpentForAllPg in
+  // dashboard-base-loader.js (same source the Projects Overview page uses).
+  // The _seedBudgetSpentPct fallback below is a Firestore-era demo fixture
+  // field; it was the ONLY thing read here, so every dashboard budget stat
+  // sat at 0% for any real org.
+  const spent = num(row, "spent");
+  if (spent > 0) return spent;
   const pct = num(row, "_seedBudgetSpentPct", "seedBudgetSpentPct");
   if (pct > 0 && total > 0) return Math.round(total * Math.min(pct, 1));
   return 0;

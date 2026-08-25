@@ -1,5 +1,4 @@
 import type { WorkSessionGroupBy, WorkSessionRow, WorkSessionScope } from "@/features/reports/models/work-sessions"
-import { WORK_SESSIONS_ME_MEMBER_NAME } from "@/features/reports/components/shared/constants"
 import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
 
 export function formatWorkSessionDuration(totalSec: number): string {
@@ -31,13 +30,18 @@ export function filterWorkSessions(
     rangeEnd: Date
     projectNames: Set<string> | null
     memberNames: Set<string> | null
+    /** Signed-in member, for the "me" scope. */
+    viewerMemberId: string | null
   }
 ): WorkSessionRow[] {
   const rs = new Date(opts.rangeStart)
   const re = new Date(opts.rangeEnd)
   return rows.filter((r) => {
     if (!inDateRange(r.date, rs, re)) return false
-    if (opts.scope === "me" && r.memberName !== WORK_SESSIONS_ME_MEMBER_NAME) return false
+    // "Me" means the signed-in member. This used to compare memberName
+    // against a hardcoded developer's name, so the tab was empty for
+    // literally everyone else.
+    if (opts.scope === "me" && (!opts.viewerMemberId || r.memberId !== opts.viewerMemberId)) return false
     if (opts.projectNames !== null) {
       if (opts.projectNames.size === 0) return false
       if (!opts.projectNames.has(r.projectName)) return false

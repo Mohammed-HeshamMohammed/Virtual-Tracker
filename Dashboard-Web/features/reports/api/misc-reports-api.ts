@@ -91,6 +91,7 @@ export async function fetchPaymentsReport(range: { from: string; to: string }): 
 
 interface RawWorkSession {
   id: string
+  memberId: string
   memberName: string
   projectName: string
   taskTitle: string
@@ -124,6 +125,7 @@ export async function fetchWorkSessionsReport(range: { from: string; to: string 
       projectName,
       projectLetter: (projectName[0] ?? "?").toUpperCase(),
       projectColor: colorForProject(projectName),
+      memberId: s.memberId,
       memberName: s.memberName,
       memberInitials: initialsFor(s.memberName),
       todoJob: s.taskTitle || "",

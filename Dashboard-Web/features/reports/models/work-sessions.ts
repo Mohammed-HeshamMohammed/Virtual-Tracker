@@ -11,6 +11,7 @@ export interface WorkSessionRow {
   projectLetter: string
   /** CSS color for project badge. */
   projectColor: string
+  memberId: string
   memberName: string
   memberInitials: string
   todoJob: string
