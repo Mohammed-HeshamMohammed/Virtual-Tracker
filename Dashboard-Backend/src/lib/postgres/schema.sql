@@ -281,21 +281,64 @@ CREATE INDEX IF NOT EXISTS idx_member_rel_parent ON member_relationships (parent
 
 CREATE INDEX IF NOT EXISTS idx_member_rel_child ON member_relationships (child_member_id);
 
+-- Emailed-token transfer invitations (transfer-request.service.js). The
+-- original columns here described a parent-reassignment request that no code
+-- ever wrote; the live feature was still on Firestore behind this name.
 CREATE TABLE IF NOT EXISTS member_transfer_requests (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  member_id         UUID NOT NULL,
-  from_parent_id    UUID,
-  to_parent_id      UUID NOT NULL,
-  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-  requested_by      UUID,
-  resolved_by       UUID,
-  resolved_at       TIMESTAMPTZ,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_member_id   UUID NOT NULL,
+  target_member_id      UUID,
+  target_email          VARCHAR(255) NOT NULL DEFAULT '',
+  token                 VARCHAR(128),
+  status                VARCHAR(20) NOT NULL DEFAULT 'pending',
+  expires_at            TIMESTAMPTZ,
+  responded_at          TIMESTAMPTZ,
+  completed_at          TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_member_transfer_member ON member_transfer_requests (member_id);
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS requester_member_id UUID;
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_member_id UUID;
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_email VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS token VARCHAR(128);
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ;
+ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS member_id;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS from_parent_id;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS to_parent_id;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS requested_by;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_by;
+ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_at;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_member_transfer_token
+     ON member_transfer_requests (token) WHERE token IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_member_transfer_target ON member_transfer_requests (target_member_id);
 
 CREATE INDEX IF NOT EXISTS idx_member_transfer_status ON member_transfer_requests (status);
+
+-- Account-deactivation workflow (auth/account-deactivation.js), previously
+-- Firestore-only with no Postgres table of any shape.
+CREATE TABLE IF NOT EXISTS deactivation_requests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id       UUID NOT NULL,
+  firebase_uid    VARCHAR(128) NOT NULL DEFAULT '',
+  member_email    VARCHAR(255) NOT NULL DEFAULT '',
+  member_name     VARCHAR(255) NOT NULL DEFAULT '',
+  role_name       VARCHAR(60) NOT NULL DEFAULT '',
+  governance      VARCHAR(40) NOT NULL DEFAULT '',
+  status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+  source          VARCHAR(40) NOT NULL DEFAULT '',
+  resolved_by     UUID,
+  resolved_at     TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_deactivation_status ON deactivation_requests (status);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_deactivation_pending_member
+     ON deactivation_requests (member_id) WHERE status = 'pending';
 
 CREATE TABLE IF NOT EXISTS members_field_data (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

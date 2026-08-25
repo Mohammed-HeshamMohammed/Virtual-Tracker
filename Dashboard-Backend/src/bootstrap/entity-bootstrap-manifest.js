@@ -15,7 +15,6 @@ export const ENTITY_BOOTSTRAP_MANIFEST = [
 
   // --- Members domain (org + per-member) ---
   { collection: "roles", entityKey: "roles", policy: "org_seed", notes: "Default Owner to Viewer (9 roles)" },
-  { collection: "member_auth_index", policy: "auth_flow", notes: "firebase_uid → members.id (prevents duplicate members)" },
   { collection: "member_onboarding", entityKey: "member-onboarding", policy: "member_ensure" },
   { collection: "invites", entityKey: "invites", policy: "on_demand" },
   { collection: "invite_projects", entityKey: "invite-projects", policy: "on_demand" },

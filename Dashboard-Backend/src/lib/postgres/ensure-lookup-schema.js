@@ -375,19 +375,66 @@ END $$`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_member_rel_parent ON member_relationships (parent_member_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_member_rel_child ON member_relationships (child_member_id)`,
+  // Shape reconciled with the feature that actually runs (transfer-request
+  // .service.js). The original columns described a parent-reassignment
+  // request; the live flow is an emailed token invitation - requester,
+  // target email, token, expiry. Same table name, different design, which is
+  // exactly why a name-based audit read this as "already migrated" while
+  // every create/accept/decline still wrote Firestore.
   `CREATE TABLE IF NOT EXISTS member_transfer_requests (
-  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  member_id         UUID NOT NULL,
-  from_parent_id    UUID,
-  to_parent_id      UUID NOT NULL,
-  status            VARCHAR(20) NOT NULL DEFAULT 'pending',
-  requested_by      UUID,
-  resolved_by       UUID,
-  resolved_at       TIMESTAMPTZ,
-  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  requester_member_id   UUID NOT NULL,
+  target_member_id      UUID,
+  target_email          VARCHAR(255) NOT NULL DEFAULT '',
+  token                 VARCHAR(128),
+  status                VARCHAR(20) NOT NULL DEFAULT 'pending',
+  expires_at            TIMESTAMPTZ,
+  responded_at          TIMESTAMPTZ,
+  completed_at          TIMESTAMPTZ,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  `CREATE INDEX IF NOT EXISTS idx_member_transfer_member ON member_transfer_requests (member_id)`,
+  // Existing databases carry the old shape. No rows were ever written to it
+  // (nothing in the codebase referenced these columns), so the legacy ones
+  // are dropped rather than left NOT NULL and blocking every insert.
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS requester_member_id UUID`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_member_id UUID`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_email VARCHAR(255) NOT NULL DEFAULT ''`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS token VARCHAR(128)`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS responded_at TIMESTAMPTZ`,
+  `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS member_id`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS from_parent_id`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS to_parent_id`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS requested_by`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_by`,
+  `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_at`,
+  // Token is cleared on accept/decline, so the uniqueness only has to hold
+  // for live invitations - a partial index, not a column constraint.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_transfer_token ON member_transfer_requests (token) WHERE token IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_member_transfer_target ON member_transfer_requests (target_member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_member_transfer_status ON member_transfer_requests (status)`,
+  // Account-deactivation workflow (auth/account-deactivation.js). Never had a
+  // Postgres table at all - submit/list-pending/approve-reject all ran against
+  // Firestore, and this page-level audit missed it because the collection name
+  // matched nothing in the catalog.
+  `CREATE TABLE IF NOT EXISTS deactivation_requests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id       UUID NOT NULL,
+  firebase_uid    VARCHAR(128) NOT NULL DEFAULT '',
+  member_email    VARCHAR(255) NOT NULL DEFAULT '',
+  member_name     VARCHAR(255) NOT NULL DEFAULT '',
+  role_name       VARCHAR(60) NOT NULL DEFAULT '',
+  governance      VARCHAR(40) NOT NULL DEFAULT '',
+  status          VARCHAR(20) NOT NULL DEFAULT 'pending',
+  source          VARCHAR(40) NOT NULL DEFAULT '',
+  resolved_by     UUID,
+  resolved_at     TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_deactivation_status ON deactivation_requests (status)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_deactivation_pending_member
+     ON deactivation_requests (member_id) WHERE status = 'pending'`,
   // ─── Miscellaneous member-adjacent (migrated from Firestore) ────────────
   `CREATE TABLE IF NOT EXISTS members_field_data (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),

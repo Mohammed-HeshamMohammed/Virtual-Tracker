@@ -1,7 +1,8 @@
-// Firestore collections still in use. Profile extensions (employment, limits, …) are in Postgres — member-data-store.js.
+// Firestore collection names. Only User_profiles still stores anything -
+// everything else here is either a name the mobile-app lint script matches
+// against, or the legacy projects name kept for the bootstrap manifest.
 export const COLLECTIONS = Object.freeze({
   members: "members",
-  memberAuthIndex: "member_auth_index",
   memberRelationships: "member_relationships",
   memberTransferRequests: "member_transfer_requests",
   roles: "roles",
@@ -22,26 +23,3 @@ export const MOBILE_APP_COLLECTIONS = Object.freeze([
   "candidates",
   "projects",
 ]);
-
-/** Invalid under members/{memberId} — includes tables we moved to Postgres. */
-export const INVALID_MEMBER_SUBCOLLECTIONS = Object.freeze([
-  "employment",
-  "pay_rates",
-  "time_settings",
-  "limits",
-  "member_onboarding",
-  "member_relationships",
-  "member_tree_cache",
-  "members",
-  "system_meta",
-  "member_bans",
-  "device_bans",
-]);
-
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {keyof typeof COLLECTIONS} key
- */
-export function topCollection(db, key) {
-  return db.collection(COLLECTIONS[key]);
-}

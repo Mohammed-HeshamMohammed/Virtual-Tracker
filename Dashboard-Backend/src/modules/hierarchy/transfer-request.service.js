@@ -19,7 +19,9 @@ import {
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
-const COLLECTION = "member_transfer_requests";
+const TABLE = "member_transfer_requests";
+const TRANSFER_COLUMNS =
+  "id, requester_member_id, target_member_id, target_email, token, status, expires_at, responded_at, completed_at, created_at";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -51,15 +53,32 @@ function isTransferExpired(row) {
 }
 
 /**
- * @param {import("firebase-admin/firestore").Firestore} db
+ * `db` is unused - transfer requests are Postgres rows now.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} token
  */
-async function findTransferByToken(db, token) {
+async function findTransferByToken(_db, token) {
   if (!token || typeof token !== "string" || token.length < 32) return null;
-  const q = await db.collection(COLLECTION).where("token", "==", token).limit(1).get();
-  if (q.empty) return null;
-  const doc = q.docs[0];
-  return { id: doc.id, ref: doc.ref, data: doc.data() || {} };
+  const rows = await pgQuery(`SELECT ${TRANSFER_COLUMNS} FROM ${TABLE} WHERE token = $1 LIMIT 1`, [token]);
+  if (!rows.length) return null;
+  const data = rows[0];
+  return { id: data.id, data, update: (patch) => updateTransferRow(data.id, patch) };
+}
+
+/**
+ * Partial update by id, mirroring the `ref.update({...})` the Firestore
+ * version used - same call shape at every site, one statement here.
+ * @param {string} id
+ * @param {Record<string, unknown>} patch
+ */
+async function updateTransferRow(id, patch) {
+  const entries = Object.entries(patch);
+  if (!entries.length) return;
+  const sets = entries.map(([column], i) => `${column} = $${i + 2}`);
+  await pgQuery(
+    `UPDATE ${TABLE} SET ${sets.join(", ")} WHERE id = $1`,
+    [id, ...entries.map(([, value]) => value)],
+  );
 }
 
 /**
@@ -157,21 +176,19 @@ export async function createMemberTransferRequest(db, {
     return { ok: false, httpStatus: 400, error: "You cannot send a transfer request to yourself." };
   }
 
-  const pendingQuery = await db
-    .collection(COLLECTION)
-    .where("target_member_id", "==", targetMember.id)
-    .where("requester_member_id", "==", requesterMemberId)
-    .where("status", "==", "pending")
-    .limit(1)
-    .get();
+  const pendingRows = await pgQuery(
+    `SELECT ${TRANSFER_COLUMNS} FROM ${TABLE}
+      WHERE target_member_id = $1 AND requester_member_id = $2 AND status = 'pending'
+      LIMIT 1`,
+    [targetMember.id, requesterMemberId],
+  );
 
-  if (!pendingQuery.empty) {
-    const existing = pendingQuery.docs[0];
-    const row = existing.data();
+  if (pendingRows.length) {
+    const row = pendingRows[0];
     const transferUrl = buildTransferRequestUrl(row.token, appOrigin);
     return {
       ok: true,
-      id: existing.id,
+      id: row.id,
       token: row.token,
       transfer_url: transferUrl,
       status: "pending",
@@ -184,20 +201,12 @@ export async function createMemberTransferRequest(db, {
   const expiresAt = defaultTransferExpiry();
   const now = new Date();
 
-  const row = {
-    id,
-    requester_member_id: requesterMemberId,
-    target_email: email,
-    target_member_id: targetMember.id,
-    token,
-    status: "pending",
-    expires_at: expiresAt,
-    created_at: now,
-    responded_at: null,
-    completed_at: null,
-  };
-
-  await db.collection(COLLECTION).doc(id).set(row);
+  await pgQuery(
+    `INSERT INTO ${TABLE}
+       (id, requester_member_id, target_member_id, target_email, token, status, expires_at, created_at)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7)`,
+    [id, requesterMemberId, targetMember.id, email, token, expiresAt, now],
+  );
 
   const transferUrl = buildTransferRequestUrl(token, appOrigin);
   const requesterName = await getRequesterDisplayName(db, requesterMemberId);
@@ -251,7 +260,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
   }
 
   if (isTransferExpired(row)) {
-    await found.ref.update({ status: "expired", responded_at: new Date() });
+    await found.update({ status: "expired", responded_at: new Date() });
     return { ok: false, httpStatus: 410, error: "This invitation has expired." };
   }
 
@@ -268,7 +277,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
   const existingParent = await getMemberParentId(db, acceptorMemberId);
 
   if (existingParent && existingParent !== requesterId) {
-    await found.ref.update({ status: "declined", responded_at: new Date() });
+    await found.update({ status: "declined", responded_at: new Date() });
     await createNotification(db, {
       recipient_id: requesterId,
       type: "transfer_declined",
@@ -297,7 +306,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
   await syncMemberHierarchyStatus(db, acceptorMemberId, roleName);
 
   const now = new Date();
-  await found.ref.update({
+  await found.update({
     status: "completed",
     responded_at: now,
     completed_at: now,
@@ -347,7 +356,7 @@ export async function declineMemberTransferRequest(db, { token, declinerMemberId
     return { ok: false, httpStatus: 403, error: "This invitation is not for your account." };
   }
 
-  await found.ref.update({ status: "declined", responded_at: new Date(), token: null });
+  await found.update({ status: "declined", responded_at: new Date(), token: null });
 
   await createNotification(db, {
     recipient_id: row.requester_member_id,
@@ -399,4 +408,4 @@ function maskEmail(email) {
   return `${masked}@${domain}`;
 }
 
-export { COLLECTION as TRANSFER_REQUESTS_COLLECTION, TRANSFER_EXPIRY_MS };
+export { TABLE as TRANSFER_REQUESTS_TABLE, TRANSFER_EXPIRY_MS };

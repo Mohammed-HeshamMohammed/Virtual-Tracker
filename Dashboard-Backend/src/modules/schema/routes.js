@@ -24,7 +24,7 @@ import {
   TEAM_MEMBER_ASSIGN_DENIED_MESSAGE,
 } from "../../http/team-member-assign-policy.js";
 import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-budget-notify.js";
-import { deleteTaskWithChildren, isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
+import { isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
@@ -601,13 +601,12 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         }
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        if (parsed.key === "tasks") {
-          // task_assignments/comments/subtasks/attachments/hours are all real
-          // Postgres tables now with task_id ON DELETE CASCADE, so deleting
-          // the tasks row below cleans those up for free - this only needs
-          // to delete the vestigial Firestore tasks doc mirror.
-          await deleteTaskWithChildren(db, parsed.id);
-        }
+        // No child cleanup here on purpose: task_assignments, comments,
+        // subtasks, attachments and hours are all Postgres tables with
+        // task_id ON DELETE CASCADE, so deleting the tasks row below takes
+        // them with it. The Firestore tasks-doc delete that used to run first
+        // is gone with the last of that mirror - nothing has written a task
+        // doc there since the domain moved.
         await deletePostgresRow(parsed.key, parsed.id);
         sendJson(res, origin, 200, { success: true, data: { id: parsed.id, deleted: true } });
         return true;

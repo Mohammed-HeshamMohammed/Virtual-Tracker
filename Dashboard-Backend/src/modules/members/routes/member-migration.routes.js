@@ -13,7 +13,6 @@ import { promotePendingMemberCore } from "./member-invites.routes.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
 import { getMemberByFirebaseUidPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-const MEMBER_AUTH_INDEX = "member_auth_index";
 const MOBILE_USERS_COLLECTION = "users";
 const MAX_MIGRATE_BATCH = 100;
 const MIGRATABLE_PAGE_SIZE = 1000;
@@ -95,18 +94,19 @@ function toMigratableRow(u, profile) {
 }
 
 /**
- * True if this uid is already a member, already indexed, or already pending —
- * i.e. not a valid Migrate candidate.
- * @param {import("firebase-admin/firestore").Firestore} db
+ * True if this uid is already a member or already pending - i.e. not a valid
+ * Migrate candidate. The third check this used to run, a member_auth_index
+ * doc lookup, is gone: the members table's unique firebase_uid index replaced
+ * that collection, and nothing has written a doc to it since.
+ * @param {import("firebase-admin/firestore").Firestore} _db
  * @param {string} uid
  */
-async function isUidAlreadyLinked(db, uid) {
-  const [member, indexSnap, pendingRows] = await Promise.all([
+async function isUidAlreadyLinked(_db, uid) {
+  const [member, pendingRows] = await Promise.all([
     getMemberByFirebaseUidPg(uid),
-    db.collection(MEMBER_AUTH_INDEX).doc(uid).get(),
     pgQuery("SELECT 1 FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]),
   ]);
-  return Boolean(member) || indexSnap.exists || pendingRows.length > 0;
+  return Boolean(member) || pendingRows.length > 0;
 }
 
 /**
