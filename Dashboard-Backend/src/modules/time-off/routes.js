@@ -7,6 +7,7 @@
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canManageMember } from "../../http/authorization.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 import { sendJson } from "../../http/response.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
@@ -185,6 +186,13 @@ export async function routeTimeOff(req, res, url, db, origin) {
   }
 
   if (pn === "/api/time-off/requests" && req.method === "POST") {
+    // Time off is staff leave. A client has no policy, no balance and nobody
+    // to approve them, so a request from one only ever produces a row nobody
+    // can action. The UI hides the page from them; this refuses it outright.
+    if (normalizeRoleKey(viewer.roleName) === "client") {
+      sendJson(res, origin, 403, { success: false, error: "Clients do not request time off." });
+      return true;
+    }
     let body;
     try {
       body = await readJsonBody(req);

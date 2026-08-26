@@ -35,10 +35,17 @@ mock.module("../src/lib/postgres/client.js", {
       const next = responses.shift();
       return next?.rows ?? [];
     },
+    __closePostgresPoolForTests: async () => null,
+    isPostgresConfigured: () => true,
+    probePostgresReadiness: async () => null,
+    withTransaction: async () => null,
   },
 });
 mock.module("../src/http/sanitize-error.js", {
-  namedExports: { logSafeWarn: () => {}, logSafeError: () => {} },
+  namedExports: { logSafeWarn: () => {}, logSafeError: () => {},
+    formatErrorForLog: async () => null,
+    sanitizeErrorMessage: async () => null,
+  },
 });
 
 const { updatePgSession } = await import(

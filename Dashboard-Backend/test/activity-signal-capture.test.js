@@ -28,10 +28,17 @@ mock.module("../src/lib/postgres/client.js", {
     // task-member-progress.service.js (imported transitively for
     // parseProgressUuid) calls the higher-level query() helper directly.
     query: async () => [],
+    __closePostgresPoolForTests: async () => null,
+    isPostgresConfigured: () => true,
+    probePostgresReadiness: async () => null,
+    withTransaction: async () => null,
   },
 });
 mock.module("../src/http/sanitize-error.js", {
-  namedExports: { logSafeWarn: () => {}, logSafeError: () => {} },
+  namedExports: { logSafeWarn: () => {}, logSafeError: () => {},
+    formatErrorForLog: async () => null,
+    sanitizeErrorMessage: async () => null,
+  },
 });
 
 const { insertActivityScreenshot, insertActivityAppLog } = await import(

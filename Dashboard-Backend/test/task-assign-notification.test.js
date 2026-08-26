@@ -15,6 +15,9 @@ mock.module("../src/lib/postgres/tasks-postgres.service.js", {
     getTaskPg: async () => stub.task,
     updateTaskPg: async () => stub.task,
     listTasksPg: async () => [],
+    createTaskPg: async () => null,
+    deleteTaskPg: async () => null,
+    getTasksByIdsPg: async () => null,
   },
 });
 
@@ -36,6 +39,7 @@ mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
     listAllAssignmentsPg: async () => [],
     sumActiveAssignmentSecondsPg: async () => 0,
     getInReviewAssignmentsForTaskPg: async () => [],
+    hasAssignmentPg: async () => null,
   },
 });
 
@@ -45,15 +49,27 @@ mock.module("../src/modules/notifications/service.js", {
       stub.notified.push(payload);
       return "n1";
     },
+    listNotificationsForMember: async () => [],
+    markAllNotificationsAsRead: async () => null,
+    markNotificationAsRead: async () => null,
   },
 });
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
-  namedExports: { validateAssigneeWorkLimits: async () => null },
+  namedExports: { validateAssigneeWorkLimits: async () => null,
+    computeEffectiveDailyCap: async () => null,
+    getMemberLimitHours: async () => null,
+    memberUsesShiftsForLimits: async () => null,
+  },
 });
 
 mock.module("../src/modules/tasks/task-time-tracking.js", {
-  namedExports: { aggregateTaskProgress: async () => null },
+  namedExports: { aggregateTaskProgress: async () => null,
+    getManagementTaskTrackingRows: async () => null,
+    getTaskTimeTracking: async () => null,
+    reviewTaskTracking: async () => null,
+    syncTaskTimeTracking: async () => null,
+  },
 });
 
 const { syncTaskAssignments } = await import("../src/modules/tasks/task-assignments.js");

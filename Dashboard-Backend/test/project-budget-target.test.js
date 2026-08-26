@@ -16,6 +16,11 @@ mock.module("../src/lib/postgres/client.js", {
       if (sql.includes("FROM client_budgets")) return stub.rows.clientBudgets ?? [];
       return [];
     },
+    __closePostgresPoolForTests: async () => null,
+    getPostgresPool: async () => null,
+    isPostgresConfigured: () => true,
+    probePostgresReadiness: async () => null,
+    withTransaction: async () => null,
   },
 });
 
@@ -24,12 +29,50 @@ mock.module("../src/lib/postgres/member-data-store.js", {
     getSingleByMemberId: async (_db, _collection, memberId) => ({
       rate: stub.payRates[memberId] ?? 0,
     }),
+    createMemberBanRecord: async () => null,
+    deleteLimitsDoc: async () => null,
+    deleteMemberScopedRows: async () => null,
+    deleteMemberTreeCache: async () => null,
+    ensureLimitsDoc: async () => null,
+    ensureSingleByMemberId: async () => null,
+    fetchWeeklyLimitsForMembers: async () => null,
+    findActiveBanByEmail: async () => null,
+    findActiveBanByFirebaseUid: async () => null,
+    findActiveBanByMemberId: async () => null,
+    getMemberBanRecord: async () => null,
+    getMemberLimitHours: async () => null,
+    getMemberLimitsDoc: async () => null,
+    getMemberTreeCache: async () => null,
+    getSystemMetaDoc: async () => null,
+    isDevicePermanentlyBanned: async () => null,
+    listActiveMemberBans: async () => [],
+    memberUsesShiftsForLimits: async () => null,
+    patchMemberBanRecord: async () => null,
+    recordBanIpAndMaybeDeviceBan: async () => null,
+    setMemberTreeCache: async () => null,
+    setSystemMetaDoc: async () => null,
+    updateWorkLimitsConditional: async () => null,
+    upsertLimitField: async () => null,
+    upsertSingleByMemberId: async () => null,
+    upsertSingleByMemberIdConditional: async () => null,
   },
 });
 
 mock.module("../src/lib/postgres/clients-postgres.service.js", {
   namedExports: {
     getClientBudgetPg: async () => null,
+    createClientPg: async () => null,
+    deleteClientBudgetPg: async () => null,
+    deleteClientPg: async () => null,
+    getAllClientBudgetsPg: async () => [],
+    getClientAutomationStatePg: async () => null,
+    getClientInvoicingPg: async () => null,
+    getClientPg: async () => null,
+    listClientsPg: async () => [],
+    updateClientPg: async () => null,
+    upsertClientAutomationStatePg: async () => null,
+    upsertClientBudgetPg: async () => null,
+    upsertClientInvoicingPg: async () => null,
   },
 });
 

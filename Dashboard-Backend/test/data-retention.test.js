@@ -68,6 +68,10 @@ mock.module("../src/lib/gcs/upload.js", {
     deleteFromGCS: async (objectPath) => {
       deletedGcsObjects.push(objectPath);
     },
+    getPublicUrl: async () => null,
+    getSignedUrl: async () => null,
+    resolveGcsBucketName: async () => null,
+    uploadToGCS: async () => null,
   },
 });
 

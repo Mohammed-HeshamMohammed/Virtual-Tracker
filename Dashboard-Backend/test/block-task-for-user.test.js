@@ -17,6 +17,9 @@ mock.module("../src/lib/postgres/tasks-postgres.service.js", {
       return { ...stub.task, ...patch };
     },
     listTasksPg: async () => [],
+    createTaskPg: async () => null,
+    deleteTaskPg: async () => null,
+    getTasksByIdsPg: async () => null,
   },
 });
 
@@ -38,6 +41,7 @@ mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
     upsertAssignmentPg: async (row) => row,
     getInReviewAssignmentsForTaskPg: async () => [],
     sumActiveAssignmentSecondsPg: async () => 0,
+    hasAssignmentPg: async () => null,
   },
 });
 
@@ -46,6 +50,45 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     getProjectPg: async () => null,
     listProjectMembersPg: async () => [],
     listProjectIdsForMemberPg: async () => [],
+    addProjectMemberPg: async () => null,
+    archiveProjectPg: async () => null,
+    computeProjectBudgetTargetForAllPg: async () => null,
+    computeProjectBudgetTargetPg: async () => null,
+    computeProjectSpentCostPg: async () => null,
+    computeProjectSpentForAllPg: async () => null,
+    computeProjectSpentPg: async () => null,
+    countMembersByProjectPg: async () => null,
+    createProjectPg: async () => null,
+    deleteProjectMemberLimitPg: async () => null,
+    deleteProjectPg: async () => null,
+    deleteTeamProjectsForTeamPg: async () => null,
+    getAllProjectBudgetsPg: async () => [],
+    getAllProjectMemberLimitsPg: async () => [],
+    getDailyActivityTotalsPg: async () => null,
+    getMemberActivitySecondsPg: async () => null,
+    getMemberWeeklyCapacityPg: async () => null,
+    getProjectActivityMetricsPg: async () => null,
+    getProjectBudgetPg: async () => null,
+    getProjectMemberLimitPg: async () => null,
+    getProjectTrackedSecondsPg: async () => null,
+    linkClientProjectPg: async () => null,
+    linkTeamProjectPg: async () => null,
+    listClientIdsForProjectPg: async () => [],
+    listClientManagedProjectIdsPg: async () => new Set(),
+    listMemberIdsForProjectsPg: async () => [],
+    listProjectIdsForClientPg: async () => [],
+    listProjectIdsForTeamPg: async () => [],
+    listProjectMemberLimitsPg: async () => [],
+    listProjectsPg: async () => [],
+    listTeamIdsForProjectPg: async () => [],
+    listViewerProjectIdsPg: async () => [],
+    removeProjectMemberPg: async () => null,
+    resolveMemberHourlyRatePg: async () => null,
+    unlinkClientProjectPg: async () => null,
+    unlinkTeamProjectPg: async () => null,
+    updateProjectPg: async () => null,
+    upsertProjectBudgetPg: async () => null,
+    upsertProjectMemberLimitPg: async () => null,
   },
 });
 
@@ -76,14 +119,46 @@ mock.module("../src/lib/postgres/client.js", {
 // recipient lookups (getDirectParentIds, getProjectLeadershipIds via these
 // two) end up empty either way, so there's nothing left to notify.
 mock.module("../src/modules/member-relationships/service.js", {
-  namedExports: { getMemberAncestors: async () => [], getVisibleMemberIds: async () => [] },
+  namedExports: { getMemberAncestors: async () => [], getVisibleMemberIds: async () => [],
+    buildMemberTree: async () => null,
+    getConnectedMembers: async () => null,
+    getEmployeeHierarchyMemberIds: async () => [],
+    getManageableMemberIds: async () => [],
+    getManagerPeoplePageVisibleMemberIds: async () => [],
+    getManagerVisibleMemberIds: async () => [],
+    getMemberDescendants: async () => null,
+    getMemberParentId: async () => null,
+    getMemberRoot: async () => null,
+    getMemberTreePath: async () => null,
+    getMembersBySharedProjects: async () => null,
+    getTeamSubtreeMemberIds: async () => [],
+    getVisibleMembersForClient: async () => null,
+    isAncestorOf: async () => null,
+    recordMemberRelationship: async () => null,
+    removeMemberHierarchyRelationships: async () => null,
+    removeMemberParentEdge: async () => null,
+    repairMemberRelationshipIntegrity: async () => null,
+    resetMemberRelationshipsCacheForTests: async () => null,
+    resolveAvatarUrlsForMembers: async () => null,
+    updateTreeCache: async () => null,
+  },
 });
 mock.module("../src/modules/activity/activity-scope.js", {
-  namedExports: { resolveMemberRoleName: async () => "employee" },
+  namedExports: { resolveMemberRoleName: async () => "employee",
+    buildMemberMetaMap: async () => null,
+    getProjectScopedMemberIds: async () => [],
+    memberOptionsFromMeta: async () => null,
+    resolveActivityFeedScope: async () => null,
+  },
 });
 
 mock.module("../src/modules/tasks/task-time-tracking.js", {
-  namedExports: { aggregateTaskProgress: async () => null },
+  namedExports: { aggregateTaskProgress: async () => null,
+    getManagementTaskTrackingRows: async () => null,
+    getTaskTimeTracking: async () => null,
+    reviewTaskTracking: async () => null,
+    syncTaskTimeTracking: async () => null,
+  },
 });
 
 const { blockTaskForUser } = await import("../src/modules/tasks/task-assignments.js");

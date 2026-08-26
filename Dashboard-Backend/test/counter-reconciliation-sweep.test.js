@@ -24,6 +24,9 @@ mock.module("../src/core/metrics.js", {
     recordSecurityEvent: (evt) => {
       recordedEvents.push(evt);
     },
+    getMetricsSnapshot: async () => null,
+    recordAuthOk: async () => null,
+    recordRequest: async () => null,
   },
 });
 

@@ -50,6 +50,27 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
     // that flag, so this stub is never actually reached, just needs to
     // exist for the static import in timer-limit.service.js to resolve.
     sumDailyMemberTaskActiveSecondsRange: async () => stub.workedTodayOnTask,
+    createPgSession: async () => null,
+    fetchAllOpenPgSessions: async () => null,
+    fetchLatestPgScreenshot: async () => null,
+    fetchPgAppLogs: async () => null,
+    fetchPgScreenshotById: async () => null,
+    fetchPgScreenshots: async () => null,
+    fetchPgSessionsForDashboard: async () => null,
+    fetchPgUrlLogs: async () => null,
+    findOpenPgSession: async () => null,
+    findUnclassifiedAppsPg: async () => null,
+    findUnclassifiedDomainsPg: async () => null,
+    getPgSessionById: async () => null,
+    insertActivityAppLog: async () => null,
+    insertActivityScreenshot: async () => null,
+    insertActivityUrlLog: async () => null,
+    reassignPgActivityMemberId: async () => null,
+    recordPgAlertSent: async () => null,
+    sumAppLogSecondsByAppNamePg: async () => null,
+    sumUrlLogSecondsByDomainPg: async () => null,
+    updatePgSession: async () => null,
+    wasPgAlertSentRecently: async () => null,
   },
 });
 
@@ -65,6 +86,9 @@ mock.module("../src/lib/postgres/task-member-progress.service.js", {
     getTaskTrackingRowsPg: async () => stub.taskTrackingRows,
     getAllTrackingRowsPg: async () => [],
     updateTrackingFieldsPg: async () => null,
+    computeProgressPercentage: async () => null,
+    parseProgressUuid: async () => null,
+    upsertTrackingRowPg: async () => null,
   },
 });
 
@@ -114,6 +138,10 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     computeProjectSpentForAllPg: async () => new Map(),
     computeProjectBudgetTargetForAllPg: async () => new Map(),
     computeProjectBudgetTargetPg: async () => 0,
+    getDailyActivityTotalsPg: async () => null,
+    getMemberActivitySecondsPg: async () => null,
+    getMemberWeeklyCapacityPg: async () => null,
+    getProjectActivityMetricsPg: async () => null,
   },
 });
 

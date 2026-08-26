@@ -41,6 +41,9 @@ mock.module("../src/modules/notifications/service.js", {
       stub.notifications.push(payload);
       return "n1";
     },
+    listNotificationsForMember: async () => [],
+    markAllNotificationsAsRead: async () => null,
+    markNotificationAsRead: async () => null,
   },
 });
 

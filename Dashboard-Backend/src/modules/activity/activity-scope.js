@@ -1,6 +1,6 @@
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { pickHighestPrivilegeRoleName, resolveRoleNameById } from "../members/services/relation-sync.js";
-import { listProjectIdsForMemberPg, listMemberIdsForProjectsPg } from "../../lib/postgres/projects-postgres.service.js";
+import { listMemberIdsForProjectsPg, listViewerProjectIdsPg } from "../../lib/postgres/projects-postgres.service.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
 import { getMemberByIdPg, getMembersByIdsPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
@@ -28,7 +28,10 @@ export async function resolveMemberRoleName(db, memberId) {
 /** Member IDs on projects the viewer belongs to (via project_members). */
 export async function getProjectScopedMemberIds(db, viewerMemberId) {
   const ids = new Set([viewerMemberId]);
-  const projectIds = new Set(await listProjectIdsForMemberPg(viewerMemberId));
+  // listProjectIdsForMemberPg only reads project_members, which a client never
+  // has a row in - their activity feed came back holding nobody but
+  // themselves. listViewerProjectIdsPg covers the client link too.
+  const projectIds = new Set(await listViewerProjectIdsPg(viewerMemberId));
 
   for (const mid of await listMemberIdsForProjectsPg([...projectIds])) {
     if (mid) ids.add(mid);

@@ -3,7 +3,7 @@ import { estimateAssignmentSeconds, toIso } from "./task-schedule-math.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
-import { getProjectPg, listProjectIdsForMemberPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
+import { getProjectPg, listViewerProjectIdsPg, listProjectMembersPg } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getTaskPg, listTasksPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
@@ -645,7 +645,10 @@ async function getClientProjectIds(db, memberId) {
   const projects = memberRow.projects;
   if (Array.isArray(projects) && projects.length > 0) return projects;
 
-  return listProjectIdsForMemberPg(memberId).catch(() => []);
+  // Falling back to project_members is the one thing a client never has a row
+  // in - the real link is clients.member_id -> client_projects, which
+  // listViewerProjectIdsPg covers along with the other two.
+  return listViewerProjectIdsPg(memberId).catch(() => []);
 }
 
 async function isAssignmentVisible(db, viewerMemberId, viewerRole, assignment, task) {
