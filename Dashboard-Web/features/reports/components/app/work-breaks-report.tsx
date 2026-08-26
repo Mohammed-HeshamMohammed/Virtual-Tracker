@@ -16,6 +16,7 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function initialsFor(name: string): string {
   return (
@@ -54,10 +55,16 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
   const [rows, setRows] = useState<WorkBreakRow[]>([])
   const [minGapMinutes, setMinGapMinutes] = useState(5)
   const [loading, setLoading] = useState(true)
+  // A failed request used to fall through to the empty state, so an
+  // outage read as "no data for this range". reloadKey re-runs the fetch
+  // when the viewer retries.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     fetchWorkBreaksReport({
       from: rangeStart.toISOString().slice(0, 10),
       to: rangeEnd.toISOString().slice(0, 10),
@@ -67,13 +74,16 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
       .then((data) => {
         if (!cancelled) setRows(data.rows)
       })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters, minGapMinutes])
+  }, [rangeStart, rangeEnd, filters, minGapMinutes, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -133,8 +143,10 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
         </select>
       </div>
 
-      {loading ? (
-        <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+      {error ? (
+        <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+      ) : loading ? (
+        <ReportTableSkeleton rows={6} columns={5} />
       ) : rows.length === 0 ? (
         <ReportEmptyState
           title="No breaks in this range"
@@ -205,7 +217,10 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
                   {rows.map((r, i) => (
                     <tr
                       key={`${r.memberId}-${r.startedAt}-${i}`}
-                      className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}
+                      className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}
                     >
                       <td
                         className={cn(
@@ -257,6 +272,7 @@ export function WorkBreaksReport({ onNavigate }: { onNavigate?: (id: string) => 
       title="Work breaks report"
       onNavigate={onNavigate}
       exportFileBaseName="work-breaks"
+      pageId="reports-work-breaks"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (

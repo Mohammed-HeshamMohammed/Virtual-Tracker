@@ -25,7 +25,6 @@ export default function FinancialsChunk({ pageId, onNavigate }: PageChunkProps) 
       return (
         <StandardReportLayout
           title="Expenses"
-          titleTone="muted"
           onNavigate={onNavigate}
           exportFileBaseName="expenses"
         >

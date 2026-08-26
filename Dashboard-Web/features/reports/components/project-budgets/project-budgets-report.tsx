@@ -180,8 +180,7 @@ export function ProjectBudgetsReport({ onNavigate }: { onNavigate: (id: string) 
       title="Project budgets report"
       onNavigate={onNavigate}
       exportFileBaseName="project-budgets"
-      titleTone="emphasis"
-      orgLayout="stacked-subtle"
+      pageId="reports-project-budgets"
       groupByOptions={PROJECT_BUDGETS_GROUP_BY_OPTIONS}
       defaultGroupBy="month"
       // Budget figures are scoped to the budget's own period (and its reset

@@ -113,8 +113,7 @@ export function ClientBudgetsReport({ onNavigate }: { onNavigate: (id: string) =
       title="Client budgets report"
       onNavigate={onNavigate}
       exportFileBaseName="client-budgets"
-      titleTone="emphasis"
-      orgLayout="stacked-subtle"
+      pageId="reports-client-budgets"
       // Client budget usage derives its own period from the budget's reset
       // cadence (client-budget-usage.js), so an arbitrary date range has no
       // meaning here and the backend never accepted one.

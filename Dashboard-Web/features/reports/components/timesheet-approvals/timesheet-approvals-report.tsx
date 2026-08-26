@@ -152,6 +152,7 @@ export function TimesheetApprovalsReport({ onNavigate }: { onNavigate: (id: stri
       title="Timesheet approvals report"
       onNavigate={onNavigate}
       exportFileBaseName="timesheet-approvals"
+      pageId="reports-timesheet-approvals"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (

@@ -27,6 +27,7 @@ import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
 import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/audit-log"
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
+import { ReportOrgLine, ReportPageHeading } from "@/features/reports/components/shared/report-ui"
 
 const COLUMN_DEFS: { key: AuditLogColumnKey; label: string }[] = [
   { key: "dateLogs", label: "Date & Logs" },
@@ -60,7 +61,7 @@ function actionBadgeClass(kind: AuditLogRow["actionKind"]): string {
       return "bg-red-100 text-red-800"
     case "archived":
     default:
-      return "bg-slate-100 text-slate-700"
+      return "bg-slate-100 dark:bg-white/10 text-slate-700 dark:text-[#dce1fb]"
   }
 }
 
@@ -79,7 +80,7 @@ function AuditFacet({
   if (values.length === 0) return null
   return (
     <div>
-      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</div>
+      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/40">{title}</div>
       <div className="space-y-0.5">
         {values.map((value) => {
           const on = selected.has(value)
@@ -88,13 +89,13 @@ function AuditFacet({
               key={value}
               type="button"
               onClick={() => onToggle(value)}
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm text-slate-700 dark:text-[#dce1fb] transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
             >
               <span
                 className={
                   on
                     ? "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-sky-500 bg-sky-500 text-[10px] font-bold text-white"
-                    : "flex h-4 w-4 shrink-0 rounded border border-slate-300 bg-white"
+                    : "flex h-4 w-4 shrink-0 rounded border border-slate-300 dark:border-white/20 bg-white dark:bg-[#151b2d]"
                 }
               >
                 {on ? "✓" : ""}
@@ -200,23 +201,20 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     <div className="relative isolate mx-auto max-w-[1400px] space-y-5">
       
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <h1 className="text-2xl font-medium text-slate-800">Audit log</h1>
+        <ReportPageHeading title="Audit log report" pageId="reports-audit" />
         <div className="relative w-full max-w-md shrink-0">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-white/40" />
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search members or event details"
-            className="w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" aria-label="Interactive control"
+            className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] py-2 pl-10 pr-4 text-sm text-slate-800 dark:text-[#dce1fb] placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" aria-label="Interactive control"
           />
         </div>
       </div>
 
-      <div>
-        <div className="text-xl font-bold text-slate-900">{AUDIT_LOG_ORG_LABEL}</div>
-        <div className="text-sm text-slate-500">{AUDIT_LOG_TIMEZONE_LABEL}</div>
-      </div>
+      <ReportOrgLine org={AUDIT_LOG_ORG_LABEL} timezone={AUDIT_LOG_TIMEZONE_LABEL} />
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative z-40">
@@ -224,8 +222,8 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
             type="button"
             onClick={() => setShowDatePicker((v) => !v)}
             className={cn(
-              "flex min-w-[260px] items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 shadow-sm hover:bg-slate-50",
-              showDatePicker ? "border-sky-500 ring-1 ring-sky-500" : "border-slate-200"
+              "flex min-w-[260px] items-center gap-2 rounded-lg border bg-white dark:bg-[#151b2d] px-4 py-2 text-sm text-slate-700 dark:text-[#dce1fb] shadow-sm hover:bg-slate-50 dark:hover:bg-white/5",
+              showDatePicker ? "border-sky-500 ring-1 ring-sky-500" : "border-slate-200 dark:border-white/10"
             )}
           >
             <span className="truncate">{dateLabel}</span>
@@ -259,8 +257,8 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
-          <Menu className="h-4 w-4 text-slate-500" />
-          <span className="text-sm text-slate-600">Group by</span>
+          <Menu className="h-4 w-4 text-slate-500 dark:text-white/45" />
+          <span className="text-sm text-slate-600 dark:text-[#bccbb9]">Group by</span>
           <ReportSimpleDropdown
             value={groupBy}
             onChange={setGroupBy}
@@ -289,17 +287,17 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-3" align="end">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">Columns</div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Columns</div>
               <div className="space-y-1">
                 {COLUMN_DEFS.map((c) => (
                   <button
                     key={c.key}
                     type="button"
                     onClick={() => toggleColumn(c.key)}
-                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-50"
+                    className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-sm hover:bg-slate-50 dark:hover:bg-white/5"
                   >
                     {c.label}
-                    <span className="text-xs text-slate-400">{columns[c.key] ? "On" : "Off"}</span>
+                    <span className="text-xs text-slate-400 dark:text-white/40">{columns[c.key] ? "On" : "Off"}</span>
                   </button>
                 ))}
               </div>
@@ -308,32 +306,32 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
             <thead>
-              <tr className="border-b border-slate-200 bg-slate-50">
+              <tr className="border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
                 {visibleCols.map((c) => (
-                  <th key={c.key} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <th key={c.key} className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-[#bccbb9]">
                     {c.label}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-slate-100 dark:divide-white/10">
               {groups.map((g) => (
                 <Fragment key={g.dateKey}>
-                  <tr className="bg-slate-50/90">
+                  <tr className="bg-slate-50/90 dark:bg-white/5">
                     <td colSpan={colCount} className="px-2 py-0">
                       <button
                         type="button"
                         onClick={() => toggleGroup(g.dateKey)}
-                        className="flex w-full items-center gap-2 px-2 py-2.5 text-left text-sm font-semibold text-slate-800 hover:bg-slate-100/80"
+                        className="flex w-full items-center gap-2 px-2 py-2.5 text-left text-sm font-semibold text-slate-800 dark:text-[#dce1fb] hover:bg-slate-100/80 dark:hover:bg-white/10"
                       >
                         {collapsed.has(g.dateKey) ? (
-                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+                          <ChevronRight className="h-4 w-4 shrink-0 text-slate-500 dark:text-white/45" />
                         ) : (
-                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500" />
+                          <ChevronDown className="h-4 w-4 shrink-0 text-slate-500 dark:text-white/45" />
                         )}
                         {g.label}
                       </button>
@@ -341,15 +339,15 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
                   </tr>
                   {!collapsed.has(g.dateKey)
                     ? g.rows.map((r) => (
-                        <tr key={r.id} className="hover:bg-slate-50/50">
+                        <tr key={r.id} className="hover:bg-slate-50/50 dark:hover:bg-white/5">
                           {columns.dateLogs ? (
-                            <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600">#{r.id}</td>
+                            <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-slate-600 dark:text-[#bccbb9]">#{r.id}</td>
                           ) : null}
                           {columns.author ? (
-                            <td className="px-4 py-3 text-slate-800">{r.author}</td>
+                            <td className="px-4 py-3 text-slate-800 dark:text-[#dce1fb]">{r.author}</td>
                           ) : null}
                           {columns.time ? (
-                            <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600">{r.timeLabel}</td>
+                            <td className="whitespace-nowrap px-4 py-3 tabular-nums text-slate-600 dark:text-[#bccbb9]">{r.timeLabel}</td>
                           ) : null}
                           {columns.action ? (
                             <td className="px-4 py-3">
@@ -363,9 +361,9 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
                               </span>
                             </td>
                           ) : null}
-                          {columns.object ? <td className="px-4 py-3 text-slate-700">{r.object}</td> : null}
-                          {columns.member ? <td className="px-4 py-3 text-slate-600">{r.member}</td> : null}
-                          {columns.detail ? <td className="max-w-md px-4 py-3 text-slate-700">{r.detail}</td> : null}
+                          {columns.object ? <td className="px-4 py-3 text-slate-700 dark:text-[#dce1fb]">{r.object}</td> : null}
+                          {columns.member ? <td className="px-4 py-3 text-slate-600 dark:text-[#bccbb9]">{r.member}</td> : null}
+                          {columns.detail ? <td className="max-w-md px-4 py-3 text-slate-700 dark:text-[#dce1fb]">{r.detail}</td> : null}
                         </tr>
                       ))
                     : null}
@@ -373,7 +371,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               ))}
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={colCount} className="px-4 py-16 text-center text-sm text-slate-500">
+                  <td colSpan={colCount} className="px-4 py-16 text-center text-sm text-slate-500 dark:text-white/45">
                     No events match your search or date range.
                   </td>
                 </tr>
@@ -383,8 +381,8 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-600">
+      <div className="flex flex-col gap-3 border-t border-slate-100 dark:border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-sm text-slate-600 dark:text-[#bccbb9]">
           Showing {filtered.length} {eventWord}
         </p>
         <div className="flex items-center gap-1">
@@ -409,9 +407,9 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               initial={{ opacity: 0, x: 16 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 16 }}
-              className="fixed right-6 top-24 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
+              className="fixed right-6 top-24 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] p-4 shadow-xl"
             >
-              <div className="mb-3 text-sm font-semibold text-slate-800">Filters</div>
+              <div className="mb-3 text-sm font-semibold text-slate-800 dark:text-[#dce1fb]">Filters</div>
               {/* Author/action values come from the loaded rows themselves, so the
                   panel can only ever offer filters that match real audit data. */}
               <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">

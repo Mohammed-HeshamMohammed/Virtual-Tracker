@@ -21,6 +21,7 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function initialsFor(name: string): string {
   return (
@@ -56,10 +57,16 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
   const [rows, setRows] = useState<TimeOffBalanceRow[]>([])
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
+  // A failed request used to fall through to the empty state, so an
+  // outage read as "no data for this range". reloadKey re-runs the fetch
+  // when the viewer retries.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     const to = rangeEnd.toISOString().slice(0, 10)
     fetchTimeOffBalancesReport({ from: to, to, memberIds: [...filters.memberIds] })
       .then((data) => {
@@ -67,13 +74,16 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
         setRows(data.rows)
         setAsOf(data.asOf)
       })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [rangeEnd, filters])
+  }, [rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -96,7 +106,10 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
   }, [rows, registerExportHandler])
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={3} rows={6} columns={5} />
+  }
+  if (error) {
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -142,7 +155,10 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
               {rows.map((r) => (
                 <tr
                   key={`${r.memberId}-${r.policyId}`}
-                  className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}
+                  className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -190,6 +206,7 @@ export function TimeOffBalancesReport({ onNavigate }: { onNavigate?: (id: string
       title="Time off balances report"
       onNavigate={onNavigate}
       exportFileBaseName="time-off-balances"
+      pageId="reports-time-off-balances"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (
@@ -220,10 +237,16 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimeOffTransactionRow[]>([])
   const [loading, setLoading] = useState(true)
+  // A failed request used to fall through to the empty state, so an
+  // outage read as "no data for this range". reloadKey re-runs the fetch
+  // when the viewer retries.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     fetchTimeOffTransactionsReport({
       from: rangeStart.toISOString().slice(0, 10),
       to: rangeEnd.toISOString().slice(0, 10),
@@ -232,13 +255,16 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
       .then((data) => {
         if (!cancelled) setRows(data)
       })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters])
+  }, [rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -263,7 +289,10 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   const net = useMemo(() => rows.reduce((s, r) => s + r.days, 0), [rows])
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={3} rows={6} columns={5} />
+  }
+  if (error) {
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -301,7 +330,10 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}>
+              <tr key={r.id} className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}>
                 <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
                   {formatDay(r.effectiveOn)}
                 </td>
@@ -371,6 +403,7 @@ export function TimeOffTransactionsReport({ onNavigate }: { onNavigate?: (id: st
       title="Time off transactions report"
       onNavigate={onNavigate}
       exportFileBaseName="time-off-transactions"
+      pageId="reports-time-off-transactions"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (

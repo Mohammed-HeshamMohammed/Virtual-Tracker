@@ -33,6 +33,7 @@ import {
   STANDARD_REPORT_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { reportCardFor } from "@/features/reports/catalog"
 import { cn } from "@/shared/utils/utils"
 
 export type StandardReportScope = "me" | "all"
@@ -98,8 +99,8 @@ export function StandardReportLayout({
   defaultGroupBy = "date",
   filtersPanel,
   exportFileBaseName,
-  titleTone = "emphasis",
-  orgLayout = "default",
+  pageId,
+  subtitle,
   showDateRange = true,
   showScopeTabs = true,
   showGroupBy = true,
@@ -113,10 +114,12 @@ export function StandardReportLayout({
    *  Done/Close buttons can dismiss the layout-owned overlay. */
   filtersPanel?: ReactNode | ((close: () => void) => ReactNode)
   exportFileBaseName?: string
-  /** emphasis = medium dark title + single-line org (shift report mock); muted = light large title + two-line org */
-  titleTone?: "emphasis" | "muted"
-  /** stacked-subtle = org name + smaller timezone (project budgets mock); default follows titleTone */
-  orgLayout?: "default" | "stacked-subtle"
+  /** Nav page id. Supplies the subtitle from the report catalog, so the line
+   *  under the title is the same sentence the hub card shows for this report
+   *  and there is only one place to write it. */
+  pageId?: string
+  /** Overrides the catalog description when a report needs its own line. */
+  subtitle?: string
   // A report that never reads `rangeStart`/`rangeEnd`, `scope`, or `groupBy`
   // out of this layout's context must hide the matching control rather than
   // render a dead one. Several reports used to show all three and consume
@@ -147,6 +150,7 @@ export function StandardReportLayout({
   }, [])
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
+  const resolvedSubtitle = subtitle ?? (pageId ? reportCardFor(pageId)?.description : undefined)
 
   const contextValue = useMemo(
     (): StandardReportLayoutContextValue => ({
@@ -196,16 +200,22 @@ export function StandardReportLayout({
 
           {/* Row 1: title (left) + date range + Today + Filters (right) — matches reference */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <h1
-              className={cn(
-                "min-w-0 max-w-xl tracking-tight",
-                titleTone === "muted"
-                  ? cn("text-3xl font-light", isDark ? "text-white/45" : "text-slate-400")
-                  : cn("text-2xl font-medium", isDark ? "text-white/90" : "text-slate-800")
-              )}
-            >
-              {title}
-            </h1>
+            <div className="min-w-0 max-w-xl">
+              {/* One title treatment. This used to be two - a `muted` variant
+                  rendered the report name in light grey at 3xl, which read as
+                  a disabled heading rather than the page title. */}
+              <h1
+                className={cn(
+                  "truncate text-2xl font-semibold tracking-tight",
+                  isDark ? "text-[#dce1fb]" : "text-slate-900"
+                )}
+              >
+                {title}
+              </h1>
+              {resolvedSubtitle ? (
+                <p className={cn("mt-1 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>{resolvedSubtitle}</p>
+              ) : null}
+            </div>
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-1">
               {showDateRange ? (
                 <>
@@ -293,14 +303,17 @@ export function StandardReportLayout({
             </div>
           </div>
 
-          {/* Row 2: ME / ALL */}
+          {/* Row 2: ME / ALL. Hidden entirely when the report has no scope -
+              this used to still render its bottom border, leaving a stray
+              divider line floating under the title. */}
+          {showScopeTabs ? (
           <div
             className={cn(
               "flex flex-wrap gap-10 border-b pb-3",
               isDark ? "border-white/10" : "border-slate-200"
             )}
           >
-            {(showScopeTabs ? (["me", "all"] as const) : ([] as const)).map((v) => (
+            {(["me", "all"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -320,6 +333,7 @@ export function StandardReportLayout({
               </button>
             ))}
           </div>
+          ) : null}
 
           {/* Row 3: TVC + group by (left) · Send / Schedule / Export (right) */}
           <div
@@ -329,29 +343,18 @@ export function StandardReportLayout({
             )}
           >
             <div className="space-y-1">
-              {orgLayout === "stacked-subtle" ? (
-                <>
-                  <div className={cn("text-base font-semibold", isDark ? "text-white/90" : "text-slate-900")}>
-                    {STANDARD_REPORT_ORG_LABEL}
-                  </div>
-                  <div className={cn("text-sm", isDark ? "text-white/45" : "text-slate-400")}>
-                    {STANDARD_REPORT_TIMEZONE_LABEL}
-                  </div>
-                </>
-              ) : titleTone === "emphasis" ? (
-                <div className={cn("text-sm", isDark ? "text-white/45" : "text-slate-400")}>
-                  {STANDARD_REPORT_ORG_LABEL} {STANDARD_REPORT_TIMEZONE_LABEL}
-                </div>
-              ) : (
-                <>
-                  <div className={cn("text-2xl font-bold", isDark ? "text-[#dce1fb]" : "text-slate-900")}>
-                    {STANDARD_REPORT_ORG_LABEL}
-                  </div>
-                  <div className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-                    {STANDARD_REPORT_TIMEZONE_LABEL}
-                  </div>
-                </>
-              )}
+              {/* One org/timezone treatment. Three variants used to exist and
+                  which one a report got was decided by unrelated title props,
+                  so the same header block rendered at three different sizes
+                  across the reports section. */}
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className={cn("text-base font-semibold", isDark ? "text-white/90" : "text-slate-900")}>
+                  {STANDARD_REPORT_ORG_LABEL}
+                </span>
+                <span className={cn("text-sm", isDark ? "text-white/45" : "text-slate-400")}>
+                  {STANDARD_REPORT_TIMEZONE_LABEL}
+                </span>
+              </div>
               {showGroupBy ? (
                 <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Menu className={cn("h-4 w-4", isDark ? "text-white/40" : "text-slate-500")} />

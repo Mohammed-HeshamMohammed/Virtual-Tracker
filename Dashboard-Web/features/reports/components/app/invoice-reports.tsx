@@ -20,6 +20,7 @@ import {
   useReportFilterOptions,
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 type InvoiceKind = "client" | "team"
 
@@ -73,6 +74,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
   const [rows, setRows] = useState<InvoiceReportRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -95,7 +97,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
     return () => {
       cancelled = true
     }
-  }, [kind, rangeStart, rangeEnd, filters])
+  }, [kind, rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -137,10 +139,10 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
   )
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={4} rows={6} columns={6} />
   }
   if (error) {
-    return <p className="py-12 text-center text-sm text-red-600">{error}</p>
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -184,7 +186,10 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}>
+              <tr key={r.id} className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}>
                 <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
                   {r.number}
                 </td>
@@ -253,6 +258,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
@@ -274,7 +280,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
     return () => {
       cancelled = true
     }
-  }, [kind, rangeEnd, filters])
+  }, [kind, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -304,10 +310,10 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
   }, [rows])
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={3} rows={6} columns={5} />
   }
   if (error) {
-    return <p className="py-12 text-center text-sm text-red-600">{error}</p>
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -374,7 +380,10 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}>
+                <tr key={r.id} className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}>
                   <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
                     {r.number}
                   </td>
@@ -415,12 +424,14 @@ function InvoiceReportPage({
   aging,
   title,
   exportFileBaseName,
+  pageId,
   onNavigate,
 }: {
   kind: InvoiceKind
   aging: boolean
   title: string
   exportFileBaseName: string
+  pageId: string
   onNavigate?: (id: string) => void
 }) {
   const [filters, setFilters] = useState<ReportFilterState>(emptyReportFilters)
@@ -430,6 +441,7 @@ function InvoiceReportPage({
       title={title}
       onNavigate={onNavigate}
       exportFileBaseName={exportFileBaseName}
+      pageId={pageId}
       showScopeTabs={false}
       showGroupBy={false}
       // Client invoices have no member dimension to filter on.
@@ -454,24 +466,24 @@ function InvoiceReportPage({
 
 export function ClientInvoicesReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   return (
-    <InvoiceReportPage kind="client" aging={false} title="Client invoices report" exportFileBaseName="client-invoices" onNavigate={onNavigate} />
+    <InvoiceReportPage kind="client" aging={false} title="Client invoices report" exportFileBaseName="client-invoices" pageId="reports-client-invoices" onNavigate={onNavigate} />
   )
 }
 
 export function TeamInvoicesReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   return (
-    <InvoiceReportPage kind="team" aging={false} title="Team invoices report" exportFileBaseName="team-invoices" onNavigate={onNavigate} />
+    <InvoiceReportPage kind="team" aging={false} title="Team invoices report" exportFileBaseName="team-invoices" pageId="reports-team-invoices" onNavigate={onNavigate} />
   )
 }
 
 export function ClientInvoicesAgingReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   return (
-    <InvoiceReportPage kind="client" aging title="Client invoices aging report" exportFileBaseName="client-invoices-aging" onNavigate={onNavigate} />
+    <InvoiceReportPage kind="client" aging title="Client invoices aging report" exportFileBaseName="client-invoices-aging" pageId="reports-client-invoices-aging" onNavigate={onNavigate} />
   )
 }
 
 export function TeamInvoicesAgingReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   return (
-    <InvoiceReportPage kind="team" aging title="Team invoices aging report" exportFileBaseName="team-invoices-aging" onNavigate={onNavigate} />
+    <InvoiceReportPage kind="team" aging title="Team invoices aging report" exportFileBaseName="team-invoices-aging" pageId="reports-team-invoices-aging" onNavigate={onNavigate} />
   )
 }
