@@ -109,7 +109,9 @@ export function StandardReportLayout({
   onNavigate?: (id: string) => void
   groupByOptions?: { value: string; label: string }[]
   defaultGroupBy?: string
-  filtersPanel?: ReactNode
+  /** Node, or a render function given a close callback so the panel's own
+   *  Done/Close buttons can dismiss the layout-owned overlay. */
+  filtersPanel?: ReactNode | ((close: () => void) => ReactNode)
   exportFileBaseName?: string
   /** emphasis = medium dark title + single-line org (shift report mock); muted = light large title + two-line org */
   titleTone?: "emphasis" | "muted"
@@ -183,7 +185,9 @@ export function StandardReportLayout({
   // A report with no filters panel simply doesn't get a Filters button. There
   // used to be a stand-in panel here reading "No additional filters for this
   // report (demo)", which made an unbuilt feature look like an empty one.
-  const panel = filtersPanel ?? null
+  const closeFilters = useCallback(() => setShowFilters(false), [])
+  const panel =
+    typeof filtersPanel === "function" ? filtersPanel(closeFilters) : (filtersPanel ?? null)
 
   return (
     <StandardReportLayoutContext.Provider value={contextValue}>

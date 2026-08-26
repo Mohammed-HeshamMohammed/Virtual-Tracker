@@ -10,4 +10,17 @@ export { TimeAndActivityReport, buildDefaultTimeActivityReportData } from "@/fea
 export { WorkSessionsReport } from "@/features/reports/components/work-sessions/work-sessions-report"
 export { ManualTimeEditsReport } from "@/features/reports/components/app/manual-time-edits-report"
 export { WorkBreaksReport } from "@/features/reports/components/app/work-breaks-report"
+export { ExpensesReport } from "@/features/reports/components/app/expenses-report"
+export {
+  TimeOffBalancesReport,
+  TimeOffTransactionsReport,
+} from "@/features/reports/components/app/time-off-reports"
+export { ShiftAttendanceReport } from "@/features/reports/components/app/shift-attendance-report"
+export { BudgetsHubReport } from "@/features/reports/components/app/budgets-hub-report"
+export {
+  ClientInvoicesReport,
+  TeamInvoicesReport,
+  ClientInvoicesAgingReport,
+  TeamInvoicesAgingReport,
+} from "@/features/reports/components/app/invoice-reports"
 export { StandardReportLayout, ReportEmptyState, useStandardReportLayout } from "@/features/reports/components/app/standard-report-layout"

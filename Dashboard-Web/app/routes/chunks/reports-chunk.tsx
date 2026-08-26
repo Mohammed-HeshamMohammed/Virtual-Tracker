@@ -8,6 +8,15 @@ import {
   WorkSessionsReport,
   ManualTimeEditsReport,
   WorkBreaksReport,
+  ExpensesReport,
+  TimeOffBalancesReport,
+  TimeOffTransactionsReport,
+  ClientInvoicesReport,
+  TeamInvoicesReport,
+  ClientInvoicesAgingReport,
+  TeamInvoicesAgingReport,
+  ShiftAttendanceReport,
+  BudgetsHubReport,
   AuditLogReport,
   ReportEmptyState,
   StandardReportLayout,
@@ -73,16 +82,23 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
     case "reports-apps-urls":
       return <AppsUrlsReport onNavigate={onNavigate} />
     case "reports-expenses":
-      return (
-        <StandardReportLayout
-          title="Expenses"
-          titleTone="muted"
-          onNavigate={onNavigate}
-          exportFileBaseName="expenses"
-        >
-          <ReportEmptyState />
-        </StandardReportLayout>
-      )
+      return <ExpensesReport onNavigate={onNavigate} />
+    case "reports-time-off-balances":
+      return <TimeOffBalancesReport onNavigate={onNavigate} />
+    case "reports-time-off-transactions":
+      return <TimeOffTransactionsReport onNavigate={onNavigate} />
+    case "reports-client-invoices":
+      return <ClientInvoicesReport onNavigate={onNavigate} />
+    case "reports-team-invoices":
+      return <TeamInvoicesReport onNavigate={onNavigate} />
+    case "reports-client-invoices-aging":
+      return <ClientInvoicesAgingReport onNavigate={onNavigate} />
+    case "reports-team-invoices-aging":
+      return <TeamInvoicesAgingReport onNavigate={onNavigate} />
+    case "reports-shift-attendance":
+      return <ShiftAttendanceReport onNavigate={onNavigate} />
+    case "reports-budgets":
+      return <BudgetsHubReport onNavigate={onNavigate} />
     default:
       return <ReportsAllPage onNavigate={onNavigate} />
   }

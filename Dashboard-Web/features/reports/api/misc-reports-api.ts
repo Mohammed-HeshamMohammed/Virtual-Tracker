@@ -75,6 +75,22 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
   }))
 }
 
+/** Range plus the shared report filter selections. */
+export interface ReportQuery {
+  from: string
+  to: string
+  memberIds?: string[]
+  projectIds?: string[]
+}
+
+/** Builds the query string every report endpoint understands. */
+function reportParams(q: ReportQuery): URLSearchParams {
+  const params = new URLSearchParams({ from: q.from, to: q.to })
+  if (q.memberIds?.length) params.set("memberIds", q.memberIds.join(","))
+  if (q.projectIds?.length) params.set("projectIds", q.projectIds.join(","))
+  return params
+}
+
 export interface ReportFilterOptions {
   members: { id: string; name: string; initials: string }[]
   projects: { id: string; name: string }[]
@@ -89,17 +105,11 @@ export async function fetchReportFilterOptions(): Promise<ReportFilterOptions> {
 /** `memberId` scopes to one member (the "ME" tab); `memberIds`/`projectIds` back
  *  the filter panel's multi-selects. The backend rejects ids outside the
  *  viewer's visible scope, so these are filters, not a trust point. */
-export async function fetchAmountsOwedReport(range: {
-  from: string
-  to: string
-  memberId?: string | null
-  memberIds?: string[]
-  projectIds?: string[]
-}): Promise<AmountsOwedDayGroup[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+export async function fetchAmountsOwedReport(
+  range: ReportQuery & { memberId?: string | null }
+): Promise<AmountsOwedDayGroup[]> {
+  const params = reportParams(range)
   if (range.memberId) params.set("memberId", range.memberId)
-  if (range.memberIds?.length) params.set("memberIds", range.memberIds.join(","))
-  if (range.projectIds?.length) params.set("projectIds", range.projectIds.join(","))
   const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/amounts-owed?${params.toString()}`)
   return data ? mapAmountsDays(data.days) : []
 }
@@ -137,8 +147,8 @@ function colorForProject(name: string): string {
   return PROJECT_COLORS[hash % PROJECT_COLORS.length]!
 }
 
-export async function fetchWorkSessionsReport(range: { from: string; to: string }): Promise<WorkSessionRow[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkSessionRow[]> {
+  const params = reportParams(range)
   const data = await getJson<{ sessions: RawWorkSession[] }>(`/api/reports/work-sessions?${params.toString()}`)
   if (!data) return []
   return data.sessions.map((s) => {
@@ -187,8 +197,8 @@ function humanizeTableName(tableName: string): string {
   return tableName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export async function fetchAuditLogReport(range: { from: string; to: string }): Promise<AuditLogRow[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+export async function fetchAuditLogReport(range: ReportQuery): Promise<AuditLogRow[]> {
+  const params = reportParams(range)
   const data = await getJson<{ rows: RawAuditRow[] }>(`/api/reports/audit-log?${params.toString()}`)
   if (!data) return []
   return data.rows.map((r) => {
@@ -295,8 +305,8 @@ interface RawLimitRow {
   pctUsed: number
 }
 
-async function fetchLimitsReport(kind: "weekly-limits" | "daily-limits", range: { from: string; to: string }): Promise<LimitUsageRow[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+async function fetchLimitsReport(kind: "weekly-limits" | "daily-limits", range: ReportQuery): Promise<LimitUsageRow[]> {
+  const params = reportParams(range)
   const data = await getJson<{ rows: RawLimitRow[] }>(`/api/reports/${kind}?${params.toString()}`)
   if (!data) return []
   return data.rows.map((row) => ({
@@ -309,11 +319,11 @@ async function fetchLimitsReport(kind: "weekly-limits" | "daily-limits", range: 
   }))
 }
 
-export function fetchWeeklyLimitsReport(range: { from: string; to: string }): Promise<LimitUsageRow[]> {
+export function fetchWeeklyLimitsReport(range: ReportQuery): Promise<LimitUsageRow[]> {
   return fetchLimitsReport("weekly-limits", range)
 }
 
-export function fetchDailyLimitsReport(range: { from: string; to: string }): Promise<LimitUsageRow[]> {
+export function fetchDailyLimitsReport(range: ReportQuery): Promise<LimitUsageRow[]> {
   return fetchLimitsReport("daily-limits", range)
 }
 
@@ -333,8 +343,8 @@ interface RawTimesheetRow {
   approvedByName: string | null
 }
 
-export async function fetchTimesheetApprovalsReport(range: { from: string; to: string }): Promise<TimesheetApprovalRow[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+export async function fetchTimesheetApprovalsReport(range: ReportQuery): Promise<TimesheetApprovalRow[]> {
+  const params = reportParams(range)
   const data = await getJson<{ rows: RawTimesheetRow[] }>(`/api/reports/timesheet-approvals?${params.toString()}`)
   if (!data) return []
   return data.rows.map((row) => ({
@@ -369,9 +379,9 @@ interface RawUrlUsageRow {
 }
 
 export async function fetchAppsUrlsReport(
-  range: { from: string; to: string }
+  range: ReportQuery
 ): Promise<{ apps: AppUsageRow[]; urls: UrlUsageRow[] }> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
+  const params = reportParams(range)
   const data = await getJson<{ apps: RawAppUsageRow[]; urls: RawUrlUsageRow[] }>(`/api/reports/apps-urls?${params.toString()}`)
   if (!data) return { apps: [], urls: [] }
   return {
@@ -388,4 +398,196 @@ export async function fetchAppsUrlsReport(
       durationHms: formatHms(u.totalSeconds),
     })),
   }
+}
+
+// ─── Manual Time Edits ────────────────────────────────────────────────────
+
+export interface ManualTimeEditRow {
+  id: string
+  day: string
+  memberId: string
+  memberName: string
+  projectName: string
+  taskTitle: string
+  hours: number
+  description: string
+  billable: boolean
+  status: string
+  editedByName: string
+  editedAt: string | null
+}
+
+export async function fetchManualTimeEditsReport(range: ReportQuery): Promise<ManualTimeEditRow[]> {
+  const data = await getJson<{ rows: ManualTimeEditRow[] }>(
+    `/api/reports/manual-time-edits?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
+
+// ─── Work Breaks ──────────────────────────────────────────────────────────
+
+export interface WorkBreakRow {
+  memberId: string
+  memberName: string
+  day: string
+  startedAt: string | null
+  endedAt: string | null
+  durationSeconds: number
+}
+
+export async function fetchWorkBreaksReport(
+  range: ReportQuery & { minGapMinutes?: number }
+): Promise<{ rows: WorkBreakRow[]; minGapMinutes: number }> {
+  const params = reportParams(range)
+  if (range.minGapMinutes) params.set("minGapMinutes", String(range.minGapMinutes))
+  const data = await getJson<{ rows: WorkBreakRow[]; minGapMinutes: number }>(
+    `/api/reports/work-breaks?${params.toString()}`
+  )
+  return { rows: data?.rows ?? [], minGapMinutes: data?.minGapMinutes ?? 5 }
+}
+
+// ─── Expenses ─────────────────────────────────────────────────────────────
+
+export interface ExpenseReportRow {
+  id: string
+  day: string
+  memberId: string
+  memberName: string
+  projectName: string
+  clientName: string
+  category: string
+  description: string
+  amount: number
+  currency: string
+  billable: boolean
+  status: string
+}
+
+export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseReportRow[]> {
+  const data = await getJson<{ rows: ExpenseReportRow[] }>(`/api/reports/expenses?${reportParams(range).toString()}`)
+  return data?.rows ?? []
+}
+
+// ─── Time off ─────────────────────────────────────────────────────────────
+
+export interface TimeOffBalanceRow {
+  memberId: string
+  memberName: string
+  policyId: string
+  policyName: string
+  entitlementDays: number
+  accruedDays: number
+  usedDays: number
+  balanceDays: number
+}
+
+export async function fetchTimeOffBalancesReport(
+  range: ReportQuery
+): Promise<{ rows: TimeOffBalanceRow[]; asOf: string }> {
+  const data = await getJson<{ rows: TimeOffBalanceRow[]; asOf: string }>(
+    `/api/reports/time-off-balances?${reportParams(range).toString()}`
+  )
+  return { rows: data?.rows ?? [], asOf: data?.asOf ?? range.to }
+}
+
+export interface TimeOffTransactionRow {
+  id: string
+  memberId: string
+  memberName: string
+  policyId: string
+  policyName: string
+  requestId: string | null
+  kind: "accrual" | "usage" | "adjustment"
+  days: number
+  effectiveOn: string
+  note: string
+}
+
+export async function fetchTimeOffTransactionsReport(range: ReportQuery): Promise<TimeOffTransactionRow[]> {
+  const data = await getJson<{ rows: TimeOffTransactionRow[] }>(
+    `/api/reports/time-off-transactions?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
+
+// ─── Invoices ─────────────────────────────────────────────────────────────
+
+export interface InvoiceReportRow {
+  id: string
+  number: string
+  clientName: string
+  memberId: string | null
+  memberName: string
+  issueDate: string
+  dueDate: string
+  status: string
+  total: number
+  paidAmount: number
+  dueAmount: number
+  currency: string
+}
+
+export interface InvoiceAgingRow extends Omit<InvoiceReportRow, "status"> {
+  daysOverdue: number
+  bucket: string
+}
+
+export async function fetchInvoicesReport(
+  kind: "client" | "team",
+  range: ReportQuery
+): Promise<InvoiceReportRow[]> {
+  const data = await getJson<{ rows: InvoiceReportRow[] }>(
+    `/api/reports/${kind}-invoices?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
+
+export async function fetchInvoiceAgingReport(
+  kind: "client" | "team",
+  range: ReportQuery
+): Promise<{ rows: InvoiceAgingRow[]; asOf: string }> {
+  const data = await getJson<{ rows: InvoiceAgingRow[]; asOf: string }>(
+    `/api/reports/${kind}-invoices-aging?${reportParams(range).toString()}`
+  )
+  return { rows: data?.rows ?? [], asOf: data?.asOf ?? range.to }
+}
+
+// ─── Payments ─────────────────────────────────────────────────────────────
+
+export interface PaymentReportRow {
+  id: string
+  invoiceId: string
+  invoiceNumber: string
+  kind: "client" | "team"
+  memberId: string | null
+  memberName: string
+  clientName: string
+  amount: number
+  currency: string
+  paidOn: string
+  method: string
+  reference: string
+}
+
+export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<PaymentReportRow[]> {
+  const data = await getJson<{ rows: PaymentReportRow[] }>(`/api/reports/payments?${reportParams(range).toString()}`)
+  return data?.rows ?? []
+}
+
+// ─── Shift attendance ─────────────────────────────────────────────────────
+
+export interface ShiftAttendanceRow {
+  memberId: string
+  memberName: string
+  day: string
+  scheduled: boolean
+  activeSeconds: number
+  status: "worked" | "missed" | "unscheduled"
+}
+
+export async function fetchShiftAttendanceReport(range: ReportQuery): Promise<ShiftAttendanceRow[]> {
+  const data = await getJson<{ rows: ShiftAttendanceRow[] }>(
+    `/api/reports/shift-attendance?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
 }

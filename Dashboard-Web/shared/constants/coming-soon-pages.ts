@@ -14,6 +14,10 @@ function addPagesFromSection(sectionId: string) {
 
 addPagesFromSection("settings")
 addPagesFromSection("financials")
+// ...except Expenses, which is now backed by the real `expenses` table:
+// claim, review (management only, never your own), remove, and it feeds the
+// Expenses report.
+COMING_SOON_PAGES.delete("financials-expenses")
 
 // --- Reports: only non-Tier-1 reports are "coming soon" ---
 // Tier 1 (unlocked): Time & Activity, Project Budgets, Daily Totals
@@ -22,19 +26,15 @@ addPagesFromSection("financials")
 // Shift-style hub reports are all non-Tier-1 (payments, limits, budgets, time-off, invoices, shift attendance).
 Object.keys(SHIFT_STYLE_HUB_REPORTS).forEach((pageId) => COMING_SOON_PAGES.add(pageId))
 
-// Non-Tier-1 individual report pages still with no real backend.
-COMING_SOON_PAGES.add("reports-manual-edits") // No backend — coming soon
-COMING_SOON_PAGES.add("reports-expenses")     // No backend — coming soon
-// There is no payments/disbursement table at all: /api/reports/payments is
-// served by the same handler as amounts-owed (hours x current rate), so the
-// page showed estimated amounts *still owed* under a title promising a record
-// of what was actually paid. Locked until a real payments source exists.
-COMING_SOON_PAGES.add("reports-payments")
-// Was listed as Tier-1 "unlocked" above, but work-breaks-report.tsx is a bare
-// ReportEmptyState with no fetch and there is no work-breaks backend route -
-// so it rendered "Nothing to report / Try adjusting the filters", which reads
-// as "your filters excluded everything" rather than "not built yet".
-COMING_SOON_PAGES.add("reports-work-breaks")
+// reports-expenses is now backed by a real expenses table plus
+// /api/reports/expenses and the Financials expense form — unlocked.
+// reports-manual-edits is now backed by /api/reports/manual-time-edits, which
+// reads the manual (source='manual') rows of time_entries — unlocked.
+// reports-payments now reads invoice_payments - money actually recorded
+// against an invoice, no longer the amounts-owed estimate relabelled.
+// reports-work-breaks is now backed by /api/reports/work-breaks, which derives
+// breaks from the gaps between a member's consecutive tracked sessions on the
+// same local day — unlocked.
 // reports-work-sessions, reports-amounts, reports-audit, reports-apps-urls,
 // and reports-timesheet-approvals are now wired to real Postgres-backed
 // endpoints (activity_sessions, daily_member_active_seconds, audit_logs,

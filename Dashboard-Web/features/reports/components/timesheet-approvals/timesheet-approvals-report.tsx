@@ -4,6 +4,12 @@ import { useEffect, useState } from "react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchTimesheetApprovalsReport } from "@/features/reports/api/misc-reports-api"
+import {
+  ReportFiltersPanel,
+  emptyReportFilters,
+  useReportFilterOptions,
+  type ReportFilterState,
+} from "@/features/reports/components/shared/report-filters-panel"
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
 import { cn } from "@/shared/utils/utils"
 
@@ -28,7 +34,7 @@ function formatDateLabel(date: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-function TimesheetApprovalsTable() {
+function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
@@ -37,13 +43,13 @@ function TimesheetApprovalsTable() {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchTimesheetApprovalsReport({ from, to }).then((data) => {
+    fetchTimesheetApprovalsReport({ from, to, memberIds: [...filters.memberIds] }).then((data) => {
       if (!cancelled) setRows(data)
     })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, filters])
 
   useEffect(() => {
     const runExport = () => {
@@ -139,9 +145,26 @@ function TimesheetApprovalsTable() {
 }
 
 export function TimesheetApprovalsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
+  const [filters, setFilters] = useState<ReportFilterState>(emptyReportFilters)
+  const options = useReportFilterOptions()
   return (
-    <StandardReportLayout title="Timesheet approvals report" onNavigate={onNavigate} exportFileBaseName="timesheet-approvals" showScopeTabs={false} showGroupBy={false}>
-      <TimesheetApprovalsTable />
+    <StandardReportLayout
+      title="Timesheet approvals report"
+      onNavigate={onNavigate}
+      exportFileBaseName="timesheet-approvals"
+      showScopeTabs={false}
+      showGroupBy={false}
+      filtersPanel={(close) => (
+        <ReportFiltersPanel
+          onClose={close}
+          options={options}
+          value={filters}
+          onChange={setFilters}
+          showProjects={false}
+        />
+      )}
+    >
+      <TimesheetApprovalsTable filters={filters} />
     </StandardReportLayout>
   )
 }

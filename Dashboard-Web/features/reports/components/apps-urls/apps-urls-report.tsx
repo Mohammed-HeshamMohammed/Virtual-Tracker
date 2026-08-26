@@ -4,6 +4,12 @@ import { useEffect, useState } from "react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchAppsUrlsReport } from "@/features/reports/api/misc-reports-api"
+import {
+  ReportFiltersPanel,
+  emptyReportFilters,
+  useReportFilterOptions,
+  type ReportFilterState,
+} from "@/features/reports/components/shared/report-filters-panel"
 import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-urls"
 import { cn } from "@/shared/utils/utils"
 
@@ -58,7 +64,7 @@ function UsageTable<T extends { memberName: string; durationHms: string }>({
   )
 }
 
-function AppsUrlsTables() {
+function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [apps, setApps] = useState<AppUsageRow[]>([])
   const [urls, setUrls] = useState<UrlUsageRow[]>([])
@@ -67,7 +73,7 @@ function AppsUrlsTables() {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchAppsUrlsReport({ from, to }).then((data) => {
+    fetchAppsUrlsReport({ from, to, memberIds: [...filters.memberIds], projectIds: [...filters.projectIds] }).then((data) => {
       if (!cancelled) {
         setApps(data.apps)
         setUrls(data.urls)
@@ -76,7 +82,7 @@ function AppsUrlsTables() {
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, filters])
 
   useEffect(() => {
     const runExport = () => {
@@ -107,9 +113,21 @@ function AppsUrlsTables() {
 }
 
 export function AppsUrlsReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
+  const [filters, setFilters] = useState<ReportFilterState>(emptyReportFilters)
+  const options = useReportFilterOptions()
   return (
-    <StandardReportLayout title="Apps & URLs report" titleTone="muted" onNavigate={onNavigate} exportFileBaseName="apps-urls" showScopeTabs={false} showGroupBy={false}>
-      <AppsUrlsTables />
+    <StandardReportLayout
+      title="Apps & URLs report"
+      titleTone="muted"
+      onNavigate={onNavigate}
+      exportFileBaseName="apps-urls"
+      showScopeTabs={false}
+      showGroupBy={false}
+      filtersPanel={(close) => (
+        <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
+      )}
+    >
+      <AppsUrlsTables filters={filters} />
     </StandardReportLayout>
   )
 }
