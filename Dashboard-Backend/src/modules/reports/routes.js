@@ -33,6 +33,10 @@ import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients
 import { canViewCompensation } from "../../http/field-policy.js";
 import { getViewerProjectIds } from "../../http/project-access.js";
 import { listExpensesPg } from "../../lib/postgres/expenses-postgres.service.js";
+import {
+  getTimeOffBalanceRowsPg,
+  getTimeOffTransactionRowsPg,
+} from "../../lib/postgres/time-off-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
@@ -662,6 +666,57 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
       logSafeError("[reports/expenses]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Time off balances ────────────────────────────────────────────────────
+  // Balance is as of the end of the selected range, not "now" - an accrual
+  // dated later in the year must not count towards a period that ended before it.
+  if (pn === "/api/reports/time-off-balances" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const to = parseDateParam(url.searchParams.get("to")) || new Date().toISOString().slice(0, 10);
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const balances = await getTimeOffBalanceRowsPg({ memberIds, asOf: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(balances.map((b) => b.memberId))]);
+      const rows = balances.map((b) => ({
+        ...b,
+        memberName: nameMap.get(b.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows, asOf: to } });
+    } catch (e) {
+      logSafeError("[reports/time-off-balances]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Time off transactions ────────────────────────────────────────────────
+  if (pn === "/api/reports/time-off-transactions" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const transactions = await getTimeOffTransactionRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(transactions.map((t) => t.memberId))]);
+      const rows = transactions.map((t) => ({
+        ...t,
+        memberName: nameMap.get(t.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/time-off-transactions]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;

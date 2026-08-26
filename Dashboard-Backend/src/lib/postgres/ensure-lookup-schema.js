@@ -1944,6 +1944,75 @@ $$ LANGUAGE plpgsql`,
   // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
   // polls this on the same interval-timer pattern team-weekly-report.service.js
   // already uses, no job-queue dependency needed for one feature.
+  // ─── Time off ───────────────────────────────────────────────────────────
+  // A policy is the entitlement (e.g. "Annual leave, 20 days/year"); a request
+  // is someone asking for days against it; transactions are the ledger.
+  //
+  // Balances are deliberately NOT a stored column - they are SUM(transactions)
+  // per member+policy. A stored balance and a ledger disagree the moment any
+  // write is missed, and then there is no way to tell which is right. Accruals
+  // are positive days, approved leave is negative.
+  `CREATE TABLE IF NOT EXISTS time_off_policies (
+  id                UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              VARCHAR(120)  NOT NULL,
+  description       TEXT          NOT NULL DEFAULT '',
+  days_per_year     NUMERIC(6,2)  NOT NULL DEFAULT 0 CHECK (days_per_year >= 0),
+  paid              BOOLEAN       NOT NULL DEFAULT true,
+  requires_approval BOOLEAN       NOT NULL DEFAULT true,
+  active            BOOLEAN       NOT NULL DEFAULT true,
+  created_by        VARCHAR(255),
+  updated_by        VARCHAR(255),
+  created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  UNIQUE (name)
+)`,
+  `CREATE TABLE IF NOT EXISTS time_off_requests (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  policy_id     UUID          NOT NULL REFERENCES time_off_policies(id) ON DELETE RESTRICT,
+  start_date    DATE          NOT NULL,
+  end_date      DATE          NOT NULL,
+  days          NUMERIC(6,2)  NOT NULL CHECK (days > 0),
+  note          TEXT          NOT NULL DEFAULT '',
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  reviewed_by   VARCHAR(255),
+  reviewed_at   TIMESTAMPTZ,
+  review_note   TEXT          NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  CHECK (end_date >= start_date)
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_member ON time_off_requests (member_id)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_status ON time_off_requests (status)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_dates  ON time_off_requests (start_date, end_date)",
+  // kind: 'accrual' (grant), 'usage' (approved leave), 'adjustment' (manual
+  // correction). request_id links a usage row back to what caused it, and is
+  // UNIQUE so approving the same request twice cannot double-deduct.
+  `CREATE TABLE IF NOT EXISTS time_off_transactions (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  policy_id     UUID          NOT NULL REFERENCES time_off_policies(id) ON DELETE RESTRICT,
+  request_id    UUID          REFERENCES time_off_requests(id) ON DELETE CASCADE,
+  kind          VARCHAR(20)   NOT NULL CHECK (kind IN ('accrual', 'usage', 'adjustment')),
+  days          NUMERIC(6,2)  NOT NULL,
+  effective_on  DATE          NOT NULL,
+  note          TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_time_off_tx_member ON time_off_transactions (member_id, policy_id)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_tx_date   ON time_off_transactions (effective_on)",
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_time_off_tx_request
+     ON time_off_transactions (request_id) WHERE request_id IS NOT NULL`,
+  `DROP TRIGGER IF EXISTS trg_time_off_policies_updated_at ON time_off_policies`,
+  `CREATE TRIGGER trg_time_off_policies_updated_at
+  BEFORE UPDATE ON time_off_policies
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  `DROP TRIGGER IF EXISTS trg_time_off_requests_updated_at ON time_off_requests`,
+  `CREATE TRIGGER trg_time_off_requests_updated_at
+  BEFORE UPDATE ON time_off_requests
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
   // ─── Expenses ───────────────────────────────────────────────────────────
   // Money a member spent doing the work, as opposed to time they spent on it.
   // Approval mirrors time_entries' pending/approved/rejected vocabulary so the

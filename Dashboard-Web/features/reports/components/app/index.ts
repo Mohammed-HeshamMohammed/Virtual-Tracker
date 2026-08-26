@@ -11,4 +11,8 @@ export { WorkSessionsReport } from "@/features/reports/components/work-sessions/
 export { ManualTimeEditsReport } from "@/features/reports/components/app/manual-time-edits-report"
 export { WorkBreaksReport } from "@/features/reports/components/app/work-breaks-report"
 export { ExpensesReport } from "@/features/reports/components/app/expenses-report"
+export {
+  TimeOffBalancesReport,
+  TimeOffTransactionsReport,
+} from "@/features/reports/components/app/time-off-reports"
 export { StandardReportLayout, ReportEmptyState, useStandardReportLayout } from "@/features/reports/components/app/standard-report-layout"

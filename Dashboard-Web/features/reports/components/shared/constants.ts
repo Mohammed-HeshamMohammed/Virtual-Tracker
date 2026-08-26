@@ -181,11 +181,6 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
   { title: string; exportFileBaseName: string }
 > = {
   "reports-budgets": { title: "Budgets and limits report", exportFileBaseName: "budgets-limits" },
-  "reports-time-off-balances": { title: "Time off balances report", exportFileBaseName: "time-off-balances" },
-  "reports-time-off-transactions": {
-    title: "Time off transactions report",
-    exportFileBaseName: "time-off-transactions",
-  },
   "reports-client-invoices": { title: "Client invoices report", exportFileBaseName: "client-invoices" },
   "reports-team-invoices": { title: "Team invoices report", exportFileBaseName: "team-invoices" },
   "reports-client-invoices-aging": {

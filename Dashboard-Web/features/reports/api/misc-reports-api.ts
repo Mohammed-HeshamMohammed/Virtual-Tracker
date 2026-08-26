@@ -467,3 +467,45 @@ export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseRe
   const data = await getJson<{ rows: ExpenseReportRow[] }>(`/api/reports/expenses?${reportParams(range).toString()}`)
   return data?.rows ?? []
 }
+
+// ─── Time off ─────────────────────────────────────────────────────────────
+
+export interface TimeOffBalanceRow {
+  memberId: string
+  memberName: string
+  policyId: string
+  policyName: string
+  entitlementDays: number
+  accruedDays: number
+  usedDays: number
+  balanceDays: number
+}
+
+export async function fetchTimeOffBalancesReport(
+  range: ReportQuery
+): Promise<{ rows: TimeOffBalanceRow[]; asOf: string }> {
+  const data = await getJson<{ rows: TimeOffBalanceRow[]; asOf: string }>(
+    `/api/reports/time-off-balances?${reportParams(range).toString()}`
+  )
+  return { rows: data?.rows ?? [], asOf: data?.asOf ?? range.to }
+}
+
+export interface TimeOffTransactionRow {
+  id: string
+  memberId: string
+  memberName: string
+  policyId: string
+  policyName: string
+  requestId: string | null
+  kind: "accrual" | "usage" | "adjustment"
+  days: number
+  effectiveOn: string
+  note: string
+}
+
+export async function fetchTimeOffTransactionsReport(range: ReportQuery): Promise<TimeOffTransactionRow[]> {
+  const data = await getJson<{ rows: TimeOffTransactionRow[] }>(
+    `/api/reports/time-off-transactions?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
