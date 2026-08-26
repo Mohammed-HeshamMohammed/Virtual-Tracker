@@ -399,3 +399,49 @@ export async function fetchAppsUrlsReport(
     })),
   }
 }
+
+// ─── Manual Time Edits ────────────────────────────────────────────────────
+
+export interface ManualTimeEditRow {
+  id: string
+  day: string
+  memberId: string
+  memberName: string
+  projectName: string
+  taskTitle: string
+  hours: number
+  description: string
+  billable: boolean
+  status: string
+  editedByName: string
+  editedAt: string | null
+}
+
+export async function fetchManualTimeEditsReport(range: ReportQuery): Promise<ManualTimeEditRow[]> {
+  const data = await getJson<{ rows: ManualTimeEditRow[] }>(
+    `/api/reports/manual-time-edits?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
+
+// ─── Work Breaks ──────────────────────────────────────────────────────────
+
+export interface WorkBreakRow {
+  memberId: string
+  memberName: string
+  day: string
+  startedAt: string | null
+  endedAt: string | null
+  durationSeconds: number
+}
+
+export async function fetchWorkBreaksReport(
+  range: ReportQuery & { minGapMinutes?: number }
+): Promise<{ rows: WorkBreakRow[]; minGapMinutes: number }> {
+  const params = reportParams(range)
+  if (range.minGapMinutes) params.set("minGapMinutes", String(range.minGapMinutes))
+  const data = await getJson<{ rows: WorkBreakRow[]; minGapMinutes: number }>(
+    `/api/reports/work-breaks?${params.toString()}`
+  )
+  return { rows: data?.rows ?? [], minGapMinutes: data?.minGapMinutes ?? 5 }
+}

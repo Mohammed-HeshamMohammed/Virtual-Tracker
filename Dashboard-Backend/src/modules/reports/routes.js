@@ -20,6 +20,8 @@ import {
   getTimesheetApprovalRowsPg,
   getAppUsageRowsPg,
   getUrlUsageRowsPg,
+  getManualTimeEditRowsPg,
+  getWorkBreakRowsPg,
 } from "../../lib/postgres/misc-reports-postgres.service.js";
 import {
   listProjectsPg,
@@ -538,6 +540,84 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
       logSafeError("[reports/audit-log]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Manual Time Edits ────────────────────────────────────────────────────
+  if (pn === "/api/reports/manual-time-edits" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const entries = await getManualTimeEditRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
+
+      // created_by/updated_by hold a member id for in-app writes; resolve both
+      // those and the entry owner in one lookup.
+      const ids = new Set();
+      for (const e of entries) {
+        if (e.memberId) ids.add(String(e.memberId));
+        if (UUID_PARAM_RE.test(e.updatedBy)) ids.add(e.updatedBy);
+        if (UUID_PARAM_RE.test(e.createdBy)) ids.add(e.createdBy);
+      }
+      const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
+      const nameOf = (value) => (UUID_PARAM_RE.test(value) ? nameMap.get(value)?.name ?? "Unknown" : value || "");
+
+      const rows = entries.map((e) => ({
+        ...e,
+        memberName: nameMap.get(String(e.memberId))?.name ?? "Unknown",
+        editedByName: nameOf(e.updatedBy) || nameOf(e.createdBy),
+        hours: Math.round((e.durationSeconds / 3600) * 100) / 100,
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/manual-time-edits]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Work Breaks ──────────────────────────────────────────────────────────
+  if (pn === "/api/reports/work-breaks" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+    // How long a gap has to be before it counts as a break rather than a
+    // stop/start while switching task.
+    const rawMinGap = Number.parseInt(url.searchParams.get("minGapMinutes") ?? "", 10);
+    const minGapMinutes = Number.isFinite(rawMinGap) ? Math.min(Math.max(rawMinGap, 1), 240) : 5;
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const breaks = await getWorkBreakRowsPg({ memberIds, fromDay: from, toDay: to, minGapMinutes });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(breaks.map((b) => String(b.memberId)))]);
+      const rows = breaks.map((b) => ({
+        ...b,
+        memberName: nameMap.get(String(b.memberId))?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
+    } catch (e) {
+      logSafeError("[reports/work-breaks]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;

@@ -23,18 +23,17 @@ addPagesFromSection("financials")
 Object.keys(SHIFT_STYLE_HUB_REPORTS).forEach((pageId) => COMING_SOON_PAGES.add(pageId))
 
 // Non-Tier-1 individual report pages still with no real backend.
-COMING_SOON_PAGES.add("reports-manual-edits") // No backend — coming soon
-COMING_SOON_PAGES.add("reports-expenses")     // No backend — coming soon
+COMING_SOON_PAGES.add("reports-expenses")     // No expenses table yet — coming soon
+// reports-manual-edits is now backed by /api/reports/manual-time-edits, which
+// reads the manual (source='manual') rows of time_entries — unlocked.
 // There is no payments/disbursement table at all: /api/reports/payments is
 // served by the same handler as amounts-owed (hours x current rate), so the
 // page showed estimated amounts *still owed* under a title promising a record
 // of what was actually paid. Locked until a real payments source exists.
 COMING_SOON_PAGES.add("reports-payments")
-// Was listed as Tier-1 "unlocked" above, but work-breaks-report.tsx is a bare
-// ReportEmptyState with no fetch and there is no work-breaks backend route -
-// so it rendered "Nothing to report / Try adjusting the filters", which reads
-// as "your filters excluded everything" rather than "not built yet".
-COMING_SOON_PAGES.add("reports-work-breaks")
+// reports-work-breaks is now backed by /api/reports/work-breaks, which derives
+// breaks from the gaps between a member's consecutive tracked sessions on the
+// same local day — unlocked.
 // reports-work-sessions, reports-amounts, reports-audit, reports-apps-urls,
 // and reports-timesheet-approvals are now wired to real Postgres-backed
 // endpoints (activity_sessions, daily_member_active_seconds, audit_logs,

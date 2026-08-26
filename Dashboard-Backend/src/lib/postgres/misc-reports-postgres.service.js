@@ -240,3 +240,104 @@ export async function getUrlUsageRowsPg({ memberIds, fromDay, toDay }) {
     totalSeconds: Math.max(0, Number(r.total_seconds) || 0),
   }));
 }
+
+/**
+ * Manual time entries in a period - backs the Manual Time Edits report.
+ *
+ * `source` defaults to 'manual' on time_entries, and the tracker writes
+ * 'tracked' rows, so this is exactly the set a person typed in by hand rather
+ * than had recorded for them. created_by/updated_by are VARCHAR (they hold a
+ * member id for in-app writes), resolved to names by the caller.
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
+ */
+export async function getManualTimeEditRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
+  const rows = await query(
+    `SELECT te.id, te.member_id, te.project_id, te.task_id, te.date,
+            te.start_time, te.end_time, te.duration, te.description,
+            te.billable, te.status, te.created_by, te.updated_by,
+            te.created_at, te.updated_at,
+            COALESCE(p.name, '') AS project_name,
+            COALESCE(t.title, '') AS task_title
+     FROM time_entries te
+     LEFT JOIN projects p ON p.id = te.project_id
+     LEFT JOIN tasks t ON t.id = te.task_id
+     WHERE te.source = 'manual'
+       AND te.date >= $1 AND te.date <= $2
+       AND ($3::uuid[] IS NULL OR te.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR te.project_id = ANY($4::uuid[]))
+     ORDER BY te.date DESC, te.created_at DESC
+     LIMIT 2000`,
+    [fromDay, toDay, memberIds, projectIds],
+  );
+  return rows.map((r) => ({
+    id: String(r.id),
+    memberId: r.member_id,
+    projectId: r.project_id,
+    projectName: r.project_name,
+    taskTitle: r.task_title,
+    day: toDayString(r.date),
+    startTime: r.start_time ? String(r.start_time) : "",
+    endTime: r.end_time ? String(r.end_time) : "",
+    durationSeconds: Math.max(0, Number(r.duration) || 0),
+    description: r.description || "",
+    billable: r.billable === true,
+    status: r.status || "pending",
+    createdBy: r.created_by || "",
+    updatedBy: r.updated_by || "",
+    editedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
+  }));
+}
+
+/**
+ * Work breaks, derived from the gaps between a member's consecutive tracked
+ * sessions on the same local day.
+ *
+ * There is no breaks table and nothing records "went on break" - but a gap
+ * between the end of one session and the start of the next IS the break, so
+ * it is derived rather than invented. Gaps shorter than minGapMinutes are
+ * noise (a stop/start while switching task), and a gap that crosses into the
+ * next day is the end of the working day, not a break, so it is excluded.
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, minGapMinutes?: number }} params
+ */
+export async function getWorkBreakRowsPg({ memberIds, fromDay, toDay, minGapMinutes = 5 }) {
+  const rows = await query(
+    `WITH tz AS (
+       SELECT s.id, s.member_id, s.started_at, s.ended_at,
+              COALESCE(NULLIF(m.timezone, ''), 'UTC') AS zone
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       WHERE s.ended_at IS NOT NULL
+         AND ($3::uuid[] IS NULL OR s.member_id = ANY($3::uuid[]))
+     ),
+     local_days AS (
+       SELECT id, member_id, started_at, ended_at,
+              (started_at AT TIME ZONE zone)::date AS local_day,
+              (ended_at   AT TIME ZONE zone)::date AS end_local_day
+       FROM tz
+     ),
+     bounded AS (
+       SELECT * FROM local_days WHERE local_day >= $1 AND local_day <= $2
+     ),
+     gaps AS (
+       SELECT member_id, local_day, ended_at AS break_start,
+              LEAD(started_at) OVER (PARTITION BY member_id, local_day ORDER BY started_at) AS break_end
+       FROM bounded
+     )
+     SELECT member_id, local_day, break_start, break_end,
+            EXTRACT(EPOCH FROM (break_end - break_start)) AS gap_seconds
+     FROM gaps
+     WHERE break_end IS NOT NULL
+       AND break_end > break_start
+       AND EXTRACT(EPOCH FROM (break_end - break_start)) >= $4
+     ORDER BY local_day DESC, break_start DESC
+     LIMIT 2000`,
+    [fromDay, toDay, memberIds, Math.max(1, minGapMinutes) * 60],
+  );
+  return rows.map((r) => ({
+    memberId: r.member_id,
+    day: toDayString(r.local_day),
+    startedAt: r.break_start ? new Date(r.break_start).toISOString() : null,
+    endedAt: r.break_end ? new Date(r.break_end).toISOString() : null,
+    durationSeconds: Math.max(0, Math.round(Number(r.gap_seconds) || 0)),
+  }));
+}
