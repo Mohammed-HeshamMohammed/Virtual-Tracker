@@ -22,6 +22,7 @@ import {
   getUrlUsageRowsPg,
   getManualTimeEditRowsPg,
   getWorkBreakRowsPg,
+  getShiftAttendanceRowsPg,
 } from "../../lib/postgres/misc-reports-postgres.service.js";
 import {
   listProjectsPg,
@@ -810,6 +811,34 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
       logSafeError("[reports/payments]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Shift attendance ─────────────────────────────────────────────────────
+  if (pn === "/api/reports/shift-attendance" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const attendance = await getShiftAttendanceRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(attendance.map((a) => a.memberId))]);
+      const rows = attendance.map((a) => ({
+        ...a,
+        memberName: nameMap.get(a.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/shift-attendance]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;

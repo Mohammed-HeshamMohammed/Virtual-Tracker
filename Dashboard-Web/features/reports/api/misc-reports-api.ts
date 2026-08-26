@@ -573,3 +573,21 @@ export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<P
   const data = await getJson<{ rows: PaymentReportRow[] }>(`/api/reports/payments?${reportParams(range).toString()}`)
   return data?.rows ?? []
 }
+
+// ─── Shift attendance ─────────────────────────────────────────────────────
+
+export interface ShiftAttendanceRow {
+  memberId: string
+  memberName: string
+  day: string
+  scheduled: boolean
+  activeSeconds: number
+  status: "worked" | "missed" | "unscheduled"
+}
+
+export async function fetchShiftAttendanceReport(range: ReportQuery): Promise<ShiftAttendanceRow[]> {
+  const data = await getJson<{ rows: ShiftAttendanceRow[] }>(
+    `/api/reports/shift-attendance?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}

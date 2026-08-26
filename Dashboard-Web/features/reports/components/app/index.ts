@@ -15,6 +15,8 @@ export {
   TimeOffBalancesReport,
   TimeOffTransactionsReport,
 } from "@/features/reports/components/app/time-off-reports"
+export { ShiftAttendanceReport } from "@/features/reports/components/app/shift-attendance-report"
+export { BudgetsHubReport } from "@/features/reports/components/app/budgets-hub-report"
 export {
   ClientInvoicesReport,
   TeamInvoicesReport,

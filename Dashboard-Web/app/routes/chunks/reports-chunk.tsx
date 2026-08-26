@@ -15,6 +15,8 @@ import {
   TeamInvoicesReport,
   ClientInvoicesAgingReport,
   TeamInvoicesAgingReport,
+  ShiftAttendanceReport,
+  BudgetsHubReport,
   AuditLogReport,
   ReportEmptyState,
   StandardReportLayout,
@@ -93,6 +95,10 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
       return <ClientInvoicesAgingReport onNavigate={onNavigate} />
     case "reports-team-invoices-aging":
       return <TeamInvoicesAgingReport onNavigate={onNavigate} />
+    case "reports-shift-attendance":
+      return <ShiftAttendanceReport onNavigate={onNavigate} />
+    case "reports-budgets":
+      return <BudgetsHubReport onNavigate={onNavigate} />
     default:
       return <ReportsAllPage onNavigate={onNavigate} />
   }

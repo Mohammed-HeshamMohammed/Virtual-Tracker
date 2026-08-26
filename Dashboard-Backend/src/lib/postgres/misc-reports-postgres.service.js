@@ -341,3 +341,69 @@ export async function getWorkBreakRowsPg({ memberIds, fromDay, toDay, minGapMinu
     durationSeconds: Math.max(0, Math.round(Number(r.gap_seconds) || 0)),
   }));
 }
+
+/**
+ * Shift attendance: did people work on the days they were scheduled to?
+ *
+ * There is no shift table and no configured shift clock times anywhere in this
+ * schema, so "late" and "abandoned" are not derivable and are deliberately not
+ * invented. What IS configured is time_settings.work_days - a per-member array
+ * of weekday indices where 0 = Monday (its default [0,1,2,3,4] is Mon-Fri, and
+ * the settings UI labels it that way). Postgres ISODOW is 1=Monday, hence the
+ * -1 below.
+ *
+ * Attendance is that schedule crossed with whether the member actually tracked
+ * anything that day, bucketed in their own timezone so a late-evening session
+ * counts towards the day they worked it:
+ *   worked      - scheduled, and tracked time
+ *   missed      - scheduled, tracked nothing
+ *   unscheduled - not scheduled, but tracked time anyway
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
+ */
+export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay }) {
+  const rows = await query(
+    `WITH days AS (
+       SELECT generate_series($1::date, $2::date, interval '1 day')::date AS day
+     ),
+     scoped_members AS (
+       SELECT m.id,
+              COALESCE(NULLIF(m.timezone, ''), 'UTC') AS zone,
+              COALESCE(ts.work_days, '[0,1,2,3,4]'::jsonb) AS work_days
+       FROM members m
+       LEFT JOIN time_settings ts ON ts.member_id = m.id
+       WHERE m.status <> 'banned'
+         AND ($3::uuid[] IS NULL OR m.id = ANY($3::uuid[]))
+     ),
+     worked AS (
+       SELECT s.member_id,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day,
+              SUM(s.active_seconds) AS active_seconds
+       FROM activity_sessions s
+       JOIN members m ON m.id = s.member_id
+       GROUP BY 1, 2
+     )
+     SELECT sm.id AS member_id,
+            d.day,
+            (sm.work_days @> to_jsonb(EXTRACT(ISODOW FROM d.day)::int - 1)) AS scheduled,
+            COALESCE(w.active_seconds, 0) AS active_seconds
+     FROM scoped_members sm
+     CROSS JOIN days d
+     LEFT JOIN worked w ON w.member_id = sm.id AND w.day = d.day
+     WHERE (sm.work_days @> to_jsonb(EXTRACT(ISODOW FROM d.day)::int - 1))
+        OR COALESCE(w.active_seconds, 0) > 0
+     ORDER BY d.day DESC
+     LIMIT 3000`,
+    [fromDay, toDay, memberIds],
+  );
+  return rows.map((r) => {
+    const activeSeconds = Math.max(0, Number(r.active_seconds) || 0);
+    const scheduled = r.scheduled === true;
+    return {
+      memberId: String(r.member_id),
+      day: toDayString(r.day),
+      scheduled,
+      activeSeconds,
+      status: scheduled ? (activeSeconds > 0 ? "worked" : "missed") : "unscheduled",
+    };
+  });
+}

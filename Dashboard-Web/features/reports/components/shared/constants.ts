@@ -176,13 +176,17 @@ export const REPORTS_SECTIONS: { heading: string; cards: ReportHubCard[] }[] = [
 // 2. Hub Shift-Style Reports Configuration
 // ==========================================
 
+/**
+ * Reports that render through the generic hub shell rather than a hand-built
+ * page. Every entry that used to live here now has a real backend and its own
+ * component, so the map is empty - kept because resolve-chunk.ts and
+ * coming-soon-pages.ts both iterate it, and a future generic report belongs
+ * here rather than in a new mechanism.
+ */
 export const SHIFT_STYLE_HUB_REPORTS: Record<
   string,
   { title: string; exportFileBaseName: string }
-> = {
-  "reports-budgets": { title: "Budgets and limits report", exportFileBaseName: "budgets-limits" },
-  "reports-shift-attendance": { title: "Shift attendance report", exportFileBaseName: "shift-attendance" },
-}
+> = {}
 
 // ==========================================
 // 3. Shared Report Layout & Settings
