@@ -3,7 +3,13 @@ import { getAuthContext, requireManagementRole } from "../../http/auth-context.j
 import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { canAccessTask } from "../../http/task-access.js";
-import { getViewerProjectIds, toAllowedProjectSet, viewerCanWriteProject, viewerCanCreateProjectTasks } from "../../http/project-access.js";
+import {
+  clientMayManageProject,
+  getViewerProjectIds,
+  toAllowedProjectSet,
+  viewerCanWriteProject,
+  viewerCanCreateProjectTasks,
+} from "../../http/project-access.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { sendPgConstraintError } from "../../http/api-error.js";
@@ -286,10 +292,6 @@ async function assertTeamWriteAuthorized(
 async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, body, existingData, resourceId) {
   if (!PROJECT_WRITE_KEYS.has(entityKey)) return true;
   const viewer = getAuthContext(req);
-  if (!requireManagementRole(viewer)) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
-  }
   let projectId = "";
   if (entityKey === "projects") {
     projectId = resourceId || (typeof body.id === "string" ? body.id : "");
@@ -299,6 +301,21 @@ async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, bod
       (typeof body.projectId === "string" && body.projectId) ||
       (typeof existingData?.project_id === "string" && existingData.project_id) ||
       "";
+  }
+  // A client is not management, but a project with client_can_manage on is
+  // theirs to run. Everyone else still needs a management role.
+  const clientManages = projectId ? await clientMayManageProject(viewer, projectId) : false;
+  if (!clientManages && !requireManagementRole(viewer)) {
+    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+    return false;
+  }
+  // The switch itself is not the client's to flip.
+  if (clientManages && entityKey === "projects" && Object.prototype.hasOwnProperty.call(body, "client_can_manage")) {
+    sendJson(res, origin, 403, {
+      success: false,
+      error: "Only the project's organization can change who may manage it.",
+    });
+    return false;
   }
   if (projectId) {
     const allowed = await viewerCanWriteProject(db, viewer, projectId);
@@ -382,8 +399,18 @@ async function assertGenericWriteAuthorized(
   options = {},
 ) {
   if (requiresManagementWriteGate(entityKey) && !requireManagementRole(getAuthContext(req))) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
+    // A client managing this project passes here and is then checked against
+    // that project specifically by the project/task gates below.
+    const viewer = getAuthContext(req);
+    const projectId =
+      (typeof body?.project_id === "string" && body.project_id) ||
+      (typeof body?.projectId === "string" && body.projectId) ||
+      (typeof existingData?.project_id === "string" && existingData.project_id) ||
+      (entityKey === "projects" ? options.resourceId || "" : "");
+    if (!projectId || !(await clientMayManageProject(viewer, projectId))) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+      return false;
+    }
   }
   if (!(await assertTaskChildWritable(req, res, origin, db, entityKey, body, existingData))) return false;
   if (!(await assertTeamWriteAuthorized(req, res, origin, db, entityKey, body, existingData, options))) return false;

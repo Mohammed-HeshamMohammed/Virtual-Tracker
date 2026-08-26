@@ -194,8 +194,14 @@ export function canCreateTasksInProject(
    * the manager-only rule this function has always enforced unconditionally.
    * false lets any assigned member of that project create tasks in it. */
   restrictTaskCreation = true,
+  /** The project's `clientCanManage` setting. A client has no project_members
+   *  row, so without this the checks below always deny them - which is right
+   *  by default, and wrong for the one project their organization handed them
+   *  to run. Mirrors clientMayManageProject on the server. */
+  clientCanManage = false,
 ): boolean {
   if (canCreateTasksByOrgRole(orgRole)) return true
+  if (normalizeMemberRole(orgRole) === "client") return clientCanManage === true
   if (!memberId) return false
   const managesAnyProject = projectMembers.some(
     (row) => row.memberId === memberId && isProjectManagerRole(row.projectRole),
@@ -277,6 +283,45 @@ export function defaultNavItemForRole(_role: string): string {
 
 const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "settings"])
 
+/**
+ * A Client is attached to projects through their client record, and reads
+ * everything about those projects: the dashboard, the reports, the activity,
+ * the project pages, the timesheet outcomes and the people on them. They do
+ * not manage any of it - the server scopes every one of those reads to their
+ * projects and refuses their writes unless the project has client_can_manage
+ * turned on.
+ */
+const CLIENT_SECTION_IDS = new Set([
+  "dashboard",
+  "timesheets",
+  "activity",
+  "project-management",
+  "reports",
+  "people",
+  "settings",
+  "financials",
+])
+
+/** Client and Viewer are read-only everywhere the UI offers a create action. */
+export function isReadOnlyRole(role: string): boolean {
+  const key = normalizeMemberRole(role)
+  return key === "client" || key === "viewer" || key === "user"
+}
+
+/**
+ * Nav sections this role may open. The sidebar, the breadcrumb dropdowns and
+ * the global search each used to carry their own copy of this list, so a
+ * client could reach a page from one of them that the others did not show.
+ */
+export function allowedNavSectionIds(role: string): Set<string> {
+  if (canAccessAllSidebarTabs(role)) return new Set(NAV_SECTIONS.map((section) => section.id))
+  if (normalizeMemberRole(role) === "client") return new Set(CLIENT_SECTION_IDS)
+  const ids = new Set(RESTRICTED_SECTION_IDS)
+  if (canSeePmTasksSection(role)) ids.add("project-management")
+  if (canAccessReviewCenter(role)) ids.add("timesheets")
+  return ids
+}
+
 function collectPageIdsForSections(sectionIds: Set<string>, restrictDashboardToGeneral: boolean): Set<string> {
   const ids = new Set<string>()
   for (const section of NAV_SECTIONS) {
@@ -293,8 +338,20 @@ function collectPageIdsForSections(sectionIds: Set<string>, restrictDashboardToG
 }
 
 let restrictedPageIdsCache: Set<string> | null = null
+let clientPageIdsCache: Set<string> | null = null
+
+function getClientPageIds(): Set<string> {
+  if (!clientPageIdsCache) {
+    // Every page of those sections, dashboard included - a client's dashboard
+    // is the same one, already scoped to their projects by the server.
+    clientPageIdsCache = collectPageIdsForSections(CLIENT_SECTION_IDS, false)
+    clientPageIdsCache.add("profile")
+  }
+  return new Set(clientPageIdsCache)
+}
 
 function getRestrictedPageIds(role: string): Set<string> {
+  if (normalizeMemberRole(role) === "client") return getClientPageIds()
   if (!restrictedPageIdsCache) {
     restrictedPageIdsCache = collectPageIdsForSections(RESTRICTED_SECTION_IDS, true)
     restrictedPageIdsCache.add("profile")

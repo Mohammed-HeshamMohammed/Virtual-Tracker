@@ -14,7 +14,8 @@ import { useAuth } from "@/shared/providers/app"
 import { NAV_SECTIONS, type NavSection, type NavSubItem } from "@/shared/ui/layout/config/nav-sections"
 import { SIDEBAR_THEME_DARK as dark, SIDEBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { prefetchChunkForPage } from "@/app"
-import { canAccessAllSidebarTabs, canAccessReviewCenter, canSeePmTasksSection } from "@/features/auth"
+import { allowedNavSectionIds, canAccessAllSidebarTabs, canAccessReviewCenter, isReadOnlyRole } from "@/features/auth"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SidebarUserCard } from "@/shared/ui/layout/components/sidebar/sidebar-user-card"
 
@@ -48,6 +49,10 @@ export function Sidebar({
 
   const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
   const canSeeReviewCenter = canAccessReviewCenter(memberRole)
+  const isClient = isClientRole(memberRole)
+  // Client and Viewer have nothing to add a task to - the button opened a
+  // creation flow the server would refuse.
+  const canAddTask = !isReadOnlyRole(memberRole)
 
   const isSectionActive = (s: NavSection) =>
     s.id === activeItem || s.pages?.some((p: NavSubItem) => p.id === activeItem) || false
@@ -59,19 +64,15 @@ export function Sidebar({
     let sections = NAV_SECTIONS.filter((s: NavSection) => s.id !== "favorites" && !hiddenSections.has(s.id))
 
     if (!canAccessAllTabs) {
-      const allowedSectionIds = new Set(["dashboard", "people", "activity", "settings"])
-
-      if (canSeePmTasksSection(memberRole)) {
-        allowedSectionIds.add("project-management")
-      }
-
-      if (canSeeReviewCenter) {
-        allowedSectionIds.add("timesheets")
-      }
-
+      // A client reads their projects across the whole app; the server scopes
+      // each of these to the projects linked to their client record. Settings
+      // and Financials stay listed and stay disabled.
+      const allowedSectionIds = allowedNavSectionIds(memberRole)
       sections = sections.filter((s: NavSection) => allowedSectionIds.has(s.id))
 
-      if (canSeeReviewCenter && !canAccessAllTabs) {
+      // A client only ever sees the outcome of a timesheet, never the
+      // approval queue - they are the project's client, not its approver.
+      if ((canSeeReviewCenter || isClient) && !canAccessAllTabs) {
         sections = sections.map((s: NavSection) => {
           if (s.id !== "timesheets") return s
           return {
@@ -81,25 +82,27 @@ export function Sidebar({
         })
       }
 
-      sections = sections.map((s: NavSection) => {
-        if (s.id === "dashboard") {
-          return {
-            ...s,
-            pages: s.pages?.filter((p: NavSubItem) => p.id === "command-center")
+      if (!isClient) {
+        sections = sections.map((s: NavSection) => {
+          if (s.id === "dashboard") {
+            return {
+              ...s,
+              pages: s.pages?.filter((p: NavSubItem) => p.id === "command-center")
+            }
           }
-        }
-        if (s.id === "project-management") {
-          return {
-            ...s,
-            pages: s.pages?.filter((p: NavSubItem) => p.id === "pm-tasks")
+          if (s.id === "project-management") {
+            return {
+              ...s,
+              pages: s.pages?.filter((p: NavSubItem) => p.id === "pm-tasks")
+            }
           }
-        }
-        return s
-      })
+          return s
+        })
+      }
     }
 
     return sections
-  }, [hiddenSections, canAccessAllTabs, canSeeReviewCenter, memberRole])
+  }, [hiddenSections, canAccessAllTabs, canSeeReviewCenter, isClient, memberRole])
 
   return (
     <motion.aside
@@ -237,6 +240,7 @@ export function Sidebar({
         <Divider sep={t.sep} />
 
         <div className="mt-3 space-y-3">
+          {canAddTask ? (
           <button
             className={cn("relative w-full flex items-center justify-center py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02] active:scale-95 overflow-hidden group", t.addTaskText)}
             style={{ background: `linear-gradient(135deg, ${t.addTaskFrom}, ${t.addTaskTo})` }} type="button"
@@ -249,6 +253,7 @@ export function Sidebar({
               </motion.span>
             )}
           </button>
+          ) : null}
 
           <SidebarUserCard
             isCollapsed={isCollapsed}

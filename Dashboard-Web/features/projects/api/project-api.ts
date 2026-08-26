@@ -19,6 +19,7 @@ function toProject(input: Record<string, unknown>): Project {
     requireTaskToTrack: Boolean(input.require_task_to_track ?? input.requireTaskToTrack ?? true),
     restrictTaskCreation: Boolean(input.restrict_task_creation ?? input.restrictTaskCreation ?? true),
     requireStopNote: Boolean(input.require_stop_note ?? input.requireStopNote ?? false),
+    clientCanManage: Boolean(input.client_can_manage ?? input.clientCanManage ?? false),
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
     idleTimeSeconds: Number(input.idle_time_seconds ?? input.idleTimeSeconds ?? 450),
     endDate: String(input.end_date ?? input.endDate ?? ""),
@@ -47,6 +48,7 @@ function toProjectPayload(
   if (input.requireTaskToTrack !== undefined) out.require_task_to_track = input.requireTaskToTrack
   if (input.restrictTaskCreation !== undefined) out.restrict_task_creation = input.restrictTaskCreation
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
+  if (input.clientCanManage !== undefined) out.client_can_manage = input.clientCanManage
   // Management-project links. Sent only when present so a normal project's
   // update body stays exactly as it was.
   if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
@@ -95,6 +97,8 @@ export interface Project {
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
+  /** The project's client may run it - create and edit its tasks. Off by default. */
+  clientCanManage: boolean
   disableIdleTime: boolean
   idleTimeSeconds?: number
   endDate: string
@@ -128,6 +132,7 @@ export interface CreateProjectInput {
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
+  clientCanManage?: boolean
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
@@ -148,6 +153,7 @@ export interface UpdateProjectInput {
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
+  clientCanManage?: boolean
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
@@ -167,7 +173,7 @@ export interface UpdateProjectInput {
 
 export async function getProjects(options: RequestOptions & { fields?: string[] } = {}): Promise<Project[]> {
   const params = new URLSearchParams()
-  const fields = options.fields ?? ["id", "name", "type", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "requireTaskToTrack", "require_task_to_track", "restrictTaskCreation", "restrict_task_creation", "requireStopNote", "require_stop_note", "disableIdleTime", "disable_idle_time", "idleTimeSeconds", "idle_time_seconds", "endDate", "end_date", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
+  const fields = options.fields ?? ["id", "name", "type", "clientId", "client_id", "status", "billable", "disableActivity", "disable_activity", "allowProjectTracking", "allow_project_tracking", "requireTaskToTrack", "require_task_to_track", "restrictTaskCreation", "restrict_task_creation", "requireStopNote", "require_stop_note", "clientCanManage", "client_can_manage", "disableIdleTime", "disable_idle_time", "idleTimeSeconds", "idle_time_seconds", "endDate", "end_date", "managersNotes", "managers_notes", "usersNotes", "users_notes", "viewersNotes", "viewers_notes", "createdAt", "created_at", "createdBy", "created_by", "updatedBy", "updated_by", "updatedAt", "updated_at", "archivedBy", "archived_by", "archivedAt", "archived_at"]
   if (fields.length) params.set("fields", fields.join(","))
 
   const query = params.toString() ? `?${params.toString()}` : ""

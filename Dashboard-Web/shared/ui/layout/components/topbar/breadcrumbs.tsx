@@ -12,7 +12,7 @@ import {
   PAGE_PARENTS, sortedItems, type NavSection, type NavSubItem, type NavSubSection
 } from "@/shared/ui/layout/config/nav-sections"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { canAccessAllSidebarTabs } from "@/features/auth"
+import { allowedNavSectionIds, canAccessAllSidebarTabs } from "@/features/auth"
 import { isComingSoonPage } from "@/shared/constants/coming-soon-pages"
 import { prefetchChunkForPage } from "@/app"
 
@@ -39,10 +39,7 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
 
   const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
 
-  const allowedSectionIds = useMemo(() => {
-    if (canAccessAllTabs) return new Set(NAV_SECTIONS.map((s: NavSection) => s.id))
-    return new Set(["dashboard", "people", "activity", "settings"])
-  }, [canAccessAllTabs])
+  const allowedSectionIds = useMemo(() => allowedNavSectionIds(memberRole), [memberRole])
 
   const filterSectionPages = (section: NavSection | undefined): NavSection | undefined => {
     if (!section) return undefined

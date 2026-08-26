@@ -622,8 +622,22 @@ export async function getConnectedMembers(db, memberId) {
  */
 export async function getMembersBySharedProjects(db, memberId) {
   if (!memberId) return [];
+  // "Shared project" used to mean a shared project_members row, which a client
+  // never has - they are attached through clients.member_id -> client_projects.
+  // So the People page showed a client nobody but themselves, even on projects
+  // with a full team on them.
   const rows = await pgQuery(
-    "SELECT DISTINCT member_id FROM project_members WHERE project_id IN (SELECT project_id FROM project_members WHERE member_id = $1) AND member_id != $1",
+    `WITH mine AS (
+       SELECT project_id FROM project_members WHERE member_id = $1
+       UNION
+       SELECT cp.project_id
+       FROM client_projects cp
+       JOIN clients c ON c.id = cp.client_id
+       WHERE c.member_id = $1
+     )
+     SELECT DISTINCT pm.member_id
+     FROM project_members pm
+     WHERE pm.project_id IN (SELECT project_id FROM mine) AND pm.member_id != $1`,
     [memberId],
   );
   return rows.map((r) => r.member_id).filter(Boolean);

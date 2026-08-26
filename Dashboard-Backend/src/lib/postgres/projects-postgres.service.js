@@ -38,8 +38,9 @@ export async function createProjectPg(data) {
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
        idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
-       require_task_to_track, restrict_task_creation, require_stop_note, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)
+       require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage,
+       created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)
      RETURNING *`,
     [
       id,
@@ -61,6 +62,9 @@ export async function createProjectPg(data) {
       data.requireTaskToTrack ?? true,
       data.restrictTaskCreation ?? true,
       data.requireStopNote ?? false,
+      // Off unless the creator turned it on - a client reads their projects
+      // either way, this is the only thing that lets them write to one.
+      data.clientCanManage === true,
       uuidOrNull(data.createdBy),
     ],
   );
@@ -98,6 +102,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     requireTaskToTrack: "require_task_to_track",
     restrictTaskCreation: "restrict_task_creation",
     requireStopNote: "require_stop_note",
+    clientCanManage: "client_can_manage",
     updatedBy: "updated_by",
   };
   const sets = [];
@@ -111,7 +116,9 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
           ? dateOrNull(patch[key])
           : key === "idleTimeSeconds"
             ? Math.max(0, Math.floor(Number(patch[key]) || 0))
-            : patch[key],
+            : key === "clientCanManage"
+              ? patch[key] === true
+              : patch[key],
     );
     sets.push(`${column} = $${params.length}`);
   }
@@ -212,6 +219,54 @@ export async function listProjectMembersPg(projectId) {
 export async function listProjectIdsForMemberPg(memberId) {
   const rows = await query("SELECT project_id FROM project_members WHERE member_id = $1 LIMIT 200", [memberId]);
   return rows.map((r) => r.project_id);
+}
+
+/**
+ * Every project a viewer is attached to, in all three ways the schema records
+ * an attachment: a project_members row, having created the project, or being
+ * the member behind a client the project is assigned to.
+ *
+ * The client leg is what was missing. A client member has no project_members
+ * row - they are linked through clients.member_id -> client_projects - so
+ * every scoped surface (Projects, Tasks, Reports, Activity, the dashboard)
+ * resolved an empty list for them and showed nothing at all.
+ * @param {string} memberId
+ * @returns {Promise<string[]>}
+ */
+export async function listViewerProjectIdsPg(memberId) {
+  if (!memberId) return [];
+  const rows = await query(
+    `SELECT project_id FROM project_members WHERE member_id = $1
+     UNION
+     SELECT id AS project_id FROM projects WHERE created_by = $1
+     UNION
+     SELECT cp.project_id
+     FROM client_projects cp
+     JOIN clients c ON c.id = cp.client_id
+     WHERE c.member_id = $1
+     LIMIT 500`,
+    [memberId],
+  );
+  return rows.map((r) => String(r.project_id)).filter(Boolean);
+}
+
+/**
+ * Projects a client member may write to: linked to one of their client rows
+ * AND flagged client_can_manage. Empty for everyone else.
+ * @param {string} memberId
+ * @returns {Promise<Set<string>>}
+ */
+export async function listClientManagedProjectIdsPg(memberId) {
+  if (!memberId) return new Set();
+  const rows = await query(
+    `SELECT cp.project_id
+     FROM client_projects cp
+     JOIN clients c ON c.id = cp.client_id
+     JOIN projects p ON p.id = cp.project_id
+     WHERE c.member_id = $1 AND p.client_can_manage = true`,
+    [memberId],
+  );
+  return new Set(rows.map((r) => String(r.project_id)));
 }
 
 /** Every member on a set of projects - the reverse lookup activity-scope.js needs. */

@@ -72,6 +72,8 @@ interface AddProjectFormState {
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
+  /** Lets this project's client run it, rather than only read it. */
+  clientCanManage: boolean
   /** Management projects only: projects grouped beneath this one. */
   subProjectIds: string[]
   disableIdleTime: boolean
@@ -182,6 +184,7 @@ function createDefaultAddForm(): AddProjectFormState {
     requireTaskToTrack: true,
     restrictTaskCreation: true,
     requireStopNote: false,
+    clientCanManage: false,
     subProjectIds: [],
     disableIdleTime: false,
     // Matches ID-1's server-side default (450s) - shown up front on a new
@@ -350,6 +353,7 @@ function formStateToPayload(
     requireTaskToTrack: addForm.requireTaskToTrack,
     restrictTaskCreation: addForm.restrictTaskCreation,
     requireStopNote: addForm.requireStopNote,
+    clientCanManage: addForm.clientCanManage,
     // Only meaningful for types that group projects; sending [] otherwise
     // keeps the server from having to special-case an absent field.
     subProjectIds: projectTypeDef(addForm.type).hasSubProjects ? addForm.subProjectIds : [],
@@ -690,6 +694,7 @@ export function ProjectModal({
           requireTaskToTrack: payload.requireTaskToTrack,
           restrictTaskCreation: payload.restrictTaskCreation,
           requireStopNote: payload.requireStopNote,
+          clientCanManage: payload.clientCanManage,
           subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
           // Real stored value in edit mode - the "7.5" default above is
@@ -1807,6 +1812,21 @@ export function ProjectModal({
                     />
                     <p className={cn("text-xs", formTheme.mutedText)}>
                       Members are asked what they worked on before their timer stops.
+                    </p>
+                  </div>
+
+                  {/* Off by default: a client reads everything about the
+                      projects linked to them either way, and this is the only
+                      thing that also lets them change any of it. */}
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <SettingToggleRow
+                      checked={addForm.clientCanManage}
+                      onChange={(next) => setAddForm((p) => ({ ...p, clientCanManage: next }))}
+                      label="This project's client can manage it"
+                    />
+                    <p className={cn("text-xs", formTheme.mutedText)}>
+                      On lets the client create and edit this project&apos;s tasks. Off, they can still see the
+                      project, its activity and its reports, but change nothing.
                     </p>
                   </div>
                 </div>

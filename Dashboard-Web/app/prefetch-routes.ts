@@ -1,10 +1,13 @@
 import { canAccessAllSidebarTabs } from "@/features/auth"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { CHUNK_IMPORTS } from "@/app/routes/chunk-loaders"
 import { resolveChunkId } from "@/app/routes/resolve-chunk"
 import type { AppChunkId } from "@/app/routes/types"
 
 const PRIVILEGED_WARMUP: AppChunkId[] = ["people", "projects", "activity"]
 const STANDARD_WARMUP: AppChunkId[] = ["people", "activity", "settings"]
+// A client lands on the dashboard and works across projects and reports.
+const CLIENT_WARMUP: AppChunkId[] = ["projects", "reports", "activity"]
 
 let prefetchStarted = false
 
@@ -17,7 +20,11 @@ export function prefetchAppRoutesForRole(role: string) {
   if (prefetchStarted || typeof window === "undefined") return
   prefetchStarted = true
 
-  const chunks = canAccessAllSidebarTabs(role) ? PRIVILEGED_WARMUP : STANDARD_WARMUP
+  const chunks = canAccessAllSidebarTabs(role)
+    ? PRIVILEGED_WARMUP
+    : isClientRole(role)
+      ? CLIENT_WARMUP
+      : STANDARD_WARMUP
 
   const run = () => {
     for (const id of chunks) prefetchChunk(id)
