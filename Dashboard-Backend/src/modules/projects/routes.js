@@ -428,6 +428,7 @@ export async function routeProjects(req, res, url, db, origin) {
           requireTaskToTrack: Boolean(project.require_task_to_track ?? project.requireTaskToTrack ?? true),
           restrictTaskCreation: Boolean(project.restrict_task_creation ?? project.restrictTaskCreation ?? true),
           requireStopNote: Boolean(project.require_stop_note ?? project.requireStopNote ?? false),
+          clientCanManage: Boolean(project.client_can_manage ?? project.clientCanManage ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           // Only management projects can have these; an empty array for every
           // other type keeps the response shape uniform for the client.
@@ -676,6 +677,7 @@ export async function routeProjects(req, res, url, db, origin) {
         requireTaskToTrack: body.require_task_to_track ?? body.requireTaskToTrack,
         restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
         requireStopNote: body.require_stop_note ?? body.requireStopNote,
+        clientCanManage: (body.client_can_manage ?? body.clientCanManage) === true,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       // Management projects group other projects; linking also rolls those
@@ -767,6 +769,7 @@ export async function routeProjects(req, res, url, db, origin) {
           requireTaskToTrack: body.require_task_to_track ?? body.requireTaskToTrack,
           restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
           requireStopNote: body.require_stop_note ?? body.requireStopNote,
+          clientCanManage: body.client_can_manage ?? body.clientCanManage,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {

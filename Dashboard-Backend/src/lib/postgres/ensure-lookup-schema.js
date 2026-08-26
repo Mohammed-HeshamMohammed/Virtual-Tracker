@@ -1533,6 +1533,11 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_cp_client ON client_projects (client_id)`,
   `CREATE INDEX IF NOT EXISTS idx_cp_project ON client_projects (project_id)`,
+  // A client member reads their linked projects everywhere by default. This
+  // flag is the one thing that also lets them write to a project - create and
+  // edit its tasks - and it is off unless someone turns it on for that
+  // specific project.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_manage BOOLEAN NOT NULL DEFAULT false`,
   // client_projects.client_id had no FK until the clients table existed above -
   // added here, after clients exists in this array, same idempotent pattern as
   // fk_tmp_task below.

@@ -1,6 +1,10 @@
 import { getAuthContext } from "./auth-context.js";
 import { sendJson } from "./response.js";
-import { getProjectPg, listProjectIdsForMemberPg } from "../lib/postgres/projects-postgres.service.js";
+import {
+  getProjectPg,
+  listClientManagedProjectIdsPg,
+  listViewerProjectIdsPg,
+} from "../lib/postgres/projects-postgres.service.js";
 import { query } from "../lib/postgres/client.js";
 import { normalizeRoleKey } from "./role-key.js";
 
@@ -24,19 +28,25 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
     return null;
   }
 
-  // Union with projects the viewer created but was never added as a
-  // project_members row for (createProjectPg only stamps created_by, it
-  // doesn't also insert a membership row) - every other visibility check in
-  // the codebase (schema/visibility.js's "projects"/"tasks" filters,
-  // viewerCanWriteProject below) already falls back to created_by; this was
-  // the one place that didn't, which made a non-admin's own newly-created
-  // projects (and their tasks) invisible to the two Overview endpoints that
-  // scope purely off this function's return value.
-  const [memberProjectIds, createdRows] = await Promise.all([
-    listProjectIdsForMemberPg(viewerMemberId),
-    query("SELECT id FROM projects WHERE created_by = $1", [viewerMemberId]),
-  ]);
-  return [...new Set([...memberProjectIds, ...createdRows.map((r) => r.id)])];
+  // Membership rows, projects the viewer created (createProjectPg stamps
+  // created_by without inserting a membership row), and - for a client member
+  // - the projects assigned to their client. See listViewerProjectIdsPg.
+  return listViewerProjectIdsPg(viewerMemberId);
+}
+
+/**
+ * Whether this viewer may write to a project as its client.
+ *
+ * A client reads every project linked to them, but writes to none of it
+ * unless that project has client_can_manage turned on.
+ * @param {{ memberId: string; roleName: string }} viewer
+ * @param {string} projectId
+ */
+export async function clientMayManageProject(viewer, projectId) {
+  if (!viewer?.memberId || !projectId) return false;
+  if (normalizeRole(viewer.roleName) !== "client") return false;
+  const managed = await listClientManagedProjectIdsPg(viewer.memberId);
+  return managed.has(projectId);
 }
 
 const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
@@ -75,6 +85,7 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
 
   const roleKey = normalizeRole(viewer.roleName);
   if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
+  if (roleKey === "client") return clientMayManageProject(viewer, pid);
 
   const rows = await query(
     "SELECT project_role FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 10",
@@ -117,6 +128,14 @@ export async function isProjectMemberForTimer(db, viewer, projectId) {
 export async function viewerCanWriteProject(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!pid || !viewer?.memberId) return false;
+
+  // A client now appears in getViewerProjectIds for every project linked to
+  // them, which is a read scope. Writing needs the per-project switch, so the
+  // client leg is decided here before the generic membership check below
+  // would wave it through.
+  if (normalizeRole(viewer.roleName) === "client") {
+    return clientMayManageProject(viewer, pid);
+  }
 
   const allowedProjects = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
   if (allowedProjects === null) return true;
