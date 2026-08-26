@@ -136,6 +136,7 @@ export function TasksPage() {
         selectedProjectId,
         projectMemberLinks,
         rawProjectList.find((p: any) => p.id === selectedProjectId)?.restrictTaskCreation ?? true,
+        rawProjectList.find((p: any) => p.id === selectedProjectId)?.clientCanManage ?? false,
       ),
     [memberRole, currentMemberId, selectedProjectId, projectMemberLinks, rawProjectList],
   )
