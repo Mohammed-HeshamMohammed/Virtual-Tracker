@@ -12,6 +12,7 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-urls"
 import { cn } from "@/shared/utils/utils"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function UsageTable<T extends { memberName: string; durationHms: string }>({
   title,
@@ -71,21 +72,35 @@ function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [apps, setApps] = useState<AppUsageRow[]>([])
   const [urls, setUrls] = useState<UrlUsageRow[]>([])
+  const [loading, setLoading] = useState(true)
+  // A failed read used to be indistinguishable from an empty report:
+  // getJson swallowed every error and both tables rendered "no rows".
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchAppsUrlsReport({ from, to, memberIds: [...filters.memberIds], projectIds: [...filters.projectIds] }).then((data) => {
-      if (!cancelled) {
-        setApps(data.apps)
-        setUrls(data.urls)
-      }
-    })
+    setLoading(true)
+    setError(null)
+    fetchAppsUrlsReport({ from, to, memberIds: [...filters.memberIds], projectIds: [...filters.projectIds] })
+      .then((data) => {
+        if (!cancelled) {
+          setApps(data.apps)
+          setUrls(data.urls)
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters])
+  }, [rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     const runExport = () => {
@@ -106,6 +121,9 @@ function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [apps, urls, registerExportHandler])
+
+  if (loading) return <ReportSkeleton rows={5} columns={3} />
+  if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
   return (
     <div className="space-y-6">

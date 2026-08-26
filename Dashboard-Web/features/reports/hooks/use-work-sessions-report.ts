@@ -42,6 +42,11 @@ export function useWorkSessionsReport() {
   })
   const [rangeEnd, setRangeEnd] = useState(() => endOfDay(new Date()))
   const [rows, setRows] = useState<WorkSessionRow[]>([])
+  const [loading, setLoading] = useState(true)
+  // A failed read used to be indistinguishable from an empty report:
+  // getJson swallowed every error and the table rendered no sessions.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
   const [groupBy, setGroupBy] = useState<WorkSessionGroupBy>("date")
@@ -62,13 +67,22 @@ export function useWorkSessionsReport() {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchWorkSessionsReport({ from, to }).then((data) => {
-      if (!cancelled) setRows(data)
-    })
+    setLoading(true)
+    setError(null)
+    fetchWorkSessionsReport({ from, to })
+      .then((data) => {
+        if (!cancelled) setRows(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, reloadKey])
 
   const projectOptions = useMemo(() => {
     const s = new Set<string>()
@@ -209,6 +223,9 @@ export function useWorkSessionsReport() {
   const clearMembers = useCallback(() => setMemberFilter(null), [])
 
   return {
+    loading,
+    error,
+    retry: () => setReloadKey((k) => k + 1),
     scope,
     setScope,
     rangeStart,

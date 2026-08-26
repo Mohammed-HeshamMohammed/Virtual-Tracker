@@ -38,7 +38,12 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { WorkSessionsFiltersPanel } from "@/features/reports/components/work-sessions/work-sessions-filters-panel"
-import { ReportOrgLine, ReportPageHeading } from "@/features/reports/components/shared/report-ui"
+import {
+  ReportErrorState,
+  ReportOrgLine,
+  ReportPageHeading,
+  ReportTableSkeleton,
+} from "@/features/reports/components/shared/report-ui"
 
 const COLUMN_META: { key: WorkSessionColumnKey; label: string }[] = [
   { key: "client", label: "Client" },
@@ -218,6 +223,9 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     shiftRangeByDays,
     goToToday,
     downloadCsv,
+    loading,
+    error,
+    retry,
   } = useWorkSessionsReport()
 
   const visibleCols = COLUMN_META.filter((c) => columnVisibility[c.key])
@@ -432,6 +440,11 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
             </div>
           </div>
 
+          {loading ? (
+            <ReportTableSkeleton rows={8} columns={6} />
+          ) : error ? (
+            <ReportErrorState message={error} onRetry={retry} />
+          ) : (
           <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
             <div className={cn("overflow-x-auto", tableCollapsed && "hidden")}>
               <table className="w-full min-w-[900px] table-fixed">
@@ -545,6 +558,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
               <div className="px-4 py-8 text-center text-sm text-slate-500 dark:text-white/45">Table collapsed. Use Expand to show sessions.</div>
             ) : null}
           </div>
+          )}
         </div>
 
         <ReportSendDialog open={sendOpen} onOpenChange={setSendOpen} />

@@ -106,18 +106,24 @@ export async function fetchTimeAndActivityReport(range: {
   from: string
   to: string
   memberId?: string
-}): Promise<TimeActivityReportData | null> {
+}): Promise<TimeActivityReportData> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
   if (range.memberId) params.set("memberId", range.memberId)
-  try {
-    const res = await apiFetch(apiPath(`/api/reports/time-and-activity?${params.toString()}`))
-    if (!res.ok) return null
-    const json = await res.json()
-    if (!json?.data) return null
-    return mapReport(json.data as RawTimeAndActivityReport)
-  } catch {
-    return null
+  const res = await apiFetch(apiPath(`/api/reports/time-and-activity?${params.toString()}`))
+  if (!res.ok) {
+    // Returning null here made a 403 or a 500 render as an empty report, the
+    // same as a range nobody tracked in.
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(
+      body?.error ||
+        (res.status === 403
+          ? "You do not have access to this report."
+          : `Report request failed (${res.status}).`),
+    )
   }
+  const json = await res.json()
+  if (!json?.data) throw new Error("The report response was empty.")
+  return mapReport(json.data as RawTimeAndActivityReport)
 }
 
 export interface SendTimeAndActivityReportInput {
@@ -138,11 +144,17 @@ export async function sendTimeAndActivityReport(
       method: "POST",
       body: JSON.stringify(input),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      // The dialog used to report a generic failure for everything, so a
+      // rejected address and an unreachable mail service read the same.
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      throw new Error(body?.error || "Failed to send the report.")
+    }
     const json = await res.json()
     return json.data ?? null
-  } catch {
-    return null
+  } catch (err) {
+    if (err instanceof Error) throw err
+    throw new Error("Failed to send the report.")
   }
 }
 
@@ -166,10 +178,16 @@ export async function scheduleTimeAndActivityReport(
       method: "POST",
       body: JSON.stringify(input),
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      // The dialog used to report a generic failure for everything, so a
+      // rejected address and an unreachable mail service read the same.
+      const body = (await res.json().catch(() => null)) as { error?: string } | null
+      throw new Error(body?.error || "Failed to save the schedule.")
+    }
     const json = await res.json()
     return json.data ?? null
-  } catch {
-    return null
+  } catch (err) {
+    if (err instanceof Error) throw err
+    throw new Error("Failed to save the schedule.")
   }
 }

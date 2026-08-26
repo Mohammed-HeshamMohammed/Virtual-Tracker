@@ -22,9 +22,14 @@ export function useReportFilterOptions(): ReportFilterOptions {
   const [options, setOptions] = useState<ReportFilterOptions>({ members: [], projects: [] })
   useEffect(() => {
     let cancelled = false
-    void fetchReportFilterOptions().then((opts) => {
-      if (!cancelled) setOptions(opts)
-    })
+    // Filter options failing is not fatal: the panel offers nothing to filter
+    // by, which is better than an unhandled rejection taking the report with
+    // it. The report body reports its own failure.
+    void fetchReportFilterOptions()
+      .then((opts) => {
+        if (!cancelled) setOptions(opts)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }

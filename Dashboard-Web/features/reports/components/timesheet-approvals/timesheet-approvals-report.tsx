@@ -12,6 +12,7 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
 import { cn } from "@/shared/utils/utils"
+import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function statusBadgeClass(status: TimesheetStatus): string {
   switch (status) {
@@ -38,18 +39,32 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
+  const [loading, setLoading] = useState(true)
+  // A failed read used to be indistinguishable from an empty report:
+  // getJson swallowed every error and the table rendered "no rows".
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchTimesheetApprovalsReport({ from, to, memberIds: [...filters.memberIds] }).then((data) => {
-      if (!cancelled) setRows(data)
-    })
+    setLoading(true)
+    setError(null)
+    fetchTimesheetApprovalsReport({ from, to, memberIds: [...filters.memberIds] })
+      .then((data) => {
+        if (!cancelled) setRows(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters])
+  }, [rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     const runExport = () => {
@@ -79,6 +94,9 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [rows, registerExportHandler])
+
+  if (loading) return <ReportTableSkeleton rows={6} columns={6} />
+  if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
   const th = cn(
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",

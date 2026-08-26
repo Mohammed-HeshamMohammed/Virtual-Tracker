@@ -34,15 +34,31 @@ function formatDateLabel(date: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
-async function getJson<T>(path: string): Promise<T | null> {
-  try {
-    const res = await apiFetch(apiPath(path))
-    if (!res.ok) return null
-    const json = await res.json()
-    return json?.data ?? null
-  } catch {
-    return null
+/**
+ * Every report read goes through here.
+ *
+ * This used to return `null` for any failure - a 403 from a role that may not
+ * see the report, a 500, a dropped connection - and each caller then mapped
+ * `null` to an empty array. So a report the viewer was not allowed to open, a
+ * report whose endpoint was erroring, and a report with genuinely no rows all
+ * rendered the same "nothing to report" state, with no way to tell them
+ * apart. It throws now, and the report pages surface the message.
+ */
+async function getJson<T>(path: string): Promise<T> {
+  const res = await apiFetch(apiPath(path))
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(
+      body?.error ||
+        (res.status === 403
+          ? "You do not have access to this report."
+          : res.status === 404
+            ? "This report is not available on this server."
+            : `Report request failed (${res.status}).`),
+    )
   }
+  const json = await res.json()
+  return (json?.data ?? null) as T
 }
 
 // ─── Amounts Owed / Daily Totals / Payments (same shape) ────────────────────
@@ -111,17 +127,6 @@ export async function fetchAmountsOwedReport(
   const params = reportParams(range)
   if (range.memberId) params.set("memberId", range.memberId)
   const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/amounts-owed?${params.toString()}`)
-  return data ? mapAmountsDays(data.days) : []
-}
-
-export async function fetchPaymentsReport(range: {
-  from: string
-  to: string
-  memberId?: string | null
-}): Promise<AmountsOwedDayGroup[]> {
-  const params = new URLSearchParams({ from: range.from, to: range.to })
-  if (range.memberId) params.set("memberId", range.memberId)
-  const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/payments?${params.toString()}`)
   return data ? mapAmountsDays(data.days) : []
 }
 

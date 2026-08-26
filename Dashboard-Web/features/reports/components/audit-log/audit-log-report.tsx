@@ -27,7 +27,7 @@ import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
 import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/audit-log"
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
-import { ReportOrgLine, ReportPageHeading } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportOrgLine, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 
 const COLUMN_DEFS: { key: AuditLogColumnKey; label: string }[] = [
   { key: "dateLogs", label: "Date & Logs" },
@@ -118,6 +118,11 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   })
   const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date()))
   const [rows, setRows] = useComponentState<AuditLogRow[]>([])
+  const [loading, setLoading] = useComponentState(true)
+  // A failed read used to be indistinguishable from an empty log:
+  // getJson swallowed every error and the table rendered no rows.
+  const [error, setError] = useComponentState<string | null>(null)
+  const [reloadKey, setReloadKey] = useComponentState(0)
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
   const [authorFilter, setAuthorFilter] = useComponentState<Set<string>>(() => new Set())
@@ -140,13 +145,22 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    fetchAuditLogReport({ from, to }).then((data) => {
-      if (!cancelled) setRows(data)
-    })
+    setLoading(true)
+    setError(null)
+    fetchAuditLogReport({ from, to })
+      .then((data) => {
+        if (!cancelled) setRows(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd])
+  }, [rangeStart, rangeEnd, reloadKey])
 
   const filtered = useMemo(
     () =>
@@ -306,6 +320,11 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
         </div>
       </div>
 
+      {loading ? (
+        <ReportTableSkeleton rows={8} columns={5} />
+      ) : error ? (
+        <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+      ) : (
       <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[800px] text-left text-sm">
@@ -380,6 +399,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
           </table>
         </div>
       </div>
+      )}
 
       <div className="flex flex-col gap-3 border-t border-slate-100 dark:border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-600 dark:text-[#bccbb9]">

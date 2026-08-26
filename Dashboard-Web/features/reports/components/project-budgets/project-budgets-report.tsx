@@ -8,6 +8,7 @@ import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchProjectBudgetsReport } from "@/features/reports/api/misc-reports-api"
 import { cn } from "@/shared/utils/utils"
+import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow }[], dateLabel: string): void {
   const header = ["Section", "Project", "Spent (H:MM:SS)", "Budget (H:MM:SS)", "Remaining (H:MM:SS)", "% used"]
@@ -40,16 +41,30 @@ function ProjectBudgetsTable() {
   const { isDark } = useTheme()
   const { dateLabel, registerExportHandler } = useStandardReportLayout()
   const [sections, setSections] = useState<ProjectBudgetSection[]>([])
+  const [loading, setLoading] = useState(true)
+  // A failed read used to be indistinguishable from an empty report:
+  // getJson swallowed every error and the table rendered "no rows".
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    fetchProjectBudgetsReport().then((data) => {
-      if (!cancelled) setSections(data)
-    })
+    setLoading(true)
+    setError(null)
+    fetchProjectBudgetsReport()
+      .then((data) => {
+        if (!cancelled) setSections(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [reloadKey])
 
   const flatRows = useMemo(() => {
     const out: { section: string; row: ProjectBudgetRow }[] = []
@@ -74,6 +89,9 @@ function ProjectBudgetsTable() {
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",
     isDark ? "text-white/40" : "text-slate-500"
   )
+
+  if (loading) return <ReportTableSkeleton rows={6} columns={5} />
+  if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
   return (
     <div
