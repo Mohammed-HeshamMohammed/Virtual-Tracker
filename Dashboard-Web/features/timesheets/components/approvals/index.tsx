@@ -8,9 +8,10 @@ import { canManageTimesheetApprovals } from "@/features/auth"
 import { Tab, SetupData } from "@/features/timesheets/components/approvals/types"
 import { EMPTY_APPROVAL_MEMBERS } from "@/features/timesheets/components/approvals/data"
 import { SetupModal } from "@/features/timesheets/components/approvals/components/SetupModal"
-import { TimesheetPreviewCard } from "@/features/timesheets/components/approvals/components/TimesheetPreviewCard"
+import { SubmitMyTimesheetCard } from "@/features/timesheets/components/approvals/components/SubmitMyTimesheetCard"
 import { ManualTimeContent } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
 import { getMembers, getTimesheets, approveTimesheet, rejectTimesheet, type Timesheet } from "@/infrastructure/api"
+import { saveTimesheetApprovalSetup } from "@/features/timesheets/api/timesheet-api"
 import { changedEvent } from "@/infrastructure/api/change-events"
 
 function formatPeriodLabel(start: string, end: string): string {
@@ -160,9 +161,21 @@ export function TimesheetsApprovalsContent() {
     return () => window.removeEventListener(changedEvent("timesheets"), handler)
   }, [canManage])
 
-  const handleSave = (data: SetupData) => {
+  const [setupError, setSetupError] = useState<string | null>(null)
+
+  const handleSave = async (data: SetupData) => {
     if (!canManage) return
-    console.log("Setup saved:", data)
+    setSetupError(null)
+    try {
+      await saveTimesheetApprovalSetup({
+        memberIds: data.members,
+        payPeriod: data.payPeriod,
+        autoSetup: data.autoSetup,
+      })
+      setShowSetupModal(false)
+    } catch (e) {
+      setSetupError(e instanceof Error ? e.message : "Failed to save timesheet approval settings.")
+    }
   }
 
   if (!canManage) {
@@ -226,11 +239,17 @@ export function TimesheetsApprovalsContent() {
                 <p className="mt-2 text-xs text-slate-400">Current timesheets in system: {timesheetCount}</p>
               </div>
 
+              {setupError ? (
+                <p className="mx-auto max-w-xl rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-center text-sm text-red-600">
+                  {setupError}
+                </p>
+              ) : null}
+
+              {/* The member's own submit flow - the writer that fills the queue below */}
+              <SubmitMyTimesheetCard />
+
               {/* Real approve/reject queue */}
               <PendingApprovalsQueue members={members} />
-
-              {/* Preview Card */}
-              <TimesheetPreviewCard member={members[0]} />
 
               {/* Set it up button */}
               <div className="flex justify-center">
@@ -261,7 +280,7 @@ export function TimesheetsApprovalsContent() {
         open={showSetupModal}
         members={members}
         onClose={() => setShowSetupModal(false)}
-        onSave={handleSave}
+        onSave={(data) => void handleSave(data)}
       />
     </div>
   )

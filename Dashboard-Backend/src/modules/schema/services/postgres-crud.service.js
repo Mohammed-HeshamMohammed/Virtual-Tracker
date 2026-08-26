@@ -833,13 +833,38 @@ export async function deletePostgresRow(entityKey, id) {
  * @param {string} periodStart
  * @param {string} periodEnd
  */
+/**
+ * Hours for a member's pay period.
+ *
+ * Unions the two places worked time actually lands, the same way
+ * getProjectTrackedSecondsPg does: manual `time_entries` rows, and time the
+ * agent/web tracker recorded as `activity_sessions`. Reading only time_entries
+ * (as this did) reports 0 for anyone who tracks their time instead of typing
+ * it in - which is every member using the tracker, so every submitted
+ * timesheet came out empty.
+ *
+ * `duration` on time_entries is SECONDS, matching activity_sessions'
+ * active_seconds and every other reader in this codebase.
+ *
+ * Tracked session time counts as billable: it is time worked against a
+ * project, and sessions carry no billable flag of their own. Manual entries
+ * keep their explicit flag.
+ */
 export async function computeTimesheetHours(memberId, periodStart, periodEnd) {
   const [summary] = await query(
-    `SELECT
-      COALESCE(SUM(duration), 0) / 3600.0 AS total_hours,
-      COALESCE(SUM(CASE WHEN billable THEN duration ELSE 0 END), 0) / 3600.0 AS billable_hours
-    FROM time_entries
-    WHERE member_id = $1 AND date BETWEEN $2 AND $3 AND status != 'rejected'`,
+    `WITH worked AS (
+       SELECT duration AS seconds, billable
+       FROM time_entries
+       WHERE member_id = $1 AND date BETWEEN $2 AND $3 AND status != 'rejected'
+       UNION ALL
+       SELECT active_seconds AS seconds, true AS billable
+       FROM activity_sessions
+       WHERE member_id = $1 AND started_at::date BETWEEN $2 AND $3
+     )
+     SELECT
+       COALESCE(SUM(seconds), 0) / 3600.0 AS total_hours,
+       COALESCE(SUM(CASE WHEN billable THEN seconds ELSE 0 END), 0) / 3600.0 AS billable_hours
+     FROM worked`,
     [memberId, periodStart, periodEnd],
   );
   return {
