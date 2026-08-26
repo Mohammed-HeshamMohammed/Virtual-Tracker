@@ -1944,6 +1944,77 @@ $$ LANGUAGE plpgsql`,
   // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
   // polls this on the same interval-timer pattern team-weekly-report.service.js
   // already uses, no job-queue dependency needed for one feature.
+  // ─── Invoicing ──────────────────────────────────────────────────────────
+  // One table covers both directions, distinguished by `kind`:
+  //   'client' - what the org bills a client (money coming in)
+  //   'team'   - what a member/contractor bills the org (money going out)
+  // They share every field that matters (number, dates, totals, status) and
+  // both age the same way, so two near-identical tables would only guarantee
+  // the two halves drift apart.
+  //
+  // Totals are stored rather than summed from line items on read: an issued
+  // invoice is a financial record of what was actually billed, and must not
+  // change retroactively if a line item is later edited. recalcInvoiceTotalsPg
+  // updates them deliberately while a draft is still being edited.
+  `CREATE TABLE IF NOT EXISTS invoices (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind          VARCHAR(10)   NOT NULL CHECK (kind IN ('client', 'team')),
+  client_id     UUID,
+  member_id     UUID,
+  number        VARCHAR(40)   NOT NULL,
+  issue_date    DATE          NOT NULL DEFAULT CURRENT_DATE,
+  due_date      DATE,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'draft'
+                              CHECK (status IN ('draft', 'sent', 'paid', 'void')),
+  subtotal      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  tax           NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total         NUMERIC(14,2) NOT NULL DEFAULT 0,
+  currency      VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  notes         TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  updated_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  UNIQUE (number),
+  -- A client invoice needs a client, a team invoice needs a member.
+  CHECK ((kind = 'client' AND client_id IS NOT NULL) OR (kind = 'team' AND member_id IS NOT NULL))
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoices_kind   ON invoices (kind)",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices (client_id) WHERE client_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_member ON invoices (member_id) WHERE member_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices (status)",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_due    ON invoices (due_date)",
+  `CREATE TABLE IF NOT EXISTS invoice_line_items (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id    UUID          NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  project_id    UUID,
+  description   TEXT          NOT NULL DEFAULT '',
+  quantity      NUMERIC(10,2) NOT NULL DEFAULT 1,
+  unit_price    NUMERIC(14,2) NOT NULL DEFAULT 0,
+  amount        NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_line_items (invoice_id)",
+  // Payments recorded against an invoice. The Payments report is the sum of
+  // these - actual money moved, as opposed to amounts-owed's estimate of what
+  // is still due.
+  `CREATE TABLE IF NOT EXISTS invoice_payments (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id    UUID          NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount        NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  paid_on       DATE          NOT NULL DEFAULT CURRENT_DATE,
+  method        VARCHAR(40)   NOT NULL DEFAULT 'other',
+  reference     VARCHAR(120)  NOT NULL DEFAULT '',
+  note          TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments (invoice_id)",
+  "CREATE INDEX IF NOT EXISTS idx_invoice_payments_paid_on ON invoice_payments (paid_on)",
+  `DROP TRIGGER IF EXISTS trg_invoices_updated_at ON invoices`,
+  `CREATE TRIGGER trg_invoices_updated_at
+  BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
   // ─── Time off ───────────────────────────────────────────────────────────
   // A policy is the entitlement (e.g. "Annual leave, 20 days/year"); a request
   // is someone asking for days against it; transactions are the ledger.

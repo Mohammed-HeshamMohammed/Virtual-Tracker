@@ -509,3 +509,67 @@ export async function fetchTimeOffTransactionsReport(range: ReportQuery): Promis
   )
   return data?.rows ?? []
 }
+
+// ─── Invoices ─────────────────────────────────────────────────────────────
+
+export interface InvoiceReportRow {
+  id: string
+  number: string
+  clientName: string
+  memberId: string | null
+  memberName: string
+  issueDate: string
+  dueDate: string
+  status: string
+  total: number
+  paidAmount: number
+  dueAmount: number
+  currency: string
+}
+
+export interface InvoiceAgingRow extends Omit<InvoiceReportRow, "status"> {
+  daysOverdue: number
+  bucket: string
+}
+
+export async function fetchInvoicesReport(
+  kind: "client" | "team",
+  range: ReportQuery
+): Promise<InvoiceReportRow[]> {
+  const data = await getJson<{ rows: InvoiceReportRow[] }>(
+    `/api/reports/${kind}-invoices?${reportParams(range).toString()}`
+  )
+  return data?.rows ?? []
+}
+
+export async function fetchInvoiceAgingReport(
+  kind: "client" | "team",
+  range: ReportQuery
+): Promise<{ rows: InvoiceAgingRow[]; asOf: string }> {
+  const data = await getJson<{ rows: InvoiceAgingRow[]; asOf: string }>(
+    `/api/reports/${kind}-invoices-aging?${reportParams(range).toString()}`
+  )
+  return { rows: data?.rows ?? [], asOf: data?.asOf ?? range.to }
+}
+
+// ─── Payments ─────────────────────────────────────────────────────────────
+
+export interface PaymentReportRow {
+  id: string
+  invoiceId: string
+  invoiceNumber: string
+  kind: "client" | "team"
+  memberId: string | null
+  memberName: string
+  clientName: string
+  amount: number
+  currency: string
+  paidOn: string
+  method: string
+  reference: string
+}
+
+export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<PaymentReportRow[]> {
+  const data = await getJson<{ rows: PaymentReportRow[] }>(`/api/reports/payments?${reportParams(range).toString()}`)
+  return data?.rows ?? []
+}

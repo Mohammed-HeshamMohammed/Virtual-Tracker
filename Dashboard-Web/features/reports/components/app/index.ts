@@ -15,4 +15,10 @@ export {
   TimeOffBalancesReport,
   TimeOffTransactionsReport,
 } from "@/features/reports/components/app/time-off-reports"
+export {
+  ClientInvoicesReport,
+  TeamInvoicesReport,
+  ClientInvoicesAgingReport,
+  TeamInvoicesAgingReport,
+} from "@/features/reports/components/app/invoice-reports"
 export { StandardReportLayout, ReportEmptyState, useStandardReportLayout } from "@/features/reports/components/app/standard-report-layout"

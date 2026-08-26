@@ -37,6 +37,11 @@ import {
   getTimeOffBalanceRowsPg,
   getTimeOffTransactionRowsPg,
 } from "../../lib/postgres/time-off-postgres.service.js";
+import {
+  listInvoiceAgingPg,
+  listInvoicePaymentsPg,
+  listInvoicesWithBalancePg,
+} from "../../lib/postgres/invoices-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
@@ -441,7 +446,7 @@ export async function routeReports(req, res, url, origin) {
 
   // ─── Amounts Owed / Daily Totals / Payments (same "hours x rate" shape) ──
   if (
-    (pn === "/api/reports/amounts-owed" || pn === "/api/reports/payments") &&
+    pn === "/api/reports/amounts-owed" &&
     req.method === "GET"
   ) {
     const viewer = requireAuthContext(req, res, origin);
@@ -717,6 +722,94 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
       logSafeError("[reports/time-off-transactions]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Invoices (client / team) and their aging ─────────────────────────────
+  // One handler per pair: the only difference is which side of the ledger the
+  // invoice sits on, so splitting them into four near-identical handlers would
+  // only guarantee they drift.
+  {
+    const invoiceMatch = /^\/api\/reports\/(client|team)-invoices(-aging)?$/.exec(pn);
+    if (invoiceMatch && req.method === "GET") {
+      const viewer = requireAuthContext(req, res, origin);
+      if (!viewer) return true;
+      const kind = invoiceMatch[1] === "client" ? "client" : "team";
+      const aging = Boolean(invoiceMatch[2]);
+
+      // Client invoices are org financials; team invoices are scoped to the
+      // members the viewer can see.
+      if (kind === "client" && !isManagementRole(viewer.roleName)) {
+        sendJson(res, origin, 403, { success: false, error: "Management role required." });
+        return true;
+      }
+
+      const from = parseDateParam(url.searchParams.get("from"));
+      const to = parseDateParam(url.searchParams.get("to")) || new Date().toISOString().slice(0, 10);
+      if (!aging && (!from || !to || from > to)) {
+        sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+        return true;
+      }
+
+      try {
+        const memberIds = kind === "team" ? await resolveReportMemberScope(getDb(), viewer, url) : null;
+        const rows = aging
+          ? await listInvoiceAgingPg({ kind, memberIds, asOf: to })
+          : await listInvoicesWithBalancePg({ kind, memberIds, fromDay: from, toDay: to });
+        const nameMap = await buildMemberMetaMap(
+          getDb(),
+          [...new Set(rows.map((r) => r.memberId).filter(Boolean))],
+        );
+        sendJson(res, origin, 200, {
+          success: true,
+          data: {
+            rows: rows.map((r) => ({
+              ...r,
+              memberName: r.memberId ? (nameMap.get(r.memberId)?.name ?? "Unknown") : "",
+            })),
+            asOf: to,
+          },
+        });
+      } catch (e) {
+        logSafeError("[reports/invoices]", e);
+        sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+      }
+      return true;
+    }
+  }
+
+  // ─── Payments ─────────────────────────────────────────────────────────────
+  // Money actually recorded against an invoice, as opposed to amounts-owed's
+  // estimate of what is still due. These used to share one handler, so this
+  // report showed outstanding estimates under a title promising a record of
+  // what was paid.
+  if (pn === "/api/reports/payments" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const payments = await listInvoicePaymentsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(
+        getDb(),
+        [...new Set(payments.map((p) => p.memberId).filter(Boolean))],
+      );
+      const rows = payments.map((p) => ({
+        ...p,
+        memberName: p.memberId ? (nameMap.get(p.memberId)?.name ?? "Unknown") : "",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/payments]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;
