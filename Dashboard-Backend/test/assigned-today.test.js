@@ -16,6 +16,11 @@ const stub = { rows: [] };
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     query: async () => stub.rows,
+    __closePostgresPoolForTests: async () => null,
+    getPostgresPool: async () => null,
+    isPostgresConfigured: () => true,
+    probePostgresReadiness: async () => null,
+    withTransaction: async () => null,
   },
 });
 

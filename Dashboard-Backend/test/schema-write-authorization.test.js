@@ -24,6 +24,7 @@ mock.module("../src/http/auth-context.js", {
     requireAuthContext: () => stub.viewer,
     isManagementRole: (r) => r === "Admin" || r === "Owner",
     AUTH_CONTEXT,
+    setAuthContext: async () => null,
   },
 });
 
@@ -45,11 +46,27 @@ mock.module("../src/modules/schema/services/postgres-crud.service.js", {
     deletePostgresRow: async (key, id) => {
       stub.writes.push(`delete:${key}:${id}`);
     },
+    computeTimesheetHours: async () => null,
+    fetchTimeEntriesSinceDate: async () => null,
+    sumBillableHoursForProjectInPeriod: async () => null,
   },
 });
 
 mock.module("../src/lib/postgres/members-postgres.service.js", {
-  namedExports: { getMemberByIdPg: async () => ({ id: "m1" }) },
+  namedExports: { getMemberByIdPg: async () => ({ id: "m1" }),
+    createMemberPg: async () => null,
+    deleteMemberPg: async () => null,
+    getMemberAuthContextPg: async () => null,
+    getMemberByFirebaseUidPg: async () => null,
+    getMembersByIdsPg: async () => [],
+    hasMemberPermissionPg: async () => null,
+    listMembersEnrichedPg: async () => [],
+    listMembersPagePg: async () => [],
+    listMembersPg: async () => [],
+    resolveMemberIdForFirebaseUidPg: async () => null,
+    revokeAllMemberSessionsPg: async () => null,
+    updateMemberPg: async () => null,
+  },
 });
 mock.module("../src/http/team-member-assign-policy.js", {
   namedExports: {
@@ -63,6 +80,9 @@ mock.module("../src/http/team-member-assign-policy.js", {
     TEAM_INELIGIBLE_MEMBER_MESSAGE: "ineligible",
     TEAM_LEAD_ROLE_DENIED_MESSAGE: "lead",
     TEAM_MEMBER_ASSIGN_DENIED_MESSAGE: "assign",
+    assertCanBeTeamMemberRole: async () => null,
+    hasManageEmployeeTeamsPrivilege: async () => null,
+    isEmployeeL2OrHigherRole: async () => null,
   },
 });
 mock.module("../src/http/team-edit-access.js", {
@@ -72,6 +92,14 @@ mock.module("../src/http/team-edit-access.js", {
     teamHasMembers: async () => true,
     isProjectOnTeam: async () => false,
     canAssignMemberToTeamRoster: async () => true,
+    canManageAllTeams: async () => null,
+    getOrgWideEmployeeMemberIds: async () => [],
+    getTeamIdsLedByMember: async () => null,
+    getTeamStaffableMemberIds: async () => [],
+    getTeamStaffableMemberSummaries: async () => [],
+    isManagerRole: async () => null,
+    isManagerTeamStaffableMember: async () => null,
+    isMemberOnTeam: async () => null,
   },
 });
 mock.module("../src/http/task-access.js", {
@@ -89,6 +117,11 @@ mock.module("../src/http/project-access.js", {
     toAllowedProjectSet: () => null,
     viewerCanWriteProject: async () => true,
     viewerCanCreateProjectTasks: async () => true,
+    assertAuthenticated: async () => null,
+    assertProjectAccessible: async () => null,
+    clientMayManageProject: async () => null,
+    isOrgProjectAdminRole: async () => null,
+    isProjectMemberForTimer: async () => null,
   },
 });
 mock.module("../src/modules/schema/visibility.js", {
@@ -101,6 +134,8 @@ mock.module("../src/modules/schema/services/schema-crud.service.js", {
     validateBusinessRules: async () => {},
     validateForeignKeys: async () => {},
     validateRequiredFields: () => {},
+    applyTeamWriteMetadata: async () => null,
+    normalizeDoc: async () => null,
   },
 });
 mock.module("../src/modules/schema/catalog/index.js", {
@@ -111,13 +146,23 @@ mock.module("../src/modules/schema/catalog/index.js", {
       ["employment", { key: "employment", collection: "employment", fields: { id: "uuid", member_id: "uuid" } }],
       ["task-comments", { key: "task-comments", collection: "tasks", fields: { id: "uuid", task_id: "uuid", body: "text" } }],
     ]),
+    foreignKeyCollectionByField: async () => null,
+    generateUUID: async () => null,
+    now: async () => null,
   },
 });
 mock.module("../src/http/read-json-body.js", {
-  namedExports: { readJsonBody: async (req) => req.__body ?? {}, MAX_AVATAR_JSON_BODY_BYTES: 1 },
+  namedExports: { readJsonBody: async (req) => req.__body ?? {}, MAX_AVATAR_JSON_BODY_BYTES: 1,
+    MAX_ACTIVITY_EVENTS_BODY_BYTES: async () => null,
+    MAX_JSON_BODY_BYTES: async () => null,
+  },
 });
 mock.module("../src/lib/postgres/tasks-postgres.service.js", {
-  namedExports: { getTaskPg: async () => null, getTasksByIdsPg: async () => [], updateTaskPg: async () => null },
+  namedExports: { getTaskPg: async () => null, getTasksByIdsPg: async () => [], updateTaskPg: async () => null,
+    createTaskPg: async () => null,
+    deleteTaskPg: async () => null,
+    listTasksPg: async () => [],
+  },
 });
 mock.module("../src/lib/firestore/task-subcollections.js", {
   namedExports: {
@@ -126,10 +171,23 @@ mock.module("../src/lib/firestore/task-subcollections.js", {
   },
 });
 mock.module("../src/modules/clients/services/client-budget-notify.js", {
-  namedExports: { maybeNotifyClientBudgetsForProject: async () => {} },
+  namedExports: { maybeNotifyClientBudgetsForProject: async () => {},
+    evaluateAndNotifyClientBudget: async () => null,
+    resolveClientBudgetNotifyRecipients: async () => null,
+    syncClientBudgetAutomationState: async () => null,
+  },
 });
-mock.module("../src/http/authorization.js", { namedExports: { canAccessMember: async () => true, assertManagementRole: () => true } });
-mock.module("../src/modules/activity/activity-scope.js", { namedExports: { resolveMemberRoleName: async () => "Employee" } });
+mock.module("../src/http/authorization.js", { namedExports: { canAccessMember: async () => true, assertManagementRole: () => true,
+    assertMemberAccessible: async () => null,
+    assertOrgAdminRole: async () => null,
+    canManageMember: async () => null,
+  } });
+mock.module("../src/modules/activity/activity-scope.js", { namedExports: { resolveMemberRoleName: async () => "Employee",
+    buildMemberMetaMap: async () => null,
+    getProjectScopedMemberIds: async () => [],
+    memberOptionsFromMeta: async () => null,
+    resolveActivityFeedScope: async () => null,
+  } });
 
 let lastResponse = null;
 mock.module("../src/http/response.js", {
@@ -168,7 +226,14 @@ test("an employee cannot create a team through the generic entity route", async 
 
 test("an admin can still create a team", async () => {
   reset(ADMIN);
-  const { req, res, url } = makeReqRes("POST", "/api/teams", { name: "Real Team" });
+  // A roster is required on create (validateTeamRoster: at least one member,
+  // at least one lead, and the lead has to be one of the members). A
+  // name-only body now fails validation before the authorization gate this
+  // test is actually about is ever reached.
+  const { req, res, url } = makeReqRes("POST", "/api/teams", {
+    name: "Real Team",
+    members: [{ member_id: "m1", is_lead: true }],
+  });
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(stub.writes.includes("create:teams"), true, "admin create must succeed");
 });

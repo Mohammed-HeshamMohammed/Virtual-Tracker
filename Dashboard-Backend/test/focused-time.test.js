@@ -10,10 +10,30 @@ let categoryRows;
 let memberRole;
 
 mock.module("../src/config/firebase.js", {
-  namedExports: { getDb: () => ({}) },
+  namedExports: { getDb: () => ({}),
+    __resetTestDb: async () => null,
+    __setTestAuth: async () => null,
+    __setTestDb: async () => null,
+    defaultFirebaseDatabaseUrl: async () => null,
+    formatStorageSetupError: async () => null,
+    getAuthAdmin: async () => null,
+    getFirebaseStatus: async () => null,
+    getStorageBucket: async () => null,
+    getStorageBucketAsync: async () => null,
+    readFirebaseWebConfigFromEnv: async () => null,
+    resolveFirebaseDatabaseUrl: async () => null,
+    resolveStorageBucketCandidates: async () => null,
+    resolveStorageBucketName: async () => null,
+    warnIfDatabaseUrlMismatch: async () => null,
+  },
 });
 mock.module("../src/modules/activity/activity-scope.js", {
-  namedExports: { resolveMemberRoleName: async () => memberRole },
+  namedExports: { resolveMemberRoleName: async () => memberRole,
+    buildMemberMetaMap: async () => null,
+    getProjectScopedMemberIds: async () => [],
+    memberOptionsFromMeta: async () => null,
+    resolveActivityFeedScope: async () => null,
+  },
 });
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   namedExports: {
@@ -24,6 +44,26 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
     // same mocked module.
     findUnclassifiedAppsPg: async () => [],
     findUnclassifiedDomainsPg: async () => [],
+    createPgSession: async () => null,
+    fetchAllOpenPgSessions: async () => null,
+    fetchLatestPgScreenshot: async () => null,
+    fetchPgAppLogs: async () => null,
+    fetchPgScreenshotById: async () => null,
+    fetchPgScreenshots: async () => null,
+    fetchPgSessionsForDashboard: async () => null,
+    fetchPgUrlLogs: async () => null,
+    findOpenPgSession: async () => null,
+    getPgSessionById: async () => null,
+    insertActivityAppLog: async () => null,
+    insertActivityScreenshot: async () => null,
+    insertActivityUrlLog: async () => null,
+    reassignPgActivityMemberId: async () => null,
+    recordPgAlertSent: async () => null,
+    sumDailyMemberActiveSeconds: async () => null,
+    sumDailyMemberTaskActiveSeconds: async () => null,
+    sumDailyMemberTaskActiveSecondsRange: async () => null,
+    updatePgSession: async () => null,
+    wasPgAlertSentRecently: async () => null,
   },
 });
 mock.module("../src/lib/postgres/classification-postgres.service.js", {

@@ -20,11 +20,24 @@ mock.module("../src/lib/postgres/integrity-postgres.service.js", {
     insertIntegrityFlagPg: async (row) => {
       insertedFlags.push(row);
     },
+    contestIntegrityFlagPg: async () => null,
+    getIntegrityFlagByIdPg: async () => null,
+    listIntegrityFlagsForMemberPg: async () => [],
+    listIntegrityFlagsForSessionPg: async () => [],
   },
 });
 mock.module("../src/modules/classification/activity-categories.js", {
   namedExports: {
     categorize: async (_matchType, name) => categoryMap[name] ?? "unclassified",
+    CATEGORIES: async () => null,
+    CLASSIFY_DENIED_MESSAGE: "Only Owner, Super Admin, or Admin can classify apps and URLs.",
+    MATCH_TYPES: async () => null,
+    canClassifyActivity: async () => null,
+    getAllCategories: async () => [],
+    getAppDisplayName: async () => null,
+    getUnclassifiedReviewQueue: async () => null,
+    removeCategory: async () => null,
+    setCategory: async () => null,
   },
 });
 

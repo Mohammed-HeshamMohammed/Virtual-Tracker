@@ -18,10 +18,37 @@ mock.module("../src/lib/redis/client.js", {
     getRedisClient: () => {
       throw new Error("isSessionAbandoned must not touch Redis at all");
     },
+    __closeRedisForTests: async () => null,
+    getRedisSubscriberClient: async () => null,
+    isRedisConfigured: async () => null,
   },
 });
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  namedExports: { updatePgSession: async () => {} },
+  namedExports: { updatePgSession: async () => {},
+    createPgSession: async () => null,
+    fetchAllOpenPgSessions: async () => null,
+    fetchLatestPgScreenshot: async () => null,
+    fetchPgAppLogs: async () => null,
+    fetchPgScreenshotById: async () => null,
+    fetchPgScreenshots: async () => null,
+    fetchPgSessionsForDashboard: async () => null,
+    fetchPgUrlLogs: async () => null,
+    findOpenPgSession: async () => null,
+    findUnclassifiedAppsPg: async () => null,
+    findUnclassifiedDomainsPg: async () => null,
+    getPgSessionById: async () => null,
+    insertActivityAppLog: async () => null,
+    insertActivityScreenshot: async () => null,
+    insertActivityUrlLog: async () => null,
+    reassignPgActivityMemberId: async () => null,
+    recordPgAlertSent: async () => null,
+    sumAppLogSecondsByAppNamePg: async () => null,
+    sumDailyMemberActiveSeconds: async () => null,
+    sumDailyMemberTaskActiveSeconds: async () => null,
+    sumDailyMemberTaskActiveSecondsRange: async () => null,
+    sumUrlLogSecondsByDomainPg: async () => null,
+    wasPgAlertSentRecently: async () => null,
+  },
 });
 
 const { isSessionAbandoned } = await import(

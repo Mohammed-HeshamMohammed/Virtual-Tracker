@@ -26,7 +26,9 @@ mock.module("../src/lib/postgres/client.js", {
   },
 });
 mock.module("../src/modules/realtime/change-bus.js", {
-  namedExports: { publishChange: async () => {}, subscribeChanges: () => () => {} },
+  namedExports: { publishChange: async () => {}, subscribeChanges: () => () => {},
+    resetChangeBusForTests: async () => null,
+  },
 });
 
 const { syncManagementProjectMembers } = await import(

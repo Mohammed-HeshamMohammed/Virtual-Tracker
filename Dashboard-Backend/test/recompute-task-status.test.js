@@ -17,6 +17,9 @@ mock.module("../src/lib/postgres/tasks-postgres.service.js", {
       return { ...stub.task, ...patch };
     },
     listTasksPg: async () => [],
+    createTaskPg: async () => null,
+    deleteTaskPg: async () => null,
+    getTasksByIdsPg: async () => null,
   },
 });
 
@@ -33,11 +36,17 @@ mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
     upsertAssignmentPg: async () => ({}),
     sumActiveAssignmentSecondsPg: async () => 0,
     getInReviewAssignmentsForTaskPg: async () => [],
+    hasAssignmentPg: async () => null,
   },
 });
 
 mock.module("../src/modules/tasks/task-time-tracking.js", {
-  namedExports: { aggregateTaskProgress: async () => null },
+  namedExports: { aggregateTaskProgress: async () => null,
+    getManagementTaskTrackingRows: async () => null,
+    getTaskTimeTracking: async () => null,
+    reviewTaskTracking: async () => null,
+    syncTaskTimeTracking: async () => null,
+  },
 });
 
 const { recomputeTaskStatus } = await import("../src/modules/tasks/task-assignments.js");

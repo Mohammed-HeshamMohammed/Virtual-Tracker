@@ -55,6 +55,11 @@ mock.module("../src/lib/postgres/client.js", {
       }
       throw new Error(`Unhandled query in test mock: ${sql}`);
     },
+    __closePostgresPoolForTests: async () => null,
+    getPostgresPool: async () => null,
+    isPostgresConfigured: () => true,
+    probePostgresReadiness: async () => null,
+    withTransaction: async () => null,
   },
 });
 

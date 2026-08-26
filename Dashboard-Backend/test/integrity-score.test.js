@@ -19,6 +19,11 @@ mock.module("../src/lib/postgres/integrity-postgres.service.js", {
       contestCalls.push({ id, note });
       return { id, session_id: "s1", flag_type: "screenshot_staleness", detail: "d", detected_at: new Date(), contested: true, contested_at: new Date(), contested_note: note };
     },
+    fetchRecentActivityLevelsBySessionPg: async () => null,
+    fetchRecentAppLogNamesPg: async () => null,
+    fetchRecentScreenshotsPg: async () => null,
+    fetchRecentUrlLogDomainsPg: async () => null,
+    insertIntegrityFlagPg: async () => null,
   },
 });
 
