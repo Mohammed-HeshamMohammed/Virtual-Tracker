@@ -2136,6 +2136,20 @@ $$ LANGUAGE plpgsql`,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_report_schedules_due ON report_schedules (frequency, last_sent_at)`,
+  // Reports a member pinned to the "Customized reports" strip on the reports
+  // hub. The strip used to be a hardcoded empty array with a delete button
+  // wired to useState, so nothing could be saved and a removal came back on
+  // reload. One row per member per report page.
+  `CREATE TABLE IF NOT EXISTS saved_reports (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id  UUID NOT NULL,
+  page_id    VARCHAR(64) NOT NULL,
+  title      TEXT NOT NULL,
+  tag        TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (member_id, page_id)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_saved_reports_member ON saved_reports (member_id, created_at DESC)`,
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
