@@ -1944,6 +1944,180 @@ $$ LANGUAGE plpgsql`,
   // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
   // polls this on the same interval-timer pattern team-weekly-report.service.js
   // already uses, no job-queue dependency needed for one feature.
+  // ─── Invoicing ──────────────────────────────────────────────────────────
+  // One table covers both directions, distinguished by `kind`:
+  //   'client' - what the org bills a client (money coming in)
+  //   'team'   - what a member/contractor bills the org (money going out)
+  // They share every field that matters (number, dates, totals, status) and
+  // both age the same way, so two near-identical tables would only guarantee
+  // the two halves drift apart.
+  //
+  // Totals are stored rather than summed from line items on read: an issued
+  // invoice is a financial record of what was actually billed, and must not
+  // change retroactively if a line item is later edited. recalcInvoiceTotalsPg
+  // updates them deliberately while a draft is still being edited.
+  `CREATE TABLE IF NOT EXISTS invoices (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind          VARCHAR(10)   NOT NULL CHECK (kind IN ('client', 'team')),
+  client_id     UUID,
+  member_id     UUID,
+  number        VARCHAR(40)   NOT NULL,
+  issue_date    DATE          NOT NULL DEFAULT CURRENT_DATE,
+  due_date      DATE,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'draft'
+                              CHECK (status IN ('draft', 'sent', 'paid', 'void')),
+  subtotal      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  tax           NUMERIC(14,2) NOT NULL DEFAULT 0,
+  total         NUMERIC(14,2) NOT NULL DEFAULT 0,
+  currency      VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  notes         TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  updated_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  UNIQUE (number),
+  -- A client invoice needs a client, a team invoice needs a member.
+  CHECK ((kind = 'client' AND client_id IS NOT NULL) OR (kind = 'team' AND member_id IS NOT NULL))
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoices_kind   ON invoices (kind)",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices (client_id) WHERE client_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_member ON invoices (member_id) WHERE member_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices (status)",
+  "CREATE INDEX IF NOT EXISTS idx_invoices_due    ON invoices (due_date)",
+  `CREATE TABLE IF NOT EXISTS invoice_line_items (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id    UUID          NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  project_id    UUID,
+  description   TEXT          NOT NULL DEFAULT '',
+  quantity      NUMERIC(10,2) NOT NULL DEFAULT 1,
+  unit_price    NUMERIC(14,2) NOT NULL DEFAULT 0,
+  amount        NUMERIC(14,2) NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_line_items (invoice_id)",
+  // Payments recorded against an invoice. The Payments report is the sum of
+  // these - actual money moved, as opposed to amounts-owed's estimate of what
+  // is still due.
+  `CREATE TABLE IF NOT EXISTS invoice_payments (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id    UUID          NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+  amount        NUMERIC(14,2) NOT NULL CHECK (amount > 0),
+  paid_on       DATE          NOT NULL DEFAULT CURRENT_DATE,
+  method        VARCHAR(40)   NOT NULL DEFAULT 'other',
+  reference     VARCHAR(120)  NOT NULL DEFAULT '',
+  note          TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_invoice_payments_invoice ON invoice_payments (invoice_id)",
+  "CREATE INDEX IF NOT EXISTS idx_invoice_payments_paid_on ON invoice_payments (paid_on)",
+  `DROP TRIGGER IF EXISTS trg_invoices_updated_at ON invoices`,
+  `CREATE TRIGGER trg_invoices_updated_at
+  BEFORE UPDATE ON invoices
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  // ─── Time off ───────────────────────────────────────────────────────────
+  // A policy is the entitlement (e.g. "Annual leave, 20 days/year"); a request
+  // is someone asking for days against it; transactions are the ledger.
+  //
+  // Balances are deliberately NOT a stored column - they are SUM(transactions)
+  // per member+policy. A stored balance and a ledger disagree the moment any
+  // write is missed, and then there is no way to tell which is right. Accruals
+  // are positive days, approved leave is negative.
+  `CREATE TABLE IF NOT EXISTS time_off_policies (
+  id                UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  name              VARCHAR(120)  NOT NULL,
+  description       TEXT          NOT NULL DEFAULT '',
+  days_per_year     NUMERIC(6,2)  NOT NULL DEFAULT 0 CHECK (days_per_year >= 0),
+  paid              BOOLEAN       NOT NULL DEFAULT true,
+  requires_approval BOOLEAN       NOT NULL DEFAULT true,
+  active            BOOLEAN       NOT NULL DEFAULT true,
+  created_by        VARCHAR(255),
+  updated_by        VARCHAR(255),
+  created_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at        TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  UNIQUE (name)
+)`,
+  `CREATE TABLE IF NOT EXISTS time_off_requests (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  policy_id     UUID          NOT NULL REFERENCES time_off_policies(id) ON DELETE RESTRICT,
+  start_date    DATE          NOT NULL,
+  end_date      DATE          NOT NULL,
+  days          NUMERIC(6,2)  NOT NULL CHECK (days > 0),
+  note          TEXT          NOT NULL DEFAULT '',
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled')),
+  reviewed_by   VARCHAR(255),
+  reviewed_at   TIMESTAMPTZ,
+  review_note   TEXT          NOT NULL DEFAULT '',
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  CHECK (end_date >= start_date)
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_member ON time_off_requests (member_id)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_status ON time_off_requests (status)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_req_dates  ON time_off_requests (start_date, end_date)",
+  // kind: 'accrual' (grant), 'usage' (approved leave), 'adjustment' (manual
+  // correction). request_id links a usage row back to what caused it, and is
+  // UNIQUE so approving the same request twice cannot double-deduct.
+  `CREATE TABLE IF NOT EXISTS time_off_transactions (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  policy_id     UUID          NOT NULL REFERENCES time_off_policies(id) ON DELETE RESTRICT,
+  request_id    UUID          REFERENCES time_off_requests(id) ON DELETE CASCADE,
+  kind          VARCHAR(20)   NOT NULL CHECK (kind IN ('accrual', 'usage', 'adjustment')),
+  days          NUMERIC(6,2)  NOT NULL,
+  effective_on  DATE          NOT NULL,
+  note          TEXT          NOT NULL DEFAULT '',
+  created_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_time_off_tx_member ON time_off_transactions (member_id, policy_id)",
+  "CREATE INDEX IF NOT EXISTS idx_time_off_tx_date   ON time_off_transactions (effective_on)",
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_time_off_tx_request
+     ON time_off_transactions (request_id) WHERE request_id IS NOT NULL`,
+  `DROP TRIGGER IF EXISTS trg_time_off_policies_updated_at ON time_off_policies`,
+  `CREATE TRIGGER trg_time_off_policies_updated_at
+  BEFORE UPDATE ON time_off_policies
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  `DROP TRIGGER IF EXISTS trg_time_off_requests_updated_at ON time_off_requests`,
+  `CREATE TRIGGER trg_time_off_requests_updated_at
+  BEFORE UPDATE ON time_off_requests
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  // ─── Expenses ───────────────────────────────────────────────────────────
+  // Money a member spent doing the work, as opposed to time they spent on it.
+  // Approval mirrors time_entries' pending/approved/rejected vocabulary so the
+  // two review flows behave the same way.
+  `CREATE TABLE IF NOT EXISTS expenses (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  project_id    UUID,
+  client_id     UUID,
+  date          DATE          NOT NULL,
+  category      VARCHAR(60)   NOT NULL DEFAULT 'other',
+  description   TEXT          NOT NULL DEFAULT '',
+  notes         TEXT          NOT NULL DEFAULT '',
+  amount        NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  currency      VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  billable      BOOLEAN       NOT NULL DEFAULT false,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'approved', 'rejected')),
+  reviewed_by   VARCHAR(255),
+  reviewed_at   TIMESTAMPTZ,
+  receipt_url   TEXT,
+  created_by    VARCHAR(255),
+  updated_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_expenses_member  ON expenses (member_id)",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_project ON expenses (project_id) WHERE project_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_date    ON expenses (date)",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_status  ON expenses (status)",
+  `DROP TRIGGER IF EXISTS trg_expenses_updated_at ON expenses`,
+  `CREATE TRIGGER trg_expenses_updated_at
+  BEFORE UPDATE ON expenses
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
   `CREATE TABLE IF NOT EXISTS report_schedules (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   report_type     VARCHAR(64) NOT NULL DEFAULT 'time-and-activity',

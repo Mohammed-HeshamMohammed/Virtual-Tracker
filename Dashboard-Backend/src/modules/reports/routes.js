@@ -20,6 +20,9 @@ import {
   getTimesheetApprovalRowsPg,
   getAppUsageRowsPg,
   getUrlUsageRowsPg,
+  getManualTimeEditRowsPg,
+  getWorkBreakRowsPg,
+  getShiftAttendanceRowsPg,
 } from "../../lib/postgres/misc-reports-postgres.service.js";
 import {
   listProjectsPg,
@@ -30,6 +33,16 @@ import {
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
 import { canViewCompensation } from "../../http/field-policy.js";
 import { getViewerProjectIds } from "../../http/project-access.js";
+import { listExpensesPg } from "../../lib/postgres/expenses-postgres.service.js";
+import {
+  getTimeOffBalanceRowsPg,
+  getTimeOffTransactionRowsPg,
+} from "../../lib/postgres/time-off-postgres.service.js";
+import {
+  listInvoiceAgingPg,
+  listInvoicePaymentsPg,
+  listInvoicesWithBalancePg,
+} from "../../lib/postgres/invoices-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
@@ -105,6 +118,22 @@ function parseUuidListParam(value) {
 }
 
 const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * One member-scope resolver for every report route, so they all accept the
+ * same params and enforce the same rule: `memberIds` (CSV, from a filter
+ * panel's multi-select) or `memberId` (single), each validated against the
+ * viewer's visible set; absent means "everyone this viewer can see".
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {URL} url
+ * @returns {Promise<string[] | null>} null = unrestricted
+ */
+async function resolveReportMemberScope(db, viewer, url) {
+  const many = parseUuidListParam(url.searchParams.get("memberIds"));
+  if (many.length > 0) return resolveMemberIdsMultiFilter(db, viewer, many);
+  return resolveMemberIdsFilter(db, viewer, url.searchParams.get("memberId") || null);
+}
 
 /**
  * Narrow a requested project filter to the ones the viewer may actually see,
@@ -418,7 +447,7 @@ export async function routeReports(req, res, url, origin) {
 
   // ─── Amounts Owed / Daily Totals / Payments (same "hours x rate" shape) ──
   if (
-    (pn === "/api/reports/amounts-owed" || pn === "/api/reports/payments") &&
+    pn === "/api/reports/amounts-owed" &&
     req.method === "GET"
   ) {
     const viewer = requireAuthContext(req, res, origin);
@@ -432,13 +461,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      // memberId (single) is kept for existing callers; memberIds (CSV) backs
-      // the report's multi-select filter panel. Both are checked against the
-      // viewer's visible set before they reach the query.
-      const requestedMemberIds = parseUuidListParam(url.searchParams.get("memberIds"));
-      const memberIds = requestedMemberIds.length
-        ? await resolveMemberIdsMultiFilter(getDb(), viewer, requestedMemberIds)
-        : await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const projectIds = await filterProjectIdsForViewer(
         getDb(),
         viewer,
@@ -486,8 +509,13 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
-      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to });
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(sessions.map((s) => s.memberId))]);
 
       const rows = sessions.map((s) => ({
@@ -523,6 +551,294 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
       logSafeError("[reports/audit-log]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Manual Time Edits ────────────────────────────────────────────────────
+  if (pn === "/api/reports/manual-time-edits" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const entries = await getManualTimeEditRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
+
+      // created_by/updated_by hold a member id for in-app writes; resolve both
+      // those and the entry owner in one lookup.
+      const ids = new Set();
+      for (const e of entries) {
+        if (e.memberId) ids.add(String(e.memberId));
+        if (UUID_PARAM_RE.test(e.updatedBy)) ids.add(e.updatedBy);
+        if (UUID_PARAM_RE.test(e.createdBy)) ids.add(e.createdBy);
+      }
+      const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
+      const nameOf = (value) => (UUID_PARAM_RE.test(value) ? nameMap.get(value)?.name ?? "Unknown" : value || "");
+
+      const rows = entries.map((e) => ({
+        ...e,
+        memberName: nameMap.get(String(e.memberId))?.name ?? "Unknown",
+        editedByName: nameOf(e.updatedBy) || nameOf(e.createdBy),
+        hours: Math.round((e.durationSeconds / 3600) * 100) / 100,
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/manual-time-edits]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Work Breaks ──────────────────────────────────────────────────────────
+  if (pn === "/api/reports/work-breaks" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+    // How long a gap has to be before it counts as a break rather than a
+    // stop/start while switching task.
+    const rawMinGap = Number.parseInt(url.searchParams.get("minGapMinutes") ?? "", 10);
+    const minGapMinutes = Number.isFinite(rawMinGap) ? Math.min(Math.max(rawMinGap, 1), 240) : 5;
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const breaks = await getWorkBreakRowsPg({ memberIds, fromDay: from, toDay: to, minGapMinutes });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(breaks.map((b) => String(b.memberId)))]);
+      const rows = breaks.map((b) => ({
+        ...b,
+        memberName: nameMap.get(String(b.memberId))?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
+    } catch (e) {
+      logSafeError("[reports/work-breaks]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Expenses ─────────────────────────────────────────────────────────────
+  if (pn === "/api/reports/expenses" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const expenses = await listExpensesPg({ memberIds, projectIds, fromDay: from, toDay: to, limit: 2000 });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(expenses.map((e) => String(e.member_id)))]);
+      const rows = expenses.map((e) => ({
+        id: String(e.id),
+        day: e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10),
+        memberId: String(e.member_id),
+        memberName: nameMap.get(String(e.member_id))?.name ?? "Unknown",
+        projectName: e.project_name || "",
+        clientName: e.client_name || "",
+        category: e.category || "other",
+        description: e.description || "",
+        amount: Number(e.amount) || 0,
+        currency: e.currency || "USD",
+        billable: e.billable === true,
+        status: e.status || "pending",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/expenses]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Time off balances ────────────────────────────────────────────────────
+  // Balance is as of the end of the selected range, not "now" - an accrual
+  // dated later in the year must not count towards a period that ended before it.
+  if (pn === "/api/reports/time-off-balances" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const to = parseDateParam(url.searchParams.get("to")) || new Date().toISOString().slice(0, 10);
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const balances = await getTimeOffBalanceRowsPg({ memberIds, asOf: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(balances.map((b) => b.memberId))]);
+      const rows = balances.map((b) => ({
+        ...b,
+        memberName: nameMap.get(b.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows, asOf: to } });
+    } catch (e) {
+      logSafeError("[reports/time-off-balances]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Time off transactions ────────────────────────────────────────────────
+  if (pn === "/api/reports/time-off-transactions" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const transactions = await getTimeOffTransactionRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(transactions.map((t) => t.memberId))]);
+      const rows = transactions.map((t) => ({
+        ...t,
+        memberName: nameMap.get(t.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/time-off-transactions]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Invoices (client / team) and their aging ─────────────────────────────
+  // One handler per pair: the only difference is which side of the ledger the
+  // invoice sits on, so splitting them into four near-identical handlers would
+  // only guarantee they drift.
+  {
+    const invoiceMatch = /^\/api\/reports\/(client|team)-invoices(-aging)?$/.exec(pn);
+    if (invoiceMatch && req.method === "GET") {
+      const viewer = requireAuthContext(req, res, origin);
+      if (!viewer) return true;
+      const kind = invoiceMatch[1] === "client" ? "client" : "team";
+      const aging = Boolean(invoiceMatch[2]);
+
+      // Client invoices are org financials; team invoices are scoped to the
+      // members the viewer can see.
+      if (kind === "client" && !isManagementRole(viewer.roleName)) {
+        sendJson(res, origin, 403, { success: false, error: "Management role required." });
+        return true;
+      }
+
+      const from = parseDateParam(url.searchParams.get("from"));
+      const to = parseDateParam(url.searchParams.get("to")) || new Date().toISOString().slice(0, 10);
+      if (!aging && (!from || !to || from > to)) {
+        sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+        return true;
+      }
+
+      try {
+        const memberIds = kind === "team" ? await resolveReportMemberScope(getDb(), viewer, url) : null;
+        const rows = aging
+          ? await listInvoiceAgingPg({ kind, memberIds, asOf: to })
+          : await listInvoicesWithBalancePg({ kind, memberIds, fromDay: from, toDay: to });
+        const nameMap = await buildMemberMetaMap(
+          getDb(),
+          [...new Set(rows.map((r) => r.memberId).filter(Boolean))],
+        );
+        sendJson(res, origin, 200, {
+          success: true,
+          data: {
+            rows: rows.map((r) => ({
+              ...r,
+              memberName: r.memberId ? (nameMap.get(r.memberId)?.name ?? "Unknown") : "",
+            })),
+            asOf: to,
+          },
+        });
+      } catch (e) {
+        logSafeError("[reports/invoices]", e);
+        sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+      }
+      return true;
+    }
+  }
+
+  // ─── Payments ─────────────────────────────────────────────────────────────
+  // Money actually recorded against an invoice, as opposed to amounts-owed's
+  // estimate of what is still due. These used to share one handler, so this
+  // report showed outstanding estimates under a title promising a record of
+  // what was paid.
+  if (pn === "/api/reports/payments" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const payments = await listInvoicePaymentsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(
+        getDb(),
+        [...new Set(payments.map((p) => p.memberId).filter(Boolean))],
+      );
+      const rows = payments.map((p) => ({
+        ...p,
+        memberName: p.memberId ? (nameMap.get(p.memberId)?.name ?? "Unknown") : "",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/payments]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Shift attendance ─────────────────────────────────────────────────────
+  if (pn === "/api/reports/shift-attendance" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const attendance = await getShiftAttendanceRowsPg({ memberIds, fromDay: from, toDay: to });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(attendance.map((a) => a.memberId))]);
+      const rows = attendance.map((a) => ({
+        ...a,
+        memberName: nameMap.get(a.memberId)?.name ?? "Unknown",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/shift-attendance]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;
@@ -640,7 +956,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const rows = await getLimitsUsageRowsPg({ memberIds, fromDay: from, toDay: to });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
 
@@ -677,7 +993,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const rows = await getTimesheetApprovalRowsPg({ memberIds, fromDay: from, toDay: to });
       const ids = new Set(rows.map((r) => r.memberId));
       for (const r of rows) if (r.approvedBy) ids.add(r.approvedBy);
@@ -709,7 +1025,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const [apps, urls] = await Promise.all([
         getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
         getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
