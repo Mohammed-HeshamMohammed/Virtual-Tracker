@@ -62,7 +62,7 @@ export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, pr
  * Raw per-session rows (start/stop granularity) - backs Work Sessions.
  * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
  */
-export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay }) {
+export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
   to.setUTCDate(to.getUTCDate() + 1);
@@ -76,9 +76,10 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay }) {
      LEFT JOIN projects p ON p.id = s.project_id
      WHERE s.started_at >= $1 AND s.started_at < $2
        AND ($3::uuid[] IS NULL OR s.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR s.project_id = ANY($4::uuid[]))
      ORDER BY s.started_at DESC
      LIMIT 2000`,
-    [from.toISOString(), to.toISOString(), memberIds],
+    [from.toISOString(), to.toISOString(), memberIds, projectIds],
   );
   return rows.map((r) => ({
     id: r.id,

@@ -107,6 +107,22 @@ function parseUuidListParam(value) {
 const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * One member-scope resolver for every report route, so they all accept the
+ * same params and enforce the same rule: `memberIds` (CSV, from a filter
+ * panel's multi-select) or `memberId` (single), each validated against the
+ * viewer's visible set; absent means "everyone this viewer can see".
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {URL} url
+ * @returns {Promise<string[] | null>} null = unrestricted
+ */
+async function resolveReportMemberScope(db, viewer, url) {
+  const many = parseUuidListParam(url.searchParams.get("memberIds"));
+  if (many.length > 0) return resolveMemberIdsMultiFilter(db, viewer, many);
+  return resolveMemberIdsFilter(db, viewer, url.searchParams.get("memberId") || null);
+}
+
+/**
  * Narrow a requested project filter to the ones the viewer may actually see,
  * so the filter can never be used to surface time on an out-of-scope project.
  * @param {import("firebase-admin/firestore").Firestore} db
@@ -432,13 +448,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      // memberId (single) is kept for existing callers; memberIds (CSV) backs
-      // the report's multi-select filter panel. Both are checked against the
-      // viewer's visible set before they reach the query.
-      const requestedMemberIds = parseUuidListParam(url.searchParams.get("memberIds"));
-      const memberIds = requestedMemberIds.length
-        ? await resolveMemberIdsMultiFilter(getDb(), viewer, requestedMemberIds)
-        : await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const projectIds = await filterProjectIdsForViewer(
         getDb(),
         viewer,
@@ -486,8 +496,13 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
-      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to });
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(sessions.map((s) => s.memberId))]);
 
       const rows = sessions.map((s) => ({
@@ -640,7 +655,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const rows = await getLimitsUsageRowsPg({ memberIds, fromDay: from, toDay: to });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
 
@@ -677,7 +692,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const rows = await getTimesheetApprovalRowsPg({ memberIds, fromDay: from, toDay: to });
       const ids = new Set(rows.map((r) => r.memberId));
       for (const r of rows) if (r.approvedBy) ids.add(r.approvedBy);
@@ -709,7 +724,7 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const [apps, urls] = await Promise.all([
         getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
         getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to }),

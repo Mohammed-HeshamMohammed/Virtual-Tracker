@@ -4,10 +4,16 @@ import { useEffect, useState } from "react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchWeeklyLimitsReport, fetchDailyLimitsReport } from "@/features/reports/api/misc-reports-api"
+import {
+  ReportFiltersPanel,
+  emptyReportFilters,
+  useReportFilterOptions,
+  type ReportFilterState,
+} from "@/features/reports/components/shared/report-filters-panel"
 import type { LimitUsageRow } from "@/features/reports/models/limits"
 import { cn } from "@/shared/utils/utils"
 
-function LimitsTable({ kind }: { kind: "weekly" | "daily" }) {
+function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: ReportFilterState }) {
   const { isDark } = useTheme()
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<LimitUsageRow[]>([])
@@ -17,13 +23,13 @@ function LimitsTable({ kind }: { kind: "weekly" | "daily" }) {
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
     const fetcher = kind === "weekly" ? fetchWeeklyLimitsReport : fetchDailyLimitsReport
-    fetcher({ from, to }).then((data) => {
+    fetcher({ from, to, memberIds: [...filters.memberIds] }).then((data) => {
       if (!cancelled) setRows(data)
     })
     return () => {
       cancelled = true
     }
-  }, [kind, rangeStart, rangeEnd])
+  }, [kind, rangeStart, rangeEnd, filters])
 
   useEffect(() => {
     const runExport = () => {
@@ -109,18 +115,51 @@ function LimitsTable({ kind }: { kind: "weekly" | "daily" }) {
   )
 }
 
+/** Limits are per member and carry no project dimension, so the panel offers
+ *  members only. */
+function LimitsReport({
+  kind,
+  title,
+  exportFileBaseName,
+  onNavigate,
+}: {
+  kind: "weekly" | "daily"
+  title: string
+  exportFileBaseName: string
+  onNavigate: (id: string) => void
+}) {
+  const [filters, setFilters] = useState<ReportFilterState>(emptyReportFilters)
+  const options = useReportFilterOptions()
+  return (
+    <StandardReportLayout
+      title={title}
+      onNavigate={onNavigate}
+      exportFileBaseName={exportFileBaseName}
+      showScopeTabs={false}
+      showGroupBy={false}
+      filtersPanel={(close) => (
+        <ReportFiltersPanel
+          onClose={close}
+          options={options}
+          value={filters}
+          onChange={setFilters}
+          showProjects={false}
+        />
+      )}
+    >
+      <LimitsTable kind={kind} filters={filters} />
+    </StandardReportLayout>
+  )
+}
+
 export function WeeklyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Weekly limits report" onNavigate={onNavigate} exportFileBaseName="weekly-limits" showScopeTabs={false} showGroupBy={false}>
-      <LimitsTable kind="weekly" />
-    </StandardReportLayout>
+    <LimitsReport kind="weekly" title="Weekly limits report" exportFileBaseName="weekly-limits" onNavigate={onNavigate} />
   )
 }
 
 export function DailyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <StandardReportLayout title="Daily limits report" onNavigate={onNavigate} exportFileBaseName="daily-limits" showScopeTabs={false} showGroupBy={false}>
-      <LimitsTable kind="daily" />
-    </StandardReportLayout>
+    <LimitsReport kind="daily" title="Daily limits report" exportFileBaseName="daily-limits" onNavigate={onNavigate} />
   )
 }
