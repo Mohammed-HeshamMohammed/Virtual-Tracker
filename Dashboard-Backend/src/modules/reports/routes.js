@@ -32,6 +32,7 @@ import {
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
 import { canViewCompensation } from "../../http/field-policy.js";
 import { getViewerProjectIds } from "../../http/project-access.js";
+import { listExpensesPg } from "../../lib/postgres/expenses-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
@@ -618,6 +619,49 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
     } catch (e) {
       logSafeError("[reports/work-breaks]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // ─── Expenses ─────────────────────────────────────────────────────────────
+  if (pn === "/api/reports/expenses" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    const from = parseDateParam(url.searchParams.get("from"));
+    const to = parseDateParam(url.searchParams.get("to"));
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const expenses = await listExpensesPg({ memberIds, projectIds, fromDay: from, toDay: to, limit: 2000 });
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(expenses.map((e) => String(e.member_id)))]);
+      const rows = expenses.map((e) => ({
+        id: String(e.id),
+        day: e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10),
+        memberId: String(e.member_id),
+        memberName: nameMap.get(String(e.member_id))?.name ?? "Unknown",
+        projectName: e.project_name || "",
+        clientName: e.client_name || "",
+        category: e.category || "other",
+        description: e.description || "",
+        amount: Number(e.amount) || 0,
+        currency: e.currency || "USD",
+        billable: e.billable === true,
+        status: e.status || "pending",
+      }));
+      sendJson(res, origin, 200, { success: true, data: { rows } });
+    } catch (e) {
+      logSafeError("[reports/expenses]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
     }
     return true;

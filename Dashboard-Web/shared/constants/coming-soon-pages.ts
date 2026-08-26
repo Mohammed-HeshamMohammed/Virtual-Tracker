@@ -14,6 +14,10 @@ function addPagesFromSection(sectionId: string) {
 
 addPagesFromSection("settings")
 addPagesFromSection("financials")
+// ...except Expenses, which is now backed by the real `expenses` table:
+// claim, review (management only, never your own), remove, and it feeds the
+// Expenses report.
+COMING_SOON_PAGES.delete("financials-expenses")
 
 // --- Reports: only non-Tier-1 reports are "coming soon" ---
 // Tier 1 (unlocked): Time & Activity, Project Budgets, Daily Totals
@@ -22,8 +26,8 @@ addPagesFromSection("financials")
 // Shift-style hub reports are all non-Tier-1 (payments, limits, budgets, time-off, invoices, shift attendance).
 Object.keys(SHIFT_STYLE_HUB_REPORTS).forEach((pageId) => COMING_SOON_PAGES.add(pageId))
 
-// Non-Tier-1 individual report pages still with no real backend.
-COMING_SOON_PAGES.add("reports-expenses")     // No expenses table yet — coming soon
+// reports-expenses is now backed by a real expenses table plus
+// /api/reports/expenses and the Financials expense form — unlocked.
 // reports-manual-edits is now backed by /api/reports/manual-time-edits, which
 // reads the manual (source='manual') rows of time_entries — unlocked.
 // There is no payments/disbursement table at all: /api/reports/payments is

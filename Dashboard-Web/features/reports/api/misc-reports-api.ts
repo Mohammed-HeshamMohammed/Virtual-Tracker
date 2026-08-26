@@ -445,3 +445,25 @@ export async function fetchWorkBreaksReport(
   )
   return { rows: data?.rows ?? [], minGapMinutes: data?.minGapMinutes ?? 5 }
 }
+
+// ─── Expenses ─────────────────────────────────────────────────────────────
+
+export interface ExpenseReportRow {
+  id: string
+  day: string
+  memberId: string
+  memberName: string
+  projectName: string
+  clientName: string
+  category: string
+  description: string
+  amount: number
+  currency: string
+  billable: boolean
+  status: string
+}
+
+export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseReportRow[]> {
+  const data = await getJson<{ rows: ExpenseReportRow[] }>(`/api/reports/expenses?${reportParams(range).toString()}`)
+  return data?.rows ?? []
+}

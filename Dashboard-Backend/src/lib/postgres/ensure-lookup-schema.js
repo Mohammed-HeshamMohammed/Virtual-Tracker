@@ -1944,6 +1944,40 @@ $$ LANGUAGE plpgsql`,
   // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
   // polls this on the same interval-timer pattern team-weekly-report.service.js
   // already uses, no job-queue dependency needed for one feature.
+  // ─── Expenses ───────────────────────────────────────────────────────────
+  // Money a member spent doing the work, as opposed to time they spent on it.
+  // Approval mirrors time_entries' pending/approved/rejected vocabulary so the
+  // two review flows behave the same way.
+  `CREATE TABLE IF NOT EXISTS expenses (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id     UUID          NOT NULL,
+  project_id    UUID,
+  client_id     UUID,
+  date          DATE          NOT NULL,
+  category      VARCHAR(60)   NOT NULL DEFAULT 'other',
+  description   TEXT          NOT NULL DEFAULT '',
+  notes         TEXT          NOT NULL DEFAULT '',
+  amount        NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+  currency      VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  billable      BOOLEAN       NOT NULL DEFAULT false,
+  status        VARCHAR(20)   NOT NULL DEFAULT 'pending'
+                              CHECK (status IN ('pending', 'approved', 'rejected')),
+  reviewed_by   VARCHAR(255),
+  reviewed_at   TIMESTAMPTZ,
+  receipt_url   TEXT,
+  created_by    VARCHAR(255),
+  updated_by    VARCHAR(255),
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_expenses_member  ON expenses (member_id)",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_project ON expenses (project_id) WHERE project_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_date    ON expenses (date)",
+  "CREATE INDEX IF NOT EXISTS idx_expenses_status  ON expenses (status)",
+  `DROP TRIGGER IF EXISTS trg_expenses_updated_at ON expenses`,
+  `CREATE TRIGGER trg_expenses_updated_at
+  BEFORE UPDATE ON expenses
+  FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
   `CREATE TABLE IF NOT EXISTS report_schedules (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   report_type     VARCHAR(64) NOT NULL DEFAULT 'time-and-activity',

@@ -1,277 +1,266 @@
 /* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
-import { useState as useComponentState, useRef } from "react"
-import { motion, AnimatePresence } from "framer-motion"
-import { Calendar, X, Check } from "lucide-react"
+import { useEffect, useState } from "react"
+import { AnimatePresence, motion } from "framer-motion"
+import { X } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
-import { SingleDatePicker } from "@/features/financials/components/shared/date-pickers"
-import { CategoryDropdown, ProjectDropdown } from "@/features/financials/components/shared/dropdowns"
-import { ReceiptIllustration } from "@/features/financials/components/shared/ui-components"
-import { MEMBER_AVATARS, PROJECTS_LIST, CATEGORIES } from "@/features/financials/components/shared/constants"
-import { fmtShort } from "@/features/financials/components/shared/date-pickers"
-import { parsePositiveNumber, validateRequiredText } from "@/shared/validation"
+import { getProjects } from "@/features/projects/api/project-api"
+import { EXPENSE_CATEGORIES, createExpense } from "@/features/expenses/api/expense-api"
 
-// The modal expects to be placed inside an AnimatePresence
+const inputCls =
+  "w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-700 placeholder:text-slate-400 outline-none transition-colors focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
+
+const labelCls = "mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400"
+
+/** Today as YYYY-MM-DD in local time. */
+function todayLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
+}
+
+/**
+ * Claim an expense. Saves to the real `expenses` table as `pending`, attributed
+ * to the signed-in member server-side - this form previously built a fake row
+ * hardcoded to a person named "Sarah Johnson" and handed it to the caller,
+ * which threw it away.
+ */
 export function AddExpenseModal({
+  open,
   onClose,
-  onSave,
+  onSaved,
 }: {
+  open: boolean
   onClose: () => void
-  onSave: (e: any) => void
+  onSaved?: () => void
 }) {
-  const [description, setDescription] = useComponentState("")
-  const [date, setDate] = useComponentState<Date>(new Date(2026, 2, 22))
-  const [showDate, setShowDate] = useComponentState(false)
-  const [amount, setAmount] = useComponentState("")
-  const [category, setCategory] = useComponentState("")
-  const [project, setProject] = useComponentState("")
-  const [notes, setNotes] = useComponentState("")
-  const [billable, setBillable] = useComponentState(false)
-  const [receiptFile, setReceiptFile] = useComponentState<string | null>(null)
-  const [dragging, setDragging] = useComponentState(false)
-  const [saveError, setSaveError] = useComponentState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
+  const [description, setDescription] = useState("")
+  const [date, setDate] = useState(todayLocal)
+  const [amount, setAmount] = useState("")
+  const [category, setCategory] = useState("other")
+  const [projectId, setProjectId] = useState("")
+  const [notes, setNotes] = useState("")
+  const [billable, setBillable] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function save() {
-    const descriptionError = validateRequiredText(description, "Description")
-    const amountError = parsePositiveNumber(amount) === null ? "Enter a valid amount greater than zero." : null
-    const validationError = descriptionError ?? amountError
-    if (validationError) {
-      setSaveError(validationError)
-      return
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void getProjects({ fields: ["id", "name", "status"] })
+      .then((rows) => {
+        if (cancelled) return
+        setProjects(
+          rows
+            .filter((p) => String(p.status ?? "").toLowerCase() !== "archived")
+            .map((p) => ({ id: String(p.id), name: String(p.name ?? "Untitled project") }))
+        )
+      })
+      .catch(() => setProjects([]))
+    return () => {
+      cancelled = true
     }
-    setSaveError(null)
-    const av = Object.entries(MEMBER_AVATARS).find(() => true)!
-    onSave({
-      member: "Sarah Johnson",
-      memberAvatar: "SJ",
-      memberColor: "#6366f1",
-      date: fmtShort(date).replace(/,\s\d{4}/, ", 2026"), // formatting string as before
-      description,
-      amount: parseFloat(amount) || 0,
-      category,
-      project,
-      billable,
-      receipt: receiptFile ?? undefined,
-    })
-    onClose()
+  }, [open])
+
+  function reset() {
+    setDescription("")
+    setDate(todayLocal())
+    setAmount("")
+    setCategory("other")
+    setProjectId("")
+    setNotes("")
+    setBillable(false)
+    setError(null)
   }
 
-  const inputCls =
-    "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-colors"
+  async function save() {
+    const parsedAmount = Number(amount)
+    if (!description.trim()) {
+      setError("Add a description.")
+      return
+    }
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      setError("Enter an amount greater than zero.")
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      await createExpense({
+        date,
+        category,
+        description: description.trim(),
+        notes: notes.trim(),
+        amount: parsedAmount,
+        billable,
+        projectId: projectId || null,
+      })
+      reset()
+      onSaved?.()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save this expense.")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.96, y: 8 }}
-        animate={{ scale: 1, y: 0 }}
-        exit={{ scale: 0.96 }}
-        transition={{ duration: 0.18 }}
-        className="bg-white rounded-2xl w-full max-w-[900px] shadow-2xl flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-7 pt-6 pb-4 shrink-0">
-          <h2 className="text-xl font-bold text-slate-800">New expense</h2>
-          <button onClick={onClose} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors" type="button">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* Left form */}
-          <div className="flex-1 px-7 pb-6 overflow-y-auto space-y-4">
-            {saveError ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{saveError}</p>
-            ) : null}
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">
-                DESCRIPTION*
-              </label>
-              <input
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Description"
-                className={inputCls} aria-label="Interactive control"
-              />
+    <AnimatePresence>
+      {open ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.97, y: 12, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.97, y: 8, opacity: 0 }}
+            className="flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4">
+              <h2 className="text-lg font-bold text-slate-800">Add expense</h2>
+              <button type="button" onClick={onClose} className="rounded-lg p-1.5 hover:bg-slate-100">
+                <X className="h-5 w-5 text-slate-500" />
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-5">
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                  DATE*
+                <label htmlFor="exp-description" className={labelCls}>
+                  Description *
                 </label>
-                <div className="relative">
-                  <div
-                    onClick={() => setShowDate((v) => !v)}
-                    className={cn(
-                      "flex items-center justify-between px-3 py-2.5 border rounded-lg cursor-pointer hover:border-blue-400 transition-colors bg-white",
-                      showDate ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200"
-                    )} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }}
-                  >
-                    <span className="text-sm text-slate-700">{fmtShort(date)}</span>
-                    <Calendar className="w-5 h-5 text-blue-500 shrink-0 ml-2" />
-                  </div>
-                  <AnimatePresence>
-                    {showDate && (
-                      <>
-                        <div className="fixed inset-0 z-20" onClick={() => setShowDate(false)} />
-                        <SingleDatePicker value={date} onChange={(d) => setDate(d)} onClose={() => setShowDate(false)} />
-                      </>
-                    )}
-                  </AnimatePresence>
-                </div>
+                <input
+                  id="exp-description"
+                  type="text"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="What was this for?"
+                  className={inputCls}
+                />
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" aria-label="Interactive control">
-                  AMOUNT*
-                </label>
-                <div className="flex">
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="exp-date" className={labelCls}>
+                    Date *
+                  </label>
                   <input
+                    id="exp-date"
+                    type="date"
+                    value={date}
+                    max={todayLocal()}
+                    onChange={(e) => setDate(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="exp-amount" className={labelCls}>
+                    Amount *
+                  </label>
+                  <input
+                    id="exp-amount"
                     type="number"
+                    min="0"
+                    step="0.01"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    placeholder="Amount"
-                    min={0}
-                    className="flex-1 min-w-0 px-3 py-2.5 border border-r-0 border-slate-200 rounded-l-lg text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-blue-400 transition-colors"
+                    placeholder="0.00"
+                    className={inputCls}
                   />
-                  <span className="px-4 py-2.5 bg-slate-100 border border-slate-200 rounded-r-lg text-sm text-slate-500 font-medium shrink-0">
-                    USD
-                  </span>
                 </div>
               </div>
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">
-                CATEGORY*
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="exp-category" className={labelCls}>
+                    Category *
+                  </label>
+                  <select
+                    id="exp-category"
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className={inputCls}
+                  >
+                    {EXPENSE_CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="exp-project" className={labelCls}>
+                    Project
+                  </label>
+                  <select
+                    id="exp-project"
+                    value={projectId}
+                    onChange={(e) => setProjectId(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">No project</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="exp-notes" className={labelCls}>
+                  Notes
+                </label>
+                <textarea
+                  id="exp-notes"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={3}
+                  placeholder="Anything the reviewer should know"
+                  className={cn(inputCls, "resize-y")}
+                />
+              </div>
+
+              <label className="flex cursor-pointer select-none items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={billable}
+                  onChange={(e) => setBillable(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                <span className="text-sm text-slate-700">Billable to the client</span>
               </label>
-              <CategoryDropdown value={category} onChange={setCategory} />
+
+              {error ? <p className="text-sm text-red-600">{error}</p> : null}
             </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">
-                PROJECT
-              </label>
-              <ProjectDropdown value={project} onChange={setProject} />
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block">
-                NOTES
-              </label>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Notes"
-                rows={4}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm text-slate-700 placeholder:text-slate-400 resize-y focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400 transition-colors" role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.currentTarget.click(); } }}
-              />
-            </div>
-            <label className="flex items-center gap-2.5 cursor-pointer select-none">
-              <div
-                onClick={() => setBillable((v) => !v)}
-                className={cn(
-                  "w-4 h-4 rounded border-2 flex items-center justify-center transition-colors cursor-pointer shrink-0",
-                  billable ? "bg-blue-500 border-blue-500" : "border-slate-300"
-                )}
+
+            <div className="flex shrink-0 justify-end gap-2 border-t border-slate-100 px-6 py-4">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800"
               >
-                {billable && <Check className="w-2.5 h-2.5 text-white" />}
-              </div>
-              <span className="text-sm text-slate-700">Billable</span>
-            </label>
-          </div>
-
-          {/* Right receipt upload */}
-          <div className="w-72 px-6 py-6 border-l border-slate-100 flex flex-col shrink-0">
-            <div
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragging(true)
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault()
-                setDragging(false)
-                const f = e.dataTransfer.files[0]
-                if (f) setReceiptFile(f.name)
-              }}
-              onClick={() => fileRef.current?.click()}
-              className={cn(
-                "flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl cursor-pointer transition-colors p-4 text-center",
-                dragging ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-slate-50/50 hover:border-blue-300"
-              )} aria-label="Interactive control"
-            >
-              <input
-                ref={fileRef}
-                type="file"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  if (f) setReceiptFile(f.name)
-                }}
-              />
-              {receiptFile ? (
-                <div className="space-y-2">
-                  <ReceiptIllustration size={80} />
-                  <p className="text-sm font-medium text-blue-500 break-all">{receiptFile}</p>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setReceiptFile(null)
-                    }}
-                    className="text-xs text-red-400 hover:text-red-500"
-                  >
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <ReceiptIllustration size={90} />
-                  <p className="text-sm text-slate-500 mt-3 leading-relaxed">
-                    Drag and drop your receipt here or browse to upload.
-                  </p>
-                  <button
-                    type="button"
-                    className="mt-4 px-5 py-2 border border-blue-400 text-blue-500 text-sm font-semibold rounded-lg hover:bg-blue-50 transition-colors"
-                  >
-                    Browse files
-                  </button>
-                  <p className="text-xs text-slate-400 mt-3 leading-relaxed">
-                    Accepted file formats
-                    <br />
-                    JPG, JPEG, PNG, GIF, PDF, HTML, TXT, RTF,
-                    <br />
-                    DOC, DOCX, HTM, TIFF, TIF, and XML.
-                  </p>
-                </>
-              )}
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void save()}
+                disabled={saving}
+                className="rounded-lg bg-blue-500 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+              >
+                {saving ? "Saving…" : "Add expense"}
+              </button>
             </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-7 py-4 border-t border-slate-100 shrink-0">
-          <button
-            onClick={onClose}
-            className="px-5 py-2.5 text-sm font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors" type="button"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={save}
-            disabled={!description.trim() || !amount}
-            className="px-7 py-2.5 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" type="button"
-          >
-            Save
-          </button>
-        </div>
-      </motion.div>
-    </motion.div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   )
 }

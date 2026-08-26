@@ -8,6 +8,7 @@ import {
   WorkSessionsReport,
   ManualTimeEditsReport,
   WorkBreaksReport,
+  ExpensesReport,
   AuditLogReport,
   ReportEmptyState,
   StandardReportLayout,
@@ -73,16 +74,7 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
     case "reports-apps-urls":
       return <AppsUrlsReport onNavigate={onNavigate} />
     case "reports-expenses":
-      return (
-        <StandardReportLayout
-          title="Expenses"
-          titleTone="muted"
-          onNavigate={onNavigate}
-          exportFileBaseName="expenses"
-        >
-          <ReportEmptyState />
-        </StandardReportLayout>
-      )
+      return <ExpensesReport onNavigate={onNavigate} />
     default:
       return <ReportsAllPage onNavigate={onNavigate} />
   }
