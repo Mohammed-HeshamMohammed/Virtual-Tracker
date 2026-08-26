@@ -66,8 +66,13 @@ function seedMembersListCache(members: Member[]): void {
 function mapWarmMember(row: Record<string, unknown>): Member {
   const first = typeof row.first_name === "string" ? row.first_name : ""
   const last = typeof row.last_name === "string" ? row.last_name : ""
+  // Same order as normalizeMember and the server's memberMetaFromRow:
+  // display_name is the column that actually holds a full name for members
+  // created through an invite or renamed in profile settings.
+  const display = typeof row.display_name === "string" ? row.display_name : ""
   const name =
     (typeof row.name === "string" && row.name.trim()) ||
+    display.trim() ||
     [first, last].filter(Boolean).join(" ").trim() ||
     "Member"
   const email = typeof row.work_email === "string" ? row.work_email : ""

@@ -6,6 +6,8 @@ export const MEMBERS_LIST_CORE_API_FIELDS = [
   "id",
   "first_name",
   "last_name",
+  // The full name for members whose first/last are empty.
+  "display_name",
   "work_email",
   "personal_email",
   "avatar",

@@ -463,6 +463,24 @@ export function ProjectModal({
 
   const modalContentLoading = isEditMode && editFormLoading
   const formConfigPending = formConfigLoading && !formConfig && !formConfigError
+  /** Why Save is unavailable, or null when it is available. */
+  const saveDisabledReason = useMemo((): string | null => {
+    if (isSubmitting) return "Saving…"
+    if (modalContentLoading || formConfigPending) return "Still loading this project's settings."
+    if (!addForm.projectNames.trim()) return "A project name is required."
+    if (addForm.budgetType.trim() && !addForm.budgetTotal.trim()) {
+      return "Enter a budget amount, or clear the budget type to save without one."
+    }
+    return null
+  }, [
+    isSubmitting,
+    modalContentLoading,
+    formConfigPending,
+    addForm.projectNames,
+    addForm.budgetType,
+    addForm.budgetTotal,
+  ])
+
   const addProjectTabs = useMemo(() => {
     const base = normalizeProjectModalTabs(formConfig?.tabs ?? DEFAULT_ADD_PROJECT_TABS)
     if (!canManageProjectTracking) return base
@@ -709,7 +727,10 @@ export function ProjectModal({
           memberLimit: payload.memberLimitMembers ?? "",
           memberLimitMembers: payload.memberLimitMemberIds,
           budgetStopTimers: payload.budgetStopTimers,
-          budgetType: payload.budgetType || "Cost based",
+          // A project with no budget row loads with an empty type and stays
+          // that way. Defaulting it to "Cost based" here meant opening such a
+          // project and saving silently gave it a budget it never had.
+          budgetType: payload.budgetType,
           // Loaded from a saved project - already an explicit choice, not a
           // blank default, so client-budget aggregation must not touch it.
           budgetTypeTouched: true,
@@ -1368,6 +1389,13 @@ export function ProjectModal({
                     </p>
                   ) : null}
 
+                  {!addForm.budgetType.trim() && !projectTypeDef(addForm.type).forcesHours ? (
+                    <p className={cn("text-xs leading-relaxed", formTheme.mutedText)}>
+                      This project has no budget. Pick a type below to give it one — nothing is capped
+                      or notified until you do.
+                    </p>
+                  ) : null}
+
                   <BudgetSection
                     first
                     icon={<Wallet className="h-3.5 w-3.5" />}
@@ -1400,6 +1428,7 @@ export function ProjectModal({
                               }))
                             }
                             options={[
+                              { id: "", label: "No budget" },
                               { id: "Cost based", label: "Cost based" },
                               { id: "Hours based", label: "Hours based" },
                             ]}
@@ -1942,13 +1971,13 @@ export function ProjectModal({
             {addProjectStep === "form" ? (
               <button
                 type="submit"
-                disabled={
-                  isSubmitting ||
-                  modalContentLoading ||
-                  formConfigPending ||
-                  !addForm.projectNames.trim() ||
-                  !addForm.budgetTotal.trim()
-                }
+                // A budget row is only written when a budget type is chosen
+                // (shouldPersistBudget), so requiring an amount unconditionally
+                // meant clearing the budget field - the way to say "this
+                // project has no budget" - disabled Save with nothing on screen
+                // explaining why.
+                disabled={saveDisabledReason !== null}
+                title={saveDisabledReason ?? undefined}
                 className={cn(
                   "rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
                   formTheme.accent.primarySolid,
