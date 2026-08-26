@@ -23,6 +23,13 @@ export function num(row, ...keys) {
   for (const key of keys) {
     const v = row[key];
     if (typeof v === "number" && Number.isFinite(v)) return v;
+    // node-postgres returns NUMERIC and BIGINT columns as strings - no
+    // setTypeParser is registered anywhere in this backend. Without this
+    // branch every numeric-string field read back as 0, which is why the
+    // Command Center reported "No Budget" and 0% progress while the Projects
+    // Overview page (whose own num() already handles this) showed real
+    // figures from the very same project_budgets.cost column.
+    if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
   }
   return 0;
 }

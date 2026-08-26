@@ -29,6 +29,13 @@ import {
 
 const PROJECT_COLORS = 10;
 
+/** YYYY-MM-DD shifted by whole days. */
+function shiftDay(day, delta) {
+  const d = new Date(`${day}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
 function taskRowFromDoc(doc, assigneeNames) {
   const row = doc.data() || {};
   const projectId = str(row, "project_id", "projectId");
@@ -169,7 +176,7 @@ function buildHealthMilestones(tasks, projectId, fallbackName, fallbackHealth) {
  * They now come from tracked time, matching what the Time & Activity report
  * and the Projects Overview page report for the same period.
  */
-function buildStats(projectRow, projectId, metrics) {
+function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
   const activeSeconds = metrics?.activeSeconds ?? 0;
   const idleSeconds = metrics?.idleSeconds ?? 0;
   const trackedSeconds = activeSeconds + idleSeconds;
@@ -182,8 +189,16 @@ function buildStats(projectRow, projectId, metrics) {
   // The app's activity meter everywhere else: active out of active+idle.
   const activityPercent = trackedSeconds > 0 ? Math.round((activeSeconds / trackedSeconds) * 100) : 0;
 
+  // Null when there is nothing to compare against - the card hides the badge
+  // rather than claiming a change from zero.
+  const timeWorkedTrendPercent =
+    prevActiveSeconds > 0
+      ? Math.round(((activeSeconds - prevActiveSeconds) / prevActiveSeconds) * 100)
+      : null;
+
   return {
     timeWorked: formatSecondsAsHours(activeSeconds),
+    timeWorkedTrendPercent,
     // Members who actually tracked time in the window - 0 is a real answer.
     activeMembers: String(metrics?.memberIds?.size ?? 0),
     totalMembers: String(Math.max(projectRow?.members ?? 0, 0)),
@@ -251,12 +266,18 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     if (pid && !budgetByProject.has(pid)) budgetByProject.set(pid, row);
   }
 
-  const memberCountByProject = new Map();
+  // Member IDS per project, not just counts: the all-projects card needs the
+  // distinct union. Summing per-project counts double-counted anyone staffed
+  // on more than one project, so the Command Center reported a bigger team
+  // than the Projects Overview page for the same org.
+  const memberIdsByProject = new Map();
   for (const doc of projectMembersSnap.docs) {
     const row = doc.data() || {};
     const pid = str(row, "project_id", "projectId");
-    if (!pid) continue;
-    memberCountByProject.set(pid, (memberCountByProject.get(pid) ?? 0) + 1);
+    const mid = str(row, "member_id", "memberId");
+    if (!pid || !mid) continue;
+    if (!memberIdsByProject.has(pid)) memberIdsByProject.set(pid, new Set());
+    memberIdsByProject.get(pid).add(mid);
   }
 
   const assigneeIds = new Set();
@@ -296,7 +317,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     const budgetRow = budgetByProject.get(doc.id);
     const budgetTotal = budgetRow ? num(budgetRow, "cost") : 0;
     const spent = budgetRow ? budgetSpent(budgetTotal, budgetRow) : 0;
-    const members = memberCountByProject.get(doc.id) ?? 0;
+    const members = memberIdsByProject.get(doc.id)?.size ?? 0;
     const inProgress = projectTasks.filter((task) => task.status === "in_progress").length;
 
     projectRows.push({
@@ -329,11 +350,24 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const weekFrom = weekDays[0].dateKey;
   const weekTo = weekDays[weekDays.length - 1].dateKey;
   const metricProjectIds = allowedProjectIdList === null ? null : allowedProjectIdList;
-  const [projectMetrics, dailyTotalsAll, capacityByMember] = await Promise.all([
+  // Previous week, so "Total Time Worked" can show a real change instead of
+  // the hardcoded "+12%" the card used to display for every org, forever.
+  const prevFrom = shiftDay(weekFrom, -7);
+  const prevTo = shiftDay(weekTo, -7);
+  const [projectMetrics, dailyTotalsAll, capacityByMember, prevMetrics] = await Promise.all([
     getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
     getDailyActivityTotalsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
     getMemberWeeklyCapacityPg(null),
+    getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: prevFrom, toDay: prevTo }),
   ]);
+
+  /** Previous-week active seconds for a project scope. */
+  function prevActiveSecondsFor(projectId) {
+    if (projectId) return prevMetrics.get(projectId)?.activeSeconds ?? 0;
+    let total = 0;
+    for (const metrics of prevMetrics.values()) total += metrics.activeSeconds;
+    return total;
+  }
 
   /** Seconds worked per member across a project scope, for utilisation. */
   function memberSecondsFor(projectId) {
@@ -430,7 +464,11 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     const aggregateRow = projectId
       ? projectRows.find((row) => row.id === projectId)
       : {
-          members: projectRows.reduce((sum, row) => sum + row.members, 0),
+          // Distinct people across every in-scope project, not the sum of
+          // per-project counts.
+          members: new Set(
+            projectRows.flatMap((row) => [...(memberIdsByProject.get(row.id) ?? [])]),
+          ).size,
           budgetTotal: projectRows.reduce((sum, row) => sum + row.budgetTotal, 0),
           budgetSpent: projectRows.reduce((sum, row) => sum + row.budgetSpent, 0),
           done: projectRows.reduce((sum, row) => sum + row.done, 0),
@@ -449,13 +487,17 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
           name: row.name,
           percent: row.total > 0 ? Math.round((row.done / row.total) * 100) : 0,
           health: row.health,
+          // A project with no tasks has no progress to report - without this
+          // it rendered "ON TRACK" against an empty bar, which reads as a
+          // measurement rather than an absence of one.
+          empty: row.total === 0,
         }));
 
     return {
       id: projectId ?? "all",
       name: projectId ? aggregateRow?.name || "Project" : seesAllProjects ? "All Projects" : "All My Projects",
       colorIndex: projectId ? aggregateRow?.colorIndex ?? 0 : 0,
-      stats: buildStats(aggregateRow, projectId, metrics),
+      stats: buildStats(aggregateRow, projectId, metrics, prevActiveSecondsFor(projectId)),
       chartPath,
       chartFill,
       weeklyTrend,

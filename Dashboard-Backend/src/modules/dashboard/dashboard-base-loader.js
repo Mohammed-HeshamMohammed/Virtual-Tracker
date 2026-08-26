@@ -6,7 +6,10 @@ import { getSystemMetaDoc, setSystemMetaDoc } from "../../lib/postgres/member-da
 import { fetchTimeEntriesSinceDate } from "../schema/services/postgres-crud.service.js";
 import { fetchPgSessionsForDashboard } from "../../lib/postgres/activity-events-postgres.service.js";
 import { listTasksPg } from "../../lib/postgres/tasks-postgres.service.js";
-import { computeProjectSpentForAllPg } from "../../lib/postgres/projects-postgres.service.js";
+import {
+  computeProjectBudgetTargetForAllPg,
+  computeProjectSpentForAllPg,
+} from "../../lib/postgres/projects-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
 
 /** Postgres rows -> the same {id, data} shape serializeDoc() produces for
@@ -73,7 +76,7 @@ async function fetchFreshBase(db) {
   const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
     pgQuery(
-      "SELECT id, project_id, cost, type, based_on, include_non_billable_time FROM project_budgets LIMIT 300",
+      "SELECT id, project_id, cost, type, based_on, scope, include_non_billable_time FROM project_budgets LIMIT 300",
     ),
     pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
     listTasksPg({ limit: 800 }),
@@ -124,10 +127,34 @@ async function fetchFreshBase(db) {
     logSafeWarn("[dashboard-base-loader] budget spend computation failed:", err);
     return new Map();
   });
-  const budgetRowsWithSpend = budgetRows.map((row) => ({
-    ...row,
-    spent: spentByProject.get(String(row.project_id)) ?? 0,
-  }));
+  // scope='per_person' stores hours/cost PER MEMBER, so the real target scales
+  // with headcount - the same computation the Projects Overview page uses.
+  // Without it a per-person budget read as a fraction of its true size here.
+  const targetByProject = await computeProjectBudgetTargetForAllPg(
+    db,
+    budgetRows
+      .filter((row) => row.project_id)
+      .map((row) => ({
+        id: String(row.project_id),
+        scope: row.scope,
+        cost: Number(row.cost) || 0,
+        type: row.type,
+        based_on: row.based_on,
+      })),
+  ).catch((err) => {
+    logSafeWarn("[dashboard-base-loader] per-person budget target failed:", err);
+    return new Map();
+  });
+
+  const budgetRowsWithSpend = budgetRows.map((row) => {
+    const projectId = String(row.project_id);
+    return {
+      ...row,
+      // Effective total for this project, per-person scaling already applied.
+      cost: targetByProject.get(projectId) ?? (Number(row.cost) || 0),
+      spent: spentByProject.get(projectId) ?? 0,
+    };
+  });
 
   return {
     projects: pgRowsToSerialized(projectRows),
