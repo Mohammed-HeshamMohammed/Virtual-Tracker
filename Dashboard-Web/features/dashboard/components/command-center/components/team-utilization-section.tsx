@@ -17,7 +17,7 @@ export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationS
       <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-6 w-full">
         Team Utilization
       </h3>
-      <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">Based on active task assignments per member</p>
+      <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">Hours tracked this week against each member&apos;s weekly capacity</p>
 
       {/* Donut */}
       <div className="relative w-44 h-44 mb-6 self-center">

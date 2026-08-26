@@ -34,6 +34,8 @@ export interface ProjectData {
   color: string
   stats: {
     timeWorked: string
+    /** Week-over-week change in tracked hours; null when there is no prior week to compare. */
+    timeWorkedTrendPercent: number | null
     activeMembers: string
     totalMembers: string
     budgetPercent: number

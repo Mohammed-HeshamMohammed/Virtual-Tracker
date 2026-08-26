@@ -14,7 +14,16 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
   const statCards = [
     {
       Icon: Clock,      iconBg: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/80",
-      badge: "+12%",    badgeColor: "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60",
+      // Real week-over-week change; hidden when there is no prior week to
+      // compare against. This was hardcoded "+12%" for every org.
+      badge:
+        d.stats.timeWorkedTrendPercent === null
+          ? ""
+          : `${d.stats.timeWorkedTrendPercent > 0 ? "+" : ""}${d.stats.timeWorkedTrendPercent}%`,
+      badgeColor:
+        (d.stats.timeWorkedTrendPercent ?? 0) < 0
+          ? "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-full border border-rose-200/60 dark:border-rose-800/60"
+          : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60",
       label: "Total Time Worked", value: d.stats.timeWorked,
     },
     {
@@ -58,7 +67,9 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
               <div className={`p-2.5 ${card.iconBg} rounded-xl shadow-inner`}>
                 <card.Icon className="w-5 h-5" />
                </div>
-              <span className={`text-xs font-bold ${card.badgeColor}`}>{card.badge}</span>
+              {card.badge ? (
+                <span className={`text-xs font-bold ${card.badgeColor}`}>{card.badge}</span>
+              ) : null}
             </div>
             <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{card.label}</p>
             <p className="text-3xl font-black mt-1 text-slate-900 dark:text-slate-100 tracking-tight">{card.value}</p>
