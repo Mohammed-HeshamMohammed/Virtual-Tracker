@@ -1,179 +1,7 @@
 import type { TimeActivityColumnPickerSection, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 
 // ==========================================
-// 1. Reports Hub Page Constants
-// ==========================================
-
-export type CustomizedReportCard = {
-  id: string
-  title: string
-  tag: string
-  navigateTo: string
-}
-
-export const REPORTS_CUSTOMIZED: CustomizedReportCard[] = []
-
-export const REPORTS_POPULAR = [
-  {
-    id: "p1",
-    title: "Time & activity",
-    description: "See team members' time worked, activity levels, and amounts earned per project or to-do.",
-    navigateTo: "reports-time" as const,
-    badge: "New" as const | null,
-  },
-  {
-    id: "p2",
-    title: "Amounts owed",
-    description: "Track outstanding balances and what your organization owes members and contractors.",
-    navigateTo: "reports-amounts" as const,
-    badge: null,
-  },
-  {
-    id: "p3",
-    title: "Daily totals",
-    description: "Review daily hours and totals across members with a weekly lens.",
-    navigateTo: "reports-daily" as const,
-    badge: null,
-  },
-] as const
-
-export type ReportHubCard = { title: string; description: string; navigateTo: string }
-
-export const REPORTS_SECTIONS: { heading: string; cards: ReportHubCard[] }[] = [
-  {
-    heading: "General",
-    cards: [
-      {
-        title: "Work sessions",
-        description: "See the start and stop times for team members.",
-        navigateTo: "reports-work-sessions",
-      },
-      {
-        title: "Apps & URLs",
-        description: "See team members' apps used and URLs visited while working.",
-        navigateTo: "reports-apps-urls",
-      },
-      {
-        title: "Manual time edits",
-        description: "See team members' time worked, project, to-do, and reason for each manual time entry.",
-        navigateTo: "reports-manual-edits",
-      },
-      {
-        title: "Timesheet approvals",
-        description: "See team member's timesheets and their status.",
-        navigateTo: "reports-timesheet-approvals",
-      },
-      {
-        title: "Expenses",
-        description: "See how much has been spent on expenses by member and project.",
-        navigateTo: "reports-expenses",
-      },
-      {
-        title: "Work breaks",
-        description: "See how many work breaks team members are taking.",
-        navigateTo: "reports-work-breaks",
-      },
-      {
-        title: "Audit log",
-        description: "See who changed what, when, and how (People add-on).",
-        navigateTo: "reports-audit",
-      },
-    ],
-  },
-  {
-    heading: "Payment",
-    cards: [
-      {
-        title: "Amounts owed",
-        description: "Track outstanding balances and what your organization owes members and contractors.",
-        navigateTo: "reports-amounts",
-      },
-      {
-        title: "Payments",
-        description: "See how much team members were paid over a given period.",
-        navigateTo: "reports-payments",
-      },
-    ],
-  },
-  {
-    heading: "Budgets and limits",
-    cards: [
-      {
-        title: "Weekly limits",
-        description: "See team members' weekly limits usage.",
-        navigateTo: "reports-weekly-limits",
-      },
-      {
-        title: "Daily limits",
-        description: "See team members' daily limits usage.",
-        navigateTo: "reports-daily-limits",
-      },
-      {
-        title: "Project budgets",
-        description: "See how much of your projects' budgets have been spent.",
-        navigateTo: "reports-project-budgets",
-      },
-      {
-        title: "Client budgets",
-        description: "See how much of your clients' budgets have been spent.",
-        navigateTo: "reports-client-budgets",
-      },
-    ],
-  },
-  {
-    heading: "Time off",
-    cards: [
-      {
-        title: "Time off balances",
-        description: "See your team's time off balances across the organization's time off policies.",
-        navigateTo: "reports-time-off-balances",
-      },
-      {
-        title: "Time off transactions",
-        description: "See your team's time off transactions across the organization's time off policies.",
-        navigateTo: "reports-time-off-transactions",
-      },
-    ],
-  },
-  {
-    heading: "Invoice",
-    cards: [
-      {
-        title: "Client invoices",
-        description: "See client invoice totals, paid, and due amounts.",
-        navigateTo: "reports-client-invoices",
-      },
-      {
-        title: "Team invoices",
-        description: "See team member invoice totals, paid, and due amounts.",
-        navigateTo: "reports-team-invoices",
-      },
-      {
-        title: "Client invoices aging",
-        description: "See outstanding and past due client invoices.",
-        navigateTo: "reports-client-invoices-aging",
-      },
-      {
-        title: "Team invoices aging",
-        description: "See outstanding and past due team member invoices.",
-        navigateTo: "reports-team-invoices-aging",
-      },
-    ],
-  },
-  {
-    heading: "Schedule",
-    cards: [
-      {
-        title: "Shift attendance",
-        description: "See team members' completed, late, abandoned, and missed shifts.",
-        navigateTo: "reports-shift-attendance",
-      },
-    ],
-  },
-]
-
-// ==========================================
-// 2. Hub Shift-Style Reports Configuration
+// 1. Hub Shift-Style Reports Configuration
 // ==========================================
 
 /**
@@ -189,7 +17,7 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
 > = {}
 
 // ==========================================
-// 3. Shared Report Layout & Settings
+// 2. Shared Report Layout & Settings
 // ==========================================
 
 const DEFAULT_ORG_LABEL = "TVC"
@@ -222,7 +50,7 @@ export const STANDARD_REPORT_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const STANDARD_REPORT_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
 
 // ==========================================
-// 4. Report Send & Schedule Dialog Modals
+// 3. Report Send & Schedule Dialog Modals
 // ==========================================
 
 export const SCHEDULE_REPORT_DATE_RANGE_OPTIONS: string[] = [
@@ -249,7 +77,7 @@ export const REPORT_EMAIL_DEFAULT_MESSAGE =
   "We've prepared your latest report. Contact support if you have any questions or need assistance."
 
 // ==========================================
-// 5. Amounts Owed Report
+// 4. Amounts Owed Report
 // ==========================================
 
 /** Columns the Amounts Owed / Daily Totals table can hide. "Member" is always
@@ -282,14 +110,14 @@ export interface AmountsOwedDayGroup {
 }
 
 // ==========================================
-// 6. Audit Log Report
+// 5. Audit Log Report
 // ==========================================
 
 export const AUDIT_LOG_ORG_LABEL = DEFAULT_ORG_LABEL
 export const AUDIT_LOG_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 
 // ==========================================
-// 7. Project Budgets Report
+// 6. Project Budgets Report
 // ==========================================
 
 export const PROJECT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
@@ -301,7 +129,7 @@ export const PROJECT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[
 ]
 
 // ==========================================
-// 8. Time & Activity Report
+// 7. Time & Activity Report
 // ==========================================
 
 const TIME_PERIODS = [
@@ -476,7 +304,7 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
 ]
 
 // ==========================================
-// 9. Work Sessions Report
+// 8. Work Sessions Report
 // ==========================================
 
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL

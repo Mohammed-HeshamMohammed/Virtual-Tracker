@@ -6,7 +6,9 @@ export { WeeklyLimitsReport, DailyLimitsReport } from "@/features/reports/compon
 export { TimesheetApprovalsReport } from "@/features/reports/components/timesheet-approvals/timesheet-approvals-report";
 export { PaymentsReport } from "@/features/reports/components/payments/payments-report";
 export { AppsUrlsReport } from "@/features/reports/components/apps-urls/apps-urls-report";
-export { SHIFT_STYLE_HUB_REPORTS, REPORTS_POPULAR, REPORTS_SECTIONS } from "@/features/reports/components/shared/constants";
+export { SHIFT_STYLE_HUB_REPORTS } from "@/features/reports/components/shared/constants";
+export { POPULAR_REPORTS, REPORT_CATALOG, REPORT_SECTIONS, reportCardFor } from "@/features/reports/catalog";
+export type { ReportCatalogCard } from "@/features/reports/catalog";
 export { WorkSessionsReport } from "@/features/reports/components/work-sessions/work-sessions-report";
 export { ManualTimeEditsReport } from "@/features/reports/components/app/manual-time-edits-report";
 export { WorkBreaksReport } from "@/features/reports/components/app/work-breaks-report";

@@ -1,6 +1,6 @@
 /* eslint-disable react-doctor/js-combine-iterations */
 import { NAV_SECTIONS, getPageLabel, getSectionForPage, type NavSection } from "@/shared/ui/layout"
-import { REPORTS_POPULAR, REPORTS_SECTIONS } from "@/features/reports"
+import { POPULAR_REPORTS, REPORT_SECTIONS } from "@/features/reports"
 import { SHIFT_STYLE_HUB_REPORTS } from "@/features/reports"
 import { APP_UI_SEARCH_ENTRIES } from "@/shared/search/ui-catalog"
 import type { AppSearchEntry, AppSearchEntryKind } from "@/shared/search/types"
@@ -207,10 +207,10 @@ export function buildAppSearchIndex(): AppSearchEntry[] {
   for (const entry of SETTINGS_HUB_ENTRIES) add(entry)
   for (const entry of APP_UI_SEARCH_ENTRIES) add(entry)
 
-  for (const report of REPORTS_POPULAR) {
+  for (const report of POPULAR_REPORTS) {
     add({
-      id: entryId(report.navigateTo, report.title),
-      pageId: report.navigateTo,
+      id: entryId(report.pageId, report.title),
+      pageId: report.pageId,
       title: report.title,
       section: "Reports",
       subsection: "Popular",
@@ -220,11 +220,11 @@ export function buildAppSearchIndex(): AppSearchEntry[] {
     })
   }
 
-  for (const group of REPORTS_SECTIONS) {
+  for (const group of REPORT_SECTIONS) {
     for (const card of group.cards) {
       add({
-        id: entryId(card.navigateTo, card.title),
-        pageId: card.navigateTo,
+        id: entryId(card.pageId, card.title),
+        pageId: card.pageId,
         title: card.title,
         section: "Reports",
         subsection: group.heading,

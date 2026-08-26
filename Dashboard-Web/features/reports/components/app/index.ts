@@ -1,6 +1,6 @@
 "use client"
 
-export { ReportsAllPage } from "@/features/reports/components/app/reports-all-page"
+export { ReportsHubPage } from "@/features/reports/components/app/reports-hub-page"
 export { AmountsOwedReport } from "@/features/reports/components/amounts-owed/amounts-owed-report"
 export { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-owed/amounts-owed-filters-panel"
 export { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amounts-owed/amounts-owed-table-columns-menu"
