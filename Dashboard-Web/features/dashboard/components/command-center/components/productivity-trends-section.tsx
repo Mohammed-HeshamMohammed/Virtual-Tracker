@@ -48,7 +48,10 @@ export function ProductivityTrendsSection({ project }: ProductivityTrendsSection
         <div>
           <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Weekly Productivity Trends</h3>
           <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-            Task activity for {project.name} · {selectedDay?.label ?? "—"}
+            Hours tracked for {project.name} · {selectedDay?.label ?? "—"}
+            {selectedDay
+              ? ` · ${selectedDay.active.toFixed(1)}h active, ${selectedDay.idle.toFixed(1)}h idle`
+              : ""}
           </p>
         </div>
         <div className="flex gap-4">
