@@ -412,6 +412,12 @@ interface ProjectModalProps {
   ) => Promise<void>
   /** Called instead of showing an in-form error when the project being edited no longer exists. */
   onEntityGone?: (message: string) => void
+  /** Opens the same edit form, browsable across every tab, but nothing in it
+   *  can be changed - no Save button, and the field area is `inert` so it
+   *  cannot be clicked, tabbed into, or typed in. For a double-click preview
+   *  from the table, which should show exactly what Edit shows without
+   *  offering a way to change it. Requires an existing projectId. */
+  readOnly?: boolean
 }
 
 export function ProjectModal({
@@ -420,6 +426,7 @@ export function ProjectModal({
   onClose,
   onSave,
   onEntityGone,
+  readOnly = false,
 }: ProjectModalProps) {
   const formTheme = useClientFormTheme()
   const segmented = useSegmentedClasses()
@@ -1006,6 +1013,10 @@ export function ProjectModal({
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    // Belt and suspenders: the Save button is not rendered in read-only mode
+    // and the field area is inert, so this should be unreachable - but the
+    // form itself still has an onSubmit, and nothing should ever write from it.
+    if (readOnly) return
     const projectNames = parseProjectNamesFromInput(addForm.projectNames)
     const namesError = validateProjectNames(projectNames)
     const budgetErrors = getProjectBudgetFieldErrors(addForm)
@@ -1081,14 +1092,16 @@ export function ProjectModal({
         <div className={cn("flex shrink-0 items-center justify-between border-b px-5 py-4", formTheme.modal.headerBorder)}>
           <div>
             <h2 className={cn("text-lg font-bold", formTheme.modal.title)}>
-              {isEditMode ? "Edit project" : "New project"}
+              {readOnly ? "View project" : isEditMode ? "Edit project" : "New project"}
             </h2>
             <p className={cn("mt-0.5 text-sm", formTheme.modal.subtitle)}>
-              {isEditMode
-                ? "Update project settings, members, and budget"
-                : addProjectStep === "type"
-                  ? "Choose how this project tracks time — this can't be changed later"
-                  : "Add one or more projects — enter each name on a new line"}
+              {readOnly
+                ? "Project settings, members, and budget - read-only"
+                : isEditMode
+                  ? "Update project settings, members, and budget"
+                  : addProjectStep === "type"
+                    ? "Choose how this project tracks time — this can't be changed later"
+                    : "Add one or more projects — enter each name on a new line"}
             </p>
           </div>
           <button
@@ -1125,7 +1138,12 @@ export function ProjectModal({
           ))}
         </div>
 
-        <div className={MODAL_BODY_CLASS}>
+        {/* `inert` (not just disabling each field) is what makes this
+            actually read-only: it blocks every click, drag, and keystroke in
+            one place and removes the whole subtree from the tab order,
+            rather than relying on every current and future control in this
+            ~2000-line form remembering to check a readOnly flag itself. */}
+        <div className={MODAL_BODY_CLASS} inert={readOnly}>
           <AnimatePresence mode="wait" initial={false}>
           {addProjectStep === "type" ? (
             <motion.div
@@ -1966,9 +1984,9 @@ export function ProjectModal({
                 formTheme.footer.cancel,
               )}
             >
-              Cancel
+              {readOnly ? "Close" : "Cancel"}
             </button>
-            {addProjectStep === "form" ? (
+            {addProjectStep === "form" && !readOnly ? (
               <button
                 type="submit"
                 // A budget row is only written when a budget type is chosen

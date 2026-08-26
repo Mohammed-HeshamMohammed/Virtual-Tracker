@@ -1,7 +1,9 @@
 "use client"
 
+import { Info } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useClientFormTheme } from "@/shared/ui/forms/form-styles"
+import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { PROJECT_TYPE_DEFS, type ProjectType } from "@/features/projects/config/project-types"
 
 /**
@@ -22,7 +24,6 @@ export function ProjectTypePicker({ onSelect }: { onSelect: (type: ProjectType) 
         <button
           key={value}
           type="button"
-          title={hover}
           onClick={() => onSelect(value)}
           className={cn(
             "group flex items-start gap-3 rounded-xl border p-3.5 text-left transition-colors",
@@ -39,9 +40,16 @@ export function ProjectTypePicker({ onSelect }: { onSelect: (type: ProjectType) 
                   since neither can be changed afterwards. */}
               {!hasTasks ? <TypeTag theme={theme}>No tasks</TypeTag> : null}
               {forcesHours ? <TypeTag theme={theme}>Hours only</TypeTag> : null}
+              {/* Used to reveal this text inline on hover (group-hover:block),
+                  which pushed every row below it down as the row grew taller -
+                  a layout shift on hover reads as a bug, not a detail. A
+                  tooltip shows the same text without moving anything. */}
+              <IconTooltip text={hover} placement="bottom" multiline>
+                <Info className={cn("h-3.5 w-3.5", theme.mutedText)} aria-hidden />
+                <span className="sr-only">More about {label}</span>
+              </IconTooltip>
             </span>
             <span className={cn("mt-0.5 block text-xs", theme.mutedText)}>{blurb}</span>
-            <span className={cn("mt-1 hidden text-xs group-hover:block", theme.hint)}>{hover}</span>
           </span>
         </button>
       ))}

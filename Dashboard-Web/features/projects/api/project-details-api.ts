@@ -6,6 +6,7 @@ import { getClients } from "@/features/clients/api/client-api"
 import { getProjectOverviewCore } from "@/features/projects/api/project-overview-api"
 import { filterValidUuids, isValidUuid } from "@/shared/utils/uuid"
 import { normalizeProjectType } from "@/features/projects/config/project-types"
+import { derivedBasedOn, derivedLimitType } from "@/features/projects/utils/member-limit-rules"
 import {
   addProjectMember,
   createProject,
@@ -742,6 +743,86 @@ async function syncProjectMemberLimits(
         }),
       ),
   ])
+}
+
+export type BatchMemberLimitStatus = "applied" | "skipped" | "error"
+
+export type BatchMemberLimitResult = {
+  projectId: string
+  status: BatchMemberLimitStatus
+  /** Set for "skipped" (why nothing was written) and "error" (what failed). */
+  reason?: string
+}
+
+/**
+ * The Projects page's batch action for the Members Limits tab: one amount,
+ * applied to a set of members across many projects at once, instead of
+ * opening each project's own edit form.
+ *
+ * Each project keeps its own denomination - hours vs cost, and which rate a
+ * cost limit is measured against - exactly as the per-project editor derives
+ * it from that project's own budget (derivedLimitType/derivedBasedOn). A
+ * project with no budget at all has nothing for a member limit to tighten,
+ * so it is skipped rather than silently given a cost-based cap with no real
+ * budget behind it.
+ *
+ * A member who already has a limit row on a project keeps that row's own
+ * resets/start date/notify settings - only the amount changes. upsertProject-
+ * MemberLimitPg overwrites every column on conflict, so passing those fields
+ * as undefined here would blank out settings the batch action was never
+ * asked to touch.
+ */
+export async function applyMemberLimitToProjects(input: {
+  projectIds: string[]
+  memberIds: string[]
+  amount: number
+  actorMemberId?: string
+}): Promise<BatchMemberLimitResult[]> {
+  const { projectIds, memberIds, amount, actorMemberId } = input
+  return Promise.all(
+    projectIds.map(async (projectId): Promise<BatchMemberLimitResult> => {
+      try {
+        const [budgets, existingLimits] = await Promise.all([
+          getProjectBudgets(projectId).catch(() => [] as ProjectBudgetRow[]),
+          getProjectMemberLimits(projectId).catch(() => [] as ProjectMemberLimitRow[]),
+        ])
+        const budget = budgets[0]
+        if (!budget || !budget.type.trim()) {
+          return { projectId, status: "skipped", reason: "This project has no budget to tighten." }
+        }
+        const type = derivedLimitType(budget.type)
+        const basedOn = derivedBasedOn(budget.type, budget.basedOn)
+        const existingByMember = new Map(
+          existingLimits.filter((row) => row.memberId).map((row) => [row.memberId as string, row]),
+        )
+
+        await Promise.all(
+          memberIds.map((memberId) => {
+            const existing = existingByMember.get(memberId)
+            return createProjectMemberLimit({
+              projectId,
+              memberId,
+              type,
+              basedOn,
+              cost: amount,
+              resets: existing?.resets || "Never",
+              startDate: existing?.startDate ?? "",
+              notifyAtPct: existing?.notifyAtPct ?? null,
+              notifyProjectMembers: existing?.notifyProjectMembers ?? true,
+              ...(actorMemberId ? { createdBy: actorMemberId } : {}),
+            })
+          }),
+        )
+        return { projectId, status: "applied" }
+      } catch (err) {
+        return {
+          projectId,
+          status: "error",
+          reason: err instanceof Error ? err.message : "Failed to apply the limit.",
+        }
+      }
+    }),
+  )
 }
 
 async function deleteProjectMemberLimit(projectId: string, memberId: string): Promise<void> {

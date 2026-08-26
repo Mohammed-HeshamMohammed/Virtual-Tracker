@@ -56,6 +56,7 @@ export function ProjectsTab({
   onEdit,
   onArchive,
   onDelete,
+  onPreview,
   isDark = false,
   canManageProjects = true,
   emptyContent,
@@ -78,6 +79,9 @@ export function ProjectsTab({
   onEdit: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
+  /** Double-click a row - opens the same edit form read-only, for anyone who
+   *  can see the table, not just roles that can manage projects. */
+  onPreview?: (id: string) => void
   isDark?: boolean
   canManageProjects?: boolean
   emptyContent?: ReactNode
@@ -380,8 +384,9 @@ export function ProjectsTab({
                     <tr
                       key={project.id}
                       style={peopleTableRowStyle(rowH)}
+                      onDoubleClick={() => onPreview?.(project.id)}
                       className={cn(
-                        "group transition-colors",
+                        "group cursor-default transition-colors",
                         t.tableRowHover,
                         selected.has(project.id) && (isDark ? "bg-[#4be277]/10" : "bg-blue-50/80"),
                       )}

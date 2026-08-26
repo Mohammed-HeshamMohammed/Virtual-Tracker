@@ -27,6 +27,7 @@ import type { ProjectType } from "@/features/projects/api/project-api"
 import { useProjectColumns } from "@/features/projects/hooks/use-project-columns"
 import { useProjectMutations } from "@/features/projects/hooks/use-project-mutations"
 import { ProjectModal } from "@/features/projects/components/modals/project-modal"
+import { BatchMemberLimitsModal } from "@/features/projects/components/modals/batch-member-limits-modal"
 import { ProjectsToolbar } from "@/features/projects/components/projects-toolbar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
@@ -104,10 +105,14 @@ export function ProjectsPage() {
   const [batchOpen, setBatchOpen] = useComponentState(false)
   const [batchBusy, setBatchBusy] = useComponentState(false)
   const [batchDeleteConfirmOpen, setBatchDeleteConfirmOpen] = useComponentState(false)
+  const [batchMemberLimitsOpen, setBatchMemberLimitsOpen] = useComponentState(false)
 
   const [isAddOpen, setIsAddOpen] = useComponentState(false)
   const [editingProjectId, setEditingProjectId] = useComponentState<string | null>(null)
   const [entityGoneNotice, setEntityGoneNotice] = useComponentState<string | null>(null)
+  // Double-click a row - separate from editingProjectId so it opens read-only
+  // for anyone who can see the table, not gated on canManage the way Edit is.
+  const [previewProjectId, setPreviewProjectId] = useComponentState<string | null>(null)
 
   // Columns Hook
   const {
@@ -213,6 +218,10 @@ export function ProjectsPage() {
     () => searchFiltered.filter((p) => selected.has(p.id)).map((p) => p.id),
     [searchFiltered, selected],
   )
+  const selectedProjectsInView = useMemo(
+    () => searchFiltered.filter((p) => selected.has(p.id)).map((p) => ({ id: p.id, name: p.name })),
+    [searchFiltered, selected],
+  )
   const selectedInView = selectedIdsInView.length
   const showListSkeleton = isLoading && data.length === 0
 
@@ -291,6 +300,7 @@ export function ProjectsPage() {
           setBatchOpen={setBatchOpen}
           onBatchArchive={handleBatchArchive}
           onBatchDelete={handleBatchDeleteRequest}
+          onBatchSetMemberLimits={() => setBatchMemberLimitsOpen(true)}
           batchBusy={batchBusy}
           openAddProjectModal={openAddProjectModal}
           showCompactSearchRow={showCompactSearchRow}
@@ -333,6 +343,7 @@ export function ProjectsPage() {
               onEdit={openEditProject}
               onArchive={archiveProject}
               onDelete={deleteProject}
+              onPreview={(id) => setPreviewProjectId(id)}
               isDark={isDark}
               canManageProjects={canManage}
               emptyContent={projectsEmptyContent}
@@ -366,6 +377,46 @@ export function ProjectsPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Double-click preview - open to anyone who can see the row, not just
+          canManage, since nothing here can be changed. Separate modal
+          instance from Edit above so opening one never touches the other's
+          state. */}
+      <AnimatePresence>
+        {previewProjectId && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 sm:p-6"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setPreviewProjectId(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget) return
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault()
+                setPreviewProjectId(null)
+              }
+            }}
+          >
+            <ProjectModal
+              projectId={previewProjectId}
+              user={user}
+              readOnly
+              onClose={() => setPreviewProjectId(null)}
+              onSave={saveProject}
+              onEntityGone={handleEntityGone}
+            />
+          </div>
+        )}
+      </AnimatePresence>
+
+      <BatchMemberLimitsModal
+        open={batchMemberLimitsOpen}
+        projects={selectedProjectsInView}
+        actorMemberId={currentMemberId}
+        isDark={isDark}
+        onClose={() => setBatchMemberLimitsOpen(false)}
+        onApplied={() => void refetchProjects({ forceRefetch: true })}
+      />
 
       <NotifyToastHost
         message={entityGoneNotice}
