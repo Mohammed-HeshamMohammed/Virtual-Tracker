@@ -11,6 +11,7 @@ import {
   fetchWeeklyLimitsReport,
   fetchDailyLimitsReport,
 } from "@/features/reports/api/misc-reports-api"
+import { ReportCard } from "@/features/reports/components/shared/report-ui"
 
 interface Tile {
   id: string
@@ -90,7 +91,17 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
   }, [rangeStart, rangeEnd])
 
   if (tiles === null) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return (
+      <div className="grid gap-4 sm:grid-cols-2" aria-busy="true">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <ReportCard key={i} className="p-5">
+            <div className="h-4 w-40 animate-pulse rounded bg-slate-200/80 dark:bg-white/10" />
+            <div className="mt-2 h-3 w-56 animate-pulse rounded bg-slate-100 dark:bg-white/5" />
+            <div className="mt-5 h-5 w-24 animate-pulse rounded bg-slate-100 dark:bg-white/5" />
+          </ReportCard>
+        ))}
+      </div>
+    )
   }
 
   return (
@@ -133,6 +144,7 @@ export function BudgetsHubReport({ onNavigate }: { onNavigate?: (id: string) => 
       title="Budgets and limits report"
       onNavigate={onNavigate}
       exportFileBaseName="budgets-limits"
+      subtitle="Every budget and limit report in one place, with where each one currently stands."
       showScopeTabs={false}
       showGroupBy={false}
     >

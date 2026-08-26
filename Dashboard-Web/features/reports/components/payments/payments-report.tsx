@@ -15,6 +15,7 @@ import {
   useReportFilterOptions,
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function money(amount: number, currency: string): string {
   try {
@@ -43,10 +44,16 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<PaymentReportRow[]>([])
   const [loading, setLoading] = useState(true)
+  // A failed request used to fall through to the empty state, so an
+  // outage read as "no data for this range". reloadKey re-runs the fetch
+  // when the viewer retries.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     fetchPaymentsRecordedReport({
       from: rangeStart.toISOString().slice(0, 10),
       to: rangeEnd.toISOString().slice(0, 10),
@@ -55,13 +62,16 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
       .then((data) => {
         if (!cancelled) setRows(data)
       })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters])
+  }, [rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -100,7 +110,10 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   }, [rows])
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={3} rows={6} columns={7} />
+  }
+  if (error) {
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -171,7 +184,10 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr key={r.id} className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}>
+                <tr key={r.id} className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}>
                   <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
                     {formatDay(r.paidOn)}
                   </td>
@@ -223,6 +239,7 @@ export function PaymentsReport({ onNavigate }: { onNavigate?: (id: string) => vo
       title="Payments report"
       onNavigate={onNavigate}
       exportFileBaseName="payments"
+      pageId="reports-payments"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (

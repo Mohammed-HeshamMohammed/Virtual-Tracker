@@ -121,11 +121,13 @@ function LimitsReport({
   kind,
   title,
   exportFileBaseName,
+  pageId,
   onNavigate,
 }: {
   kind: "weekly" | "daily"
   title: string
   exportFileBaseName: string
+  pageId: string
   onNavigate: (id: string) => void
 }) {
   const [filters, setFilters] = useState<ReportFilterState>(emptyReportFilters)
@@ -135,6 +137,7 @@ function LimitsReport({
       title={title}
       onNavigate={onNavigate}
       exportFileBaseName={exportFileBaseName}
+      pageId={pageId}
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (
@@ -154,12 +157,12 @@ function LimitsReport({
 
 export function WeeklyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <LimitsReport kind="weekly" title="Weekly limits report" exportFileBaseName="weekly-limits" onNavigate={onNavigate} />
+    <LimitsReport kind="weekly" title="Weekly limits report" exportFileBaseName="weekly-limits" pageId="reports-weekly-limits" onNavigate={onNavigate} />
   )
 }
 
 export function DailyLimitsReport({ onNavigate }: { onNavigate: (id: string) => void }) {
   return (
-    <LimitsReport kind="daily" title="Daily limits report" exportFileBaseName="daily-limits" onNavigate={onNavigate} />
+    <LimitsReport kind="daily" title="Daily limits report" exportFileBaseName="daily-limits" pageId="reports-daily-limits" onNavigate={onNavigate} />
   )
 }

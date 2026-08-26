@@ -29,6 +29,7 @@ import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
+import { ReportPageHeading } from "@/features/reports/components/shared/report-ui"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
@@ -88,19 +89,19 @@ function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
 
   if (n === 0) {
     return (
-      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-        <div className="border-b border-slate-50 px-6 py-3">
-          <h3 className="text-base font-semibold text-slate-800">Total amount per day</h3>
+      <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
+        <div className="border-b border-slate-50 dark:border-white/10 px-6 py-3">
+          <h3 className="text-base font-semibold text-slate-800 dark:text-[#dce1fb]">Total amount per day</h3>
         </div>
-        <div className="px-6 py-10 text-center text-sm text-slate-500">No data in this range</div>
+        <div className="px-6 py-10 text-center text-sm text-slate-500 dark:text-white/45">No data in this range</div>
       </div>
     )
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
-      <div className="border-b border-slate-50 px-6 py-3">
-        <h3 className="text-base font-semibold text-slate-800">Total amount per day</h3>
+    <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
+      <div className="border-b border-slate-50 dark:border-white/10 px-6 py-3">
+        <h3 className="text-base font-semibold text-slate-800 dark:text-[#dce1fb]">Total amount per day</h3>
       </div>
       <div className="px-6 pb-6 pt-2">
         <div className="w-full" style={{ height: CHART_H }}>
@@ -235,10 +236,11 @@ export function AmountsOwedReport() {
   return (
     <div className="relative isolate min-h-0">
       <div className="report-print-area relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
-        <div className="flex flex-col gap-4 border-b border-slate-200 pb-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-x-4 lg:gap-y-3">
+        <ReportPageHeading title="Amounts owed report" pageId="reports-amounts" />
+        <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-white/10 pb-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-x-4 lg:gap-y-3">
           <div className="flex flex-wrap items-center gap-3">
             <div
-              className="relative flex items-center gap-0.5 rounded-full bg-slate-100 p-0.5"
+              className="relative flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-white/10 p-0.5"
               role="group"
               aria-label="Report scope"
             >
@@ -252,14 +254,14 @@ export function AmountsOwedReport() {
                   {scope === v && (
                     <motion.div
                       layoutId="amounts-owed-scope-pill"
-                      className="absolute inset-0 rounded-full bg-white shadow-sm"
+                      className="absolute inset-0 rounded-full bg-white shadow-sm dark:bg-white/20"
                       transition={{ type: "spring", stiffness: 500, damping: 30 }}
                     />
                   )}
                   <span
                     className={cn(
                       "relative z-10",
-                      scope === v ? "text-slate-900" : "text-slate-500 hover:text-slate-700"
+                      scope === v ? "text-slate-900 dark:text-[#dce1fb]" : "text-slate-500 dark:text-white/45 hover:text-slate-700 dark:hover:text-[#dce1fb]"
                     )}
                   >
                     {v === "me" ? "Me" : "All"}
@@ -268,13 +270,13 @@ export function AmountsOwedReport() {
               ))}
             </div>
 
-            <div className="hidden h-6 w-px shrink-0 bg-slate-200 sm:block" aria-hidden />
+            <div className="hidden h-6 w-px shrink-0 bg-slate-200 dark:bg-white/15 sm:block" aria-hidden />
 
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => shiftRangeByDays(-1)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
                 aria-label="Previous day"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -284,8 +286,8 @@ export function AmountsOwedReport() {
                   type="button"
                   onClick={() => setShowDatePicker((v) => !v)}
                   className={cn(
-                    "flex min-w-[280px] items-center gap-2 rounded-lg border bg-white px-4 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50",
-                    showDatePicker ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200"
+                    "flex min-w-[280px] items-center gap-2 rounded-lg border bg-white dark:bg-[#151b2d] px-4 py-2 text-sm text-slate-700 dark:text-[#dce1fb] transition-colors hover:bg-slate-50 dark:hover:bg-white/5",
+                    showDatePicker ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200 dark:border-white/10"
                   )}
                 >
                   <span className="truncate">{dateLabel}</span>
@@ -310,7 +312,7 @@ export function AmountsOwedReport() {
               <button
                 type="button"
                 onClick={() => shiftRangeByDays(1)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-50"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
                 aria-label="Next day"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -330,36 +332,36 @@ export function AmountsOwedReport() {
             <button
               type="button"
               onClick={() => setShowFilters(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-[#dce1fb] shadow-sm transition-colors hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/5"
             >
-              <SlidersHorizontal className="h-4 w-4 text-slate-500" />
+              <SlidersHorizontal className="h-4 w-4 text-slate-500 dark:text-white/45" />
               Filters
             </button>
 
-            <div className="flex flex-wrap items-stretch overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-stretch overflow-visible rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
               <button
                 type="button"
                 onClick={() => setSendDialogOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb]"
               >
-                <Send className="h-4 w-4 text-slate-500" />
+                <Send className="h-4 w-4 text-slate-500 dark:text-white/45" />
                 <span className="hidden sm:inline">Send</span>
               </button>
               <button
                 type="button"
                 onClick={() => setScheduleDialogOpen(true)}
-                className="flex items-center gap-1.5 border-l border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                className="flex items-center gap-1.5 border-l border-slate-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb]"
               >
-                <Clock className="h-4 w-4 text-slate-500" />
+                <Clock className="h-4 w-4 text-slate-500 dark:text-white/45" />
                 <span className="hidden sm:inline">Schedule</span>
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex items-center gap-1.5 border-l border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 data-[state=open]:bg-slate-50"
+                    className="flex items-center gap-1.5 border-l border-slate-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb] data-[state=open]:bg-slate-50"
                   >
-                    <Download className="h-4 w-4 text-slate-500" />
+                    <Download className="h-4 w-4 text-slate-500 dark:text-white/45" />
                     <span className="hidden sm:inline">Export</span>
                   </button>
                 </DropdownMenuTrigger>
@@ -368,21 +370,21 @@ export function AmountsOwedReport() {
                   <DropdownMenuItem className="cursor-pointer" onClick={() => window.print()}>To PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="flex items-center border-l border-slate-200 px-1.5">
+              <div className="flex items-center border-l border-slate-200 dark:border-white/10 px-1.5">
                 <AmountsOwedTableColumnsMenu visible={visibleColumns} onVisibleChange={setVisibleColumns} />
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-stretch gap-4 rounded-xl border border-slate-100 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-stretch gap-4 rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] p-6 shadow-sm">
           <div className="min-w-[120px] flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Hours</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/40">Hours</div>
             <div className="mt-1 text-3xl font-semibold tabular-nums text-emerald-600">{totalHoursSummary}</div>
           </div>
           <div className="min-w-[120px] flex-1">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Amount</div>
-            <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-800">{totalAmountSummary}</div>
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-white/40">Amount</div>
+            <div className="mt-1 text-3xl font-semibold tabular-nums text-slate-800 dark:text-[#dce1fb]">{totalAmountSummary}</div>
           </div>
           <button
             type="button"
@@ -397,60 +399,60 @@ export function AmountsOwedReport() {
 
         {chartVisible ? <AmountPerDayChart groups={groups} /> : null}
 
-        <div className="overflow-hidden rounded-xl border border-slate-100 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] table-fixed">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="w-[36%] px-5 py-3 text-left text-sm font-semibold text-slate-700">Member</th>
+                <tr className="border-b border-slate-100 dark:border-white/10">
+                  <th className="w-[36%] px-5 py-3 text-left text-sm font-semibold text-slate-700 dark:text-[#dce1fb]">Member</th>
                   {visibleColumns.has("rate") ? (
-                    <th className="w-[22%] px-4 py-3 text-center text-sm font-semibold text-slate-700">Current rate</th>
+                    <th className="w-[22%] px-4 py-3 text-center text-sm font-semibold text-slate-700 dark:text-[#dce1fb]">Current rate</th>
                   ) : null}
                   {visibleColumns.has("hours") ? (
-                    <th className="w-[20%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Total hours</th>
+                    <th className="w-[20%] px-4 py-3 text-right text-sm font-semibold text-slate-700 dark:text-[#dce1fb]">Total hours</th>
                   ) : null}
                   {visibleColumns.has("amount") ? (
-                    <th className="w-[22%] px-4 py-3 text-right text-sm font-semibold text-slate-700">Amount</th>
+                    <th className="w-[22%] px-4 py-3 text-right text-sm font-semibold text-slate-700 dark:text-[#dce1fb]">Amount</th>
                   ) : null}
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group) => (
                   <Fragment key={group.date}>
-                    <tr className="bg-slate-100">
-                      <td colSpan={1 + visibleColumns.size} className="px-5 py-2 text-sm font-medium text-slate-800">
+                    <tr className="bg-slate-100 dark:bg-white/10">
+                      <td colSpan={1 + visibleColumns.size} className="px-5 py-2 text-sm font-medium text-slate-800 dark:text-[#dce1fb]">
                         {group.dateLabel}
                       </td>
                     </tr>
                     {group.members.map((m) => (
-                      <tr key={`${group.date}-${m.name}`} className="border-b border-slate-100 bg-white">
+                      <tr key={`${group.date}-${m.name}`} className="border-b border-slate-100 bg-white transition-colors hover:bg-slate-50/80 dark:border-white/10 dark:bg-[#151b2d] dark:hover:bg-white/5">
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
                             <ReportMemberAvatar initials={m.initials} />
-                            <span className="text-sm text-slate-800">{m.name}</span>
+                            <span className="text-sm text-slate-800 dark:text-[#dce1fb]">{m.name}</span>
                           </div>
                         </td>
                         {visibleColumns.has("rate") ? (
-                          <td className="px-4 py-3 text-center text-sm text-slate-500">{m.rateLabel}</td>
+                          <td className="px-4 py-3 text-center text-sm text-slate-500 dark:text-white/45">{m.rateLabel}</td>
                         ) : null}
                         {visibleColumns.has("hours") ? (
-                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.hours}</td>
+                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{m.hours}</td>
                         ) : null}
                         {visibleColumns.has("amount") ? (
-                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800">{m.amount}</td>
+                          <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{m.amount}</td>
                         ) : null}
                       </tr>
                     ))}
-                    <tr className="border-t-2 border-slate-200 bg-white font-semibold">
-                      <td className="px-5 py-3 text-sm text-slate-900">Total</td>
+                    <tr className="border-t-2 border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] font-semibold">
+                      <td className="px-5 py-3 text-sm text-slate-900 dark:text-[#dce1fb]">Total</td>
                       {visibleColumns.has("rate") ? <td className="px-4 py-3" /> : null}
                       {visibleColumns.has("hours") ? (
-                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900 dark:text-[#dce1fb]">
                           {sumHoursStrings(group.members.map((x) => x.hours))}
                         </td>
                       ) : null}
                       {visibleColumns.has("amount") ? (
-                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900">
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900 dark:text-[#dce1fb]">
                           {sumAmountStrings(group.members.map((x) => x.amount))}
                         </td>
                       ) : null}
@@ -459,7 +461,7 @@ export function AmountsOwedReport() {
                 ))}
                 {groups.length === 0 ? (
                   <tr>
-                    <td colSpan={1 + visibleColumns.size} className="px-4 py-12 text-center text-sm text-slate-500">
+                    <td colSpan={1 + visibleColumns.size} className="px-4 py-12 text-center text-sm text-slate-500 dark:text-white/45">
                       No tracked time in this date range.
                     </td>
                   </tr>

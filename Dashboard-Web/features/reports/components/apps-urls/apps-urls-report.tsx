@@ -52,7 +52,10 @@ function UsageTable<T extends { memberName: string; durationHms: string }>({
             </tr>
           ) : null}
           {rows.map((row, i) => (
-            <tr key={`${row.memberName}-${getLabel(row)}-${i}`} className={cn("border-b last:border-b-0", isDark ? "border-white/10" : "border-slate-100")}>
+            <tr key={`${row.memberName}-${getLabel(row)}-${i}`} className={cn(
+              "border-b transition-colors last:border-b-0",
+              isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+            )}>
               <td className={cn("px-4 py-3", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.memberName}</td>
               <td className={cn("px-4 py-3", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{getLabel(row)}</td>
               <td className={cn("px-4 py-3 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.durationHms}</td>
@@ -118,9 +121,9 @@ export function AppsUrlsReport({ onNavigate }: { onNavigate?: (id: string) => vo
   return (
     <StandardReportLayout
       title="Apps & URLs report"
-      titleTone="muted"
       onNavigate={onNavigate}
       exportFileBaseName="apps-urls"
+      pageId="reports-apps-urls"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (

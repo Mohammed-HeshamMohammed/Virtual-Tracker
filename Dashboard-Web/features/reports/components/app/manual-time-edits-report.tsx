@@ -16,6 +16,7 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function initialsFor(name: string): string {
   return (
@@ -53,10 +54,16 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ManualTimeEditRow[]>([])
   const [loading, setLoading] = useState(true)
+  // A failed request used to fall through to the empty state, so an
+  // outage read as "no data for this range". reloadKey re-runs the fetch
+  // when the viewer retries.
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setError(null)
     fetchManualTimeEditsReport({
       from: rangeStart.toISOString().slice(0, 10),
       to: rangeEnd.toISOString().slice(0, 10),
@@ -66,13 +73,16 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
       .then((data) => {
         if (!cancelled) setRows(data)
       })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, filters])
+  }, [rangeStart, rangeEnd, filters, reloadKey])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -107,7 +117,10 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   const totalHours = useMemo(() => rows.reduce((sum, r) => sum + r.hours, 0), [rows])
 
   if (loading) {
-    return <p className={cn("py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-400")}>Loading…</p>
+    return <ReportSkeleton tiles={2} rows={6} columns={6} />
+  }
+  if (error) {
+    return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
   }
   if (rows.length === 0) {
     return (
@@ -154,7 +167,10 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={cn("border-b", isDark ? "border-white/5" : "border-slate-100")}>
+              <tr key={r.id} className={cn(
+                  "border-b transition-colors",
+                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                )}>
                 <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
                   {formatDay(r.day)}
                 </td>
@@ -237,6 +253,7 @@ export function ManualTimeEditsReport({ onNavigate }: { onNavigate?: (id: string
       title="Manual time edits report"
       onNavigate={onNavigate}
       exportFileBaseName="manual-time-edits"
+      pageId="reports-manual-edits"
       showScopeTabs={false}
       showGroupBy={false}
       filtersPanel={(close) => (
