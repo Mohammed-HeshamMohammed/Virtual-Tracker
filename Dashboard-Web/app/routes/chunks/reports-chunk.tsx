@@ -4,7 +4,7 @@ import {
   TimeAndActivityReport,
   AmountsOwedReport,
   DailyTotalsReport,
-  ReportsAllPage,
+  ReportsHubPage,
   WorkSessionsReport,
   ManualTimeEditsReport,
   WorkBreaksReport,
@@ -68,7 +68,7 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
     case "reports-amounts":
       return <AmountsOwedReport />
     case "reports-all":
-      return <ReportsAllPage onNavigate={onNavigate} />
+      return <ReportsHubPage onNavigate={onNavigate} />
     case "reports-custom":
       return <RoutePlaceholder title="Customized Reports" />
     case "reports-work-sessions":
@@ -100,6 +100,6 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
     case "reports-budgets":
       return <BudgetsHubReport onNavigate={onNavigate} />
     default:
-      return <ReportsAllPage onNavigate={onNavigate} />
+      return <ReportsHubPage onNavigate={onNavigate} />
   }
 }

@@ -308,7 +308,7 @@ function getRestrictedPageIds(role: string): Set<string> {
 }
 
 /** Whether the signed-in role may open this nav page id (matches sidebar visibility). */
-function isPageAllowedForRole(pageId: string, role: string): boolean {
+export function isPageAllowedForRole(pageId: string, role: string): boolean {
   if (canAccessAllSidebarTabs(role)) return true
   if (pageId === "timesheets-view" && canAccessReviewCenter(role)) return true
   return getRestrictedPageIds(role).has(pageId)

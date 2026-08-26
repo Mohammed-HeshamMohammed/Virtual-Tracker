@@ -11,6 +11,11 @@ import { getMemberTimezones } from "./member-timezones.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
+import {
+  deleteSavedReportPg,
+  listSavedReportsPg,
+  saveReportPg,
+} from "../../lib/postgres/saved-reports-postgres.service.js";
 import { parseDeliveryTimeLabel } from "./date-range-kind.js";
 import {
   getMemberDailyAmountRowsPg,
@@ -48,6 +53,32 @@ import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** Report pages the hub can pin. Mirrors the reports section of the sidebar. */
+const SAVEABLE_REPORT_PAGE_IDS = new Set([
+  "reports-time",
+  "reports-work-sessions",
+  "reports-apps-urls",
+  "reports-manual-edits",
+  "reports-timesheet-approvals",
+  "reports-expenses",
+  "reports-work-breaks",
+  "reports-audit",
+  "reports-amounts",
+  "reports-payments",
+  "reports-weekly-limits",
+  "reports-daily-limits",
+  "reports-project-budgets",
+  "reports-client-budgets",
+  "reports-time-off-balances",
+  "reports-time-off-transactions",
+  "reports-client-invoices",
+  "reports-team-invoices",
+  "reports-client-invoices-aging",
+  "reports-team-invoices-aging",
+  "reports-shift-attendance",
+  "reports-daily",
+  "reports-budgets",
+]);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_FREQUENCIES = new Set(["Daily", "Weekly", "Bi-weekly", "Monthly"]);
 
@@ -268,6 +299,62 @@ export async function routeReports(req, res, url, origin) {
     } catch (e) {
       logSafeError("[reports/filter-options]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load filter options." });
+    }
+    return true;
+  }
+
+  // Reports the viewer pinned to the hub's "Customized reports" strip. Always
+  // the viewer's own rows - there is no cross-member read here, so no role
+  // check beyond being signed in.
+  if (pn === "/api/reports/saved" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      sendJson(res, origin, 200, { success: true, data: await listSavedReportsPg(viewer.memberId) });
+    } catch (e) {
+      logSafeError("[reports/saved list]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load saved reports." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/reports/saved" && req.method === "POST") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const body = (await readJsonBody(req)) || {};
+      const pageId = typeof body.pageId === "string" ? body.pageId.trim() : "";
+      const title = typeof body.title === "string" ? body.title.trim() : "";
+      // The page id is what the hub navigates to; an unknown one would pin a
+      // card that goes nowhere.
+      if (!SAVEABLE_REPORT_PAGE_IDS.has(pageId) || !title) {
+        sendJson(res, origin, 400, { success: false, error: "A known report page id and a title are required." });
+        return true;
+      }
+      const tag = typeof body.tag === "string" ? body.tag.trim().slice(0, 60) : "";
+      const saved = await saveReportPg({ memberId: viewer.memberId, pageId, title: title.slice(0, 120), tag });
+      sendJson(res, origin, 200, { success: true, data: saved });
+    } catch (e) {
+      logSafeError("[reports/saved create]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to save report." });
+    }
+    return true;
+  }
+
+  const savedReportMatch = pn.match(/^\/api\/reports\/saved\/([^/]+)$/);
+  if (savedReportMatch && req.method === "DELETE") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const removed = await deleteSavedReportPg(viewer.memberId, decodeURIComponent(savedReportMatch[1]));
+      if (!removed) {
+        sendJson(res, origin, 404, { success: false, error: "Saved report not found." });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: { removed: true } });
+    } catch (e) {
+      logSafeError("[reports/saved delete]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to remove saved report." });
     }
     return true;
   }
