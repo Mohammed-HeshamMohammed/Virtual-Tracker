@@ -456,9 +456,14 @@ export function MemberManageModal({
 
   async function handleRemove() {
     setBusy(true)
+    setSaveError(null)
     try {
       await Promise.resolve(onRemoveMember(member.id))
       handleClose()
+    } catch (e) {
+      // Same gap the invite modal had: an unhandled rejection left the modal
+      // open with no message, so a refused remove read as a dead button.
+      setSaveError(e instanceof Error ? e.message : "Could not remove this member.")
     } finally {
       setBusy(false)
     }

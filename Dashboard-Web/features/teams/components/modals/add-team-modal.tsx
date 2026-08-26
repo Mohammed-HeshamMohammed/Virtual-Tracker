@@ -38,13 +38,19 @@ function staffableSummaryToMember(row: {
   id: string
   first_name?: string
   last_name?: string
+  display_name?: string
   work_email?: string
   role_name?: string
   avatar?: string
   avatar_color?: string
   avatar_url?: string
 }): Member {
-  const name = [row.first_name, row.last_name].filter(Boolean).join(" ").trim() || "Unknown Member"
+  // display_name first: it is where a full name lives for members created
+  // through an invite, whose first_name/last_name are empty.
+  const name =
+    (row.display_name ?? "").trim() ||
+    [row.first_name, row.last_name].filter(Boolean).join(" ").trim() ||
+    "Unknown Member"
   const initials = row.avatar || name.slice(0, 2).toUpperCase() || "??"
   const role = row.role_name || ""
   return {

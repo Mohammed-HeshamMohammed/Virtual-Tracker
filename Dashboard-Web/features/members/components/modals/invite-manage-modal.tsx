@@ -130,9 +130,14 @@ export function InviteManageModal({
 
   async function handleRemove() {
     setBusy(true)
+    setSaveError(null)
     try {
       await Promise.resolve(onRemoveInvite(invite.id))
       handleClose()
+    } catch (e) {
+      // Without this the rejection went unhandled: the modal stayed open with
+      // no message, so a failed remove looked like a click that did nothing.
+      setSaveError(e instanceof Error ? e.message : "Could not remove this invite.")
     } finally {
       setBusy(false)
     }

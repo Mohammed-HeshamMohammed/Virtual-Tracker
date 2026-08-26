@@ -105,8 +105,19 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
   const workEmail = asString(input.work_email) || asString(input.email) || ""
   const firstName = sanitizeDisplayNamePart(asString(input.first_name), workEmail)
   const lastName = sanitizeDisplayNamePart(asString(input.last_name), workEmail)
+  // display_name is where the members table actually keeps a full name -
+  // profile updates and invite acceptance write it, and first_name/last_name
+  // stay empty for those members. Reading only first/last is why they
+  // rendered as the fallback. Order matches memberMetaFromRow on the server,
+  // which resolves display_name first and is why activity and reports showed
+  // the right names all along.
+  const displayName = sanitizeDisplayNamePart(
+    asString(input.display_name ?? input.displayName),
+    workEmail,
+  )
   const name =
     asString(input.name) ||
+    displayName ||
     [firstName, lastName].filter(Boolean).join(" ").trim() ||
     "Unknown Member"
   const email = asString(input.email) || asString(input.work_email) || ""
