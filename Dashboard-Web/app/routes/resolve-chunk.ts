@@ -1,4 +1,3 @@
-import { SHIFT_STYLE_HUB_REPORTS } from "@/features/reports"
 import type { AppChunkId } from "@/app/routes/types"
 
 /** Explicit page id → lazy chunk (domain bundle). */
@@ -28,20 +27,6 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "timesheets-approvals": "timesheets",
   "timesheets-time-activity": "timesheets",
 
-  "reports-project-budgets": "reports",
-  "reports-timesheet-approvals": "reports",
-  "reports-apps-urls": "reports",
-  "reports-time": "reports",
-  "reports-daily": "reports",
-  "reports-amounts": "reports",
-  "reports-all": "reports",
-  "reports-custom": "reports",
-  "reports-work-sessions": "reports",
-  "reports-manual-edits": "reports",
-  "reports-work-breaks": "reports",
-  "reports-audit": "reports",
-  "reports-expenses": "reports",
-
   "financials-overview": "financials",
   "financials-payroll": "financials",
   "financials-create": "financials",
@@ -63,10 +48,16 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   profile: "profile",
 }
 
-for (const pageId of Object.keys(SHIFT_STYLE_HUB_REPORTS)) {
-  PAGE_CHUNK[pageId] = "reports"
-}
-
 export function resolveChunkId(pageId: string): AppChunkId {
+  // Every reports page, by prefix. This used to be thirteen hand-written
+  // entries, and twelve report pages were missing from them - Payments, both
+  // limits reports, Client budgets, both time off reports, all four invoice
+  // reports, Shift attendance and the Budgets hub. A missing entry does not
+  // fail loudly: it falls through to the `?? "dashboard"` below, and the
+  // dashboard chunk renders the General dashboard for any id that is not
+  // "command-center". So those pages opened as the General dashboard sitting
+  // under a "Reports > ..." breadcrumb, which read as a broken report rather
+  // than a missing route.
+  if (pageId.startsWith("reports-")) return "reports"
   return PAGE_CHUNK[pageId] ?? "dashboard"
 }
