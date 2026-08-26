@@ -32,6 +32,17 @@ function healthUi(health: string): Pick<ProjectHealthItem, "status" | "statusCol
 function mapHealth(items: CommandCenterApiPayload["projects"][number]["health"]): ProjectHealthItem[] {
   return items.map((item) => {
     const ui = healthUi(item.health)
+    // A project with no tasks has no progress to report - saying "ON TRACK" at
+    // 0% would read as a real measurement rather than an absence of one.
+    if (item.empty) {
+      return {
+        name: item.name,
+        percent: 0,
+        status: "NO TASKS",
+        statusColor: "text-slate-400 dark:text-slate-500",
+        barColor: "bg-slate-200 dark:bg-slate-700",
+      }
+    }
     return {
       name: item.name,
       percent: item.percent,

@@ -5,8 +5,12 @@
 export type WeeklyTrendDay = {
   key: string
   label: string
+  /** Hours actively worked that day (was: a count of task rows touched). */
   active: number
+  /** Hours idle within tracked sessions that day. */
   idle: number
+  activeSeconds: number
+  idleSeconds: number
   tasks: {
     id: string
     title: string
@@ -70,6 +74,9 @@ export type ApiProjectHealthItem = {
   name: string
   percent: number
   health: string
+  /** Set when the project has no tasks at all, so the bar is not presented as
+   *  real progress. */
+  empty?: boolean
 }
 
 /** Raw API project row (colorIndex + health codes) before UI mapping. */

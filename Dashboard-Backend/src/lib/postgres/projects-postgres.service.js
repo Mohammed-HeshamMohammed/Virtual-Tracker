@@ -858,3 +858,126 @@ export async function computeProjectBudgetTargetPg(db, projectId, budgetRow) {
   ]);
   return map.get(projectId) ?? 0;
 }
+
+/**
+ * Real tracked-time metrics per project for a date window, for the Command
+ * Center. Unions the two places worked time lands (agent/web sessions and
+ * manual time entries), the same way computeProjectSpentForAllPg does.
+ *
+ * Idle seconds only exist on sessions - a manual entry is time someone
+ * asserts they worked, so all of it counts as active.
+ * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
+ * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number, memberIds: Set<string> }>>}
+ */
+export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT s.project_id, s.member_id,
+              s.active_seconds AS active_seconds,
+              s.idle_seconds   AS idle_seconds,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       UNION ALL
+       SELECT te.project_id, te.member_id,
+              te.duration AS active_seconds,
+              0           AS idle_seconds,
+              te.date     AS day
+       FROM time_entries te
+       WHERE te.status <> 'rejected'
+     )
+     SELECT project_id,
+            SUM(active_seconds) AS active_seconds,
+            SUM(idle_seconds)   AS idle_seconds,
+            ARRAY_AGG(DISTINCT member_id) FILTER (WHERE member_id IS NOT NULL) AS member_ids
+     FROM worked
+     WHERE project_id IS NOT NULL
+       AND day >= $1::date AND day <= $2::date
+       AND ($3::uuid[] IS NULL OR project_id = ANY($3::uuid[]))
+     GROUP BY project_id`,
+    [fromDay, toDay, projectIds],
+  );
+
+  const byProject = new Map();
+  for (const row of rows) {
+    byProject.set(String(row.project_id), {
+      activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
+      idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+      memberIds: new Set((row.member_ids ?? []).map((id) => String(id))),
+    });
+  }
+  return byProject;
+}
+
+/**
+ * Per-day active/idle seconds for a project scope - backs the Command Center's
+ * weekly productivity trend, which used to plot counts of task rows touched
+ * that day rather than time actually worked.
+ * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
+ * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} keyed by YYYY-MM-DD
+ */
+export async function getDailyActivityTotalsPg({ projectIds = null, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT s.project_id,
+              s.active_seconds AS active_seconds,
+              s.idle_seconds   AS idle_seconds,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       UNION ALL
+       SELECT te.project_id, te.duration, 0, te.date
+       FROM time_entries te
+       WHERE te.status <> 'rejected'
+     )
+     SELECT day,
+            SUM(active_seconds) AS active_seconds,
+            SUM(idle_seconds)   AS idle_seconds
+     FROM worked
+     WHERE day >= $1::date AND day <= $2::date
+       AND ($3::uuid[] IS NULL OR project_id = ANY($3::uuid[]))
+     GROUP BY day`,
+    [fromDay, toDay, projectIds],
+  );
+
+  const byDay = new Map();
+  for (const row of rows) {
+    const key = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day).slice(0, 10);
+    byDay.set(key, {
+      activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
+      idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+    });
+  }
+  return byDay;
+}
+
+/**
+ * Weekly capacity per member, for real utilisation. Prefers the member's
+ * configured weekly limit; falls back to their working-days count times an
+ * 8-hour day when no limit is set.
+ * @param {string[] | null} memberIds
+ * @returns {Promise<Map<string, number>>} memberId -> capacity seconds per week
+ */
+export async function getMemberWeeklyCapacityPg(memberIds = null) {
+  const rows = await query(
+    `SELECT m.id,
+            l.weekly AS weekly_limit_hours,
+            COALESCE(jsonb_array_length(ts.work_days), 5) AS work_day_count
+     FROM members m
+     LEFT JOIN limits l ON l.member_id = m.id
+     LEFT JOIN time_settings ts ON ts.member_id = m.id
+     WHERE m.status <> 'banned'
+       AND ($1::uuid[] IS NULL OR m.id = ANY($1::uuid[]))`,
+    [memberIds],
+  );
+  const byMember = new Map();
+  for (const row of rows) {
+    const weeklyHours = Number(row.weekly_limit_hours);
+    const capacityHours =
+      Number.isFinite(weeklyHours) && weeklyHours > 0
+        ? weeklyHours
+        : (Number(row.work_day_count) || 5) * 8;
+    byMember.set(String(row.id), Math.round(capacityHours * 3600));
+  }
+  return byMember;
+}

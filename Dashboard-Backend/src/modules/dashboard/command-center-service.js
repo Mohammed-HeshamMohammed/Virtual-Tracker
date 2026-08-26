@@ -8,6 +8,11 @@ import {
 } from "../activity/activity-scope.js";
 import { fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.service.js";
 import { isOrgProjectAdminRole } from "../../http/project-access.js";
+import {
+  getDailyActivityTotalsPg,
+  getMemberWeeklyCapacityPg,
+  getProjectActivityMetricsPg,
+} from "../../lib/postgres/projects-postgres.service.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import {
   budgetSpent,
@@ -38,22 +43,37 @@ function taskRowFromDoc(doc, assigneeNames) {
     assigneeId,
     assigneeName: assigneeId ? assigneeNames.get(assigneeId) || "Team member" : null,
     updatedMs: timestampMs(row.updated_at ?? row.updatedAt ?? row.created_at ?? row.createdAt),
+    // Real progress the task tracker maintains, rather than a number inferred
+    // from the status column.
+    progressPercent: num(row, "aggregated_progress_percent", "aggregatedProgressPercent"),
+    activeSeconds: num(row, "total_active_seconds", "totalActiveSeconds"),
   };
 }
 
-function buildWeeklyTrend(tasks, projectId) {
+/**
+ * Weekly productivity trend from time actually worked.
+ *
+ * This used to count task rows whose updated_at happened to fall on a day and
+ * call that "active"/"idle" - so a day where someone worked eight hours on one
+ * task scored 1, and touching five tickets without tracking anything scored 5.
+ * `dailyTotals` is real per-day active/idle seconds; the task list is still
+ * carried per day for the drill-down the UI shows on hover.
+ */
+function buildWeeklyTrend(tasks, projectId, dailyTotals) {
   const days = getRollingWeekDays();
   const scoped = projectId ? tasks.filter((task) => task.projectId === projectId) : tasks;
 
   return days.map((day) => {
     const dayTasks = scoped.filter((task) => task.updatedMs >= day.startMs && task.updatedMs <= day.endMs);
-    const active = dayTasks.filter((task) => ["in_progress", "in_review", "done"].includes(task.status)).length;
-    const idle = dayTasks.filter((task) => ["todo", "blocked"].includes(task.status)).length;
+    const totals = dailyTotals.get(day.dateKey) ?? { activeSeconds: 0, idleSeconds: 0 };
     return {
       key: day.key,
       label: day.label,
-      active,
-      idle,
+      // Hours worked, to one decimal - the series the chart plots.
+      active: Math.round((totals.activeSeconds / 3600) * 10) / 10,
+      idle: Math.round((totals.idleSeconds / 3600) * 10) / 10,
+      activeSeconds: totals.activeSeconds,
+      idleSeconds: totals.idleSeconds,
       tasks: dayTasks.slice(0, 12).map((task) => ({
         id: task.id,
         title: task.title,
@@ -65,37 +85,37 @@ function buildWeeklyTrend(tasks, projectId) {
   });
 }
 
-function buildUtilization(tasks, projectId) {
-  const scoped = projectId ? tasks.filter((task) => task.projectId === projectId) : tasks;
-  const byMember = new Map();
-
-  for (const task of scoped) {
-    if (!task.assigneeId) continue;
-    if (!byMember.has(task.assigneeId)) {
-      byMember.set(task.assigneeId, { active: 0, total: 0, name: task.assigneeName || "Member" });
-    }
-    const row = byMember.get(task.assigneeId);
-    row.total += 1;
-    if (task.status === "in_progress" || task.status === "in_review") row.active += 1;
-  }
-
+/**
+ * Utilisation: hours worked against the member's own weekly capacity.
+ *
+ * This used to be `min(100, activeTaskCount / 3 * 100)` - three in-progress
+ * tickets read as 100% utilised regardless of whether anyone tracked a minute,
+ * and the 3 was arbitrary. Capacity comes from the member's configured weekly
+ * limit, falling back to their working-days count at 8h/day.
+ */
+function buildUtilization(memberSeconds, capacityByMember) {
   let optimal = 0;
   let over = 0;
   let under = 0;
   let pctSum = 0;
   let count = 0;
 
-  for (const row of byMember.values()) {
+  for (const [memberId, seconds] of memberSeconds.entries()) {
+    const capacity = capacityByMember.get(memberId) ?? 0;
+    if (capacity <= 0) continue;
     count += 1;
-    const load = row.active;
-    pctSum += Math.min(100, Math.round((load / 3) * 100));
-    if (load >= 4) over += 1;
-    else if (load >= 1) optimal += 1;
+    const pct = Math.round((seconds / capacity) * 100);
+    pctSum += Math.min(150, pct);
+    // Under 60% of capacity is slack, over 100% is overloaded.
+    if (pct > 100) over += 1;
+    else if (pct >= 60) optimal += 1;
     else under += 1;
   }
 
   const utilizationPercent = count ? Math.round(pctSum / count) : 0;
-  const utilizationOffset = Math.max(20, 251.2 - (utilizationPercent / 100) * 251.2);
+  // The gauge arc is 251.2 long; clamp the visual at 100% even when someone is
+  // over capacity, so the ring cannot wrap past full.
+  const utilizationOffset = Math.max(0, 251.2 - (Math.min(100, utilizationPercent) / 100) * 251.2);
   return {
     utilizationPercent,
     utilizationOffset,
@@ -103,67 +123,94 @@ function buildUtilization(tasks, projectId) {
   };
 }
 
+/**
+ * Milestone bars for the health panel.
+ *
+ * Progress is `tasks.aggregated_progress_percent`, which the task tracker
+ * already maintains, rather than a number inferred from the status column
+ * (in_progress used to mean "55%" for every task regardless of how far along
+ * it was). Tasks in flight are surfaced first - a milestone panel showing four
+ * arbitrary rows is not telling anyone anything.
+ *
+ * A project with no tasks reports 0%, not the invented 85/45/15 this used to
+ * return based on its health label.
+ */
 function buildHealthMilestones(tasks, projectId, fallbackName, fallbackHealth) {
-  const scoped = tasks.filter((task) => task.projectId === projectId).slice(0, 4);
+  const scoped = tasks.filter((task) => task.projectId === projectId);
   if (!scoped.length) {
-    const percent =
-      fallbackHealth === "on_track" ? 85 : fallbackHealth === "at_risk" ? 45 : 15;
-    return [{ name: fallbackName, percent, health: fallbackHealth }];
+    return [{ name: fallbackName, percent: 0, health: fallbackHealth, empty: true }];
   }
-  return scoped.map((task) => {
-    let health = "at_risk";
-    let percent = 20;
-    if (task.status === "done") {
-      health = "on_track";
-      percent = 100;
-    } else if (task.status === "in_review") {
-      health = "on_track";
-      percent = 80;
-    } else if (task.status === "in_progress") {
-      health = "at_risk";
-      percent = 55;
-    } else if (task.status === "blocked") {
-      health = "stalled";
-      percent = 10;
-    }
+
+  const rank = { blocked: 0, in_progress: 1, in_review: 2, todo: 3, done: 4 };
+  const ordered = [...scoped]
+    .sort((a, b) => (rank[a.status] ?? 5) - (rank[b.status] ?? 5) || b.updatedMs - a.updatedMs)
+    .slice(0, 4);
+
+  return ordered.map((task) => {
+    const percent =
+      task.status === "done"
+        ? 100
+        : Number.isFinite(task.progressPercent) && task.progressPercent > 0
+          ? Math.min(100, Math.round(task.progressPercent))
+          : 0;
+    const health = task.status === "blocked" ? "stalled" : task.status === "done" || task.status === "in_review" ? "on_track" : "at_risk";
     return { name: task.title, percent, health };
   });
 }
 
-function buildStats(projectRow, tasks, projectId, activityPanel) {
-  const scoped = projectId ? tasks.filter((task) => task.projectId === projectId) : tasks;
-  const done = scoped.filter((task) => task.status === "done").length;
-  const total = scoped.length;
-  const completion = total > 0 ? Math.round((done / total) * 100) : 0;
+/**
+ * The four stat cards.
+ *
+ * Every number here used to be derived from task rows:
+ *   timeWorked      = (non-todo task count) x 2 hours, i.e. invented outright
+ *   activeMembers   = task assignees, floored at 1 so it never read zero
+ *   activityPercent = task completion %, badged PEAK/HIGH/LOW as if it were
+ *                     the activity meter the rest of the app means by that word
+ * They now come from tracked time, matching what the Time & Activity report
+ * and the Projects Overview page report for the same period.
+ */
+function buildStats(projectRow, projectId, metrics) {
+  const activeSeconds = metrics?.activeSeconds ?? 0;
+  const idleSeconds = metrics?.idleSeconds ?? 0;
+  const trackedSeconds = activeSeconds + idleSeconds;
+
   const budgetPct =
     projectRow?.budgetTotal > 0
       ? Math.min(100, Math.round((projectRow.budgetSpent / projectRow.budgetTotal) * 100))
       : 0;
 
-  const activeAssignees = new Set(
-    scoped
-      .filter((task) => task.status === "in_progress" || task.status === "in_review")
-      .map((task) => task.assigneeId)
-      .filter(Boolean),
-  );
+  // The app's activity meter everywhere else: active out of active+idle.
+  const activityPercent = trackedSeconds > 0 ? Math.round((activeSeconds / trackedSeconds) * 100) : 0;
 
   return {
-    timeWorked: formatDurationHours(scoped.filter((task) => task.status !== "todo").length * 2),
-    activeMembers: String(Math.max(activeAssignees.size, activityPanel?.inProgress ?? 0, 1)),
-    totalMembers: String(Math.max(projectRow?.members ?? 1, 1)),
+    timeWorked: formatSecondsAsHours(activeSeconds),
+    // Members who actually tracked time in the window - 0 is a real answer.
+    activeMembers: String(metrics?.memberIds?.size ?? 0),
+    totalMembers: String(Math.max(projectRow?.members ?? 0, 0)),
     budgetPercent: budgetPct,
     budgetLabel: projectRow?.budgetTotal > 0 ? "Budget Used" : "No Budget",
-    activityPercent: completion,
+    activityPercent,
     activityBadge:
-      completion >= 85 ? "PEAK" : completion >= 70 ? "HIGH" : completion >= 50 ? "GOOD" : completion >= 30 ? "LOW" : "IDLE",
+      trackedSeconds === 0
+        ? "IDLE"
+        : activityPercent >= 85
+          ? "PEAK"
+          : activityPercent >= 70
+            ? "HIGH"
+            : activityPercent >= 50
+              ? "GOOD"
+              : activityPercent >= 30
+                ? "LOW"
+                : "IDLE",
   };
 }
 
-function formatDurationHours(taskUnits) {
-  const hours = Math.max(0, taskUnits);
-  const h = Math.floor(hours);
-  const m = Math.round((hours - h) * 60);
-  return `${h}:${String(m).padStart(2, "0")}`;
+/** Seconds -> "7h 30m" style label for the stat card. */
+function formatSecondsAsHours(seconds) {
+  const safe = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(safe / 3600);
+  const m = Math.round((safe % 3600) / 60);
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
 function relativeTime(iso) {
@@ -257,7 +304,8 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       name: str(row, "name") || "Untitled project",
       colorIndex: colorIndex % PROJECT_COLORS,
       health,
-      members: members > 0 ? members : 1,
+      // No floor: a project with nobody on it reports 0, not 1.
+      members,
       budgetTotal,
       budgetSpent: spent,
       done: projectTasks.filter((task) => task.status === "done").length,
@@ -273,6 +321,51 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     allowedProjectIdList === null
       ? allTasks
       : allTasks.filter((task) => allowedProjectIdList.includes(task.projectId));
+
+  // Real tracked-time metrics for the same rolling week the trend chart shows,
+  // scoped to the projects this viewer may see. One round trip each, reused by
+  // every project payload below.
+  const weekDays = getRollingWeekDays();
+  const weekFrom = weekDays[0].dateKey;
+  const weekTo = weekDays[weekDays.length - 1].dateKey;
+  const metricProjectIds = allowedProjectIdList === null ? null : allowedProjectIdList;
+  const [projectMetrics, dailyTotalsAll, capacityByMember] = await Promise.all([
+    getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
+    getDailyActivityTotalsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
+    getMemberWeeklyCapacityPg(null),
+  ]);
+
+  /** Seconds worked per member across a project scope, for utilisation. */
+  function memberSecondsFor(projectId) {
+    const perMember = new Map();
+    const entries = projectId
+      ? [[projectId, projectMetrics.get(projectId)]]
+      : [...projectMetrics.entries()];
+    for (const [, metrics] of entries) {
+      if (!metrics) continue;
+      // Session rows carry the member set but not per-member seconds; splitting
+      // the project total evenly across its trackers is the honest
+      // approximation available without a second per-member roll-up, and the
+      // gauge is a team-level indicator rather than a payroll figure.
+      const share = metrics.memberIds.size > 0 ? metrics.activeSeconds / metrics.memberIds.size : 0;
+      for (const memberId of metrics.memberIds) {
+        perMember.set(memberId, (perMember.get(memberId) ?? 0) + share);
+      }
+    }
+    return perMember;
+  }
+
+  /** Aggregate metrics across every in-scope project. */
+  function metricsFor(projectId) {
+    if (projectId) return projectMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
+    const all = { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
+    for (const metrics of projectMetrics.values()) {
+      all.activeSeconds += metrics.activeSeconds;
+      all.idleSeconds += metrics.idleSeconds;
+      for (const memberId of metrics.memberIds) all.memberIds.add(memberId);
+    }
+    return all;
+  }
 
   const scope = await resolveActivityFeedScope(db, viewerMemberId, {
     memberId: "all",
@@ -322,14 +415,17 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
 
   const globalActivityFeed = [...globalFeed, ...doneTaskFeed].slice(0, 8);
 
-  function mapProjectPayload(projectRow, projectId) {
-    const weeklyTrend = buildWeeklyTrend(scopedTasks, projectId);
+  async function mapProjectPayload(projectRow, projectId) {
+    // The all-projects card reuses the scope-wide totals already loaded; a
+    // single project needs its own per-day series.
+    const dailyTotals = projectId
+      ? await getDailyActivityTotalsPg({ projectIds: [projectId], fromDay: weekFrom, toDay: weekTo })
+      : dailyTotalsAll;
+    const weeklyTrend = buildWeeklyTrend(scopedTasks, projectId, dailyTotals);
     const activeSeries = weeklyTrend.map((day) => day.active);
     const { chartPath, chartFill } = buildTrendPaths(activeSeries);
-    const utilization = buildUtilization(scopedTasks, projectId);
-    const activityPanel = projectId
-      ? { inProgress: projectRows.find((row) => row.id === projectId)?.inProgress ?? 0 }
-      : { inProgress: projectRows.reduce((sum, row) => sum + row.inProgress, 0) };
+    const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember);
+    const metrics = metricsFor(projectId);
 
     const aggregateRow = projectId
       ? projectRows.find((row) => row.id === projectId)
@@ -359,7 +455,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       id: projectId ?? "all",
       name: projectId ? aggregateRow?.name || "Project" : seesAllProjects ? "All Projects" : "All My Projects",
       colorIndex: projectId ? aggregateRow?.colorIndex ?? 0 : 0,
-      stats: buildStats(aggregateRow, scopedTasks, projectId, activityPanel),
+      stats: buildStats(aggregateRow, projectId, metrics),
       chartPath,
       chartFill,
       weeklyTrend,
@@ -370,10 +466,10 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
 
   const projects = [];
   if (projectRows.length > 1 || seesAllProjects) {
-    projects.push(mapProjectPayload(null, null));
+    projects.push(await mapProjectPayload(null, null));
   }
   for (const row of projectRows) {
-    projects.push(mapProjectPayload(row, row.id));
+    projects.push(await mapProjectPayload(row, row.id));
   }
 
   return {
