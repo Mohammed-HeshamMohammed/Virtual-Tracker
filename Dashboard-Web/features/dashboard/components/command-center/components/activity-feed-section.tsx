@@ -1,8 +1,53 @@
 "use client"
 
-import { MoreHorizontal } from "lucide-react"
+import { useEffect, useState } from "react"
+import Image from "next/image"
+import { Monitor, MoreHorizontal } from "lucide-react"
+import { fetchActivityScreenshotImage } from "@/features/activity/services/activity-api"
 import type { ActivityFeedItem } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
+
+/** The two latest captures, shown side by side above the rest of the feed. */
+function ScreenshotCard({ item }: { item: ActivityFeedItem }) {
+  const [image, setImage] = useState<string | null>(null)
+  const screenshotId = item.screenshotId
+
+  useEffect(() => {
+    if (!screenshotId) return
+    let cancelled = false
+    void fetchActivityScreenshotImage(screenshotId).then((data) => {
+      if (!cancelled) setImage(data)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [screenshotId])
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+      <div className="relative aspect-video bg-slate-100 dark:bg-slate-800">
+        {image ? (
+          <Image src={image} alt="" width={480} height={270} className="absolute inset-0 h-full w-full object-cover object-top" />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Monitor className="h-8 w-8 text-slate-300 dark:text-slate-700" />
+          </div>
+        )}
+        {item.activityBadge ? (
+          <span className="absolute right-2 top-2 rounded-md bg-emerald-600/90 px-2 py-0.5 text-[10px] font-bold text-white">
+            {item.activityBadge}
+          </span>
+        ) : null}
+      </div>
+      <div className="p-3">
+        <p className="truncate text-sm font-bold text-slate-900 dark:text-slate-100">{item.person}</p>
+        <p className="truncate text-xs text-slate-400 dark:text-slate-500">
+          {item.project} · {item.time}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 interface ActivityFeedSectionProps {
   feed: ActivityFeedItem[]
@@ -10,6 +55,11 @@ interface ActivityFeedSectionProps {
 }
 
 export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionProps) {
+  // The two latest captures go in the grid above; everything else keeps the
+  // stacked timeline, which no longer renders its own placeholder tile.
+  const shots = feed.filter((item) => item.type === "screenshot").slice(0, 2)
+  const rest = feed.filter((item) => !shots.includes(item))
+
   return (
     <SectionCard className="lg:col-span-2">
       <div className="flex justify-between items-center mb-8">
@@ -25,11 +75,18 @@ export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionPro
           View All Feed
         </button>
       </div>
+      {shots.length > 0 && (
+        <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {shots.map((shot, i) => (
+            <ScreenshotCard key={shot.screenshotId ?? `${shot.person}-${i}`} item={shot} />
+          ))}
+        </div>
+      )}
       <div className="space-y-6">
         {feed.length === 0 ? (
           <p className="text-sm text-slate-400 dark:text-slate-500">No recent activity yet.</p>
         ) : (
-          feed.map((item, i) => (
+          rest.map((item, i) => (
             <div key={`${item.person}-${item.time}-${item.type}-${i}`}>
               {i > 0 && <div className="h-px bg-slate-50 dark:bg-slate-800 mb-6" />}
               <div className="flex gap-6 items-start group">
@@ -55,14 +112,6 @@ export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionPro
                       <button className="text-slate-400 dark:text-slate-500 hover:text-green-700 dark:hover:text-green-400 transition-colors shrink-0" type="button"><MoreHorizontal className="w-5 h-5" /></button>
                     )}
                   </div>
-                  {item.type === "screenshot" && (
-                    <div className="mt-3 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-800 aspect-video w-64 border border-slate-200 dark:border-slate-700 group-hover:border-green-700/20 dark:group-hover:border-green-500/30 transition-colors flex items-center justify-center">
-                      <div className="text-center text-slate-300 dark:text-slate-600 space-y-1">
-                        <div className="text-3xl">🖥</div>
-                        <p className="text-[10px] font-medium">Screenshot preview</p>
-                      </div>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

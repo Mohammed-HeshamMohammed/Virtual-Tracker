@@ -26,9 +26,14 @@ export function MilestonesSection({ project, onNavigate }: MilestonesSectionProp
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.07 }}
           >
-            <div className="flex justify-between items-center mb-2.5">
-              <span className="text-sm font-bold text-slate-900 dark:text-slate-100">{p.name}</span>
-              <span className={`text-xs font-black ${p.statusColor}`}>{p.status}</span>
+            <div className="flex justify-between items-center mb-2.5 gap-3">
+              <span className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate">{p.name}</span>
+              <span className="flex items-baseline gap-2 shrink-0">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                  {p.hint} {p.percent}%
+                </span>
+                <span className={`text-xs font-black ${p.statusColor}`}>{p.status}</span>
+              </span>
             </div>
             <div className="w-full h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
               <motion.div

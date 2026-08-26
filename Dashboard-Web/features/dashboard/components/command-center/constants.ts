@@ -26,6 +26,8 @@ export type ProjectHealthItem = {
   status: string
   statusColor: string
   barColor: string
+  /** What the bar measures: task progress, budget burn, or nothing tracked yet. */
+  hint: string
 }
 
 export interface ProjectData {
@@ -50,6 +52,18 @@ export interface ProjectData {
   utilizationPercent: number
   utilizationOffset: number
   utilizationMembers: { optimal: number; over: number; under: number }
+  utilizationBreakdown: UtilizationMember[]
+}
+
+/** One member's own hours against their own weekly capacity. */
+export type UtilizationMember = {
+  id: string
+  name: string
+  initials: string
+  percent: number
+  hours: number
+  capacityHours: number
+  load: "optimal" | "over" | "under"
 }
 
 export type ActivityFeedItem = {
@@ -61,6 +75,8 @@ export type ActivityFeedItem = {
   time: string
   activityBadge?: string
   type: "screenshot" | "task"
+  /** Screenshot rows only - used to load the capture through the auth-gated endpoint. */
+  screenshotId?: string
 }
 
 export type CommandCenterPayload = {
@@ -76,9 +92,8 @@ export type ApiProjectHealthItem = {
   name: string
   percent: number
   health: string
-  /** Set when the project has no tasks at all, so the bar is not presented as
-   *  real progress. */
-  empty?: boolean
+  /** Which measure the percent is: task progress, budget burn, or neither. */
+  metric?: "progress" | "budget" | "none"
 }
 
 /** Raw API project row (colorIndex + health codes) before UI mapping. */
@@ -94,6 +109,7 @@ export type ApiProjectData = {
   utilizationPercent: number
   utilizationOffset: number
   utilizationMembers: ProjectData["utilizationMembers"]
+  utilizationBreakdown: UtilizationMember[]
 }
 
 export type CommandCenterApiPayload = Omit<CommandCenterPayload, "projects"> & {
