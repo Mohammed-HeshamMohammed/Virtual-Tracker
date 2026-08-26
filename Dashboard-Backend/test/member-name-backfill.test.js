@@ -4,22 +4,42 @@
 // boot-time backfill that heals such a row from Firebase Auth's own record of
 // the member (the "Google account"), whether that record is already linked by
 // firebase_uid or has to be found by email instead, since Postgres has
-// nothing left to read at that point.
+// nothing left to read at that point - and proves the sweep can never
+// overwrite a member who already has a real name.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
-/** @type {{ rows: any[], updates: any[][], postgresConfigured: boolean }} */
-const stub = { rows: [], updates: [], postgresConfigured: true };
+function isBlankOrPlaceholder(value) {
+  const trimmed = (value ?? "").trim().toLowerCase();
+  return !trimmed || trimmed === "member";
+}
+
+/** @type {{ rows: any[], updates: any[][], postgresConfigured: boolean, currentNames: Record<string, { first: string, last: string, display: string }> }} */
+const stub = { rows: [], updates: [], postgresConfigured: true, currentNames: {} };
 /** @type {{ byUid: Record<string, any>, byEmail: Record<string, any> }} */
 const authStub = { byUid: {}, byEmail: {} };
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
+    // The UPDATE branch mirrors the real query's own safety net: it only
+    // "succeeds" (returns a row, the same as a real RETURNING id) when the
+    // member's name is still blank-or-placeholder at write time - proving the
+    // backfill's guard is real and not just an unused WHERE clause, a test
+    // reading only stub.updates could not distinguish "guarded" from
+    // "unconditional but happened not to overwrite anything in this run".
     query: async (sql, params = []) => {
       if (sql.includes("SELECT id, firebase_uid, work_email, personal_email")) return stub.rows;
       if (sql.startsWith("UPDATE members")) {
+        const [firstName, lastName, displayName, id] = params;
+        const current = stub.currentNames[id] ?? { first: "", last: "", display: "" };
+        const stillBlank =
+          isBlankOrPlaceholder(current.first) &&
+          isBlankOrPlaceholder(current.last) &&
+          isBlankOrPlaceholder(current.display);
+        if (!stillBlank) return [];
         stub.updates.push(params);
-        return [];
+        stub.currentNames[id] = { first: firstName, last: lastName, display: displayName };
+        return [{ id }];
       }
       return [];
     },
@@ -83,12 +103,16 @@ const { backfillMemberDisplayNames } = await import(
   "../src/modules/members/services/member-name-backfill.js"
 );
 
-function reset({ rows = [], byUid = {}, byEmail = {}, postgresConfigured = true } = {}) {
+function reset({ rows = [], byUid = {}, byEmail = {}, postgresConfigured = true, currentNames = {} } = {}) {
   stub.rows = rows;
   stub.updates = [];
   stub.postgresConfigured = postgresConfigured;
   authStub.byUid = byUid;
   authStub.byEmail = byEmail;
+  // Every row the SELECT stage returned starts blank in "the database" too,
+  // unless a test explicitly seeds otherwise - see the anti-overwrite test.
+  stub.currentNames = Object.fromEntries(rows.map((r) => [r.id, { first: "", last: "", display: "" }]));
+  Object.assign(stub.currentNames, currentNames);
 }
 
 test("skips entirely when Postgres is not configured", async () => {
@@ -185,4 +209,36 @@ test("one row erroring never stops the rest of the sweep", async () => {
   assert.equal(result.checked, 2);
   assert.equal(result.updated, 1);
   assert.deepEqual(stub.updates, [["Avery", "Chen", "Avery Chen", "m7"]]);
+});
+
+test("never overwrites a member who already has a real name, even one that slipped past the SELECT", async () => {
+  // Simulates the exact case being guarded against: a row reaches the loop
+  // (as if the SELECT's own filter had somehow let it through, or another
+  // process named this member in the gap between the SELECT and this row's
+  // turn) already holding a real name in Postgres. The UPDATE's own WHERE
+  // must refuse to touch it - this is the guarantee, not just the SELECT
+  // filter tested indirectly by every case above.
+  reset({
+    rows: [{ id: "already-named", firebase_uid: "u8", work_email: "morgan@example.com", personal_email: "" }],
+    byUid: { u8: { displayName: "Someone Else Entirely", email: "morgan@example.com", providerData: [] } },
+    currentNames: { "already-named": { first: "Morgan", last: "Lee", display: "Morgan Lee" } },
+  });
+  const result = await backfillMemberDisplayNames();
+  assert.equal(result.updated, 0, "a member with an existing name must never be counted as updated");
+  assert.deepEqual(stub.updates, [], "no write may reach a member who already has a name");
+  assert.deepEqual(stub.currentNames["already-named"], { first: "Morgan", last: "Lee", display: "Morgan Lee" });
+});
+
+test("a member holding the literal placeholder word in only one of the three name fields is left alone", async () => {
+  // "Member" leaking into first_name alongside a real last_name is not the
+  // fully-blank case this sweep targets - some real name data exists, so the
+  // row is left for a human to clean up rather than guessed at.
+  reset({
+    rows: [{ id: "partial", firebase_uid: "u9", work_email: "partial@example.com", personal_email: "" }],
+    byUid: { u9: { displayName: "Full Name", email: "partial@example.com", providerData: [] } },
+    currentNames: { partial: { first: "Member", last: "Reyes", display: "" } },
+  });
+  const result = await backfillMemberDisplayNames();
+  assert.equal(result.updated, 0);
+  assert.deepEqual(stub.updates, []);
 });

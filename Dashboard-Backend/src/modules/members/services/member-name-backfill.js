@@ -42,6 +42,14 @@ function blankOrPlaceholder(column) {
  * last-resort fallback ensureMemberRowForUserRecord uses when creating a
  * member fresh, so nobody's row is left holding "Member" as if it were a name.
  *
+ * Never overwrites a member who already has a name, by design in two layers:
+ * the SELECT only fetches rows where first_name, last_name, AND display_name
+ * are each blank-or-placeholder, and the UPDATE re-checks that same condition
+ * in its own WHERE clause before writing, so even a member who gets a real
+ * name some other way in the gap between the SELECT and this row's turn in
+ * the loop cannot be clobbered - the write simply matches nothing and
+ * `updated` does not count it.
+ *
  * Run at boot (like ensure-lookup-schema.js / backfillMemberAvatarUrls)
  * rather than a one-off script, so it is covered by the no-manual-migration
  * deploy flow. Only queries members still missing every name field, so once
@@ -98,13 +106,23 @@ export async function backfillMemberDisplayNames() {
       if (!firstName) continue; // Truly nothing to backfill with; leave for next boot.
 
       const displayName = [firstName, lastName].filter(Boolean).join(" ");
-      await query("UPDATE members SET first_name = $1, last_name = $2, display_name = $3 WHERE id = $4", [
-        firstName,
-        lastName,
-        displayName,
-        member.id,
-      ]);
-      updated += 1;
+      // Re-checked here, not just in the SELECT above: this WHERE has to be
+      // true at the moment of the write, in the same statement that writes,
+      // or the UPDATE matches nothing. That closes the one window the SELECT
+      // alone can't - a member signing in for real (and getting a real name
+      // some other way) in between this row being read and this row being
+      // written. A row that already has a name, by any path, can never be
+      // touched by this sweep.
+      const written = await query(
+        `UPDATE members SET first_name = $1, last_name = $2, display_name = $3
+         WHERE id = $4
+           AND ${blankOrPlaceholder("first_name")}
+           AND ${blankOrPlaceholder("last_name")}
+           AND ${blankOrPlaceholder("display_name")}
+         RETURNING id`,
+        [firstName, lastName, displayName, member.id],
+      );
+      if (written.length > 0) updated += 1;
     } catch (err) {
       logSafeWarn(`[member-name-backfill] skipping member ${member.id}:`, err);
     }
