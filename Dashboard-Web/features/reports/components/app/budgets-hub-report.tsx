@@ -19,6 +19,9 @@ interface Tile {
   description: string
   headline: string
   detail: string
+  /** Set when this tile's source failed - "0 with a budget" would otherwise
+   *  read as a measurement rather than a failed read. */
+  failed?: boolean
 }
 
 /**
@@ -37,11 +40,26 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
 
+    // Each tile falls back on its own: one failing source should not blank the
+    // other three. The tile says so rather than reporting a zero it never read.
+    const failed = { project: false, client: false, weekly: false, daily: false }
     void Promise.all([
-      fetchProjectBudgetsReport().catch(() => []),
-      fetchClientBudgetsReport().catch(() => []),
-      fetchWeeklyLimitsReport({ from, to }).catch(() => []),
-      fetchDailyLimitsReport({ from, to }).catch(() => []),
+      fetchProjectBudgetsReport().catch(() => {
+        failed.project = true
+        return []
+      }),
+      fetchClientBudgetsReport().catch(() => {
+        failed.client = true
+        return []
+      }),
+      fetchWeeklyLimitsReport({ from, to }).catch(() => {
+        failed.weekly = true
+        return []
+      }),
+      fetchDailyLimitsReport({ from, to }).catch(() => {
+        failed.daily = true
+        return []
+      }),
     ]).then(([projectSections, clientRows, weekly, daily]) => {
       if (cancelled) return
 
@@ -58,29 +76,33 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
           id: "reports-project-budgets",
           title: "Project budgets",
           description: "How much of each project budget has been spent.",
-          headline: `${projectRows.length} with a budget`,
-          detail: projectsOver > 0 ? `${projectsOver} over budget` : "None over budget",
+          headline: failed.project ? "Unavailable" : `${projectRows.length} with a budget`,
+          detail: failed.project ? "This report could not be loaded." : projectsOver > 0 ? `${projectsOver} over budget` : "None over budget",
+          failed: failed.project,
         },
         {
           id: "reports-client-budgets",
           title: "Client budgets",
           description: "How much of each client budget has been spent.",
-          headline: `${clientRows.length} with a budget`,
-          detail: clientsOver > 0 ? `${clientsOver} over budget` : "None over budget",
+          headline: failed.client ? "Unavailable" : `${clientRows.length} with a budget`,
+          detail: failed.client ? "This report could not be loaded." : clientsOver > 0 ? `${clientsOver} over budget` : "None over budget",
+          failed: failed.client,
         },
         {
           id: "reports-weekly-limits",
           title: "Weekly limits",
           description: "Weekly hour limits and how close people are to them.",
-          headline: `${weekly.length} tracked`,
-          detail: weeklyOver > 0 ? `${weeklyOver} at or over limit` : "None over limit",
+          headline: failed.weekly ? "Unavailable" : `${weekly.length} tracked`,
+          detail: failed.weekly ? "This report could not be loaded." : weeklyOver > 0 ? `${weeklyOver} at or over limit` : "None over limit",
+          failed: failed.weekly,
         },
         {
           id: "reports-daily-limits",
           title: "Daily limits",
           description: "Daily hour limits and how close people are to them.",
-          headline: `${daily.length} tracked`,
-          detail: dailyOver > 0 ? `${dailyOver} at or over limit` : "None over limit",
+          headline: failed.daily ? "Unavailable" : `${daily.length} tracked`,
+          detail: failed.daily ? "This report could not be loaded." : dailyOver > 0 ? `${dailyOver} at or over limit` : "None over limit",
+          failed: failed.daily,
         },
       ])
     })
@@ -127,7 +149,12 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
           </div>
           <p className={cn("mt-1 text-sm", isDark ? "text-white/45" : "text-slate-500")}>{t.description}</p>
           <div className="mt-4">
-            <div className={cn("text-lg font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+            <div
+              className={cn(
+                "text-lg font-semibold",
+                t.failed ? "text-rose-600 dark:text-rose-400" : isDark ? "text-[#dce1fb]" : "text-slate-800"
+              )}
+            >
               {t.headline}
             </div>
             <div className={cn("text-xs", isDark ? "text-white/40" : "text-slate-400")}>{t.detail}</div>

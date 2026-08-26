@@ -23,8 +23,8 @@ import {
 } from "lucide-react"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
-import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
-import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
+import { ReportScheduleDialog, type ReportScheduleInput } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
+import { ReportSendDialog, type ReportSendInput } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { useTheme } from "@/shared/providers/app"
 import {
@@ -37,6 +37,9 @@ import { reportCardFor } from "@/features/reports/catalog"
 import { cn } from "@/shared/utils/utils"
 
 export type StandardReportScope = "me" | "all"
+
+export type { ReportSendInput } from "@/features/reports/components/amounts-owed/report-send-dialog"
+export type { ReportScheduleInput } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 
 export type StandardReportLayoutContextValue = {
   scope: StandardReportScope
@@ -101,6 +104,8 @@ export function StandardReportLayout({
   exportFileBaseName,
   pageId,
   subtitle,
+  onSend,
+  onSchedule,
   showDateRange = true,
   showScopeTabs = true,
   showGroupBy = true,
@@ -120,6 +125,16 @@ export function StandardReportLayout({
   pageId?: string
   /** Overrides the catalog description when a report needs its own line. */
   subtitle?: string
+  // Send and Schedule used to render on every report, and on all but Time &
+  // Activity the dialog just closed itself and did nothing - no email, no
+  // schedule row, no error. The scheduler is worse than a no-op for the
+  // others: it builds a Time & Activity payload whatever report_type says, so
+  // a scheduled "Payments report" would arrive as someone's time report. A
+  // report gets the button only once it can honour it.
+  /** Emails this report now. Without it, Send is not offered. */
+  onSend?: (input: ReportSendInput) => Promise<void>
+  /** Saves a recurring delivery. Without it, Schedule is not offered. */
+  onSchedule?: (input: ReportScheduleInput) => Promise<void>
   // A report that never reads `rangeStart`/`rangeEnd`, `scope`, or `groupBy`
   // out of this layout's context must hide the matching control rather than
   // render a dead one. Several reports used to show all three and consume
@@ -134,7 +149,16 @@ export function StandardReportLayout({
 }) {
   const { isDark } = useTheme()
   const [scope, setScope] = useComponentState<StandardReportScope>("all")
-  const [rangeStart, setRangeStart] = useComponentState(() => startOfDay(new Date()))
+  // Last 7 days, the default every hand-built report page already uses
+  // (work sessions, audit log, amounts owed, daily totals, time & activity).
+  // This layout opened on today alone, so the seventeen reports that use it
+  // rendered "nothing to report" on load unless someone had tracked time
+  // since midnight - the reports looked broken rather than narrow.
+  const [rangeStart, setRangeStart] = useComponentState(() => {
+    const d = startOfDay(new Date())
+    d.setDate(d.getDate() - 6)
+    return d
+  })
   const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date()))
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
@@ -164,19 +188,30 @@ export function StandardReportLayout({
     [scope, rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler]
   )
 
-  function shiftRangeByDays(delta: number) {
+  /**
+   * Page by a whole window, which is what the buttons are labelled
+   * ("Previous period" / "Next period"). Shifting a single day across a
+   * seven-day window would leave six days of overlap between one click and
+   * the next.
+   */
+  function shiftRangeByPeriods(direction: -1 | 1) {
+    const spanDays = Math.max(1, Math.round((endOfDay(rangeEnd).getTime() - startOfDay(rangeStart).getTime()) / 86_400_000))
     const s = new Date(rangeStart)
-    s.setDate(s.getDate() + delta)
+    s.setDate(s.getDate() + direction * spanDays)
     const e = new Date(rangeEnd)
-    e.setDate(e.getDate() + delta)
+    e.setDate(e.getDate() + direction * spanDays)
     setRangeStart(startOfDay(s))
     setRangeEnd(endOfDay(e))
   }
 
-  function goToToday() {
-    const now = new Date()
-    setRangeStart(startOfDay(now))
-    setRangeEnd(endOfDay(now))
+  /** Back to the default window, not to today alone - the button sits next to
+   *  the range picker and is the way back after paging through history. */
+  function resetRange() {
+    const end = endOfDay(new Date())
+    const start = startOfDay(new Date())
+    start.setDate(start.getDate() - 6)
+    setRangeStart(start)
+    setRangeEnd(end)
   }
 
   function runExport() {
@@ -221,7 +256,7 @@ export function StandardReportLayout({
                 <>
               <button
                 type="button"
-                onClick={() => shiftRangeByDays(-1)}
+                onClick={() => shiftRangeByPeriods(-1)}
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm",
                   isDark
@@ -265,7 +300,7 @@ export function StandardReportLayout({
               </div>
               <button
                 type="button"
-                onClick={() => shiftRangeByDays(1)}
+                onClick={() => shiftRangeByPeriods(1)}
                 className={cn(
                   "flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm",
                   isDark
@@ -278,7 +313,7 @@ export function StandardReportLayout({
               </button>
               <button
                 type="button"
-                onClick={goToToday}
+                onClick={resetRange}
                 className={cn(
                   "rounded-lg border px-3 py-2 text-sm font-medium",
                   isDark
@@ -286,7 +321,7 @@ export function StandardReportLayout({
                     : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                 )}
               >
-                Today
+                Last 7 days
               </button>
                 </>
               ) : null}
@@ -371,6 +406,7 @@ export function StandardReportLayout({
             </div>
 
             <div className="flex flex-wrap items-center gap-4 lg:gap-5">
+              {onSend ? (
               <button
                 type="button"
                 onClick={() => setSendOpen(true)}
@@ -382,6 +418,8 @@ export function StandardReportLayout({
                 <Send className="h-4 w-4 shrink-0" strokeWidth={2} />
                 Send
               </button>
+              ) : null}
+              {onSchedule ? (
               <button
                 type="button"
                 onClick={() => setScheduleOpen(true)}
@@ -393,6 +431,7 @@ export function StandardReportLayout({
                 <Clock className="h-4 w-4 shrink-0" strokeWidth={2} />
                 Schedule
               </button>
+              ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -419,12 +458,15 @@ export function StandardReportLayout({
           <div className="report-print-area pt-4">{children}</div>
         </div>
 
-        <ReportSendDialog open={sendOpen} onOpenChange={setSendOpen} />
-        <ReportScheduleDialog
-          open={scheduleOpen}
-          onOpenChange={setScheduleOpen}
-          onRequestOpenFilters={panel ? () => setShowFilters(true) : undefined}
-        />
+        {onSend ? <ReportSendDialog open={sendOpen} onOpenChange={setSendOpen} onSend={onSend} /> : null}
+        {onSchedule ? (
+          <ReportScheduleDialog
+            open={scheduleOpen}
+            onOpenChange={setScheduleOpen}
+            onSave={onSchedule}
+            onRequestOpenFilters={panel ? () => setShowFilters(true) : undefined}
+          />
+        ) : null}
 
         <AnimatePresence>
           {showFilters && panel ? (

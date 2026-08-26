@@ -19,6 +19,7 @@ import {
 import type { TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 import { fetchTimeAndActivityReport } from "@/features/reports/api/time-and-activity-api"
 import { startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 export { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 export type { UseTimeAndActivityReportParams } from "@/features/reports/hooks/use-time-and-activity-report"
@@ -58,17 +59,33 @@ function defaultRange(): { start: Date; end: Date } {
 export function TimeAndActivityReport() {
   const [range, setRange] = useState<{ start: Date; end: Date }>(() => defaultRange())
   const [reportData, setReportData] = useState<TimeActivityReportData>(() => buildDefaultTimeActivityReportData())
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    fetchTimeAndActivityReport({ from: toDateParam(range.start), to: toDateParam(range.end) }).then((data) => {
-      if (cancelled) return
-      setReportData(data ?? buildDefaultTimeActivityReportData())
-    })
+    setLoading(true)
+    setError(null)
+    fetchTimeAndActivityReport({ from: toDateParam(range.start), to: toDateParam(range.end) })
+      .then((data) => {
+        if (!cancelled) setReportData(data)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setReportData(buildDefaultTimeActivityReportData())
+        setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [range])
+  }, [range, reloadKey])
+
+  if (loading) return <ReportSkeleton tiles={3} rows={8} columns={6} />
+  if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
   return (
     <TimeActivityReportView

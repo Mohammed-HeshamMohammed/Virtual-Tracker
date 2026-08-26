@@ -29,7 +29,7 @@ import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
-import { ReportPageHeading } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
@@ -172,6 +172,11 @@ export function AmountsOwedReport() {
   const [sendDialogOpen, setSendDialogOpen] = useComponentState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useComponentState(false)
   const [groups, setGroups] = useComponentState<AmountsOwedDayGroup[]>([])
+  const [loading, setLoading] = useComponentState(true)
+  // A failed read used to be indistinguishable from an empty report:
+  // getJson swallowed every error and the table said "No data in this range".
+  const [error, setError] = useComponentState<string | null>(null)
+  const [reloadKey, setReloadKey] = useComponentState(0)
   const [filterOptions, setFilterOptions] = useComponentState<ReportFilterOptions>({ members: [], projects: [] })
   const [selectedMemberIds, setSelectedMemberIds] = useComponentState<Set<string>>(() => new Set())
   const [selectedProjectIds, setSelectedProjectIds] = useComponentState<Set<string>>(() => new Set())
@@ -181,9 +186,13 @@ export function AmountsOwedReport() {
 
   useEffect(() => {
     let cancelled = false
-    void fetchReportFilterOptions().then((opts) => {
-      if (!cancelled) setFilterOptions(opts)
-    })
+    // Filter options failing is not fatal - the panel just offers nothing to
+    // filter by, which beats taking the whole report down.
+    void fetchReportFilterOptions()
+      .then((opts) => {
+        if (!cancelled) setFilterOptions(opts)
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
@@ -197,16 +206,25 @@ export function AmountsOwedReport() {
     const to = rangeEnd.toISOString().slice(0, 10)
     // scope "me" filters to the signed-in member server-side; without it in
     // the dep list (and in the request) the ME tab showed everyone.
+    setLoading(true)
+    setError(null)
     fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null,
       memberIds: [...selectedMemberIds],
       projectIds: [...selectedProjectIds],
-    }).then((data) => {
-      if (!cancelled) setGroups(data)
     })
+      .then((data) => {
+        if (!cancelled) setGroups(data)
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [rangeStart, rangeEnd, scope, memberId, selectedMemberIds, selectedProjectIds])
+  }, [rangeStart, rangeEnd, scope, memberId, selectedMemberIds, selectedProjectIds, reloadKey])
 
   function shiftRangeByDays(delta: number) {
     const s = new Date(rangeStart)
@@ -399,6 +417,11 @@ export function AmountsOwedReport() {
 
         {chartVisible ? <AmountPerDayChart groups={groups} /> : null}
 
+        {loading ? (
+          <ReportTableSkeleton rows={6} columns={4} />
+        ) : error ? (
+          <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+        ) : (
         <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] table-fixed">
@@ -470,6 +493,7 @@ export function AmountsOwedReport() {
             </table>
           </div>
         </div>
+        )}
 
         <ReportSendDialog open={sendDialogOpen} onOpenChange={setSendDialogOpen} />
         <ReportScheduleDialog
