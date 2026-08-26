@@ -34,7 +34,10 @@ type AddProjectDynamicFieldsProps = {
   onClientAdded?: (clientId: string) => void
 }
 
-function memberOptionsToSelect(options: ProjectFormOption[]) {
+/** Shared with the batch member-limits modal, so a member picker looks the
+ *  same (initials chip + label) whether it's on this per-project form or
+ *  applying across several projects at once. */
+export function memberOptionsToSelect(options: ProjectFormOption[]) {
   return options.map((m) => ({
     label: m.label,
     value: m.id,

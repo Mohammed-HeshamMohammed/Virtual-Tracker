@@ -9,36 +9,16 @@ import { ExpandCollapse } from "@/shared/ui/motion/expand-collapse"
 import { FormField } from "@/shared/ui/forms/form-field"
 import { SelectField } from "@/shared/ui/forms/select-field"
 import type { ProjectMemberLimitEntry } from "@/features/projects/api/project-details-api"
+// Pure derivations, factored out so the batch-apply API function can share
+// them without the API layer importing this "use client" component module.
+// Re-exported here so nothing that already imports them from this file breaks.
+import { derivedBasedOn, derivedLimitType, isHoursLimit } from "@/features/projects/utils/member-limit-rules"
+
+export { derivedBasedOn, derivedLimitType, isHoursLimit }
 
 export type MemberOwnLimit = { daily: number; weekly: number }
 
 const RESET_OPTIONS = ["Never", "Weekly", "Monthly"]
-
-/** "Hours limit" is denominated in time; the other two are money. The backend
- * converts them differently (see loadProjectMemberLimitRemainderSeconds), so
- * the field must not label an hours cap with a "$". */
-export function isHoursLimit(type: string): boolean {
-  return type.toLowerCase().includes("hour")
-}
-
-/**
- * A member limit only tightens the project's own budget, so it has to be
- * denominated the same way that budget is - an hours-based project budget
- * cannot be capped in dollars, and a cost-based one has to use the same
- * rate the budget itself is computed from. Both therefore come from the
- * Budget Limits tab rather than being picked per member.
- */
-export function derivedLimitType(budgetType: string): string {
-  return budgetType === "Hours based" ? "Hours limit" : "Total cost"
-}
-
-/** Cost-based budgets carry a rate; Hours based clears it (see the Budget
- * tab, which hides "Based on" entirely for hours). Falling back to Bill rate
- * keeps a cost row saveable if the budget somehow has none. */
-export function derivedBasedOn(budgetType: string, budgetBasedOn: string): string {
-  if (budgetType === "Hours based") return "Bill rate"
-  return budgetBasedOn.trim() || "Bill rate"
-}
 
 /** A row only reaches the server once it has the fields the API requires -
  * syncProjectMemberLimits silently drops anything short of this. Type and
