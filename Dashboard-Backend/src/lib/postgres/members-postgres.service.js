@@ -65,6 +65,10 @@ const WRITABLE_COLUMNS = [
   "agent_source",
   "privileged_role_owner_granted",
   "privileged_role_owner_granted_at",
+  // Drives per-member local-day attribution in the Activity feeds, so it has
+  // to be writable through the normal member-update path and not only via
+  // profile-settings.js's own raw UPDATE.
+  "timezone",
 ];
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);
@@ -149,48 +153,68 @@ export async function listMembersPg(options = {}) {
   return query("SELECT * FROM members ORDER BY date_added DESC LIMIT $1", [limit]);
 }
 
+// Every v_members_enriched column the members list actually needs. Explicit
+// rather than SELECT * so security_stamp (a session-invalidation token, never
+// read client-side) does not ride along to the browser.
+const MEMBER_LIST_COLUMNS = [
+  "id",
+  "firebase_uid",
+  "first_name",
+  "last_name",
+  "display_name",
+  "work_email",
+  "personal_email",
+  "status",
+  "avatar_url",
+  "avatar_color",
+  "date_added",
+  "role_id",
+  "role_name",
+  "hierarchy_level",
+  "is_management",
+  "pay_rate",
+  "pay_period",
+  "weekly_limit",
+  "daily_limit",
+  "teams",
+  "projects",
+].join(", ");
+
 /**
  * @param {{ viewer: any, limit?: number, visibleIds?: string[] | null }} options
- *   visibleIds - the caller's getVisibleMemberIds(...) result for
- *   non-management roles (Viewer/Client/Employee): null means "not computed
- *   / see everyone" (the super/mgmt branches below already cover their own
- *   scoping), an array is the exact set of member ids this viewer may see.
- *   Without this, every non-management role fell through to "every active
- *   member org-wide" - a Viewer or Client saw the whole org.
+ *   visibleIds - the caller's getVisibleMemberIds(...) result. null means
+ *   "unrestricted" (Owner/Super Admin/Admin); an array is the exact set of
+ *   member ids this viewer may see, and is authoritative for every other role
+ *   including Manager/Super Manager.
  */
 export async function listMembersEnrichedPg({ viewer, limit = 500, visibleIds = null }) {
   const safeLimit = Math.min(Math.max(limit, 1), 2000);
-  const isMgmt = viewer?.isManagement === true || (typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 50);
   const isSuper = typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 80;
 
-  if (isSuper) {
-    return query("SELECT * FROM v_members_enriched WHERE status != 'banned' ORDER BY date_added DESC LIMIT $1", [safeLimit]);
-  }
-  if (isMgmt && viewer?.memberId) {
+  // Owner/Super Admin/Admin see the whole org - getVisibleMemberIds returns
+  // null for them, meaning "unrestricted".
+  if (isSuper || visibleIds === null) {
     return query(
-      `SELECT * FROM v_members_enriched
-       WHERE (id IN (SELECT member_id FROM fn_get_subordinate_member_ids($1)) OR id = $1)
-         AND status != 'banned'
-       ORDER BY date_added DESC LIMIT $2`,
-      [viewer.memberId, safeLimit]
+      `SELECT ${MEMBER_LIST_COLUMNS} FROM v_members_enriched WHERE status != 'banned' ORDER BY date_added DESC LIMIT $1`,
+      [safeLimit],
     );
   }
-  if (Array.isArray(visibleIds)) {
-    if (visibleIds.length === 0) return [];
-    return query(
-      `SELECT id, first_name, last_name, display_name, work_email, status, role_name, avatar_url, avatar_color, date_added, role_id, teams, projects
-       FROM v_members_enriched
-       WHERE status = 'active' AND id = ANY($1::uuid[])
-       ORDER BY first_name LIMIT $2`,
-      [visibleIds, safeLimit]
-    );
-  }
+
+  // Everyone else is scoped to exactly the ids getVisibleMemberIds resolved.
+  // This deliberately does NOT re-derive scope in SQL: the management branch
+  // here used to run fn_get_subordinate_member_ids, a descendants-only subtree,
+  // while every other manager-scoped surface (the members tree, canManageMember,
+  // scoped-members, reports) goes through getManagerPeoplePageVisibleMemberIds -
+  // which also includes read-only upline, peer org-leadership, and members an
+  // Owner/Admin attached outside the manager's subtree. A manager's People page
+  // therefore disagreed with their own People tree about who exists. One
+  // resolver, one answer.
+  if (!Array.isArray(visibleIds) || visibleIds.length === 0) return [];
   return query(
-    `SELECT id, first_name, last_name, display_name, work_email, status, role_name, avatar_url, avatar_color, date_added, role_id, teams, projects
-     FROM v_members_enriched
-     WHERE status = 'active' AND id = $1
-     ORDER BY first_name LIMIT $2`,
-    [viewer?.memberId ?? null, safeLimit]
+    `SELECT ${MEMBER_LIST_COLUMNS} FROM v_members_enriched
+     WHERE id = ANY($1::uuid[]) AND status != 'banned'
+     ORDER BY date_added DESC LIMIT $2`,
+    [visibleIds, safeLimit]
   );
 }
 

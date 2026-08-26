@@ -14,19 +14,40 @@ function toDayString(value) {
  * Per-member per-day tracked seconds + current pay rate - backs Amounts Owed,
  * Daily Totals, and Payments (all the same "hours x rate" shape, grouped
  * differently on the frontend).
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
+ * `projectIds` narrows to time tracked against tasks in those projects. That
+ * has to come from the per-task rollup rather than daily_member_active_seconds,
+ * which carries no project dimension at all - so a project-filtered total
+ * counts task-attributed time only, and excludes time tracked with no task.
+ * Unfiltered (the default) still reads the plain daily rollup, which includes
+ * everything.
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
  */
-export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay }) {
-  const rows = await query(
-    `SELECT d.member_id, d.day, d.active_seconds,
-            pr.rate AS rate, pr.type AS rate_type, pr.currency AS currency
-     FROM daily_member_active_seconds d
-     LEFT JOIN pay_rates pr ON pr.member_id = d.member_id
-     WHERE d.day >= $1 AND d.day <= $2
-       AND ($3::uuid[] IS NULL OR d.member_id = ANY($3::uuid[]))
-     ORDER BY d.day ASC`,
-    [fromDay, toDay, memberIds],
-  );
+export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
+  const hasProjectFilter = Array.isArray(projectIds) && projectIds.length > 0;
+  const rows = hasProjectFilter
+    ? await query(
+        `SELECT dt.member_id, dt.day, SUM(dt.active_seconds) AS active_seconds,
+                MIN(pr.rate) AS rate, MIN(pr.type) AS rate_type, MIN(pr.currency) AS currency
+         FROM daily_member_task_active_seconds dt
+         JOIN tasks t ON t.id = dt.task_id
+         LEFT JOIN pay_rates pr ON pr.member_id = dt.member_id
+         WHERE dt.day >= $1 AND dt.day <= $2
+           AND ($3::uuid[] IS NULL OR dt.member_id = ANY($3::uuid[]))
+           AND t.project_id = ANY($4::uuid[])
+         GROUP BY dt.member_id, dt.day
+         ORDER BY dt.day ASC`,
+        [fromDay, toDay, memberIds, projectIds],
+      )
+    : await query(
+        `SELECT d.member_id, d.day, d.active_seconds,
+                pr.rate AS rate, pr.type AS rate_type, pr.currency AS currency
+         FROM daily_member_active_seconds d
+         LEFT JOIN pay_rates pr ON pr.member_id = d.member_id
+         WHERE d.day >= $1 AND d.day <= $2
+           AND ($3::uuid[] IS NULL OR d.member_id = ANY($3::uuid[]))
+         ORDER BY d.day ASC`,
+        [fromDay, toDay, memberIds],
+      );
   return rows.map((r) => ({
     memberId: r.member_id,
     day: toDayString(r.day),

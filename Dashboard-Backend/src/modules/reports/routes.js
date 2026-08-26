@@ -29,6 +29,7 @@ import {
 } from "../../lib/postgres/projects-postgres.service.js";
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
 import { canViewCompensation } from "../../http/field-policy.js";
+import { getViewerProjectIds } from "../../http/project-access.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
@@ -68,6 +69,61 @@ async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
     throw err;
   }
   return [requestedMemberId];
+}
+
+/**
+ * Multi-select variant for report filter panels. Every requested id is checked
+ * against the viewer's visible set, so a client cannot widen its own scope by
+ * naming members it isn't allowed to see.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {string[]} requestedMemberIds
+ */
+async function resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds) {
+  const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+  if (!requestedMemberIds || requestedMemberIds.length === 0) return visibleIds;
+
+  if (visibleIds !== null) {
+    const visibleSet = new Set(visibleIds);
+    const denied = requestedMemberIds.find((id) => !visibleSet.has(id));
+    if (denied) {
+      const err = new Error("Not allowed to view this member's report.");
+      err.status = 403;
+      throw err;
+    }
+  }
+  return requestedMemberIds;
+}
+
+/** Comma-separated uuid list from a query param; [] when absent/empty. */
+function parseUuidListParam(value) {
+  if (typeof value !== "string" || !value.trim()) return [];
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => UUID_PARAM_RE.test(part));
+}
+
+const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Narrow a requested project filter to the ones the viewer may actually see,
+ * so the filter can never be used to surface time on an out-of-scope project.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {string[]} requestedProjectIds
+ * @returns {Promise<string[] | null>} null = no project filter
+ */
+async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
+  if (!requestedProjectIds || requestedProjectIds.length === 0) return null;
+  const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
+  if (allowed === null) return requestedProjectIds;
+  const allowedSet = new Set(allowed);
+  const permitted = requestedProjectIds.filter((id) => allowedSet.has(id));
+  // Every requested project was out of scope - return an impossible filter
+  // rather than silently falling back to "no filter" (which would widen the
+  // result to everything).
+  return permitted.length > 0 ? permitted : ["00000000-0000-0000-0000-000000000000"];
 }
 
 /**
@@ -154,6 +210,38 @@ async function buildReportAttachment(payload, fileType, rangeLbl) {
 export async function routeReports(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/reports/")) return false;
+
+  // Options for the report filter panels. Scoped to what the viewer may see,
+  // so the panel can only ever offer members/projects they're allowed to
+  // filter by. Replaces the hardcoded name lists the panels used to render.
+  if (pn === "/api/reports/filter-options" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const [visibleMemberIds, allowedProjectIds] = await Promise.all([
+        getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName),
+        getViewerProjectIds(getDb(), viewer.memberId, viewer.roleName),
+      ]);
+
+      const memberMeta = await buildMemberMetaMap(getDb(), visibleMemberIds);
+      const members = [...memberMeta.entries()]
+        .map(([id, meta]) => ({ id, name: meta.name, initials: meta.initials }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const projectRows = await listProjectsPg({ limit: 500 });
+      const allowedProjectSet = allowedProjectIds === null ? null : new Set(allowedProjectIds);
+      const projects = projectRows
+        .filter((row) => allowedProjectSet === null || allowedProjectSet.has(String(row.id)))
+        .map((row) => ({ id: String(row.id), name: String(row.name ?? "Untitled project") }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      sendJson(res, origin, 200, { success: true, data: { members, projects } });
+    } catch (e) {
+      logSafeError("[reports/filter-options]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load filter options." });
+    }
+    return true;
+  }
 
   if (pn === "/api/reports/time-and-activity" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
@@ -344,8 +432,19 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const memberIds = await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
-      const rows = await getMemberDailyAmountRowsPg({ memberIds, fromDay: from, toDay: to });
+      // memberId (single) is kept for existing callers; memberIds (CSV) backs
+      // the report's multi-select filter panel. Both are checked against the
+      // viewer's visible set before they reach the query.
+      const requestedMemberIds = parseUuidListParam(url.searchParams.get("memberIds"));
+      const memberIds = requestedMemberIds.length
+        ? await resolveMemberIdsMultiFilter(getDb(), viewer, requestedMemberIds)
+        : await resolveMemberIdsFilter(getDb(), viewer, url.searchParams.get("memberId") || null);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const rows = await getMemberDailyAmountRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
 
       const byDay = new Map();

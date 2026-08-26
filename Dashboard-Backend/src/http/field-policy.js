@@ -10,6 +10,10 @@ const COMPENSATION_FIELDS = [
   "payPeriod",
   "weekly_limit",
   "weeklyLimit",
+  // Same class as weekly_limit and returned alongside it by
+  // v_members_enriched - it was simply missing from this list.
+  "daily_limit",
+  "dailyLimit",
   "limits",
   "rate",
   "currency",

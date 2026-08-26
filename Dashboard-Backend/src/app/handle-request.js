@@ -23,6 +23,7 @@ import { routeProjects } from "../modules/projects/routes.js";
 import { routeClients } from "../modules/clients/routes.js";
 import { routeMonitor } from "../modules/monitor/routes.js";
 import { routeTasks } from "../modules/tasks/routes.js";
+import { routeTimesheets } from "../modules/timesheets/routes.js";
 import { routeReports } from "../modules/reports/routes.js";
 import { routeNotifications } from "../modules/notifications/routes.js";
 import { routeDashboard } from "../modules/dashboard/routes.js";
@@ -202,6 +203,7 @@ export async function handleRequest(req, res) {
     if (await routeBootstrap(req, res, url, db, origin)) return;
     if (await routeClients(req, res, url, db, origin)) return;
     if (await routeTasks(req, res, url, db, origin)) return;
+    if (await routeTimesheets(req, res, url, db, origin)) return;
     if (await routeReports(req, res, url, origin)) return;
     if (await routeNotifications(req, res, url, origin)) return;
     if (await routePresenceEvents(req, res, url, origin)) return;

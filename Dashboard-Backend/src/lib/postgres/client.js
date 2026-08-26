@@ -16,10 +16,15 @@ export function getPostgresPool() {
     // url-logs/rollups) resolved in whatever the server's default session
     // timezone happened to be - never set explicitly, so implicit and
     // undocumented rather than genuinely wrong. Pinning it to UTC on every new
-    // physical connection makes day-boundary math deterministic. This does not
-    // solve per-member local-day attribution (no member timezone is stored
-    // anywhere in this schema) - that needs a real member.timezone field and
-    // is a separate, larger product gap, not something to invent here.
+    // physical connection makes day-boundary math deterministic.
+    //
+    // UTC is the storage/transport baseline, NOT how tracked activity is
+    // attributed to a day: the Activity feeds bucket each row by the tracked
+    // member's own timezone (members.timezone, joined per row - see
+    // activity-events-postgres.service.js's localDay()), so a capture near a
+    // member's local midnight lands on the day they actually worked it.
+    // Anything else added here that buckets by day should do the same rather
+    // than take a bare `::date` off this UTC session.
     pool.on("connect", (client) => {
       client.query("SET TIME ZONE 'UTC'").catch(() => {});
     });
