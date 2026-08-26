@@ -18,8 +18,3 @@ export const EMPTY_APPROVAL_MEMBERS: {
   avatar: string
   color: string
 }[] = []
-
-export const EMPTY_TIMESHEET_PREVIEW: { week: { day: string; hours: string }[]; total: string } = {
-  week: [],
-  total: "0:00",
-}

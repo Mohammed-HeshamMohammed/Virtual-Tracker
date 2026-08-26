@@ -204,7 +204,22 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
 // ==========================================
 
 const DEFAULT_ORG_LABEL = "TVC"
-const DEFAULT_TIMEZONE_LABEL = "America - Denver"
+
+/**
+ * The timezone a report's day boundaries are read in, shown in its header.
+ * This used to be the literal string "America - Denver" for every viewer,
+ * which is actively misleading on a report whose rows are bucketed by day -
+ * a viewer in another zone was told their days were cut in Denver. Resolved
+ * from the browser instead, so the label matches the dates on screen.
+ */
+export function resolveReportTimezoneLabel(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return zone ? zone.replace(/_/g, " ") : "UTC"
+  } catch {
+    return "UTC"
+  }
+}
 
 const REPORT_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "date", label: "Date" },
@@ -214,7 +229,7 @@ const REPORT_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
 ]
 
 export const STANDARD_REPORT_ORG_LABEL = DEFAULT_ORG_LABEL
-export const STANDARD_REPORT_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
+export const STANDARD_REPORT_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const STANDARD_REPORT_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
 
 // ==========================================
@@ -248,22 +263,20 @@ export const REPORT_EMAIL_DEFAULT_MESSAGE =
 // 5. Amounts Owed Report
 // ==========================================
 
-export const AMOUNTS_OWED_PROJECT_OPTIONS = [
-  "All projects",
-  "Amina with Amplified",
-  "Bana Properties",
-  "Frontend Architecture",
-  "API Development",
-  "Mobile App",
+/** Columns the Amounts Owed / Daily Totals table can hide. "Member" is always
+ *  shown - a row with no member is meaningless. These are the columns the
+ *  report genuinely renders; the previous list offered member profile fields
+ *  (email, job title, tax info, ...) that neither the table nor the endpoint
+ *  has. */
+export type AmountsOwedColumnKey = "rate" | "hours" | "amount"
+
+export const AMOUNTS_OWED_TOGGLEABLE_COLUMNS: { key: AmountsOwedColumnKey; label: string }[] = [
+  { key: "rate", label: "Current rate" },
+  { key: "hours", label: "Total hours" },
+  { key: "amount", label: "Amount" },
 ]
 
-export const AMOUNTS_OWED_MEMBER_OPTIONS: { id: string; name: string; initials: string }[] = [
-  { id: "1", name: "Bella Jeffery", initials: "BJ" },
-  { id: "2", name: "Joe Abraham", initials: "JA" },
-  { id: "3", name: "Mahmoud Emad", initials: "ME" },
-  { id: "4", name: "mazen salah", initials: "MS" },
-  { id: "5", name: "Amina Moner", initials: "AM" },
-]
+export const AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS: AmountsOwedColumnKey[] = ["rate", "hours", "amount"]
 
 export interface AmountsOwedMemberLine {
   name: string
@@ -279,56 +292,12 @@ export interface AmountsOwedDayGroup {
   members: AmountsOwedMemberLine[]
 }
 
-export const AMOUNTS_OWED_ABOUT_MEMBER_FIELDS: { key: string; label: string; defaultVisible: boolean }[] = [
-  { key: "email", label: "Email", defaultVisible: true },
-  { key: "job_title", label: "Job title", defaultVisible: true },
-  { key: "job_type", label: "Job type", defaultVisible: true },
-  { key: "employee_id", label: "Employee ID", defaultVisible: true },
-  { key: "tax_info", label: "Tax info", defaultVisible: true },
-  { key: "location", label: "Location", defaultVisible: true },
-  { key: "member_timezone", label: "Member's timezone", defaultVisible: true },
-  { key: "date_added", label: "Date added", defaultVisible: true },
-  { key: "date_removed", label: "Date removed", defaultVisible: false },
-]
-
-export const AMOUNTS_OWED_CHART_LABELS = [
-  "Mar 10",
-  "Mar 11",
-  "Mar 12",
-  "Mar 13",
-  "Mar 14",
-  "Mar 15",
-  "Mar 16",
-  "Mar 17",
-  "Mar 18",
-  "Mar 19",
-  "Mar 20",
-  "Mar 21",
-  "Mar 22",
-  "Mar 23",
-  "Mar 24",
-  "Mar 25",
-  "Mar 26",
-  "Mar 27",
-  "Mar 28",
-  "Mar 29",
-  "Mar 30",
-  "Mar 31",
-  "Apr 01",
-  "Apr 02",
-  "Apr 03",
-  "Apr 04",
-  "Apr 05",
-  "Apr 06",
-  "Apr 07",
-]
-
 // ==========================================
 // 6. Audit Log Report
 // ==========================================
 
 export const AUDIT_LOG_ORG_LABEL = DEFAULT_ORG_LABEL
-export const AUDIT_LOG_TIMEZONE_LABEL = "America/Denver"
+export const AUDIT_LOG_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 
 // ==========================================
 // 7. Project Budgets Report
@@ -372,21 +341,6 @@ export const METRIC_OPTIONS: { value: string; label: string }[] = [
   { value: "activity", label: "Activity %" },
   { value: "total_spent", label: "Total spent" },
 ]
-
-export const MEMBER_ROSTER: { name: string; avatar: string }[] = []
-
-export const DEMO_TRACKED_HOURS = [] as number[]
-
-export const DEMO_ACTIVITY_PCT = [] as number[]
-export const DEMO_MEMBER_COUNTS = [] as number[]
-export const AVATAR_COLORS: Record<string, string> = {
-  SJ: "#6366f1",
-  MC: "#22c55e",
-  ED: "#f59e0b",
-  AT: "#ec4899",
-  LW: "#14b8a6",
-  JL: "#8b5cf6",
-}
 
 export const CALENDAR_MONTHS = [
   "January",
@@ -532,13 +486,12 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
-
 // ==========================================
 // 9. Work Sessions Report
 // ==========================================
 
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL
-export const WORK_SESSIONS_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
+export const WORK_SESSIONS_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 // No "Client": /api/reports/work-sessions returns no client for a session, so
 // grouping by it collapsed every row into one blank-labelled group.
 export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(

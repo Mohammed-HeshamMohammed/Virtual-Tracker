@@ -54,7 +54,8 @@ export interface TimeEntry {
   date: string
   startTime: string
   endTime: string
-  duration: number // in minutes
+  /** Seconds. Matches the backend column and every reader of it. */
+  duration: number
   description: string
   billable: boolean
   status: "draft" | "submitted" | "approved" | "rejected"
@@ -221,8 +222,69 @@ async function patchTimesheet(id: string, body: Record<string, unknown>): Promis
   return toTimesheet(json.data)
 }
 
-export function submitTimesheet(id: string): Promise<Timesheet> {
-  return patchTimesheet(id, { status: "submitted", submitted_at: new Date().toISOString() })
+export interface TimesheetPeriodSummary {
+  memberId: string
+  periodStart: string
+  periodEnd: string
+  totalHours: number
+  billableHours: number
+  timesheet: {
+    id: string
+    status: "draft" | "submitted" | "approved" | "rejected"
+    submitted_at: string | null
+    total_hours: number | null
+    billable_hours: number | null
+  } | null
+}
+
+/** Hours the member has actually tracked in a period, plus any existing
+ *  timesheet row for it. Server-computed - never derived on the client. */
+export async function fetchTimesheetPeriodSummary(
+  periodStart: string,
+  periodEnd: string,
+  memberId?: string,
+): Promise<TimesheetPeriodSummary | null> {
+  const params = new URLSearchParams({ from: periodStart, to: periodEnd })
+  if (memberId) params.set("memberId", memberId)
+  const res = await apiFetch(apiPath(`/api/timesheets/period-summary?${params.toString()}`))
+  if (!res.ok) return null
+  const json = (await res.json()) as ApiEnvelope<TimesheetPeriodSummary>
+  return json.success ? (json.data ?? null) : null
+}
+
+/** Persist the Approvals "Set it up" settings onto each member's pay_rates
+ *  row (pay_period + require_timesheet_approval). Management-gated and
+ *  scope-checked server-side. */
+export async function saveTimesheetApprovalSetup(input: {
+  memberIds: string[]
+  payPeriod: string
+  autoSetup: boolean
+}): Promise<string[]> {
+  const res = await apiFetch(apiPath("/api/timesheets/approval-setup"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  })
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<{ updated: string[] }> | null
+  if (!res.ok || !json?.success) {
+    throw new Error(json?.error || "Failed to save timesheet approval settings")
+  }
+  return json.data?.updated ?? []
+}
+
+/** Submit the signed-in member's own timesheet for a pay period. Hours are
+ *  computed server-side from tracked time, so none are sent from here. */
+export async function submitTimesheetPeriod(periodStart: string, periodEnd: string): Promise<Timesheet> {
+  const res = await apiFetch(apiPath("/api/timesheets/submit"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ periodStart, periodEnd }),
+  })
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<unknown> | null
+  if (!res.ok || !json?.success) {
+    throw new Error(json?.error || "Failed to submit timesheet")
+  }
+  return toTimesheet(json.data)
 }
 
 export function approveTimesheet(id: string, approvedBy: string): Promise<Timesheet> {
