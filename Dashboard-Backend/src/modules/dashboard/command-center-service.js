@@ -10,6 +10,7 @@ import { fetchPgScreenshots } from "../../lib/postgres/activity-events-postgres.
 import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import {
   getDailyActivityTotalsPg,
+  getMemberActivitySecondsPg,
   getMemberWeeklyCapacityPg,
   getProjectActivityMetricsPg,
 } from "../../lib/postgres/projects-postgres.service.js";
@@ -99,13 +100,19 @@ function buildWeeklyTrend(tasks, projectId, dailyTotals) {
  * tickets read as 100% utilised regardless of whether anyone tracked a minute,
  * and the 3 was arbitrary. Capacity comes from the member's configured weekly
  * limit, falling back to their working-days count at 8h/day.
+ *
+ * `memberSeconds` is each member's own tracked seconds (see
+ * getMemberActivitySecondsPg) and covers everyone staffed on the projects in
+ * scope, including those at zero hours - so the breakdown is a real per-member
+ * roll-up rather than the project total divided by head count.
  */
-function buildUtilization(memberSeconds, capacityByMember) {
+function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
   let optimal = 0;
   let over = 0;
   let under = 0;
   let pctSum = 0;
   let count = 0;
+  const members = [];
 
   for (const [memberId, seconds] of memberSeconds.entries()) {
     const capacity = capacityByMember.get(memberId) ?? 0;
@@ -114,11 +121,30 @@ function buildUtilization(memberSeconds, capacityByMember) {
     const pct = Math.round((seconds / capacity) * 100);
     pctSum += Math.min(150, pct);
     // Under 60% of capacity is slack, over 100% is overloaded.
-    if (pct > 100) over += 1;
-    else if (pct >= 60) optimal += 1;
-    else under += 1;
+    let load = "under";
+    if (pct > 100) {
+      over += 1;
+      load = "over";
+    } else if (pct >= 60) {
+      optimal += 1;
+      load = "optimal";
+    } else {
+      under += 1;
+    }
+
+    const meta = memberMeta?.get(memberId) || { name: "Team member", initials: "??" };
+    members.push({
+      id: memberId,
+      name: meta.name,
+      initials: meta.initials,
+      percent: pct,
+      hours: Math.round((seconds / 3600) * 10) / 10,
+      capacityHours: Math.round((capacity / 3600) * 10) / 10,
+      load,
+    });
   }
 
+  members.sort((a, b) => b.percent - a.percent);
   const utilizationPercent = count ? Math.round(pctSum / count) : 0;
   // The gauge arc is 251.2 long; clamp the visual at 100% even when someone is
   // over capacity, so the ring cannot wrap past full.
@@ -127,6 +153,9 @@ function buildUtilization(memberSeconds, capacityByMember) {
     utilizationPercent,
     utilizationOffset,
     utilizationMembers: { optimal, over, under },
+    // Named per-member rows behind the counts, so the panel can say who is
+    // over or under rather than only how many people are.
+    utilizationBreakdown: members.slice(0, 8),
   };
 }
 
@@ -142,10 +171,12 @@ function buildUtilization(memberSeconds, capacityByMember) {
  * A project with no tasks reports 0%, not the invented 85/45/15 this used to
  * return based on its health label.
  */
-function buildHealthMilestones(tasks, projectId, fallbackName, fallbackHealth) {
+function buildHealthMilestones(tasks, projectId, projectRow) {
   const scoped = tasks.filter((task) => task.projectId === projectId);
   if (!scoped.length) {
-    return [{ name: fallbackName, percent: 0, health: fallbackHealth, empty: true }];
+    // No tasks to measure progress with - report what the project does have:
+    // how much of its budget is spent, and whether that reads as on track.
+    return [projectProgressRow(projectRow)];
   }
 
   const rank = { blocked: 0, in_progress: 1, in_review: 2, todo: 3, done: 4 };
@@ -161,8 +192,48 @@ function buildHealthMilestones(tasks, projectId, fallbackName, fallbackHealth) {
           ? Math.min(100, Math.round(task.progressPercent))
           : 0;
     const health = task.status === "blocked" ? "stalled" : task.status === "done" || task.status === "in_review" ? "on_track" : "at_risk";
-    return { name: task.title, percent, health };
+    return { name: task.title, percent, health, metric: "progress" };
   });
+}
+
+/**
+ * One health bar for a whole project.
+ *
+ * Task completion is the preferred measure; a project with no tasks falls back
+ * to budget burn, which is a real number the project does have. Both used to
+ * render as an empty bar labelled "NO TASKS", so the panel showed nothing for
+ * exactly the projects someone would open it to check on.
+ */
+function projectProgressRow(projectRow) {
+  const total = projectRow?.total ?? 0;
+  if (total > 0) {
+    return {
+      name: projectRow?.name || "Project",
+      percent: Math.round(((projectRow?.done ?? 0) / total) * 100),
+      health: projectRow?.health || "on_track",
+      metric: "progress",
+    };
+  }
+
+  const budgetTotal = projectRow?.budgetTotal ?? 0;
+  if (budgetTotal > 0) {
+    const percent = Math.round(((projectRow?.budgetSpent ?? 0) / budgetTotal) * 100);
+    return {
+      name: projectRow?.name || "Project",
+      // Over budget is a real state worth seeing, so the bar clamps at 100 but
+      // the status does not.
+      percent: Math.min(100, percent),
+      health: percent > 100 ? "stalled" : percent >= 90 ? "at_risk" : "on_track",
+      metric: "budget",
+    };
+  }
+
+  return {
+    name: projectRow?.name || "Project",
+    percent: 0,
+    health: projectRow?.health || "on_track",
+    metric: "none",
+  };
 }
 
 /**
@@ -354,12 +425,23 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   // the hardcoded "+12%" the card used to display for every org, forever.
   const prevFrom = shiftDay(weekFrom, -7);
   const prevTo = shiftDay(weekTo, -7);
-  const [projectMetrics, dailyTotalsAll, capacityByMember, prevMetrics] = await Promise.all([
+  const [projectMetrics, dailyTotalsAll, capacityByMember, prevMetrics, memberSecondsByProject] = await Promise.all([
     getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
     getDailyActivityTotalsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
     getMemberWeeklyCapacityPg(null),
     getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: prevFrom, toDay: prevTo }),
+    getMemberActivitySecondsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
   ]);
+
+  // Names for everyone staffed on an in-scope project plus anyone who tracked
+  // time against one, so the utilisation breakdown can name them.
+  const utilizationMemberIds = new Set();
+  for (const row of projectRows) {
+    for (const memberId of memberIdsByProject.get(row.id) ?? []) utilizationMemberIds.add(memberId);
+    for (const memberId of memberSecondsByProject.get(row.id)?.keys() ?? []) utilizationMemberIds.add(memberId);
+  }
+  const utilizationMeta =
+    utilizationMemberIds.size > 0 ? await buildMemberMetaMap(db, [...utilizationMemberIds]) : new Map();
 
   /** Previous-week active seconds for a project scope. */
   function prevActiveSecondsFor(projectId) {
@@ -369,21 +451,22 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return total;
   }
 
-  /** Seconds worked per member across a project scope, for utilisation. */
+  /**
+   * Seconds each member worked across a project scope, for utilisation.
+   *
+   * Everyone staffed on the projects in scope is seeded at zero first: a member
+   * who tracked nothing this week is underutilised, not absent from the gauge,
+   * which is what dropping them did to both the average and the counts.
+   */
   function memberSecondsFor(projectId) {
     const perMember = new Map();
-    const entries = projectId
-      ? [[projectId, projectMetrics.get(projectId)]]
-      : [...projectMetrics.entries()];
-    for (const [, metrics] of entries) {
-      if (!metrics) continue;
-      // Session rows carry the member set but not per-member seconds; splitting
-      // the project total evenly across its trackers is the honest
-      // approximation available without a second per-member roll-up, and the
-      // gauge is a team-level indicator rather than a payroll figure.
-      const share = metrics.memberIds.size > 0 ? metrics.activeSeconds / metrics.memberIds.size : 0;
-      for (const memberId of metrics.memberIds) {
-        perMember.set(memberId, (perMember.get(memberId) ?? 0) + share);
+    const scopeIds = projectId ? [projectId] : projectRows.map((row) => row.id);
+    for (const pid of scopeIds) {
+      for (const memberId of memberIdsByProject.get(pid) ?? []) {
+        if (!perMember.has(memberId)) perMember.set(memberId, 0);
+      }
+      for (const [memberId, seconds] of memberSecondsByProject.get(pid) ?? []) {
+        perMember.set(memberId, (perMember.get(memberId) ?? 0) + seconds);
       }
     }
     return perMember;
@@ -426,10 +509,13 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       person: meta.name,
       avatar: meta.initials,
       action: "captured a screenshot",
-      project: "Active session",
+      project: str(d, "project_name") || "Active session",
       time: relativeTime(captured || new Date().toISOString()),
       activityBadge: `${Math.round(d.activity_level ?? 0)}% Activity`,
       type: "screenshot",
+      // The card renders the capture itself; the image bytes are fetched
+      // separately through the auth-gated screenshot endpoint.
+      screenshotId: String(d.id ?? ""),
     };
   });
 
@@ -458,7 +544,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     const weeklyTrend = buildWeeklyTrend(scopedTasks, projectId, dailyTotals);
     const activeSeries = weeklyTrend.map((day) => day.active);
     const { chartPath, chartFill } = buildTrendPaths(activeSeries);
-    const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember);
+    const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember, utilizationMeta);
     const metrics = metricsFor(projectId);
 
     const aggregateRow = projectId
@@ -477,21 +563,11 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
         };
 
     const health = projectId
-      ? buildHealthMilestones(
-          scopedTasks,
-          projectId,
-          aggregateRow?.name || "Project",
-          aggregateRow?.health || "on_track",
-        )
-      : projectRows.slice(0, 4).map((row) => ({
-          name: row.name,
-          percent: row.total > 0 ? Math.round((row.done / row.total) * 100) : 0,
-          health: row.health,
-          // A project with no tasks has no progress to report - without this
-          // it rendered "ON TRACK" against an empty bar, which reads as a
-          // measurement rather than an absence of one.
-          empty: row.total === 0,
-        }));
+      ? buildHealthMilestones(scopedTasks, projectId, aggregateRow)
+      : // Project Health across the scope: task completion where there are
+        // tasks, budget burn where there are not, each labelled with which of
+        // the two it is and whether the project reads as on track.
+        projectRows.slice(0, 4).map((row) => projectProgressRow(row));
 
     return {
       id: projectId ?? "all",
