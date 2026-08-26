@@ -981,3 +981,45 @@ export async function getMemberWeeklyCapacityPg(memberIds = null) {
   }
   return byMember;
 }
+
+/**
+ * Active seconds per member per project for a date window.
+ *
+ * The Command Center's utilisation gauge used to split a project's total
+ * evenly across everyone who tracked on it, because the project roll-up only
+ * carried the member set and not per-member seconds. This is that missing
+ * roll-up, so a member's utilisation is their own hours against their own
+ * capacity rather than a team average wearing their name.
+ * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
+ * @returns {Promise<Map<string, Map<string, number>>>} projectId -> memberId -> active seconds
+ */
+export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT s.project_id, s.member_id,
+              s.active_seconds AS active_seconds,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       UNION ALL
+       SELECT te.project_id, te.member_id, te.duration, te.date
+       FROM time_entries te
+       WHERE te.status <> 'rejected'
+     )
+     SELECT project_id, member_id, SUM(active_seconds) AS active_seconds
+     FROM worked
+     WHERE project_id IS NOT NULL AND member_id IS NOT NULL
+       AND day >= $1::date AND day <= $2::date
+       AND ($3::uuid[] IS NULL OR project_id = ANY($3::uuid[]))
+     GROUP BY project_id, member_id`,
+    [fromDay, toDay, projectIds],
+  );
+
+  const byProject = new Map();
+  for (const row of rows) {
+    const projectId = String(row.project_id);
+    if (!byProject.has(projectId)) byProject.set(projectId, new Map());
+    byProject.get(projectId).set(String(row.member_id), Math.max(0, Number(row.active_seconds) || 0));
+  }
+  return byProject;
+}
