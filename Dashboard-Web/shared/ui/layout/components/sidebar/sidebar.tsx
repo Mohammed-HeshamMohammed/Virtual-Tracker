@@ -14,7 +14,13 @@ import { useAuth } from "@/shared/providers/app"
 import { NAV_SECTIONS, type NavSection, type NavSubItem } from "@/shared/ui/layout/config/nav-sections"
 import { SIDEBAR_THEME_DARK as dark, SIDEBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { prefetchChunkForPage } from "@/app"
-import { allowedNavSectionIds, canAccessAllSidebarTabs, canAccessReviewCenter, isReadOnlyRole } from "@/features/auth"
+import {
+  allowedNavSectionIds,
+  canAccessAllSidebarTabs,
+  canAccessReviewCenter,
+  clientHiddenPageIds,
+  isReadOnlyRole,
+} from "@/features/auth"
 import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SidebarUserCard } from "@/shared/ui/layout/components/sidebar/sidebar-user-card"
@@ -82,7 +88,17 @@ export function Sidebar({
         })
       }
 
-      if (!isClient) {
+      if (isClient) {
+        const hidden = clientHiddenPageIds()
+        sections = sections.map((s: NavSection) => ({
+          ...s,
+          pages: s.pages?.filter((p: NavSubItem) => !hidden.has(p.id)),
+          subsections: s.subsections?.map((sub) => ({
+            ...sub,
+            items: sub.items.filter((item) => !hidden.has(item.id)),
+          })),
+        }))
+      } else {
         sections = sections.map((s: NavSection) => {
           if (s.id === "dashboard") {
             return {

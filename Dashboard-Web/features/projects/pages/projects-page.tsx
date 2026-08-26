@@ -10,7 +10,7 @@ import {
   type EnrichedProjectListContext,
 } from "@/infrastructure/api"
 import { useAuth } from "@/shared/providers/app"
-import { normalizeMemberRole, canManageProjects } from "@/features/auth"
+import { normalizeMemberRole, canManageProjects, SERVER_SCOPED_PROJECT_ROLES } from "@/features/auth"
 import { usePageSearch } from "@/shared/ui/layout"
 import { useTheme } from "@/shared/providers/app"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
@@ -184,8 +184,11 @@ export function ProjectsPage() {
   }
 
   const projectList = useMemo(() => {
-    const privilegedRoles = new Set(["owner", "superadmin", "admin"])
-    if (privilegedRoles.has(normalizedRole)) return data
+    // A client has no project_members row - they are attached through their
+    // client record - so this membership filter emptied their list even
+    // though the server had already scoped the response to exactly their
+    // projects. Roles whose scope the server resolves are passed through.
+    if (SERVER_SCOPED_PROJECT_ROLES.has(normalizedRole)) return data
     if (!currentMemberId) return data
     return data.filter((p: Project) => p.memberIds.includes(currentMemberId))
   }, [data, normalizedRole, currentMemberId])

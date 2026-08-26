@@ -291,6 +291,13 @@ const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "sett
  * projects and refuses their writes unless the project has client_can_manage
  * turned on.
  */
+/**
+ * Pages inside a client's sections that are still not theirs. Time off is
+ * staff leave - a client has no policy, no balance and nobody to approve
+ * them, so the request form would only ever produce a row nobody can action.
+ */
+const CLIENT_EXCLUDED_PAGE_IDS = new Set(["calendar-timeoff"])
+
 const CLIENT_SECTION_IDS = new Set([
   "dashboard",
   "timesheets",
@@ -313,6 +320,20 @@ export function isReadOnlyRole(role: string): boolean {
  * the global search each used to carry their own copy of this list, so a
  * client could reach a page from one of them that the others did not show.
  */
+/**
+ * Roles whose project list the server already resolves, so a page must not
+ * narrow it again client-side by looking for the viewer in project_members.
+ * Org admins are there because they are rarely members of anything; a client
+ * is there because they are attached through their client record and have no
+ * membership row at all.
+ */
+/** Pages a client's sections list but that the client may not open. */
+export function clientHiddenPageIds(): Set<string> {
+  return new Set(CLIENT_EXCLUDED_PAGE_IDS)
+}
+
+export const SERVER_SCOPED_PROJECT_ROLES = new Set(["owner", "superadmin", "admin", "client"])
+
 export function allowedNavSectionIds(role: string): Set<string> {
   if (canAccessAllSidebarTabs(role)) return new Set(NAV_SECTIONS.map((section) => section.id))
   if (normalizeMemberRole(role) === "client") return new Set(CLIENT_SECTION_IDS)
@@ -345,6 +366,7 @@ function getClientPageIds(): Set<string> {
     // Every page of those sections, dashboard included - a client's dashboard
     // is the same one, already scoped to their projects by the server.
     clientPageIdsCache = collectPageIdsForSections(CLIENT_SECTION_IDS, false)
+    for (const id of CLIENT_EXCLUDED_PAGE_IDS) clientPageIdsCache.delete(id)
     clientPageIdsCache.add("profile")
   }
   return new Set(clientPageIdsCache)
