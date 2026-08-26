@@ -64,6 +64,50 @@ function actionBadgeClass(kind: AuditLogRow["actionKind"]): string {
   }
 }
 
+/** One checkbox group in the audit Filters panel. */
+function AuditFacet({
+  title,
+  values,
+  selected,
+  onToggle,
+}: {
+  title: string
+  values: string[]
+  selected: Set<string>
+  onToggle: (value: string) => void
+}) {
+  if (values.length === 0) return null
+  return (
+    <div>
+      <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">{title}</div>
+      <div className="space-y-0.5">
+        {values.map((value) => {
+          const on = selected.has(value)
+          return (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onToggle(value)}
+              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50"
+            >
+              <span
+                className={
+                  on
+                    ? "flex h-4 w-4 shrink-0 items-center justify-center rounded border border-sky-500 bg-sky-500 text-[10px] font-bold text-white"
+                    : "flex h-4 w-4 shrink-0 rounded border border-slate-300 bg-white"
+                }
+              >
+                {on ? "✓" : ""}
+              </span>
+              <span className="truncate">{value}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => void }) {
   const { query: search, setQuery: setSearch } = usePageSearch()
   const [rangeStart, setRangeStart] = useComponentState(() => {
@@ -75,6 +119,16 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   const [rows, setRows] = useComponentState<AuditLogRow[]>([])
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
+  const [authorFilter, setAuthorFilter] = useComponentState<Set<string>>(() => new Set())
+  const [actionFilter, setActionFilter] = useComponentState<Set<string>>(() => new Set())
+  const authorOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.author).filter(Boolean))].sort(),
+    [rows]
+  )
+  const actionOptions = useMemo(
+    () => [...new Set(rows.map((r) => r.action).filter(Boolean))].sort(),
+    [rows]
+  )
   const [groupBy, setGroupBy] = useComponentState<string>("date")
   const [columns, setColumns] = useComponentState<Record<AuditLogColumnKey, boolean>>({ ...DEFAULT_COLS })
   const [collapsed, setCollapsed] = useComponentState<Set<string>>(() => new Set())
@@ -94,8 +148,15 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   }, [rangeStart, rangeEnd])
 
   const filtered = useMemo(
-    () => filterAuditRows(rows, { query: search, rangeStart, rangeEnd }),
-    [rows, search, rangeStart, rangeEnd]
+    () =>
+      filterAuditRows(rows, {
+        query: search,
+        rangeStart,
+        rangeEnd,
+        authors: authorFilter,
+        actions: actionFilter,
+      }),
+    [rows, search, rangeStart, rangeEnd, authorFilter, actionFilter]
   )
 
   const groups = useMemo(() => groupAuditRowsByDate(filtered), [filtered])
@@ -351,10 +412,48 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               className="fixed right-6 top-24 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"
             >
               <div className="mb-3 text-sm font-semibold text-slate-800">Filters</div>
-              <p className="text-sm text-slate-500">Additional audit filters (demo — connect to API later).</p>
-              <Button type="button" className="mt-4 w-full bg-sky-500 hover:bg-sky-600" onClick={() => setShowFilters(false)}>
-                Done
-              </Button>
+              {/* Author/action values come from the loaded rows themselves, so the
+                  panel can only ever offer filters that match real audit data. */}
+              <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+                <AuditFacet
+                  title="Author"
+                  values={authorOptions}
+                  selected={authorFilter}
+                  onToggle={(value) => {
+                    const next = new Set(authorFilter)
+                    if (next.has(value)) next.delete(value)
+                    else next.add(value)
+                    setAuthorFilter(next)
+                  }}
+                />
+                <AuditFacet
+                  title="Action"
+                  values={actionOptions}
+                  selected={actionFilter}
+                  onToggle={(value) => {
+                    const next = new Set(actionFilter)
+                    if (next.has(value)) next.delete(value)
+                    else next.add(value)
+                    setActionFilter(next)
+                  }}
+                />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    setAuthorFilter(new Set())
+                    setActionFilter(new Set())
+                  }}
+                >
+                  Clear
+                </Button>
+                <Button type="button" className="flex-1 bg-sky-500 hover:bg-sky-600" onClick={() => setShowFilters(false)}>
+                  Done
+                </Button>
+              </div>
             </motion.div>
           </>
         ) : null}

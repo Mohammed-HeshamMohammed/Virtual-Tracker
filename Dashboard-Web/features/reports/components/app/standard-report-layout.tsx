@@ -56,44 +56,6 @@ export function useStandardReportLayout(): StandardReportLayoutContextValue {
   return v
 }
 
-function DefaultFiltersPanel({ onClose, isDark }: { onClose: () => void; isDark: boolean }) {
-  return (
-    <div
-      className={cn(
-        "flex max-h-[min(24rem,85vh)] w-[min(360px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border shadow-sm",
-        isDark ? "border-white/10 bg-[#191f31]" : "border-slate-200 bg-white"
-      )}
-    >
-      <div className={cn("flex items-center justify-between border-b px-4 py-3", isDark ? "border-white/10" : "border-slate-100")}>
-        <h2 className={cn("text-sm font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Filters</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className={cn(
-            "rounded-lg p-1.5 transition-colors",
-            isDark ? "text-white/40 hover:bg-white/10" : "text-slate-400 hover:bg-slate-100"
-          )}
-          aria-label="Close"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-      <div className={cn("px-4 py-6 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-        No additional filters for this report (demo).
-      </div>
-      <div className={cn("border-t px-4 py-3", isDark ? "border-white/10" : "border-slate-100")}>
-        <button
-          type="button"
-          onClick={onClose}
-          className="w-full rounded-xl bg-sky-500 py-2.5 text-sm font-semibold text-white hover:bg-sky-600"
-        >
-          Done
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export function ReportEmptyState({
   title = "Nothing to report",
   subtitle = "Expecting to see something? Try adjusting the report.",
@@ -218,8 +180,10 @@ export function StandardReportLayout({
     exportHandlerRef.current?.()
   }
 
-  const panel =
-    filtersPanel ?? <DefaultFiltersPanel isDark={isDark} onClose={() => setShowFilters(false)} />
+  // A report with no filters panel simply doesn't get a Filters button. There
+  // used to be a stand-in panel here reading "No additional filters for this
+  // report (demo)", which made an unbuilt feature look like an empty one.
+  const panel = filtersPanel ?? null
 
   return (
     <StandardReportLayoutContext.Provider value={contextValue}>
@@ -312,14 +276,16 @@ export function StandardReportLayout({
               </button>
                 </>
               ) : null}
-              <button
-                type="button"
-                onClick={() => setShowFilters(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600"
-              >
-                Filters
-                <ChevronDown className="h-4 w-4 opacity-90" />
-              </button>
+              {panel ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600"
+                >
+                  Filters
+                  <ChevronDown className="h-4 w-4 opacity-90" />
+                </button>
+              ) : null}
             </div>
           </div>
 
@@ -450,11 +416,11 @@ export function StandardReportLayout({
         <ReportScheduleDialog
           open={scheduleOpen}
           onOpenChange={setScheduleOpen}
-          onRequestOpenFilters={() => setShowFilters(true)}
+          onRequestOpenFilters={panel ? () => setShowFilters(true) : undefined}
         />
 
         <AnimatePresence>
-          {showFilters ? (
+          {showFilters && panel ? (
             <>
               <motion.div
                 initial={{ opacity: 0 }}

@@ -20,6 +20,7 @@ import { TablePagination } from "@/shared/tables/ui"
 
 const SCREENSHOTS_PER_PAGE = 8
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
+import { normalizeActivityCategory } from "@/features/activity/utils/activity-categories"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
 import { canManageActivityData } from "@/features/auth"
@@ -60,6 +61,8 @@ export interface Screenshot {
   hasImage?: boolean
   pageTitle?: string
   memberId?: string
+  /** Configured productivity classification for `activeApp`. */
+  category?: string
 }
 
 /** Format a capturedAt ISO string (or fallback to pre-formatted time) in the user's local timezone. */
@@ -79,15 +82,14 @@ function localDate(screenshot: Screenshot): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-const CORE_APPS = ["VS Code", "IntelliJ IDEA", "Xcode", "Terminal", "Postman"]
-const PRODUCTIVE_APPS = ["Figma", "Adobe XD", "Chrome DevTools"]
-const SUSPICIOUS_APPS = ["Chrome", "Firefox", "Safari", "YouTube", "Netflix"]
+// Productivity here comes from the classification an admin actually
+// configured (activity_categories, surfaced as `category` on each row) - not
+// from a hardcoded list of app names. The previous lists called Chrome and
+// Safari "suspicious" for everyone and credited only five specific IDEs as
+// core work, regardless of what the org had classified.
 const FOCUS_THRESHOLD = 75
 const HIGH_ACTIVITY_THRESHOLD = 90
 const LOW_ACTIVITY_THRESHOLD = 50
-
-/** @deprecated Use API feed; kept empty so dashboard widget does not show demo rows */
-export const activityScreenshotsData: Screenshot[] = []
 
 export const getScreenshotActivityColor = (level: number) => {
   if (level >= 80) return "bg-emerald-500"
@@ -120,10 +122,13 @@ function WorkTimeSection({ data }: { data: Screenshot[] }) {
     data.forEach((s) => {
       if (!map[s.member]) map[s.member] = { avatar: s.avatar, core: 0, nonCore: 0, unproductive: 0, total: 0 }
       const e = map[s.member]
-      e.total++
-      if (CORE_APPS.includes(s.activeApp)) e.core++
-      else if (PRODUCTIVE_APPS.includes(s.activeApp)) e.nonCore++
-      else e.unproductive++
+      // Unclassified captures are left out of both the numerator and the
+      // denominator - the split describes classified activity, and counting
+      // "not yet classified" as any of the three would misreport it.
+      const category = normalizeActivityCategory(s.category)
+      if (category === "productive") { e.core++; e.total++ }
+      else if (category === "neutral") { e.nonCore++; e.total++ }
+      else if (category === "distracting") { e.unproductive++; e.total++ }
     })
     let core = 0, nonCore = 0, unproductive = 0
     Object.values(map).forEach((m) => { core += m.core; nonCore += m.nonCore; unproductive += m.unproductive })
@@ -235,7 +240,7 @@ function UnusualActivitySection({ data }: { data: Screenshot[] }) {
     const highActivity: { avatar: string; name: string; level: number }[] = []
     const lowInput: { avatar: string; name: string; level: number }[] = []
     data.forEach((s) => {
-      if (SUSPICIOUS_APPS.some((a) => s.activeApp.toLowerCase().includes(a.toLowerCase()))) {
+      if (normalizeActivityCategory(s.category) === "distracting") {
         suspicious.push({ avatar: s.avatar, name: s.member.split(" ")[0], app: s.activeApp })
       }
       if (s.activityLevel >= HIGH_ACTIVITY_THRESHOLD) {

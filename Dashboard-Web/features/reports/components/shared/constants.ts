@@ -204,7 +204,22 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
 // ==========================================
 
 const DEFAULT_ORG_LABEL = "TVC"
-const DEFAULT_TIMEZONE_LABEL = "America - Denver"
+
+/**
+ * The timezone a report's day boundaries are read in, shown in its header.
+ * This used to be the literal string "America - Denver" for every viewer,
+ * which is actively misleading on a report whose rows are bucketed by day -
+ * a viewer in another zone was told their days were cut in Denver. Resolved
+ * from the browser instead, so the label matches the dates on screen.
+ */
+export function resolveReportTimezoneLabel(): string {
+  try {
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
+    return zone ? zone.replace(/_/g, " ") : "UTC"
+  } catch {
+    return "UTC"
+  }
+}
 
 const REPORT_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "date", label: "Date" },
@@ -214,7 +229,7 @@ const REPORT_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
 ]
 
 export const STANDARD_REPORT_ORG_LABEL = DEFAULT_ORG_LABEL
-export const STANDARD_REPORT_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
+export const STANDARD_REPORT_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const STANDARD_REPORT_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
 
 // ==========================================
@@ -277,13 +292,12 @@ export interface AmountsOwedDayGroup {
   members: AmountsOwedMemberLine[]
 }
 
-
 // ==========================================
 // 6. Audit Log Report
 // ==========================================
 
 export const AUDIT_LOG_ORG_LABEL = DEFAULT_ORG_LABEL
-export const AUDIT_LOG_TIMEZONE_LABEL = "America/Denver"
+export const AUDIT_LOG_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 
 // ==========================================
 // 7. Project Budgets Report
@@ -327,21 +341,6 @@ export const METRIC_OPTIONS: { value: string; label: string }[] = [
   { value: "activity", label: "Activity %" },
   { value: "total_spent", label: "Total spent" },
 ]
-
-export const MEMBER_ROSTER: { name: string; avatar: string }[] = []
-
-export const DEMO_TRACKED_HOURS = [] as number[]
-
-export const DEMO_ACTIVITY_PCT = [] as number[]
-export const DEMO_MEMBER_COUNTS = [] as number[]
-export const AVATAR_COLORS: Record<string, string> = {
-  SJ: "#6366f1",
-  MC: "#22c55e",
-  ED: "#f59e0b",
-  AT: "#ec4899",
-  LW: "#14b8a6",
-  JL: "#8b5cf6",
-}
 
 export const CALENDAR_MONTHS = [
   "January",
@@ -487,13 +486,12 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
-
 // ==========================================
 // 9. Work Sessions Report
 // ==========================================
 
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL
-export const WORK_SESSIONS_TIMEZONE_LABEL = DEFAULT_TIMEZONE_LABEL
+export const WORK_SESSIONS_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 // No "Client": /api/reports/work-sessions returns no client for a session, so
 // grouping by it collapsed every row into one blank-labelled group.
 export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(

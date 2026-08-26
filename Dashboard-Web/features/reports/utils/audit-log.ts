@@ -8,11 +8,20 @@ function auditRowInRange(isoDate: string, rangeStart: Date, rangeEnd: Date): boo
 
 export function filterAuditRows(
   rows: AuditLogRow[],
-  opts: { query: string; rangeStart: Date; rangeEnd: Date }
+  opts: {
+    query: string
+    rangeStart: Date
+    rangeEnd: Date
+    /** Empty set = no restriction. */
+    authors?: Set<string>
+    actions?: Set<string>
+  }
 ): AuditLogRow[] {
   const q = opts.query.trim().toLowerCase()
   return rows.filter((r) => {
     if (!auditRowInRange(r.date, opts.rangeStart, opts.rangeEnd)) return false
+    if (opts.authors && opts.authors.size > 0 && !opts.authors.has(r.author)) return false
+    if (opts.actions && opts.actions.size > 0 && !opts.actions.has(r.action)) return false
     if (!q) return true
     const hay = [
       r.id,

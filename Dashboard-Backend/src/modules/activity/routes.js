@@ -1209,6 +1209,11 @@ export async function routeActivity(req, res, url, origin) {
         },
       };
 
+      // Every feed reports the classification an admin actually configured in
+      // activity_categories. One read per feed request, keyed the same way the
+      // table's unique index is (match_type + lowered pattern).
+      const categoryLookup = await buildCategoryLookup();
+
       if (feedType === "screenshots") {
         const captureEnabled = isActivityScreenshotsEnabled();
         const disabledReason = captureEnabled
@@ -1251,6 +1256,9 @@ export async function routeActivity(req, res, url, origin) {
             time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             activityLevel: d.activity_level ?? 75,
             activeApp: d.app_name || "Browser",
+            // Real configured classification, so the productivity roll-ups on
+            // this page stop keying off a hardcoded list of app names.
+            category: categoryLookup("app", d.app_name || ""),
             hasImage: true,
             pageTitle: d.page_title || "",
           };
@@ -1264,13 +1272,6 @@ export async function routeActivity(req, res, url, origin) {
         });
         return true;
       }
-
-      // Both feeds used to report every row as "neutral" regardless of what
-      // was actually configured in activity_categories, so the classification
-      // an admin set never showed up anywhere. One read per feed request,
-      // keyed the same way the table's unique index is (match_type + lowered
-      // pattern).
-      const categoryLookup = await buildCategoryLookup();
 
       if (feedType === "apps") {
         const byApp = new Map();
