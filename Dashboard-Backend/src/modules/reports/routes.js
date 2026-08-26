@@ -941,8 +941,23 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const [projects, budgets] = await Promise.all([listProjectsPg({ limit: 500 }), getAllProjectBudgetsPg()]);
+      const [allProjects, budgets] = await Promise.all([listProjectsPg({ limit: 500 }), getAllProjectBudgetsPg()]);
       const budgetByProject = new Map(budgets.map((b) => [b.project_id, b]));
+
+      // Same rule the Projects page and the schema visibility layer apply to
+      // `projects` and `project-budgets`: the projects the viewer is on, plus
+      // any they created. This report listed every project in the org, so a
+      // Manager saw budgets for projects the Project Management pages hide
+      // from them.
+      const allowedProjectIds = await getViewerProjectIds(getDb(), viewer.memberId, viewer.roleName);
+      const allowedSet = allowedProjectIds === null ? null : new Set(allowedProjectIds);
+      const projects =
+        allowedSet === null
+          ? allProjects
+          : allProjects.filter(
+              (project) =>
+                allowedSet.has(String(project.id)) || String(project.created_by ?? "") === viewer.memberId,
+            );
 
       const rows = await Promise.all(
         projects.map(async (project) => {
@@ -983,8 +998,21 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const [clients, budgets] = await Promise.all([listClientsPg({ limit: 500 }), getAllClientBudgetsPg()]);
+      const [allClients, budgets] = await Promise.all([listClientsPg({ limit: 500 }), getAllClientBudgetsPg()]);
       const budgetByClient = new Map(budgets.map((b) => [b.client_id, b]));
+
+      // Same rule the schema visibility layer applies to `clients`: a client
+      // is visible when its contact member is someone the viewer can see.
+      // This report listed every client in the org regardless.
+      const visibleMemberIds = await getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName);
+      const visibleSet = visibleMemberIds === null ? null : new Set(visibleMemberIds);
+      const clients =
+        visibleSet === null
+          ? allClients
+          : allClients.filter((client) => {
+              const memberId = String(client.client_member ?? client.member_id ?? "").trim();
+              return memberId ? visibleSet.has(memberId) : false;
+            });
 
       const rows = await Promise.all(
         clients.map(async (client) => {
