@@ -442,7 +442,7 @@ function MainApp() {
   const refreshMemberLimits = useCallback(async () => {
     if (!signedIn) return;
     try {
-      setMemberLimits(await invoke<MemberLimits>("get_member_limits"));
+      setMemberLimits(await invoke<MemberLimits | null>("get_member_limits"));
     } catch {
       setMemberLimits(null);
     }
@@ -513,7 +513,7 @@ function MainApp() {
   // needs the record as soon as the sidebar itself is on screen.
   useEffect(() => {
     if (!signedIn) return;
-    invoke<MemberProfile>("get_member_profile")
+    invoke<MemberProfile | null>("get_member_profile")
       .then(setMemberProfile)
       .catch(() => setMemberProfile(null));
   }, [signedIn]);
