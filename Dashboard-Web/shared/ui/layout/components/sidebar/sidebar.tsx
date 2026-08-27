@@ -14,14 +14,7 @@ import { useAuth } from "@/shared/providers/app"
 import { NAV_SECTIONS, type NavSection, type NavSubItem } from "@/shared/ui/layout/config/nav-sections"
 import { SIDEBAR_THEME_DARK as dark, SIDEBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { prefetchChunkForPage } from "@/app"
-import {
-  allowedNavSectionIds,
-  canAccessAllSidebarTabs,
-  canAccessReviewCenter,
-  clientHiddenPageIds,
-  isManagementRole,
-} from "@/features/auth"
-import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
+import { isManagementRole, visibleNavSections } from "@/features/auth"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SidebarUserCard } from "@/shared/ui/layout/components/sidebar/sidebar-user-card"
 
@@ -53,9 +46,6 @@ export function Sidebar({
   const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set())
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
 
-  const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
-  const canSeeReviewCenter = canAccessReviewCenter(memberRole)
-  const isClient = isClientRole(memberRole)
   // Below Manager tier, the button opened a creation flow the server would
   // refuse - only Manager and above may create tasks from the sidebar.
   const canAddTask = isManagementRole(memberRole)
@@ -66,63 +56,15 @@ export function Sidebar({
   const toggleSet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     setter(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
+  // Single source with the breadcrumb dropdowns and global search
+  // (visibleNavSections) - each used to carry its own copy of this
+  // filtering, so a role could see a page from one of them that another
+  // didn't show.
   const visibleSections = useMemo(() => {
-    let sections = NAV_SECTIONS.filter((s: NavSection) => s.id !== "favorites" && !hiddenSections.has(s.id))
-
-    if (!canAccessAllTabs) {
-      // A client reads their projects across the whole app; the server scopes
-      // each of these to the projects linked to their client record. Settings
-      // and Financials stay listed and stay disabled.
-      const allowedSectionIds = allowedNavSectionIds(memberRole)
-      sections = sections.filter((s: NavSection) => allowedSectionIds.has(s.id))
-
-      // A client only ever sees the outcome of a timesheet, never the
-      // approval queue - they are the project's client, not its approver.
-      if ((canSeeReviewCenter || isClient) && !canAccessAllTabs) {
-        sections = sections.map((s: NavSection) => {
-          if (s.id !== "timesheets") return s
-          return {
-            ...s,
-            pages: s.pages?.filter((p) => p.id === "timesheets-view"),
-          }
-        })
-      }
-
-      if (isClient) {
-        const hidden = clientHiddenPageIds()
-        sections = sections.map((s: NavSection) => ({
-          ...s,
-          pages: s.pages?.filter((p: NavSubItem) => !hidden.has(p.id)),
-          subsections: s.subsections?.map((sub) => ({
-            ...sub,
-            items: sub.items.filter((item) => !hidden.has(item.id)),
-          })),
-        }))
-      } else {
-        sections = sections.map((s: NavSection) => {
-          if (s.id === "dashboard") {
-            return {
-              ...s,
-              pages: s.pages?.filter((p: NavSubItem) => p.id === "command-center")
-            }
-          }
-          if (s.id === "project-management") {
-            // Own tasks, own project rows (read-only), and own time off
-            // requests - Overview and Clients stay manager-only.
-            return {
-              ...s,
-              pages: s.pages?.filter((p: NavSubItem) =>
-                p.id === "pm-tasks" || p.id === "pm-projects" || p.id === "calendar-timeoff",
-              )
-            }
-          }
-          return s
-        })
-      }
-    }
-
-    return sections
-  }, [hiddenSections, canAccessAllTabs, canSeeReviewCenter, isClient, memberRole])
+    return visibleNavSections(memberRole).filter(
+      (s: NavSection) => s.id !== "favorites" && !hiddenSections.has(s.id),
+    )
+  }, [hiddenSections, memberRole])
 
   return (
     <motion.aside

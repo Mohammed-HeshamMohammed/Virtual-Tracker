@@ -7,7 +7,6 @@ import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { canAccessAllSidebarTabs } from "@/features/auth"
 import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { GlobalSearchBar } from "@/shared/ui/layout/components/topbar/global-search-bar"
 import { NotificationsBell } from "@/shared/ui/layout/components/topbar/notifications-bell"
@@ -25,7 +24,6 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
   const t = isDark ? dark : light
   const { memberRole } = useAuth()
 
-  const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
   const isClient = isClientRole(memberRole)
 
   return (
@@ -40,7 +38,7 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
       <motion.div layout="position" className="flex items-center justify-center">
         <GlobalSearchBar
           onNavigate={onNavigate}
-          canAccessAllTabs={canAccessAllTabs}
+          memberRole={memberRole}
           activePageId={activeItem}
         />
       </motion.div>

@@ -8,11 +8,11 @@ import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import {
-  NAV_SECTIONS, getSectionForPage, getPageLabel, getSubsectionForPage,
+  getSectionForPage, getPageLabel, getSubsectionForPage,
   PAGE_PARENTS, sortedItems, type NavSection, type NavSubItem, type NavSubSection
 } from "@/shared/ui/layout/config/nav-sections"
 import { TOPBAR_THEME_DARK as dark, TOPBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { allowedNavSectionIds, canAccessAllSidebarTabs } from "@/features/auth"
+import { visibleNavSections } from "@/features/auth"
 import { isComingSoonPage } from "@/shared/constants/coming-soon-pages"
 import { prefetchChunkForPage } from "@/app"
 
@@ -37,29 +37,20 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
   const [showSubsectionDropdown, setShowSubsectionDropdown] = useState(false)
   const sectionRef = useRef<HTMLDivElement>(null)
 
-  const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
-
-  const allowedSectionIds = useMemo(() => allowedNavSectionIds(memberRole), [memberRole])
-
-  const filterSectionPages = (section: NavSection | undefined): NavSection | undefined => {
-    if (!section) return undefined
-    if (!allowedSectionIds.has(section.id)) return undefined
-
-    if (!canAccessAllTabs && section.id === "dashboard") {
-      return {
-        ...section,
-        pages: section.pages?.filter((p: NavSubItem) => p.id === "command-center"),
-        subsections: undefined
-      }
-    }
-    return section
-  }
+  // Single source with the sidebar and global search (visibleNavSections) -
+  // each used to carry its own copy of this filtering, so a role could reach
+  // a page from one of them that another didn't show.
+  const sectionById = useMemo(() => {
+    const map = new Map<string, NavSection>()
+    for (const section of visibleNavSections(memberRole)) map.set(section.id, section)
+    return map
+  }, [memberRole])
 
   const currentSectionRaw = getSectionForPage(activeItem)
-  const currentSection = filterSectionPages(currentSectionRaw)
+  const currentSection = currentSectionRaw ? sectionById.get(currentSectionRaw.id) : undefined
   const currentPage = getPageLabel(activeItem)
   const subsectionInfoRaw = getSubsectionForPage(activeItem)
-  const subsectionInfo = subsectionInfoRaw && allowedSectionIds.has(subsectionInfoRaw.section.id) ? subsectionInfoRaw : undefined
+  const subsectionInfo = subsectionInfoRaw && sectionById.has(subsectionInfoRaw.section.id) ? subsectionInfoRaw : undefined
   const parentPageId = PAGE_PARENTS[activeItem] ?? null
   const parentPageLabel = parentPageId ? getPageLabel(parentPageId) : null
 

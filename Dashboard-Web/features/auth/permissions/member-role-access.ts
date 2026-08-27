@@ -1,4 +1,4 @@
-import { NAV_SECTIONS } from "@/shared/ui/layout"
+import { NAV_SECTIONS, type NavSection } from "@/shared/ui/layout"
 
 /**
  * Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js.
@@ -342,6 +342,54 @@ export function allowedNavSectionIds(role: string): Set<string> {
   if (canSeePmTasksSection(role)) ids.add("project-management")
   if (canAccessReviewCenter(role) || canSeePmTasksSection(role)) ids.add("timesheets")
   return ids
+}
+
+/**
+ * The nav tree exactly as the sidebar renders it for this role: sections
+ * filtered by allowedNavSectionIds, then trimmed page-by-page the same way
+ * the sidebar trims them. Single source for the sidebar, the breadcrumb
+ * dropdowns and the global search, so none of the three can drift from what
+ * the others show - allowedNavSectionIds fixed this same class of bug once
+ * already, at the section level; this closes it at the page level too.
+ */
+export function visibleNavSections(role: string): NavSection[] {
+  if (canAccessAllSidebarTabs(role)) return NAV_SECTIONS
+
+  const isClient = normalizeMemberRole(role) === "client"
+  const allowedSectionIds = allowedNavSectionIds(role)
+  const sections = NAV_SECTIONS.filter((s) => allowedSectionIds.has(s.id))
+
+  if (isClient) {
+    const hidden = clientHiddenPageIds()
+    return sections.map((s) => {
+      if (s.id === "timesheets") {
+        return { ...s, pages: s.pages?.filter((p) => p.id === "timesheets-view") }
+      }
+      return {
+        ...s,
+        pages: s.pages?.filter((p) => !hidden.has(p.id)),
+        subsections: s.subsections?.map((sub) => ({
+          ...sub,
+          items: sub.items.filter((item) => !hidden.has(item.id)),
+        })),
+      }
+    })
+  }
+
+  return sections.map((s) => {
+    if (s.id === "dashboard") {
+      return { ...s, pages: s.pages?.filter((p) => p.id === "command-center") }
+    }
+    if (s.id === "project-management") {
+      // Own tasks, own project rows (read-only), and own time off requests -
+      // Overview and Clients stay manager-only.
+      return {
+        ...s,
+        pages: s.pages?.filter((p) => p.id === "pm-tasks" || p.id === "pm-projects" || p.id === "calendar-timeoff"),
+      }
+    }
+    return s
+  })
 }
 
 function collectPageIdsForSections(sectionIds: Set<string>, restrictDashboardToGeneral: boolean): Set<string> {
