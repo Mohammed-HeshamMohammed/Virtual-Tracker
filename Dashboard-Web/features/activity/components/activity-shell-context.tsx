@@ -45,6 +45,11 @@ interface ActivityShellContextValue {
   triggerExport: () => void
   registerRefresh: (fn: (() => void) | null) => void
   registerExport: (fn: (() => void) | null) => void
+  /** True once the page registers a classify handler - the toolbar button is
+   *  role-gated by the page (canClassifyActivity), not by the shell. */
+  canClassify: boolean
+  triggerClassify: () => void
+  registerClassify: (fn: (() => void) | null) => void
 }
 
 const ActivityShellContext = createContext<ActivityShellContextValue | undefined>(undefined)
@@ -70,9 +75,10 @@ export function useActivityShell() {
 export function useActivityShellRegistration(options: {
   onRefresh: () => void
   onExport?: () => void
+  onClassify?: () => void
 }) {
-  const { registerRefresh, registerExport } = useActivityShell()
-  const { onRefresh, onExport } = options
+  const { registerRefresh, registerExport, registerClassify } = useActivityShell()
+  const { onRefresh, onExport, onClassify } = options
 
   useEffect(() => {
     registerRefresh(onRefresh)
@@ -87,6 +93,15 @@ export function useActivityShellRegistration(options: {
     registerExport(onExport)
     return () => registerExport(null)
   }, [onExport, registerExport])
+
+  useEffect(() => {
+    if (!onClassify) {
+      registerClassify(null)
+      return
+    }
+    registerClassify(onClassify)
+    return () => registerClassify(null)
+  }, [onClassify, registerClassify])
 }
 
 export function ActivityShellProvider({
@@ -99,6 +114,11 @@ export function ActivityShellProvider({
   const day = useActivitySelectedDay()
   const refreshRef = useRef<(() => void) | null>(null)
   const exportRef = useRef<(() => void) | null>(null)
+  const classifyRef = useRef<(() => void) | null>(null)
+  // State, not just a ref like the two above: this one decides whether the
+  // toolbar renders the button at all, so the bar has to re-render when the
+  // page registers or unregisters its handler.
+  const [canClassify, setCanClassify] = useState(false)
 
   const [searchByPage, setSearchByPage] = useState<SearchByPage>({
     screenshots: "",
@@ -165,6 +185,15 @@ export function ActivityShellProvider({
     exportRef.current?.()
   }, [])
 
+  const registerClassify = useCallback((fn: (() => void) | null) => {
+    classifyRef.current = fn
+    setCanClassify(Boolean(fn))
+  }, [])
+
+  const triggerClassify = useCallback(() => {
+    classifyRef.current?.()
+  }, [])
+
   const value = useMemo<ActivityShellContextValue>(
     () => ({
       pageId,
@@ -186,6 +215,9 @@ export function ActivityShellProvider({
       triggerExport,
       registerRefresh,
       registerExport,
+      canClassify,
+      triggerClassify,
+      registerClassify,
     }),
     [
       pageId,
@@ -202,6 +234,9 @@ export function ActivityShellProvider({
       triggerExport,
       registerRefresh,
       registerExport,
+      canClassify,
+      triggerClassify,
+      registerClassify,
     ],
   )
 

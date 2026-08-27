@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
-import { ArrowDownAZ, Clock, Grid3X3, List, Shield } from "lucide-react"
+import { Grid3X3, List, Shield, Tag } from "lucide-react"
 import { useAuth } from "@/shared/providers/app"
 import { canExportActivity } from "@/features/auth"
 import { ActivityControlBar } from "@/features/activity/components/activity-control-bar"
@@ -27,21 +27,29 @@ function ActivityPageFilters() {
     setShowBlocked,
     sortOrder,
     setSortOrder,
+    canClassify,
+    triggerClassify,
   } = useActivityShell()
 
   if (pageId === "activity-apps" || pageId === "activity-urls") {
     return (
       <>
         <ActivityCategoryFilter value={selectedCategory} onChange={setSelectedCategory} />
-        <ActivitySegmentedControl
-          value={sortOrder}
-          onChange={setSortOrder}
-          ariaLabel="Sort order"
-          options={[
-            { value: "time" as const, label: "By time", icon: Clock },
-            { value: "name" as const, label: "By name", icon: ArrowDownAZ },
-          ]}
-        />
+        {/* Replaced the By time / By name sort control. Both pages keep their
+            own default ordering (most time / most visits first); classifying
+            is the action people actually come to this toolbar for, and it used
+            to be buried in the table header, where it disappeared entirely
+            whenever the day had no data to show. */}
+        {canClassify ? (
+          <button
+            type="button"
+            onClick={triggerClassify}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <Tag className="h-3.5 w-3.5" />
+            Classify {pageId === "activity-apps" ? "apps" : "sites"}
+          </button>
+        ) : null}
         {pageId === "activity-urls" ? (
           <ActivityToolbarIconButton
             onClick={() => setShowBlocked(!showBlocked)}
