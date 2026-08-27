@@ -1,6 +1,6 @@
 [package]
 name = "virtual-tracker-agent"
-version = "0.4.13"
+version = "0.4.14"
 description = "Virtual Tracker Tauri desktop agent — screenshots, apps, URLs"
 authors = ["Virtual Tracker"]
 edition = "2021"
