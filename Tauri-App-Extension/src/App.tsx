@@ -6,6 +6,8 @@ import "./App.css";
 import { toast } from "./Toast";
 
 import type {
+  AppSettingsView,
+  ThemePreference,
   ActionResult,
   AgentTask,
   AuthView,
@@ -30,12 +32,11 @@ import {
   fmtHours,
   fmtLimitHours,
   initialsFromName,
-  statusLabel,
-  statusTone,
 } from "./utils/formatters";
 import { TitleBar } from "./components/common/TitleBar";
 import { Dropdown } from "./components/common/Dropdown";
 import { Icon } from "./components/common/Icon";
+import { applyTheme } from "./utils/theme";
 import { SettingsPanel } from "./components/views/SettingsPanel";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
@@ -154,6 +155,10 @@ function MainApp() {
   // used to render identically, which is what made a dead session look like an
   // empty account.
   const [projectsFailed, setProjectsFailed] = useState(false);
+  // Mirrors the stored preference so the title-bar control and the Settings
+  // picker never disagree. main.tsx already painted the class before first
+  // render; this only tracks it for the UI.
+  const [themePref, setThemePref] = useState<ThemePreference>("system");
 
   useEffect(() => {
     setAvatarError(false);
@@ -462,13 +467,15 @@ function MainApp() {
   }, [refreshTaskTracking, refreshMemberLimits, refreshProjectBudget]);
 
   // The People-page member record never changes while the app is open - one
-  // fetch when the profile view opens, no polling.
+  // fetch per sign-in, no polling. Used to wait for the profile view to open,
+  // but the footer identity card now shows the same email and role, so it
+  // needs the record as soon as the sidebar itself is on screen.
   useEffect(() => {
-    if (view !== "profile" || !signedIn) return;
+    if (!signedIn) return;
     invoke<MemberProfile>("get_member_profile")
       .then(setMemberProfile)
       .catch(() => setMemberProfile(null));
-  }, [view, signedIn]);
+  }, [signedIn]);
 
   // Re-sync from the last server snapshot, then tick locally so the clock is
   // smooth between 5s polls instead of jumping.
@@ -569,6 +576,28 @@ function MainApp() {
   useEffect(() => {
     void checkForUpdate();
   }, [checkForUpdate]);
+
+  useEffect(() => {
+    void invoke<AppSettingsView>("get_app_settings")
+      .then((s) => {
+        if (s?.preferences?.theme) setThemePref(s.preferences.theme);
+      })
+      .catch(() => {
+        /* Falls back to "system", which is also the stored default. */
+      });
+  }, []);
+
+  const handleCycleTheme = useCallback((next: ThemePreference) => {
+    // Painted first, persisted after - waiting on the round trip makes the
+    // control feel broken.
+    applyTheme(next);
+    setThemePref(next);
+    void invoke<AppSettingsView>("get_app_settings")
+      .then((s) =>
+        invoke("save_preferences", { preferences: { ...s.preferences, theme: next } }),
+      )
+      .catch(() => toast.error("Could not save your theme preference."));
+  }, []);
 
   // In-app sign-in. The password lives in component state only for as long as
   // the form is on screen and is cleared the moment the call returns - it is
@@ -1037,10 +1066,13 @@ function MainApp() {
   }, [tracking, taskLessSession]);
 
   const idleStage = session?.idleStage ?? 0;
-  const tone = statusTone(link?.status || "", signedIn);
   const displayName = loadingProfile ? "Loading…" : profile?.name || "Not signed in";
-  const firstName =
-    signedIn && profile?.name ? profile.name.trim().split(/\s+/)[0] : displayName;
+  // Full identity for the footer card - memberProfile (the People-page
+  // record) is the richer source once it loads, profile (JWT claims) is
+  // what's available immediately. Same fallback ProfilePanel already uses.
+  const footerName = memberProfile?.name || displayName;
+  const footerEmail = memberProfile?.email || profile?.email || "";
+  const footerRole = memberProfile?.role || "";
   const selectedTask = tasks.find((t) => t.id === selectedTaskId);
   // A task-less session has no task title to show, so the project names the run.
   const trackingLabel = taskLessSession
@@ -1405,10 +1437,6 @@ function MainApp() {
     return taskOvertimeSeconds > 0 ? `${base} + ${fmtHours(taskOvertimeSeconds)} OT` : base;
   })();
 
-  if (view === "settings") {
-    return <SettingsPanel onBack={() => setView("home")} />;
-  }
-
   // CF-2: required disclosure notice blocks all tracker interactions until
   // acknowledged. Takes priority over stale-session recovery (a user whose
   // token aged out will reach WelcomeBackPanel immediately after accepting, or
@@ -1449,6 +1477,8 @@ function MainApp() {
   if (!signedIn && view === "home") {
     return (
       <SignInPanel
+        theme={themePref}
+        onCycleTheme={handleCycleTheme}
         busy={busy}
         actionError={actionError}
         signInEmail={signInEmail}
@@ -1472,77 +1502,55 @@ function MainApp() {
     );
   }
 
-  if (view === "profile") {
-    return (
-      <ProfilePanel
-        profile={profile}
-        memberProfile={memberProfile}
-        memberLimits={memberLimits}
-        onBack={() => setView("home")}
-        onSignOut={() => void handleSignOut()}
-        signingOut={signingOut}
-      />
-    );
-  }
+  const isPanelView = view === "settings" || view === "profile";
 
   return (
-    <main className="agent-tray view-home">
+    /* One shell for home, profile and settings. Each of the three used to
+       return its own <main> from a different component, so React tore the
+       whole tree down on every view change and replayed every mount
+       animation - which read as the app reloading. */
+    <main className="agent-tray">
+      {/* The slide-in animation used to live on .agent-tray itself, back when
+          each view was its own freshly-mounted <main>. Now that the shell is
+          one persistent element (see above), a transform on .agent-tray would
+          drag the title bar along with it - transform creates a new
+          containing block, so the absolutely-positioned title bar moves with
+          its animated ancestor. The animation now lives on this inner
+          wrapper instead, so the window controls stay put and only the
+          content underneath slides or fades. */}
       <TitleBar
-        title="Virtual Tracker"
+        title={view === "settings" ? "Settings" : view === "profile" ? "Profile" : "Virtual Tracker"}
         onClose={() => void invoke("close_window")}
         onCheckUpdate={() => void checkForUpdate(true)}
         checkingUpdate={checkingUpdate}
+        theme={themePref}
+        onCycleTheme={handleCycleTheme}
       />
 
+      <div
+        key={isPanelView ? "panel" : "home"}
+        className={`agent-view${isPanelView ? " settings-window view-settings" : " view-home"}`}
+      >
+      {view === "settings" ? (
+        <SettingsPanel onBack={() => setView("home")} />
+      ) : view === "profile" ? (
+        <ProfilePanel
+          profile={profile}
+          memberProfile={memberProfile}
+          memberLimits={memberLimits}
+          onBack={() => setView("home")}
+          onSignOut={() => void handleSignOut()}
+          signingOut={signingOut}
+        />
+      ) : (
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">
+          {/* Identity moved to the footer bar, which now carries the avatar,
+              the name and the live status - it was duplicated here and there.
+              What is left is the one thing that isn't repeated anywhere: what
+              is happening right now. */}
           <section className="hero-card">
-            <div className="hero-top">
-              <button
-                type="button"
-                className="avatar-wrap avatar-button"
-                disabled={!signedIn}
-                title={signedIn ? "View profile" : undefined}
-                aria-label="View profile"
-                onClick={() => setView("profile")}
-              >
-                {profile?.avatarUrl && !avatarError ? (
-                  <img
-                    className="avatar-img"
-                    src={profile.avatarUrl}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    draggable={false}
-                    onError={() => setAvatarError(true)}
-                  />
-                ) : (
-                  <div className="avatar-fallback">
-                    {signedIn ? initialsFromName(displayName) : "VT"}
-                  </div>
-                )}
-              </button>
-              <div className="hero-copy">
-                <span className="hero-kicker">Desktop Agent</span>
-                <h1 className="hero-name">{firstName}</h1>
-              </div>
-              <span
-                className={`pill pill-${
-                  loadingProfile ? "idle" : connection === "disconnected" ? "warn" : tone
-                }`}
-              >
-                {loadingProfile
-                  ? "Loading"
-                  : connection === "disconnected"
-                    ? "Offline"
-                    : statusLabel(link?.status || "", signedIn)}
-              </span>
-            </div>
-
             <div className={`signal${tracking ? " live" : ""}`}>
-              {/* Was nine bars driven by Math.random() on a 700ms interval -
-                  decorative noise shaped like an activity graph, in a
-                  monitoring app. This is the member's real active/idle split,
-                  the same ratio the dashboard grades on. */}
               {tracking && activityPercent != null ? (
                 <div className="signal-activity">
                   <div className="signal-activity-head">
@@ -1552,6 +1560,18 @@ function MainApp() {
                   <div className="capacity-bar slim">
                     <div className="capacity-fill active" style={{ width: `${activityPercent}%` }} />
                   </div>
+                  {activityToday ? (
+                    <div className="signal-split">
+                      <span>
+                        <i className="dot good" />
+                        {fmtHours(activityToday.activeSeconds)} active
+                      </span>
+                      <span>
+                        <i className="dot idle" />
+                        {fmtHours(activityToday.idleSeconds)} idle
+                      </span>
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
               <p className="signal-text">
@@ -1666,22 +1686,67 @@ function MainApp() {
               {/* Profile and Settings as peers in the flow. The gear used to
                   float at position:absolute bottom-left, detached from the
                   layout and the only route into Settings; the avatar was
-                  secretly the only route into the profile. */}
+                  secretly the only route into the profile. The card itself
+                  is name + email + role, same as the People-page identity it
+                  is drawn from - state lives on the dot alone (tracking /
+                  paused / offline / ready) rather than repeating it as a
+                  second line under a status pill up top. */}
               <div className="side-footer">
                 <button
                   type="button"
                   className="side-footer-profile"
                   disabled={!signedIn}
+                  title={signedIn ? "View profile" : undefined}
                   onClick={() => setView("profile")}
                 >
                   <span className="side-footer-avatar">
                     {profile?.avatarUrl && !avatarError ? (
-                      <img src={profile.avatarUrl} alt="" referrerPolicy="no-referrer" draggable={false} />
+                      <img
+                        src={profile.avatarUrl}
+                        alt=""
+                        referrerPolicy="no-referrer"
+                        draggable={false}
+                        onError={() => setAvatarError(true)}
+                      />
                     ) : (
                       <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
                     )}
+                    <i
+                      className={`side-footer-dot ${
+                        loadingProfile
+                          ? "idle"
+                          : connection === "disconnected"
+                            ? "warn"
+                            : tracking
+                              ? "live"
+                              : paused
+                                ? "paused"
+                                : "ok"
+                      }`}
+                      title={
+                        loadingProfile
+                          ? "Checking…"
+                          : connection === "disconnected"
+                            ? "Offline"
+                            : tracking
+                              ? "Tracking"
+                              : paused
+                                ? "On a break"
+                                : signedIn
+                                  ? "Ready"
+                                  : "Not linked"
+                      }
+                    />
                   </span>
-                  Profile
+                  <span className="side-footer-copy">
+                    <span className="side-footer-name">{signedIn ? footerName : "Signed out"}</span>
+                    {signedIn && footerEmail ? (
+                      <span className="side-footer-email">{footerEmail}</span>
+                    ) : null}
+                    {signedIn && footerRole ? (
+                      <span className="badge neutral side-footer-badge">{footerRole}</span>
+                    ) : null}
+                  </span>
                 </button>
                 <button
                   className="icon-btn"
@@ -1897,6 +1962,8 @@ function MainApp() {
             <span className="version-banner">v{version}</span>
           </section>
         ) : null}
+      </div>
+      )}
       </div>
     </main>
   );

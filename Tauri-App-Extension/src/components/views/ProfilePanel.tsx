@@ -1,7 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
 import type { MemberLimits, MemberProfile, ProfileInfo } from "../../types";
 import { fmtHours, fmtLimitHours, initialsFromName } from "../../utils/formatters";
-import { TitleBar } from "../common/TitleBar";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Icon } from "../common/Icon";
 
@@ -59,8 +57,7 @@ export function ProfilePanel({
   const statusTone = status === "active" ? "good" : status ? "warn" : "neutral";
 
   return (
-    <main className="agent-tray settings-window view-settings">
-      <TitleBar title="Profile" onClose={() => void invoke("close_window")} />
+    <>
       <PanelBackHeader title="Profile" onBack={onBack} />
 
       <div className="content settings-content">
@@ -156,6 +153,6 @@ export function ProfilePanel({
           {signingOut ? "Signing out…" : "Log out"}
         </button>
       </div>
-    </main>
+    </>
   );
 }

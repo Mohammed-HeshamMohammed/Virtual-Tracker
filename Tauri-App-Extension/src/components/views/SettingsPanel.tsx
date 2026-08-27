@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AppSettingsView, ThemePreference, UserPreferences } from "../../types";
-import { TitleBar } from "../common/TitleBar";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Switch } from "../common/Switch";
 import { Icon } from "../common/Icon";
@@ -81,8 +80,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
   );
 
   return (
-    <main className="agent-tray settings-window view-settings">
-      <TitleBar title="Settings" onClose={() => void invoke("close_window")} />
+    <>
       <PanelBackHeader title="Settings" onBack={onBack} />
 
       <div className="content settings-content">
@@ -167,6 +165,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           Virtual Tracker Agent <span className="settings-version-pill">v{settings?.version || "—"}</span>
         </p>
       </div>
-    </main>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AuthView, ForgotState, SignUpFields, SignUpState } from "../../types";
+import type { AuthView, ForgotState, SignUpFields, SignUpState, ThemePreference } from "../../types";
 import { TitleBar } from "../common/TitleBar";
 import { Icon } from "../common/Icon";
 
@@ -59,6 +59,8 @@ export function SignInPanel({
   onForgotSubmit,
   onCheckUpdate,
   checkingUpdate,
+  theme,
+  onCycleTheme,
 }: {
   busy: boolean;
   actionError: string | null;
@@ -79,6 +81,8 @@ export function SignInPanel({
   onForgotSubmit: () => void;
   onCheckUpdate: () => void;
   checkingUpdate: boolean;
+  theme?: ThemePreference;
+  onCycleTheme?: (next: ThemePreference) => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
@@ -113,6 +117,8 @@ export function SignInPanel({
         onClose={() => void invoke("close_window")}
         onCheckUpdate={onCheckUpdate}
         checkingUpdate={checkingUpdate}
+        theme={theme}
+        onCycleTheme={onCycleTheme}
       />
       <div className="app-body auth-split">
         <section className="auth-brand" aria-hidden="true" data-tauri-drag-region>
