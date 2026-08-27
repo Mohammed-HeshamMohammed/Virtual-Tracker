@@ -59,6 +59,7 @@ function mapProject(project: CommandCenterApiPayload["projects"][number]): Proje
     name: project.name,
     color: PROJECT_COLORS[project.colorIndex % PROJECT_COLORS.length] ?? "bg-slate-400",
     stats: project.stats,
+    personalTaskStats: project.personalTaskStats ?? null,
     chartPath: project.chartPath,
     chartFill: project.chartFill,
     weeklyTrend: project.weeklyTrend,
@@ -74,12 +75,14 @@ export function mapCommandCenterPayload(payload: CommandCenterApiPayload): {
   projects: ProjectData[]
   globalActivityFeed: ActivityFeedItem[]
   canSeeAllProjects: boolean
+  isPersonalView: boolean
   roleName: string
 } {
   return {
     projects: payload.projects.map(mapProject),
     globalActivityFeed: payload.globalActivityFeed,
     canSeeAllProjects: payload.canSeeAllProjects,
+    isPersonalView: payload.isPersonalView,
     roleName: payload.roleName,
   }
 }

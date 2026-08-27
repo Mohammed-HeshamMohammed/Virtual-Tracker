@@ -9,6 +9,7 @@ type CommandCenterState = {
   projects: ProjectData[]
   globalActivityFeed: ActivityFeedItem[]
   canSeeAllProjects: boolean
+  isPersonalView: boolean
   roleName: string
   loading: boolean
   error: string | null
@@ -20,6 +21,7 @@ export function useCommandCenterData(enabled = true) {
     projects: [],
     globalActivityFeed: [],
     canSeeAllProjects: false,
+    isPersonalView: false,
     roleName: "",
     loading: true,
     error: null,

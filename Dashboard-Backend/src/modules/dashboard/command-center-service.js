@@ -11,6 +11,8 @@ import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import {
   getDailyActivityTotalsPg,
   getMemberActivitySecondsPg,
+  getMemberDailyActivityTotalsPg,
+  getMemberProjectActivityMetricsPg,
   getMemberWeeklyCapacityPg,
   getProjectActivityMetricsPg,
 } from "../../lib/postgres/projects-postgres.service.js";
@@ -29,6 +31,10 @@ import {
 } from "./dashboard-utils.js";
 
 const PROJECT_COLORS = 10;
+
+// Intern and Employee specifically - not Team Lead, who still manages a
+// team and keeps the whole-project view every other role gets.
+const PERSONAL_VIEW_ROLES = new Set(["employee", "intern"]);
 
 /** YYYY-MM-DD shifted by whole days. */
 function shiftDay(day, delta) {
@@ -322,6 +328,9 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   // view off `isOwner` alone was what left an Admin looking at "No projects
   // yet" on a populated org.
   const seesAllProjects = isOrgProjectAdminRole(roleName);
+  // Intern/Employee: Time Worked and Avg Activity become this person's own
+  // hours instead of the whole project's; every other role is untouched.
+  const isPersonalView = PERSONAL_VIEW_ROLES.has(roleKey);
   const allowedProjectIds = await getMemberProjectIds(db, viewerMemberId, roleName);
 
   const base = await loadDashboardBase(db);
@@ -425,12 +434,28 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   // the hardcoded "+12%" the card used to display for every org, forever.
   const prevFrom = shiftDay(weekFrom, -7);
   const prevTo = shiftDay(weekTo, -7);
-  const [projectMetrics, dailyTotalsAll, capacityByMember, prevMetrics, memberSecondsByProject] = await Promise.all([
+  const [
+    projectMetrics,
+    dailyTotalsAll,
+    capacityByMember,
+    prevMetrics,
+    memberSecondsByProject,
+    personalMetrics,
+    prevPersonalMetrics,
+  ] = await Promise.all([
     getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
-    getDailyActivityTotalsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
+    isPersonalView
+      ? getMemberDailyActivityTotalsPg({ projectIds: metricProjectIds, memberId: viewerMemberId, fromDay: weekFrom, toDay: weekTo })
+      : getDailyActivityTotalsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
     getMemberWeeklyCapacityPg(null),
     getProjectActivityMetricsPg({ projectIds: metricProjectIds, fromDay: prevFrom, toDay: prevTo }),
     getMemberActivitySecondsPg({ projectIds: metricProjectIds, fromDay: weekFrom, toDay: weekTo }),
+    isPersonalView
+      ? getMemberProjectActivityMetricsPg({ projectIds: metricProjectIds, memberId: viewerMemberId, fromDay: weekFrom, toDay: weekTo })
+      : Promise.resolve(new Map()),
+    isPersonalView
+      ? getMemberProjectActivityMetricsPg({ projectIds: metricProjectIds, memberId: viewerMemberId, fromDay: prevFrom, toDay: prevTo })
+      : Promise.resolve(new Map()),
   ]);
 
   // Names for everyone staffed on an in-scope project plus anyone who tracked
@@ -484,17 +509,56 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return all;
   }
 
-  const scope = await resolveActivityFeedScope(db, viewerMemberId, {
-    memberId: "all",
-    projectScopeOnly: !seesAllProjects,
-  });
-  let activityMemberIds = scope.targetMemberIds;
-  if (!seesAllProjects && allowedProjectIdList?.length) {
-    const projectMemberIds = await getProjectScopedMemberIds(db, viewerMemberId);
-    activityMemberIds =
-      activityMemberIds === null
-        ? [...projectMemberIds]
-        : activityMemberIds.filter((id) => projectMemberIds.has(id));
+  /** Personal view only: this viewer's own active/idle seconds, not the project's. */
+  function personalMetricsFor(projectId) {
+    if (projectId) return personalMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0 };
+    const all = { activeSeconds: 0, idleSeconds: 0 };
+    for (const metrics of personalMetrics.values()) {
+      all.activeSeconds += metrics.activeSeconds;
+      all.idleSeconds += metrics.idleSeconds;
+    }
+    return all;
+  }
+
+  /** Personal view only: this viewer's own previous-week active seconds. */
+  function prevPersonalActiveSecondsFor(projectId) {
+    if (projectId) return prevPersonalMetrics.get(projectId)?.activeSeconds ?? 0;
+    let total = 0;
+    for (const metrics of prevPersonalMetrics.values()) total += metrics.activeSeconds;
+    return total;
+  }
+
+  /**
+   * Personal view only: how many of this viewer's own tasks (in the scope)
+   * are in progress, out of how many are assigned to them at all - the
+   * Command Center's stand-in for "Active Members" when the view is one
+   * person, not a team.
+   */
+  function personalTaskStatsFor(projectId) {
+    const pool = projectId ? scopedTasks.filter((task) => task.projectId === projectId) : scopedTasks;
+    const mine = pool.filter((task) => task.assigneeId === viewerMemberId);
+    return {
+      inProgress: mine.filter((task) => task.status === "in_progress").length,
+      assigned: mine.length,
+    };
+  }
+
+  // Personal view: this person's own captures only. Everyone else keeps the
+  // project-scoped feed of whoever they may already see.
+  let activityMemberIds = [viewerMemberId];
+  if (!isPersonalView) {
+    const scope = await resolveActivityFeedScope(db, viewerMemberId, {
+      memberId: "all",
+      projectScopeOnly: !seesAllProjects,
+    });
+    activityMemberIds = scope.targetMemberIds;
+    if (!seesAllProjects && allowedProjectIdList?.length) {
+      const projectMemberIds = await getProjectScopedMemberIds(db, viewerMemberId);
+      activityMemberIds =
+        activityMemberIds === null
+          ? [...projectMemberIds]
+          : activityMemberIds.filter((id) => projectMemberIds.has(id));
+    }
   }
 
   const screenshotRows = await fetchPgScreenshots(activityMemberIds, null, 40);
@@ -519,7 +583,12 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     };
   });
 
-  const doneTaskFeed = scopedTasks
+  // Personal view: only tasks this person completed, matching the
+  // screenshot half of the feed above.
+  const feedTasks = isPersonalView
+    ? scopedTasks.filter((task) => task.assigneeId === viewerMemberId)
+    : scopedTasks;
+  const doneTaskFeed = feedTasks
     .filter((task) => task.status === "done")
     .sort((a, b) => b.updatedMs - a.updatedMs)
     .slice(0, 4)
@@ -539,13 +608,22 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     // The all-projects card reuses the scope-wide totals already loaded; a
     // single project needs its own per-day series.
     const dailyTotals = projectId
-      ? await getDailyActivityTotalsPg({ projectIds: [projectId], fromDay: weekFrom, toDay: weekTo })
+      ? isPersonalView
+        ? await getMemberDailyActivityTotalsPg({ projectIds: [projectId], memberId: viewerMemberId, fromDay: weekFrom, toDay: weekTo })
+        : await getDailyActivityTotalsPg({ projectIds: [projectId], fromDay: weekFrom, toDay: weekTo })
       : dailyTotalsAll;
-    const weeklyTrend = buildWeeklyTrend(scopedTasks, projectId, dailyTotals);
+    // feedTasks is already narrowed to this person in the personal view, so
+    // the chart's per-day drill-down lists their tasks, not the team's.
+    const weeklyTrend = buildWeeklyTrend(feedTasks, projectId, dailyTotals);
     const activeSeries = weeklyTrend.map((day) => day.active);
     const { chartPath, chartFill } = buildTrendPaths(activeSeries);
     const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember, utilizationMeta);
-    const metrics = metricsFor(projectId);
+    // Intern/Employee: their own hours, not the project's - everyone else
+    // keeps the whole-project totals unchanged.
+    const metrics = isPersonalView ? personalMetricsFor(projectId) : metricsFor(projectId);
+    const prevActiveSeconds = isPersonalView
+      ? prevPersonalActiveSecondsFor(projectId)
+      : prevActiveSecondsFor(projectId);
 
     const aggregateRow = projectId
       ? projectRows.find((row) => row.id === projectId)
@@ -573,7 +651,10 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       id: projectId ?? "all",
       name: projectId ? aggregateRow?.name || "Project" : seesAllProjects ? "All Projects" : "All My Projects",
       colorIndex: projectId ? aggregateRow?.colorIndex ?? 0 : 0,
-      stats: buildStats(aggregateRow, projectId, metrics, prevActiveSecondsFor(projectId)),
+      stats: buildStats(aggregateRow, projectId, metrics, prevActiveSeconds),
+      // Only set for Intern/Employee - the "Active Members" card's personal
+      // stand-in. null for every other role, who keep that card as-is.
+      personalTaskStats: isPersonalView ? personalTaskStatsFor(projectId) : null,
       chartPath,
       chartFill,
       weeklyTrend,
@@ -594,6 +675,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     roleName,
     isOwner,
     canSeeAllProjects: seesAllProjects,
+    isPersonalView,
     globalActivityFeed,
     projects,
   };

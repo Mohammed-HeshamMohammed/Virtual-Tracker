@@ -30,6 +30,12 @@ export type ProjectHealthItem = {
   hint: string
 }
 
+/** Intern/Employee stand-in for the "Active Members" card: their own tasks, not the team. */
+export type PersonalTaskStats = {
+  inProgress: number
+  assigned: number
+}
+
 export interface ProjectData {
   id: string
   name: string
@@ -45,6 +51,8 @@ export interface ProjectData {
     activityPercent: number
     activityBadge: string
   }
+  /** Set only for Intern/Employee (personal view); null for every other role. */
+  personalTaskStats: PersonalTaskStats | null
   chartPath: string
   chartFill: string
   weeklyTrend: WeeklyTrendDay[]
@@ -83,6 +91,8 @@ export type CommandCenterPayload = {
   roleName: string
   isOwner: boolean
   canSeeAllProjects: boolean
+  /** Intern/Employee: cards read as this person's own work, not the project's. */
+  isPersonalView: boolean
   globalActivityFeed: ActivityFeedItem[]
   projects: ProjectData[]
 }
@@ -102,6 +112,7 @@ export type ApiProjectData = {
   name: string
   colorIndex: number
   stats: ProjectData["stats"]
+  personalTaskStats: PersonalTaskStats | null
   chartPath: string
   chartFill: string
   weeklyTrend: WeeklyTrendDay[]
