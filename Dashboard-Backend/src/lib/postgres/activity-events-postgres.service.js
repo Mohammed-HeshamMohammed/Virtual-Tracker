@@ -729,6 +729,41 @@ export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay }) 
 }
 
 /**
+ * A member's own active AND idle seconds over a day range, for the agent's
+ * activity meter.
+ *
+ * Deliberately not read from daily_member_active_seconds like the function
+ * above: that rollup has no idle column, so an activity percentage built from
+ * it would divide a rollup number by a sessions number. Both halves come from
+ * activity_sessions here, which is also what the dashboard's own
+ * getProjectActivityMetricsPg reads - so the agent and the web app report the
+ * same percentage for the same day rather than two that drift apart.
+ * The day boundary uses the member's own timezone, matching that query.
+ * @param {string} memberId
+ * @param {{ fromDay: string, toDay: string }} range
+ * @returns {Promise<{ activeSeconds: number, idleSeconds: number }>}
+ */
+export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return { activeSeconds: 0, idleSeconds: 0 };
+  const result = await pgQuery(
+    `SELECT COALESCE(SUM(s.active_seconds), 0) AS active_seconds,
+            COALESCE(SUM(s.idle_seconds), 0)   AS idle_seconds
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date`,
+    [id, fromDay, toDay],
+  );
+  const row = result?.rows?.[0] ?? {};
+  return {
+    activeSeconds: Math.max(0, Math.floor(Number(row.active_seconds ?? 0))),
+    idleSeconds: Math.max(0, Math.floor(Number(row.idle_seconds ?? 0))),
+  };
+}
+
+/**
  * @param {string} memberId
  * @param {string} taskId
  * @param {string} day 'YYYY-MM-DD'

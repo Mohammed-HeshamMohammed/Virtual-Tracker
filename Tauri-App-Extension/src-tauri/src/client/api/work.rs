@@ -385,6 +385,16 @@ impl ApiClient {
             assigned_today: parse_assigned_today(data.get("assignedToday")),
             working_today: data.get("workingToday").and_then(|v| v.as_bool()).unwrap_or(true),
             is_makeup_day: data.get("isMakeupDay").and_then(|v| v.as_bool()).unwrap_or(false),
+            today_activity: {
+                let node = data.get("todayActivity");
+                let field = |key: &str| -> i64 {
+                    node.and_then(|n| n.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+                };
+                crate::types::TodayActivity {
+                    active_seconds: field("activeSeconds"),
+                    idle_seconds: field("idleSeconds"),
+                }
+            },
         })
     }
 

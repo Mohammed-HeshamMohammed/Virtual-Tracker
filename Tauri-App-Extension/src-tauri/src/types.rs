@@ -302,6 +302,21 @@ pub struct MemberLimits {
     /// "makeup day" flag, not a regular selected working day.
     #[serde(default)]
     pub is_makeup_day: bool,
+    /// Today's active/idle split, the same measure the dashboard grades
+    /// activity on. Zeroed on older backends, which the UI reads as
+    /// "nothing tracked yet" and hides.
+    #[serde(default)]
+    pub today_activity: TodayActivity,
+}
+
+/// Active vs idle seconds for a day - the ratio behind the activity meter.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayActivity {
+    #[serde(default)]
+    pub active_seconds: i64,
+    #[serde(default)]
+    pub idle_seconds: i64,
 }
 
 fn default_true() -> bool {

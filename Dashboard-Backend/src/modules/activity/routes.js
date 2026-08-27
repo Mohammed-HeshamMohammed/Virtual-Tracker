@@ -52,6 +52,7 @@ import { computeAssignedTodayDemand, applyCapToAssignedTodayDemand } from "../ta
 import {
   computeMemberTimerAllowance,
   computeTimerAllowance,
+  currentDayRange,
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
 import { isProjectMemberForTimer } from "../../http/project-access.js";
@@ -77,6 +78,7 @@ import {
   insertActivityAppLog,
   insertActivityScreenshot,
   insertActivityUrlLog,
+  sumMemberActiveIdleSeconds,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
@@ -384,13 +386,23 @@ export async function routeActivity(req, res, url, origin) {
       // timerAllowance is the same computation the calling-project start path
       // gates on below, so what the agent displays as "remaining today" and
       // what actually blocks the start button can never disagree.
-      const [dailyHours, weeklyHours, usesShifts, timerAllowance, assignedDemand, todayWorkStatus] = await Promise.all([
+      const { todayDay } = currentDayRange();
+      const [
+        dailyHours,
+        weeklyHours,
+        usesShifts,
+        timerAllowance,
+        assignedDemand,
+        todayWorkStatus,
+        todayActivity,
+      ] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
         memberUsesShiftsForLimits(db, member.memberId),
         computeMemberTimerAllowance(db, member.memberId),
         computeAssignedTodayDemand(member.memberId),
         getMemberTodayWorkStatus(db, member.memberId),
+        sumMemberActiveIdleSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay }),
       ]);
       // Shift-based members have no daily/weekly cap (loadMemberCapContext
       // zeroes it out), so nothing caps their assigned demand either -
@@ -407,6 +419,9 @@ export async function routeActivity(req, res, url, origin) {
           assignedToday,
           workingToday: todayWorkStatus.workingToday,
           isMakeupDay: todayWorkStatus.isMakeupDay,
+          // Both halves from activity_sessions, so the agent's activity meter
+          // matches the percentage the dashboard reports for the same day.
+          todayActivity,
         },
       });
     } catch (e) {

@@ -1101,6 +1101,52 @@ function MainApp() {
         : `${fmtHours(memberLimits.allowedRemainingSeconds)} left`;
   const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds) : "—";
 
+  // The measure the dashboard actually grades on (active / active+idle), which
+  // the agent never showed - so the number someone is judged by was only
+  // visible by opening the web app. Idle time is what the 5/10/15-minute
+  // banners below warn about while it accrues; this is the running total.
+  const activityToday = memberLimits?.todayActivity;
+  const activityTrackedSeconds = activityToday
+    ? activityToday.activeSeconds + activityToday.idleSeconds
+    : 0;
+  const activityPercent =
+    activityTrackedSeconds > 0
+      ? Math.round((activityToday!.activeSeconds / activityTrackedSeconds) * 100)
+      : null;
+  const activityLabel = activityPercent == null ? "—" : `${activityPercent}%`;
+  const activitySubLabel =
+    activityPercent == null
+      ? "nothing tracked yet today"
+      : `${fmtHours(activityToday!.idleSeconds)} idle`;
+
+  // Weekly cap holders were flying blind: weeklyHours only ever appeared as a
+  // fallback label on the Daily cap card when no daily cap existed, so there
+  // was no way to see where the week stood until it ran out.
+  const weeklyCapSeconds =
+    memberLimits && !memberLimits.usesShifts && memberLimits.weeklyHours > 0
+      ? Math.floor(memberLimits.weeklyHours * 3600)
+      : 0;
+  const weekWorkedLabel = memberLimits ? fmtHours(memberLimits.workedWeekSeconds) : "—";
+  const weekSubLabel = !memberLimits
+    ? ""
+    : memberLimits.usesShifts
+      ? "shift-based — no weekly cap"
+      : weeklyCapSeconds > 0
+        ? `of ${fmtLimitHours(memberLimits.weeklyHours)} · ${fmtHours(
+            Math.max(0, weeklyCapSeconds - memberLimits.workedWeekSeconds),
+          )} left`
+        : "no weekly cap";
+
+  // "2h 15m left" makes you do the arithmetic; a wall-clock time doesn't.
+  // Only meaningful while the timer is actually running toward the cap.
+  const projectedCapTimeLabel = (() => {
+    if (!memberLimits || memberLimits.usesShifts) return "";
+    const remaining = memberLimits.allowedRemainingSeconds;
+    if (remaining == null || remaining <= 0 || !tracking) return "";
+    const at = new Date(Date.now() + remaining * 1000);
+    return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  })();
+
   // T5 - "how much work is assigned to me today" (demandSeconds, including
   // rollover from earlier days), a different question from the cap above
   // ("how much am I still allowed to work"). Both matter; this is the one
@@ -1158,6 +1204,19 @@ function MainApp() {
         <span className={`stat-card-value${memberLimits?.limitReached ? " warn" : ""}`}>
           {dailyCapLeftLabel}
         </span>
+        {projectedCapTimeLabel ? (
+          <span className="stat-card-sub">reached around {projectedCapTimeLabel}</span>
+        ) : null}
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">Activity today</span>
+        <span className="stat-card-value">{activityLabel}</span>
+        <span className="stat-card-sub">{activitySubLabel}</span>
+      </div>
+      <div className="stat-card">
+        <span className="stat-card-label">This week</span>
+        <span className="stat-card-value">{weekWorkedLabel}</span>
+        {weekSubLabel ? <span className="stat-card-sub">{weekSubLabel}</span> : null}
       </div>
       {projectBudget ? (
         <div className="stat-card">

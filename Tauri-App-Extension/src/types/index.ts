@@ -175,6 +175,9 @@ export type MemberLimits = {
   workingToday: boolean;
   /** True when today is only worked because of a flagged makeup day. */
   isMakeupDay: boolean;
+  /** Today's active/idle split - the ratio the dashboard grades activity on.
+   *  Both zero means nothing tracked today (or an older backend). */
+  todayActivity: { activeSeconds: number; idleSeconds: number };
 };
 
 // The viewer's own People-page member record - richer than what's in the
