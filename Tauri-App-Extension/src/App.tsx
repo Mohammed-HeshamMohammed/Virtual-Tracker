@@ -1115,6 +1115,18 @@ function MainApp() {
     setSelectedTaskId(task.id);
   };
 
+  // How many of the member's open tasks live in each project - lets the
+  // project quick-switch below say "3 open" instead of just naming it.
+  const openTaskCountByProject = new Map<string, number>();
+  for (const task of assignedTasks) {
+    if (!task.projectId) continue;
+    openTaskCountByProject.set(task.projectId, (openTaskCountByProject.get(task.projectId) ?? 0) + 1);
+  }
+  const jumpToProject = (projectId: string) => {
+    if (busy || sessionOpen || projectId === selectedProjectId) return;
+    setSelectedProjectId(projectId);
+  };
+
   // The member's own daily cap, as a ceiling the day panel measures against
   // rather than a tile of its own - a static config value was being given the
   // same weight as "can I keep working".
@@ -1603,36 +1615,79 @@ function MainApp() {
             </div>
           </section>
 
+          {/* Every project the member can track against, as a quick-switch
+              list rather than only the dropdown below - useful the moment
+              there's more than one, and each row's open-task count is
+              something the dropdown itself has no room to show. */}
+          {signedIn && projects.length > 0 ? (
+            <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
+              <div className="side-tasklist-head">
+                <span className="stat-tile-label">Your projects</span>
+                <span className="side-tasklist-count">{projects.length}</span>
+              </div>
+              <div className="side-tasklist-body">
+                {projects.map((project) => {
+                  const openCount = openTaskCountByProject.get(project.id) ?? 0;
+                  return (
+                    <button
+                      key={project.id}
+                      type="button"
+                      className={`side-task-row${project.id === selectedProjectId ? " active" : ""}`}
+                      disabled={busy || sessionOpen}
+                      onClick={() => jumpToProject(project.id)}
+                    >
+                      <span className="side-task-row-main">
+                        <span className="side-task-row-title">{project.name}</span>
+                        <span className="side-task-row-project">
+                          {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+
           {/* Everything open and assigned to the member, across every
               project - not just the one picked below. Doubles as a
               shortcut: clicking a row jumps the pickers straight to it. */}
-          {assignedTasks.length > 0 ? (
+          {signedIn ? (
             <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
               <div className="side-tasklist-head">
                 <span className="stat-tile-label">Your tasks</span>
-                <span className="side-tasklist-count">{assignedTasks.length}</span>
+                {assignedTasks.length > 0 ? (
+                  <span className="side-tasklist-count">{assignedTasks.length}</span>
+                ) : null}
               </div>
-              <div className="side-tasklist-body">
-                {assignedTasks.map((task) => (
-                  <button
-                    key={task.id}
-                    type="button"
-                    className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}
-                    disabled={busy || sessionOpen}
-                    onClick={() => jumpToAssignedTask(task)}
-                  >
-                    <span className="side-task-row-main">
-                      <span className="side-task-row-title">{task.title}</span>
-                      {task.projectId ? (
-                        <span className="side-task-row-project">
-                          {projectNameById.get(task.projectId) || "Unknown project"}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className={`badge ${taskStatusTone(task.status)}`}>{taskStatusLabel(task.status)}</span>
-                  </button>
-                ))}
-              </div>
+              {assignedTasks.length > 0 ? (
+                <div className="side-tasklist-body">
+                  {assignedTasks.map((task) => (
+                    <button
+                      key={task.id}
+                      type="button"
+                      className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}
+                      disabled={busy || sessionOpen}
+                      onClick={() => jumpToAssignedTask(task)}
+                    >
+                      <span className="side-task-row-main">
+                        <span className="side-task-row-title">{task.title}</span>
+                        {task.projectId ? (
+                          <span className="side-task-row-project">
+                            {projectNameById.get(task.projectId) || "Unknown project"}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className={`badge ${taskStatusTone(task.status)}`}>{taskStatusLabel(task.status)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="side-tasklist-empty">
+                  <Icon name="check-filled" />
+                  Nothing open assigned to you right now
+                </p>
+              )}
             </section>
           ) : null}
 
@@ -1643,9 +1698,9 @@ function MainApp() {
             </div>
           ) : (
             <>
-              {/* Centred as a pair, so the project card visibly rides upward as
-                  the task card grows in - and sits centred on its own for a
-                  calling project, which never gets one. */}
+              {/* Project and task pickers, stacked in normal flow so the task
+                  card's grid-row transition still reads as it growing in
+                  underneath, without pulling the project card up with it. */}
               <div className="selector-stack side-panel-swap">
                 <section className="task-card">
                   <label className="task-label" htmlFor="project-select">

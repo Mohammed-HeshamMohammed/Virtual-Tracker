@@ -1446,19 +1446,18 @@ body {
   gap: 8px;
 }
 
-/* Project + task pickers, centred as a group in the space above the actions.
-   Centring is what makes the project card ride upward when the task card
-   opens, instead of the task card just appearing underneath it. */
+/* Project + task pickers. Used to flex:1-and-centre in the whole remaining
+   height, which read fine with a big activity graphic above eating most of
+   it - once that graphic became the task/project lists (real content, sized
+   to what they hold), centring in a forced-tall box just moved the dead
+   space around instead of shrinking it. Natural height now; the sidebar's
+   one flex-grower is the footer's own auto top margin below, so everything
+   above packs together and any real slack collects in one place - right
+   above the footer card, not sandwiched mid-content. */
 .selector-stack {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  /* Never centre content out of reach on a short window - overflow spills
-     downward into the panel's scroll area instead of clipping off the top. */
-  justify-content: safe center;
   gap: 20px;
-  flex: 1;
-  min-height: 0;
 }
 
 /* Cross-project "your tasks" list - sits between the hero card and the
@@ -1492,6 +1491,22 @@ body {
   gap: 4px;
   max-height: 188px;
   overflow-y: auto;
+}
+
+.side-tasklist-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: rgb(var(--c-overlay) / 0.03);
+  color: var(--on-surface-faint);
+  font-size: 12px;
+}
+
+.side-tasklist-empty .vt-icon {
+  color: rgb(var(--c-good));
+  flex-shrink: 0;
 }
 
 .side-task-row {
@@ -3312,7 +3327,10 @@ body {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-top: 12px;
+  /* The one flex-grower in .side-panel - pins the footer to the bottom of
+     the sidebar and packs everything above it together instead of that
+     content being stretched/centred across the full remaining height. */
+  margin-top: auto;
   padding: 5px;
   border-radius: 13px;
   background: rgb(var(--c-overlay) / 0.03);
