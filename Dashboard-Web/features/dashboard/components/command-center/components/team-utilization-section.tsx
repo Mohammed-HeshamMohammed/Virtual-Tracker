@@ -5,18 +5,6 @@ import { motion } from "framer-motion"
 import type { ProjectData } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
 
-const LOAD_TEXT = {
-  optimal: "text-emerald-600 dark:text-emerald-400",
-  over: "text-rose-600 dark:text-rose-400",
-  under: "text-slate-500 dark:text-slate-400",
-} as const
-
-const LOAD_BAR = {
-  optimal: "bg-emerald-500 dark:bg-emerald-400",
-  over: "bg-rose-500 dark:bg-rose-400",
-  under: "bg-slate-300 dark:bg-slate-600",
-} as const
-
 interface TeamUtilizationSectionProps {
   project: ProjectData
   onNavigate?: (id: string, state?: Record<string, unknown>) => void
@@ -86,39 +74,6 @@ export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationS
             </motion.span>
           </div>
         ))}
-      </div>
-
-      {/* Per-member rows behind the counts: each member's own tracked hours
-          against their own weekly capacity, not the team average. */}
-      <div className="w-full space-y-3 mb-6">
-        {d.utilizationBreakdown.length === 0 ? (
-          <p className="text-xs text-slate-400 dark:text-slate-500">
-            No members with a weekly capacity set on these projects yet.
-          </p>
-        ) : (
-          d.utilizationBreakdown.map((member) => (
-            <div key={member.id} className="flex items-center gap-3">
-              <div className="w-8 h-8 shrink-0 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px] font-bold text-slate-600 dark:text-slate-300">
-                {member.initials}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">{member.name}</span>
-                  <span className={`text-xs font-bold shrink-0 ${LOAD_TEXT[member.load]}`}>{member.percent}%</span>
-                </div>
-                <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full ${LOAD_BAR[member.load]}`}
-                    style={{ width: `${Math.min(100, member.percent)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                  {member.hours}h of {member.capacityHours}h
-                </p>
-              </div>
-            </div>
-          ))
-        )}
       </div>
 
       <button
