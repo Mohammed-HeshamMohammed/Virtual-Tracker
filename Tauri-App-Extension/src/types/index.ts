@@ -67,6 +67,10 @@ export type AgentTask = {
   id: string;
   title: string;
   status: string;
+  /** Empty for a task fetched already scoped to one project (the dropdown's
+   *  own call). Populated when list_tasks is called with no project filter,
+   *  which is how the sidebar's cross-project "Your tasks" list is built. */
+  projectId: string;
 };
 
 export type ProjectInfo = {

@@ -50,6 +50,23 @@ export function statusLabel(status: string, signedIn: boolean): string {
   return "Signed out";
 }
 
+// Backend task statuses are free-form strings from whatever project-type
+// owns them (todo/in_progress/blocked/on_hold/...) - grade on keywords
+// rather than an exact match so an unfamiliar one still lands somewhere
+// sane instead of falling through as an error.
+export function taskStatusTone(status: string): "neutral" | "good" | "warn" {
+  const s = status.toLowerCase();
+  if (s.includes("block") || s.includes("hold") || s.includes("stuck") || s.includes("overdue")) return "warn";
+  if (s.includes("progress") || s.includes("active") || s.includes("review")) return "good";
+  return "neutral";
+}
+
+export function taskStatusLabel(status: string): string {
+  const trimmed = status.trim();
+  if (!trimmed) return "Open";
+  return trimmed.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export function fmtLimitHours(hours: number): string {
   if (!hours || hours <= 0) return "No cap";
   return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;

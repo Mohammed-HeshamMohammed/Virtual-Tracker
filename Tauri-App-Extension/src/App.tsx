@@ -32,6 +32,8 @@ import {
   fmtHours,
   fmtLimitHours,
   initialsFromName,
+  taskStatusLabel,
+  taskStatusTone,
 } from "./utils/formatters";
 import { TitleBar } from "./components/common/TitleBar";
 import { Dropdown } from "./components/common/Dropdown";
@@ -109,6 +111,11 @@ function MainApp() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
+  // Every open task assigned to the member, across every project - not
+  // scoped to whichever project happens to be picked (that's `tasks`
+  // above, which only exists to feed the task dropdown). This is the
+  // sidebar's own "what else is on my plate" view.
+  const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -248,6 +255,19 @@ function MainApp() {
     } catch {
       setProjects([]);
       setProjectsFailed(true);
+    }
+  }, [signedIn]);
+
+  const refreshAssignedTasks = useCallback(async () => {
+    if (!signedIn) {
+      setAssignedTasks([]);
+      return;
+    }
+    try {
+      const next = await invoke<AgentTask[]>("list_tasks", { projectId: null });
+      setAssignedTasks(next);
+    } catch {
+      setAssignedTasks([]);
     }
   }, [signedIn]);
 
@@ -441,6 +461,7 @@ function MainApp() {
   // Slower than the 5s polls above because these settings change rarely and
   // this refetches the whole list.
   usePolling(view === "home" || view === "profile", 30000, refreshProjects);
+  usePolling(view === "home" || view === "profile", 30000, refreshAssignedTasks);
 
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
@@ -461,10 +482,11 @@ function MainApp() {
       void refreshTaskTracking();
       void refreshMemberLimits();
       void refreshProjectBudget();
+      void refreshAssignedTasks();
     };
     window.addEventListener("vt-live-changed", onLiveChanged);
     return () => window.removeEventListener("vt-live-changed", onLiveChanged);
-  }, [refreshTaskTracking, refreshMemberLimits, refreshProjectBudget]);
+  }, [refreshTaskTracking, refreshMemberLimits, refreshProjectBudget, refreshAssignedTasks]);
 
   // The People-page member record never changes while the app is open - one
   // fetch per sign-in, no polling. Used to wait for the profile view to open,
@@ -1079,6 +1101,20 @@ function MainApp() {
     ? selectedProject?.name ?? ""
     : selectedTask?.title ?? "";
 
+  // For the sidebar's cross-project task list - it only has a projectId per
+  // row, never a project name of its own.
+  const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
+  // Jumping to a task from that list re-picks its project first (a task from
+  // a project that's gone missing client-side is simply not clickable), the
+  // same two-step a person would do by hand with the dropdowns above.
+  const jumpToAssignedTask = (task: AgentTask) => {
+    if (busy || sessionOpen) return;
+    if (task.projectId && task.projectId !== selectedProjectId) {
+      setSelectedProjectId(task.projectId);
+    }
+    setSelectedTaskId(task.id);
+  };
+
   // The member's own daily cap, as a ceiling the day panel measures against
   // rather than a tile of its own - a static config value was being given the
   // same weight as "can I keep working".
@@ -1551,29 +1587,6 @@ function MainApp() {
               is happening right now. */}
           <section className="hero-card">
             <div className={`signal${tracking ? " live" : ""}`}>
-              {tracking && activityPercent != null ? (
-                <div className="signal-activity">
-                  <div className="signal-activity-head">
-                    <span className="stat-tile-label">Activity now</span>
-                    <span className="signal-activity-value">{activityPercent}%</span>
-                  </div>
-                  <div className="capacity-bar slim">
-                    <div className="capacity-fill active" style={{ width: `${activityPercent}%` }} />
-                  </div>
-                  {activityToday ? (
-                    <div className="signal-split">
-                      <span>
-                        <i className="dot good" />
-                        {fmtHours(activityToday.activeSeconds)} active
-                      </span>
-                      <span>
-                        <i className="dot idle" />
-                        {fmtHours(activityToday.idleSeconds)} idle
-                      </span>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
               <p className="signal-text">
                 {loadingProfile
                   ? "Checking your session…"
@@ -1589,6 +1602,39 @@ function MainApp() {
               </p>
             </div>
           </section>
+
+          {/* Everything open and assigned to the member, across every
+              project - not just the one picked below. Doubles as a
+              shortcut: clicking a row jumps the pickers straight to it. */}
+          {assignedTasks.length > 0 ? (
+            <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
+              <div className="side-tasklist-head">
+                <span className="stat-tile-label">Your tasks</span>
+                <span className="side-tasklist-count">{assignedTasks.length}</span>
+              </div>
+              <div className="side-tasklist-body">
+                {assignedTasks.map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}
+                    disabled={busy || sessionOpen}
+                    onClick={() => jumpToAssignedTask(task)}
+                  >
+                    <span className="side-task-row-main">
+                      <span className="side-task-row-title">{task.title}</span>
+                      {task.projectId ? (
+                        <span className="side-task-row-project">
+                          {projectNameById.get(task.projectId) || "Unknown project"}
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className={`badge ${taskStatusTone(task.status)}`}>{taskStatusLabel(task.status)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
 
           {loadingProfile ? (
             <div className="side-skeleton side-panel-swap" aria-hidden="true">
