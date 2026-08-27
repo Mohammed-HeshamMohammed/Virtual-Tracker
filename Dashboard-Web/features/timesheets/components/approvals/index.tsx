@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
-import { canManageTimesheetApprovals } from "@/features/auth"
+import { canManageTimesheetApprovals, isEmployeeRole } from "@/features/auth"
 import { Tab, SetupData } from "@/features/timesheets/components/approvals/types"
 import { EMPTY_APPROVAL_MEMBERS } from "@/features/timesheets/components/approvals/data"
 import { SetupModal } from "@/features/timesheets/components/approvals/components/SetupModal"
@@ -119,6 +119,9 @@ function PendingApprovalsQueue({
 export function TimesheetsApprovalsContent() {
   const { memberRole } = useAuth()
   const canManage = canManageTimesheetApprovals(memberRole)
+  // Employee tier gets this tab too, but only their own submission tools -
+  // the org-wide pending queue and the approval setup button stay hidden.
+  const canViewOwnOnly = isEmployeeRole(memberRole)
   const [activeTab, setActiveTab] = useState<Tab>("timesheets")
   const [showSetupModal, setShowSetupModal] = useState(false)
   const [members, setMembers] = useState(EMPTY_APPROVAL_MEMBERS)
@@ -178,7 +181,7 @@ export function TimesheetsApprovalsContent() {
     }
   }
 
-  if (!canManage) {
+  if (!canManage && !canViewOwnOnly) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center p-8">
         <p className="text-sm text-slate-500">You do not have permission to configure timesheet approvals.</p>
@@ -248,18 +251,22 @@ export function TimesheetsApprovalsContent() {
               {/* The member's own submit flow - the writer that fills the queue below */}
               <SubmitMyTimesheetCard />
 
-              {/* Real approve/reject queue */}
-              <PendingApprovalsQueue members={members} />
+              {canManage ? (
+                <>
+                  {/* Real approve/reject queue */}
+                  <PendingApprovalsQueue members={members} />
 
-              {/* Set it up button */}
-              <div className="flex justify-center">
-                <button
-                  onClick={() => setShowSetupModal(true)}
-                  className="px-6 py-2.5 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  Set it up
-                </button>
-              </div>
+                  {/* Set it up button */}
+                  <div className="flex justify-center">
+                    <button
+                      onClick={() => setShowSetupModal(true)}
+                      className="px-6 py-2.5 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors"
+                    >
+                      Set it up
+                    </button>
+                  </div>
+                </>
+              ) : null}
             </motion.div>
           ) : (
             <motion.div

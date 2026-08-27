@@ -19,7 +19,7 @@ import {
   canAccessAllSidebarTabs,
   canAccessReviewCenter,
   clientHiddenPageIds,
-  isReadOnlyRole,
+  isManagementRole,
 } from "@/features/auth"
 import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
@@ -56,9 +56,9 @@ export function Sidebar({
   const canAccessAllTabs = canAccessAllSidebarTabs(memberRole)
   const canSeeReviewCenter = canAccessReviewCenter(memberRole)
   const isClient = isClientRole(memberRole)
-  // Client and Viewer have nothing to add a task to - the button opened a
-  // creation flow the server would refuse.
-  const canAddTask = !isReadOnlyRole(memberRole)
+  // Below Manager tier, the button opened a creation flow the server would
+  // refuse - only Manager and above may create tasks from the sidebar.
+  const canAddTask = isManagementRole(memberRole)
 
   const isSectionActive = (s: NavSection) =>
     s.id === activeItem || s.pages?.some((p: NavSubItem) => p.id === activeItem) || false
@@ -107,9 +107,13 @@ export function Sidebar({
             }
           }
           if (s.id === "project-management") {
+            // Own tasks, own project rows (read-only), and own time off
+            // requests - Overview and Clients stay manager-only.
             return {
               ...s,
-              pages: s.pages?.filter((p: NavSubItem) => p.id === "pm-tasks")
+              pages: s.pages?.filter((p: NavSubItem) =>
+                p.id === "pm-tasks" || p.id === "pm-projects" || p.id === "calendar-timeoff",
+              )
             }
           }
           return s

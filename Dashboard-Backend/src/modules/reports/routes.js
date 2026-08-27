@@ -1,4 +1,5 @@
 import { requireAuthContext, isManagementRole } from "../../http/auth-context.js";
+import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { sendJson } from "../../http/response.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { readJsonBody } from "../../http/read-json-body.js";
@@ -89,6 +90,20 @@ function parseDateParam(value) {
 }
 
 /**
+ * Report-scoped visible ids. getVisibleMemberIds gives Employee-tier roles a
+ * full read of their org/team subtree for the People directory, but reports
+ * are personal data, not a roster - an Employee/Intern/Team Lead's report
+ * scope is always just themselves, regardless of who they can see listed on
+ * the Members page.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {{ memberId: string, roleName: string }} viewer
+ */
+async function resolveReportVisibleIds(db, viewer) {
+  if (isEmployeeRole(viewer.roleName)) return [viewer.memberId];
+  return getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+}
+
+/**
  * Resolves which member ids the viewer is allowed to pull this report for.
  * Returns `null` (no filter, i.e. every visible member) or an array of ids.
  * Throws with a `status` field on the error when the request should be rejected.
@@ -97,12 +112,10 @@ function parseDateParam(value) {
  * @param {string | null} requestedMemberId
  */
 async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
-  const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+  const visibleIds = await resolveReportVisibleIds(db, viewer);
 
   if (!requestedMemberId) {
     // No specific member requested - scope to everyone the viewer can already see.
-    // getVisibleMemberIds returns [viewer.memberId] for non-management roles, so
-    // there's no separate "else self-only" branch needed here.
     return visibleIds;
   }
 
@@ -124,7 +137,7 @@ async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
  * @param {string[]} requestedMemberIds
  */
 async function resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds) {
-  const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+  const visibleIds = await resolveReportVisibleIds(db, viewer);
   if (!requestedMemberIds || requestedMemberIds.length === 0) return visibleIds;
 
   if (visibleIds !== null) {
@@ -279,7 +292,7 @@ export async function routeReports(req, res, url, origin) {
     if (!viewer) return true;
     try {
       const [visibleMemberIds, allowedProjectIds] = await Promise.all([
-        getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName),
+        resolveReportVisibleIds(getDb(), viewer),
         getViewerProjectIds(getDb(), viewer.memberId, viewer.roleName),
       ]);
 

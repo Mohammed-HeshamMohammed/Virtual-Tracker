@@ -25,6 +25,7 @@ import {
 } from "../../lib/postgres/task-member-progress.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
+import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
 const REVIEW_CENTER_ROLES = new Set([
   "owner",
@@ -653,6 +654,14 @@ async function getClientProjectIds(db, memberId) {
 
 async function isAssignmentVisible(db, viewerMemberId, viewerRole, assignment, task) {
   const role = normalizeRole(viewerRole);
+
+  // Employee tier reads the review queue for their own assignments only -
+  // getVisibleMemberIds gives them their whole org/team subtree for the
+  // People directory, which is far wider than "their stuff" here.
+  if (isEmployeeRole(viewerRole)) {
+    return assignment.userId === viewerMemberId;
+  }
+
   const visibleIds = await getVisibleMemberIds(db, viewerMemberId, viewerRole);
   const isPrivileged = visibleIds === null;
 
@@ -746,7 +755,11 @@ async function enrichAssignmentRow(db, assignment, trackingByKey, caches) {
 }
 
 export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {}) {
-  if (!isReviewCenterRole(viewerRole)) {
+  // Employee tier may open the queue too, read-only and scoped to their own
+  // assignments only (see the isEmployeeRole branch in isAssignmentVisible) -
+  // deliberately not folded into isReviewCenterRole/REVIEW_CENTER_ROLES, which
+  // other checks in this module reuse to mean "can see/edit anyone's rows".
+  if (!isReviewCenterRole(viewerRole) && !isEmployeeRole(viewerRole)) {
     throw new Error("Only review center roles can access the review queue");
   }
 

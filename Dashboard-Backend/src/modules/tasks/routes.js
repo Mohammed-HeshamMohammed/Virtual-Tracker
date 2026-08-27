@@ -1,4 +1,5 @@
 import { requireAuthContext } from "../../http/auth-context.js";
+import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { assertCanReviewTasks, assertTaskAccessible, canAccessTask, canSyncTaskAssignments } from "../../http/task-access.js";
@@ -126,7 +127,9 @@ export async function routeTasks(req, res, url, db, origin) {
   if (pn === "/api/task-assignments/review-queue" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    if (!isReviewCenterRole(viewer.roleName)) {
+    // Employee tier may open this too - getReviewQueue itself scopes their
+    // rows down to their own assignments only.
+    if (!isReviewCenterRole(viewer.roleName) && !isEmployeeRole(viewer.roleName)) {
       sendJson(res, origin, 403, { success: false, error: "Only authorized roles can access the review center" });
       return true;
     }

@@ -384,7 +384,7 @@ export function ProjectsTab({
                     <tr
                       key={project.id}
                       style={peopleTableRowStyle(rowH)}
-                      onDoubleClick={() => onPreview?.(project.id)}
+                      onDoubleClick={canManageProjects ? () => onPreview?.(project.id) : undefined}
                       className={cn(
                         "group cursor-default transition-colors",
                         t.tableRowHover,
