@@ -3265,11 +3265,18 @@ body {
   cursor: not-allowed;
 }
 
+/* Unclipped, so the status dot below can sit on the rim of the circle
+   instead of being cut off at its edge. */
 .side-footer-avatar {
   position: relative;
   width: 36px;
   height: 36px;
   flex-shrink: 0;
+}
+
+.side-footer-avatar-circle {
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   border-radius: 999px;
@@ -3280,7 +3287,7 @@ body {
   font-weight: 700;
 }
 
-.side-footer-avatar img {
+.side-footer-avatar-circle img {
   width: 100%;
   height: 100%;
   object-fit: cover;

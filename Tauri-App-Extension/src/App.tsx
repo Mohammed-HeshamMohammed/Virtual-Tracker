@@ -1700,17 +1700,24 @@ function MainApp() {
                   onClick={() => setView("profile")}
                 >
                   <span className="side-footer-avatar">
-                    {profile?.avatarUrl && !avatarError ? (
-                      <img
-                        src={profile.avatarUrl}
-                        alt=""
-                        referrerPolicy="no-referrer"
-                        draggable={false}
-                        onError={() => setAvatarError(true)}
-                      />
-                    ) : (
-                      <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
-                    )}
+                    {/* The circular clip lives on this inner span, not on
+                        .side-footer-avatar itself - clipping the outer
+                        element also clipped the status dot below to the
+                        circle's own edge instead of letting it sit on the
+                        rim. */}
+                    <span className="side-footer-avatar-circle">
+                      {profile?.avatarUrl && !avatarError ? (
+                        <img
+                          src={profile.avatarUrl}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          draggable={false}
+                          onError={() => setAvatarError(true)}
+                        />
+                      ) : (
+                        <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
+                      )}
+                    </span>
                     <i
                       className={`side-footer-dot ${
                         loadingProfile
