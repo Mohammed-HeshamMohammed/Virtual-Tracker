@@ -15,6 +15,7 @@ src-tauri/target/
 .env.production
 agent-store.json
 preferences.json
+tracker-progress.json
 
 # Editor
 .DS_Store

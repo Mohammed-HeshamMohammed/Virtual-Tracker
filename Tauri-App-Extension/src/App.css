@@ -704,66 +704,501 @@ body {
   color: var(--on-surface-variant);
 }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+/* ── Stats pane ─────────────────────────────────────────────────────────
+   Nearly every number here is a ratio against a ceiling - worked against a
+   cap, active against idle, spent against an estimate. These render the
+   ratio instead of printing each side as its own equal-weight tile, which
+   is what left a static config value ("Daily cap: 8h") shouting as loudly
+   as "can I keep working". */
+
+.stats-stack {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
-/* The personal-hours group is three cards, not four. */
-.stat-grid.cols-3 {
-  grid-template-columns: repeat(3, 1fr);
+.stat-panel {
+  padding: 13px 15px 15px;
+  border-radius: 14px;
+  background: rgba(20, 31, 56, 0.7);
+  border: 1px solid rgba(109, 117, 140, 0.13);
 }
 
-/* Names a group of stat cards, so "your cap" and "this task" are not read as
-   one undifferentiated grid of numbers. */
-.stat-group-label {
+.stat-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.stat-panel-title {
   margin: 0;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--on-surface-variant);
+  color: #7d86a3;
 }
 
-.stat-card {
+.stat-panel-hint {
+  font-size: 10px;
+  font-weight: 600;
+  color: #5d6683;
+  white-space: nowrap;
+}
+
+/* Hero row: the day's headline number and, opposite it, the one thing you
+   actually want to know next - when the cap lands. */
+.stat-hero-row {
+  margin-top: 9px;
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.stat-hero-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stat-hero-number {
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-hero-number.warn {
+  color: #fbbf24;
+}
+
+.stat-hero-of {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7d86a3;
+  white-space: nowrap;
+}
+
+.stat-hero-aside {
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stat-hero-aside-value {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-hero-aside-value.warn {
+  color: #fbbf24;
+}
+
+.stat-hero-aside-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7d86a3;
+}
+
+/* A capacity bar. `--used` is the filled share; hour ticks turn it from a
+   decorative bar into a gauge you can read a number off. */
+.capacity-bar {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(8, 16, 34, 0.85);
+  border: 1px solid rgba(109, 117, 140, 0.14);
+}
+
+.capacity-bar.slim {
+  height: 6px;
+}
+
+.capacity-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+
+.capacity-fill.warn {
+  background: #fbbf24;
+}
+
+.capacity-fill.active {
+  background: #34d399;
+}
+
+.capacity-ticks {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+
+.capacity-ticks span {
+  flex: 1;
+  border-right: 1px solid rgba(6, 14, 32, 0.7);
+}
+
+.capacity-ticks span:last-child {
+  border-right: none;
+}
+
+.capacity-scale {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 600;
+  color: #5d6683;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three-across row of secondary cards under the hero. */
+.stat-row-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.stat-tile {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 14px;
+  padding: 11px 13px;
   border-radius: 12px;
   background: rgba(25, 37, 64, 0.55);
   border: 1px solid rgba(109, 117, 140, 0.1);
 }
 
-.stat-card-label {
+.stat-tile-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stat-tile-label {
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--on-surface-variant);
+  color: #7d86a3;
 }
 
-.stat-card-value {
-  font-size: 17px;
+.stat-tile-note {
+  font-size: 10px;
+  font-weight: 600;
+  color: #5d6683;
+  white-space: nowrap;
+}
+
+.stat-tile-value-row {
+  margin-top: 5px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stat-tile-value {
+  font-size: 20px;
   font-weight: 700;
+  line-height: 1;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-tile-value.warn {
+  color: #fbbf24;
+}
+
+.stat-tile-of {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7d86a3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stat-tile-foot {
+  margin-top: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #7d86a3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Activity ring - the active/idle split is the measure the dashboard grades
+   on, so it gets a shape rather than a bare percentage. */
+.activity-tile {
+  display: flex;
+  /* .stat-tile is a column; the ring belongs beside its legend, not above it. */
+  flex-direction: row;
+  align-items: center;
+  gap: 13px;
+}
+
+.activity-ring {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+}
+
+.activity-ring svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.activity-ring-value {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-legend {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.activity-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c3cbe8;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.activity-dot.active {
+  background: #34d399;
+}
+
+.activity-dot.idle {
+  background: #4a5573;
+}
+
+.activity-legend-row em {
+  font-style: normal;
+  font-weight: 500;
+  color: #7d86a3;
+}
+
+/* Assigned today: planned vs deferred in one bar, so what moves to another
+   day is never silently dropped. */
+.split-bar {
+  margin-top: 9px;
+  display: flex;
+  height: 6px;
+  width: 100%;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(8, 16, 34, 0.85);
+  border: 1px solid rgba(109, 117, 140, 0.14);
+}
+
+.split-bar-planned {
+  background: var(--primary);
+}
+
+.split-bar-deferred {
+  background: rgba(251, 191, 36, 0.7);
+}
+
+.split-legend {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.split-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #c3cbe8;
+}
+
+.split-legend-row.deferred {
+  color: #fbbf24;
+}
+
+.split-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+.split-dot.deferred {
+  background: rgba(251, 191, 36, 0.7);
+}
+
+.stat-tile-divider {
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid rgba(64, 72, 93, 0.25);
+  font-size: 10px;
+  font-weight: 500;
+  color: #7d86a3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Task budget track: the estimate's own shape - regular hours, then the
+   overtime allowance the schedule already grants - with time worked drawn
+   over it. A flat "16h" hid that 4h of it was overtime. */
+.budget-track {
+  position: relative;
+  width: 100%;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: rgba(8, 16, 34, 0.85);
+  border: 1px solid rgba(109, 117, 140, 0.14);
+}
+
+.budget-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.budget-zone.regular {
+  background: rgba(186, 158, 255, 0.16);
+}
+
+.budget-zone.overtime {
+  background: rgba(251, 191, 36, 0.16);
+}
+
+.budget-worked {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+
+.budget-worked.overtime {
+  background: #fbbf24;
+}
+
+.budget-scale {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #7d86a3;
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-scale .right {
+  color: #c3cbe8;
+}
+
+.budget-scale .right.overtime {
+  color: #fbbf24;
+}
+
+.task-title-line {
+  margin-top: 8px;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--on-surface);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.stat-card-sub {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--on-surface-variant);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.task-budget-row {
+  margin-top: 11px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
-.stat-card-value.warn {
-  color: #fbbf24;
+.task-budget-number {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-budget-of {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7d86a3;
+}
+
+.task-budget-today {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #7d86a3;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-progress-block {
+  margin-top: 11px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(64, 72, 93, 0.25);
+}
+
+.task-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.task-progress-head .label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7d86a3;
+}
+
+.task-progress-head .value {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--on-surface);
+  font-variant-numeric: tabular-nums;
 }
 
 .page-progress {
