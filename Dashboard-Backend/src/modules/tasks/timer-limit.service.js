@@ -26,8 +26,10 @@ function dayKey(ms) {
   return new Date(ms).toISOString().slice(0, 10);
 }
 
-/** Today's day key, and the first day of the rolling week, in 'YYYY-MM-DD'. */
-function currentDayRange() {
+/** Today's day key, and the first day of the rolling week, in 'YYYY-MM-DD'.
+ *  Exported so callers reporting "today"/"this week" figures use the same
+ *  boundary the caps here are enforced against, rather than a second copy. */
+export function currentDayRange() {
   const todayStart = startOfDay(new Date()).getTime();
   return {
     todayDay: dayKey(todayStart),
