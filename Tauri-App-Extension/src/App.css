@@ -1499,11 +1499,18 @@ body {
   padding: 1px 7px;
 }
 
+/* Capped to exactly 3 rows, everything past that scrolls - a row is 45px
+   at its tallest (title + subtitle line, measured live), 3 of those plus
+   the two 4px gaps between them is 143px. Sized off the tallest variant on
+   purpose: the shorter progress-bar row (41px, "Your projects" once its
+   real data has loaded) still always clears 3 full rows this way, it just
+   occasionally leaves a sliver of a 4th visible as a "there's more" hint
+   rather than ever showing fewer than 3. */
 .side-tasklist-body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 188px;
+  max-height: 143px;
   overflow-y: auto;
 }
 
