@@ -2,7 +2,7 @@
 "use client"
 
 import { motion, AnimatePresence } from "framer-motion"
-import { Clock, Users, CreditCard, Zap } from "lucide-react"
+import { Clock, Users, CreditCard, Zap, ListChecks } from "lucide-react"
 import type { ProjectData } from "@/features/dashboard/components/command-center/constants"
 
 interface StatCardsSectionProps {
@@ -11,6 +11,10 @@ interface StatCardsSectionProps {
 
 export function StatCardsSection({ project }: StatCardsSectionProps) {
   const d = project
+  // Intern/Employee only: personalTaskStats is set, and stands in for the
+  // "Active Members" card - a team headcount makes no sense when the rest of
+  // the row is already this one person's own hours and activity.
+  const personal = d.personalTaskStats
   const statCards = [
     {
       Icon: Clock,      iconBg: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/80",
@@ -26,11 +30,17 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
           : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60",
       label: "Total Time Worked", value: d.stats.timeWorked,
     },
-    {
-      Icon: Users,      iconBg: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/80",
-      badge: `${d.stats.activeMembers} active`, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
-      label: "Active Members",    value: `${d.stats.activeMembers} / ${d.stats.totalMembers}`,
-    },
+    personal
+      ? {
+          Icon: ListChecks, iconBg: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/80",
+          badge: `${personal.assigned} assigned`, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
+          label: "Tasks In Progress", value: `${personal.inProgress}`,
+        }
+      : {
+          Icon: Users,      iconBg: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/80",
+          badge: `${d.stats.activeMembers} active`, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
+          label: "Active Members",    value: `${d.stats.activeMembers} / ${d.stats.totalMembers}`,
+        },
     {
       Icon: CreditCard, iconBg: "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/80",
       badge: d.stats.budgetLabel, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
@@ -40,7 +50,7 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
     {
       Icon: Zap,        iconBg: "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/80 dark:border-purple-800/80",
       badge: d.stats.activityBadge, badgeColor: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200/60 dark:border-purple-800/60",
-      label: "Avg Team Activity", value: `${d.stats.activityPercent}%`,
+      label: personal ? "Your Activity" : "Avg Team Activity", value: `${d.stats.activityPercent}%`,
       barPercent: d.stats.activityPercent, barColor: "bg-purple-500 dark:bg-purple-400",
     },
   ] as const
