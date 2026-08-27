@@ -35,6 +35,7 @@ import {
 } from "./utils/formatters";
 import { TitleBar } from "./components/common/TitleBar";
 import { Dropdown } from "./components/common/Dropdown";
+import { Icon } from "./components/common/Icon";
 import { SettingsPanel } from "./components/views/SettingsPanel";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
@@ -153,9 +154,6 @@ function MainApp() {
   // used to render identically, which is what made a dead session look like an
   // empty account.
   const [projectsFailed, setProjectsFailed] = useState(false);
-  const [bars, setBars] = useState<number[]>(() =>
-    Array.from({ length: 9 }, () => 20),
-  );
 
   useEffect(() => {
     setAvatarError(false);
@@ -571,17 +569,6 @@ function MainApp() {
   useEffect(() => {
     void checkForUpdate();
   }, [checkForUpdate]);
-
-  useEffect(() => {
-    if (!tracking) {
-      setBars(Array.from({ length: 9 }, () => 12));
-      return;
-    }
-    const barTimer = window.setInterval(() => {
-      setBars(Array.from({ length: 9 }, () => Math.floor(Math.random() * 75) + 15));
-    }, 800);
-    return () => window.clearInterval(barTimer);
-  }, [tracking]);
 
   // In-app sign-in. The password lives in component state only for as long as
   // the form is on screen and is cleared the moment the call returns - it is
@@ -1552,26 +1539,32 @@ function MainApp() {
             </div>
 
             <div className={`signal${tracking ? " live" : ""}`}>
-              <div className="viz-bars" aria-hidden="true">
-                {bars.map((height, index) => (
-                  <span
-                    key={index}
-                    className="viz-bar"
-                    style={{ height: `${height}%` }}
-                  />
-                ))}
-              </div>
+              {/* Was nine bars driven by Math.random() on a 700ms interval -
+                  decorative noise shaped like an activity graph, in a
+                  monitoring app. This is the member's real active/idle split,
+                  the same ratio the dashboard grades on. */}
+              {tracking && activityPercent != null ? (
+                <div className="signal-activity">
+                  <div className="signal-activity-head">
+                    <span className="stat-tile-label">Activity now</span>
+                    <span className="signal-activity-value">{activityPercent}%</span>
+                  </div>
+                  <div className="capacity-bar slim">
+                    <div className="capacity-fill active" style={{ width: `${activityPercent}%` }} />
+                  </div>
+                </div>
+              ) : null}
               <p className="signal-text">
                 {loadingProfile
                   ? "Checking your session…"
                   : paused
                     ? "On a break — time is counting as idle"
                     : tracking
-                      ? `Tracking${trackingLabel ? ` · ${trackingLabel}` : ""}`
+                      ? trackingLabel || "Tracking"
                       : signedIn
                         ? !taskRequired
-                          ? "Start when you’re ready"
-                          : "Select a task and start when you’re ready"
+                          ? "Start when you're ready"
+                          : "Select a task and start when you're ready"
                         : "Sign in to link this PC to your account"}
               </p>
             </div>
@@ -1629,23 +1622,19 @@ function MainApp() {
 
               <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
                 {paused ? (
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void handleResume()}
-                  >
+                  <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void handleResume()}>
                     Resume tracking
                   </button>
                 ) : tracking ? (
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void handlePause()}
-                  >
-                    Take a break
-                  </button>
+                  /* Pause and Stop are a pair, not two slabs in a stack. */
+                  <div className="action-pair">
+                    <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void handlePause()}>
+                      Pause
+                    </button>
+                    <button className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={handleStopClick}>
+                      Stop
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="btn btn-primary"
@@ -1661,31 +1650,49 @@ function MainApp() {
                     Start tracking
                   </button>
                 )}
-                {sessionOpen && (
-                  <button
-                    className="btn btn-danger"
-                    type="button"
-                    disabled={busy}
-                    onClick={handleStopClick}
-                  >
-                    Stop tracking
-                  </button>
-                )}
-                <button
-                  className="btn btn-secondary"
-                  type="button"
-                  onClick={() => void invoke("open_web_app")}
-                >
+
+                <button className="btn btn-secondary" type="button" onClick={() => void invoke("open_web_app")}>
                   Open dashboard
+                  <Icon name="external" />
                 </button>
-                <button
-                  className="btn btn-tertiary"
-                  type="button"
-                  onClick={() => void handleSignIn()}
-                >
-                  Re-link account
+
+                {/* Recovery, not a peer of Start. "Re-link account" was
+                    internal jargon for signing in again on this PC. */}
+                <button className="btn-quiet" type="button" onClick={() => void handleSignIn()}>
+                  Sign in again
                 </button>
               </nav>
+
+              {/* Profile and Settings as peers in the flow. The gear used to
+                  float at position:absolute bottom-left, detached from the
+                  layout and the only route into Settings; the avatar was
+                  secretly the only route into the profile. */}
+              <div className="side-footer">
+                <button
+                  type="button"
+                  className="side-footer-profile"
+                  disabled={!signedIn}
+                  onClick={() => setView("profile")}
+                >
+                  <span className="side-footer-avatar">
+                    {profile?.avatarUrl && !avatarError ? (
+                      <img src={profile.avatarUrl} alt="" referrerPolicy="no-referrer" draggable={false} />
+                    ) : (
+                      <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
+                    )}
+                  </span>
+                  Profile
+                </button>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="Settings"
+                  aria-label="Settings"
+                  onClick={() => setView("settings")}
+                >
+                  <Icon name="gear" />
+                </button>
+              </div>
             </>
           )}
 
@@ -1736,20 +1743,6 @@ function MainApp() {
             </div>
           ) : null}
 
-          <button
-            className="settings-corner-btn"
-            type="button"
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => setView("settings")}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path
-                fill="currentColor"
-                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96a7.03 7.03 0 0 0-1.62-.94l-.36-2.54A.484.484 0 0 0 14.06 2h-3.88c-.24 0-.45.17-.49.41l-.36 2.54a7.03 7.03 0 0 0-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.39 1.04.71 1.62.94l.36 2.54c.05.24.25.41.49.41h3.88c.24 0 .44-.17.49-.41l.36-2.54c.58-.23 1.12-.55 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32a.49.49 0 0 0-.12-.61l-2.01-1.58ZM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2Z"
-              />
-            </svg>
-          </button>
         </aside>
 
         {signedIn ? (
@@ -1760,7 +1753,7 @@ function MainApp() {
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
               <button
-                className="page-refresh-btn"
+                className="icon-btn"
                 type="button"
                 title="Refresh projects & tasks"
                 aria-label="Refresh projects & tasks"
@@ -1789,7 +1782,7 @@ function MainApp() {
                   {!taskLessSession && taskTracking ? (
                     <button
                       type="button"
-                      className="page-refresh-btn"
+                      className="icon-btn"
                       title={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       aria-label={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       style={{ marginLeft: "auto", alignSelf: "center" }}

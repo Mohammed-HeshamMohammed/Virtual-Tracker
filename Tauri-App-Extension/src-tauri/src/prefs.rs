@@ -36,6 +36,15 @@ pub struct UserPreferences {
     /// the "still running" notice is shown once and never repeated.
     #[serde(default)]
     pub tray_notice_shown: bool,
+    /// "system" | "light" | "dark". Lives here rather than in the webview's
+    /// localStorage so it survives a reinstall like every other preference,
+    /// and so the window can be painted before the first React render.
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "system".to_string()
 }
 
 impl Default for UserPreferences {
@@ -47,6 +56,7 @@ impl Default for UserPreferences {
             close_to_tray: true,
             has_launched_before: false,
             tray_notice_shown: false,
+            theme: default_theme(),
         }
     }
 }

@@ -1,31 +1,23 @@
 import { ReactNode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Icon, type IconName } from "./components/common/Icon";
 
-const CloseIcon = () => (
-  <svg height="14" strokeLinejoin="round" viewBox="0 0 16 16" width="14" fill="currentColor">
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M12.4697 13.5303L13 14.0607L14.0607 13L13.5303 12.4697L9.06065 7.99999L13.5303 3.53032L14.0607 2.99999L13 1.93933L12.4697 2.46966L7.99999 6.93933L3.53032 2.46966L2.99999 1.93933L1.93933 2.99999L2.46966 3.53032L6.93933 7.99999L2.46966 12.4697L1.93933 13L2.99999 14.0607L3.53032 13.5303L7.99999 9.06065L12.4697 13.5303Z"
-    />
-  </svg>
-);
-
-const UndoIcon = () => (
-  <svg height="14" strokeLinejoin="round" viewBox="0 0 16 16" width="14" fill="currentColor">
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M13.5 8C13.5 4.96643 11.0257 2.5 7.96452 2.5C5.42843 2.5 3.29365 4.19393 2.63724 6.5H5.25H6V8H5.25H0.75C0.335787 8 0 7.66421 0 7.25V2.75V2H1.5V2.75V5.23347C2.57851 2.74164 5.06835 1 7.96452 1C11.8461 1 15 4.13001 15 8C15 11.87 11.8461 15 7.96452 15C5.62368 15 3.54872 13.8617 2.27046 12.1122L1.828 11.5066L3.03915 10.6217L3.48161 11.2273C4.48831 12.6051 6.12055 13.5 7.96452 13.5C11.0257 13.5 13.5 11.0336 13.5 8Z"
-    />
-  </svg>
-);
-
+/** Type is signalled by icon as well as colour - colour alone is unreadable
+ *  for a colourblind user and slow to parse for everyone else. */
 export type ToastType = "message" | "success" | "warning" | "error";
+
+const TYPE_ICON: Record<ToastType, IconName> = {
+  success: "check",
+  warning: "warn",
+  error: "error",
+  message: "info",
+};
 
 export type Toast = {
   id: number;
   text: string | ReactNode;
+  /** Secondary line under the title, so the first line carries the message. */
+  detail?: string;
   measuredHeight?: number;
   timeout?: ReturnType<typeof setTimeout>;
   remaining?: number;
@@ -204,57 +196,77 @@ const ToastContainer = () => {
                 pointerEvents: isVisible ? "auto" : "none",
               }}
             >
-              <div className="vt-toast-body">
-                <div className="vt-toast-top">
-                  <span className="vt-toast-text">{t.text}</span>
-                  {!t.action && (
-                    <div className="vt-toast-actions">
-                      {t.onUndoAction && (
+              <div className="vt-toast-main">
+                <span className="vt-toast-icon">
+                  <Icon name={TYPE_ICON[t.type]} />
+                </span>
+
+                <div className="vt-toast-body">
+                  <div className="vt-toast-top">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="vt-toast-title">{t.text}</div>
+                      {t.detail ? <div className="vt-toast-detail">{t.detail}</div> : null}
+                    </div>
+                    {!t.action && (
+                      <div className="vt-toast-actions">
+                        {t.onUndoAction && (
+                          <button
+                            type="button"
+                            className="vt-toast-icon-btn"
+                            title="Undo"
+                            aria-label="Undo"
+                            onClick={() => {
+                              t.onUndoAction?.();
+                              toastStore.remove(t.id);
+                            }}
+                          >
+                            <Icon name="undo" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="vt-toast-icon-btn"
-                          title="Undo"
-                          onClick={() => {
-                            t.onUndoAction?.();
-                            toastStore.remove(t.id);
-                          }}
+                          title="Dismiss"
+                          aria-label="Dismiss"
+                          onClick={() => toastStore.remove(t.id)}
                         >
-                          <UndoIcon />
+                          <Icon name="close" />
                         </button>
-                      )}
+                      </div>
+                    )}
+                  </div>
+
+                  {t.action && (
+                    <div className="vt-toast-actions" style={{ justifyContent: "flex-end", marginTop: 4 }}>
                       <button
                         type="button"
-                        className="vt-toast-icon-btn"
-                        title="Dismiss"
+                        className="vt-toast-btn vt-toast-btn-secondary"
                         onClick={() => toastStore.remove(t.id)}
                       >
-                        <CloseIcon />
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        className="vt-toast-btn vt-toast-btn-primary"
+                        onClick={() => {
+                          t.onAction?.();
+                          toastStore.remove(t.id);
+                        }}
+                      >
+                        {t.action}
                       </button>
                     </div>
                   )}
                 </div>
-                {t.action && (
-                  <div className="vt-toast-actions" style={{ justifyContent: "flex-end", marginTop: 4 }}>
-                    <button
-                      type="button"
-                      className="vt-toast-btn vt-toast-btn-secondary"
-                      onClick={() => toastStore.remove(t.id)}
-                    >
-                      Dismiss
-                    </button>
-                    <button
-                      type="button"
-                      className="vt-toast-btn vt-toast-btn-primary"
-                      onClick={() => {
-                        t.onAction?.();
-                        toastStore.remove(t.id);
-                      }}
-                    >
-                      {t.action}
-                    </button>
-                  </div>
-                )}
               </div>
+
+              {/* Mirrors the store's own 4s timer, and the CSS pauses it on
+                  hover exactly where pause()/resume() already fire. */}
+              {!t.preserve && t.remaining ? (
+                <div className="vt-toast-progress">
+                  <span style={{ animationDuration: `${t.remaining}ms` }} />
+                </div>
+              ) : null}
             </div>
           );
         })}

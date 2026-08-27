@@ -42,6 +42,8 @@ export type ForgotState = {
   success: string | null;
 };
 
+export type ThemePreference = "system" | "light" | "dark";
+
 export type UserPreferences = {
   launchAtLogin: boolean;
   startHidden: boolean;
@@ -50,6 +52,9 @@ export type UserPreferences = {
   /** Internal bookkeeping, not user-facing: gates first-run visibility and the one-time tray notice. */
   hasLaunchedBefore: boolean;
   trayNoticeShown: boolean;
+  /** Mirrors Dashboard-Web's light/dark/system. Stored server-side of the
+   *  webview (Rust prefs) so it survives a reinstall like the rest. */
+  theme: ThemePreference;
 };
 
 export type AppSettingsView = {

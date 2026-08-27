@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthView, ForgotState, SignUpFields, SignUpState } from "../../types";
 import { TitleBar } from "../common/TitleBar";
+import { Icon } from "../common/Icon";
 
 const UPPERCASE_RE = /[A-Z]/;
 const LOWERCASE_RE = /[a-z]/;
@@ -93,6 +94,18 @@ export function SignInPanel({
     signUp.password && signUp.confirmPassword && signUp.password === signUp.confirmPassword
   );
 
+  const metCount = [
+    isMinLengthValid,
+    isUppercaseValid,
+    isLowercaseValid,
+    isNumberValid,
+    isSpecialValid,
+    isNotSimplePatternValid,
+    isMatchValid,
+  ].filter(Boolean).length;
+  const strengthTone = metCount <= 3 ? "bad" : metCount < 7 ? "warn" : "good";
+  const strengthWord = metCount <= 3 ? "Weak" : metCount < 7 ? "Almost there" : "Strong";
+
   return (
     <main className="agent-tray view-home">
       <TitleBar
@@ -108,129 +121,44 @@ export function SignInPanel({
             <span data-tauri-drag-region>Virtual Tracker</span>
           </div>
 
-          <div key={authView} className="auth-brand-copy">
-            {authView === "signup" ? (
-              <>
-                <h2>Password Requirements</h2>
-                <p>Your password must satisfy all security rules from our platform policy.</p>
+          {/* Brand stays brand in every view. The password checklist used to
+              live here - 420px from the password field it describes - and is
+              now rendered beside that field instead. */}
+          <div className="auth-brand-copy">
+            <h2>Time tracking that stays out of your way.</h2>
+            <p>Sign in to link this desktop agent to your account and start tracking your work.</p>
 
-                <div className="auth-brand-features auth-password-checklist">
-                  <div className={`auth-feature-item${isMinLengthValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isMinLengthValid ? "✓" : "📏"}</span>
-                    <div>
-                      <strong>Minimum 10 characters</strong>
-                      <p>At least 10 characters long.</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isUppercaseValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isUppercaseValid ? "✓" : "🔤"}</span>
-                    <div>
-                      <strong>Uppercase letter</strong>
-                      <p>Contains at least one uppercase letter (A-Z).</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isLowercaseValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isLowercaseValid ? "✓" : "🔤"}</span>
-                    <div>
-                      <strong>Lowercase letter</strong>
-                      <p>Contains at least one lowercase letter (a-z).</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isNumberValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isNumberValid ? "✓" : "🔢"}</span>
-                    <div>
-                      <strong>Number</strong>
-                      <p>Contains at least one digit (0-9).</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isSpecialValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isSpecialValid ? "✓" : "✨"}</span>
-                    <div>
-                      <strong>Special character</strong>
-                      <p>Contains at least one symbol (!@#$%^&*).</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isNotSimplePatternValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isNotSimplePatternValid ? "✓" : "🛡️"}</span>
-                    <div>
-                      <strong>Not a simple pattern</strong>
-                      <p>Avoid sequential characters (1234, abcd) or repeated letters.</p>
-                    </div>
-                  </div>
-
-                  <div className={`auth-feature-item${isMatchValid ? " valid" : ""}`}>
-                    <span className="auth-feature-icon">{isMatchValid ? "✓" : "🔒"}</span>
-                    <div>
-                      <strong>Passwords match</strong>
-                      <p>Both password fields must match exactly.</p>
-                    </div>
-                  </div>
+            <div className="auth-brand-features">
+              {/* SVG, not emoji: emoji render differently per machine and
+                  ignore currentColor, so they can't follow the theme. */}
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="bolt" />
+                </span>
+                <div>
+                  <strong>Instant sync</strong>
+                  <p>Real-time sync with the dashboard and your assigned tasks.</p>
                 </div>
-              </>
-            ) : authView === "forgot" ? (
-              <>
-                <h2>Password Reset Instructions</h2>
-                <p>Enter your email to receive a secure link to reset your account password.</p>
-
-                <div className="auth-brand-features">
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">📧</span>
-                    <div>
-                      <strong>Check Your Inbox</strong>
-                      <p>We will email you a secure single-use reset link.</p>
-                    </div>
-                  </div>
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">⏳</span>
-                    <div>
-                      <strong>Time-Sensitive Link</strong>
-                      <p>Reset links expire for safety after 1 hour.</p>
-                    </div>
-                  </div>
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">🛡️</span>
-                    <div>
-                      <strong>Account Protection</strong>
-                      <p>Your tracking session remains secure.</p>
-                    </div>
-                  </div>
+              </div>
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="lock" />
+                </span>
+                <div>
+                  <strong>Private by design</strong>
+                  <p>Encrypted device authentication and secure tokens.</p>
                 </div>
-              </>
-            ) : (
-              <>
-                <h2>Time tracking that stays out of your way.</h2>
-                <p>Sign in to link this desktop agent to your account and start tracking your work seamlessly.</p>
-
-                <div className="auth-brand-features">
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">⚡</span>
-                    <div>
-                      <strong>Instant Sync</strong>
-                      <p>Real-time sync with web dashboard & assigned tasks.</p>
-                    </div>
-                  </div>
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">🔒</span>
-                    <div>
-                      <strong>Enterprise Security</strong>
-                      <p>Encrypted device authentication & secure tokens.</p>
-                    </div>
-                  </div>
-                  <div className="auth-feature-item">
-                    <span className="auth-feature-icon">⏱️</span>
-                    <div>
-                      <strong>Smart Tracking</strong>
-                      <p>Automatic idle detection & work limit notifications.</p>
-                    </div>
-                  </div>
+              </div>
+              <div className="auth-feature-item">
+                <span className="auth-feature-icon">
+                  <Icon name="clock" />
+                </span>
+                <div>
+                  <strong>Counts what's real</strong>
+                  <p>Idle time is detected and discounted, never billed.</p>
                 </div>
-              </>
-            )}
+              </div>
+            </div>
           </div>
 
           <div className="auth-brand-viz">
@@ -374,6 +302,38 @@ export function SignInPanel({
                       disabled={signUp.busy}
                       onChange={(e) => onSignUpFieldChange("confirmPassword", e.target.value)}
                     />
+                  </div>
+
+
+                  {/* The rules sit with the field they describe. Each row keeps
+                      one glyph in both states - only its colour changes - so
+                      the list never reflows or swaps shape as you type. */}
+                  <div className="pw-rules">
+                    <div className="pw-strength">
+                      <div className="pw-strength-track">
+                        <div
+                          className={`pw-strength-fill ${strengthTone}`}
+                          style={{ width: `${(metCount / 7) * 100}%` }}
+                        />
+                      </div>
+                      <span className={`pw-strength-word ${strengthTone}`}>{strengthWord}</span>
+                    </div>
+                    <ul className="pw-rule-list">
+                      {[
+                        { ok: isMinLengthValid, label: "At least 10 characters" },
+                        { ok: isUppercaseValid, label: "An uppercase letter" },
+                        { ok: isLowercaseValid, label: "A lowercase letter" },
+                        { ok: isNumberValid, label: "A number" },
+                        { ok: isSpecialValid, label: "A special character" },
+                        { ok: isNotSimplePatternValid, label: "Not a simple pattern" },
+                        { ok: isMatchValid, label: "Passwords match" },
+                      ].map((r) => (
+                        <li key={r.label} className={r.ok ? "ok" : undefined}>
+                          <Icon name={r.ok ? "check-filled" : "circle"} />
+                          {r.label}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
                   {signUp.error ? (
