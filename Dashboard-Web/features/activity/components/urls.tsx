@@ -7,7 +7,7 @@ import { useActivityShell, useActivityShellRegistration } from "@/features/activ
 import { useAuth } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity, canManageActivityData } from "@/features/auth"
 import { motion } from "framer-motion"
-import { Globe, ExternalLink, Tag, TrendingUp, TrendingDown, Eye } from "lucide-react"
+import { Globe, ExternalLink, TrendingUp, TrendingDown, Eye } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   ActivityDayEmptyState,
@@ -51,7 +51,7 @@ export function ActivityURLsContent() {
   const canManage = canManageActivityData(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
-  const { day, searchQuery, selectedCategory, showBlocked, sortOrder } = useActivityShell()
+  const { day, searchQuery, selectedCategory, showBlocked } = useActivityShell()
   const periodLabel = day.dayMode === "all" ? "all days" : day.selectedDayLabel
   const { scope } = useActivityFeedContext()
   const { data: liveUrls, loading, reload } = useActivityFeed<URLUsage[]>("urls", { day: day.dayKey })
@@ -77,11 +77,10 @@ export function ActivityURLsContent() {
             url.category.toLowerCase().includes(searchLower),
         )
       : blockedFiltered
-    if (sortOrder === "name") {
-      return [...searched].sort((a, b) => a.domain.localeCompare(b.domain))
-    }
+    // Most-visited first is the only ordering now - the By name sort control
+    // it used to back was removed from the toolbar.
     return [...searched].sort((a, b) => b.visits - a.visits)
-  }, [blockedFiltered, searchLower, sortOrder])
+  }, [blockedFiltered, searchLower])
   const hasData = urlsSource.length > 0
   const tableRef = useRef<HTMLDivElement>(null)
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
@@ -156,6 +155,24 @@ export function ActivityURLsContent() {
     URL.revokeObjectURL(url)
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, memberOpts, selectedCategory])
 
+  // Real sites only. A row whose sourceKind is "window" came from a browser
+  // window title the agent could not resolve to a URL, so its `domain` is the
+  // browser itself ("Google Chrome", "Firefox") - classifying that would
+  // write a domain rule matching the browser and label every site opened in
+  // it. Memoized so the dialog's saved-label fetch isn't retriggered by a new
+  // array identity on every render.
+  const classifyItems = useMemo(
+    () =>
+      urlsSource
+        .filter((url) => url.sourceKind !== "window")
+        .map((url) => ({ pattern: url.domain, label: url.domain, category: url.category })),
+    [urlsSource],
+  )
+
+  const handleClassify = useCallback(() => {
+    setClassifyOpen(true)
+  }, [])
+
   useActivityShellRegistration({
     onRefresh: () => {
       void reload({ force: true })
@@ -165,6 +182,7 @@ export function ActivityURLsContent() {
           void handleExport()
         }
       : undefined,
+    onClassify: canClassify ? handleClassify : undefined,
   })
 
   return (
@@ -174,7 +192,7 @@ export function ActivityURLsContent() {
           open={classifyOpen}
           onOpenChange={setClassifyOpen}
           matchType="domain"
-          items={urlsSource.map((url) => ({ pattern: url.domain, label: url.domain, category: url.category }))}
+          items={classifyItems}
           onSaved={() => {
             void reload({ force: true })
           }}
@@ -200,18 +218,6 @@ export function ActivityURLsContent() {
           <ActivitySection
             title="Website records"
             description={`${filteredURLs.length} site${filteredURLs.length !== 1 ? "s" : ""} for ${periodLabel}`}
-            action={
-              canClassify ? (
-                <button
-                  type="button"
-                  onClick={() => setClassifyOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <Tag className="h-3.5 w-3.5" />
-                  Classify sites
-                </button>
-              ) : null
-            }
           >
             <motion.div
               initial={{ opacity: 0, y: 12 }}

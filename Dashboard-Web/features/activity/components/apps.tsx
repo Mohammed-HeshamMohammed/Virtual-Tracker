@@ -6,7 +6,7 @@ import { useActivityShell, useActivityShellRegistration } from "@/features/activ
 import { useAuth } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity } from "@/features/auth"
 import { motion } from "framer-motion"
-import { Clock, Monitor, Tag, TrendingUp, TrendingDown, Minus } from "lucide-react"
+import { Clock, Monitor, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
 import {
@@ -64,7 +64,7 @@ export function ActivityAppsContent() {
   const canExport = canExportActivity(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
-  const { day, searchQuery, selectedCategory, sortOrder } = useActivityShell()
+  const { day, searchQuery, selectedCategory } = useActivityShell()
   const { data: feed, loading, reload } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
 
   const appsSource = useMemo(
@@ -91,11 +91,10 @@ export function ActivityAppsContent() {
             app.category.toLowerCase().includes(searchLower),
         )
       : categoryFiltered
-    if (sortOrder === "name") {
-      return [...searched].sort((a, b) => a.name.localeCompare(b.name))
-    }
+    // Feed order (most time first) is the only ordering now - the By name
+    // sort control it used to back was removed from the toolbar.
     return searched
-  }, [categoryFiltered, searchLower, sortOrder])
+  }, [categoryFiltered, searchLower])
   const hasData = appsSource.length > 0 || membersSource.length > 0
   const tableRef = useRef<HTMLDivElement>(null)
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
@@ -177,6 +176,17 @@ export function ActivityAppsContent() {
     URL.revokeObjectURL(url)
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
 
+  // Memoized: built inline, this array was a new reference on every render,
+  // which retriggered the dialog's "load saved labels" fetch in a loop.
+  const classifyItems = useMemo(
+    () => appsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
+    [appsSource],
+  )
+
+  const handleClassify = useCallback(() => {
+    setClassifyOpen(true)
+  }, [])
+
   useActivityShellRegistration({
     onRefresh: () => {
       void reload({ force: true })
@@ -186,6 +196,7 @@ export function ActivityAppsContent() {
           void handleExport()
         }
       : undefined,
+    onClassify: canClassify ? handleClassify : undefined,
   })
 
   return (
@@ -195,7 +206,7 @@ export function ActivityAppsContent() {
           open={classifyOpen}
           onOpenChange={setClassifyOpen}
           matchType="app"
-          items={appsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category }))}
+          items={classifyItems}
           onSaved={() => {
             void reload({ force: true })
           }}
@@ -217,18 +228,6 @@ export function ActivityAppsContent() {
           <ActivitySection
             title="Application records"
             description={`${filteredApps.length} app${filteredApps.length !== 1 ? "s" : ""} tracked for ${day.selectedDayLabel}`}
-            action={
-              canClassify ? (
-                <button
-                  type="button"
-                  onClick={() => setClassifyOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                >
-                  <Tag className="h-3.5 w-3.5" />
-                  Classify apps
-                </button>
-              ) : null
-            }
           >
             <motion.div
               initial={{ opacity: 0, y: 12 }}
