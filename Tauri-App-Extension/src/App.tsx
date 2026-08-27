@@ -116,6 +116,7 @@ function MainApp() {
   // above, which only exists to feed the task dropdown). This is the
   // sidebar's own "what else is on my plate" view.
   const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
+  const [assignedTasksFailed, setAssignedTasksFailed] = useState(false);
   // The web dashboard's own "Weekly trends" + "Recent projects" widgets,
   // reused rather than reinvented - null on an older backend without the
   // route yet, in which case those two sidebar cards just don't render.
@@ -253,8 +254,11 @@ function MainApp() {
       const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
       setProjectsFailed(false);
+      // A budget-exhausted project can't be tracked against, so it can't stay
+      // selected either - it used to drop out of the list entirely, which
+      // cleared the selection as a side effect. Same outcome, stated directly.
       setSelectedProjectId((current) =>
-        current && next.some((p) => p.id === current) ? current : "",
+        current && next.some((p) => p.id === current && !p.budgetExhausted) ? current : "",
       );
     } catch {
       setProjects([]);
@@ -270,8 +274,13 @@ function MainApp() {
     try {
       const next = await invoke<AgentTask[]>("list_tasks", { projectId: null });
       setAssignedTasks(next);
+      setAssignedTasksFailed(false);
     } catch {
       setAssignedTasks([]);
+      // Without this, "Could not resolve your member profile" and a genuine
+      // empty backlog both rendered as the same green "Nothing open assigned
+      // to you" - a hard failure reported as an all-clear.
+      setAssignedTasksFailed(true);
     }
   }, [signedIn]);
 
@@ -1141,9 +1150,9 @@ function MainApp() {
     if (!task.projectId) continue;
     openTaskCountByProject.set(task.projectId, (openTaskCountByProject.get(task.projectId) ?? 0) + 1);
   }
-  const jumpToProject = (projectId: string) => {
-    if (busy || sessionOpen || projectId === selectedProjectId) return;
-    setSelectedProjectId(projectId);
+  const jumpToProject = (project: ProjectInfo) => {
+    if (busy || sessionOpen || project.budgetExhausted || project.id === selectedProjectId) return;
+    setSelectedProjectId(project.id);
   };
   // Same "Recent projects" progress the web dashboard's general view shows
   // for this member - keyed by id so the quick-switch list below can show
@@ -1719,16 +1728,21 @@ function MainApp() {
                     <button
                       key={project.id}
                       type="button"
-                      className={`side-task-row${progress != null ? " has-progress" : ""}${project.id === selectedProjectId ? " active" : ""}`}
-                      disabled={busy || sessionOpen}
-                      onClick={() => jumpToProject(project.id)}
+                      className={`side-task-row${progress != null && !project.budgetExhausted ? " has-progress" : ""}${project.id === selectedProjectId ? " active" : ""}`}
+                      disabled={busy || sessionOpen || project.budgetExhausted}
+                      title={project.budgetExhausted ? "This project's hours budget is spent — no timer can start against it." : undefined}
+                      onClick={() => jumpToProject(project)}
                     >
                       <span className="side-task-row-main">
                         <span className="side-task-row-top">
                           <span className="side-task-row-title">{project.name}</span>
-                          {progress != null ? <span className="side-task-row-percent">{Math.round(progress)}%</span> : null}
+                          {progress != null && !project.budgetExhausted ? (
+                            <span className="side-task-row-percent">{Math.round(progress)}%</span>
+                          ) : null}
                         </span>
-                        {progress != null ? (
+                        {project.budgetExhausted ? (
+                          <span className="side-task-row-project">Budget spent</span>
+                        ) : progress != null ? (
                           <span className="capacity-bar slim">
                             <span className="capacity-fill active" style={{ width: `${Math.round(progress)}%` }} />
                           </span>
@@ -1738,6 +1752,7 @@ function MainApp() {
                           </span>
                         )}
                       </span>
+                      {project.budgetExhausted ? <span className="badge warn">Budget</span> : null}
                     </button>
                   );
                 })}
@@ -1779,8 +1794,13 @@ function MainApp() {
                     </button>
                   ))}
                 </div>
+              ) : assignedTasksFailed ? (
+                <p className="side-tasklist-empty bad">
+                  <Icon name="warn" />
+                  Couldn't load your tasks
+                </p>
               ) : (
-                <p className="side-tasklist-empty">
+                <p className="side-tasklist-empty ok">
                   <Icon name="check-filled" />
                   Nothing open assigned to you right now
                 </p>
@@ -1806,7 +1826,8 @@ function MainApp() {
                   control for the same choice. Only the "nothing to pick
                   from" fallback is left to show here. */}
               {projects.length === 0 ? (
-                <p className="side-tasklist-empty side-panel-swap">
+                <p className={`side-tasklist-empty side-panel-swap${projectsFailed ? " bad" : ""}`}>
+                  <Icon name={projectsFailed ? "warn" : "info"} />
                   {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
                 </p>
               ) : null}

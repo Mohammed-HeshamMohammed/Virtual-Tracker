@@ -89,6 +89,9 @@ export type ProjectInfo = {
   requireTaskToTrack: boolean;
   // Prompts for a short note when the member stops their timer.
   requireStopNote: boolean;
+  // This project's Hours budget is spent - it stays in the list, shown as
+  // unselectable with a reason, rather than silently vanishing.
+  budgetExhausted: boolean;
 };
 
 export type SessionInfo = {

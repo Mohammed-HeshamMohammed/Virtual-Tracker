@@ -114,11 +114,7 @@ impl ApiClient {
             if id.is_empty() {
                 continue;
             }
-            if let Some(limit_reached) = budget_map.get(&id) {
-                if *limit_reached {
-                    continue;
-                }
-            }
+            let budget_exhausted = budget_map.get(&id).copied().unwrap_or(false);
             let name = item
                 .get("name")
                 .and_then(|v| v.as_str())
@@ -151,6 +147,7 @@ impl ApiClient {
                 has_tasks,
                 require_task_to_track,
                 require_stop_note,
+                budget_exhausted,
             });
         }
         projects.sort_by_key(|p| p.name.to_lowercase());

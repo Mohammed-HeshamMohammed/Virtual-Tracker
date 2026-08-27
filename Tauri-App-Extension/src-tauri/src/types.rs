@@ -143,6 +143,14 @@ pub struct ProjectInfo {
     /// Whether stopping a timer on this project prompts for a note.
     #[serde(default)]
     pub require_stop_note: bool,
+    /// This project's Hours budget is spent, so no timer can start against
+    /// it. These used to be dropped from the list entirely, which rendered
+    /// as a bare "No projects to track against yet" with no way to tell an
+    /// exhausted budget apart from having no projects at all. Same reasoning
+    /// fetch_assigned_tasks already gives for keeping over-limit tasks
+    /// visible: explaining why it can't start beats hiding it.
+    #[serde(default)]
+    pub budget_exhausted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
