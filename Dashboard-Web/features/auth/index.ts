@@ -26,6 +26,7 @@ export {
   isClientOrViewerRole,
   isReadOnlyRole,
   allowedNavSectionIds,
+  visibleNavSections,
   SERVER_SCOPED_PROJECT_ROLES,
   clientHiddenPageIds,
   isPageAllowedForRole,

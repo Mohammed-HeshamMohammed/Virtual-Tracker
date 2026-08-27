@@ -17,11 +17,11 @@ import {
 
 type GlobalSearchBarProps = {
   onNavigate: (pageId: string) => void
-  canAccessAllTabs: boolean
+  memberRole: string
   activePageId: string
 }
 
-export function GlobalSearchBar({ onNavigate, canAccessAllTabs, activePageId }: GlobalSearchBarProps) {
+export function GlobalSearchBar({ onNavigate, memberRole, activePageId }: GlobalSearchBarProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
 
@@ -33,7 +33,7 @@ export function GlobalSearchBar({ onNavigate, canAccessAllTabs, activePageId }: 
   const inputRef = useRef<HTMLInputElement>(null)
 
   const index = useMemo(() => buildAppSearchIndex(), [])
-  const accessiblePageIds = useMemo(() => getAccessiblePageIds(canAccessAllTabs), [canAccessAllTabs])
+  const accessiblePageIds = useMemo(() => getAccessiblePageIds(memberRole), [memberRole])
 
   const results = useMemo(
     () => searchAppIndex(index, query, accessiblePageIds),

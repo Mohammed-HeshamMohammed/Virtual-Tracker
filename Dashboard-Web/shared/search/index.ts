@@ -1,5 +1,6 @@
 /* eslint-disable react-doctor/js-combine-iterations */
 import { NAV_SECTIONS, getPageLabel, getSectionForPage, type NavSection } from "@/shared/ui/layout"
+import { visibleNavSections, canAccessAllSidebarTabs } from "@/features/auth"
 import { POPULAR_REPORTS, REPORT_SECTIONS } from "@/features/reports"
 import { SHIFT_STYLE_HUB_REPORTS } from "@/features/reports"
 import { APP_UI_SEARCH_ENTRIES } from "@/shared/search/ui-catalog"
@@ -255,28 +256,22 @@ export function buildAppSearchIndex(): AppSearchEntry[] {
   return [...byId.values()]
 }
 
-/** Page ids the current user role may open (mirrors sidebar visibility). */
-export function getAccessiblePageIds(canAccessAllTabs: boolean): Set<string> {
+/**
+ * Page ids this role may open. Built from visibleNavSections, the same
+ * source the sidebar and breadcrumb dropdowns use, so search cannot surface
+ * a page that neither of those would let the role reach.
+ */
+export function getAccessiblePageIds(role: string): Set<string> {
   const ids = new Set<string>(["profile"])
 
-  for (const section of NAV_SECTIONS) {
-    if (!canAccessAllTabs) {
-      const allowedSections = new Set(["dashboard", "people", "activity", "settings"])
-      if (!allowedSections.has(section.id)) continue
-    }
-
-    if (section.id === "dashboard" && !canAccessAllTabs) {
-      ids.add("general")
-      continue
-    }
-
+  for (const section of visibleNavSections(role)) {
     for (const page of section.pages ?? []) ids.add(page.id)
     for (const subsection of section.subsections ?? []) {
       for (const item of subsection.items) ids.add(item.id)
     }
   }
 
-  if (canAccessAllTabs) {
+  if (canAccessAllSidebarTabs(role)) {
     ids.add("settings-billing-plans")
     ids.add("people-members-tree")
     ids.add("reports-custom")
