@@ -739,6 +739,13 @@ impl AgentController {
         self.api.lock().fetch_member_limits().ok()
     }
 
+    /// `None` covers a network/auth error the same as an older backend
+    /// without this route yet - the sidebar widgets it feeds simply don't
+    /// render rather than showing an error over what's an optional extra.
+    pub fn get_dashboard_summary(&self) -> Option<crate::types::DashboardSummary> {
+        self.api.lock().fetch_dashboard_summary().ok().flatten()
+    }
+
     /// `None` covers both "network/auth error" and "no Hours-based budget
     /// configured on this project" - the UI treats them identically (no card
     /// shown), so there's nothing useful to distinguish here.

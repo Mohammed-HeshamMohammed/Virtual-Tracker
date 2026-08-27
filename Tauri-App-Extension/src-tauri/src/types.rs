@@ -378,6 +378,49 @@ pub struct MemberProfile {
     pub teams: u32,
 }
 
+/// One day's row out of the web dashboard's own "Weekly trends" chart
+/// (GET /api/dashboard/general) - reused rather than re-derived so the
+/// agent's chart is never a moment out of sync with the one the member
+/// already knows from the web.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WeeklyActivityDay {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub active_hours: f64,
+    #[serde(default)]
+    pub idle_hours: f64,
+}
+
+/// One row out of the web dashboard's "Recent projects" panel - the same
+/// per-project progress the member already sees there, not something the
+/// agent computes on its own.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentProjectSummary {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub progress: f64,
+    #[serde(default)]
+    pub member_count: u32,
+}
+
+/// The member's own ("me", never "all" - the agent is a personal tool, not
+/// a manager's view) slice of GET /api/dashboard/general - the same payload
+/// that fills the web dashboard's own general/personal view.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DashboardSummary {
+    #[serde(default)]
+    pub activity_week_percent: f64,
+    #[serde(default)]
+    pub weekly_activity: Vec<WeeklyActivityDay>,
+    #[serde(default)]
+    pub recent_projects: Vec<RecentProjectSummary>,
+}
+
 #[cfg(test)]
 mod tests {
     // Guards CF-0.3: "No keystroke *content* logging... it must never

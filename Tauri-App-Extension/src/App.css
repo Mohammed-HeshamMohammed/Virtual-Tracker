@@ -1493,6 +1493,31 @@ body {
   overflow-y: auto;
 }
 
+/* Weekly activity - same percentage as the web dashboard's own "Weekly
+   trends" widget, drawn as a ring (reusing .activity-ring/-value/-legend
+   from the main pane's Activity tile) instead of a second chart shape. */
+.side-weekly {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.side-weekly-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.side-weekly-ring {
+  width: 48px;
+  height: 48px;
+}
+
+.side-weekly-ring .activity-ring-value {
+  font-size: 12px;
+}
+
 .side-tasklist-empty {
   display: flex;
   align-items: center;
@@ -1543,6 +1568,7 @@ body {
 .side-task-row-main {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 1px;
   min-width: 0;
 }
@@ -1566,6 +1592,28 @@ body {
 
 .side-task-row .badge {
   flex-shrink: 0;
+}
+
+.side-task-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.side-task-row-percent {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--on-surface-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* .capacity-bar is a <div> everywhere else it's used; width:100% needs an
+   explicit display here since it's a <span> inside this row's button. */
+.side-task-row .capacity-bar {
+  display: block;
+  margin-top: 4px;
 }
 
 /* grid-template-rows 0fr -> 1fr is the one way to transition to a content-sized

@@ -12,6 +12,7 @@ import type {
   AgentTask,
   AuthView,
   ConnectionState,
+  DashboardSummary,
   ForgotState,
   LinkStatus,
   MemberLimits,
@@ -116,6 +117,10 @@ function MainApp() {
   // above, which only exists to feed the task dropdown). This is the
   // sidebar's own "what else is on my plate" view.
   const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
+  // The web dashboard's own "Weekly trends" + "Recent projects" widgets,
+  // reused rather than reinvented - null on an older backend without the
+  // route yet, in which case those two sidebar cards just don't render.
+  const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -268,6 +273,22 @@ function MainApp() {
       setAssignedTasks(next);
     } catch {
       setAssignedTasks([]);
+    }
+  }, [signedIn]);
+
+  // Same 60s cache window the web dashboard itself uses for this payload
+  // (general-dashboard-api.ts) - no point polling it any faster than the
+  // source ever actually changes.
+  const refreshDashboardSummary = useCallback(async () => {
+    if (!signedIn) {
+      setDashboardSummary(null);
+      return;
+    }
+    try {
+      const next = await invoke<DashboardSummary | null>("get_dashboard_summary");
+      setDashboardSummary(next);
+    } catch {
+      setDashboardSummary(null);
     }
   }, [signedIn]);
 
@@ -462,6 +483,7 @@ function MainApp() {
   // this refetches the whole list.
   usePolling(view === "home" || view === "profile", 30000, refreshProjects);
   usePolling(view === "home" || view === "profile", 30000, refreshAssignedTasks);
+  usePolling(view === "home" || view === "profile", 60000, refreshDashboardSummary);
 
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
@@ -1126,6 +1148,12 @@ function MainApp() {
     if (busy || sessionOpen || projectId === selectedProjectId) return;
     setSelectedProjectId(projectId);
   };
+  // Same "Recent projects" progress the web dashboard's general view shows
+  // for this member - keyed by id so the quick-switch list below can show
+  // it next to a project without re-deriving it from anything client-side.
+  const projectProgressById = new Map(
+    (dashboardSummary?.recentProjects ?? []).map((p) => [p.id, p.progress]),
+  );
 
   // The member's own daily cap, as a ceiling the day panel measures against
   // rather than a tile of its own - a static config value was being given the
@@ -1186,6 +1214,21 @@ function MainApp() {
   const ACTIVITY_RING_CIRCUMFERENCE = 2 * Math.PI * 26;
   const activityDash =
     activityPercent == null ? 0 : (activityPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE;
+
+  // The week's activity ring - same percentage as the web dashboard's own
+  // "Weekly trends" widget, drawn with the exact ring math above so the
+  // sidebar's two rings read as one family instead of two different charts.
+  const weekActivityDash = dashboardSummary
+    ? (dashboardSummary.activityWeekPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE
+    : 0;
+  const weekActiveSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
+    (sum, day) => sum + day.activeHours * 3600,
+    0,
+  );
+  const weekIdleSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
+    (sum, day) => sum + day.idleHours * 3600,
+    0,
+  );
 
   // Weekly cap holders were flying blind: weeklyHours only ever appeared as a
   // fallback label on the Daily cap card when no daily cap existed, so there
@@ -1615,6 +1658,46 @@ function MainApp() {
             </div>
           </section>
 
+          {/* Same weekly-activity percentage the web dashboard's own general
+              view shows this member, drawn as a ring so it reads as one
+              family with the Activity ring in the main pane instead of a
+              second, differently-shaped chart. */}
+          {signedIn && dashboardSummary ? (
+            <section className="side-weekly side-panel-swap" style={{ animationDelay: "0.01s" }}>
+              <div className="side-tasklist-head">
+                <span className="stat-tile-label">Weekly activity</span>
+              </div>
+              <div className="side-weekly-ring-row">
+                <div className="activity-ring side-weekly-ring">
+                  <svg viewBox="0 0 60 60" aria-hidden="true">
+                    <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(8,16,34,0.9)" strokeWidth="6" />
+                    <circle
+                      cx="30"
+                      cy="30"
+                      r="26"
+                      fill="none"
+                      stroke="#34d399"
+                      strokeWidth="6"
+                      strokeLinecap="round"
+                      strokeDasharray={`${weekActivityDash} ${ACTIVITY_RING_CIRCUMFERENCE}`}
+                    />
+                  </svg>
+                  <span className="activity-ring-value">{Math.round(dashboardSummary.activityWeekPercent)}%</span>
+                </div>
+                <div className="activity-legend">
+                  <span className="activity-legend-row">
+                    <i className="activity-dot active" />
+                    {fmtHours(weekActiveSeconds)} <em>active</em>
+                  </span>
+                  <span className="activity-legend-row">
+                    <i className="activity-dot idle" />
+                    {fmtHours(weekIdleSeconds)} <em>idle</em>
+                  </span>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {/* Every project the member can track against, as a quick-switch
               list rather than only the dropdown below - useful the moment
               there's more than one, and each row's open-task count is
@@ -1628,19 +1711,29 @@ function MainApp() {
               <div className="side-tasklist-body">
                 {projects.map((project) => {
                   const openCount = openTaskCountByProject.get(project.id) ?? 0;
+                  const progress = projectProgressById.get(project.id);
                   return (
                     <button
                       key={project.id}
                       type="button"
-                      className={`side-task-row${project.id === selectedProjectId ? " active" : ""}`}
+                      className={`side-task-row${progress != null ? " has-progress" : ""}${project.id === selectedProjectId ? " active" : ""}`}
                       disabled={busy || sessionOpen}
                       onClick={() => jumpToProject(project.id)}
                     >
                       <span className="side-task-row-main">
-                        <span className="side-task-row-title">{project.name}</span>
-                        <span className="side-task-row-project">
-                          {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
+                        <span className="side-task-row-top">
+                          <span className="side-task-row-title">{project.name}</span>
+                          {progress != null ? <span className="side-task-row-percent">{Math.round(progress)}%</span> : null}
                         </span>
+                        {progress != null ? (
+                          <span className="capacity-bar slim">
+                            <span className="capacity-fill active" style={{ width: `${Math.round(progress)}%` }} />
+                          </span>
+                        ) : (
+                          <span className="side-task-row-project">
+                            {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
+                          </span>
+                        )}
                       </span>
                     </button>
                   );
@@ -1698,25 +1791,17 @@ function MainApp() {
             </div>
           ) : (
             <>
-              {/* Project and task pickers, stacked in normal flow so the task
-                  card's grid-row transition still reads as it growing in
-                  underneath, without pulling the project card up with it. */}
+              {/* Project picking now happens by clicking a row in "Your
+                  projects" above - a second, redundant dropdown for the
+                  same choice added nothing. The task picker stays: it's the
+                  one place left to choose a task inside whichever project
+                  just got picked, if that project needs one. */}
               <div className="selector-stack side-panel-swap">
-                <section className="task-card">
-                  <label className="task-label" htmlFor="project-select">
-                    Project
-                  </label>
-                  <Dropdown
-                    id="project-select"
-                    direction="up"
-                    value={selectedProjectId}
-                    options={projects.map((project) => ({ id: project.id, label: project.name }))}
-                    placeholder="Select a project"
-                    emptyLabel={projectsFailed ? "Couldn't load projects" : "No projects"}
-                    disabled={busy || sessionOpen}
-                    onChange={setSelectedProjectId}
-                  />
-                </section>
+                {projects.length === 0 ? (
+                  <p className="side-tasklist-empty">
+                    {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
+                  </p>
+                ) : null}
 
                 <div
                   className={`task-slot${showTaskPicker ? " open" : ""}`}
@@ -1725,7 +1810,7 @@ function MainApp() {
                 >
                   <section className="task-card">
                     <label className="task-label" htmlFor="task-select">
-                      Your tasks
+                      Task
                     </label>
                     <Dropdown
                       id="task-select"

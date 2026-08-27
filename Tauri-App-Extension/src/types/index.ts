@@ -202,6 +202,30 @@ export type MemberProfile = {
   teams: number;
 };
 
+// The same GET /api/dashboard/general payload that feeds the web
+// dashboard's own personal/general view - only its "me" slice ever reaches
+// the agent (see Rust's DashboardSummary), so these widgets show exactly
+// what the member already sees on the web, not a re-derived approximation.
+export type WeeklyActivityDay = {
+  key: string;
+  label: string;
+  activeHours: number;
+  idleHours: number;
+};
+
+export type RecentProjectSummary = {
+  id: string;
+  name: string;
+  progress: number;
+  memberCount: number;
+};
+
+export type DashboardSummary = {
+  activityWeekPercent: number;
+  weeklyActivity: WeeklyActivityDay[];
+  recentProjects: RecentProjectSummary[];
+};
+
 export type DropdownOption = {
   id: string;
   label: string;

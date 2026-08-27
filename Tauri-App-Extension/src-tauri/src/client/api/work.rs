@@ -436,6 +436,72 @@ impl ApiClient {
             teams: data.get("teams").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
         })
     }
+
+    /// The same payload GET /api/dashboard/general feeds the web dashboard's
+    /// own personal/general view with - only the "me" slice, never "all"
+    /// (that's the manager cross-team view, out of scope for a per-member
+    /// agent). `Ok(None)` on a 404/older backend that doesn't have this
+    /// route yet, same convention as fetch_project_budget_status - "nothing
+    /// to show" rather than an error banner over an optional widget.
+    pub fn fetch_dashboard_summary(&mut self) -> Result<Option<crate::types::DashboardSummary>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/dashboard/general", self.api_url);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let Some(me) = body.pointer("/data/me") else {
+            return Ok(None);
+        };
+        let stats = me.get("stats");
+        let weekly_activity = me
+            .get("weeklyActivity")
+            .and_then(|v| v.as_array())
+            .map(|days| {
+                days.iter()
+                    .map(|d| crate::types::WeeklyActivityDay {
+                        key: d.get("key").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        label: d.get("label").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        active_hours: d.get("activeHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                        idle_hours: d.get("idleHours").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let recent_projects = me
+            .get("recentProjects")
+            .and_then(|v| v.as_array())
+            .map(|projects| {
+                projects
+                    .iter()
+                    .map(|p| crate::types::RecentProjectSummary {
+                        id: p.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        name: p.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                        progress: p.get("progress").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                        member_count: p.get("memberCount").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Some(crate::types::DashboardSummary {
+            activity_week_percent: stats
+                .and_then(|s| s.get("activityWeekPercent"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0),
+            weekly_activity,
+            recent_projects,
+        }))
+    }
 }
 
 /// Parses the `assignedToday` block on GET /api/activity/limits (T5,

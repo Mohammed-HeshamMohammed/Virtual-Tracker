@@ -247,6 +247,14 @@ async fn get_project_budget_status(
 }
 
 #[tauri::command]
+async fn get_dashboard_summary(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<crate::types::DashboardSummary>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_dashboard_summary()).await)
+}
+
+#[tauri::command]
 async fn get_member_profile(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MemberProfile>, String> {
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.get_member_profile()).await)
@@ -502,6 +510,7 @@ pub fn run() {
             get_member_limits,
             get_project_budget_status,
             get_member_profile,
+            get_dashboard_summary,
             start_task_session,
             get_monitoring_notice,
             acknowledge_monitoring_notice,
