@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { motion } from "framer-motion"
 import { ClipboardCheck, AlertTriangle } from "lucide-react"
 import { useAuth, useTheme } from "@/shared/providers/app"
-import { canAccessReviewCenter, canReviewAssignments } from "@/features/auth"
+import { canAccessReviewCenter, canReviewAssignments, isEmployeeRole } from "@/features/auth"
 import { getMembers, getProjects } from "@/infrastructure/api"
 import { MyTeamScopePeopleButton } from "@/features/members/components/my-team-scope-controls"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
@@ -14,7 +14,9 @@ import { sectionHeaderEnter, contentEnter, badgePop } from "@/features/timesheet
 export function TimesheetsViewEdit() {
   const { isDark } = useTheme()
   const { memberRole } = useAuth()
-  const canReview = canAccessReviewCenter(memberRole)
+  // Employee tier reads this queue too, scoped server-side to their own
+  // assignments only - they just never get the approve/reject controls.
+  const canReview = canAccessReviewCenter(memberRole) || isEmployeeRole(memberRole)
   const canApproveReject = canReviewAssignments(memberRole)
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading } = usePeopleTeamScope()
   const [memberOptions, setMemberOptions] = useState<{ id: string; name: string }[]>([])

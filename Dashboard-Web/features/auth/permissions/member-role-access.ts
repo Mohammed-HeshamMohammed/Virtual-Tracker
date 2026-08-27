@@ -338,8 +338,9 @@ export function allowedNavSectionIds(role: string): Set<string> {
   if (canAccessAllSidebarTabs(role)) return new Set(NAV_SECTIONS.map((section) => section.id))
   if (normalizeMemberRole(role) === "client") return new Set(CLIENT_SECTION_IDS)
   const ids = new Set(RESTRICTED_SECTION_IDS)
+  // Intern+ (see canSeePmTasksSection): own project rows and own timesheet outcomes.
   if (canSeePmTasksSection(role)) ids.add("project-management")
-  if (canAccessReviewCenter(role)) ids.add("timesheets")
+  if (canAccessReviewCenter(role) || canSeePmTasksSection(role)) ids.add("timesheets")
   return ids
 }
 
@@ -382,6 +383,13 @@ function getRestrictedPageIds(role: string): Set<string> {
   const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
   if (rank >= ROLE_PRIVILEGE_RANK.intern) {
     ids.add("pm-tasks")
+    // Own project rows (read-only), own time off requests, and own timesheet
+    // outcomes - matches the sections allowedNavSectionIds now opens for this tier.
+    ids.add("pm-projects")
+    ids.add("calendar-timeoff")
+    ids.add("timesheets-view")
+    ids.add("timesheets-approvals")
+    ids.add("timesheets-time-activity")
   }
   return ids
 }
