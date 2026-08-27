@@ -1102,3 +1102,96 @@ export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, t
   }
   return byProject;
 }
+
+/**
+ * Per-day active/idle seconds for one member - the one-member version of
+ * getDailyActivityTotalsPg, so the Command Center's personal view (Intern /
+ * Employee) plots that person's own week rather than the whole project's.
+ * Without it the trend chart would contradict the "Total Time Worked" card
+ * sitting directly above it, which is already personal for those roles.
+ * @param {{ projectIds?: string[] | null, memberId: string, fromDay: string, toDay: string }} params
+ * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} keyed by YYYY-MM-DD
+ */
+export async function getMemberDailyActivityTotalsPg({ projectIds = null, memberId, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT s.project_id, s.member_id,
+              s.active_seconds AS active_seconds,
+              s.idle_seconds   AS idle_seconds,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       UNION ALL
+       SELECT te.project_id, te.member_id, te.duration, 0, te.date
+       FROM time_entries te
+       WHERE te.status <> 'rejected'
+     )
+     SELECT day,
+            SUM(active_seconds) AS active_seconds,
+            SUM(idle_seconds)   AS idle_seconds
+     FROM worked
+     WHERE member_id = $4
+       AND day >= $1::date AND day <= $2::date
+       AND ($3::uuid[] IS NULL OR project_id = ANY($3::uuid[]))
+     GROUP BY day`,
+    [fromDay, toDay, projectIds, memberId],
+  );
+
+  const byDay = new Map();
+  for (const row of rows) {
+    const key = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day).slice(0, 10);
+    byDay.set(key, {
+      activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
+      idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+    });
+  }
+  return byDay;
+}
+
+/**
+ * Active + idle seconds for one member per project, for a date window.
+ *
+ * getProjectActivityMetricsPg gives that same shape for a whole project;
+ * this is the one-member version the Command Center's personal view (Intern
+ * / Employee) needs for "Total Time Worked" and "Avg Team Activity" to read
+ * as that person's own hours, not the whole project's.
+ * @param {{ projectIds?: string[] | null, memberId: string, fromDay: string, toDay: string }} params
+ * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} projectId -> totals
+ */
+export async function getMemberProjectActivityMetricsPg({ projectIds = null, memberId, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT s.project_id, s.member_id,
+              s.active_seconds AS active_seconds,
+              s.idle_seconds   AS idle_seconds,
+              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+       FROM activity_sessions s
+       LEFT JOIN members m ON m.id = s.member_id
+       UNION ALL
+       SELECT te.project_id, te.member_id,
+              te.duration AS active_seconds,
+              0           AS idle_seconds,
+              te.date     AS day
+       FROM time_entries te
+       WHERE te.status <> 'rejected'
+     )
+     SELECT project_id,
+            SUM(active_seconds) AS active_seconds,
+            SUM(idle_seconds)   AS idle_seconds
+     FROM worked
+     WHERE project_id IS NOT NULL AND member_id = $4
+       AND day >= $1::date AND day <= $2::date
+       AND ($3::uuid[] IS NULL OR project_id = ANY($3::uuid[]))
+     GROUP BY project_id`,
+    [fromDay, toDay, projectIds, memberId],
+  );
+
+  const byProject = new Map();
+  for (const row of rows) {
+    byProject.set(String(row.project_id), {
+      activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
+      idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+    });
+  }
+  return byProject;
+}
