@@ -116,6 +116,40 @@
   user-select: none;
 }
 
+/* Custom scrollbar everywhere, once instead of per-panel - the sidebar's
+   own lists were about to grow their own native ones otherwise. Thumb
+   colour rides the same --c-overlay token every hover/fill surface in
+   this file already uses, so it's white-on-dark / near-black-on-light
+   automatically, no separate light-mode rule needed. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-overlay) / 0.22) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--c-overlay) / 0.22);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--c-overlay) / 0.38);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 html,
 body,
 #root {
@@ -1440,26 +1474,6 @@ body {
   color: var(--primary);
 }
 
-.task-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* Project + task pickers. Used to flex:1-and-centre in the whole remaining
-   height, which read fine with a big activity graphic above eating most of
-   it - once that graphic became the task/project lists (real content, sized
-   to what they hold), centring in a forced-tall box just moved the dead
-   space around instead of shrinking it. Natural height now; the sidebar's
-   one flex-grower is the footer's own auto top margin below, so everything
-   above packs together and any real slack collects in one place - right
-   above the footer card, not sandwiched mid-content. */
-.selector-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
 /* Cross-project "your tasks" list - sits between the hero card and the
    pickers, capped so a long backlog scrolls internally instead of pushing
    the pickers/actions off the bottom of a short window. */
@@ -1618,49 +1632,6 @@ body {
 
 /* grid-template-rows 0fr -> 1fr is the one way to transition to a content-sized
    height in CSS, so the task picker expands smoothly rather than popping in. */
-.task-slot {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.2s ease;
-}
-
-.task-slot > * {
-  overflow: hidden;
-  min-height: 0;
-}
-
-.task-slot.open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-  /* Fade after the row has started opening, so it reads as "grows, then
-     reveals" rather than both at once. */
-  transition:
-    grid-template-rows 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 0.22s ease 0.08s;
-}
-
-.task-slot.open > * {
-  overflow: visible;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .task-slot,
-  .task-slot.open {
-    transition: none;
-  }
-}
-
-.task-label {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
 .dropdown {
   position: relative;
 }

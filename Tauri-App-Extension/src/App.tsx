@@ -37,7 +37,6 @@ import {
   taskStatusTone,
 } from "./utils/formatters";
 import { TitleBar } from "./components/common/TitleBar";
-import { Dropdown } from "./components/common/Dropdown";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
 import { SettingsPanel } from "./components/views/SettingsPanel";
@@ -296,8 +295,6 @@ function MainApp() {
   // "This project has no task list", not "this project is type X" - the
   // server decides which types those are, so a new one needs no agent change.
   const isCallingProject = selectedProject ? selectedProject.hasTasks === false : false;
-  // Only a picked, task-based project has tasks to choose from.
-  const showTaskPicker = Boolean(selectedProjectId) && !isCallingProject;
   // Normal projects require a task before tracking unless a manager turned
   // that off for this specific project. Calling projects never require one.
   const taskRequired = !isCallingProject && selectedProject?.requireTaskToTrack !== false;
@@ -1743,8 +1740,9 @@ function MainApp() {
           ) : null}
 
           {/* Everything open and assigned to the member, across every
-              project - not just the one picked below. Doubles as a
-              shortcut: clicking a row jumps the pickers straight to it. */}
+              project - not scoped to whichever one is currently picked.
+              This is the task picker now, the same way the list above is
+              the project picker: click a row to select it, no dropdown. */}
           {signedIn ? (
             <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
               <div className="side-tasklist-head">
@@ -1791,40 +1789,16 @@ function MainApp() {
             </div>
           ) : (
             <>
-              {/* Project picking now happens by clicking a row in "Your
-                  projects" above - a second, redundant dropdown for the
-                  same choice added nothing. The task picker stays: it's the
-                  one place left to choose a task inside whichever project
-                  just got picked, if that project needs one. */}
-              <div className="selector-stack side-panel-swap">
-                {projects.length === 0 ? (
-                  <p className="side-tasklist-empty">
-                    {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
-                  </p>
-                ) : null}
-
-                <div
-                  className={`task-slot${showTaskPicker ? " open" : ""}`}
-                  aria-hidden={!showTaskPicker}
-                  inert={!showTaskPicker}
-                >
-                  <section className="task-card">
-                    <label className="task-label" htmlFor="task-select">
-                      Task
-                    </label>
-                    <Dropdown
-                      id="task-select"
-                      direction="down"
-                      value={selectedTaskId}
-                      options={tasks.map((task) => ({ id: task.id, label: task.title }))}
-                      placeholder="Select a task"
-                      emptyLabel="No assigned tasks"
-                      disabled={busy || sessionOpen}
-                      onChange={setSelectedTaskId}
-                    />
-                  </section>
-                </div>
-              </div>
+              {/* Project and task pickers are both gone - "Your projects"
+                  and "Your tasks" above already do that job by clicking a
+                  row, and a dropdown next to each was a second, redundant
+                  control for the same choice. Only the "nothing to pick
+                  from" fallback is left to show here. */}
+              {projects.length === 0 ? (
+                <p className="side-tasklist-empty side-panel-swap">
+                  {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
+                </p>
+              ) : null}
 
               <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
                 {paused ? (
