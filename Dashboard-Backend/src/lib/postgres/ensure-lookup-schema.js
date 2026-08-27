@@ -4,6 +4,43 @@ import { markPostgresLookupReady, resetPostgresLookupReadyCache } from "./lookup
 import { markPostgresMemberDataReady, resetPostgresMemberDataReadyCache } from "./member-data-availability.js";
 import { isActivityScreenshotsEnabled } from "../../config/activity.js";
 
+/**
+ * activity_sessions/activity_screenshots/activity_app_logs/activity_url_logs/
+ * time_entries were every one of them declared with a bare UUID member_id/
+ * project_id/task_id - no FK at all. Deleting a member or a project never
+ * touched any of this: the row just kept its now-meaningless id, and the
+ * Work Sessions / Time & Activity / Amounts Owed reports rendered it as
+ * "Unknown" or "No project" forever, because there is nothing left to look
+ * that id up against.
+ *
+ * Two statements per column, always in this order:
+ *  1. Delete every row already holding a dangling id - this has to run
+ *     BEFORE the constraint below, or ADD CONSTRAINT fails outright the
+ *     moment it validates existing data against the new FK.
+ *  2. Add the FK, ON DELETE CASCADE, idempotently (skipped if a boot has
+ *     already added it) - so this can never happen again going forward,
+ *     for a delete through any path, not just the app's own delete
+ *     handlers.
+ * @param {string} table
+ * @param {string} column
+ * @param {string} parentTable
+ * @param {{ nullable?: boolean }} [options] nullable=false skips the
+ *   `column IS NOT NULL AND` guard for a NOT NULL column (time_entries.
+ *   project_id), where every row already has some value to check.
+ */
+function cascadeOnDelete(table, column, parentTable, { nullable = true } = {}) {
+  const constraintName = `${table}_${column}_fkey`;
+  return [
+    `DELETE FROM ${table} WHERE ${nullable ? `${column} IS NOT NULL AND ` : ""}${column} NOT IN (SELECT id FROM ${parentTable})`,
+    `DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${constraintName}') THEN
+    ALTER TABLE ${table} ADD CONSTRAINT ${constraintName} FOREIGN KEY (${column}) REFERENCES ${parentTable}(id) ON DELETE CASCADE;
+  END IF;
+END $$`,
+  ];
+}
+
 const LOOKUP_DDL = [
   "CREATE EXTENSION IF NOT EXISTS pgcrypto",
   `CREATE OR REPLACE FUNCTION set_updated_at()
@@ -2155,6 +2192,25 @@ $$ LANGUAGE plpgsql`,
   UNIQUE (member_id, page_id)
 )`,
   `CREATE INDEX IF NOT EXISTS idx_saved_reports_member ON saved_reports (member_id, created_at DESC)`,
+
+  // See cascadeOnDelete above. Placed last in this array (not next to each
+  // table's own CREATE TABLE) because every table these reference - members,
+  // projects, tasks, and the five tables below - must already exist by the
+  // time these run; members/projects/tasks are scattered across both DDL
+  // arrays and are not all defined yet at the point activity_sessions itself
+  // is created.
+  ...cascadeOnDelete("activity_sessions", "member_id", "members", { nullable: false }),
+  ...cascadeOnDelete("activity_sessions", "project_id", "projects"),
+  ...cascadeOnDelete("activity_sessions", "task_id", "tasks"),
+  ...cascadeOnDelete("activity_screenshots", "member_id", "members", { nullable: false }),
+  ...cascadeOnDelete("activity_screenshots", "task_id", "tasks"),
+  ...cascadeOnDelete("activity_app_logs", "member_id", "members", { nullable: false }),
+  ...cascadeOnDelete("activity_app_logs", "task_id", "tasks"),
+  ...cascadeOnDelete("activity_url_logs", "member_id", "members", { nullable: false }),
+  ...cascadeOnDelete("activity_url_logs", "task_id", "tasks"),
+  ...cascadeOnDelete("time_entries", "member_id", "members", { nullable: false }),
+  ...cascadeOnDelete("time_entries", "project_id", "projects", { nullable: false }),
+  ...cascadeOnDelete("time_entries", "task_id", "tasks"),
 ];
 
 // CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
