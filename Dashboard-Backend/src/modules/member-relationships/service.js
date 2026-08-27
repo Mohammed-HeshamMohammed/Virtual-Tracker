@@ -900,20 +900,35 @@ async function getOwnerOrgMemberIds(db, ownerMemberId) {
   return [...ids];
 }
 
-/** Employee read-only tree: shared Owner root → full subtree; else manager branch or self. */
+/** Drop member ids whose role is Viewer. */
+async function filterOutViewerRole(db, memberIds) {
+  const kept = [];
+  for (const id of memberIds) {
+    const roleName = await resolveMemberRoleName(db, id);
+    if (normalizeRoleKey(roleName) !== "viewer") kept.push(id);
+  }
+  return kept;
+}
+
+/**
+ * Employee read-only tree: shared Owner root → full subtree; else manager
+ * branch or self. Viewer-role members are dropped here rather than upstream -
+ * Employees can see everyone else in that tree, just not portal Viewers.
+ */
 export async function getEmployeeHierarchyMemberIds(db, memberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, memberId);
   if (ownerMemberId && (await memberBelongsToOrg(db, memberId, ownerMemberId))) {
-    return getOwnerOrgMemberIds(db, ownerMemberId);
+    const ids = await getOwnerOrgMemberIds(db, ownerMemberId);
+    return filterOutViewerRole(db, ids);
   }
 
   const ancestors = await getMemberAncestors(db, memberId);
   const directParentId =
     ancestors.length > 0 ? ancestors[ancestors.length - 1].member_id : null;
-  if (directParentId) {
-    return getTeamSubtreeMemberIds(db, directParentId);
-  }
-  return getTeamSubtreeMemberIds(db, memberId);
+  const ids = directParentId
+    ? await getTeamSubtreeMemberIds(db, directParentId)
+    : await getTeamSubtreeMemberIds(db, memberId);
+  return filterOutViewerRole(db, ids);
 }
 
 /**
