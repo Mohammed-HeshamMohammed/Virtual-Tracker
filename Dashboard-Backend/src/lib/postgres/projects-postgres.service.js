@@ -165,8 +165,32 @@ export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
   return project;
 }
 
-/** @param {string} id @param {string} [actorId] */
+/**
+ * Deleting the project row alone cascades activity_sessions, tasks (and
+ * through tasks, any activity_screenshots/app_logs/url_logs that carry a
+ * task_id - see ensure-lookup-schema.js's cascadeOnDelete), project_members,
+ * project_budgets, etc.
+ *
+ * What that cascade chain cannot reach: a calling/support project's sessions
+ * have no task at all, so their screenshots/app-logs/url-logs are linked
+ * only by session_id - a VARCHAR matched against activity_sessions.id by
+ * cast, not a real FK (the column predates the id's UUID type and cannot
+ * take a foreign key against it without a wider migration). Deleting those
+ * explicitly, by session_id, before the project (and its sessions) are gone,
+ * is the only way this project's screenshots/logs don't survive it as
+ * orphaned rows - which is exactly the "No project" bug this closes.
+ * @param {string} id @param {string} [actorId]
+ */
 export async function deleteProjectPg(id, actorId) {
+  const sessions = await query("SELECT id FROM activity_sessions WHERE project_id = $1", [id]);
+  const sessionIds = sessions.map((row) => String(row.id));
+  if (sessionIds.length > 0) {
+    await Promise.all([
+      query("DELETE FROM activity_screenshots WHERE session_id = ANY($1::text[])", [sessionIds]),
+      query("DELETE FROM activity_app_logs WHERE session_id = ANY($1::text[])", [sessionIds]),
+      query("DELETE FROM activity_url_logs WHERE session_id = ANY($1::text[])", [sessionIds]),
+    ]);
+  }
   await query("DELETE FROM projects WHERE id = $1", [id]);
   void publishChange("projects", id, "deleted", uuidOrNull(actorId) ?? undefined);
 }
