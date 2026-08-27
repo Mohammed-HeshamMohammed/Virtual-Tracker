@@ -1434,16 +1434,39 @@ body {
   line-height: 1.5;
 }
 
+/* Two 3-row lists plus the weekly ring plus the hero card is genuinely
+   more content than a fixed 680px window always has room for. Rather than
+   let the whole sidebar scroll as one block - which can push Start
+   tracking and the footer off-screen - only .side-panel-scroll (hero
+   through Your tasks) scrolls; .side-panel-pinned (actions + footer)
+   never does, so the primary action and profile/settings stay reachable
+   no matter how tall the lists above get. */
 .side-panel {
   position: relative;
   width: 290px;
   flex-shrink: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: rgb(var(--c-surface-low) / 0.4);
+}
+
+.side-panel-scroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 44px 16px 14px;
+  padding: 44px 16px 0;
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: rgb(var(--c-surface-low) / 0.4);
+}
+
+.side-panel-pinned {
+  flex-shrink: 0;
+  padding: 12px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .settings-corner-btn {

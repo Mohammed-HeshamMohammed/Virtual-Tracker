@@ -1633,6 +1633,12 @@ function MainApp() {
       ) : (
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">
+        {/* Everything above Start tracking can genuinely outgrow 680px -
+            two 3-row lists plus the weekly ring plus the hero card is more
+            content than a fixed-height window can always show at once.
+            This region scrolls on its own so the primary action and the
+            footer below never do - they're always on screen. */}
+        <div className="side-panel-scroll">
           {/* Identity moved to the footer bar, which now carries the avatar,
               the name and the live status - it was duplicated here and there.
               What is left is the one thing that isn't repeated anywhere: what
@@ -1781,7 +1787,12 @@ function MainApp() {
               )}
             </section>
           ) : null}
+        </div>
 
+        {/* Pinned to the bottom, outside the scroll region above - Start
+            tracking and the profile/settings footer stay reachable no
+            matter how tall the lists above get. */}
+        <div className="side-panel-pinned">
           {loadingProfile ? (
             <div className="side-skeleton side-panel-swap" aria-hidden="true">
               <span className="skeleton-bar skeleton-bar-lg" />
@@ -1936,6 +1947,7 @@ function MainApp() {
               </button>
             </div>
           ) : null}
+        </div>
 
           {stopNoteOpen ? (
             <div className="stop-note-backdrop">
