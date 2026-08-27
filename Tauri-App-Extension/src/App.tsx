@@ -1756,7 +1756,7 @@ function MainApp() {
                   </span>
                 </button>
                 <button
-                  className="icon-btn"
+                  className="icon-btn side-footer-settings"
                   type="button"
                   title="Settings"
                   aria-label="Settings"
