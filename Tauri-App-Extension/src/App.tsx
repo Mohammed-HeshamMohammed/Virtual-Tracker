@@ -28,19 +28,20 @@ import type {
   SignUpState,
   TaskTimeTracking,
 } from "./types";
-import {
-  fmtClock,
-  fmtHours,
-  initialsFromName,
-  taskStatusLabel,
-  taskStatusTone,
-} from "./utils/formatters";
-import { ACTIVITY_RING_CIRCUMFERENCE, computeHomeStats } from "./utils/homeStats";
+import { fmtClock } from "./utils/formatters";
+import { computeHomeStats } from "./utils/homeStats";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
 import { WeekTile } from "./components/stats/WeekTile";
 import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
 import { AssignedTile } from "./components/stats/AssignedTile";
+import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
+import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
+import { ProjectsList } from "./components/sidebar/ProjectsList";
+import { TasksList } from "./components/sidebar/TasksList";
+import { SidebarActions } from "./components/sidebar/SidebarActions";
+import { SidebarFooter } from "./components/sidebar/SidebarFooter";
+import { StopNoteModal } from "./components/StopNoteModal";
 import { TitleBar } from "./components/common/TitleBar";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
@@ -1419,143 +1420,35 @@ function MainApp() {
             </div>
           </section>
 
-          {/* Same weekly-activity percentage the web dashboard's own general
-              view shows this member, drawn as a ring so it reads as one
-              family with the Activity ring in the main pane instead of a
-              second, differently-shaped chart. */}
-          {signedIn && dashboardSummary ? (
-            <section className="side-weekly side-panel-swap" style={{ animationDelay: "0.01s" }}>
-              <div className="side-tasklist-head">
-                <span className="stat-tile-label">Weekly activity</span>
-              </div>
-              <div className="side-weekly-ring-row">
-                <div className="activity-ring side-weekly-ring">
-                  <svg viewBox="0 0 60 60" aria-hidden="true">
-                    <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(8,16,34,0.9)" strokeWidth="6" />
-                    <circle
-                      cx="30"
-                      cy="30"
-                      r="26"
-                      fill="none"
-                      stroke="#34d399"
-                      strokeWidth="6"
-                      strokeLinecap="round"
-                      strokeDasharray={`${weekActivityDash} ${ACTIVITY_RING_CIRCUMFERENCE}`}
-                    />
-                  </svg>
-                  <span className="activity-ring-value">{Math.round(dashboardSummary.activityWeekPercent)}%</span>
-                </div>
-                <div className="activity-legend">
-                  <span className="activity-legend-row">
-                    <i className="activity-dot active" />
-                    {fmtHours(weekActiveSeconds)} <em>active</em>
-                  </span>
-                  <span className="activity-legend-row">
-                    <i className="activity-dot idle" />
-                    {fmtHours(weekIdleSeconds)} <em>idle</em>
-                  </span>
-                </div>
-              </div>
-            </section>
-          ) : null}
+          <WeeklyActivityCard
+            signedIn={signedIn}
+            dashboardSummary={dashboardSummary}
+            weekActivityDash={weekActivityDash}
+            weekActiveSeconds={weekActiveSeconds}
+            weekIdleSeconds={weekIdleSeconds}
+          />
 
-          {/* Every project the member can track against, as a quick-switch
-              list rather than only the dropdown below - useful the moment
-              there's more than one, and each row's open-task count is
-              something the dropdown itself has no room to show. */}
-          {signedIn && projects.length > 0 ? (
-            <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
-              <div className="side-tasklist-head">
-                <span className="stat-tile-label">Your projects</span>
-                <span className="side-tasklist-count">{projects.length}</span>
-              </div>
-              <div className="side-tasklist-body">
-                {projects.map((project) => {
-                  const openCount = openTaskCountByProject.get(project.id) ?? 0;
-                  const progress = projectProgressById.get(project.id);
-                  return (
-                    <button
-                      key={project.id}
-                      type="button"
-                      className={`side-task-row${progress != null && !project.budgetExhausted ? " has-progress" : ""}${project.id === selectedProjectId ? " active" : ""}`}
-                      disabled={busy || sessionOpen || project.budgetExhausted}
-                      title={project.budgetExhausted ? "This project's hours budget is spent — no timer can start against it." : undefined}
-                      onClick={() => jumpToProject(project)}
-                    >
-                      <span className="side-task-row-main">
-                        <span className="side-task-row-top">
-                          <span className="side-task-row-title">{project.name}</span>
-                          {progress != null && !project.budgetExhausted ? (
-                            <span className="side-task-row-percent">{Math.round(progress)}%</span>
-                          ) : null}
-                        </span>
-                        {project.budgetExhausted ? (
-                          <span className="side-task-row-project">Budget spent</span>
-                        ) : progress != null ? (
-                          <span className="capacity-bar slim">
-                            <span className="capacity-fill active" style={{ width: `${Math.round(progress)}%` }} />
-                          </span>
-                        ) : (
-                          <span className="side-task-row-project">
-                            {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
-                          </span>
-                        )}
-                      </span>
-                      {project.budgetExhausted ? <span className="badge warn">Budget</span> : null}
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          ) : null}
+          <ProjectsList
+            signedIn={signedIn}
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            busy={busy}
+            sessionOpen={sessionOpen}
+            openTaskCountByProject={openTaskCountByProject}
+            projectProgressById={projectProgressById}
+            onSelectProject={jumpToProject}
+          />
 
-          {/* Everything open and assigned to the member, across every
-              project - not scoped to whichever one is currently picked.
-              This is the task picker now, the same way the list above is
-              the project picker: click a row to select it, no dropdown. */}
-          {signedIn ? (
-            <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
-              <div className="side-tasklist-head">
-                <span className="stat-tile-label">Your tasks</span>
-                {assignedTasks.length > 0 ? (
-                  <span className="side-tasklist-count">{assignedTasks.length}</span>
-                ) : null}
-              </div>
-              {assignedTasks.length > 0 ? (
-                <div className="side-tasklist-body">
-                  {assignedTasks.map((task) => (
-                    <button
-                      key={task.id}
-                      type="button"
-                      className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}
-                      disabled={busy || sessionOpen}
-                      onClick={() => jumpToAssignedTask(task)}
-                    >
-                      <span className="side-task-row-main">
-                        <span className="side-task-row-title">{task.title}</span>
-                        {task.projectId ? (
-                          <span className="side-task-row-project">
-                            {projectNameById.get(task.projectId) || "Unknown project"}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className={`badge ${taskStatusTone(task.status)}`}>{taskStatusLabel(task.status)}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : assignedTasksFailed ? (
-                <p className="side-tasklist-empty bad">
-                  <Icon name="warn" />
-                  Couldn't load your tasks
-                </p>
-              ) : (
-                <p className="side-tasklist-empty ok">
-                  <Icon name="check-filled" />
-                  Nothing open assigned to you right now
-                </p>
-              )}
-            </section>
-          ) : null}
+          <TasksList
+            signedIn={signedIn}
+            assignedTasks={assignedTasks}
+            assignedTasksFailed={assignedTasksFailed}
+            selectedTaskId={selectedTaskId}
+            busy={busy}
+            sessionOpen={sessionOpen}
+            projectNameById={projectNameById}
+            onSelectTask={jumpToAssignedTask}
+          />
         </div>
 
         {/* Pinned to the bottom, outside the scroll region above - Start
@@ -1581,131 +1474,38 @@ function MainApp() {
                 </p>
               ) : null}
 
-              <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
-                {paused ? (
-                  <button className="btn btn-primary" type="button" disabled={busy} onClick={() => void handleResume()}>
-                    Resume tracking
-                  </button>
-                ) : tracking ? (
-                  /* Pause and Stop are a pair, not two slabs in a stack. */
-                  <div className="action-pair">
-                    <button className="btn btn-secondary" type="button" disabled={busy} onClick={() => void handlePause()}>
-                      Pause
-                    </button>
-                    <button className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={handleStopClick}>
-                      Stop
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    className="btn btn-primary"
-                    type="button"
-                    disabled={
-                      busy ||
-                      (taskRequired ? !selectedTaskId : !selectedProjectId) ||
-                      Boolean(taskTracking?.limitReached)
-                    }
-                    title={taskTracking?.limitReached ? taskTracking.allowanceMessage || "Maximum allowed work time reached." : undefined}
-                    onClick={() => void handleStart()}
-                  >
-                    Start tracking
-                  </button>
-                )}
+              <SidebarActions
+                paused={paused}
+                tracking={tracking}
+                busy={busy}
+                taskRequired={taskRequired}
+                selectedTaskId={selectedTaskId}
+                selectedProjectId={selectedProjectId}
+                taskTracking={taskTracking}
+                onResume={() => void handleResume()}
+                onPause={() => void handlePause()}
+                onStopClick={handleStopClick}
+                onStart={() => void handleStart()}
+                onOpenDashboard={() => void invoke("open_web_app")}
+                onSignInAgain={() => void handleSignIn()}
+              />
 
-                <button className="btn btn-secondary" type="button" onClick={() => void invoke("open_web_app")}>
-                  Open dashboard
-                  <Icon name="external" />
-                </button>
-
-                {/* Recovery, not a peer of Start. "Re-link account" was
-                    internal jargon for signing in again on this PC. */}
-                <button className="btn-quiet" type="button" onClick={() => void handleSignIn()}>
-                  Sign in again
-                </button>
-              </nav>
-
-              {/* Profile and Settings as peers in the flow. The gear used to
-                  float at position:absolute bottom-left, detached from the
-                  layout and the only route into Settings; the avatar was
-                  secretly the only route into the profile. The card itself
-                  is name + email + role, same as the People-page identity it
-                  is drawn from - state lives on the dot alone (tracking /
-                  paused / offline / ready) rather than repeating it as a
-                  second line under a status pill up top. */}
-              <div className="side-footer">
-                <button
-                  type="button"
-                  className="side-footer-profile"
-                  disabled={!signedIn}
-                  title={signedIn ? "View profile" : undefined}
-                  onClick={() => setView("profile")}
-                >
-                  <span className="side-footer-avatar">
-                    {/* The circular clip lives on this inner span, not on
-                        .side-footer-avatar itself - clipping the outer
-                        element also clipped the status dot below to the
-                        circle's own edge instead of letting it sit on the
-                        rim. */}
-                    <span className="side-footer-avatar-circle">
-                      {profile?.avatarUrl && !avatarError ? (
-                        <img
-                          src={profile.avatarUrl}
-                          alt=""
-                          referrerPolicy="no-referrer"
-                          draggable={false}
-                          onError={() => setAvatarError(true)}
-                        />
-                      ) : (
-                        <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
-                      )}
-                    </span>
-                    <i
-                      className={`side-footer-dot ${
-                        loadingProfile
-                          ? "idle"
-                          : connection === "disconnected"
-                            ? "warn"
-                            : tracking
-                              ? "live"
-                              : paused
-                                ? "paused"
-                                : "ok"
-                      }`}
-                      title={
-                        loadingProfile
-                          ? "Checking…"
-                          : connection === "disconnected"
-                            ? "Offline"
-                            : tracking
-                              ? "Tracking"
-                              : paused
-                                ? "On a break"
-                                : signedIn
-                                  ? "Ready"
-                                  : "Not linked"
-                      }
-                    />
-                  </span>
-                  <span className="side-footer-copy">
-                    <span className="side-footer-name">{signedIn ? footerName : "Signed out"}</span>
-                    {signedIn && footerEmail ? (
-                      <span className="side-footer-email">{footerEmail}</span>
-                    ) : null}
-                    {signedIn && footerRole ? (
-                      <span className="badge neutral side-footer-badge">{footerRole}</span>
-                    ) : null}
-                  </span>
-                </button>
-                <button
-                  className="icon-btn side-footer-settings"
-                  type="button"
-                  title="Settings"
-                  aria-label="Settings"
-                  onClick={() => setView("settings")}
-                >
-                  <Icon name="gear" />
-                </button>
-              </div>
+              <SidebarFooter
+                signedIn={signedIn}
+                avatarUrl={profile?.avatarUrl}
+                avatarError={avatarError}
+                onAvatarError={() => setAvatarError(true)}
+                displayName={displayName}
+                footerName={footerName}
+                footerEmail={footerEmail}
+                footerRole={footerRole}
+                loadingProfile={loadingProfile}
+                connection={connection}
+                tracking={tracking}
+                paused={paused}
+                onViewProfile={() => setView("profile")}
+                onViewSettings={() => setView("settings")}
+              />
             </>
           )}
 
@@ -1719,43 +1519,14 @@ function MainApp() {
           ) : null}
         </div>
 
-          {stopNoteOpen ? (
-            <div className="stop-note-backdrop">
-              <div className="stop-note-card" role="dialog" aria-modal="true" aria-label="What did you work on?">
-                <h3 className="stop-note-title">What did you work on?</h3>
-                <p className="stop-note-sub">
-                  This project asks for a short note before the timer stops.
-                </p>
-                <textarea
-                  className="stop-note-input"
-                  autoFocus
-                  rows={3}
-                  maxLength={1000}
-                  value={stopNoteDraft}
-                  placeholder="e.g. Called 12 leads, 3 follow-ups booked"
-                  onChange={(e) => setStopNoteDraft(e.target.value)}
-                />
-                <div className="stop-note-actions">
-                  <button
-                    className="btn btn-secondary"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setStopNoteOpen(false)}
-                  >
-                    Keep tracking
-                  </button>
-                  <button
-                    className="btn btn-danger"
-                    type="button"
-                    disabled={busy || !stopNoteDraft.trim()}
-                    onClick={() => void handleStop(stopNoteDraft.trim())}
-                  >
-                    {busy ? "Stopping…" : "Stop tracking"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : null}
+          <StopNoteModal
+            open={stopNoteOpen}
+            draft={stopNoteDraft}
+            busy={busy}
+            onDraftChange={setStopNoteDraft}
+            onKeepTracking={() => setStopNoteOpen(false)}
+            onStop={() => void handleStop(stopNoteDraft.trim())}
+          />
 
         </aside>
 
@@ -1818,70 +1589,17 @@ function MainApp() {
 
                 {/* Task estimate, budget and progress are what performance is
                     measured from - a task-less session has none of it. */}
-                {taskLessSession ? null : (
-                  <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
-                    <div className="stat-panel-head">
-                      <h3 className="stat-panel-title">This task</h3>
-                      {taskTracking?.sharedBudget ? (
-                        <span className="stat-panel-hint">shared across the team</span>
-                      ) : null}
-                    </div>
-
-                    {/* No task title here - it is already the page heading. */}
-                    <div className="task-budget-row" style={{ marginTop: 9 }}>
-                      <span className="task-budget-number">{fmtHours(taskTracking?.activeSeconds)}</span>
-                      <span className="task-budget-of">
-                        {taskEstimateSeconds > 0 ? `of ${fmtHours(taskEstimateSeconds)} budget` : "no estimate set"}
-                      </span>
-                      <span className="task-budget-today">
-                        {fmtHours(taskTracking?.workedTodayOnTaskSeconds)} today
-                      </span>
-                    </div>
-
-                    {taskEstimateSeconds > 0 ? (
-                      <div style={{ marginTop: 9 }}>
-                        <div className="budget-track">
-                          <div
-                            className="budget-zone regular"
-                            style={{ left: 0, width: `${taskRegularPercent}%` }}
-                          />
-                          {taskOvertimePercent > 0 ? (
-                            <div
-                              className="budget-zone overtime"
-                              style={{ left: `${taskRegularPercent}%`, width: `${taskOvertimePercent}%` }}
-                            />
-                          ) : null}
-                          <div
-                            className={`budget-worked${taskIntoOvertime ? " overtime" : ""}`}
-                            style={{ width: `${taskWorkedPercent}%` }}
-                          />
-                        </div>
-                        <div className="budget-scale">
-                          <span>{taskScheduleLabel}</span>
-                          <span className={`right${taskIntoOvertime ? " overtime" : ""}`}>
-                            {taskIntoOvertime ? "into overtime · " : ""}
-                            {taskBudgetRemainingLabel} left
-                          </span>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {taskTracking?.progressPercent != null ? (
-                      <div className="task-progress-block">
-                        <div className="task-progress-head">
-                          <span className="label">Progress</span>
-                          <span className="value">{Math.round(taskTracking.progressPercent)}%</span>
-                        </div>
-                        <div className="capacity-bar slim">
-                          <div
-                            className="capacity-fill active"
-                            style={{ width: `${Math.min(100, Math.max(0, taskTracking.progressPercent))}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : null}
-                  </section>
-                )}
+                <TaskProgressPanel
+                  taskLessSession={taskLessSession}
+                  taskTracking={taskTracking}
+                  taskEstimateSeconds={taskEstimateSeconds}
+                  taskRegularPercent={taskRegularPercent}
+                  taskOvertimePercent={taskOvertimePercent}
+                  taskWorkedPercent={taskWorkedPercent}
+                  taskIntoOvertime={taskIntoOvertime}
+                  taskScheduleLabel={taskScheduleLabel}
+                  taskBudgetRemainingLabel={taskBudgetRemainingLabel}
+                />
 
                 {idleStage > 0 ? (
                   <p className={`page-idle-banner stage-${idleStage}`}>
