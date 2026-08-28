@@ -189,8 +189,10 @@ export type MemberLimits = {
   isMakeupDay: boolean;
   /** Today's active/idle split - the ratio the dashboard grades activity on.
    *  Both zero means nothing tracked today (or an older backend). */
-  todayActivity: { activeSeconds: number; idleSeconds: number };
+  todayActivity: TodayActivity;
 };
+
+export type TodayActivity = { activeSeconds: number; idleSeconds: number };
 
 // The viewer's own People-page member record - richer than what's in the
 // Firebase JWT claims (role, status, date added, team count).

@@ -31,11 +31,16 @@ import type {
 import {
   fmtClock,
   fmtHours,
-  fmtLimitHours,
   initialsFromName,
   taskStatusLabel,
   taskStatusTone,
 } from "./utils/formatters";
+import { ACTIVITY_RING_CIRCUMFERENCE, computeHomeStats } from "./utils/homeStats";
+import { TodayPanel } from "./components/stats/TodayPanel";
+import { ActivityTile } from "./components/stats/ActivityTile";
+import { WeekTile } from "./components/stats/WeekTile";
+import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
+import { AssignedTile } from "./components/stats/AssignedTile";
 import { TitleBar } from "./components/common/TitleBar";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
@@ -1161,333 +1166,105 @@ function MainApp() {
     (dashboardSummary?.recentProjects ?? []).map((p) => [p.id, p.progress]),
   );
 
-  // The member's own daily cap, as a ceiling the day panel measures against
-  // rather than a tile of its own - a static config value was being given the
-  // same weight as "can I keep working".
-  const dailyCapSeconds =
-    memberLimits && !memberLimits.usesShifts && memberLimits.dailyHours > 0
-      ? Math.floor(memberLimits.dailyHours * 3600)
-      : 0;
-  const dailyCapLabel = !memberLimits
-    ? "—"
-    : memberLimits.usesShifts
-      ? "By shifts"
-      : memberLimits.dailyHours > 0
-        ? fmtLimitHours(memberLimits.dailyHours)
-        : memberLimits.weeklyHours > 0
-          ? `${fmtLimitHours(memberLimits.weeklyHours)}/wk`
-          : "No hour limit";
-  // What the day panel says opposite the headline when there is no wall-clock
-  // projection to show (not tracking, no cap, or the cap already spent).
-  const dailyCapLeftLabel = !memberLimits
-    ? "—"
-    : memberLimits.usesShifts || memberLimits.allowedRemainingSeconds == null
-      ? "No cap"
-      : memberLimits.limitReached
-        ? "Limit reached"
-        : fmtHours(memberLimits.allowedRemainingSeconds);
-  const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds) : "—";
-  const dayUsedPercent =
-    dailyCapSeconds > 0 ? Math.min(100, (liveWorkedTodaySeconds / dailyCapSeconds) * 100) : 0;
-  const dayOverPercent =
-    dailyCapSeconds > 0
-      ? Math.min(100 - dayUsedPercent, (Math.max(0, liveWorkedTodaySeconds - dailyCapSeconds) / dailyCapSeconds) * 100)
-      : 0;
-  // Not a working day, or one only worked because of a flagged makeup day -
-  // both already arrive on every poll and were never shown anywhere.
-  const dayHint = !memberLimits
-    ? ""
-    : memberLimits.isMakeupDay
-      ? "makeup day"
-      : memberLimits.workingToday
-        ? ""
-        : "not a working day";
+  // Every label/percent/dash-array the Today panel, the three stat tiles, the
+  // sidebar's Weekly activity ring, and the This-task panel display - see
+  // utils/homeStats.ts (pure, unit-tested) for the derivation of each.
+  const {
+    dailyCapSeconds,
+    dailyCapLabel,
+    dailyCapLeftLabel,
+    workedTodayLabel,
+    dayUsedPercent,
+    dayOverPercent,
+    dayHint,
+    activityToday,
+    activityPercent,
+    activityLabel,
+    activityDash,
+    weekActivityDash,
+    weekActiveSeconds,
+    weekIdleSeconds,
+    weeklyCapSeconds,
+    weekWorkedLabel,
+    weekUsedPercent,
+    weekOfLabel,
+    weekFootLabel,
+    projectedCapTimeLabel,
+    assignedTodayLabel,
+    assignedPlannedPercent,
+    assignedDeferredPercent,
+    assignedCarriedLabel,
+    assignedTaskCountLabel,
+    assignedSplitLabel,
+    projectBudgetReached,
+    projectBudgetPercent,
+    taskBudgetRemainingLabel,
+    taskEstimateSeconds,
+    taskRegularPercent,
+    taskOvertimePercent,
+    taskWorkedPercent,
+    taskIntoOvertime,
+    taskScheduleLabel,
+  } = computeHomeStats({
+    memberLimits,
+    dashboardSummary,
+    projectBudget,
+    taskTracking,
+    liveWorkedTodaySeconds,
+    tracking,
+  });
 
-  // The measure the dashboard actually grades on (active / active+idle), which
-  // the agent never showed - so the number someone is judged by was only
-  // visible by opening the web app. Idle time is what the 5/10/15-minute
-  // banners below warn about while it accrues; this is the running total.
-  const activityToday = memberLimits?.todayActivity;
-  const activityTrackedSeconds = activityToday
-    ? activityToday.activeSeconds + activityToday.idleSeconds
-    : 0;
-  const activityPercent =
-    activityTrackedSeconds > 0
-      ? Math.round((activityToday!.activeSeconds / activityTrackedSeconds) * 100)
-      : null;
-  const activityLabel = activityPercent == null ? "—" : `${activityPercent}%`;
-  // Ring geometry: r=26 in a 60x60 box, so the arc length is 2*pi*26.
-  const ACTIVITY_RING_CIRCUMFERENCE = 2 * Math.PI * 26;
-  const activityDash =
-    activityPercent == null ? 0 : (activityPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE;
-
-  // The week's activity ring - same percentage as the web dashboard's own
-  // "Weekly trends" widget, drawn with the exact ring math above so the
-  // sidebar's two rings read as one family instead of two different charts.
-  const weekActivityDash = dashboardSummary
-    ? (dashboardSummary.activityWeekPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE
-    : 0;
-  const weekActiveSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
-    (sum, day) => sum + day.activeHours * 3600,
-    0,
-  );
-  const weekIdleSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
-    (sum, day) => sum + day.idleHours * 3600,
-    0,
-  );
-
-  // Weekly cap holders were flying blind: weeklyHours only ever appeared as a
-  // fallback label on the Daily cap card when no daily cap existed, so there
-  // was no way to see where the week stood until it ran out.
-  const weeklyCapSeconds =
-    memberLimits && !memberLimits.usesShifts && memberLimits.weeklyHours > 0
-      ? Math.floor(memberLimits.weeklyHours * 3600)
-      : 0;
-  const weekWorkedLabel = memberLimits ? fmtHours(memberLimits.workedWeekSeconds) : "—";
-  const weekUsedPercent =
-    weeklyCapSeconds > 0 && memberLimits
-      ? Math.min(100, (memberLimits.workedWeekSeconds / weeklyCapSeconds) * 100)
-      : 0;
-  const weekOfLabel = weeklyCapSeconds > 0 && memberLimits ? `of ${fmtLimitHours(memberLimits.weeklyHours)}` : "";
-  const weekFootLabel = !memberLimits
-    ? ""
-    : memberLimits.usesShifts
-      ? "shift-based — no weekly cap"
-      : weeklyCapSeconds > 0
-        ? `${fmtHours(Math.max(0, weeklyCapSeconds - memberLimits.workedWeekSeconds))} left`
-        : "no weekly cap";
-
-  // "2h 15m left" makes you do the arithmetic; a wall-clock time doesn't.
-  // Only meaningful while the timer is actually running toward the cap.
-  const projectedCapTimeLabel = (() => {
-    if (!memberLimits || memberLimits.usesShifts) return "";
-    const remaining = memberLimits.allowedRemainingSeconds;
-    if (remaining == null || remaining <= 0 || !tracking) return "";
-    const at = new Date(Date.now() + remaining * 1000);
-    return at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  })();
-
-  // T5 - "how much work is assigned to me today" (demandSeconds, including
-  // rollover from earlier days), a different question from the cap above
-  // ("how much am I still allowed to work"). Both matter; this is the one
-  // that answers "1h task + 3h calling project = 4h before I select
-  // anything."
-  const assignedTodayLabel = !memberLimits
-    ? "—"
-    : fmtHours(memberLimits.assignedToday.demandSeconds);
-  const assignedDemandSeconds = Math.max(1, memberLimits?.assignedToday.demandSeconds ?? 1);
-  const assignedPlannedPercent = memberLimits
-    ? Math.min(100, (memberLimits.assignedToday.plannedSeconds / assignedDemandSeconds) * 100)
-    : 0;
-  const assignedDeferredPercent = memberLimits
-    ? Math.min(100 - assignedPlannedPercent, (memberLimits.assignedToday.deferredSeconds / assignedDemandSeconds) * 100)
-    : 0;
-  const assignedCarriedLabel =
-    memberLimits && memberLimits.assignedToday.rolloverSeconds > 0
-      ? `incl. ${fmtHours(memberLimits.assignedToday.rolloverSeconds)} carried`
-      : "";
-  const assignedTaskCountLabel = !memberLimits
-    ? ""
-    : memberLimits.assignedToday.taskCount === 1
-      ? "1 task"
-      : `${memberLimits.assignedToday.taskCount} tasks`;
-  // byProjectType arrives on every poll and had no home in the old grid.
-  const assignedSplitLabel = (() => {
-    if (!memberLimits) return "";
-    const { normal, calling } = memberLimits.assignedToday.byProjectType;
-    if (normal > 0 && calling > 0) return `${fmtHours(normal)} on tasks · ${fmtHours(calling)} on calls`;
-    return "";
-  })();
-
-  // Only rendered when the project actually has an Hours-based budget - no
-  // dash-filled card cluttering the common case of no budget configured.
-  const projectBudgetReached = projectBudget != null && projectBudget.remainingSeconds <= 0;
-  const projectBudgetPercent =
-    projectBudget && projectBudget.capSeconds > 0
-      ? Math.min(100, (projectBudget.spentSeconds / projectBudget.capSeconds) * 100)
-      : 0;
-
-  /** The day as one gauge: worked, the cap it runs into, and when that lands. */
   const todayPanel = (
-    <section className="stat-panel page-content-swap" style={{ animationDelay: "0.04s" }}>
-      <div className="stat-panel-head">
-        <h3 className="stat-panel-title">Today</h3>
-        {dayHint ? <span className="stat-panel-hint">{dayHint}</span> : null}
-      </div>
-
-      <div className="stat-hero-row">
-        <div className="stat-hero-value">
-          <span className={`stat-hero-number${memberLimits?.limitReached ? " warn" : ""}`}>
-            {workedTodayLabel}
-          </span>
-          <span className="stat-hero-of">
-            {dailyCapSeconds > 0 ? `of ${dailyCapLabel}` : "across every project"}
-          </span>
-        </div>
-
-        <div className="stat-hero-aside">
-          {memberLimits?.limitReached ? (
-            <span className="stat-hero-aside-value warn">Cap reached</span>
-          ) : projectedCapTimeLabel ? (
-            <>
-              <div className="stat-hero-aside-value">{projectedCapTimeLabel}</div>
-              <div className="stat-hero-aside-label">cap lands here</div>
-            </>
-          ) : (
-            <>
-              <div className="stat-hero-aside-value">{dailyCapLeftLabel}</div>
-              <div className="stat-hero-aside-label">
-                {dailyCapSeconds > 0 ? "still allowed" : "no daily cap"}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {dailyCapSeconds > 0 ? (
-        <div style={{ marginTop: 11 }}>
-          <div className="capacity-bar">
-            <div
-              className={`capacity-fill${memberLimits?.limitReached || dayUsedPercent > 90 ? " warn" : ""}`}
-              style={{ width: `${dayUsedPercent}%` }}
-            />
-            {dayOverPercent > 0 ? (
-              <div
-                className="capacity-fill warn"
-                style={{ left: `${dayUsedPercent}%`, right: "auto", width: `${dayOverPercent}%` }}
-              />
-            ) : null}
-            {/* One tick per hour of the cap, so the bar reads as a gauge. */}
-            {memberLimits && memberLimits.dailyHours > 0 && memberLimits.dailyHours <= 16 ? (
-              <div className="capacity-ticks">
-                {Array.from({ length: Math.round(memberLimits.dailyHours) }, (_, i) => (
-                  <span key={i} />
-                ))}
-              </div>
-            ) : null}
-          </div>
-          <div className="capacity-scale">
-            <span>start of day</span>
-            <span>{dailyCapLabel} cap</span>
-          </div>
-        </div>
-      ) : null}
-    </section>
+    <TodayPanel
+      dayHint={dayHint}
+      memberLimits={memberLimits}
+      workedTodayLabel={workedTodayLabel}
+      dailyCapSeconds={dailyCapSeconds}
+      dailyCapLabel={dailyCapLabel}
+      projectedCapTimeLabel={projectedCapTimeLabel}
+      dailyCapLeftLabel={dailyCapLeftLabel}
+      dayUsedPercent={dayUsedPercent}
+      dayOverPercent={dayOverPercent}
+    />
   );
 
   const activityTile = (
-    <div className="stat-tile activity-tile">
-      <div className="activity-ring">
-        <svg viewBox="0 0 60 60" aria-hidden="true">
-          <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(8,16,34,0.9)" strokeWidth="6" />
-          <circle
-            cx="30"
-            cy="30"
-            r="26"
-            fill="none"
-            stroke="#34d399"
-            strokeWidth="6"
-            strokeLinecap="round"
-            strokeDasharray={`${activityDash} ${ACTIVITY_RING_CIRCUMFERENCE}`}
-          />
-        </svg>
-        <span className="activity-ring-value">{activityLabel}</span>
-      </div>
-      <div style={{ minWidth: 0 }}>
-        <span className="stat-tile-label">Activity</span>
-        {activityPercent == null ? (
-          <div className="stat-tile-foot">nothing tracked yet</div>
-        ) : (
-          <div className="activity-legend">
-            <span className="activity-legend-row">
-              <i className="activity-dot active" />
-              {fmtHours(activityToday!.activeSeconds)} <em>active</em>
-            </span>
-            <span className="activity-legend-row">
-              <i className="activity-dot idle" />
-              {fmtHours(activityToday!.idleSeconds)} <em>idle</em>
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
+    <ActivityTile
+      activityDash={activityDash}
+      activityLabel={activityLabel}
+      activityPercent={activityPercent}
+      activityToday={activityToday}
+    />
   );
 
   const weekTile = (
-    <div className="stat-tile">
-      <div className="stat-tile-head">
-        <span className="stat-tile-label">This week</span>
-      </div>
-      <div className="stat-tile-value-row">
-        <span className="stat-tile-value">{weekWorkedLabel}</span>
-        {weekOfLabel ? <span className="stat-tile-of">{weekOfLabel}</span> : null}
-      </div>
-      {weeklyCapSeconds > 0 ? (
-        <div style={{ marginTop: 9 }}>
-          <div className="capacity-bar slim">
-            <div
-              className={`capacity-fill${weekUsedPercent > 90 ? " warn" : ""}`}
-              style={{ width: `${weekUsedPercent}%` }}
-            />
-          </div>
-        </div>
-      ) : null}
-      {weekFootLabel ? <span className="stat-tile-foot">{weekFootLabel}</span> : null}
-    </div>
+    <WeekTile
+      weekWorkedLabel={weekWorkedLabel}
+      weekOfLabel={weekOfLabel}
+      weeklyCapSeconds={weeklyCapSeconds}
+      weekUsedPercent={weekUsedPercent}
+      weekFootLabel={weekFootLabel}
+    />
   );
 
   const projectBudgetTile = projectBudget ? (
-    <div className="stat-tile">
-      <div className="stat-tile-head">
-        <span className="stat-tile-label">Project budget</span>
-        <span className="stat-tile-note">{projectBudget.scope === "per_person" ? "yours" : "team"}</span>
-      </div>
-      <div className="stat-tile-value-row">
-        <span className={`stat-tile-value${projectBudgetReached ? " warn" : ""}`}>
-          {fmtHours(projectBudget.remainingSeconds)}
-        </span>
-        <span className="stat-tile-of">left of {fmtHours(projectBudget.capSeconds)}</span>
-      </div>
-      <div style={{ marginTop: 9 }}>
-        <div className="capacity-bar slim">
-          <div
-            className={`capacity-fill${projectBudgetPercent > 90 ? " warn" : ""}`}
-            style={{ width: `${projectBudgetPercent}%` }}
-          />
-        </div>
-      </div>
-    </div>
+    <ProjectBudgetTile
+      projectBudget={projectBudget}
+      projectBudgetReached={projectBudgetReached}
+      projectBudgetPercent={projectBudgetPercent}
+    />
   ) : null;
 
-  /** Assigned today: what fits under the cap vs what defers to a later day. */
   const assignedTile = (
-    <div className="stat-tile">
-      <div className="stat-tile-head">
-        <span className="stat-tile-label">Assigned today</span>
-        {assignedTaskCountLabel ? <span className="stat-tile-note">{assignedTaskCountLabel}</span> : null}
-      </div>
-      <div className="stat-tile-value-row">
-        <span className="stat-tile-value">{assignedTodayLabel}</span>
-        {assignedCarriedLabel ? <span className="stat-tile-of">{assignedCarriedLabel}</span> : null}
-      </div>
-      <div className="split-bar">
-        <div className="split-bar-planned" style={{ width: `${assignedPlannedPercent}%` }} />
-        <div className="split-bar-deferred" style={{ width: `${assignedDeferredPercent}%` }} />
-      </div>
-      <div className="split-legend">
-        <span className="split-legend-row">
-          <i className="split-dot" />
-          {fmtHours(memberLimits?.assignedToday.plannedSeconds)} fits today
-        </span>
-        {memberLimits && memberLimits.assignedToday.deferredSeconds > 0 ? (
-          <span className="split-legend-row deferred">
-            <i className="split-dot deferred" />
-            {fmtHours(memberLimits.assignedToday.deferredSeconds)} moves on
-          </span>
-        ) : null}
-      </div>
-      {assignedSplitLabel ? <div className="stat-tile-divider">{assignedSplitLabel}</div> : null}
-    </div>
+    <AssignedTile
+      memberLimits={memberLimits}
+      assignedTaskCountLabel={assignedTaskCountLabel}
+      assignedTodayLabel={assignedTodayLabel}
+      assignedCarriedLabel={assignedCarriedLabel}
+      assignedPlannedPercent={assignedPlannedPercent}
+      assignedDeferredPercent={assignedDeferredPercent}
+      assignedSplitLabel={assignedSplitLabel}
+    />
   );
 
   // Rendered under both project types. A project's own budget is independent
@@ -1505,34 +1282,6 @@ function MainApp() {
       {projectBudgetTile ? assignedTile : null}
     </div>
   );
-
-  // Whole-task budget remaining, independent of whichever daily/weekly cap
-  // "Remaining" above is currently bound by. activeSeconds here is the
-  // cumulative total worked on this task across every day, so this decreases
-  // by real time worked whether it came out of regular or overtime hours.
-  const taskBudgetRemainingLabel = !taskTracking?.estimatedSeconds
-    ? "—"
-    : fmtHours(Math.max(0, taskTracking.estimatedSeconds - taskTracking.activeSeconds));
-
-  // The estimate's own shape. overtimeSeconds is part of estimatedSeconds, so
-  // a flat "16h" hid that 4h of it was overtime; drawing the two zones behind
-  // the worked bar makes crossing into overtime visible as it happens.
-  const taskEstimateSeconds = taskTracking?.estimatedSeconds ?? 0;
-  const taskOvertimeSeconds = Math.max(0, taskTracking?.overtimeSeconds ?? 0);
-  const taskRegularSeconds = Math.max(0, taskEstimateSeconds - taskOvertimeSeconds);
-  const taskRegularPercent = taskEstimateSeconds > 0 ? (taskRegularSeconds / taskEstimateSeconds) * 100 : 0;
-  const taskOvertimePercent = taskEstimateSeconds > 0 ? (taskOvertimeSeconds / taskEstimateSeconds) * 100 : 0;
-  const taskWorkedPercent =
-    taskEstimateSeconds > 0
-      ? Math.min(100, ((taskTracking?.activeSeconds ?? 0) / taskEstimateSeconds) * 100)
-      : 0;
-  const taskIntoOvertime =
-    taskEstimateSeconds > 0 && (taskTracking?.activeSeconds ?? 0) > taskRegularSeconds;
-  const taskScheduleLabel = (() => {
-    if (!taskTracking?.workingDays || !taskTracking?.hoursPerDay) return "";
-    const base = `${taskTracking.workingDays}d × ${taskTracking.hoursPerDay}h`;
-    return taskOvertimeSeconds > 0 ? `${base} + ${fmtHours(taskOvertimeSeconds)} OT` : base;
-  })();
 
   // CF-2: required disclosure notice blocks all tracker interactions until
   // acknowledged. Takes priority over stale-session recovery (a user whose
