@@ -1,27 +1,19 @@
 name: release
 
-# Auto-builds the next agent version when Tauri-App-Extension changes land on
-# main (0.4.3 → 0.4.4 …), or when run manually. Landing-Backend serves
-# installers from GitHub `releases/latest`, so a published release is live for
-# /api/download within the backend's ~5 min metadata cache.
+# Builds the next agent version (0.4.3 → 0.4.4 …) - manually, on demand.
+# Landing-Backend serves installers from GitHub `releases/latest`, so a
+# published release is live for /api/download within the backend's ~5 min
+# metadata cache.
+#
+# Used to also trigger on every qualifying push to main - removed. A release
+# builds all three platforms (Windows 2x / macOS 10x the Linux runner-minute
+# cost), and this repo is private, so every one of those pushes was a real
+# charge against a finite monthly minute quota regardless of whether the
+# change was worth shipping on its own (a single-line CSS tweak or a
+# Cargo.lock sync got the same full matrix build as a real feature). Releasing
+# is now a deliberate action - run this workflow manually when main actually
+# has something worth shipping.
 on:
-  push:
-    branches: [main]
-    paths:
-      # Source / build inputs only — version bumps (package.json, Cargo.toml,
-      # tauri.conf.json) are committed by this workflow and must NOT re-trigger.
-      - "Tauri-App-Extension/src/**"
-      - "Tauri-App-Extension/src-tauri/src/**"
-      - "Tauri-App-Extension/src-tauri/capabilities/**"
-      - "Tauri-App-Extension/src-tauri/icons/**"
-      - "Tauri-App-Extension/src-tauri/build.rs"
-      - "Tauri-App-Extension/scripts/**"
-      - "Tauri-App-Extension/index.html"
-      - "Tauri-App-Extension/vite.config.ts"
-      - "Tauri-App-Extension/tsconfig.json"
-      - "Tauri-App-Extension/tsconfig.node.json"
-      - "Tauri-App-Extension/package-lock.json"
-      - ".github/workflows/release.yml"
   workflow_dispatch:
     inputs:
       bump:
@@ -32,7 +24,11 @@ on:
 
 concurrency:
   group: agent-release
-  cancel-in-progress: false
+  # No push trigger left to fire concurrently by accident - if this does run
+  # twice in close succession now it's from two manual dispatches, and the
+  # newer one should win rather than queue a second full paid matrix build
+  # behind the first.
+  cancel-in-progress: true
 
 jobs:
   # Gates bump/release on the checks that were previously only ever run by
@@ -62,10 +58,11 @@ jobs:
         working-directory: Tauri-App-Extension/src-tauri
         run: cargo test --locked
 
-      - name: frontend typecheck + build
+      - name: frontend typecheck, test, build
         working-directory: Tauri-App-Extension
         run: |
           npm ci
+          npm run test
           npm run build
 
   bump:
