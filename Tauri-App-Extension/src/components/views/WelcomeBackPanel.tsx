@@ -15,7 +15,6 @@ export function WelcomeBackPanel({
   message,
   busy,
   needsRelink,
-  staleSession,
   onReconnect,
   onRelink,
   onSwitchAccount,
@@ -24,8 +23,6 @@ export function WelcomeBackPanel({
   message: string | null;
   busy: boolean;
   needsRelink: boolean;
-  /** Signed out server-side but still showing a cached identity. */
-  staleSession: boolean;
   onReconnect: () => void;
   onRelink: () => void;
   onSwitchAccount: () => void;
@@ -56,12 +53,16 @@ export function WelcomeBackPanel({
 
           <h1 className="reconnect-name">{name}</h1>
           <p className="reconnect-text">
+            {/* The caller ORs its own stale-session flag into needsRelink
+                before this ever reaches us (App.tsx: needsRelink ||
+                staleSession) - a stale session with no device credential
+                genuinely has no lighter recovery than this, so there used to
+                be a separate "we couldn't verify this session" message here
+                for it that could never actually be reached. */}
             {message ??
               (needsRelink
                 ? "This device is no longer linked to your account."
-                : staleSession
-                  ? "We couldn't verify this session. Continue, or sign in as someone else."
-                  : "Your session went idle. Reconnect to pick up where you left off.")}
+                : "Your session went idle. Reconnect to pick up where you left off.")}
           </p>
 
           <button

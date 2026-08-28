@@ -1310,10 +1310,17 @@ function MainApp() {
     return (
       <WelcomeBackPanel
         profile={profile}
-        message={reconnectMessage}
+        // "Link this device again" routes through handleSignIn, the same
+        // function SignInPanel uses - and its failures land in actionError,
+        // not reconnectMessage. Without this fallback, a failed relink here
+        // showed a toast (easy to miss - the agent mostly runs in the tray)
+        // and then reset to the same generic text with no persistent
+        // explanation, leaving the same button to click again with no visible
+        // change. reconnectMessage still wins when both are set - it's the
+        // more specific one, from reconnect()/reauth actually running.
+        message={reconnectMessage ?? actionError}
         busy={reconnecting || busy}
         needsRelink={needsRelink || staleSession}
-        staleSession={staleSession}
         onReconnect={() => void handleReconnect()}
         onRelink={() => void handleSignIn()}
         onSwitchAccount={() => void handleSwitchAccount()}
