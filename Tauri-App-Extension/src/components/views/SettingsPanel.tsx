@@ -164,6 +164,7 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
         <p className="settings-version">
           Virtual Tracker Agent <span className="settings-version-pill">v{settings?.version || "—"}</span>
         </p>
+        <p className="settings-credit">Developed by Mohammed Hesham, Mohammed Magdy</p>
       </div>
     </>
   );
