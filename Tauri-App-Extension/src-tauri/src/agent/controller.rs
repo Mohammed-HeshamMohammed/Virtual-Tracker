@@ -322,9 +322,17 @@ impl AgentController {
         let on_tokens: OnTokens = Arc::new(move |id, refresh| {
             controller.apply_tokens(id, refresh);
         });
+        // on_warning, not on_status_changed: this fires from the poll thread
+        // after open_sign_in has already returned success:true (a link
+        // timeout, 15 minutes later), so a SignInResult return value can't
+        // carry it - vt-warning/toast is the only channel left that a user
+        // actually sees. vt-status exists and does carry event.detail, but
+        // the frontend's own vt-status listener discards it and only uses
+        // the event to trigger a refresh - status_changed here would be
+        // exactly as silent as it was before this fix.
         let controller_err = Arc::clone(self);
         let on_error: OnError = Arc::new(move |msg| {
-            controller_err.on_status_changed(msg);
+            controller_err.on_warning(msg);
         });
 
         let ok = self.link_flow.start(hint, on_tokens, Some(on_error));
@@ -497,9 +505,14 @@ impl AgentController {
         let on_tokens: OnTokens = Arc::new(move |id, refresh| {
             controller.apply_tokens(id, refresh);
         });
+        // Same reasoning as open_sign_in's on_error: this only ever fires
+        // async, after the caller has already gotten its return value back,
+        // so on_warning/vt-warning is the one channel that actually reaches
+        // the user - on_status_changed's vt-status event is real but its
+        // frontend listener discards event.detail.
         let controller_err = Arc::clone(self);
         let on_error: OnError = Arc::new(move |msg| {
-            controller_err.on_status_changed(msg);
+            controller_err.on_warning(msg);
         });
         self.link_flow
             .ensure_polling(on_tokens, Some(on_error))
