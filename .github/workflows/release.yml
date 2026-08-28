@@ -35,7 +35,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Gates bump/release on the checks that were previously only ever run by
+  # hand before a push - 81 existing #[test] fns in src-tauri and tsc/vite
+  # never ran in CI, so a broken commit could reach bump -> tag -> a signed
+  # 3-platform build before anyone noticed. Runs once on Linux rather than
+  # per-platform: it's the cheapest runner (1x minute multiplier vs 2x
+  # Windows / 10x macOS), and failing fast here skips those expensive
+  # matrix builds entirely on a bad commit instead of burning them first.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Linux webview deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+
+      - name: cargo test
+        working-directory: Tauri-App-Extension/src-tauri
+        run: cargo test --locked
+
+      - name: frontend typecheck + build
+        working-directory: Tauri-App-Extension
+        run: |
+          npm ci
+          npm run build
+
   bump:
+    needs: verify
     runs-on: ubuntu-latest
     permissions:
       contents: write
