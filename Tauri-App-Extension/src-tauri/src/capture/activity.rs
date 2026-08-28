@@ -21,6 +21,10 @@ use crate::types::ActivitySignal;
 /// analysis ("straight-line/looping = automated") - upgrade there if a
 /// jiggler using large, slow, human-speed movements ever shows up in
 /// practice; the OS injected-flag (AC-1) already catches the common case.
+// Windows-only: its one use site is inside the #[cfg(windows)] mouse-hook
+// callback below - there's no macOS/Linux input-hook implementation yet for
+// this to throttle.
+#[cfg(windows)]
 const MOUSE_MOVE_MIN_INTERVAL_MS: u64 = 50;
 
 /// Rolling mouse/keyboard activity score (0-100). ACT-2: weighted by input
@@ -65,7 +69,12 @@ pub struct ActivityMeter {
     /// seconds" so it can count idle vs. active seconds honestly instead of
     /// treating every tick as active just because a session is open.
     last_input_ms: AtomicU64,
+    /// MOUSE_MOVE_MIN_INTERVAL_MS's own throttle state - Windows-only for the
+    /// same reason that constant is, see its doc comment.
+    #[cfg(windows)]
     last_mouse_move_ms: AtomicU64,
+    #[cfg(not(windows))]
+    _last_mouse_move_ms: AtomicU64,
     /// CQ-1: OS thread ID the input hooks are installed on (0 = not
     /// running). `stop()` posts WM_QUIT to this thread to unblock its
     /// message loop and unregister the hooks cleanly - required now that
@@ -99,7 +108,10 @@ impl ActivityMeter {
             window_ms: AtomicU64::new(ACTIVITY_WINDOW_MS),
             started: AtomicBool::new(false),
             last_input_ms: AtomicU64::new(now_ms()),
+            #[cfg(windows)]
             last_mouse_move_ms: AtomicU64::new(0),
+            #[cfg(not(windows))]
+            _last_mouse_move_ms: AtomicU64::new(0),
             #[cfg(windows)]
             hook_thread_id: AtomicU32::new(0),
             #[cfg(not(windows))]
@@ -247,6 +259,14 @@ impl ActivityMeter {
         // and test this against.
     }
 
+    // note_input through on_mouse_move: real production callers are the
+    // #[cfg(windows)] hook callbacks further down (there's no macOS/Linux
+    // input-hook implementation yet). Never actually dead where it matters -
+    // the tests below call all four directly on every platform, deliberately,
+    // to exercise the scoring logic independent of any real OS hook - but
+    // that only holds in the (lib test) build; the plain (lib) build has
+    // neither a real hook nor a test calling them on non-Windows targets.
+    #[allow(dead_code)]
     fn note_input(&self, injected: bool) {
         if injected {
             self.injected_count.fetch_add(1, Ordering::Relaxed);
@@ -254,6 +274,7 @@ impl ActivityMeter {
         self.last_input_ms.store(now_ms(), Ordering::Relaxed);
     }
 
+    #[allow(dead_code)]
     fn on_keyboard_input(&self, vk_code: u32, injected: bool) {
         self.keyboard_count.fetch_add(1, Ordering::Relaxed);
         self.distinct_keys.lock().insert(vk_code);
@@ -270,11 +291,13 @@ impl ActivityMeter {
         self.note_input(injected);
     }
 
+    #[allow(dead_code)]
     fn on_mouse_click(&self, injected: bool) {
         self.click_count.fetch_add(1, Ordering::Relaxed);
         self.note_input(injected);
     }
 
+    #[allow(dead_code)]
     fn on_mouse_move(&self, injected: bool, x: i32, y: i32) {
         self.move_count.fetch_add(1, Ordering::Relaxed);
         {

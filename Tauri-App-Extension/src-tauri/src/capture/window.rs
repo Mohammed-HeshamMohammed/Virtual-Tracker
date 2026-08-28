@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::constants::{MAX_URL_LEN, URL_SCRIPT_TIMEOUT_SEC};
+#[cfg(any(windows, target_os = "macos"))]
+use crate::constants::MAX_URL_LEN;
+use crate::constants::URL_SCRIPT_TIMEOUT_SEC;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -16,8 +20,18 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+// This whole cluster (through BROWSER_EXES below) backs Windows's own
+// get_foreground_window_win/resolve_display_name path specifically - macOS
+// gets its display name straight from xcap's app_name instead (see
+// get_foreground_window_macos's own comment), and Linux has no window-
+// capture backend at all yet (get_foreground_window's #[cfg(not(...))]
+// fallback). Real, used code on Windows; genuinely unreachable elsewhere,
+// with no test exercising it directly the way browser_hint_from_exe's tests
+// do below - hence the explicit allow rather than leaving it to warn.
+#[allow(dead_code)]
 static DISPLAY_OVERRIDES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
+#[allow(dead_code)]
 fn overrides() -> &'static HashMap<&'static str, &'static str> {
     DISPLAY_OVERRIDES.get_or_init(|| {
         HashMap::from([
@@ -38,6 +52,7 @@ fn overrides() -> &'static HashMap<&'static str, &'static str> {
     })
 }
 
+#[allow(dead_code)]
 const BROWSER_EXES: &[&str] = &[
     "chrome.exe",
     "msedge.exe",
@@ -57,8 +72,14 @@ pub struct ForegroundWindow {
     pub app_name: String,
     pub title: String,
     pub process_name: String,
+    // Read back only inside read_browser_url's #[cfg(windows)] branch -
+    // always constructed (every get_foreground_window_* branch sets them,
+    // hwnd to 0 where there's no such concept), just never read on whatever
+    // platform doesn't have a real capture backend.
+    #[allow(dead_code)]
     pub hwnd: usize,
     pub is_browser: bool,
+    #[allow(dead_code)]
     pub browser_hint: String,
 }
 
@@ -215,6 +236,7 @@ fn get_foreground_window_win() -> ForegroundWindow {
     }
 }
 
+#[allow(dead_code)]
 fn resolve_display_name(process_name: &str, title: &str) -> String {
     let key = process_name.to_lowercase();
     if let Some(name) = overrides().get(key.as_str()) {
@@ -250,6 +272,12 @@ fn resolve_display_name(process_name: &str, title: &str) -> String {
     }
 }
 
+// Its own tests below call this directly on every platform (deliberately -
+// see their comment), so it's never actually dead where it matters; the
+// #[allow] is only for the plain non-test lib build, where its real callers
+// (get_foreground_window_win/_macos, both #[cfg]-gated) leave it unreachable
+// on whichever platform isn't Windows or macOS.
+#[allow(dead_code)]
 fn browser_hint_from_exe(exe: &str) -> String {
     // "safari" only ever matches a macOS app_name ("Safari"); harmless no-op
     // on Windows, where no process name contains that substring. Kept in this
@@ -274,6 +302,8 @@ fn browser_hint_from_exe(exe: &str) -> String {
     }
 }
 
+// Only reachable via read_browser_url's windows/macos branches.
+#[allow(dead_code)]
 fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command.spawn().ok()?;
@@ -303,6 +333,7 @@ fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String
 
 /// Logs the missing-script warning once per process instead of every poll —
 /// it fires on every browser-focused tick otherwise, which is noisy.
+#[allow(dead_code)]
 static WARNED_MISSING_SCRIPT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
 pub fn read_browser_url(
