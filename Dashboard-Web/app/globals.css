@@ -373,7 +373,29 @@ tr[style*="height"] > td {
 
 /* Report "Print / PDF" export: wrap the printable content of a report page in
    .report-print-area so window.print() (browser's Save-as-PDF) shows only the
-   report, not the sidebar/topbar/dialogs. */
+   report, not the sidebar/topbar/dialogs.
+   Two bugs used to combine here to print a blank page for every report:
+   1. `.report-print-area { position: absolute; inset: 0 }` pulls the report
+      out of its parent's normal flow. That parent (StandardReportLayout's
+      own wrapper) has no explicit height, so with the report itself no
+      longer counted its auto height collapsed to just its other children
+      (the now-invisible title/date-range/filter row) - a sliver a few
+      hundred pixels tall - and `inset: 0` then stretched the report into
+      exactly that sliver instead of its real, much taller, content height.
+      Fixed by dropping the absolute positioning: the report stays in flow
+      at its natural height, leaving only a harmless invisible gap above it
+      where the hidden toolbar row used to be.
+   2. Every page in the app renders inside a fixed-height, clipped scroll
+      region (.dashboard-shell-frame/-main/-scroll: h-dvh + overflow-hidden
+      on the outer frame and <main>, overflow-y-auto on the inner content
+      pane) so the sidebar/topbar stay put while a page's own content
+      scrolls internally. `visibility: hidden` above does not touch any of
+      that - an invisible element keeps its box, and keeps clipping,
+      exactly as before. Left alone, the browser's print layout still
+      clipped .report-print-area to whatever fit inside that one
+      viewport-tall scroll box, cutting off everything past the first
+      screenful. Fixed by resetting height/overflow on that specific chain
+      for print only. */
 @media print {
   body * {
     visibility: hidden;
@@ -383,8 +405,13 @@ tr[style*="height"] > td {
     visibility: visible;
   }
   .report-print-area {
-    position: absolute;
-    inset: 0;
     width: 100%;
+  }
+  .dashboard-shell-frame,
+  .dashboard-shell-main,
+  .dashboard-shell-scroll {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
   }
 }
