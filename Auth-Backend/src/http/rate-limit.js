@@ -4,10 +4,23 @@ const buckets = new Map();
 
 const WINDOW_MS = 60_000;
 const DEFAULT_LIMIT = 120;
-// Auth limit raised — shared NAT can hit 25/min with multiple sessions.
-const AUTH_LIMIT = 60;
-const VALIDATE_PASSWORD_LIMIT = 40;
-const PUBLIC_INVITE_LIMIT = 15;
+// Eased again — the auth bucket is shared by every /api/auth/* route at
+// once (resolve-sign-in-methods, sign-in, password reset, the desktop
+// agent's link-flow polling, Google OAuth...), so several people signing
+// in around the same time behind one office/shared NAT IP were adding up
+// against a single 60/min bucket meant for one person. Same reasoning as
+// the raise before this one, just tuned further: this is a per-IP abuse
+// backstop, not meant to be the thing a legitimate login run into.
+const AUTH_LIMIT = 120;
+// validate-password fires on password-strength checks while typing during
+// sign-up/reset (already debounced + deduped client-side - see
+// use-password-backend-check.ts) - several people typing passwords behind
+// the same shared IP around the same time was enough to trip 40/min.
+const VALIDATE_PASSWORD_LIMIT = 80;
+// Invite acceptance is a login-adjacent flow (a new teammate landing on
+// their invite link) - 15/min was tight enough that a couple of people
+// accepting invites from the same office IP within a minute could trip it.
+const PUBLIC_INVITE_LIMIT = 30;
 const PRESENCE_LIMIT = 30;
 const ACTIVITY_LIMIT = 60;
 const SEARCH_LIMIT = 40;
