@@ -7,6 +7,8 @@ import { fetchClientBudgetsReport } from "@/features/reports/api/misc-reports-ap
 import type { ClientBudgetRow } from "@/features/reports/models/client-budgets"
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`
@@ -14,7 +16,7 @@ function formatUsd(value: number): string {
 
 function ClientBudgetsTable() {
   const { isDark } = useTheme()
-  const { registerExportHandler } = useStandardReportLayout()
+  const { registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ClientBudgetRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed read used to be indistinguishable from an empty report:
@@ -61,6 +63,55 @@ function ClientBudgetsTable() {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [rows, registerExportHandler])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const withBudget = rows.filter((r) => r.hasBudget && r.cap > 0)
+      downloadReportPdf({
+        title: "Client Budgets Report",
+        subtitle: "How much of each client's budget has been spent.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        charts:
+          withBudget.length > 0
+            ? [
+                {
+                  type: "progress",
+                  title: "Budget used",
+                  rows: withBudget
+                    .slice()
+                    .sort((a, b) => b.pctUsed - a.pctUsed)
+                    .map((r) => ({
+                      label: r.clientName,
+                      pct: r.pctUsed,
+                      sublabel: `${formatUsd(r.spentAmount)} of ${formatUsd(r.cap)}`,
+                    })),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Client", key: "client" },
+            { header: "Budget type", key: "type" },
+            { header: "Spent", key: "spent", align: "right" },
+            { header: "Cap", key: "cap", align: "right" },
+            { header: "% used", key: "pct", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            client: r.clientName,
+            type: r.budgetType ?? "No budget",
+            spent: formatUsd(r.spentAmount),
+            cap: r.hasBudget ? formatUsd(r.cap) : "—",
+            pct: r.hasBudget ? `${r.pctUsed}%` : "—",
+          })),
+          emptyMessage: "No clients found.",
+        },
+        filename: "client-budgets",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, registerPdfExportHandler])
 
   if (loading) return <ReportTableSkeleton rows={6} columns={5} />
   if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />

@@ -48,6 +48,7 @@ export type StandardReportLayoutContextValue = {
   dateLabel: string
   groupBy: string
   registerExportHandler: (fn: (() => void) | null) => void
+  registerPdfExportHandler: (fn: (() => void) | null) => void
 }
 
 const StandardReportLayoutContext = createContext<StandardReportLayoutContextValue | null>(null)
@@ -173,6 +174,17 @@ export function StandardReportLayout({
     setCanExport(Boolean(fn))
   }, [])
 
+  // Same registration pattern as CSV above, for the real generated-PDF export
+  // (see features/reports/utils/pdf/report-pdf-kit.ts). A report gets "To
+  // PDF" only once it has registered a builder for its own data - same "no
+  // dead options" rule the CSV item already follows.
+  const pdfExportHandlerRef = useRef<(() => void) | null>(null)
+  const [canExportPdf, setCanExportPdf] = useComponentState(false)
+  const registerPdfExportHandler = useCallback((fn: (() => void) | null) => {
+    pdfExportHandlerRef.current = fn
+    setCanExportPdf(Boolean(fn))
+  }, [])
+
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
   const resolvedSubtitle = subtitle ?? (pageId ? reportCardFor(pageId)?.description : undefined)
 
@@ -184,8 +196,9 @@ export function StandardReportLayout({
       dateLabel,
       groupBy,
       registerExportHandler,
+      registerPdfExportHandler,
     }),
-    [scope, rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler]
+    [scope, rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler]
   )
 
   /**
@@ -219,6 +232,10 @@ export function StandardReportLayout({
     // a fallback here writing a literal "Demo,<range>" CSV, which looked like
     // a genuine (if empty) export of the report the user was looking at.
     exportHandlerRef.current?.()
+  }
+
+  function runPdfExport() {
+    pdfExportHandlerRef.current?.()
   }
 
   // A report with no filters panel simply doesn't get a Filters button. There
@@ -449,7 +466,9 @@ export function StandardReportLayout({
                   {canExport ? (
                     <DropdownMenuItem onClick={runExport}>To CSV</DropdownMenuItem>
                   ) : null}
-                  <DropdownMenuItem onClick={() => window.print()}>Print / PDF</DropdownMenuItem>
+                  {canExportPdf ? (
+                    <DropdownMenuItem onClick={runPdfExport}>To PDF</DropdownMenuItem>
+                  ) : null}
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>

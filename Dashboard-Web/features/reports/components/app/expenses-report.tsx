@@ -17,6 +17,8 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function initialsFor(name: string): string {
   return (
@@ -53,7 +55,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 function ExpensesTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ExpenseReportRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -117,6 +119,66 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
     const mixed = new Set(rows.map((r) => r.currency)).size > 1
     return { currency, total, approved, pending, billable, mixed }
   }, [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byCategory = new Map<string, number>()
+      rows.forEach((r) => byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.amount))
+      downloadReportPdf({
+        title: "Expenses Report",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: !summary.mixed
+          ? [
+              { label: "Total", value: money(summary.total, summary.currency) },
+              { label: "Approved", value: money(summary.approved, summary.currency) },
+              { label: "Pending", value: money(summary.pending, summary.currency) },
+              { label: "Billable", value: money(summary.billable, summary.currency) },
+            ]
+          : undefined,
+        charts:
+          !summary.mixed && byCategory.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Spend by category",
+                  data: [...byCategory.entries()]
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([label, value]) => ({ label: label.charAt(0).toUpperCase() + label.slice(1), value })),
+                  valueFormatter: (v) => money(v, summary.currency),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Member", key: "member" },
+            { header: "Project", key: "project" },
+            { header: "Category", key: "category" },
+            { header: "Description", key: "description" },
+            { header: "Amount", key: "amount", align: "right" },
+            { header: "Billable", key: "billable", align: "center" },
+            { header: "Status", key: "status" },
+          ],
+          rows: rows.map((r) => ({
+            date: formatDay(r.day),
+            member: r.memberName,
+            project: r.projectName || "—",
+            category: r.category,
+            description: r.description,
+            amount: money(r.amount, r.currency),
+            billable: r.billable ? "Yes" : "No",
+            status: r.status,
+          })),
+          emptyMessage: "No expenses in this range.",
+        },
+        filename: "expenses",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, summary, dateLabel, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={3} rows={6} columns={6} />

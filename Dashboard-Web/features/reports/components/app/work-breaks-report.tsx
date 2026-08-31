@@ -17,6 +17,8 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function initialsFor(name: string): string {
   return (
@@ -51,7 +53,7 @@ function formatDay(day: string): string {
 
 function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<WorkBreakRow[]>([])
   const [minGapMinutes, setMinGapMinutes] = useState(5)
   const [loading, setLoading] = useState(true)
@@ -105,17 +107,71 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
     return () => registerExportHandler(null)
   }, [rows, registerExportHandler])
 
+  const perMemberSeconds = useMemo(() => {
+    const m = new Map<string, number>()
+    rows.forEach((r) => m.set(r.memberName, (m.get(r.memberName) ?? 0) + r.durationSeconds))
+    return m
+  }, [rows])
+
   const summary = useMemo(() => {
     const totalSeconds = rows.reduce((sum, r) => sum + r.durationSeconds, 0)
-    const perMember = new Map<string, number>()
-    rows.forEach((r) => perMember.set(r.memberName, (perMember.get(r.memberName) ?? 0) + 1))
     return {
       totalSeconds,
       count: rows.length,
       avgSeconds: rows.length > 0 ? Math.round(totalSeconds / rows.length) : 0,
-      members: perMember.size,
+      members: perMemberSeconds.size,
     }
-  }, [rows])
+  }, [rows, perMemberSeconds])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byMember = [...perMemberSeconds.entries()].sort(([, a], [, b]) => b - a)
+      downloadReportPdf({
+        title: "Work Breaks Report",
+        subtitle: "How many breaks team members are taking, derived from the gaps between tracked sessions.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: [
+          { label: "Breaks", value: String(summary.count) },
+          { label: "Total", value: formatDuration(summary.totalSeconds) },
+          { label: "Average", value: formatDuration(summary.avgSeconds) },
+          { label: "Members", value: String(summary.members) },
+        ],
+        charts:
+          byMember.length > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Break time by member",
+                  data: byMember.map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
+                  valueFormatter: (v) => `${v}h`,
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Member", key: "member" },
+            { header: "Break start", key: "start" },
+            { header: "Break end", key: "end" },
+            { header: "Duration", key: "duration", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            date: formatDay(r.day),
+            member: r.memberName,
+            start: formatClock(r.startedAt),
+            end: formatClock(r.endedAt),
+            duration: formatDuration(r.durationSeconds),
+          })),
+          emptyMessage: "No breaks in this range.",
+        },
+        filename: "work-breaks",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, perMemberSeconds, summary, dateLabel, registerPdfExportHandler])
 
   return (
     <div className="space-y-5">

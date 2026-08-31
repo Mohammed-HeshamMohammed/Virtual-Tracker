@@ -9,6 +9,8 @@ import { StandardReportLayout, useStandardReportLayout } from "@/features/report
 import { fetchProjectBudgetsReport } from "@/features/reports/api/misc-reports-api"
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow }[], dateLabel: string): void {
   const header = ["Section", "Project", "Spent (H:MM:SS)", "Budget (H:MM:SS)", "Remaining (H:MM:SS)", "% used"]
@@ -39,7 +41,7 @@ function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow 
 
 function ProjectBudgetsTable() {
   const { isDark } = useTheme()
-  const { dateLabel, registerExportHandler } = useStandardReportLayout()
+  const { dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [sections, setSections] = useState<ProjectBudgetSection[]>([])
   const [loading, setLoading] = useState(true)
   // A failed read used to be indistinguishable from an empty report:
@@ -84,6 +86,61 @@ function ProjectBudgetsTable() {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [registerExportHandler, runExport])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const withBudget = flatRows.filter(({ row }) => row.budgetSeconds > 0)
+      downloadReportPdf({
+        title: "Project Budgets Report",
+        subtitle: "How much of each project's budget has been spent.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        charts:
+          withBudget.length > 0
+            ? [
+                {
+                  type: "progress",
+                  title: "Budget used",
+                  rows: withBudget
+                    .slice()
+                    .sort((a, b) => b.row.spentSeconds / b.row.budgetSeconds - a.row.spentSeconds / a.row.budgetSeconds)
+                    .map(({ row }) => ({
+                      label: row.projectName,
+                      pct: Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)),
+                      sublabel: `${formatDurationHms(row.spentSeconds)} of ${formatDurationHms(row.budgetSeconds)}`,
+                    })),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Section", key: "section" },
+            { header: "Project", key: "project" },
+            { header: "Spent", key: "spent", align: "right" },
+            { header: "Budget", key: "budget", align: "right" },
+            { header: "Remaining", key: "remaining", align: "right" },
+            { header: "% used", key: "pct", align: "right" },
+          ],
+          rows: flatRows.map(({ section, row }) => {
+            const remaining = Math.max(0, row.budgetSeconds - row.spentSeconds)
+            const pct = row.budgetSeconds > 0 ? Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)) : 0
+            return {
+              section,
+              project: row.projectName,
+              spent: formatDurationHms(row.spentSeconds),
+              budget: row.budgetSeconds > 0 ? formatDurationHms(row.budgetSeconds) : "No budget",
+              remaining: row.budgetSeconds > 0 ? formatDurationHms(remaining) : "—",
+              pct: row.budgetSeconds > 0 ? `${pct}%` : "—",
+            }
+          }),
+          emptyMessage: "No projects found.",
+        },
+        filename: "project-budgets",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [flatRows, registerPdfExportHandler])
 
   const th = cn(
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",

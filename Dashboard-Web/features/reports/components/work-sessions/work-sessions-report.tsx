@@ -223,6 +223,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     shiftRangeByDays,
     goToToday,
     downloadCsv,
+    downloadPdf,
     loading,
     error,
     retry,
@@ -402,13 +403,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
                     <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => {
-                        window.print()
-                      }}
-                    >
-                      Print / PDF
-                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Popover>

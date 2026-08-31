@@ -13,6 +13,8 @@ import {
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function statusBadgeClass(status: TimesheetStatus): string {
   switch (status) {
@@ -37,7 +39,7 @@ function formatDateLabel(date: string | null): string {
 
 function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed read used to be indistinguishable from an empty report:
@@ -94,6 +96,54 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [rows, registerExportHandler])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byStatus = new Map<string, number>()
+      rows.forEach((r) => byStatus.set(r.status, (byStatus.get(r.status) ?? 0) + 1))
+      downloadReportPdf({
+        title: "Timesheet Approvals Report",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        charts:
+          byStatus.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Timesheets by status",
+                  data: [...byStatus.entries()].map(([label, value]) => ({
+                    label: label.charAt(0).toUpperCase() + label.slice(1),
+                    value,
+                  })),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Member", key: "member" },
+            { header: "Period", key: "period" },
+            { header: "Status", key: "status" },
+            { header: "Total hours", key: "total", align: "right" },
+            { header: "Billable", key: "billable", align: "right" },
+            { header: "Approved by", key: "approvedBy" },
+          ],
+          rows: rows.map((r) => ({
+            member: r.memberName,
+            period: `${formatDateLabel(r.periodStart)} – ${formatDateLabel(r.periodEnd)}`,
+            status: r.status,
+            total: `${r.totalHours.toFixed(2)}h`,
+            billable: `${r.billableHours.toFixed(2)}h`,
+            approvedBy: r.approvedByName ?? "—",
+          })),
+          emptyMessage: "No timesheets in this date range.",
+        },
+        filename: "timesheet-approvals",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, dateLabel, registerPdfExportHandler])
 
   if (loading) return <ReportTableSkeleton rows={6} columns={6} />
   if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />

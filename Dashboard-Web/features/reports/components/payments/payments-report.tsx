@@ -16,6 +16,8 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function money(amount: number, currency: string): string {
   try {
@@ -41,7 +43,7 @@ function formatDay(day: string): string {
  */
 function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<PaymentReportRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -108,6 +110,64 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
     const paidOut = rows.filter((r) => r.kind === "team").reduce((s, r) => s + r.amount, 0)
     return { currency, mixed, received, paidOut, net: received - paidOut }
   }, [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byMethod = new Map<string, number>()
+      rows.forEach((r) => byMethod.set(r.method, (byMethod.get(r.method) ?? 0) + r.amount))
+      downloadReportPdf({
+        title: "Payments Report",
+        subtitle: "Money actually recorded against an invoice.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: !summary.mixed
+          ? [
+              { label: "Received", value: money(summary.received, summary.currency) },
+              { label: "Paid out", value: money(summary.paidOut, summary.currency) },
+              { label: "Net", value: money(summary.net, summary.currency) },
+            ]
+          : undefined,
+        charts:
+          !summary.mixed && byMethod.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Amount by payment method",
+                  data: [...byMethod.entries()]
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([label, value]) => ({ label: label.charAt(0).toUpperCase() + label.slice(1), value })),
+                  valueFormatter: (v) => money(v, summary.currency),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Invoice", key: "invoice" },
+            { header: "Direction", key: "direction" },
+            { header: "Paid to / from", key: "party" },
+            { header: "Method", key: "method" },
+            { header: "Reference", key: "reference" },
+            { header: "Amount", key: "amount", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            date: formatDay(r.paidOn),
+            invoice: r.invoiceNumber,
+            direction: r.kind === "client" ? "Received" : "Paid out",
+            party: (r.kind === "client" ? r.clientName : r.memberName) || "—",
+            method: r.method,
+            reference: r.reference || "—",
+            amount: money(r.amount, r.currency),
+          })),
+          emptyMessage: "No payments in this range.",
+        },
+        filename: "payments",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, summary, dateLabel, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={3} rows={6} columns={7} />

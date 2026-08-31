@@ -17,6 +17,8 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function initialsFor(name: string): string {
   return (
@@ -51,7 +53,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ManualTimeEditRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -115,6 +117,63 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   }, [rows, registerExportHandler])
 
   const totalHours = useMemo(() => rows.reduce((sum, r) => sum + r.hours, 0), [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byMember = new Map<string, number>()
+      rows.forEach((r) => byMember.set(r.memberName, (byMember.get(r.memberName) ?? 0) + r.hours))
+      downloadReportPdf({
+        title: "Manual Time Edits Report",
+        subtitle: "Time entered by hand instead of tracked.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: [
+          { label: "Entries", value: String(rows.length) },
+          { label: "Total hours", value: formatHours(totalHours) },
+        ],
+        charts:
+          byMember.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Manual hours by member",
+                  data: [...byMember.entries()]
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 })),
+                  valueFormatter: (v) => formatHours(v),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Member", key: "member" },
+            { header: "Project / To-do", key: "project" },
+            { header: "Hours", key: "hours", align: "right" },
+            { header: "Billable", key: "billable", align: "center" },
+            { header: "Status", key: "status", align: "center" },
+            { header: "Reason", key: "reason" },
+            { header: "Edited by", key: "editedBy" },
+          ],
+          rows: rows.map((r) => ({
+            date: formatDay(r.day),
+            member: r.memberName,
+            project: r.taskTitle ? `${r.projectName || "No project"} — ${r.taskTitle}` : r.projectName || "No project",
+            hours: formatHours(r.hours),
+            billable: r.billable ? "Yes" : "No",
+            status: r.status,
+            reason: r.description || "—",
+            editedBy: r.editedByName || "—",
+          })),
+          emptyMessage: "No manual time in this range.",
+        },
+        filename: "manual-time-edits",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, totalHours, dateLabel, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={2} rows={6} columns={6} />

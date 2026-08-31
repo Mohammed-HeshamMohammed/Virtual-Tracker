@@ -30,6 +30,8 @@ import { ReportSendDialog } from "@/features/reports/components/amounts-owed/rep
 import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
 import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
@@ -62,6 +64,71 @@ function downloadAmountsOwedCsv(groups: AmountsOwedDayGroup[]): void {
 function parseMoney(label: string): number {
   const n = Number(String(label).replace(/[^0-9.-]/g, ""))
   return Number.isFinite(n) ? n : 0
+}
+
+function downloadAmountsOwedPdf(groups: AmountsOwedDayGroup[], dateLabel: string): void {
+  const byMember = new Map<string, number>()
+  groups.forEach((g) => g.members.forEach((m) => byMember.set(m.name, (byMember.get(m.name) ?? 0) + parseMoney(m.amount))))
+  const allHours = groups.flatMap((g) => g.members.map((m) => m.hours))
+  const allAmounts = groups.flatMap((g) => g.members.map((m) => m.amount))
+  downloadReportPdf({
+    title: "Amounts Owed Report",
+    subtitle: "Outstanding balances and what the organization owes members and contractors.",
+    orgLabel: STANDARD_REPORT_ORG_LABEL,
+    timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+    rangeLabel: dateLabel,
+    summary: [
+      { label: "Hours", value: sumHoursStrings(allHours) },
+      { label: "Amount", value: sumAmountStrings(allAmounts) },
+    ],
+    charts: [
+      ...(groups.length > 0
+        ? [
+            {
+              type: "line" as const,
+              title: "Total amount per day",
+              points: groups.map((g) => ({
+                label: g.dateLabel,
+                value: g.members.reduce((sum, m) => sum + parseMoney(m.amount), 0),
+              })),
+              valueFormatter: (v: number) => `$${v.toFixed(0)}`,
+            },
+          ]
+        : []),
+      ...(byMember.size > 0
+        ? [
+            {
+              type: "bar" as const,
+              title: "Amount by member",
+              data: [...byMember.entries()]
+                .sort(([, a], [, b]) => b - a)
+                .map(([label, value]) => ({ label, value })),
+              valueFormatter: (v: number) => `$${v.toFixed(0)}`,
+            },
+          ]
+        : []),
+    ],
+    table: {
+      columns: [
+        { header: "Date", key: "date" },
+        { header: "Member", key: "member" },
+        { header: "Rate", key: "rate" },
+        { header: "Hours", key: "hours", align: "right" },
+        { header: "Amount", key: "amount", align: "right" },
+      ],
+      rows: groups.flatMap((g) =>
+        g.members.map((m) => ({
+          date: g.dateLabel,
+          member: m.name,
+          rate: m.rateLabel,
+          hours: m.hours,
+          amount: m.amount,
+        })),
+      ),
+      emptyMessage: "No tracked time in this date range.",
+    },
+    filename: "amounts-owed",
+  })
 }
 
 /** Total amount per day, plotted from the report's own rows. */
@@ -385,7 +452,7 @@ export function AmountsOwedReport() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-36">
                   <DropdownMenuItem className="cursor-pointer" onClick={() => downloadAmountsOwedCsv(groups)}>To CSV</DropdownMenuItem>
-                  <DropdownMenuItem className="cursor-pointer" onClick={() => window.print()}>To PDF</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => downloadAmountsOwedPdf(groups, dateLabel)}>To PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
               <div className="flex items-center border-l border-slate-200 dark:border-white/10 px-1.5">

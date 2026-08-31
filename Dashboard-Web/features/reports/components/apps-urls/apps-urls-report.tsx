@@ -13,6 +13,8 @@ import {
 import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-urls"
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function UsageTable<T extends { memberName: string; durationHms: string }>({
   title,
@@ -69,7 +71,7 @@ function UsageTable<T extends { memberName: string; durationHms: string }>({
 }
 
 function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [apps, setApps] = useState<AppUsageRow[]>([])
   const [urls, setUrls] = useState<UrlUsageRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -121,6 +123,50 @@ function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [apps, urls, registerExportHandler])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byApp = new Map<string, number>()
+      apps.forEach((a) => byApp.set(a.appName, (byApp.get(a.appName) ?? 0) + a.totalSeconds))
+      downloadReportPdf({
+        title: "Apps & URLs Report",
+        subtitle: "Apps used and URLs visited while working.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        charts:
+          byApp.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Top apps by time",
+                  data: [...byApp.entries()]
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
+                  valueFormatter: (v) => `${v}h`,
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Type", key: "type" },
+            { header: "Member", key: "member" },
+            { header: "App / Domain", key: "target" },
+            { header: "Time", key: "time", align: "right" },
+          ],
+          rows: [
+            ...apps.map((a) => ({ type: "App", member: a.memberName, target: a.appName, time: a.durationHms })),
+            ...urls.map((u) => ({ type: "URL", member: u.memberName, target: u.domain, time: u.durationHms })),
+          ],
+          emptyMessage: "No activity in this date range.",
+        },
+        filename: "apps-urls",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [apps, urls, dateLabel, registerPdfExportHandler])
 
   if (loading) return <ReportSkeleton rows={5} columns={3} />
   if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />

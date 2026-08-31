@@ -19,6 +19,13 @@ import type {
   WorkSessionRow,
   WorkSessionScope,
 } from "@/features/reports/models/work-sessions"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import {
+  STANDARD_REPORT_ORG_LABEL,
+  WORK_SESSIONS_TIMEZONE_LABEL,
+} from "@/features/reports/components/shared/constants"
+import { formatWorkSessionDuration } from "@/features/reports/utils/work-sessions"
+import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
 
 const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
   client: true,
@@ -181,6 +188,74 @@ export function useWorkSessionsReport() {
     URL.revokeObjectURL(url)
   }, [filteredRows])
 
+  const downloadPdf = useCallback(() => {
+    const byMemberSeconds = new Map<string, number>()
+    filteredRows.forEach((r) => {
+      // Same parser aggregateWorkSessionTotals already uses on this exact field.
+      byMemberSeconds.set(r.memberName, (byMemberSeconds.get(r.memberName) ?? 0) + parseTimeToSeconds(r.durationHms))
+    })
+    downloadReportPdf({
+      title: "Work Sessions Report",
+      subtitle: "Start and stop times for team members.",
+      orgLabel: STANDARD_REPORT_ORG_LABEL,
+      timezoneLabel: WORK_SESSIONS_TIMEZONE_LABEL,
+      rangeLabel: dateLabel,
+      summary: [
+        { label: "Time", value: formatWorkSessionDuration(totals.timeSec) },
+        { label: "Break time", value: totals.breakSec > 0 ? formatWorkSessionDuration(totals.breakSec) : "—" },
+        { label: "Avg. activity", value: `${totals.avgActivity}%` },
+      ],
+      charts: [
+        ...(activityChartSeries.length > 0
+          ? [
+              {
+                type: "line" as const,
+                title: "Average activity by day",
+                points: activityChartSeries.map((pt) => ({ label: pt.xShort, value: pt.avgActivity })),
+                valueFormatter: (v: number) => `${Math.round(v)}%`,
+              },
+            ]
+          : []),
+        ...(byMemberSeconds.size > 0
+          ? [
+              {
+                type: "bar" as const,
+                title: "Time by member",
+                data: [...byMemberSeconds.entries()]
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
+                valueFormatter: (v: number) => `${v}h`,
+              },
+            ]
+          : []),
+      ],
+      table: {
+        columns: [
+          { header: "Client", key: "client" },
+          { header: "Project", key: "project" },
+          { header: "Member", key: "member" },
+          { header: "To-do", key: "todo" },
+          { header: "Started", key: "started" },
+          { header: "Stopped", key: "stopped" },
+          { header: "Duration", key: "duration", align: "right" },
+          { header: "Activity", key: "activity", align: "right" },
+        ],
+        rows: filteredRows.map((r) => ({
+          client: r.client,
+          project: r.projectName,
+          member: r.memberName,
+          todo: r.todoJob,
+          started: r.startedLabel,
+          stopped: r.stoppedLabel,
+          duration: r.durationHms,
+          activity: `${r.activityPct}%`,
+        })),
+        emptyMessage: "No work sessions match the current filters or date range.",
+      },
+      filename: "work-sessions",
+    })
+  }, [filteredRows, activityChartSeries, totals, dateLabel])
+
   const toggleProject = useCallback(
     (name: string) => {
       setProjectFilter((prev) => {
@@ -269,5 +344,6 @@ export function useWorkSessionsReport() {
     shiftRangeByDays,
     goToToday,
     downloadCsv,
+    downloadPdf,
   }
 }
