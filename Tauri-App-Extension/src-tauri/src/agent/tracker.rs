@@ -436,7 +436,7 @@ impl ActivityTracker {
                     let window = get_foreground_window();
                     let session_id = state.current_session.clone();
                     let now = Instant::now();
-                    self.tick_progress(
+                    let idle_now = self.tick_progress(
                         &state.task_id,
                         &mut state.last_tick_at,
                         &state.active_baseline,
@@ -446,7 +446,12 @@ impl ActivityTracker {
                         state.idle_time_disabled,
                         state.idle_threshold_sec_for_project,
                     );
-                    if now >= state.next_screenshot_at {
+                    // No screenshots while idle - see tick_progress's doc
+                    // comment. next_screenshot_at is left untouched so the
+                    // very next active tick captures immediately instead of
+                    // waiting out the rest of a cadence that elapsed while
+                    // nobody was there to be captured.
+                    if !idle_now && now >= state.next_screenshot_at {
                         self.upload_screenshot(&session_id, &window);
                         state.next_screenshot_at =
                             now + Duration::from_secs(self.events.random_screenshot_delay_sec());
@@ -621,7 +626,7 @@ impl ActivityTracker {
         state.was_active = true;
 
         let now = Instant::now();
-        self.tick_progress(
+        let idle_now = self.tick_progress(
             &state.task_id,
             &mut state.last_tick_at,
             &state.active_baseline,
@@ -673,7 +678,11 @@ impl ActivityTracker {
             return;
         }
 
-        if now >= state.next_screenshot_at {
+        // No screenshots while idle - see tick_progress's doc comment.
+        // next_screenshot_at is left untouched so the very next active tick
+        // captures immediately instead of waiting out the rest of a cadence
+        // that elapsed while nobody was there to be captured.
+        if !idle_now && now >= state.next_screenshot_at {
             self.upload_screenshot(&session_id, &window);
             state.next_screenshot_at =
                 now + Duration::from_secs(self.events.random_screenshot_delay_sec());
@@ -911,6 +920,13 @@ impl ActivityTracker {
     /// no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session
     /// sitting untouched shouldn't silently rack up "active" hours.
     #[allow(clippy::too_many_arguments)]
+    /// Returns whether this tick's delta was credited to idle rather than
+    /// active - callers use it to skip screenshot/app-slice capture while
+    /// the user is idle (a screenshot of an idle desktop is never useful,
+    /// and taking one defeats the point of idle detection in the first
+    /// place). Always `false` when idle time is disabled for the project,
+    /// since there's no idle bucket to fall into - see the `active_elapsed`
+    /// branch below.
     fn tick_progress(
         &self,
         task_id: &str,
@@ -921,7 +937,7 @@ impl ActivityTracker {
         idle_elapsed: &mut u64,
         idle_time_disabled: bool,
         idle_threshold_sec: u64,
-    ) {
+    ) -> bool {
         let now = Instant::now();
         let delta = Self::credited_seconds(now.duration_since(*last_tick_at));
         *last_tick_at = now;
@@ -935,18 +951,22 @@ impl ActivityTracker {
         // from process start and never resets. Without this gate, every tick
         // past the first idle_threshold_sec on a non-Windows build would be
         // misclassified as idle forever, even with continuous real input.
-        if idle_time_disabled {
+        let credited_idle = if idle_time_disabled {
             *active_elapsed += delta;
+            false
         } else if ActivityMeter::HOOKS_SUPPORTED && self.activity.idle_seconds() >= idle_threshold_sec {
             *idle_elapsed += delta;
+            true
         } else {
             *active_elapsed += delta;
-        }
+            false
+        };
         self.set_task_progress(
             task_id,
             *active_baseline + *active_elapsed,
             *idle_baseline + *idle_elapsed,
         );
+        credited_idle
     }
 
     fn set_task_progress(&self, task_id: &str, active_seconds: u64, idle_seconds: u64) {
@@ -1409,6 +1429,82 @@ mod tests {
 
         assert!(state.idle_elapsed >= 1, "a break must still count as idle time by default");
         assert_eq!(state.active_elapsed, 0, "a break is never active time");
+    }
+
+    /// Screenshots must stop while the user is idle - a picture of an empty
+    /// desk defeats the point of idle detection. tick_progress's return
+    /// value is the signal callers (tick, in both its normal and
+    /// fetch-session-failed branches) gate `upload_screenshot` on; this
+    /// tests that signal directly, at the level where the active/idle split
+    /// itself is decided, rather than the network side effect three calls
+    /// away.
+    #[test]
+    fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
+        let base_url = fake_server(|_| (200, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        let mut last_tick_at = Instant::now();
+        let mut active_elapsed = 0u64;
+        let mut idle_elapsed = 0u64;
+
+        thread::sleep(Duration::from_millis(1_100));
+        let credited_idle = tracker.tick_progress(
+            "task-1",
+            &mut last_tick_at,
+            &0,
+            &mut active_elapsed,
+            &0,
+            &mut idle_elapsed,
+            false,
+            1, // 1-second threshold, cleared by the sleep above
+        );
+
+        if ActivityMeter::HOOKS_SUPPORTED {
+            // Real hooks: ActivityMeter's last-input clock was set at
+            // construction and nothing here ever fed it real input, so
+            // idle_seconds() grew with the sleep above exactly as it would
+            // if the user genuinely walked away - same setup
+            // tick_stops_the_timer_once_the_idle_escalation_deadline_passes
+            // relies on.
+            assert!(credited_idle, "should report idle once idle_seconds() clears the threshold");
+            assert_eq!(active_elapsed, 0);
+            assert!(idle_elapsed >= 1);
+        } else {
+            // No real hooks on this platform - idle_seconds() can't move,
+            // so tick_progress always credits active. Documents why the
+            // assertion flips rather than silently skipping the platform.
+            assert!(!credited_idle);
+            assert!(active_elapsed >= 1);
+            assert_eq!(idle_elapsed, 0);
+        }
+    }
+
+    /// The disabled-project counterpart: even once the same real idle time
+    /// has elapsed, idle_time_disabled must keep tick_progress reporting
+    /// "not idle" - screenshots keep flowing exactly as ID-3 already
+    /// guarantees the active/idle split itself does.
+    #[test]
+    fn tick_progress_never_reports_idle_when_the_projects_idle_time_is_disabled() {
+        let base_url = fake_server(|_| (200, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        let mut last_tick_at = Instant::now();
+        let mut active_elapsed = 0u64;
+        let mut idle_elapsed = 0u64;
+
+        thread::sleep(Duration::from_millis(1_100));
+        let credited_idle = tracker.tick_progress(
+            "task-1",
+            &mut last_tick_at,
+            &0,
+            &mut active_elapsed,
+            &0,
+            &mut idle_elapsed,
+            true,
+            1,
+        );
+
+        assert!(!credited_idle, "idle time disabled must mean screenshots never stop for idleness");
+        assert!(active_elapsed >= 1);
+        assert_eq!(idle_elapsed, 0);
     }
 
     // Guards ACT-3: a server-pushed idle-stage triple must be applied whole
