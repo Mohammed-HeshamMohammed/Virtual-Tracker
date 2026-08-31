@@ -3,6 +3,7 @@ export interface AppUsageRow {
   memberName: string
   appName: string
   durationHms: string
+  totalSeconds: number
 }
 
 export interface UrlUsageRow {
@@ -10,4 +11,5 @@ export interface UrlUsageRow {
   memberName: string
   domain: string
   durationHms: string
+  totalSeconds: number
 }

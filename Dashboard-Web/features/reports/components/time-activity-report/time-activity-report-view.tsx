@@ -36,6 +36,8 @@ import { ReportPeriodMetricCell } from "@/features/reports/components/time-activ
 import { ReportTimeActivityChart } from "@/features/reports/components/time-activity-report/report-chart"
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 export function TimeActivityReportView({ days, memberRows, onRangeApply, range }: TimeActivityReportViewProps) {
   const [sendOpen, setSendOpen] = useComponentState(false)
@@ -85,6 +87,73 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
     saveView,
     justSaved,
   } = useTimeAndActivityReport({ days, memberRows })
+
+  function downloadPdf() {
+    const byMemberHours = new Map<string, number>()
+    for (const day of sortedDisplayRows) {
+      for (const member of getSubRowsForDay(day.date)) {
+        byMemberHours.set(member.name, (byMemberHours.get(member.name) ?? 0) + member.trackedHours)
+      }
+    }
+    downloadReportPdf({
+      title: "Time & Activity Report",
+      subtitle: "Time worked, activity levels, and amounts earned per project or to-do.",
+      orgLabel: STANDARD_REPORT_ORG_LABEL,
+      timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+      rangeLabel: dateLabel,
+      summary: [
+        { label: "Total time", value: totals.time },
+        { label: "Average activity", value: `${totals.activity}%` },
+        { label: "Total spent", value: totals.spent },
+      ],
+      charts: [
+        ...(sortedDisplayRows.length > 0
+          ? [
+              {
+                type: "line" as const,
+                title: "Tracked hours by day",
+                points: sortedDisplayRows.map((d) => ({ label: d.dateLabel, value: Math.round(d.trackedHours * 100) / 100 })),
+                valueFormatter: (v: number) => `${v}h`,
+              },
+            ]
+          : []),
+        ...(byMemberHours.size > 0
+          ? [
+              {
+                type: "bar" as const,
+                title: "Tracked hours by member",
+                data: [...byMemberHours.entries()]
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 })),
+                valueFormatter: (v: number) => `${v}h`,
+              },
+            ]
+          : []),
+      ],
+      table: {
+        columns: [
+          { header: "Date", key: "date" },
+          { header: "Members", key: "members", align: "right" },
+          { header: "Total hours", key: "totalHours", align: "right" },
+          { header: "Activity %", key: "activity", align: "right" },
+          { header: "Idle %", key: "idlePct", align: "right" },
+          { header: "Idle hours", key: "idleHr", align: "right" },
+          { header: "Total spent", key: "totalSpent", align: "right" },
+        ],
+        rows: sortedDisplayRows.map((d) => ({
+          date: d.dateLabel,
+          members: d.memberCount,
+          totalHours: d.totalHours,
+          activity: `${d.activityPct}%`,
+          idlePct: d.idlePct,
+          idleHr: d.idleHr,
+          totalSpent: d.totalSpent,
+        })),
+        emptyMessage: "No data for this range.",
+      },
+      filename: "time-and-activity",
+    })
+  }
 
   const statCards = [
     { icon: <Clock className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total time", value: totals.time },
@@ -166,7 +235,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 <DropdownMenuItem onClick={() => downloadTimeActivityCsv(sortedDisplayRows, "time-and-activity")}>
                   To CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.print()}>Print / PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             <IconTooltip text="Send" placement="bottom">

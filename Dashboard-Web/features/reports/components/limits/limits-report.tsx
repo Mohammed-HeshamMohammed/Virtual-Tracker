@@ -13,10 +13,12 @@ import {
 import type { LimitUsageRow } from "@/features/reports/models/limits"
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<LimitUsageRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed read used to be indistinguishable from an empty report:
@@ -66,6 +68,55 @@ function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: Rep
     registerExportHandler(runExport)
     return () => registerExportHandler(null)
   }, [rows, kind, registerExportHandler])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const limitLabel = kind === "weekly" ? "Weekly limit" : "Daily limit"
+      const withLimit = rows.filter((r) => r.limitHours > 0)
+      downloadReportPdf({
+        title: kind === "weekly" ? "Weekly Limits Report" : "Daily Limits Report",
+        subtitle: `Tracked hours against each member's ${kind} limit.`,
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        charts:
+          withLimit.length > 0
+            ? [
+                {
+                  type: "progress",
+                  title: `${limitLabel} usage`,
+                  rows: withLimit
+                    .slice()
+                    .sort((a, b) => b.pctUsed - a.pctUsed)
+                    .map((r) => ({
+                      label: r.name,
+                      pct: r.pctUsed,
+                      sublabel: `${r.trackedHours.toFixed(1)}h of ${r.limitHours.toFixed(1)}h`,
+                    })),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Member", key: "member" },
+            { header: "Tracked", key: "tracked", align: "right" },
+            { header: limitLabel, key: "limit", align: "right" },
+            { header: "% used", key: "pct", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            member: r.name,
+            tracked: `${r.trackedHours.toFixed(1)}h`,
+            limit: r.limitHours > 0 ? `${r.limitHours.toFixed(1)}h` : "No limit set",
+            pct: r.limitHours > 0 ? `${r.pctUsed}%` : "—",
+          })),
+          emptyMessage: `No members with a ${kind} limit set.`,
+        },
+        filename: `${kind}-limits`,
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, kind, dateLabel, registerPdfExportHandler])
 
   if (loading) return <ReportTableSkeleton rows={6} columns={3} />
   if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />

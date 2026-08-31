@@ -17,6 +17,8 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function initialsFor(name: string): string {
   return (
@@ -57,7 +59,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ShiftAttendanceRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -127,6 +129,55 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
       rate: scheduled > 0 ? Math.round((worked / scheduled) * 100) : 0,
     }
   }, [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      downloadReportPdf({
+        title: "Shift Attendance Report",
+        subtitle: "Configured working days against days actually tracked, in each member's own timezone.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: [
+          { label: "Worked", value: String(summary.worked) },
+          { label: "Missed", value: String(summary.missed) },
+          { label: "Unscheduled", value: String(summary.unscheduled) },
+          { label: "Attendance", value: `${summary.rate}%` },
+        ],
+        charts: [
+          {
+            type: "bar",
+            title: "Days by status",
+            data: [
+              { label: "Worked", value: summary.worked },
+              { label: "Missed", value: summary.missed },
+              { label: "Unscheduled", value: summary.unscheduled },
+            ],
+          },
+        ],
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Member", key: "member" },
+            { header: "Scheduled", key: "scheduled", align: "center" },
+            { header: "Status", key: "status", align: "center" },
+            { header: "Tracked", key: "tracked", align: "right" },
+          ],
+          rows: visible.map((r) => ({
+            date: formatDay(r.day),
+            member: r.memberName,
+            scheduled: r.scheduled ? "Yes" : "No",
+            status: STATUS_LABEL[r.status] ?? r.status,
+            tracked: r.activeSeconds > 0 ? hours(r.activeSeconds) : "—",
+          })),
+          emptyMessage: "Nothing to report for this range.",
+        },
+        filename: "shift-attendance",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [visible, summary, dateLabel, registerPdfExportHandler])
 
   return (
     <div className="space-y-5">

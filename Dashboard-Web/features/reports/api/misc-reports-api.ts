@@ -395,12 +395,14 @@ export async function fetchAppsUrlsReport(
       memberName: a.memberName,
       appName: a.appName,
       durationHms: formatHms(a.totalSeconds),
+      totalSeconds: a.totalSeconds,
     })),
     urls: data.urls.map((u) => ({
       memberId: u.memberId,
       memberName: u.memberName,
       domain: u.domain,
       durationHms: formatHms(u.totalSeconds),
+      totalSeconds: u.totalSeconds,
     })),
   }
 }

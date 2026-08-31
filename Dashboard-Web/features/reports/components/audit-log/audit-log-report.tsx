@@ -28,6 +28,7 @@ import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/a
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
 import { ReportErrorState, ReportOrgLine, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 
 const COLUMN_DEFS: { key: AuditLogColumnKey; label: string }[] = [
   { key: "dateLogs", label: "Date & Logs" },
@@ -198,6 +199,52 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     URL.revokeObjectURL(url)
   }
 
+  function downloadPdf() {
+    const byAction = new Map<string, number>()
+    filtered.forEach((r) => byAction.set(r.action, (byAction.get(r.action) ?? 0) + 1))
+    downloadReportPdf({
+      title: "Audit Log Report",
+      subtitle: "Who changed what, when, and how.",
+      orgLabel: AUDIT_LOG_ORG_LABEL,
+      timezoneLabel: AUDIT_LOG_TIMEZONE_LABEL,
+      rangeLabel: dateLabel,
+      charts:
+        byAction.size > 0
+          ? [
+              {
+                type: "bar",
+                title: "Events by action",
+                data: [...byAction.entries()]
+                  .sort(([, a], [, b]) => b - a)
+                  .map(([label, value]) => ({ label, value })),
+              },
+            ]
+          : undefined,
+      table: {
+        columns: [
+          { header: "Date", key: "date" },
+          { header: "Author", key: "author" },
+          { header: "Time", key: "time" },
+          { header: "Action", key: "action" },
+          { header: "Object", key: "object" },
+          { header: "Member", key: "member" },
+          { header: "Detail", key: "detail" },
+        ],
+        rows: filtered.map((r) => ({
+          date: r.date,
+          author: r.author,
+          time: r.timeLabel,
+          action: r.action,
+          object: r.object,
+          member: r.member,
+          detail: r.detail,
+        })),
+        emptyMessage: "No events match your search or date range.",
+      },
+      filename: "audit-log",
+    })
+  }
+
   function toggleColumn(k: AuditLogColumnKey) {
     setColumns((p) => {
       const next = !p[k]
@@ -288,7 +335,15 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
             className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-500 hover:text-sky-600"
           >
             <Download className="h-4 w-4" strokeWidth={2} />
-            Export
+            Export CSV
+          </button>
+          <button
+            type="button"
+            onClick={downloadPdf}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-500 hover:text-sky-600"
+          >
+            <Download className="h-4 w-4" strokeWidth={2} />
+            Export PDF
           </button>
           <Popover>
             <PopoverTrigger asChild>

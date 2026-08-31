@@ -22,6 +22,8 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 function initialsFor(name: string): string {
   return (
@@ -53,7 +55,7 @@ const thBase = "px-4 py-3 text-sm font-semibold"
 
 function BalancesTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeEnd, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimeOffBalanceRow[]>([])
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
@@ -104,6 +106,53 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
     })
     return () => registerExportHandler(null)
   }, [rows, registerExportHandler])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      downloadReportPdf({
+        title: "Time Off Balances Report",
+        subtitle: asOf ? `Balances as of ${formatDay(asOf)}.` : undefined,
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        charts:
+          rows.length > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Balance by member",
+                  data: rows
+                    .slice()
+                    .sort((a, b) => b.balanceDays - a.balanceDays)
+                    .map((r) => ({ label: r.memberName, value: r.balanceDays })),
+                  valueFormatter: (v) => days(v),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Member", key: "member" },
+            { header: "Policy", key: "policy" },
+            { header: "Entitlement", key: "entitlement", align: "right" },
+            { header: "Accrued", key: "accrued", align: "right" },
+            { header: "Used", key: "used", align: "right" },
+            { header: "Balance", key: "balance", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            member: r.memberName,
+            policy: r.policyName,
+            entitlement: days(r.entitlementDays),
+            accrued: days(r.accruedDays),
+            used: days(r.usedDays),
+            balance: days(r.balanceDays),
+          })),
+          emptyMessage: "No time off balances.",
+        },
+        filename: "time-off-balances",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, asOf, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={3} rows={6} columns={5} />
@@ -234,7 +283,7 @@ const KIND_STYLE: Record<string, string> = {
 
 function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimeOffTransactionRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -287,6 +336,57 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   }, [rows, registerExportHandler])
 
   const net = useMemo(() => rows.reduce((s, r) => s + r.days, 0), [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const byKind = new Map<string, number>()
+      rows.forEach((r) => byKind.set(r.kind, (byKind.get(r.kind) ?? 0) + Math.abs(r.days)))
+      downloadReportPdf({
+        title: "Time Off Transactions Report",
+        subtitle: "Accruals, approved leave, and manual adjustments.",
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: [{ label: "Net change", value: net > 0 ? `+${days(net)}` : days(net) }],
+        charts:
+          byKind.size > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Days by transaction type",
+                  data: [...byKind.entries()].map(([label, value]) => ({
+                    label: label.charAt(0).toUpperCase() + label.slice(1),
+                    value,
+                  })),
+                  valueFormatter: (v) => days(v),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Date", key: "date" },
+            { header: "Member", key: "member" },
+            { header: "Policy", key: "policy" },
+            { header: "Type", key: "type" },
+            { header: "Days", key: "days", align: "right" },
+            { header: "Note", key: "note" },
+          ],
+          rows: rows.map((r) => ({
+            date: formatDay(r.effectiveOn),
+            member: r.memberName,
+            policy: r.policyName,
+            type: r.kind,
+            days: r.days > 0 ? `+${days(r.days)}` : days(r.days),
+            note: r.note || "—",
+          })),
+          emptyMessage: "No time off activity in this range.",
+        },
+        filename: "time-off-transactions",
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, net, dateLabel, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={3} rows={6} columns={5} />

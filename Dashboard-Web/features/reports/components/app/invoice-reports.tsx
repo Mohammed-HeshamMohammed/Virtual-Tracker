@@ -21,6 +21,8 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
+import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
 type InvoiceKind = "client" | "team"
 
@@ -70,7 +72,7 @@ function useCurrencySummary(rows: { currency: string }[]) {
 
 function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<InvoiceReportRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -137,6 +139,71 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
     }),
     [rows]
   )
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const partyLabel = kind === "client" ? "Client" : "Member"
+      downloadReportPdf({
+        title: `${kind === "client" ? "Client" : "Team"} Invoices Report`,
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        rangeLabel: dateLabel,
+        summary: !mixed
+          ? [
+              { label: "Total", value: money(totals.total, currency) },
+              { label: "Paid", value: money(totals.paid, currency) },
+              { label: "Outstanding", value: money(totals.due, currency) },
+            ]
+          : undefined,
+        charts:
+          !mixed && rows.length > 0
+            ? [
+                {
+                  type: "bar",
+                  title: `Outstanding by ${partyLabel.toLowerCase()}`,
+                  data: (() => {
+                    const byParty = new Map<string, number>()
+                    rows.forEach((r) => {
+                      const label = (kind === "client" ? r.clientName : r.memberName) || "—"
+                      byParty.set(label, (byParty.get(label) ?? 0) + r.dueAmount)
+                    })
+                    return [...byParty.entries()]
+                      .sort(([, a], [, b]) => b - a)
+                      .map(([label, value]) => ({ label, value }))
+                  })(),
+                  valueFormatter: (v) => money(v, currency),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Number", key: "number" },
+            { header: partyLabel, key: "party" },
+            { header: "Issued", key: "issued" },
+            { header: "Due", key: "due" },
+            { header: "Status", key: "status" },
+            { header: "Total", key: "total", align: "right" },
+            { header: "Paid", key: "paid", align: "right" },
+            { header: "Outstanding", key: "outstanding", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            number: r.number,
+            party: (kind === "client" ? r.clientName : r.memberName) || "—",
+            issued: formatDay(r.issueDate),
+            due: formatDay(r.dueDate),
+            status: r.status,
+            total: money(r.total, r.currency),
+            paid: money(r.paidAmount, r.currency),
+            outstanding: money(r.dueAmount, r.currency),
+          })),
+          emptyMessage: "No invoices in this range.",
+        },
+        filename: `${kind}-invoices`,
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, kind, currency, mixed, totals, dateLabel, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={4} rows={6} columns={6} />
@@ -253,7 +320,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
 
 function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeEnd, registerExportHandler } = useStandardReportLayout()
+  const { rangeEnd, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<InvoiceAgingRow[]>([])
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
@@ -308,6 +375,51 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
     rows.forEach((r) => totals.set(r.bucket, (totals.get(r.bucket) ?? 0) + r.dueAmount))
     return BUCKET_ORDER.map((b) => ({ bucket: b, label: BUCKET_LABEL[b], amount: totals.get(b) ?? 0 }))
   }, [rows])
+
+  useEffect(() => {
+    const runPdfExport = () => {
+      const partyLabel = kind === "client" ? "Client" : "Member"
+      downloadReportPdf({
+        title: `${kind === "client" ? "Client" : "Team"} Invoices Aging Report`,
+        subtitle: asOf ? `Aged as of ${formatDay(asOf)}.` : undefined,
+        orgLabel: STANDARD_REPORT_ORG_LABEL,
+        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        charts:
+          !mixed && rows.length > 0
+            ? [
+                {
+                  type: "bar",
+                  title: "Outstanding by age bucket",
+                  data: buckets.map((b) => ({ label: b.label, value: b.amount })),
+                  valueFormatter: (v) => money(v, currency),
+                },
+              ]
+            : undefined,
+        table: {
+          columns: [
+            { header: "Number", key: "number" },
+            { header: partyLabel, key: "party" },
+            { header: "Due", key: "due" },
+            { header: "Days overdue", key: "overdue", align: "right" },
+            { header: "Bucket", key: "bucket" },
+            { header: "Outstanding", key: "outstanding", align: "right" },
+          ],
+          rows: rows.map((r) => ({
+            number: r.number,
+            party: (kind === "client" ? r.clientName : r.memberName) || "—",
+            due: formatDay(r.dueDate),
+            overdue: String(r.daysOverdue),
+            bucket: BUCKET_LABEL[r.bucket] ?? r.bucket,
+            outstanding: money(r.dueAmount, r.currency),
+          })),
+          emptyMessage: "Nothing outstanding.",
+        },
+        filename: `${kind}-invoices-aging`,
+      })
+    }
+    registerPdfExportHandler(runPdfExport)
+    return () => registerPdfExportHandler(null)
+  }, [rows, kind, asOf, buckets, currency, mixed, registerPdfExportHandler])
 
   if (loading) {
     return <ReportSkeleton tiles={3} rows={6} columns={5} />
