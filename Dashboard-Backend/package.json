@@ -23,7 +23,7 @@
     "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
   },
   "dependencies": {
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "firebase-admin": "^13.8.0",
     "ioredis": "^5.11.1",
     "jspdf": "^4.2.1",
