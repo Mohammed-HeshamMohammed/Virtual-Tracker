@@ -14,12 +14,16 @@ import {
   Download,
   Filter,
   Play,
+  Plus,
   Save,
   Table2,
   TrendingUp,
 } from "lucide-react"
 import { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 import { cn } from "@/shared/utils/utils"
+import { useAuth } from "@/shared/providers/app"
+import { isManagementRole } from "@/features/auth"
+import { AddManualEntryDialog } from "@/features/reports/components/time-activity-report/add-manual-entry-dialog"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { downloadTimeActivityCsv } from "@/features/reports/utils/time-and-activity/csv-export"
@@ -48,7 +52,10 @@ function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
 }
 
-export function TimeActivityReportView({ days, memberRows, onRangeApply, range }: TimeActivityReportViewProps) {
+export function TimeActivityReportView({ days, memberRows, onRangeApply, range, onReload }: TimeActivityReportViewProps) {
+  const { memberRole } = useAuth()
+  const canAddForOthers = isManagementRole(memberRole)
+  const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
   const {
@@ -236,6 +243,18 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
+            {canAddForOthers ? (
+              <IconTooltip text="Add time for someone who forgot to track it" placement="bottom">
+                <button
+                  type="button"
+                  aria-label="Add time for someone"
+                  onClick={() => setAddEntryOpen(true)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </IconTooltip>
+            ) : null}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -503,6 +522,14 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
           </AnimatePresence>,
           document.body
         )}
+
+      {canAddForOthers ? (
+        <AddManualEntryDialog
+          open={addEntryOpen}
+          onOpenChange={setAddEntryOpen}
+          onSaved={() => onReload?.()}
+        />
+      ) : null}
 
       <ReportSendDialog
         open={sendOpen}

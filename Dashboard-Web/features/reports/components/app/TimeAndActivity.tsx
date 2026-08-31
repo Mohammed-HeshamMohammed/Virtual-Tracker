@@ -93,6 +93,7 @@ export function TimeAndActivityReport() {
       memberRows={reportData.memberRows}
       onRangeApply={(start, end) => setRange({ start, end })}
       range={{ from: toDateParam(range.start), to: toDateParam(range.end) }}
+      onReload={() => setReloadKey((k) => k + 1)}
     />
   )
 }

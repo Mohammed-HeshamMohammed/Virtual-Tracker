@@ -79,4 +79,7 @@ export type TimeActivityReportViewProps = TimeActivityReportData & {
   onRangeApply?: (start: Date, end: Date) => void
   /** 'YYYY-MM-DD' bounds of the data currently loaded — what Send/Schedule act on. */
   range?: { from: string; to: string }
+  /** Re-fetches `days`/`memberRows` for the current range - called after a
+   *  manual entry is added, so it shows up without a manual page refresh. */
+  onReload?: () => void
 }
