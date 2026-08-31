@@ -1386,13 +1386,28 @@ export async function routeActivity(req, res, url, origin) {
 
         const ingestUrlRow = (d, timeField) => {
           const urlStr = typeof d.url === "string" ? d.url.trim() : "";
-          if (!urlStr || !/^https?:\/\//i.test(urlStr)) return;
-          const key = urlStr;
+          const domain = typeof d.domain === "string" ? d.domain.trim() : "";
+          const isFullUrl = /^https?:\/\//i.test(urlStr);
+          // CF-0.3's domain-only privacy mode stores just the bare domain
+          // ("github.com", no protocol) in this same `url` column, not a
+          // full https://... one - the strict http(s):// check here used to
+          // reject every row a member with that setting on ever produced,
+          // so their table fell back entirely to the window-title rows
+          // below (browser names, not sites) even though real domains were
+          // right there in the `domain` column the whole time.
+          if (!urlStr && !domain) return;
+          if (!isFullUrl && !domain) return;
+          const key = isFullUrl ? urlStr : `domain:${domain}`;
           const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : 0;
           const visitedAt = toIso(d[timeField] ?? d.visited_at ?? d.visitedAt);
           const row = byUrl.get(key) || {
-            domain: d.domain || parseDomain(urlStr),
-            url: urlStr,
+            domain: domain || parseDomain(urlStr),
+            // Domain-only mode has no real path stored to show or link to -
+            // the domain itself is the most specific thing on offer, and the
+            // frontend already only renders the "open externally" link icon
+            // when this looks like a real http(s) URL, so this correctly
+            // disables it rather than linking to a broken bare-domain href.
+            url: isFullUrl ? urlStr : domain,
             totalSeconds: 0,
             visits: 0,
             lastVisit: visitedAt,

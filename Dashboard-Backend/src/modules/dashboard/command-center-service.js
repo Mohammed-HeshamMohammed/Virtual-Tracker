@@ -221,7 +221,22 @@ function projectProgressRow(projectRow) {
     };
   }
 
-  const budgetTotal = projectRow?.budgetTotal ?? 0;
+  // budgetPercentOverride (the synthetic "All Projects" row - see
+  // averageBudgetPercent) already accounts for mixed money/hours budgets by
+  // averaging each project's own percent, so it's used as-is rather than
+  // re-deriving from this row's (deliberately zeroed) budgetTotal/budgetSpent.
+  const hasOverride = projectRow?.budgetPercentOverride !== undefined;
+  if (hasOverride && projectRow.budgetPercentOverride !== null) {
+    const percent = projectRow.budgetPercentOverride;
+    return {
+      name: projectRow?.name || "Project",
+      percent,
+      health: percent > 100 ? "stalled" : percent >= 90 ? "at_risk" : "on_track",
+      metric: "budget",
+    };
+  }
+
+  const budgetTotal = hasOverride ? 0 : (projectRow?.budgetTotal ?? 0);
   if (budgetTotal > 0) {
     const percent = Math.round(((projectRow?.budgetSpent ?? 0) / budgetTotal) * 100);
     return {
@@ -243,6 +258,33 @@ function projectProgressRow(projectRow) {
 }
 
 /**
+ * "All Projects" budget %: that union view mixes Cost-based (money) and
+ * Hours-based (hours) budgets, which share no unit - summing their raw
+ * totals before dividing produces a number with no real meaning. In
+ * practice it skewed toward 0%: a handful of large, barely-touched money
+ * budgets (a client contract just set up, say $10,000 with $0 spent yet)
+ * swamp real usage on much smaller hours budgets (say 40h, 30h spent) once
+ * both are added into one pool - the org could be genuinely burning
+ * through its hour caps and the card would still read near 0%.
+ *
+ * Averaging each budgeted project's own percent instead never combines
+ * mismatched units - only the ratio *within* one project (spent/total of
+ * the exact same unit) is ever computed, then those unit-agnostic
+ * percentages are averaged together. Projects with no budget at all
+ * (budgetTotal === 0) don't participate - they have no percent to
+ * contribute, not a 0% one, so they can't drag the average down either.
+ * Returns null (not 0) when nothing in scope has a budget, so buildStats
+ * can tell "no budgeted projects" apart from "budgets exist and read 0%".
+ * @param {{ budgetTotal: number, budgetSpent: number }[]} projectRows
+ */
+function averageBudgetPercent(projectRows) {
+  const withBudget = projectRows.filter((row) => row.budgetTotal > 0);
+  if (!withBudget.length) return null;
+  const percents = withBudget.map((row) => Math.min(100, Math.round((row.budgetSpent / row.budgetTotal) * 100)));
+  return Math.round(percents.reduce((sum, p) => sum + p, 0) / percents.length);
+}
+
+/**
  * The four stat cards.
  *
  * Every number here used to be derived from task rows:
@@ -258,8 +300,14 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
   const idleSeconds = metrics?.idleSeconds ?? 0;
   const trackedSeconds = activeSeconds + idleSeconds;
 
-  const budgetPct =
-    projectRow?.budgetTotal > 0
+  // budgetPercentOverride is set only on the synthetic "All Projects" row
+  // (see averageBudgetPercent above) - every single-project row is
+  // untouched and still divides its own budgetSpent/budgetTotal directly.
+  const hasOverride = projectRow?.budgetPercentOverride !== undefined;
+  const hasBudget = hasOverride ? projectRow.budgetPercentOverride !== null : projectRow?.budgetTotal > 0;
+  const budgetPct = hasOverride
+    ? (projectRow.budgetPercentOverride ?? 0)
+    : hasBudget
       ? Math.min(100, Math.round((projectRow.budgetSpent / projectRow.budgetTotal) * 100))
       : 0;
 
@@ -280,7 +328,7 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
     activeMembers: String(metrics?.memberIds?.size ?? 0),
     totalMembers: String(Math.max(projectRow?.members ?? 0, 0)),
     budgetPercent: budgetPct,
-    budgetLabel: projectRow?.budgetTotal > 0 ? "Budget Used" : "No Budget",
+    budgetLabel: hasBudget ? "Budget Used" : "No Budget",
     activityPercent,
     activityBadge:
       trackedSeconds === 0
@@ -633,8 +681,13 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
           members: new Set(
             projectRows.flatMap((row) => [...(memberIdsByProject.get(row.id) ?? [])]),
           ).size,
-          budgetTotal: projectRows.reduce((sum, row) => sum + row.budgetTotal, 0),
-          budgetSpent: projectRows.reduce((sum, row) => sum + row.budgetSpent, 0),
+          // "All Projects" budget %: see averageBudgetPercent below - budgetTotal/
+          // budgetSpent are no longer read for this row (buildStats reads
+          // budgetPercentOverride instead), kept at 0 only so the object shape
+          // still matches a single project row for any other reader.
+          budgetTotal: 0,
+          budgetSpent: 0,
+          budgetPercentOverride: averageBudgetPercent(projectRows),
           done: projectRows.reduce((sum, row) => sum + row.done, 0),
           total: projectRows.reduce((sum, row) => sum + row.total, 0),
           health: "on_track",
