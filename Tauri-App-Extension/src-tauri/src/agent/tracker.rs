@@ -977,11 +977,22 @@ impl ActivityTracker {
     /// (SESSION_STALE_MS in Dashboard-Backend's agent-heartbeat.js) through a
     /// long break. Does not touch `status` — `pause()` already set it to
     /// "idle" server-side; a bare "sync" here just keeps the timestamp alive.
+    ///
+    /// ID-3, missed the first time: idle_time_disabled means no idle time
+    /// tracked for this project at all, and that has to hold here too, not
+    /// just in tick_progress/tick_idle_escalation - this was the one place
+    /// still crediting idle unconditionally. Not credited to active either
+    /// (unlike tick_progress's "no split" behavior) - a break is an explicit
+    /// "not working" from the person, and crediting it as active time would
+    /// mean pausing silently mints work hours instead of just leaving this
+    /// stretch out of both totals, which is what "not tracked" actually means.
     fn tick_paused(&self, state: &mut TickState) {
         let now = Instant::now();
         let delta = Self::credited_seconds(now.duration_since(state.last_tick_at));
         state.last_tick_at = now;
-        state.idle_elapsed += delta;
+        if !state.idle_time_disabled {
+            state.idle_elapsed += delta;
+        }
         self.set_task_progress(
             &state.task_id,
             state.active_baseline + state.active_elapsed,
@@ -1150,7 +1161,7 @@ impl ActivityTracker {
 mod tests {
     use super::{valid_idle_thresholds, ActivityTracker, TickState};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use parking_lot::Mutex;
     use tiny_http::Method;
@@ -1355,6 +1366,49 @@ mod tests {
 
         assert!(state.was_active, "idle time disabled must never stop the timer");
         assert_eq!(state.current_session, "sess-1");
+    }
+
+    /// ID-3, missed the first time: tick_progress and tick_idle_escalation
+    /// both already respected idle_time_disabled, but tick_paused - the
+    /// third and only other place idle_elapsed grows - credited a break to
+    /// idle unconditionally. This is the regression guard for that gap:
+    /// pausing on a project with idle time disabled must not tick idle_elapsed
+    /// up at all.
+    #[test]
+    fn tick_paused_never_credits_idle_when_the_projects_idle_time_is_disabled() {
+        let base_url = fake_server(|_| (200, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        let mut state = TickState::new();
+        state.idle_time_disabled = true;
+        // Past due right away by default (TickState::new() sets next_sync_at
+        // to construction time), which would otherwise fire tick_paused's
+        // conditional sync POST mid-test - pushed out so this test only
+        // exercises the idle-crediting logic itself.
+        state.next_sync_at = Instant::now() + Duration::from_secs(3600);
+
+        thread::sleep(Duration::from_millis(1_100));
+        tracker.tick_paused(&mut state);
+
+        assert_eq!(state.idle_elapsed, 0, "idle time disabled must mean no idle time tracked, including on a break");
+        assert_eq!(state.active_elapsed, 0, "a break must not be credited as active work either - it should be left out of both totals, not moved into the other one");
+    }
+
+    /// Same setup, idle time *not* disabled - the elapsed wall-clock time
+    /// must still land in idle_elapsed exactly as before this fix, since the
+    /// guard above only skips crediting when the project's flag is set.
+    #[test]
+    fn tick_paused_still_credits_idle_normally_when_idle_time_is_not_disabled() {
+        let base_url = fake_server(|_| (200, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        let mut state = TickState::new();
+        state.idle_time_disabled = false;
+        state.next_sync_at = Instant::now() + Duration::from_secs(3600);
+
+        thread::sleep(Duration::from_millis(1_100));
+        tracker.tick_paused(&mut state);
+
+        assert!(state.idle_elapsed >= 1, "a break must still count as idle time by default");
+        assert_eq!(state.active_elapsed, 0, "a break is never active time");
     }
 
     // Guards ACT-3: a server-pushed idle-stage triple must be applied whole
