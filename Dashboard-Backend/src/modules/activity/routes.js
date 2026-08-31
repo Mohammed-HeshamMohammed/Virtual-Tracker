@@ -203,7 +203,7 @@ function extractHttpUrl(text) {
   return match ? match[0] : "";
 }
 
-function titleFromBrowserPageTitle(pageTitle, appName) {
+export function titleFromBrowserPageTitle(pageTitle, appName) {
   const raw = String(pageTitle || "").trim();
   if (!raw) return "";
   const suffixes = [
@@ -219,6 +219,47 @@ function titleFromBrowserPageTitle(pageTitle, appName) {
     if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
   }
   return title;
+}
+
+/**
+ * "717 W Russell St, Philadelphia, PA 19140 | Realtor.com®" -> "Realtor.com".
+ *
+ * When the address bar can't be read (see URL_CAPTURE_TICK_BUDGET_SEC in the
+ * agent) the only signal left is the browser window's own title, and that
+ * title is already saved in full - page_title, on every one of these rows.
+ * It just never got read for anything beyond a browser-suffix strip: a real
+ * site name is routinely sitting right there as the title's own trailing
+ * segment (the same " - Site" / " | Site" / " — Site" convention
+ * titleFromBrowserPageTitle already strips when Site is the browser's own
+ * name), and every one of those rows was being lumped under the generic
+ * browser name ("Google Chrome") instead - useless to classify, since
+ * classifying "Chrome" would classify every site opened in it.
+ *
+ * Tries " | " first (the least ambiguous separator for this), then " — ",
+ * then " - " (also common mid-title, e.g. "How to fix X - Stack Overflow",
+ * so tried last). Returns "" when nothing usable is found - a title with no
+ * separator at all genuinely has nothing more specific than "the browser"
+ * to go on, and that case is left exactly as it was.
+ * @param {string} cleanTitle
+ */
+export function siteNameFromWindowTitle(cleanTitle) {
+  const separators = [" | ", " — ", " - "];
+  for (const sep of separators) {
+    const idx = cleanTitle.lastIndexOf(sep);
+    if (idx === -1) continue;
+    const candidate = cleanTitle
+      .slice(idx + sep.length)
+      .trim()
+      // Trailing trademark/registered/copyright marks stripped so the same
+      // site across different tabs/titles always yields the same
+      // classification pattern instead of silently splitting into several.
+      .replace(/[®™©]+$/, "")
+      .trim();
+    if (candidate.length >= 2 && candidate.length <= 60 && /[a-z]/i.test(candidate)) {
+      return candidate;
+    }
+  }
+  return "";
 }
 
 const MANAGER_TRACKING_DISABLED_MESSAGE =
@@ -1445,14 +1486,25 @@ export async function routeActivity(req, res, url, origin) {
           }
           const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
           if (!cleanTitle) return;
-          const key = `window:${appName}:${cleanTitle}`;
+          // A site name pulled out of the title text itself is real, saved
+          // data the classify dialog can actually use - promoted to
+          // sourceKind "url" (same as a genuinely captured address-bar URL)
+          // rather than left under the generic browser name, and deduped by
+          // that site name (not by exact page title) so "Realtor.com" across
+          // three different listing pages aggregates into one row instead
+          // of three, matching how a real captured domain already dedupes.
+          const siteName = siteNameFromWindowTitle(cleanTitle);
+          const key = siteName ? `site:${siteName.toLowerCase()}` : `window:${appName}:${cleanTitle}`;
           const row = byUrl.get(key) || {
-            domain: appName,
+            domain: siteName || appName,
+            // Keeps the full page title as the subtitle (e.g. the street
+            // address on a Realtor.com listing), not just the site name
+            // twice - only the bold heading/classification pattern changes.
             url: cleanTitle,
             totalSeconds: 0,
             visits: 0,
             lastVisit: startedIso,
-            sourceKind: "window",
+            sourceKind: siteName ? "url" : "window",
           };
           row.totalSeconds += dur;
           row.visits += 1;
