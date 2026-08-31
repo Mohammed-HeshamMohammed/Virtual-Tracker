@@ -10,6 +10,7 @@ import {
   comparePeriodRows,
   getFilteredSubRows,
   getMemberFilterOptions,
+  getMetricNumeric,
   getProjectFilterOptions,
   type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
@@ -215,10 +216,17 @@ export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAnd
     const h = Math.floor(secs / 3600)
     const m = Math.floor((secs % 3600) / 60)
     const s = secs % 60
+    // Was hardcoded to "$0.00" unconditionally - every row already carries a
+    // real totalSpent ("$X.XX") the table renders correctly per-day, it just
+    // never got summed into this card. getMetricNumeric is the same parser
+    // row-aggregate.ts already uses for this exact field (the chart's
+    // total_spent series), so this can't drift from what the rest of the
+    // report considers "spent" for a row.
+    const spentTotal = displayRows.reduce((a, d) => a + getMetricNumeric("total_spent", d), 0)
     return {
       time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
       activity: Math.round(displayRows.reduce((a, d) => a + d.activityPct, 0) / displayRows.length),
-      spent: "$0.00",
+      spent: `$${spentTotal.toFixed(2)}`,
     }
   }, [displayRows])
 
