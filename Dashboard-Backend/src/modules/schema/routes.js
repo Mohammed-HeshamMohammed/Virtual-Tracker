@@ -35,6 +35,7 @@ import { isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
+import { assertManualTimeEntryWithinLimits } from "../tasks/manual-time-entry-limits.js";
 
 // Roster/link arrays the team wizard posts alongside the `teams` row itself.
 // They are not `teams` columns, so without allowlisting them here
@@ -586,6 +587,18 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
         await validateForeignKeys(db, payload, { entityKey: parsed.key });
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          // A manual entry is real worked time typed in by hand, not exempt
+          // from the same daily/weekly and per-project-member caps a live
+          // timer is already stopped at (timer-limit.service.js) - it just
+          // used to be created with zero awareness of either.
+          await assertManualTimeEntryWithinLimits(db, {
+            memberId: payload.member_id,
+            projectId: payload.project_id,
+            date: payload.date,
+            durationSeconds: Number(payload.duration) || 0,
+          });
+        }
         const created = await createPostgresRow(parsed.key, payload);
         if (teamRoster && created?.id) {
           // Roster writes enforce their own per-member/per-project permission
@@ -646,6 +659,19 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
+        if (parsed.key === TIME_ENTRY_WRITE_KEY && (payload.duration !== undefined || payload.date !== undefined || payload.project_id !== undefined)) {
+          // Re-check against the merged row (existing + this edit's
+          // overrides), excluding this entry's own current duration from
+          // what's already "spent" - otherwise every edit would count the
+          // row against itself and false-positive on its own unchanged time.
+          await assertManualTimeEntryWithinLimits(db, {
+            memberId: existing.member_id,
+            projectId: payload.project_id ?? existing.project_id,
+            date: payload.date ?? existing.date,
+            durationSeconds: Number(payload.duration ?? existing.duration) || 0,
+            excludeEntryId: String(parsed.id),
+          });
+        }
         // §6.9 - optional; only forwarded to the "tasks" branch of
         // updatePostgresRow today (see that function's comment for scope).
         const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;

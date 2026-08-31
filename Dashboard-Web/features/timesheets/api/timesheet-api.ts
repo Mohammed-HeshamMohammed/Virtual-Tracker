@@ -141,12 +141,35 @@ export async function createTimeEntry(data: CreateTimeEntryInput, createdBy?: st
   const res = await apiFetch(apiPath("/api/time-entries"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...data, member_id: data.memberId, project_id: data.projectId, task_id: data.taskId, created_by: createdBy }),
+    body: JSON.stringify({
+      ...data,
+      member_id: data.memberId,
+      project_id: data.projectId,
+      task_id: data.taskId,
+      // start_time/end_time are nullable TIME columns - an empty string is
+      // not a valid time value ("" fails Postgres's own parser, not a
+      // validator up here), so every manual entry with no clock times
+      // (the normal case - both this dialog and the self-service Manual
+      // Time form only ever collect a duration, never a start/end clock)
+      // 400'd on a bare `invalid input syntax for type time: ""` that the
+      // caller never got to see (see the error-surfacing fix below).
+      start_time: data.startTime || null,
+      end_time: data.endTime || null,
+      created_by: createdBy,
+    }),
   })
-  if (!res.ok) throw new Error(`Failed to create time entry: ${res.status}`)
   assertTimesheetsAvailable(res.status)
-  const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!json.success) throw new Error(json.error || "Failed to create time entry")
+  // Was throwing on a bare res.status before ever reading the body, so the
+  // backend's real reason (a validator's own message, a foreign-key miss, a
+  // Postgres constraint - schema-crud.service.js's write path always sends
+  // a real error.message on its 400s) never reached the caller. Every 400
+  // read as an identical, useless "Failed to create time entry: 400" no
+  // matter what actually went wrong.
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<unknown> | null
+  if (!res.ok || json?.success === false) {
+    throw extractApiError(res.status, "Failed to create time entry", json)
+  }
+  if (!json) throw new Error("Failed to parse create time entry response")
   return toTimeEntry(json.data)
 }
 
@@ -154,12 +177,26 @@ export async function updateTimeEntry(id: string, data: UpdateTimeEntryInput, up
   const res = await apiFetch(apiPath(`/api/time-entries/${id}`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...data, project_id: data.projectId, task_id: data.taskId, updated_by: updatedBy }),
+    body: JSON.stringify({
+      ...data,
+      project_id: data.projectId,
+      task_id: data.taskId,
+      // Same "" -> null fix as createTimeEntry, but startTime/endTime are
+      // optional here (a PATCH that never mentions them must leave them
+      // untouched) - only rewritten when the caller actually included one,
+      // so an omitted field stays omitted (buildUpdatePayload's own "don't
+      // touch this column" signal) rather than being forced to null.
+      ...(data.startTime !== undefined ? { start_time: data.startTime || null } : {}),
+      ...(data.endTime !== undefined ? { end_time: data.endTime || null } : {}),
+      updated_by: updatedBy,
+    }),
   })
-  if (!res.ok) throw new Error(`Failed to update time entry: ${res.status}`)
   assertTimesheetsAvailable(res.status)
-  const json = (await res.json()) as ApiEnvelope<unknown>
-  if (!json.success) throw new Error(json.error || "Failed to update time entry")
+  const json = (await res.json().catch(() => null)) as ApiEnvelope<unknown> | null
+  if (!res.ok || json?.success === false) {
+    throw extractApiError(res.status, "Failed to update time entry", json)
+  }
+  if (!json) throw new Error("Failed to parse update time entry response")
   return toTimeEntry(json.data)
 }
 
