@@ -4,7 +4,7 @@
 import { useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { DATE_RANGE_PRESETS } from "@/features/reports/components/shared/constants"
-import { computePresetRange, formatRangeLabel } from "@/features/reports/utils/time-and-activity"
+import { computePresetRange, formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
 import { cn } from "@/shared/utils/utils"
 import { ReportCalendarGrid } from "@/features/reports/components/time-activity-report/calendar-grid"
 
@@ -25,8 +25,13 @@ export function ReportDateRangePicker({
   initialEnd?: Date | null
   onApplyRange?: (start: Date, end: Date) => void
 }) {
-  const seedStart = initialStart ?? new Date(2026, 2, 16)
-  const seedEnd = initialEnd ?? new Date(2026, 2, 22)
+  // Falls back to "today" (never a fixed calendar date - a caller that
+  // forgets initialStart/initialEnd used to seed this picker at a literal
+  // hardcoded March 2026, so opening it showed a range nobody selected,
+  // built out of a month that may not even be visible from "today" without
+  // clicking back through the calendar).
+  const seedStart = initialStart ?? startOfDay(new Date())
+  const seedEnd = initialEnd ?? endOfDay(new Date())
   const [leftYear, setLeftYear] = useComponentState(seedStart.getFullYear())
   const [leftMonth, setLeftMonth] = useComponentState(seedStart.getMonth())
   const [start, setStart] = useComponentState<Date | null>(seedStart)

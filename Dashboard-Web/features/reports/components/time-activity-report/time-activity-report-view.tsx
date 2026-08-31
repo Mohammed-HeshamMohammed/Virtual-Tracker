@@ -39,6 +39,14 @@ import { ReportSimpleDropdown } from "@/features/reports/components/time-activit
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
+/** 'YYYY-MM-DD' -> local midnight Date. Bare "YYYY-MM-DD" parses as UTC
+ *  midnight in JS, which reads back as the previous day in any negative
+ *  UTC-offset timezone - the same class of off-by-one this codebase already
+ *  avoids elsewhere (see audit-log-report.tsx's formatDay). */
+function parseDayParam(day: string): Date {
+  return new Date(`${day}T00:00:00`)
+}
+
 export function TimeActivityReportView({ days, memberRows, onRangeApply, range }: TimeActivityReportViewProps) {
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
@@ -86,7 +94,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
     getSubRowsForDay,
     saveView,
     justSaved,
-  } = useTimeAndActivityReport({ days, memberRows })
+  } = useTimeAndActivityReport({ days, memberRows, range })
 
   function downloadPdf() {
     const byMemberHours = new Map<string, number>()
@@ -193,6 +201,12 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
               {showDatePicker && (
                 <ReportDateRangePicker
                   key="date-range"
+                  // Was omitted entirely, so every open of this picker reseeded
+                  // the calendar to a fixed hardcoded date (see date-range-picker.tsx)
+                  // instead of the range actually loaded - it looked like the
+                  // report had forgotten what was selected.
+                  initialStart={range ? parseDayParam(range.from) : undefined}
+                  initialEnd={range ? parseDayParam(range.to) : undefined}
                   onApply={(lbl) => {
                     setDateLabel(lbl)
                     setShowDatePicker(false)
