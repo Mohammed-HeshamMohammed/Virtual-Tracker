@@ -101,10 +101,29 @@ pub const EVENT_POST_TIMEOUT_SEC: u64 = 30;
 pub const URL_SCRIPT_TIMEOUT_SEC: u64 = 8;
 /// How long the tracker tick thread will wait on the background URL-capture
 /// thread before giving up on this tick's URL and moving on (Suggestion #7).
-/// Deliberately much shorter than URL_SCRIPT_TIMEOUT_SEC - the subprocess
-/// itself keeps running in the background up to that full timeout, this only
-/// bounds how long the *tick thread* blocks waiting for it.
-pub const URL_CAPTURE_TICK_BUDGET_SEC: u64 = 2;
+/// Shorter than URL_SCRIPT_TIMEOUT_SEC - the subprocess itself keeps running
+/// in the background up to that full timeout, this only bounds how long the
+/// *tick thread* blocks waiting for it.
+///
+/// Was 2s, which in practice was shorter than get-browser-url.ps1 itself
+/// ever needs to finish a real UI Automation read: cold `powershell.exe`
+/// startup alone (routinely slowed further by real-time AV scanning of a
+/// freshly spawned process) plus `Add-Type -AssemblyName
+/// UIAutomationClient`'s first-load JIT cost plus walking a real browser's
+/// accessibility tree across the script's up-to-five fallback strategies
+/// routinely runs past 2s on an ordinary machine - not a slow/hung outlier
+/// case, the normal case. Every tick on every browser tab was giving up
+/// before the script had a real chance to answer, so every "site" the
+/// activity feed ever showed was the window-title fallback (a bare browser
+/// name), never a real domain - a member's actual URL never got captured at
+/// all, on any browser, regardless of how healthy the machine was. Raised
+/// to sit close to the script's own ceiling instead of well under it -
+/// the tick loop already measures real elapsed time rather than assuming a
+/// fixed SESSION_POLL_SEC per iteration (see credited_seconds in
+/// agent/tracker.rs), so an occasional longer tick here doesn't skew
+/// tracked time, it just means idle escalation/session sync land a few
+/// seconds later on that one tick.
+pub const URL_CAPTURE_TICK_BUDGET_SEC: u64 = 7;
 
 pub const MAX_SCREENSHOT_WIDTH: u32 = 1280;
 pub const JPEG_QUALITY: u8 = 72;

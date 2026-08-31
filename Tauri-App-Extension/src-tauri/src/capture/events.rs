@@ -145,6 +145,7 @@ impl EventBuilder {
         }
         let script_path = self.url_script_path.clone();
         let macos_script_path = self.macos_url_script_path.clone();
+        let process_name = window.process_name.clone();
         let window = window.clone();
         let (tx, rx) = mpsc::channel();
         let spawned = thread::Builder::new()
@@ -157,9 +158,23 @@ impl EventBuilder {
         if !spawned {
             return None;
         }
-        rx.recv_timeout(Duration::from_secs(URL_CAPTURE_TICK_BUDGET_SEC))
-            .ok()
-            .flatten()
+        match rx.recv_timeout(Duration::from_secs(URL_CAPTURE_TICK_BUDGET_SEC)) {
+            Ok(result) => result,
+            Err(_) => {
+                // Distinct from read_browser_url's own "failed or timed out"
+                // warning (that one only fires if the script itself hits its
+                // full URL_SCRIPT_TIMEOUT_SEC) - this is the *tick* giving up
+                // on waiting, which used to happen silently and looked
+                // identical in the feed to a genuine capture failure. Logged
+                // once it's actually hit so a still-too-tight budget on some
+                // machine shows up as this line, not as an unexplained
+                // permanent "no real URLs, ever" the next time someone asks.
+                log::warn!(
+                    "URL capture: tick gave up after {URL_CAPTURE_TICK_BUDGET_SEC}s waiting on {process_name}, falling back to window title for this tick"
+                );
+                None
+            }
+        }
     }
 }
 
