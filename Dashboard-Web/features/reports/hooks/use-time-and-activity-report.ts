@@ -15,6 +15,7 @@ import {
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 import { getMembers } from "@/features/members/api/member-api"
+import { formatRangeLabel } from "@/features/reports/utils/time-and-activity"
 
 const DEFAULT_PERIOD_COLS = [
   "client",
@@ -49,9 +50,12 @@ function loadSavedView(): SavedView | null {
   }
 }
 
-export type UseTimeAndActivityReportParams = TimeActivityReportData
+export type UseTimeAndActivityReportParams = TimeActivityReportData & {
+  /** 'YYYY-MM-DD' bounds of what was actually requested - see dateLabel below. */
+  range?: { from: string; to: string }
+}
 
-export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivityReportParams) {
+export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAndActivityReportParams) {
   const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
@@ -142,11 +146,23 @@ export function useTimeAndActivityReport({ days, memberRows }: UseTimeAndActivit
 
   const [dateLabel, setDateLabel] = useState("")
 
+  // Derived from the range actually requested, not from `days` - `days` only
+  // carries dates with at least one tracked session anywhere in the org
+  // (build-time-and-activity-rows.js never emits an empty day), so a 7-day
+  // selection with a quiet day in the middle used to silently redraw the
+  // label around whichever days happened to have data, e.g. "Tue - Fri"
+  // for a picked "Mon - Sun" - the label lied about what was actually loaded.
+  // Falls back to the old days-derived label only when no range is known
+  // yet (defensive; the one real caller always supplies one).
   useEffect(() => {
+    if (range) {
+      setDateLabel(formatRangeLabel(new Date(`${range.from}T00:00:00`), new Date(`${range.to}T00:00:00`)))
+      return
+    }
     const first = days[0]?.dateLabel ?? ""
     const last = days[days.length - 1]?.dateLabel ?? ""
     setDateLabel(first && last ? `${first} - ${last}` : "")
-  }, [days])
+  }, [days, range])
 
   const [enabledPeriodCols, setEnabledPeriodCols] = useState<Set<string>>(
     () => new Set(savedView?.enabledPeriodCols ?? DEFAULT_PERIOD_COLS)
