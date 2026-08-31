@@ -15,6 +15,7 @@ import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 
 function UsageTable<T extends { memberName: string; durationHms: string }>({
   title,
@@ -144,7 +145,7 @@ function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
                     .sort(([, a], [, b]) => b - a)
                     .slice(0, 10)
                     .map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
-                  valueFormatter: (v) => `${v}h`,
+                  valueFormatter: formatDecimalHoursClock,
                 },
               ]
             : undefined,

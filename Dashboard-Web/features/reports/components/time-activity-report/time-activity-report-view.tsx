@@ -38,6 +38,7 @@ import { ReportSortableTh } from "@/features/reports/components/time-activity-re
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 
 /** 'YYYY-MM-DD' -> local midnight Date. Bare "YYYY-MM-DD" parses as UTC
  *  midnight in JS, which reads back as the previous day in any negative
@@ -121,7 +122,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 type: "line" as const,
                 title: "Tracked hours by day",
                 points: sortedDisplayRows.map((d) => ({ label: d.dateLabel, value: Math.round(d.trackedHours * 100) / 100 })),
-                valueFormatter: (v: number) => `${v}h`,
+                valueFormatter: formatDecimalHoursClock,
               },
             ]
           : []),
@@ -133,7 +134,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range }
                 data: [...byMemberHours.entries()]
                   .sort(([, a], [, b]) => b - a)
                   .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 })),
-                valueFormatter: (v: number) => `${v}h`,
+                valueFormatter: formatDecimalHoursClock,
               },
             ]
           : []),
