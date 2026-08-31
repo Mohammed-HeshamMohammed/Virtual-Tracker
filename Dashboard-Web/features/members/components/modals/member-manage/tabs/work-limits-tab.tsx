@@ -7,10 +7,18 @@ import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import {
   SHIFT_ALLOWANCE_COMING_SOON_MESSAGE,
   SHIFT_ALLOWANCE_LIMITS_ENABLED,
+  isActiveHourLimit,
   validateWorkLimitsCombo,
 } from "@/shared/validation/work-limits"
 import { Toggle } from "@/shared/ui/toggle";
 import type { TabProps } from "@/features/members/components/modals/member-manage/types"
+
+// Matches LimitInput's own step={0.25} - a computed value (especially from
+// division, e.g. 40 / 3 working days) lands on the same quarter-hour
+// granularity manual entry already uses instead of a long float tail.
+function roundToQuarterHour(hours: number): number {
+  return Math.round(hours / 0.25) * 0.25
+}
 
 const WEEKDAYS: { label: string; short: string; index: number }[] = [
   { label: "Monday", short: "Mo", index: 0 },
@@ -117,6 +125,33 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
   const shiftsComingSoon = !SHIFT_ALLOWANCE_LIMITS_ENABLED
 
   const selectedDayLabels = WEEKDAYS.filter((d) => selectedDays.includes(d.index)).map((d) => d.label)
+
+  // Daily x working days == weekly is exactly the ceiling
+  // validateWorkLimitsCombo already enforces (it only errors once daily x
+  // days *exceeds* weekly) - auto-filling the other field to that same
+  // product/quotient keeps the two consistent instead of making the person
+  // do the arithmetic and land just under the limit by hand. Only runs once
+  // days are actually selected - with none picked there's no day count to
+  // multiply/divide by, so both fields stay independent, same as before.
+  const handleDailyChange = (dailyLimit: string) => {
+    setState((s) => {
+      const next = { ...s, dailyLimit }
+      if (selectedDays.length > 0 && isActiveHourLimit(dailyLimit)) {
+        next.weeklyLimit = String(roundToQuarterHour(Number(dailyLimit) * selectedDays.length))
+      }
+      return next
+    })
+  }
+
+  const handleWeeklyChange = (weeklyLimit: string) => {
+    setState((s) => {
+      const next = { ...s, weeklyLimit }
+      if (selectedDays.length > 0 && isActiveHourLimit(weeklyLimit)) {
+        next.dailyLimit = String(roundToQuarterHour(Number(weeklyLimit) / selectedDays.length))
+      }
+      return next
+    })
+  }
 
   const toggleDay = (index: number) =>
     setState((s) => ({
@@ -247,7 +282,7 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             suffix="hrs/wk"
             placeholder="No limit"
             value={state.weeklyLimit}
-            onChange={(weeklyLimit) => setState((s) => ({ ...s, weeklyLimit }))}
+            onChange={handleWeeklyChange}
           />
         </SectionCard>
 
@@ -261,7 +296,7 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
             suffix="hrs/day"
             placeholder="No limit"
             value={state.dailyLimit}
-            onChange={(dailyLimit) => setState((s) => ({ ...s, dailyLimit }))}
+            onChange={handleDailyChange}
           />
         </SectionCard>
       </div>
