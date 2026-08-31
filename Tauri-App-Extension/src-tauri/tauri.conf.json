@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "VirtualTrackerAgent",
+  "productName": "Virtual Tracker Agent",
   "version": "0.4.19",
   "identifier": "com.virtualtracker.agent",
   "build": {
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Virtual Tracker",
+        "title": "Virtual Tracker Agent",
         "width": 1050,
         "height": 680,
         "minWidth": 1050,

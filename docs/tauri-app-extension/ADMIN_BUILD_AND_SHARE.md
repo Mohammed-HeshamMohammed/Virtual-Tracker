@@ -22,7 +22,7 @@ Defaults to:
 
 Output:
 
-- `src-tauri/target/release/VirtualTrackerAgent.exe`
+- `src-tauri/target/release/Virtual Tracker Agent.exe`
 - `src-tauri/target/release/bundle/nsis/` or `msi/` installer
 
 ## Backend checklist

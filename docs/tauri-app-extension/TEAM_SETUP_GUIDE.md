@@ -6,7 +6,7 @@ You do **not** need to install Rust, Node, or anything technical. Just follow th
 
 Your admin will send you **one installer file**.
 
-1. Run the installer (`VirtualTrackerAgent` setup)
+1. Run the installer (`Virtual Tracker Agent` setup)
 2. Launch **Virtual Tracker Agent** from the Start menu (or let it start at login if that option was enabled)
 3. Click **Sign In** — your browser opens the Virtual Tracker web app
 4. Sign in with your work account and complete **Link this account**
