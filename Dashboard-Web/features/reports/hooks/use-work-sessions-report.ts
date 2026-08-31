@@ -10,7 +10,7 @@ import {
   filterWorkSessions,
   groupWorkSessions,
 } from "@/features/reports/utils/work-sessions"
-import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { formatRangeLabel, startOfDay, endOfDay, formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import { fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
 import { getMembers } from "@/features/members/api/member-api"
 import type {
@@ -224,7 +224,7 @@ export function useWorkSessionsReport() {
                 data: [...byMemberSeconds.entries()]
                   .sort(([, a], [, b]) => b - a)
                   .map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
-                valueFormatter: (v: number) => `${v}h`,
+                valueFormatter: formatDecimalHoursClock,
               },
             ]
           : []),

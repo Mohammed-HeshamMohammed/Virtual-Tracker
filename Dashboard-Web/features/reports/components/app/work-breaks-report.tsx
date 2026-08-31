@@ -19,6 +19,7 @@ import { ReportMemberAvatar } from "@/features/reports/components/time-activity-
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 
 function initialsFor(name: string): string {
   return (
@@ -145,7 +146,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
                   type: "bar",
                   title: "Break time by member",
                   data: byMember.map(([label, seconds]) => ({ label, value: Math.round((seconds / 3600) * 100) / 100 })),
-                  valueFormatter: (v) => `${v}h`,
+                  valueFormatter: formatDecimalHoursClock,
                 },
               ]
             : undefined,
