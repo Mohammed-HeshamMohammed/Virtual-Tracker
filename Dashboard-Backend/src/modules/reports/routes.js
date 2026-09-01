@@ -1,5 +1,5 @@
 import { requireAuthContext, isManagementRole } from "../../http/auth-context.js";
-import { isEmployeeRole } from "../../http/role-hierarchy.js";
+import { isEmployeeRole, isViewerRole } from "../../http/role-hierarchy.js";
 import { sendJson } from "../../http/response.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { readJsonBody } from "../../http/read-json-body.js";
@@ -207,8 +207,8 @@ async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
  * @param {string} from
  * @param {string} to
  */
-export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null) {
-  const rawRows = await getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to });
+export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null) {
+  const rawRows = await getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
   const memberIdsInResult = [...new Set(rawRows.map((r) => r.member_id))];
   const [nameMap, tzMap] = await Promise.all([
     buildMemberMetaMap(db, memberIdsInResult),
@@ -240,9 +240,13 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
  * @param {{ memberId: string, roleName: string }} viewer
  * @param {{ requestedMemberId: string | null, from: string, to: string }} params
  */
-async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to }) {
-  const memberIds = await resolveMemberIdsFilter(db, viewer, requestedMemberId);
-  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer);
+async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, requestedMemberIds, from, to, requestedProjectIds }) {
+  const memberIds =
+    requestedMemberIds && requestedMemberIds.length > 0
+      ? await resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds)
+      : await resolveMemberIdsFilter(db, viewer, requestedMemberId);
+  const projectIds = await filterProjectIdsForViewer(db, viewer, requestedProjectIds);
+  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer, projectIds);
 }
 
 function rangeLabel(from, to) {
@@ -283,6 +287,21 @@ async function buildReportAttachment(payload, fileType, rangeLbl) {
 export async function routeReports(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/reports/")) return false;
+
+  // Viewer is read-only access to whatever the org chose to show it
+  // directly, not a reporting seat (see isViewerRole's own doc comment) -
+  // blocked here, once, ahead of every individual route below, rather than
+  // relying on each route's own visible-ids scoping to happen to come back
+  // empty. requireAuthContext is cheap to call again per-route below (it
+  // just re-reads the AuthContext auth-middleware already attached to req,
+  // no repeat token verification), so this doesn't change any other route's
+  // own auth handling.
+  const earlyViewer = requireAuthContext(req, res, origin);
+  if (!earlyViewer) return true;
+  if (isViewerRole(earlyViewer.roleName)) {
+    sendJson(res, origin, 403, { success: false, error: "Reports are not available for the Viewer role." });
+    return true;
+  }
 
   // Options for the report filter panels. Scoped to what the viewer may see,
   // so the panel can only ever offer members/projects they're allowed to
@@ -390,7 +409,15 @@ export async function routeReports(req, res, url, origin) {
     try {
       const db = getDb();
       const requestedMemberId = url.searchParams.get("memberId") || null;
-      const payload = await loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to });
+      const requestedMemberIds = parseUuidListParam(url.searchParams.get("memberIds"));
+      const requestedProjectIds = parseUuidListParam(url.searchParams.get("projectIds"));
+      const payload = await loadTimeAndActivityReportPayload(db, viewer, {
+        requestedMemberId,
+        requestedMemberIds,
+        requestedProjectIds,
+        from,
+        to,
+      });
       sendJson(res, origin, 200, { success: true, data: payload });
     } catch (e) {
       if (e?.status) {
@@ -856,9 +883,14 @@ export async function routeReports(req, res, url, origin) {
 
       try {
         const memberIds = kind === "team" ? await resolveReportMemberScope(getDb(), viewer, url) : null;
+        const projectIds = await filterProjectIdsForViewer(
+          getDb(),
+          viewer,
+          parseUuidListParam(url.searchParams.get("projectIds")),
+        );
         const rows = aging
-          ? await listInvoiceAgingPg({ kind, memberIds, asOf: to })
-          : await listInvoicesWithBalancePg({ kind, memberIds, fromDay: from, toDay: to });
+          ? await listInvoiceAgingPg({ kind, memberIds, asOf: to, projectIds })
+          : await listInvoicesWithBalancePg({ kind, memberIds, fromDay: from, toDay: to, projectIds });
         const nameMap = await buildMemberMetaMap(
           getDb(),
           [...new Set(rows.map((r) => r.memberId).filter(Boolean))],
@@ -899,7 +931,12 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
-      const payments = await listInvoicePaymentsPg({ memberIds, fromDay: from, toDay: to });
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const payments = await listInvoicePaymentsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const nameMap = await buildMemberMetaMap(
         getDb(),
         [...new Set(payments.map((p) => p.memberId).filter(Boolean))],
@@ -964,13 +1001,24 @@ export async function routeReports(req, res, url, origin) {
       // from them.
       const allowedProjectIds = await getViewerProjectIds(getDb(), viewer.memberId, viewer.roleName);
       const allowedSet = allowedProjectIds === null ? null : new Set(allowedProjectIds);
-      const projects =
+      const visibleProjects =
         allowedSet === null
           ? allProjects
           : allProjects.filter(
               (project) =>
                 allowedSet.has(String(project.id)) || String(project.created_by ?? "") === viewer.memberId,
             );
+
+      // `projectIds` here narrows which projects' budget rows come back, not
+      // sessions within a project - each row already IS a project.
+      const requestedProjectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      const requestedSet = requestedProjectIds === null ? null : new Set(requestedProjectIds);
+      const projects =
+        requestedSet === null ? visibleProjects : visibleProjects.filter((project) => requestedSet.has(String(project.id)));
 
       const rows = await Promise.all(
         projects.map(async (project) => {
@@ -1019,13 +1067,31 @@ export async function routeReports(req, res, url, origin) {
       // This report listed every client in the org regardless.
       const visibleMemberIds = await getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName);
       const visibleSet = visibleMemberIds === null ? null : new Set(visibleMemberIds);
-      const clients =
+      let clients =
         visibleSet === null
           ? allClients
           : allClients.filter((client) => {
               const memberId = String(client.client_member ?? client.member_id ?? "").trim();
               return memberId ? visibleSet.has(memberId) : false;
             });
+
+      // A client isn't scoped to one project (it can have many, via
+      // client_projects), so `projectIds` here narrows to clients that have
+      // at least one of the allowed projects linked, rather than trying to
+      // scope a client to a single project.
+      const requestedProjectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
+      if (requestedProjectIds !== null) {
+        const cpRows = await pgQuery(
+          "SELECT DISTINCT client_id FROM client_projects WHERE project_id = ANY($1::uuid[])",
+          [requestedProjectIds],
+        );
+        const clientIdsWithProject = new Set(cpRows.map((r) => String(r.client_id)));
+        clients = clients.filter((client) => clientIdsWithProject.has(String(client.id)));
+      }
 
       const rows = await Promise.all(
         clients.map(async (client) => {
@@ -1154,9 +1220,14 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
+      const projectIds = await filterProjectIdsForViewer(
+        getDb(),
+        viewer,
+        parseUuidListParam(url.searchParams.get("projectIds")),
+      );
       const [apps, urls] = await Promise.all([
-        getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
-        getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to }),
+        getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
+        getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
       ]);
       const ids = new Set([...apps.map((a) => a.memberId), ...urls.map((u) => u.memberId)]);
       const nameMap = await buildMemberMetaMap(getDb(), [...ids]);

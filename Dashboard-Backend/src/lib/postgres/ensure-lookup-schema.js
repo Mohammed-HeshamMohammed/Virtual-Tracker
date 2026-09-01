@@ -1575,6 +1575,12 @@ GROUP BY task_id`,
   // edit its tasks - and it is off unless someone turns it on for that
   // specific project.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_manage BOOLEAN NOT NULL DEFAULT false`,
+  // Same idea as client_can_manage, for tracking instead of managing: lets a
+  // client member run a task-less timer on this project (like a calling
+  // project, or a normal project with require_task_to_track off) alongside
+  // its other members. Independent of client_can_manage - a client can be
+  // allowed to track without being allowed to edit tasks, or vice versa.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_track BOOLEAN NOT NULL DEFAULT false`,
   // client_projects.client_id had no FK until the clients table existed above -
   // added here, after clients exists in this array, same idempotent pattern as
   // fk_tmp_task below.

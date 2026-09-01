@@ -38,9 +38,9 @@ export async function createProjectPg(data) {
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
        idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
-       require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage,
+       require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
        created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)
      RETURNING *`,
     [
       id,
@@ -65,6 +65,9 @@ export async function createProjectPg(data) {
       // Off unless the creator turned it on - a client reads their projects
       // either way, this is the only thing that lets them write to one.
       data.clientCanManage === true,
+      // Same default-off reasoning, independent switch - lets a client track
+      // time on the project without also granting task-editing rights.
+      data.clientCanTrack === true,
       uuidOrNull(data.createdBy),
     ],
   );
@@ -103,6 +106,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     restrictTaskCreation: "restrict_task_creation",
     requireStopNote: "require_stop_note",
     clientCanManage: "client_can_manage",
+    clientCanTrack: "client_can_track",
     updatedBy: "updated_by",
   };
   const sets = [];
@@ -116,7 +120,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
           ? dateOrNull(patch[key])
           : key === "idleTimeSeconds"
             ? Math.max(0, Math.floor(Number(patch[key]) || 0))
-            : key === "clientCanManage"
+            : key === "clientCanManage" || key === "clientCanTrack"
               ? patch[key] === true
               : patch[key],
     );
@@ -288,6 +292,27 @@ export async function listClientManagedProjectIdsPg(memberId) {
      JOIN clients c ON c.id = cp.client_id
      JOIN projects p ON p.id = cp.project_id
      WHERE c.member_id = $1 AND p.client_can_manage = true`,
+    [memberId],
+  );
+  return new Set(rows.map((r) => String(r.project_id)));
+}
+
+/**
+ * Projects a client member may run a task-less timer on: linked to one of
+ * their client rows AND flagged client_can_track. Same shape as
+ * listClientManagedProjectIdsPg, independent flag - see that function's own
+ * doc comment for why the two aren't combined.
+ * @param {string} memberId
+ * @returns {Promise<Set<string>>}
+ */
+export async function listClientTrackableProjectIdsPg(memberId) {
+  if (!memberId) return new Set();
+  const rows = await query(
+    `SELECT cp.project_id
+     FROM client_projects cp
+     JOIN clients c ON c.id = cp.client_id
+     JOIN projects p ON p.id = cp.project_id
+     WHERE c.member_id = $1 AND p.client_can_track = true`,
     [memberId],
   );
   return new Set(rows.map((r) => String(r.project_id)));

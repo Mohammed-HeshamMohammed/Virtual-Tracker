@@ -310,11 +310,18 @@ async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, bod
     sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
     return false;
   }
-  // The switch itself is not the client's to flip.
-  if (clientManages && entityKey === "projects" && Object.prototype.hasOwnProperty.call(body, "client_can_manage")) {
+  // Neither switch is the client's to flip - a client_can_manage client could
+  // otherwise send client_can_track: true in the same PATCH that edits a task
+  // and grant themselves tracking access nobody on the org side approved.
+  if (
+    clientManages &&
+    entityKey === "projects" &&
+    (Object.prototype.hasOwnProperty.call(body, "client_can_manage") ||
+      Object.prototype.hasOwnProperty.call(body, "client_can_track"))
+  ) {
     sendJson(res, origin, 403, {
       success: false,
-      error: "Only the project's organization can change who may manage it.",
+      error: "Only the project's organization can change who may manage or track it.",
     });
     return false;
   }
