@@ -57,6 +57,38 @@ export function groupAuditRowsByDate(rows: AuditLogRow[]): { dateKey: string; la
   })
 }
 
+export type AuditLogGroupBy = "date" | "author" | "action"
+
+/**
+ * AuditLogRow (see models/audit-log.ts) has no identifiable project - the
+ * backend maps every row's `member` to a literal "—" placeholder, and
+ * `object` is a table name, not a project reference - so there is nothing
+ * to build a Projects filter or a "project" group-by option on. Author and
+ * Action are real per-row fields the endpoint already populates, so those
+ * are offered as the additional dimensions instead.
+ */
+export function groupAuditRows(
+  rows: AuditLogRow[],
+  groupBy: AuditLogGroupBy
+): { dateKey: string; label: string; rows: AuditLogRow[] }[] {
+  if (groupBy !== "date") {
+    const key = (r: AuditLogRow) => (groupBy === "author" ? r.author || "Unknown" : r.action || "Unknown")
+    const order: string[] = []
+    const map = new Map<string, AuditLogRow[]>()
+    for (const r of rows) {
+      const k = key(r)
+      if (!map.has(k)) {
+        map.set(k, [])
+        order.push(k)
+      }
+      map.get(k)!.push(r)
+    }
+    order.sort((a, b) => a.localeCompare(b))
+    return order.map((k) => ({ dateKey: k, label: k, rows: map.get(k) ?? [] }))
+  }
+  return groupAuditRowsByDate(rows)
+}
+
 export function exportAuditLogToCsv(rows: AuditLogRow[]): string {
   const headers = ["ID", "Date", "Author", "Time", "Action", "Object", "Member", "Detail"]
   const esc = (s: string) => `"${s.replace(/"/g, '""')}"`

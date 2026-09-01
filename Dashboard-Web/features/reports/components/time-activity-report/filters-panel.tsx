@@ -21,18 +21,12 @@ const TRACKED_TIME_SELECT_OPTIONS: { value: TrackedTimeFilter; label: string }[]
 export function ReportFiltersPanel({
   onClose,
   panelStyle,
-  projectFilter,
-  setProjectFilter,
-  projectFilterOptions,
   trackedTimeFilter,
   setTrackedTimeFilter,
   onClearFilters,
 }: {
   onClose: () => void
   panelStyle?: CSSProperties | null
-  projectFilter: string
-  setProjectFilter: (value: string) => void
-  projectFilterOptions: { value: string; label: string }[]
   trackedTimeFilter: TrackedTimeFilter
   setTrackedTimeFilter: (value: TrackedTimeFilter) => void
   /** Resets project/tracked-time filters on the report (owned by the parent hook). */
@@ -85,19 +79,6 @@ export function ReportFiltersPanel({
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-5 py-4 scrollbar-hide">
         <div className="space-y-5">
-          <div>
-            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">PROJECTS</div>
-            <ReportFilterDropdown
-              label={projectFilterOptions[0]?.label ?? "All projects"}
-              options={projectFilterOptions.map((o) => o.label)}
-              selectedValue={projectFilterOptions.find((o) => o.value === projectFilter)?.label ?? "All projects"}
-              onSelect={(label) => {
-                const opt = projectFilterOptions.find((o) => o.label === label)
-                if (opt) setProjectFilter(opt.value)
-              }}
-            />
-          </div>
-
           <div>
             <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">TRACKED TIME</div>
             <ReportFilterDropdown

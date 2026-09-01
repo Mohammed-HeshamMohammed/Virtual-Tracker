@@ -20,7 +20,8 @@ import { AUDIT_LOG_ORG_LABEL, AUDIT_LOG_TIMEZONE_LABEL } from "@/features/report
 import {
   exportAuditLogToCsv,
   filterAuditRows,
-  groupAuditRowsByDate,
+  groupAuditRows,
+  type AuditLogGroupBy,
 } from "@/features/reports/utils/audit-log"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
 import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
@@ -50,7 +51,16 @@ const DEFAULT_COLS: Record<AuditLogColumnKey, boolean> = {
   detail: true,
 }
 
-const GROUP_OPTIONS: { value: string; label: string }[] = [{ value: "date", label: "Date" }]
+// AuditLogRow has no identifiable project (see groupAuditRows' doc comment
+// in utils/audit-log.ts), so Author and Action - real per-row fields the
+// endpoint already populates - replace it as group-by dimensions instead of
+// leaving "Date" as the only option in a dropdown that otherwise does
+// nothing.
+const GROUP_OPTIONS: { value: AuditLogGroupBy; label: string }[] = [
+  { value: "date", label: "Date" },
+  { value: "author", label: "Author" },
+  { value: "action", label: "Action" },
+]
 
 function actionBadgeClass(kind: AuditLogRow["actionKind"]): string {
   switch (kind) {
@@ -136,7 +146,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     () => [...new Set(rows.map((r) => r.action).filter(Boolean))].sort(),
     [rows]
   )
-  const [groupBy, setGroupBy] = useComponentState<string>("date")
+  const [groupBy, setGroupBy] = useComponentState<AuditLogGroupBy>("date")
   const [columns, setColumns] = useComponentState<Record<AuditLogColumnKey, boolean>>({ ...DEFAULT_COLS })
   const [collapsed, setCollapsed] = useComponentState<Set<string>>(() => new Set())
 
@@ -175,7 +185,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     [rows, search, rangeStart, rangeEnd, authorFilter, actionFilter]
   )
 
-  const groups = useMemo(() => groupAuditRowsByDate(filtered), [filtered])
+  const groups = useMemo(() => groupAuditRows(filtered, groupBy), [filtered, groupBy])
 
   const visibleCols = COLUMN_DEFS.filter((c) => columns[c.key])
   const colCount = Math.max(visibleCols.length, 1)
@@ -322,7 +332,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
           <span className="text-sm text-slate-600 dark:text-[#bccbb9]">Group by</span>
           <ReportSimpleDropdown
             value={groupBy}
-            onChange={setGroupBy}
+            onChange={(v) => setGroupBy(v as AuditLogGroupBy)}
             options={GROUP_OPTIONS}
             width="w-36"
             accentBar={false}

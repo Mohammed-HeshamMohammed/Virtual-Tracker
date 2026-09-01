@@ -243,8 +243,13 @@ const AVATAR_CLASS_BY_INDEX = [
   "bg-emerald-500 text-white",
 ]
 
-export async function fetchProjectBudgetsReport(): Promise<ProjectBudgetSection[]> {
-  const data = await getJson<{ rows: RawProjectBudgetRow[] }>("/api/reports/project-budgets")
+export async function fetchProjectBudgetsReport(query?: { projectIds?: string[] }): Promise<ProjectBudgetSection[]> {
+  const params = new URLSearchParams()
+  if (query?.projectIds?.length) params.set("projectIds", query.projectIds.join(","))
+  const qs = params.toString()
+  const data = await getJson<{ rows: RawProjectBudgetRow[] }>(
+    `/api/reports/project-budgets${qs ? `?${qs}` : ""}`
+  )
   if (!data) return []
 
   const withBudget: ProjectBudgetRow[] = []

@@ -20,6 +20,7 @@ function toProject(input: Record<string, unknown>): Project {
     restrictTaskCreation: Boolean(input.restrict_task_creation ?? input.restrictTaskCreation ?? true),
     requireStopNote: Boolean(input.require_stop_note ?? input.requireStopNote ?? false),
     clientCanManage: Boolean(input.client_can_manage ?? input.clientCanManage ?? false),
+    clientCanTrack: Boolean(input.client_can_track ?? input.clientCanTrack ?? false),
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
     idleTimeSeconds: Number(input.idle_time_seconds ?? input.idleTimeSeconds ?? 450),
     endDate: String(input.end_date ?? input.endDate ?? ""),
@@ -49,6 +50,7 @@ function toProjectPayload(
   if (input.restrictTaskCreation !== undefined) out.restrict_task_creation = input.restrictTaskCreation
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
   if (input.clientCanManage !== undefined) out.client_can_manage = input.clientCanManage
+  if (input.clientCanTrack !== undefined) out.client_can_track = input.clientCanTrack
   // Management-project links. Sent only when present so a normal project's
   // update body stays exactly as it was.
   if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
@@ -99,6 +101,9 @@ export interface Project {
   requireStopNote: boolean
   /** The project's client may run it - create and edit its tasks. Off by default. */
   clientCanManage: boolean
+  /** The project's client may clock in on it, alongside its other members.
+   *  Independent of clientCanManage. Off by default. */
+  clientCanTrack: boolean
   disableIdleTime: boolean
   idleTimeSeconds?: number
   endDate: string
@@ -133,6 +138,7 @@ export interface CreateProjectInput {
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
   clientCanManage?: boolean
+  clientCanTrack?: boolean
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
@@ -154,6 +160,7 @@ export interface UpdateProjectInput {
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
   clientCanManage?: boolean
+  clientCanTrack?: boolean
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number

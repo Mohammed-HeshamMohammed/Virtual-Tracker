@@ -52,7 +52,7 @@ function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
 }
 
-export function TimeActivityReportView({ days, memberRows, onRangeApply, range, onReload }: TimeActivityReportViewProps) {
+export function TimeActivityReportView({ days, memberRows, entries, onRangeApply, range, onReload }: TimeActivityReportViewProps) {
   const { memberRole } = useAuth()
   const canAddForOthers = isManagementRole(memberRole)
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
@@ -100,9 +100,10 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
     handleSortClick,
     pickerEnabledCols,
     getSubRowsForDay,
+    groupColumnLabel,
     saveView,
     justSaved,
-  } = useTimeAndActivityReport({ days, memberRows, range })
+  } = useTimeAndActivityReport({ days, memberRows, entries, range })
 
   function downloadPdf() {
     const byMemberHours = new Map<string, number>()
@@ -148,7 +149,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
       ],
       table: {
         columns: [
-          { header: "Date", key: "date" },
+          { header: groupColumnLabel, key: "date" },
           { header: "Members", key: "members", align: "right" },
           { header: "Total hours", key: "totalHours", align: "right" },
           { header: "Activity %", key: "activity", align: "right" },
@@ -187,6 +188,17 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
               value={memberFilter}
               onChange={setMemberFilter}
               options={memberFilterOptions}
+              width="w-48"
+              accentBar={false}
+            />
+          </div>
+
+          <div className="flex min-w-40 flex-col gap-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Projects</div>
+            <ReportSimpleDropdown
+              value={projectFilter}
+              onChange={setProjectFilter}
+              options={projectFilterOptions}
               width="w-48"
               accentBar={false}
             />
@@ -266,7 +278,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(sortedDisplayRows, "time-and-activity")}>
+                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(sortedDisplayRows, "time-and-activity", groupColumnLabel)}>
                   To CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
@@ -376,7 +388,7 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
                 <tr className="border-b border-slate-100 dark:border-slate-800">
                   <ReportSortableTh
                     colKey="date"
-                    label="Date"
+                    label={groupColumnLabel}
                     sortable
                     activeKey={sortKey}
                     sortDir={sortDir}
@@ -510,9 +522,6 @@ export function TimeActivityReportView({ days, memberRows, onRangeApply, range, 
                   key="ta-filters-panel"
                   onClose={() => setShowFilters(false)}
                   panelStyle={filterPanelLayout}
-                  projectFilter={projectFilter}
-                  setProjectFilter={setProjectFilter}
-                  projectFilterOptions={projectFilterOptions}
                   trackedTimeFilter={trackedTimeFilter}
                   setTrackedTimeFilter={setTrackedTimeFilter}
                   onClearFilters={clearFilters}

@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchTimesheetApprovalsReport } from "@/features/reports/api/misc-reports-api"
@@ -14,7 +15,50 @@ import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/m
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+  TIMESHEET_APPROVALS_GROUP_BY_OPTIONS,
+} from "@/features/reports/components/shared/constants"
+
+/**
+ * TimesheetApprovalRow (see models/timesheet-approvals.ts) carries no
+ * project - a timesheet is a member/period/status record, not a per-project
+ * one - so TIMESHEET_APPROVALS_GROUP_BY_OPTIONS offers date/member/status
+ * instead of project.
+ */
+function groupTimesheetRows(
+  rows: TimesheetApprovalRow[],
+  groupBy: string
+): { key: string; label: string; rows: TimesheetApprovalRow[] }[] {
+  function keyFor(r: TimesheetApprovalRow): string {
+    switch (groupBy) {
+      case "member":
+        return r.memberName
+      case "status":
+        return r.status
+      case "date":
+      default:
+        return r.periodStart
+    }
+  }
+  const order: string[] = []
+  const map = new Map<string, TimesheetApprovalRow[]>()
+  for (const r of rows) {
+    const k = keyFor(r)
+    if (!map.has(k)) {
+      map.set(k, [])
+      order.push(k)
+    }
+    map.get(k)!.push(r)
+  }
+  if (groupBy === "date") order.sort((a, b) => a.localeCompare(b))
+  return order.map((key) => ({
+    key,
+    label: groupBy === "status" ? key.charAt(0).toUpperCase() + key.slice(1) : key,
+    rows: map.get(key) ?? [],
+  }))
+}
 
 function statusBadgeClass(status: TimesheetStatus): string {
   switch (status) {
@@ -39,13 +83,22 @@ function formatDateLabel(date: string | null): string {
 
 function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed read used to be indistinguishable from an empty report:
   // getJson swallowed every error and the table rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+
+  function toggleGroupCollapsed(key: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -145,6 +198,8 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
     return () => registerPdfExportHandler(null)
   }, [rows, dateLabel, registerPdfExportHandler])
 
+  const grouped = useMemo(() => groupTimesheetRows(rows, groupBy), [rows, groupBy])
+
   if (loading) return <ReportTableSkeleton rows={6} columns={6} />
   if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
@@ -175,35 +230,60 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
                 </td>
               </tr>
             ) : null}
-            {rows.map((row) => (
-              <tr
-                key={row.id}
-                className={cn("border-b last:border-b-0", isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80")}
-              >
-                <td className="px-4 py-3.5">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
-                      {row.initials}
-                    </span>
-                    <span className={cn("font-medium", isDark ? "text-[#dce1fb]" : "text-slate-900")}>{row.memberName}</span>
-                  </div>
-                </td>
-                <td className={cn("px-4 py-3.5 whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {formatDateLabel(row.periodStart)} – {formatDateLabel(row.periodEnd)}
-                </td>
-                <td className="px-4 py-3.5">
-                  <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", statusBadgeClass(row.status))}>
-                    {row.status}
-                  </span>
-                </td>
-                <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                  {row.totalHours.toFixed(2)}h
-                </td>
-                <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                  {row.billableHours.toFixed(2)}h
-                </td>
-                <td className={cn("px-4 py-3.5", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{row.approvedByName ?? "—"}</td>
-              </tr>
+            {grouped.map((g) => (
+              <Fragment key={g.key}>
+                <tr className={cn(isDark ? "bg-white/6" : "bg-slate-100")}>
+                  <td colSpan={6} className="px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupCollapsed(g.key)}
+                      className={cn("flex w-full items-center gap-2 text-left text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}
+                    >
+                      <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                      <span>{groupBy === "date" ? formatDateLabel(g.label) : g.label}</span>
+                      <ChevronDown
+                        className={cn(
+                          "ml-auto h-4 w-4 transition-transform",
+                          isDark ? "text-white/40" : "text-slate-400",
+                          collapsedGroups.has(g.key) && "-rotate-90"
+                        )}
+                      />
+                    </button>
+                  </td>
+                </tr>
+                {!collapsedGroups.has(g.key)
+                  ? g.rows.map((row) => (
+                      <tr
+                        key={row.id}
+                        className={cn("border-b last:border-b-0", isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80")}
+                      >
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center gap-3">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+                              {row.initials}
+                            </span>
+                            <span className={cn("font-medium", isDark ? "text-[#dce1fb]" : "text-slate-900")}>{row.memberName}</span>
+                          </div>
+                        </td>
+                        <td className={cn("px-4 py-3.5 whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {formatDateLabel(row.periodStart)} – {formatDateLabel(row.periodEnd)}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", statusBadgeClass(row.status))}>
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                          {row.totalHours.toFixed(2)}h
+                        </td>
+                        <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                          {row.billableHours.toFixed(2)}h
+                        </td>
+                        <td className={cn("px-4 py-3.5", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{row.approvedByName ?? "—"}</td>
+                      </tr>
+                    ))
+                  : null}
+              </Fragment>
             ))}
           </tbody>
         </table>
@@ -222,7 +302,9 @@ export function TimesheetApprovalsReport({ onNavigate }: { onNavigate: (id: stri
       exportFileBaseName="timesheet-approvals"
       pageId="reports-timesheet-approvals"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={TIMESHEET_APPROVALS_GROUP_BY_OPTIONS}
+      defaultGroupBy="date"
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

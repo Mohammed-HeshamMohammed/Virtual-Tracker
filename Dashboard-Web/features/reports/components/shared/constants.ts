@@ -314,3 +314,78 @@ export const WORK_SESSIONS_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value !== "client",
 )
+
+// ==========================================
+// 9. Limits Reports (Weekly / Daily)
+// ==========================================
+
+/** LimitUsageRow is one aggregate row per member for the whole selected
+ *  range - no per-row date and no project, so "Member" is the only
+ *  dimension that means anything here. */
+export const LIMITS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
+  { value: "member", label: "Member" },
+]
+
+// ==========================================
+// 10. Payments Report
+// ==========================================
+
+// No "Project": PaymentReportRow carries a client or a member (whichever
+// side of the payment it is), never a project.
+export const PAYMENTS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
+  (option) => option.value !== "project",
+)
+
+// ==========================================
+// 11. Timesheet Approvals Report
+// ==========================================
+
+/** TimesheetApprovalRow carries no project - "Status" replaces it as a
+ *  dimension the row actually has. */
+export const TIMESHEET_APPROVALS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
+  { value: "date", label: "Date" },
+  { value: "member", label: "Member" },
+  { value: "status", label: "Status" },
+]
+
+// ==========================================
+// 12. Client Budgets Report
+// ==========================================
+
+/** ClientBudgetRow carries no date/period and no member - "Budget type" is
+ *  the one real secondary dimension the row has (Hours based / Cost based /
+ *  No budget set). "Client" groups one row per client (identity). */
+export const CLIENT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
+  { value: "budgetType", label: "Budget type" },
+  { value: "client", label: "Client" },
+]
+
+// ==========================================
+// 13. Invoice Reports (client / team, list + aging)
+// ==========================================
+
+// No "Project": invoice rows carry no project dimension.
+export const TEAM_INVOICE_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
+  (option) => option.value !== "project",
+)
+// Client invoices carry no member dimension either - the party being
+// invoiced is the client, not a team member.
+export const CLIENT_INVOICE_GROUP_BY_OPTIONS = TEAM_INVOICE_GROUP_BY_OPTIONS.filter(
+  (option) => option.value !== "member",
+)
+
+// ==========================================
+// 14. Reports with only a date + member dimension
+// ==========================================
+
+// Shift attendance, work breaks, and time-off transactions rows carry a day
+// and a member and nothing else - no project, no client.
+export const DATE_MEMBER_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
+  (option) => option.value === "date" || option.value === "member",
+)
+
+// Time-off balances are a single as-of snapshot per member/policy - every
+// row shares the same date, so there is nothing to group by except member.
+export const MEMBER_ONLY_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
+  (option) => option.value === "member",
+)

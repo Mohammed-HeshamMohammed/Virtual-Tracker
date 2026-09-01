@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { cn } from "@/shared/utils/utils"
 import {
@@ -17,7 +18,48 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  PAYMENTS_GROUP_BY_OPTIONS,
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+} from "@/features/reports/components/shared/constants"
+
+/**
+ * PaymentReportRow carries no project - only a client (money received) or a
+ * member (money paid out), never both, so "Project" is excluded from
+ * PAYMENTS_GROUP_BY_OPTIONS. "Member"/"Client" bucket the side of the
+ * payment that dimension actually applies to and label the other side's
+ * rows plainly rather than crashing or showing a blank group.
+ */
+function groupPaymentRows(
+  rows: PaymentReportRow[],
+  groupBy: string
+): { key: string; label: string; rows: PaymentReportRow[] }[] {
+  function keyFor(r: PaymentReportRow): string {
+    switch (groupBy) {
+      case "date":
+        return r.paidOn
+      case "member":
+        return r.kind === "team" ? r.memberName || "Unknown member" : "Received from clients"
+      case "client":
+        return r.kind === "client" ? r.clientName || "Unknown client" : "Paid to team members"
+      default:
+        return r.paidOn
+    }
+  }
+  const order: string[] = []
+  const map = new Map<string, PaymentReportRow[]>()
+  for (const r of rows) {
+    const k = keyFor(r)
+    if (!map.has(k)) {
+      map.set(k, [])
+      order.push(k)
+    }
+    map.get(k)!.push(r)
+  }
+  if (groupBy === "date") order.sort((a, b) => a.localeCompare(b))
+  return order.map((key) => ({ key, label: key, rows: map.get(key) ?? [] }))
+}
 
 function money(amount: number, currency: string): string {
   try {
@@ -43,7 +85,7 @@ function formatDay(day: string): string {
  */
 function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<PaymentReportRow[]>([])
   const [loading, setLoading] = useState(true)
   // A failed request used to fall through to the empty state, so an
@@ -51,6 +93,15 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+
+  function toggleGroupCollapsed(key: string) {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -110,6 +161,8 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
     const paidOut = rows.filter((r) => r.kind === "team").reduce((s, r) => s + r.amount, 0)
     return { currency, mixed, received, paidOut, net: received - paidOut }
   }, [rows])
+
+  const grouped = useMemo(() => groupPaymentRows(rows, groupBy), [rows, groupBy])
 
   useEffect(() => {
     const runPdfExport = () => {
@@ -243,45 +296,70 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}>
-                  <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {formatDay(r.paidOn)}
-                  </td>
-                  <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                    {r.invoiceNumber}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                        r.kind === "client" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"
-                      )}
-                    >
-                      {r.kind === "client" ? "Received" : "Paid out"}
-                    </span>
-                  </td>
-                  <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.kind === "client" ? r.clientName || "—" : r.memberName || "—"}
-                  </td>
-                  <td className={cn("px-4 py-3 text-sm capitalize", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.method}
-                  </td>
-                  <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.reference || "—"}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-4 py-3 text-right text-sm font-semibold tabular-nums",
-                      r.kind === "client" ? "text-emerald-600" : "text-red-500"
-                    )}
-                  >
-                    {money(r.amount, r.currency)}
-                  </td>
-                </tr>
+              {grouped.map((g) => (
+                <Fragment key={g.key}>
+                  <tr className={cn(isDark ? "bg-white/6" : "bg-slate-100")}>
+                    <td colSpan={7} className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapsed(g.key)}
+                        className={cn("flex w-full items-center gap-2 text-left text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}
+                      >
+                        <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                        <span>{groupBy === "date" ? formatDay(g.label) : g.label}</span>
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto h-4 w-4 transition-transform",
+                            isDark ? "text-white/40" : "text-slate-400",
+                            collapsedGroups.has(g.key) && "-rotate-90"
+                          )}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                  {!collapsedGroups.has(g.key)
+                    ? g.rows.map((r) => (
+                        <tr key={r.id} className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}>
+                          <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {formatDay(r.paidOn)}
+                          </td>
+                          <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                            {r.invoiceNumber}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                                r.kind === "client" ? "bg-emerald-50 text-emerald-600" : "bg-blue-50 text-blue-600"
+                              )}
+                            >
+                              {r.kind === "client" ? "Received" : "Paid out"}
+                            </span>
+                          </td>
+                          <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.kind === "client" ? r.clientName || "—" : r.memberName || "—"}
+                          </td>
+                          <td className={cn("px-4 py-3 text-sm capitalize", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.method}
+                          </td>
+                          <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.reference || "—"}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-right text-sm font-semibold tabular-nums",
+                              r.kind === "client" ? "text-emerald-600" : "text-red-500"
+                            )}
+                          >
+                            {money(r.amount, r.currency)}
+                          </td>
+                        </tr>
+                      ))
+                    : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -301,7 +379,9 @@ export function PaymentsReport({ onNavigate }: { onNavigate?: (id: string) => vo
       exportFileBaseName="payments"
       pageId="reports-payments"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={PAYMENTS_GROUP_BY_OPTIONS}
+      defaultGroupBy="date"
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

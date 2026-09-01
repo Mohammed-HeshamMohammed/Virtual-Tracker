@@ -43,6 +43,9 @@ export interface CreateProjectFormPayload {
   requireStopNote: boolean
   /** Lets this project's client run it, rather than only read it. */
   clientCanManage: boolean
+  /** Lets this project's client clock in on it, alongside its other
+   *  members - independent of clientCanManage. */
+  clientCanTrack: boolean
   disableIdleTime: boolean
   /** Total idle-time threshold in seconds (hours+minutes in the UI, stored as
    * seconds on the wire) - how long without activity before time on this
@@ -864,6 +867,7 @@ export async function updateProjectWithDetails(
       restrictTaskCreation: payload.restrictTaskCreation,
       requireStopNote: payload.requireStopNote,
       clientCanManage: payload.clientCanManage,
+      clientCanTrack: payload.clientCanTrack,
       subProjectIds: payload.subProjectIds,
       disableIdleTime: payload.disableIdleTime,
       idleTimeSeconds: payload.idleTimeSeconds,
@@ -932,6 +936,7 @@ export async function createProjectWithDetails(
     restrictTaskCreation: payload.restrictTaskCreation,
     requireStopNote: payload.requireStopNote,
     clientCanManage: payload.clientCanManage,
+    clientCanTrack: payload.clientCanTrack,
     subProjectIds: payload.subProjectIds,
     disableIdleTime: payload.disableIdleTime,
     idleTimeSeconds: payload.idleTimeSeconds,

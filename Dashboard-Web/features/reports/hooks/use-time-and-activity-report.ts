@@ -6,12 +6,15 @@ import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE, GROUP_BY_OPTIONS, TABLE_METRIC_C
 import { attachForwardWheelToDocument } from "@/features/reports/utils/time-and-activity"
 import {
   buildDisplayDay,
+  buildGroupedRows,
   columnVisibleInTable,
   comparePeriodRows,
+  filterEntries,
   getFilteredSubRows,
   getMemberFilterOptions,
   getMetricNumeric,
   getProjectFilterOptions,
+  groupByColumnLabel,
   type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
@@ -56,7 +59,7 @@ export type UseTimeAndActivityReportParams = TimeActivityReportData & {
   range?: { from: string; to: string }
 }
 
-export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAndActivityReportParams) {
+export function useTimeAndActivityReport({ days, memberRows, entries, range }: UseTimeAndActivityReportParams) {
   const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
@@ -205,11 +208,28 @@ export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAnd
     return filtered.map((d) => buildDisplayDay(d, memberFilter, memberRows, projectFilter, trackedTimeFilter))
   }, [memberFilter, projectFilter, trackedTimeFilter, days, memberRows])
 
+  // Every mode besides the default "Date per day" re-aggregates from
+  // `entries` (day+member+project granularity) instead of the day/member
+  // rows above, which can't be regrouped by project/client/team - see
+  // group-aggregate.ts's own doc comment on why. Falls back to the
+  // existing day-based rows (and getFilteredSubRows below) when `entries`
+  // is empty (an older cached view, or a demo/builder caller) so grouping
+  // degrades to "nothing to show" rather than throwing.
+  const groupedResult = useMemo(() => {
+    if (groupBy === "date_per_day") return null
+    const filtered = filterEntries(entries, memberFilter, projectFilter, trackedTimeFilter)
+    return buildGroupedRows(filtered, groupBy)
+  }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter])
+
+  const groupColumnLabel = groupByColumnLabel(groupBy)
+
+  const activeRows = groupedResult ? groupedResult.rows : displayRows
+
   const totals = useMemo(() => {
-    if (displayRows.length === 0) {
+    if (activeRows.length === 0) {
       return { time: "00:00:00", activity: 0, spent: "$0.00" }
     }
-    const secs = displayRows.reduce((acc, d) => {
+    const secs = activeRows.reduce((acc, d) => {
       const [h, m, s] = d.totalHours.split(":").map(Number)
       return acc + h * 3600 + m * 60 + s
     }, 0)
@@ -222,19 +242,19 @@ export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAnd
     // row-aggregate.ts already uses for this exact field (the chart's
     // total_spent series), so this can't drift from what the rest of the
     // report considers "spent" for a row.
-    const spentTotal = displayRows.reduce((a, d) => a + getMetricNumeric("total_spent", d), 0)
+    const spentTotal = activeRows.reduce((a, d) => a + getMetricNumeric("total_spent", d), 0)
     return {
       time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
-      activity: Math.round(displayRows.reduce((a, d) => a + d.activityPct, 0) / displayRows.length),
+      activity: Math.round(activeRows.reduce((a, d) => a + d.activityPct, 0) / activeRows.length),
       spent: `$${spentTotal.toFixed(2)}`,
     }
-  }, [displayRows])
+  }, [activeRows])
 
   const sortedDisplayRows = useMemo(() => {
-    const rows = [...displayRows]
+    const rows = [...activeRows]
     rows.sort((a, b) => comparePeriodRows(a, b, sortKey, sortDir))
     return rows
-  }, [displayRows, sortKey, sortDir])
+  }, [activeRows, sortKey, sortDir])
 
   const visibleMetricColumns = useMemo(
     () => TABLE_METRIC_COLUMNS.filter((c) => columnVisibleInTable(enabledPeriodCols, enabledMemberCols, c.key)),
@@ -335,7 +355,10 @@ export function useTimeAndActivityReport({ days, memberRows, range }: UseTimeAnd
     handleSortClick,
     pickerEnabledCols,
     getSubRowsForDay: (date: string) =>
-      getFilteredSubRows(date, memberFilter, memberRows, projectFilter, trackedTimeFilter),
+      groupedResult
+        ? (groupedResult.subRowsByKey[date] ?? [])
+        : getFilteredSubRows(date, memberFilter, memberRows, projectFilter, trackedTimeFilter),
+    groupColumnLabel,
     saveView,
     justSaved,
   }
