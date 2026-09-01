@@ -50,7 +50,7 @@ parking_lot = "0.12"
 dirs = "6"
 log = "0.4"
 env_logger = "0.11"
-rand = "0.8"
+rand = "0.10"
 # MAC-1/F1: one cross-platform credential store (Windows Credential Manager,
 # macOS Keychain, *nix Secret Service) behind a single Entry API. The `v1`
 # feature is what unlocks that API; it declares the platform-store crates as
