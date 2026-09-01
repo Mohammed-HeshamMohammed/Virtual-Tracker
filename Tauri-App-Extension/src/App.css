@@ -2941,6 +2941,154 @@ body {
   margin: 0;
 }
 
+/* Two fields side by side inside a modal (date + hours, from + to). Stacks
+   below 300px so a narrow window never clips the second one. */
+.modal-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 300px) {
+  .modal-field-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.modal-sub.warn {
+  color: rgb(var(--c-warn));
+}
+
+/* Native select inside a modal - .modal-input covers the text inputs, but a
+   <select> needs its own appearance reset or it renders as OS chrome against
+   the dark card, the same way the number spinner did. */
+select.modal-input {
+  height: 38px;
+  appearance: none;
+  -moz-appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 16px) 16px, calc(100% - 11px) 16px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+/* Date input: same reset reasoning - the picker indicator is OS-drawn and
+   renders near-black on the dark card without this. */
+.modal-input[type="date"] {
+  height: 38px;
+}
+
+.modal-input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* Screenshot self-view (Profile). */
+.shot-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.shot-chip {
+  padding: 5px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--outline-variant);
+  background: rgb(var(--c-overlay) / 0.04);
+  color: var(--on-surface-variant);
+  font: inherit;
+  font-size: 10.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.shot-chip:hover {
+  background: rgb(var(--c-primary) / 0.12);
+  color: rgb(var(--c-primary));
+}
+
+.shot-chip.active {
+  background: rgb(var(--c-primary) / 0.16);
+  border-color: rgb(var(--c-primary) / 0.4);
+  color: rgb(var(--c-primary));
+}
+
+.shot-preview {
+  margin-top: 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-low);
+}
+
+.shot-preview-img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot-preview-loading {
+  display: block;
+  width: 100%;
+  height: 160px;
+  border-radius: 0;
+}
+
+/* Task detail (main pane). */
+.task-detail-text {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--on-surface-variant);
+  white-space: pre-wrap;
+}
+
+.task-subtasks {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.task-subtask {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--on-surface);
+}
+
+.task-subtask.done {
+  color: var(--on-surface-faint);
+  text-decoration: line-through;
+}
+
+.task-subtask-box {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--outline-variant);
+  font-size: 9px;
+  line-height: 1;
+  color: rgb(var(--c-good));
+}
+
+.task-subtask.done .task-subtask-box {
+  border-color: rgb(var(--c-good) / 0.5);
+  background: rgb(var(--c-good) / 0.12);
+}
+
 /* ── Shared controls ────────────────────────────────────────────────────
    One icon-button definition replaces .page-refresh-btn, .settings-corner-btn
    and .settings-back-btn, which were the same 34-36px / radius-10 / 4%-fill

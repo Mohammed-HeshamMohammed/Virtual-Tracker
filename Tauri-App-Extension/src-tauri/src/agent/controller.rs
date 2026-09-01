@@ -774,6 +774,66 @@ impl AgentController {
         self.api.lock().fetch_agent_workspace().ok().flatten()
     }
 
+    /// Errors surface as their server message (Err(String)) rather than a
+    /// silent None - unlike the read-only panels above, these are writes the
+    /// user explicitly asked for and has to know the outcome of.
+    pub fn create_time_entry(
+        &self,
+        member_id: &str,
+        project_id: &str,
+        task_id: Option<&str>,
+        date: &str,
+        duration_seconds: i64,
+        description: &str,
+    ) -> Result<(), String> {
+        self.api
+            .lock()
+            .create_time_entry(member_id, project_id, task_id, date, duration_seconds, description)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn submit_timesheet(&self, period_start: &str, period_end: &str) -> Result<(), String> {
+        self.api
+            .lock()
+            .submit_timesheet(period_start, period_end)
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn request_time_off(
+        &self,
+        policy_id: &str,
+        start_date: &str,
+        end_date: &str,
+        note: &str,
+    ) -> Result<(), String> {
+        self.api
+            .lock()
+            .request_time_off(policy_id, start_date, end_date, note)
+            .map_err(|e| e.to_string())
+    }
+
+    /// Empty on any failure - the screenshots panel is a transparency
+    /// surface, not something worth surfacing an error banner for.
+    pub fn get_my_screenshots(&self, limit: u32) -> Vec<crate::types::ScreenshotRef> {
+        self.api.lock().fetch_my_screenshots(limit).unwrap_or_default()
+    }
+
+    /// Empty string when the image can't be loaded - the caller renders a
+    /// placeholder rather than a broken <img>.
+    pub fn get_screenshot_image(&self, screenshot_id: &str) -> String {
+        self.api
+            .lock()
+            .fetch_screenshot_image(screenshot_id)
+            .unwrap_or_default()
+    }
+
+    pub fn get_task_detail(&self, task_id: &str) -> Option<crate::types::TaskDetail> {
+        if task_id.trim().is_empty() {
+            return None;
+        }
+        self.api.lock().fetch_task_detail(task_id.trim()).ok()
+    }
+
     /// `None` covers a network/auth error the same as an older backend
     /// without this route yet - the sidebar widgets it feeds simply don't
     /// render rather than showing an error over what's an optional extra.

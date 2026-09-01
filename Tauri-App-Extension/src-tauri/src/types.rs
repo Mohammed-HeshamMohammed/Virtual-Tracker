@@ -357,6 +357,10 @@ pub struct MemberLimits {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeOffBalance {
+    /// What a time-off request is filed against - travels with the balance
+    /// so the request dialog needs no second fetch.
+    #[serde(default)]
+    pub policy_id: String,
     #[serde(default)]
     pub policy_name: String,
     #[serde(default)]
@@ -460,6 +464,60 @@ pub struct WorkspacePulse {
     pub members_worked_today_count: i64,
 }
 
+/// Server-decided permissions for controls the agent renders. Decided
+/// there, not from the agent's own copy of the role, so a spoofed local
+/// role cannot reveal a control.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceCapabilities {
+    /// Manager and above only.
+    #[serde(default)]
+    pub can_log_manual_time: bool,
+}
+
+/// One captured screenshot, without its bytes - the image is fetched one at
+/// a time via get_screenshot_image.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotRef {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub captured_at: Option<String>,
+}
+
+/// The task's own detail, for showing what you're actually meant to be doing
+/// while tracking it.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskDetail {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub priority: String,
+    #[serde(default)]
+    pub due_date: String,
+    #[serde(default)]
+    pub subtasks: Vec<TaskSubtask>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskSubtask {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub completed: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentWorkspace {
@@ -473,6 +531,8 @@ pub struct AgentWorkspace {
     pub approvals: Option<WorkspaceApprovals>,
     #[serde(default)]
     pub pulse: Option<WorkspacePulse>,
+    #[serde(default)]
+    pub capabilities: WorkspaceCapabilities,
 }
 
 /// Active vs idle seconds for a day - the ratio behind the activity meter.

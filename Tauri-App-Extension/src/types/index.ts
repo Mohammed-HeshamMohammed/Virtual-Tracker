@@ -222,6 +222,9 @@ export type TodayActivity = { activeSeconds: number; idleSeconds: number };
 // section by a spoofed local role).
 
 export type TimeOffBalance = {
+  /** What a request is filed against - travels with the balance so the
+   *  request dialog needs no second fetch. */
+  policyId: string;
   policyName: string;
   balanceDays: number;
   entitlementDays: number;
@@ -280,11 +283,44 @@ export type WorkspacePulse = {
   membersWorkedTodayCount: number;
 };
 
+/** Server-decided permissions for controls the agent renders. Decided there,
+ *  not from the agent's own copy of the role, so a spoofed local role cannot
+ *  reveal a control. */
+export type WorkspaceCapabilities = {
+  /** Manager and above only. */
+  canLogManualTime: boolean;
+};
+
 export type AgentWorkspace = {
   self: WorkspaceSelf;
   team: WorkspaceTeam | null;
   approvals: WorkspaceApprovals | null;
   pulse: WorkspacePulse | null;
+  capabilities: WorkspaceCapabilities;
+};
+
+/** One captured screenshot, without its bytes - the image is fetched one at
+ *  a time via get_screenshot_image, which returns a ready `data:` URL. */
+export type ScreenshotRef = {
+  id: string;
+  capturedAt: string | null;
+};
+
+export type TaskSubtask = {
+  id: string;
+  title: string;
+  completed: boolean;
+};
+
+/** The open task's own detail - what you're actually meant to be doing. */
+export type TaskDetail = {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  priority: string;
+  dueDate: string;
+  subtasks: TaskSubtask[];
 };
 
 // The viewer's own People-page member record - richer than what's in the

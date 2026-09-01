@@ -59,6 +59,10 @@ async function buildSelfSection(viewer, todayDay, weekStartDay) {
 
   return {
     timeOff: timeOffRows.map((row) => ({
+      // policyId is what a time-off request is filed against, so it has to
+      // travel with the balance the agent shows - otherwise the request
+      // dialog would have to re-fetch the policy list just to name one.
+      policyId: row.policyId,
       policyName: row.policyName,
       balanceDays: row.balanceDays,
       entitlementDays: row.entitlementDays,
@@ -198,5 +202,17 @@ export async function buildAgentWorkspace(db, viewer) {
     isOrgAdmin ? buildPulseSection(todayDay) : null,
   ]);
 
-  return { self, team, approvals, pulse };
+  return {
+    self,
+    team,
+    approvals,
+    pulse,
+    // Decided here rather than from the agent's own copy of the role, for
+    // the same reason the sections above are: the desktop app renders what
+    // it is told, so a spoofed local role must not be able to reveal a
+    // control. Manual time entry is Manager-and-above only (isManagementRole
+    // - the same helper Dashboard-Web's "Add time for someone" already gates
+    // on, so the two surfaces agree).
+    capabilities: { canLogManualTime: isManagement },
+  };
 }

@@ -1,4 +1,5 @@
-import type { AgentWorkspace, MemberLimits, MemberProfile, ProfileInfo } from "../../types";
+import type { AgentWorkspace, MemberLimits, MemberProfile, ProfileInfo, ScreenshotRef } from "../../types";
+import { ScreenshotsCard } from "./ScreenshotsCard";
 import { fmtHours, fmtLimitHours, initialsFromName } from "../../utils/formatters";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Icon } from "../common/Icon";
@@ -69,6 +70,13 @@ export function ProfilePanel({
   memberProfile,
   memberLimits,
   workspace,
+  screenshots,
+  screenshotImages,
+  selectedScreenshotId,
+  onSelectScreenshot,
+  onRequestTimeOff,
+  onSubmitTimesheet,
+  submittingTimesheet,
   onBack,
   onSignOut,
   signingOut,
@@ -79,6 +87,13 @@ export function ProfilePanel({
   /** null until loaded, or on a backend without the route - every section
    *  below is skipped rather than rendering an empty shell. */
   workspace: AgentWorkspace | null;
+  screenshots: ScreenshotRef[];
+  screenshotImages: Record<string, string>;
+  selectedScreenshotId: string | null;
+  onSelectScreenshot: (id: string) => void;
+  onRequestTimeOff: () => void;
+  onSubmitTimesheet: () => void;
+  submittingTimesheet: boolean;
   onBack: () => void;
   onSignOut: () => void;
   signingOut: boolean;
@@ -199,17 +214,27 @@ export function ProfilePanel({
             <h3 className="settings-section-label">Your standing</h3>
 
             {workspace.self.timeOff.length > 0 ? (
-              <div className="detail-rows">
-                {workspace.self.timeOff.map((policy) => (
-                  <div className="detail-row" key={policy.policyName}>
-                    <span className="detail-label">{policy.policyName}</span>
-                    <span className="detail-value">
-                      {fmtDays(policy.balanceDays)}
-                      {policy.entitlementDays > 0 ? ` of ${fmtDays(policy.entitlementDays)}` : ""}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <>
+                <div className="detail-rows">
+                  {workspace.self.timeOff.map((policy) => (
+                    <div className="detail-row" key={policy.policyId || policy.policyName}>
+                      <span className="detail-label">{policy.policyName}</span>
+                      <span className="detail-value">
+                        {fmtDays(policy.balanceDays)}
+                        {policy.entitlementDays > 0 ? ` of ${fmtDays(policy.entitlementDays)}` : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  className="btn btn-secondary"
+                  type="button"
+                  style={{ marginTop: 12 }}
+                  onClick={onRequestTimeOff}
+                >
+                  Request time off
+                </button>
+              </>
             ) : null}
 
             {workspace.self.timesheet ? (
@@ -229,6 +254,21 @@ export function ProfilePanel({
                   </span>
                 </div>
               </div>
+            ) : null}
+
+            {/* Only a draft is submittable - the server refuses an already
+                submitted or approved period, so offering the button there
+                would be offering a guaranteed error. */}
+            {workspace.self.timesheet && workspace.self.timesheet.status.toLowerCase() === "draft" ? (
+              <button
+                className="btn btn-primary"
+                type="button"
+                style={{ marginTop: 12 }}
+                disabled={submittingTimesheet}
+                onClick={onSubmitTimesheet}
+              >
+                {submittingTimesheet ? "Submitting…" : "Submit timesheet"}
+              </button>
             ) : null}
 
             {/* A rate of 0 means none is configured (or isn't visible to
@@ -256,6 +296,13 @@ export function ProfilePanel({
             ) : null}
           </section>
         ) : null}
+
+        <ScreenshotsCard
+          screenshots={screenshots}
+          images={screenshotImages}
+          selectedId={selectedScreenshotId}
+          onSelect={onSelectScreenshot}
+        />
 
         <button className="btn btn-danger" type="button" disabled={signingOut} onClick={onSignOut}>
           {signingOut ? "Signing out…" : "Log out"}

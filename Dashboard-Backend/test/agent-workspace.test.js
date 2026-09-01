@@ -230,11 +230,42 @@ test("an Employee never triggers the approvals or pulse queries at all", async (
 test("self carries time off, the latest timesheet (null when there is none) and earnings from the member's own rate", async () => {
   reset();
   const ws = await buildAgentWorkspace(null, EMPLOYEE);
-  assert.deepEqual(ws.self.timeOff, [{ policyName: "Annual leave", balanceDays: 12.5, entitlementDays: 20 }]);
+  // policyId travels with the balance so the request dialog can file
+  // against a policy without re-fetching the policy list.
+  assert.deepEqual(ws.self.timeOff, [
+    { policyId: "p1", policyName: "Annual leave", balanceDays: 12.5, entitlementDays: 20 },
+  ]);
   assert.equal(ws.self.timesheet, null, "no timesheet rows stubbed");
   assert.equal(ws.self.earnings.hourlyRate, 50);
   // 3600s = 1h at $50 for both the week and month stubs.
   assert.equal(ws.self.earnings.weekAmount, 50);
   assert.equal(ws.self.earnings.monthAmount, 50);
   assert.equal(ws.self.earnings.currency, "USD");
+});
+
+// Manual time entry is Manager-and-above only. The agent renders the control
+// purely from this flag, so it is the whole gate as far as that surface is
+// concerned - a role name spoofed locally must not be able to reveal it.
+test("canLogManualTime is true for Manager and every tier above", async () => {
+  for (const viewer of [MANAGER, SUPER_MANAGER, { memberId: "m9", roleName: "Admin" }, { memberId: "m8", roleName: "Owner" }]) {
+    reset();
+    const ws = await buildAgentWorkspace(null, viewer);
+    assert.equal(ws.capabilities.canLogManualTime, true, `${viewer.roleName} should be able to log manual time`);
+  }
+});
+
+test("canLogManualTime is false for every tier below Manager", async () => {
+  for (const viewer of [TEAM_LEAD, EMPLOYEE, INTERN, CLIENT]) {
+    reset();
+    const ws = await buildAgentWorkspace(null, viewer);
+    assert.equal(ws.capabilities.canLogManualTime, false, `${viewer.roleName} must not be able to log manual time`);
+  }
+});
+
+test("a Team Lead who leads a team still cannot log manual time - leading is not managing", async () => {
+  reset();
+  stub.ledTeamIds = new Set(["team-1"]);
+  const ws = await buildAgentWorkspace(null, TEAM_LEAD);
+  assert.ok(ws.team, "still gets the team panel");
+  assert.equal(ws.capabilities.canLogManualTime, false, "but not manual time entry");
 });

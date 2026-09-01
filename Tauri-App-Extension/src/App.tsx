@@ -11,6 +11,8 @@ import type {
   ActionResult,
   AgentTask,
   AgentWorkspace,
+  ScreenshotRef,
+  TaskDetail,
   AuthView,
   ConnectionState,
   CreateTaskResult,
@@ -47,6 +49,9 @@ import { SidebarActions } from "./components/sidebar/SidebarActions";
 import { SidebarFooter } from "./components/sidebar/SidebarFooter";
 import { StopNoteModal } from "./components/StopNoteModal";
 import { NewTaskModal } from "./components/NewTaskModal";
+import { LogTimeModal } from "./components/LogTimeModal";
+import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
+import { TaskDetailPanel } from "./components/stats/TaskDetailPanel";
 import { TitleBar } from "./components/common/TitleBar";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
@@ -150,6 +155,28 @@ function MainApp() {
   // null until loaded, or on a backend without the route - every panel it
   // feeds simply doesn't render in that case.
   const [workspace, setWorkspace] = useState<AgentWorkspace | null>(null);
+  // Manual time entry - only reachable when the server says so
+  // (workspace.capabilities.canLogManualTime, Manager and above).
+  const [logTimeOpen, setLogTimeOpen] = useState(false);
+  const [logTimeMemberId, setLogTimeMemberId] = useState("");
+  const [logTimeProjectId, setLogTimeProjectId] = useState("");
+  const [logTimeDate, setLogTimeDate] = useState("");
+  const [logTimeHours, setLogTimeHours] = useState("");
+  const [logTimeDescription, setLogTimeDescription] = useState("");
+  const [logTimeBusy, setLogTimeBusy] = useState(false);
+  const [logTimeError, setLogTimeError] = useState<string | null>(null);
+  const [timeOffOpen, setTimeOffOpen] = useState(false);
+  const [timeOffPolicyId, setTimeOffPolicyId] = useState("");
+  const [timeOffStart, setTimeOffStart] = useState("");
+  const [timeOffEnd, setTimeOffEnd] = useState("");
+  const [timeOffNote, setTimeOffNote] = useState("");
+  const [timeOffBusy, setTimeOffBusy] = useState(false);
+  const [timeOffError, setTimeOffError] = useState<string | null>(null);
+  const [submittingTimesheet, setSubmittingTimesheet] = useState(false);
+  const [screenshots, setScreenshots] = useState<ScreenshotRef[]>([]);
+  const [screenshotImages, setScreenshotImages] = useState<Record<string, string>>({});
+  const [selectedScreenshotId, setSelectedScreenshotId] = useState<string | null>(null);
+  const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
   // Which project's "+" row action opened the dialog - null closes it. Kept
@@ -551,6 +578,158 @@ function MainApp() {
   usePolling(view === "home" || view === "profile", 30000, refreshAssignedTasks);
   usePolling(view === "home" || view === "profile", 60000, refreshDashboardSummary);
   usePolling(view === "home" || view === "profile", 60000, refreshWorkspace);
+
+  // The open task's own detail. Only refetched when the task actually
+  // changes - unlike tracking numbers, a task's description and checklist
+  // don't move second to second, so this is not on any poll.
+  useEffect(() => {
+    if (!signedIn || !selectedTaskId) {
+      setTaskDetail(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<TaskDetail | null>("get_task_detail", { taskId: selectedTaskId })
+      .then((detail) => {
+        if (!cancelled) setTaskDetail(detail);
+      })
+      .catch(() => {
+        if (!cancelled) setTaskDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, selectedTaskId]);
+
+  // Screenshots are only rendered on the Profile view, so they're fetched
+  // when it opens rather than polled - the list is small and changes at the
+  // capture cadence, not the UI's.
+  useEffect(() => {
+    if (!signedIn || view !== "profile") return;
+    let cancelled = false;
+    void invoke<ScreenshotRef[]>("get_my_screenshots", { limit: 12 })
+      .then((shots) => {
+        if (!cancelled) setScreenshots(shots);
+      })
+      .catch(() => {
+        if (!cancelled) setScreenshots([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, view]);
+
+  // One image at a time, on click, cached by id - the list endpoint carries
+  // no bytes on purpose, and pulling a dozen full screenshots up front to
+  // show one would be wasteful.
+  const handleSelectScreenshot = useCallback(
+    (id: string) => {
+      setSelectedScreenshotId(id);
+      setScreenshotImages((current) => {
+        if (current[id]) return current;
+        void invoke<string>("get_screenshot_image", { screenshotId: id })
+          .then((dataUrl) => {
+            if (dataUrl) setScreenshotImages((prev) => ({ ...prev, [id]: dataUrl }));
+          })
+          .catch(() => {
+            /* Leaves the placeholder in place - see ScreenshotsCard. */
+          });
+        return current;
+      });
+    },
+    [],
+  );
+
+  function openLogTime() {
+    setLogTimeMemberId("");
+    setLogTimeProjectId(selectedProjectId || "");
+    setLogTimeDate(new Date().toISOString().slice(0, 10));
+    setLogTimeHours("");
+    setLogTimeDescription("");
+    setLogTimeError(null);
+    setLogTimeOpen(true);
+  }
+
+  const handleLogTime = async () => {
+    const hours = Number(logTimeHours);
+    if (!logTimeProjectId || !logTimeDate || !Number.isFinite(hours) || hours <= 0 || logTimeBusy) return;
+    setLogTimeBusy(true);
+    setLogTimeError(null);
+    try {
+      await invoke("create_time_entry", {
+        memberId: logTimeMemberId,
+        projectId: logTimeProjectId,
+        // The dialog collects a project and a duration, never a task - a
+        // task-anchored manual entry would need the task picker too, and the
+        // server treats task_id as optional.
+        taskId: null,
+        date: logTimeDate,
+        durationSeconds: Math.round(hours * 3600),
+        description: logTimeDescription.trim(),
+      });
+      setLogTimeOpen(false);
+      toast.success(`Logged ${fmtHours(Math.round(hours * 3600))}`);
+      // The entry counts toward the same caps the header reads, so refresh
+      // rather than letting them drift until the next poll.
+      await Promise.all([refreshMemberLimits(), refreshWorkspace()]);
+    } catch (err) {
+      setLogTimeError(err instanceof Error ? err.message : "Could not save the time entry");
+    } finally {
+      setLogTimeBusy(false);
+    }
+  };
+
+  function openTimeOff() {
+    const policies = workspace?.self.timeOff ?? [];
+    setTimeOffPolicyId(policies.length === 1 ? policies[0].policyId : "");
+    const today = new Date().toISOString().slice(0, 10);
+    setTimeOffStart(today);
+    setTimeOffEnd(today);
+    setTimeOffNote("");
+    setTimeOffError(null);
+    setTimeOffOpen(true);
+  }
+
+  const handleRequestTimeOff = async () => {
+    if (!timeOffPolicyId || !timeOffStart || !timeOffEnd || timeOffBusy) return;
+    setTimeOffBusy(true);
+    setTimeOffError(null);
+    try {
+      await invoke("request_time_off", {
+        policyId: timeOffPolicyId,
+        startDate: timeOffStart,
+        endDate: timeOffEnd,
+        note: timeOffNote.trim(),
+      });
+      setTimeOffOpen(false);
+      toast.success("Time-off request sent");
+      await refreshWorkspace();
+    } catch (err) {
+      setTimeOffError(err instanceof Error ? err.message : "Could not submit the request");
+    } finally {
+      setTimeOffBusy(false);
+    }
+  };
+
+  const handleSubmitTimesheet = async () => {
+    const sheet = workspace?.self.timesheet;
+    if (!sheet || submittingTimesheet) return;
+    setSubmittingTimesheet(true);
+    try {
+      await invoke("submit_timesheet", {
+        periodStart: sheet.periodStart,
+        periodEnd: sheet.periodEnd,
+      });
+      toast.success("Timesheet submitted");
+      await refreshWorkspace();
+    } catch (err) {
+      // The server refuses an already-submitted/approved period with a
+      // specific 409 message - worth showing verbatim rather than a generic
+      // failure, since it explains itself.
+      toast.error(err instanceof Error ? err.message : "Could not submit the timesheet");
+    } finally {
+      setSubmittingTimesheet(false);
+    }
+  };
 
   // The People-page member record (name, email, role) - fetched once per
   // sign-in, then re-pulled below whenever a scope-changed live-sync frame
@@ -1464,6 +1643,34 @@ function MainApp() {
     (dashboardSummary?.recentProjects ?? []).map((p) => [p.id, p.progress]),
   );
 
+  // The same payload is already ordered most-recently-touched first
+  // (general-dashboard-service.js sorts by updatedMs and takes the top 5) -
+  // only its `progress` was ever read, so the ordering signal was fetched
+  // every 60s and thrown away.
+  //
+  // Using it matters most for Owner/Admin/Super Admin, where
+  // getViewerProjectIds returns null and "Your projects" is therefore every
+  // project in the org: alphabetical order buries whatever they actually
+  // work on. Applied to everyone rather than branching on role - a short
+  // list fits on screen either way, so it costs nothing there.
+  const projectSortRank = useMemo(() => {
+    const rank = new Map<string, number>();
+    (dashboardSummary?.recentProjects ?? []).forEach((p, i) => rank.set(p.id, i));
+    return rank;
+  }, [dashboardSummary?.recentProjects]);
+
+  const orderedProjects = useMemo(() => {
+    const NOT_RECENT = Number.MAX_SAFE_INTEGER;
+    return [...projects].sort((a, b) => {
+      const ra = projectSortRank.get(a.id) ?? NOT_RECENT;
+      const rb = projectSortRank.get(b.id) ?? NOT_RECENT;
+      // Recent ones first in their own recency order, then everything else
+      // alphabetically - a stable, predictable tail rather than an arbitrary
+      // one that shuffles as the 60s poll lands.
+      return ra !== rb ? ra - rb : a.name.localeCompare(b.name);
+    });
+  }, [projects, projectSortRank]);
+
   // Every label/percent/dash-array the Today panel, the three stat tiles, the
   // sidebar's Weekly activity ring, and the This-task panel display - see
   // utils/homeStats.ts (pure, unit-tested) for the derivation of each.
@@ -1690,6 +1897,13 @@ function MainApp() {
           memberProfile={memberProfile}
           memberLimits={memberLimits}
           workspace={workspace}
+          screenshots={screenshots}
+          screenshotImages={screenshotImages}
+          selectedScreenshotId={selectedScreenshotId}
+          onSelectScreenshot={handleSelectScreenshot}
+          onRequestTimeOff={openTimeOff}
+          onSubmitTimesheet={() => void handleSubmitTimesheet()}
+          submittingTimesheet={submittingTimesheet}
           onBack={() => setView("home")}
           onSignOut={() => void handleSignOut()}
           signingOut={signingOut}
@@ -1735,7 +1949,7 @@ function MainApp() {
 
           <ProjectsList
             signedIn={signedIn}
-            projects={projects}
+            projects={orderedProjects}
             selectedProjectId={selectedProjectId}
             busy={busy}
             sessionOpen={sessionOpen}
@@ -1743,6 +1957,7 @@ function MainApp() {
             projectProgressById={projectProgressById}
             onSelectProject={jumpToProject}
             onCreateTask={handleOpenNewTask}
+            /* Recently-touched first - see orderedProjects above. */
           />
 
           <TasksList
@@ -1834,6 +2049,45 @@ function MainApp() {
             onStop={() => void handleStop(stopNoteDraft.trim())}
           />
 
+          <LogTimeModal
+            open={logTimeOpen}
+            projects={orderedProjects}
+            /* Only offered when the viewer actually leads a team - the
+               roster is the one set of members the agent already holds. */
+            teammates={workspace?.team?.members ?? []}
+            memberId={logTimeMemberId}
+            projectId={logTimeProjectId}
+            date={logTimeDate}
+            hours={logTimeHours}
+            description={logTimeDescription}
+            busy={logTimeBusy}
+            error={logTimeError}
+            onMemberIdChange={setLogTimeMemberId}
+            onProjectIdChange={setLogTimeProjectId}
+            onDateChange={setLogTimeDate}
+            onHoursChange={setLogTimeHours}
+            onDescriptionChange={setLogTimeDescription}
+            onCancel={() => setLogTimeOpen(false)}
+            onSave={() => void handleLogTime()}
+          />
+
+          <TimeOffRequestModal
+            open={timeOffOpen}
+            policies={workspace?.self.timeOff ?? []}
+            policyId={timeOffPolicyId}
+            startDate={timeOffStart}
+            endDate={timeOffEnd}
+            note={timeOffNote}
+            busy={timeOffBusy}
+            error={timeOffError}
+            onPolicyIdChange={setTimeOffPolicyId}
+            onStartDateChange={setTimeOffStart}
+            onEndDateChange={setTimeOffEnd}
+            onNoteChange={setTimeOffNote}
+            onCancel={() => setTimeOffOpen(false)}
+            onSubmit={() => void handleRequestTimeOff()}
+          />
+
           <NewTaskModal
             open={newTaskProject != null}
             projectName={newTaskProject?.name ?? ""}
@@ -1856,6 +2110,26 @@ function MainApp() {
                 <span className="page-eyebrow">Today</span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
+              {/* Manual time entry. Rendered purely from the server-decided
+                  capability (Manager and above) - the agent holds no role
+                  logic of its own for this, so a spoofed local role cannot
+                  reveal the control. */}
+              {workspace?.capabilities.canLogManualTime ? (
+                <button
+                  className="icon-btn"
+                  type="button"
+                  title="Log time that wasn't tracked"
+                  aria-label="Log time that wasn't tracked"
+                  onClick={openLogTime}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      fill="currentColor"
+                      d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm1-13h-2v6l5 3 1-1.73-4-2.37V7Z"
+                    />
+                  </svg>
+                </button>
+              ) : null}
               <button
                 className="icon-btn"
                 type="button"
@@ -1919,6 +2193,10 @@ function MainApp() {
                   taskScheduleLabel={taskScheduleLabel}
                   taskBudgetRemainingLabel={taskBudgetRemainingLabel}
                 />
+
+                {/* What the task actually asks for - renders nothing for a
+                    task-less session or a task with no detail. */}
+                {taskLessSession ? null : <TaskDetailPanel detail={taskDetail} />}
 
                 {idleStage > 0 ? (
                   <p className={`page-idle-banner stage-${idleStage}`}>

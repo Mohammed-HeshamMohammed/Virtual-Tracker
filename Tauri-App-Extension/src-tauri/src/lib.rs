@@ -305,6 +305,79 @@ async fn get_agent_workspace(
 }
 
 #[tauri::command]
+async fn create_time_entry(
+    state: tauri::State<'_, AppState>,
+    member_id: String,
+    project_id: String,
+    task_id: Option<String>,
+    date: String,
+    duration_seconds: i64,
+    description: String,
+) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || {
+        controller.create_time_entry(
+            &member_id,
+            &project_id,
+            task_id.as_deref(),
+            &date,
+            duration_seconds,
+            &description,
+        )
+    })
+    .await
+}
+
+#[tauri::command]
+async fn submit_timesheet(
+    state: tauri::State<'_, AppState>,
+    period_start: String,
+    period_end: String,
+) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.submit_timesheet(&period_start, &period_end)).await
+}
+
+#[tauri::command]
+async fn request_time_off(
+    state: tauri::State<'_, AppState>,
+    policy_id: String,
+    start_date: String,
+    end_date: String,
+    note: String,
+) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.request_time_off(&policy_id, &start_date, &end_date, &note)).await
+}
+
+#[tauri::command]
+async fn get_my_screenshots(
+    state: tauri::State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<crate::types::ScreenshotRef>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_my_screenshots(limit.unwrap_or(12))).await)
+}
+
+#[tauri::command]
+async fn get_screenshot_image(
+    state: tauri::State<'_, AppState>,
+    screenshot_id: String,
+) -> Result<String, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_screenshot_image(&screenshot_id)).await)
+}
+
+#[tauri::command]
+async fn get_task_detail(
+    state: tauri::State<'_, AppState>,
+    task_id: String,
+) -> Result<Option<crate::types::TaskDetail>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_task_detail(&task_id)).await)
+}
+
+#[tauri::command]
 async fn get_project_budget_status(
     state: tauri::State<'_, AppState>,
     project_id: String,
@@ -646,6 +719,12 @@ pub fn run() {
             get_task_time_tracking,
             get_member_limits,
             get_agent_workspace,
+            create_time_entry,
+            submit_timesheet,
+            request_time_off,
+            get_my_screenshots,
+            get_screenshot_image,
+            get_task_detail,
             get_project_budget_status,
             get_member_profile,
             get_dashboard_summary,

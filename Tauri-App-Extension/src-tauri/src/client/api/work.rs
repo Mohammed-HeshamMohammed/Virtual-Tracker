@@ -558,6 +558,231 @@ impl ApiClient {
             .map_err(|_| ApiError::Network)
     }
 
+    /// Logs time that was never tracked live. Gated to Manager-and-above by
+    /// the workspace `canLogManualTime` capability the UI reads - the server
+    /// separately enforces that entries for *other* members need a
+    /// management role (assertTimeEntryWriteAuthorized).
+    ///
+    /// start_time/end_time are sent as explicit nulls, not omitted and not
+    /// "": they are nullable TIME columns, and Postgres rejects '' for TIME.
+    pub fn create_time_entry(
+        &mut self,
+        member_id: &str,
+        project_id: &str,
+        task_id: Option<&str>,
+        date: &str,
+        duration_seconds: i64,
+        description: &str,
+    ) -> Result<(), ApiError> {
+        // Empty member_id means "me". Resolved here rather than plumbed
+        // through the UI, which has no reason to know its own member id -
+        // nothing else in the agent's frontend carries it.
+        let resolved_member = if member_id.trim().is_empty() {
+            self.fetch_viewer_member_id()
+                .ok_or_else(|| ApiError::Rejected("Could not resolve your member profile".into()))?
+        } else {
+            member_id.to_string()
+        };
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/time-entries", self.api_url);
+        let mut body = json!({
+            "member_id": resolved_member,
+            "project_id": project_id,
+            "date": date,
+            "duration": duration_seconds,
+            "description": description,
+            "billable": true,
+            "source": "manual",
+            "status": "pending",
+            "start_time": serde_json::Value::Null,
+            "end_time": serde_json::Value::Null,
+        });
+        if let Some(tid) = task_id.filter(|t| !t.trim().is_empty()) {
+            body["task_id"] = json!(tid);
+        }
+        self.post_expecting_ok(&auth, url, &body, "Could not save the time entry")
+    }
+
+    /// The viewer's own recent screenshots (ids + timestamps). Image bytes
+    /// come one at a time from fetch_screenshot_image.
+    pub fn fetch_my_screenshots(&mut self, limit: u32) -> Result<Vec<crate::types::ScreenshotRef>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/activity/my-screenshots?limit={}", self.api_url, limit);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let list = body.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        Ok(list
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect())
+    }
+
+    /// One screenshot as a `data:` URL. The endpoint already returns it in
+    /// that form, so the webview can render the string directly - it cannot
+    /// fetch the image itself, having no way to attach the auth header to an
+    /// <img src>.
+    pub fn fetch_screenshot_image(&mut self, screenshot_id: &str) -> Result<String, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!(
+            "{}/api/activity/screenshot/{}",
+            self.api_url,
+            urlencoding::encode(screenshot_id)
+        );
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        Ok(body
+            .pointer("/data/imageData")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string())
+    }
+
+    /// Submits the viewer's own timesheet for a period. The server refuses a
+    /// period already submitted or approved (409), which surfaces as the
+    /// message rather than a generic failure.
+    pub fn submit_timesheet(&mut self, period_start: &str, period_end: &str) -> Result<(), ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/timesheets/submit", self.api_url);
+        let body = json!({ "periodStart": period_start, "periodEnd": period_end });
+        self.post_expecting_ok(&auth, url, &body, "Could not submit the timesheet")
+    }
+
+    /// Files a time-off request for the viewer against one of their policies.
+    pub fn request_time_off(
+        &mut self,
+        policy_id: &str,
+        start_date: &str,
+        end_date: &str,
+        note: &str,
+    ) -> Result<(), ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/time-off/requests", self.api_url);
+        let body = json!({
+            "policyId": policy_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            "note": note,
+        });
+        self.post_expecting_ok(&auth, url, &body, "Could not submit the request")
+    }
+
+    /// One POST + "did it work, and if not what did the server say" - the
+    /// three write calls above differ only in URL and body, and each needs
+    /// the server's own message surfaced rather than a generic failure.
+    fn post_expecting_ok(
+        &self,
+        auth: &str,
+        url: String,
+        body: &Value,
+        fallback: &str,
+    ) -> Result<(), ApiError> {
+        let res = self
+            .client
+            .post(url)
+            .header("Authorization", auth)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if res.status().is_success() {
+            return Ok(());
+        }
+        let payload: Value = res.json().unwrap_or_else(|_| json!({}));
+        Err(ApiError::Rejected(
+            payload
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or(fallback)
+                .to_string(),
+        ))
+    }
+
+    /// The open task's own detail - description, priority, due date and
+    /// subtask checklist - so "what am I actually meant to be doing" is
+    /// answerable without opening the web app. Two calls because subtasks
+    /// are a child collection (/api/tasks/:id/subtasks), and a failure on
+    /// the child is non-fatal: the task detail is still worth showing
+    /// without its checklist.
+    pub fn fetch_task_detail(&mut self, task_id: &str) -> Result<crate::types::TaskDetail, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let encoded = urlencoding::encode(task_id).to_string();
+        let res = self
+            .client
+            .get(format!("{}/api/tasks/{}", self.api_url, encoded))
+            .header("Authorization", &auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let data = body.get("data").ok_or(ApiError::Network)?;
+        let text = |key: &str| -> String {
+            data.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+        };
+
+        let subtasks = self
+            .client
+            .get(format!("{}/api/tasks/{}/subtasks", self.api_url, encoded))
+            .header("Authorization", &auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .ok()
+            .filter(|r| r.status().is_success())
+            .and_then(|r| r.json::<Value>().ok())
+            .and_then(|b| b.get("data").and_then(|v| v.as_array()).cloned())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| crate::types::TaskSubtask {
+                id: row.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                title: row.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                completed: row.get("completed").and_then(|v| v.as_bool()).unwrap_or(false),
+            })
+            .collect();
+
+        Ok(crate::types::TaskDetail {
+            id: text("id"),
+            title: text("title"),
+            description: text("description"),
+            status: text("status"),
+            priority: text("priority"),
+            // Trimmed to the date - the column is a timestamp and the UI
+            // only ever shows the day.
+            due_date: data
+                .get("due_date")
+                .or_else(|| data.get("dueDate"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .chars()
+                .take(10)
+                .collect(),
+            subtasks,
+        })
+    }
+
     /// The viewer's own People-page member record, for the profile view.
     pub fn fetch_member_profile(&mut self) -> Result<crate::types::MemberProfile, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;

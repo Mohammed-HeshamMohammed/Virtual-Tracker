@@ -1,5 +1,6 @@
 import { assertManagementRole, canAccessMember } from "../../http/authorization.js";
 import { getAuthContext, isManagementRole, requireManagementRole } from "../../http/auth-context.js";
+import { isAdminLevelRole } from "../../http/role-hierarchy.js";
 import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import {
   assertProjectAccessible,
@@ -666,11 +667,26 @@ export async function routeProjects(req, res, url, db, origin) {
           // gate just works unchanged, with no client-specific branching
           // needed on that side at all.
           const clientTrackable = viewer ? await clientMayTrackProject(viewer, row.id) : false;
+          // Owner / Super Admin / Admin hit the same wall from the other
+          // direction: they can already start a timer on any task in any
+          // project (isProjectMemberForTimer short-circuits for them), but
+          // tasks are only ever assigned *to* people, and nobody assigns
+          // tasks to the owner - so on a normal require_task_to_track
+          // project they had no task to select and Start stayed disabled.
+          // Logging fifteen minutes meant inventing a task first. This
+          // removes that friction without widening which projects they may
+          // track, which was already "all of them".
+          //
+          // Deliberately isAdminLevelRole (owner/superadmin/admin) and not
+          // the wider ORG_PROJECT_TASK_ADMIN_ROLES: Super Manager sees every
+          // project for the same reason, but keeping the task requirement
+          // for that tier was an explicit product call.
+          const orgAdminTrackable = viewer ? isAdminLevelRole(viewer.roleName) : false;
           return {
             ...row,
             has_tasks: projectTypeDef(row.type).hasTasks,
             can_create_tasks: viewer ? await viewerCanCreateProjectTasks(db, viewer, row.id) : false,
-            ...(clientTrackable ? { require_task_to_track: false } : {}),
+            ...(clientTrackable || orgAdminTrackable ? { require_task_to_track: false } : {}),
           };
         }),
       );
