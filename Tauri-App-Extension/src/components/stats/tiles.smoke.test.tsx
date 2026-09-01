@@ -34,6 +34,7 @@ const memberLimits: MemberLimits = {
   workingToday: true,
   isMakeupDay: false,
   todayActivity: { activeSeconds: 100, idleSeconds: 20 },
+  projectTodayActivity: { activeSeconds: 100, idleSeconds: 20 },
 };
 
 const projectBudget: ProjectBudgetStatus = {

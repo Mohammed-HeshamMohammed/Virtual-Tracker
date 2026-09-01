@@ -13,12 +13,12 @@ type StopNoteModalProps = {
 export function StopNoteModal({ open, draft, busy, onDraftChange, onKeepTracking, onStop }: StopNoteModalProps) {
   if (!open) return null;
   return (
-    <div className="stop-note-backdrop">
-      <div className="stop-note-card" role="dialog" aria-modal="true" aria-label="What did you work on?">
-        <h3 className="stop-note-title">What did you work on?</h3>
-        <p className="stop-note-sub">This project asks for a short note before the timer stops.</p>
+    <div className="modal-backdrop">
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label="What did you work on?">
+        <h3 className="modal-title">What did you work on?</h3>
+        <p className="modal-sub">This project asks for a short note before the timer stops.</p>
         <textarea
-          className="stop-note-input"
+          className="modal-input"
           autoFocus
           rows={3}
           maxLength={1000}
@@ -26,7 +26,7 @@ export function StopNoteModal({ open, draft, busy, onDraftChange, onKeepTracking
           placeholder="e.g. Called 12 leads, 3 follow-ups booked"
           onChange={(e) => onDraftChange(e.target.value)}
         />
-        <div className="stop-note-actions">
+        <div className="modal-actions">
           <button className="btn btn-secondary" type="button" disabled={busy} onClick={onKeepTracking}>
             Keep tracking
           </button>

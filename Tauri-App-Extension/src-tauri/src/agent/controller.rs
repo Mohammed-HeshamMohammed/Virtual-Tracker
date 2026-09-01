@@ -728,6 +728,21 @@ impl AgentController {
         self.api.lock().fetch_assigned_tasks(project_id)
     }
 
+    /// project_id must be a task-based project the viewer can manage (see
+    /// ProjectInfo.can_create_tasks) - the server re-checks this regardless
+    /// of what the UI already gated on.
+    pub fn create_task(
+        &self,
+        project_id: &str,
+        title: &str,
+        estimate_hours: Option<f64>,
+    ) -> Result<crate::types::CreateTaskResult, String> {
+        self.api
+            .lock()
+            .create_task(project_id, title, estimate_hours)
+            .map_err(|e| e.to_string())
+    }
+
     pub fn get_session(&self) -> SessionInfo {
         let mut session = self.api.lock().current_session_info();
         // Idle state lives in the tracker, not the server - attach it to the
@@ -748,8 +763,15 @@ impl AgentController {
         self.api.lock().fetch_task_time_tracking(task_id.trim()).ok()
     }
 
-    pub fn get_member_limits(&self) -> Option<crate::types::MemberLimits> {
-        self.api.lock().fetch_member_limits().ok()
+    pub fn get_member_limits(&self, project_id: Option<&str>) -> Option<crate::types::MemberLimits> {
+        self.api.lock().fetch_member_limits(project_id).ok()
+    }
+
+    /// `None` covers a network/auth error the same as an older backend without
+    /// this route - the panels it feeds simply don't render, same convention
+    /// get_dashboard_summary already uses for its own optional payload.
+    pub fn get_agent_workspace(&self) -> Option<crate::types::AgentWorkspace> {
+        self.api.lock().fetch_agent_workspace().ok().flatten()
     }
 
     /// `None` covers a network/auth error the same as an older backend

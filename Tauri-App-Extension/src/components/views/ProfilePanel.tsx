@@ -1,7 +1,39 @@
-import type { MemberLimits, MemberProfile, ProfileInfo } from "../../types";
+import type { AgentWorkspace, MemberLimits, MemberProfile, ProfileInfo } from "../../types";
 import { fmtHours, fmtLimitHours, initialsFromName } from "../../utils/formatters";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Icon } from "../common/Icon";
+
+/** Timesheet states read as states, same as the role/status badges above. */
+function timesheetTone(status: string): string {
+  const key = status.toLowerCase();
+  if (key === "approved") return "good";
+  if (key === "rejected") return "bad";
+  if (key === "submitted") return "warn";
+  return "neutral";
+}
+
+function timesheetLabel(status: string): string {
+  const key = status.toLowerCase();
+  if (key === "submitted") return "Awaiting approval";
+  return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Draft";
+}
+
+/** `days` carries fractions (a half-day of leave is 0.5) - trimmed so a
+ *  whole number doesn't render as "12.0 days". */
+function fmtDays(days: number): string {
+  const rounded = Math.round(days * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} day${rounded === 1 ? "" : "s"}`;
+}
+
+function fmtMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
+  } catch {
+    // An unrecognized currency code would otherwise throw and take the whole
+    // panel with it - the number still reads fine with the code beside it.
+    return `${amount.toFixed(2)} ${currency}`;
+  }
+}
 
 /** A cap read as a ratio, matching how the stats pane reads every ceiling. */
 function LimitCard({
@@ -36,6 +68,7 @@ export function ProfilePanel({
   profile,
   memberProfile,
   memberLimits,
+  workspace,
   onBack,
   onSignOut,
   signingOut,
@@ -43,6 +76,9 @@ export function ProfilePanel({
   profile: ProfileInfo | null;
   memberProfile: MemberProfile | null;
   memberLimits: MemberLimits | null;
+  /** null until loaded, or on a backend without the route - every section
+   *  below is skipped rather than rendering an empty shell. */
+  workspace: AgentWorkspace | null;
   onBack: () => void;
   onSignOut: () => void;
   signingOut: boolean;
@@ -148,6 +184,78 @@ export function ProfilePanel({
             <p className="settings-row-sub">Loading…</p>
           )}
         </section>
+
+        {/* Time off, timesheet and earnings all answer "where do I stand",
+            which is the same question the limits card above answers for
+            hours - so they live together rather than as a fourth view. Each
+            block is skipped entirely when the org doesn't use that feature
+            (no policies, no timesheet yet, no pay rate), so this section
+            simply doesn't appear for a workspace that has none of them. */}
+        {workspace &&
+        (workspace.self.timeOff.length > 0 ||
+          workspace.self.timesheet ||
+          workspace.self.earnings.hourlyRate > 0) ? (
+          <section className="settings-card">
+            <h3 className="settings-section-label">Your standing</h3>
+
+            {workspace.self.timeOff.length > 0 ? (
+              <div className="detail-rows">
+                {workspace.self.timeOff.map((policy) => (
+                  <div className="detail-row" key={policy.policyName}>
+                    <span className="detail-label">{policy.policyName}</span>
+                    <span className="detail-value">
+                      {fmtDays(policy.balanceDays)}
+                      {policy.entitlementDays > 0 ? ` of ${fmtDays(policy.entitlementDays)}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {workspace.self.timesheet ? (
+              <div className="detail-rows">
+                <div className="detail-row">
+                  <span className="detail-label">Latest timesheet</span>
+                  <span className="detail-value">
+                    <span className={`badge ${timesheetTone(workspace.self.timesheet.status)}`}>
+                      {timesheetLabel(workspace.self.timesheet.status)}
+                    </span>
+                  </span>
+                </div>
+                <div className="detail-row">
+                  <span className="detail-label">Period</span>
+                  <span className="detail-value">
+                    {workspace.self.timesheet.periodStart} — {workspace.self.timesheet.periodEnd}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* A rate of 0 means none is configured (or isn't visible to
+                this viewer) - showing "$0.00 earned" would read as a fact
+                rather than an absence. */}
+            {workspace.self.earnings.hourlyRate > 0 ? (
+              <div className="profile-limit-grid">
+                <div className="profile-limit">
+                  <span className="stat-tile-label">Earned this week</span>
+                  <div className="stat-tile-value-row">
+                    <span className="stat-tile-value">
+                      {fmtMoney(workspace.self.earnings.weekAmount, workspace.self.earnings.currency)}
+                    </span>
+                  </div>
+                </div>
+                <div className="profile-limit">
+                  <span className="stat-tile-label">Earned this month</span>
+                  <div className="stat-tile-value-row">
+                    <span className="stat-tile-value">
+                      {fmtMoney(workspace.self.earnings.monthAmount, workspace.self.earnings.currency)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <button className="btn btn-danger" type="button" disabled={signingOut} onClick={onSignOut}>
           {signingOut ? "Signing out…" : "Log out"}

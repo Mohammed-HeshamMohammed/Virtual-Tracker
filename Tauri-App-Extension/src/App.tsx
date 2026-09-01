@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -10,8 +10,10 @@ import type {
   ThemePreference,
   ActionResult,
   AgentTask,
+  AgentWorkspace,
   AuthView,
   ConnectionState,
+  CreateTaskResult,
   DashboardSummary,
   ForgotState,
   LinkStatus,
@@ -28,7 +30,7 @@ import type {
   SignUpState,
   TaskTimeTracking,
 } from "./types";
-import { fmtClock } from "./utils/formatters";
+import { fmtClock, fmtHours } from "./utils/formatters";
 import { computeHomeStats } from "./utils/homeStats";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
@@ -37,19 +39,30 @@ import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
 import { AssignedTile } from "./components/stats/AssignedTile";
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
 import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
+import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
+import { ManagementCard } from "./components/sidebar/ManagementCard";
 import { ProjectsList } from "./components/sidebar/ProjectsList";
 import { TasksList } from "./components/sidebar/TasksList";
 import { SidebarActions } from "./components/sidebar/SidebarActions";
 import { SidebarFooter } from "./components/sidebar/SidebarFooter";
 import { StopNoteModal } from "./components/StopNoteModal";
+import { NewTaskModal } from "./components/NewTaskModal";
 import { TitleBar } from "./components/common/TitleBar";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
+import { notify } from "./utils/notify";
 import { SettingsPanel } from "./components/views/SettingsPanel";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
 import { SignInPanel } from "./components/views/SignInPanel";
+
+/** Below this, a stop isn't a day worth recapping - see handleStop. */
+const RECAP_MIN_SECONDS = 5 * 60;
+
+/** How long the connection has to stay down before it's worth interrupting
+ *  someone about. A blip shorter than this heals before anyone could act. */
+const OFFLINE_NOTICE_DELAY_MS = 30_000;
 
 // ponytail: hand-rolled rAF countdown, ~15 lines. Dashboard-Web has
 // @number-flow/react for this, but it is not a dependency of the agent and
@@ -115,7 +128,6 @@ function MainApp() {
   const [version, setVersion] = useState("0.4.0");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [tasks, setTasks] = useState<AgentTask[]>([]);
   const [selectedTaskId, setSelectedTaskId] = useState("");
   // Every open task assigned to the member, across every project - not
   // scoped to whichever project happens to be picked (that's `tasks`
@@ -123,12 +135,31 @@ function MainApp() {
   // sidebar's own "what else is on my plate" view.
   const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
   const [assignedTasksFailed, setAssignedTasksFailed] = useState(false);
+  // "Has the first pass finished", not "did it return anything" - these gate
+  // the main pane's skeleton so it never flashes an empty state at someone
+  // whose data is still in flight. Both stay true afterwards: later polls
+  // refresh in place, and re-skeletoning a populated pane every 30s would be
+  // worse than the stale second it replaces.
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [assignedTasksLoaded, setAssignedTasksLoaded] = useState(false);
   // The web dashboard's own "Weekly trends" + "Recent projects" widgets,
   // reused rather than reinvented - null on an older backend without the
   // route yet, in which case those two sidebar cards just don't render.
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  // Per-role extras (own standing, plus team/approvals/pulse when entitled).
+  // null until loaded, or on a backend without the route - every panel it
+  // feeds simply doesn't render in that case.
+  const [workspace, setWorkspace] = useState<AgentWorkspace | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
+  // Which project's "+" row action opened the dialog - null closes it. Kept
+  // as the whole ProjectInfo (not just an id) so the dialog can show the
+  // project's name without a lookup back into `projects`.
+  const [newTaskProject, setNewTaskProject] = useState<ProjectInfo | null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskEstimateHours, setNewTaskEstimateHours] = useState("");
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [newTaskError, setNewTaskError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [paused, setPaused] = useState(false);
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
@@ -269,6 +300,11 @@ function MainApp() {
     } catch {
       setProjects([]);
       setProjectsFailed(true);
+    } finally {
+      // Marks the first pass done whether it succeeded or failed - the
+      // skeleton is for "still loading", not "loaded nothing", and a failed
+      // fetch has its own error state to show.
+      setProjectsLoaded(true);
     }
   }, [signedIn]);
 
@@ -284,9 +320,11 @@ function MainApp() {
     } catch {
       setAssignedTasks([]);
       // Without this, "Could not resolve your member profile" and a genuine
-      // empty backlog both rendered as the same green "Nothing open assigned
-      // to you" - a hard failure reported as an all-clear.
+      // empty backlog both rendered as the same "Nothing assigned" state -
+      // a hard failure reported as an all-clear.
       setAssignedTasksFailed(true);
+    } finally {
+      setAssignedTasksLoaded(true);
     }
   }, [signedIn]);
 
@@ -306,6 +344,22 @@ function MainApp() {
     }
   }, [signedIn]);
 
+  // Time off, timesheet, earnings, and - per role, decided server-side -
+  // team status, pending approvals and the org pulse, in one call. Same 60s
+  // cadence as the dashboard summary above: none of it changes faster than
+  // that, and it's four sections' worth of work per request.
+  const refreshWorkspace = useCallback(async () => {
+    if (!signedIn) {
+      setWorkspace(null);
+      return;
+    }
+    try {
+      setWorkspace(await invoke<AgentWorkspace | null>("get_agent_workspace"));
+    } catch {
+      setWorkspace(null);
+    }
+  }, [signedIn]);
+
   const selectedProject = projects.find((p) => p.id === selectedProjectId) ?? null;
   // "This project has no task list", not "this project is type X" - the
   // server decides which types those are, so a new one needs no agent change.
@@ -319,42 +373,42 @@ function MainApp() {
   // project type, since none of them have a task to work with either way.
   const taskLessSession = isCallingProject || (!taskRequired && !selectedTaskId);
 
-  const refreshTasks = useCallback(async () => {
-    if (!signedIn || !selectedProjectId || isCallingProject) {
-      setTasks([]);
-      setSelectedTaskId("");
-      return;
-    }
-    try {
-      const rawTasks = await invoke<AgentTask[]>("list_tasks", {
-        projectId: selectedProjectId,
-      });
+  // Derived, not fetched. list_tasks(projectId) and list_tasks(null) are the
+  // same server query (GET /api/tasks?assigned_to=me) with and without a
+  // project filter, so this project's tasks are exactly the subset of
+  // assignedTasks already in hand - re-fetching them was a network round trip
+  // that returned rows the app was holding the whole time, and it was what
+  // made switching projects visibly pause. Deriving makes the switch
+  // instant, and the existing 30s poll + live-sync refresh of assignedTasks
+  // keeps every project's list warm rather than only the open one.
+  //
+  // No per-task limit pre-check here (nor in the fetch this replaced) - that
+  // used to fire one get_task_time_tracking call per task just to hide
+  // over-budget ones. The real gate lives downstream: refreshTaskTracking
+  // polls the *selected* task every 5s and handleStart refuses an over-limit
+  // task from that same data, which is more honest than hiding it.
+  const tasks = useMemo(
+    () =>
+      !signedIn || !selectedProjectId || isCallingProject
+        ? []
+        : assignedTasks.filter((task) => task.projectId === selectedProjectId),
+    [signedIn, selectedProjectId, isCallingProject, assignedTasks],
+  );
 
-      // No per-task limit pre-check here anymore - that used to fire one
-      // get_task_time_tracking call per task just to hide over-budget ones
-      // from the picker (N+1 network round-trips on every project switch).
-      // The actual gate already lives downstream: refreshTaskTracking polls
-      // the *selected* task's tracking every 5s, and handleStart / the Start
-      // button both already refuse an over-limit task using that same data
-      // (see taskTracking?.limitReached below). Showing the task here and
-      // explaining why it can't start is more honest than silently hiding it.
-      setTasks(rawTasks);
-      setSelectedTaskId((current) => {
-        if (current && rawTasks.some((t) => t.id === current)) return current;
-        return rawTasks[0]?.id || "";
-      });
-    } catch {
-      setTasks([]);
-      setSelectedTaskId("");
-    }
-  }, [signedIn, selectedProjectId, isCallingProject]);
+  // Keeps the selection valid as `tasks` changes (project switch, or a poll
+  // that removed the open task) without clearing a still-valid choice.
+  useEffect(() => {
+    setSelectedTaskId((current) => {
+      if (current && tasks.some((t) => t.id === current)) return current;
+      return tasks[0]?.id || "";
+    });
+  }, [tasks]);
 
   const handleManualRefresh = async () => {
     if (refreshingData) return;
     setRefreshingData(true);
     try {
-      await Promise.all([refresh(), refreshProjects()]);
-      await refreshTasks();
+      await Promise.all([refresh(), refreshProjects(), refreshAssignedTasks()]);
     } catch (err) {
       console.error("manual refresh failed", err);
       toast.error("Couldn't refresh — check your connection.");
@@ -429,10 +483,6 @@ function MainApp() {
     void refreshProjects().catch(console.error);
   }, [refreshProjects, signedIn]);
 
-  useEffect(() => {
-    void refreshTasks().catch(console.error);
-  }, [refreshTasks]);
-
   const refreshTaskTracking = useCallback(async () => {
     if (!selectedTaskId) {
       setTaskTracking(null);
@@ -457,11 +507,15 @@ function MainApp() {
   const refreshMemberLimits = useCallback(async () => {
     if (!signedIn) return;
     try {
-      setMemberLimits(await invoke<MemberLimits | null>("get_member_limits"));
+      setMemberLimits(
+        await invoke<MemberLimits | null>("get_member_limits", {
+          projectId: selectedProjectId || null,
+        }),
+      );
     } catch {
       setMemberLimits(null);
     }
-  }, [signedIn]);
+  }, [signedIn, selectedProjectId]);
 
   usePolling(view === "home" || view === "profile", 5000, refreshMemberLimits);
 
@@ -496,42 +550,97 @@ function MainApp() {
   usePolling(view === "home" || view === "profile", 30000, refreshProjects);
   usePolling(view === "home" || view === "profile", 30000, refreshAssignedTasks);
   usePolling(view === "home" || view === "profile", 60000, refreshDashboardSummary);
+  usePolling(view === "home" || view === "profile", 60000, refreshWorkspace);
+
+  // The People-page member record (name, email, role) - fetched once per
+  // sign-in, then re-pulled below whenever a scope-changed live-sync frame
+  // says something about this member's own access changed (role edited on
+  // the web, hierarchy move, ...). No polling: role edits are rare enough
+  // that the live-sync push is the only trigger it needs.
+  const refreshMemberProfile = useCallback(async () => {
+    if (!signedIn) {
+      setMemberProfile(null);
+      return;
+    }
+    try {
+      setMemberProfile(await invoke<MemberProfile | null>("get_member_profile"));
+    } catch {
+      setMemberProfile(null);
+    }
+  }, [signedIn]);
+
+  useEffect(() => {
+    void refreshMemberProfile();
+  }, [refreshMemberProfile]);
 
   // P10 (PLAN-livesyncandagenttimer.md, case 45/46b) - the 5s polls above stay
   // as the fallback for whenever the live-sync WebSocket (Rust side:
   // agent/live_sync.rs) is down; this just shrinks the gap to sub-second when
-  // it's up. Only task-assignments/tasks changes and scope changes matter
-  // here - a manager assigning a new task, logging time from another device,
-  // or reaching a limit are exactly the events "Assigned today" and the
-  // running task-limit timer need to react to without waiting on the poll.
+  // it's up, but ONLY for whichever piece of state that specific frame could
+  // plausibly have touched - a broadcastToAll frame (index.js's
+  // subscribeChanges(() => broadcastToAll(...))) reaches every signed-in
+  // client for every org-wide write, so calling all six refreshers on all of
+  // them turned one save anywhere into a refetch storm here. The frame
+  // itself already carries resource/id/action (change-bus.js's
+  // publishChange), so this routes on those instead of re-fetching
+  // everything and hoping something changed:
+  //
+  //  - "tasks" (a task's own row: title, estimate, status, ...) - only
+  //    refreshAssignedTasks reads task rows now; the current project's own
+  //    list is derived from it (see `tasks` above), so one refetch updates
+  //    both. refreshTaskTracking only if the changed task is the one open.
+  //  - "task-assignments" (who's on a task) - assignedToday demand
+  //    (refreshMemberLimits) and the assigned-to-me list are what actually
+  //    read that table; same open-task-only rule for refreshTaskTracking.
+  //  - scope-changed reason "role" - only the profile record carries role
+  //    text (see compat/routes.js's sendToMember(..., { reason: "role" })
+  //    on the member-update path).
+  //  - scope-changed reason "project-access" - only the project list
+  //    (visibility/budget-exhausted flags) reads that.
+  //  - any other scope-changed reason (e.g. "hierarchy") - workload figures
+  //    are the one thing a hierarchy move could plausibly shift; kept as a
+  //    conservative catch-all rather than a guess at every possible cause.
   useEffect(() => {
     const onLiveChanged = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail;
       if (!detail || typeof detail !== "object") return;
-      const frame = detail as { type?: unknown; resource?: unknown };
-      const isRelevantChange =
-        frame.type === "changed" && (frame.resource === "task-assignments" || frame.resource === "tasks");
-      const isScopeChanged = frame.type === "scope-changed";
-      if (!isRelevantChange && !isScopeChanged) return;
-      void refreshTaskTracking();
-      void refreshMemberLimits();
-      void refreshProjectBudget();
-      void refreshAssignedTasks();
+      const frame = detail as { type?: unknown; resource?: unknown; reason?: unknown; id?: unknown };
+      const touchesOpenTask = typeof frame.id === "string" && frame.id === selectedTaskId;
+
+      if (frame.type === "changed" && frame.resource === "tasks") {
+        void refreshAssignedTasks();
+        if (touchesOpenTask) void refreshTaskTracking();
+        return;
+      }
+      if (frame.type === "changed" && frame.resource === "task-assignments") {
+        void refreshAssignedTasks();
+        void refreshMemberLimits();
+        if (touchesOpenTask) void refreshTaskTracking();
+        return;
+      }
+      if (frame.type === "scope-changed") {
+        const reason = typeof frame.reason === "string" ? frame.reason : "";
+        if (reason === "role") {
+          void refreshMemberProfile();
+        } else if (reason === "project-access") {
+          void refreshProjects();
+        } else {
+          void refreshMemberLimits();
+          void refreshProjectBudget();
+        }
+      }
     };
     window.addEventListener("vt-live-changed", onLiveChanged);
     return () => window.removeEventListener("vt-live-changed", onLiveChanged);
-  }, [refreshTaskTracking, refreshMemberLimits, refreshProjectBudget, refreshAssignedTasks]);
-
-  // The People-page member record never changes while the app is open - one
-  // fetch per sign-in, no polling. Used to wait for the profile view to open,
-  // but the footer identity card now shows the same email and role, so it
-  // needs the record as soon as the sidebar itself is on screen.
-  useEffect(() => {
-    if (!signedIn) return;
-    invoke<MemberProfile | null>("get_member_profile")
-      .then(setMemberProfile)
-      .catch(() => setMemberProfile(null));
-  }, [signedIn]);
+  }, [
+    selectedTaskId,
+    refreshTaskTracking,
+    refreshMemberLimits,
+    refreshProjectBudget,
+    refreshAssignedTasks,
+    refreshProjects,
+    refreshMemberProfile,
+  ]);
 
   // Re-sync from the last server snapshot, then tick locally so the clock is
   // smooth between 5s polls instead of jumping.
@@ -609,25 +718,111 @@ function MainApp() {
 
   // Idle-stage toasts, fired once per transition into a higher stage - the
   // in-page banner (below, in the render body) already explains the current
-  // stage, but a toast is what actually gets noticed since the agent mostly
-  // runs in the tray. Stage 3 (stopped) is announced by the banner text and
-  // by the rewind animation above; no extra toast needed there.
+  // stage, and the toast used to be considered enough on its own on the
+  // (wrong) assumption someone would see it - the agent mostly runs
+  // minimized to the tray, where neither the toast nor the banner is ever
+  // on screen. notify() is the one that actually reaches someone there.
+  // Stage 3 (stopped, idle time removed) gets its own native notification
+  // even though it never had a toast - it's the stage with a real
+  // consequence (lost time), so it's the last one that should go unnoticed
+  // just because the window was hidden.
   const prevIdleStageRef = useRef(0);
   useEffect(() => {
     const stage = session?.idleStage ?? 0;
     const prevStage = prevIdleStageRef.current;
     if (stage === 1 && prevStage < 1) {
-      toast.warning("You look idle — the timer will stop in 10 minutes if there's no activity.");
+      const msg = "You look idle — the timer will stop in 10 minutes if there's no activity.";
+      toast.warning(msg);
+      void notify("You look idle", msg);
     } else if (stage === 2 && prevStage < 2) {
-      toast.warning("Still idle — the timer stops in 5 minutes and this idle time will be removed.");
+      const msg = "Still idle — the timer stops in 5 minutes and this idle time will be removed.";
+      toast.warning(msg);
+      void notify("Still idle", msg);
     } else if (stage === 3 && prevStage < 3) {
       idleRewindFromRef.current = liveWorkedTodaySeconds;
+      void notify(
+        "Timer stopped",
+        "Stopped after 15 minutes idle. The idle time was removed from your hours.",
+      );
     }
     prevIdleStageRef.current = stage;
     // liveWorkedTodaySeconds is read at the moment of the transition only -
     // it must not retrigger this effect on every tick.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.idleStage]);
+
+  // Connection lost/restored - the in-page reconnect banner (rendered below)
+  // is invisible while minimized to the tray, and a lost connection means
+  // time is only being counted locally until it resolves.
+  //
+  // Held for a grace period rather than fired on the transition: a blip that
+  // heals in a few seconds resolves itself, and announcing it (then
+  // immediately announcing the recovery) produced the back-to-back
+  // lost/restored pair with nothing for anyone to do in between. The effect's
+  // own cleanup cancels the pending notice when the connection changes
+  // again, so a blip shorter than the grace period says nothing at all.
+  //
+  // "Restored" is gated on having actually announced the loss - otherwise a
+  // recovery from a blip nobody was told about announces itself out of
+  // nowhere.
+  const offlineNoticeSentRef = useRef(false);
+  useEffect(() => {
+    if (connection === "disconnected") {
+      const timer = window.setTimeout(() => {
+        offlineNoticeSentRef.current = true;
+        void notify("Connection lost", "Time is still being counted locally. Reconnecting…");
+      }, OFFLINE_NOTICE_DELAY_MS);
+      return () => window.clearTimeout(timer);
+    }
+    if (connection === "connected" && offlineNoticeSentRef.current) {
+      offlineNoticeSentRef.current = false;
+      void notify("Connection restored", "Back online — your time is syncing again.");
+    }
+  }, [connection]);
+
+  // "Forgot to start tracking" - the idle-stage notifications above catch
+  // forgetting to stop; nothing caught the opposite, more common mistake of
+  // settling into work and never hitting Start at all, which leaves nothing
+  // tracked to even notice later. Fires once per stretch of "should be
+  // working, nothing open" - resets the moment a session opens, so it can
+  // only ever nag about the gap that's actually still open right now.
+  const neverStartedSinceRef = useRef<number | null>(null);
+  const neverStartedNotifiedRef = useRef(false);
+  useEffect(() => {
+    const shouldBeTracking = signedIn && Boolean(memberLimits?.workingToday) && !sessionOpen;
+    if (!shouldBeTracking) {
+      neverStartedSinceRef.current = null;
+      neverStartedNotifiedRef.current = false;
+      return;
+    }
+    if (neverStartedSinceRef.current == null) {
+      neverStartedSinceRef.current = Date.now();
+    }
+    const timer = window.setInterval(() => {
+      const since = neverStartedSinceRef.current;
+      if (neverStartedNotifiedRef.current || since == null) return;
+      if (Date.now() - since >= 20 * 60_000) {
+        neverStartedNotifiedRef.current = true;
+        void notify("Still working?", "You haven't started tracking yet today.");
+      }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [signedIn, memberLimits?.workingToday, sessionOpen]);
+
+  // Long-unbroken-session nudge - a pacing/wellness signal, not a limit.
+  // liveActiveSeconds already excludes paused/idle time by construction (see
+  // its own sync effect above), so this only ever measures genuinely
+  // continuous active work, not wall-clock time with breaks folded in.
+  // Fires once per session (keyed on session?.id, not just `tracking`, so
+  // stop-then-restart on the same task still gets its own fresh countdown).
+  const longSessionNotifiedForRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!tracking || liveActiveSeconds < 2 * 3600) return;
+    const sessionKey = session?.id ?? null;
+    if (longSessionNotifiedForRef.current === sessionKey) return;
+    longSessionNotifiedForRef.current = sessionKey;
+    void notify("Still going?", "You've been tracking for 2 hours straight — consider a short break.");
+  }, [tracking, liveActiveSeconds, session?.id]);
 
   useEffect(() => {
     void checkForUpdate();
@@ -806,7 +1001,7 @@ function MainApp() {
         toast.success("Reconnected");
         await refresh();
         await refreshProjects();
-        await refreshTasks();
+        await refreshAssignedTasks();
       } else {
         setNeedsRelink(result.needsRelink);
         setReconnectMessage(result.error ?? "Could not reconnect.");
@@ -942,7 +1137,11 @@ function MainApp() {
     }
   };
 
-  const handleStop = async (stopNote?: string) => {
+  // silent skips the "Today: X tracked" recap notification - only for
+  // stopForTaskLimit below, which already sends its own "Task limit
+  // reached" notification for the same stop; a manual Stop click (the only
+  // other caller) always wants the recap.
+  const handleStop = async (stopNote?: string, silent = false) => {
     setBusy(true);
     setActionError(null);
     try {
@@ -963,6 +1162,23 @@ function MainApp() {
       setPaused(false);
       setStopNoteOpen(false);
       setStopNoteDraft("");
+      // A recap is worth interrupting someone for only once there's a day
+      // worth recapping - stopping a two-second session and being told
+      // "Today: 2s tracked" is noise, not a summary. Below the threshold the
+      // in-app toast above still confirms the stop.
+      if (!silent && liveWorkedTodaySeconds >= RECAP_MIN_SECONDS) {
+        // todayActivity (member-wide, every project) rather than the main
+        // pane's own activityToday, which is scoped to whichever project
+        // was just stopped - a day's-end recap should cover the whole day.
+        const dayActivity = memberLimits?.todayActivity;
+        const dayActivitySeconds = dayActivity ? dayActivity.activeSeconds + dayActivity.idleSeconds : 0;
+        const activityPct =
+          dayActivitySeconds > 0 ? Math.round((dayActivity!.activeSeconds / dayActivitySeconds) * 100) : null;
+        void notify(
+          "Tracking stopped",
+          `Today: ${fmtHours(liveWorkedTodaySeconds)} tracked${activityPct != null ? `, ${activityPct}% active` : ""}.`,
+        );
+      }
       await refresh();
     } catch {
       const msg = "Could not stop session";
@@ -984,6 +1200,66 @@ function MainApp() {
       return;
     }
     void handleStop();
+  };
+
+  // "+ New task" from a ProjectsList row - see side-task-row-add. Only
+  // rendered there when project.canCreateTasks is already true, but the
+  // server re-checks regardless (viewerCanCreateProjectTasks), so a 403 here
+  // is still a real, expected outcome (e.g. the viewer's own project-manager
+  // role was revoked between page load and this click).
+  const handleOpenNewTask = (project: ProjectInfo) => {
+    setNewTaskProject(project);
+    setNewTaskTitle("");
+    setNewTaskEstimateHours("");
+    setNewTaskError(null);
+  };
+
+  const handleCancelNewTask = () => {
+    if (creatingTask) return;
+    setNewTaskProject(null);
+  };
+
+  const handleCreateTask = async () => {
+    const project = newTaskProject;
+    const title = newTaskTitle.trim();
+    if (!project || !title || creatingTask) return;
+    // Blank stays blank (no estimate at all, same as skipping it on the
+    // web) - a non-numeric or non-positive entry is treated the same way
+    // rather than blocking creation over a field that was always optional.
+    const parsedEstimate = Number(newTaskEstimateHours);
+    const estimateHours =
+      newTaskEstimateHours.trim() && Number.isFinite(parsedEstimate) && parsedEstimate > 0
+        ? parsedEstimate
+        : null;
+    setCreatingTask(true);
+    setNewTaskError(null);
+    try {
+      const result = await invoke<CreateTaskResult>("create_task", {
+        projectId: project.id,
+        title,
+        estimateHours,
+      });
+      setNewTaskProject(null);
+      setNewTaskTitle("");
+      setNewTaskEstimateHours("");
+      // The task exists either way (create_task only throws if the create
+      // step itself failed) - self-assignment is a separate, stricter gate
+      // (see CreateTaskResult's own doc comment), so a false here isn't an
+      // error, just a reason the new task won't show up in "Your tasks" on
+      // its own yet.
+      if (result.selfAssigned) {
+        toast.success(`"${result.task.title}" created`);
+        jumpToAssignedTask(result.task);
+      } else {
+        toast.message(`"${result.task.title}" created — ask a manager to assign it to you to start tracking it.`);
+      }
+      await refreshAssignedTasks();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not create the task";
+      setNewTaskError(msg);
+    } finally {
+      setCreatingTask(false);
+    }
   };
 
   // Break, not stop - the backend keeps the session's accumulated totals
@@ -1049,8 +1325,10 @@ function MainApp() {
   const stopForTaskLimit = (message?: string | null) => {
     if (limitStopTriggeredRef.current || !tracking) return;
     limitStopTriggeredRef.current = true;
-    toast.warning(message || "Task limit reached — timer stopped. Your time is saved.");
-    void handleStop();
+    const msg = message || "Task limit reached — timer stopped. Your time is saved.";
+    toast.warning(msg);
+    void notify("Task limit reached", msg);
+    void handleStop(undefined, true);
   };
 
   // P7 - server-confirmed stop. Catches time logged against the same task
@@ -1134,6 +1412,25 @@ function MainApp() {
   const trackingLabel = taskLessSession
     ? selectedProject?.name ?? ""
     : selectedTask?.title ?? "";
+
+  // Keeps the tray menu's status/Pause/Resume/Stop items in sync, on the
+  // same cadence as the 5s session poll (session/paused/tracking above) -
+  // no second poller on the Rust side (see TrayStatusItems's own doc
+  // comment). session?.activeSeconds rather than the ticking
+  // liveActiveSeconds, so this doesn't fire an IPC call every second.
+  useEffect(() => {
+    void invoke("set_tray_status", {
+      label: sessionOpen
+        ? `${trackingLabel || "Tracking"} — ${fmtHours(session?.activeSeconds ?? 0)}`
+        : "Not tracking",
+      tracking,
+      paused,
+      sessionOpen,
+    }).catch(() => {
+      /* Tray may not exist yet (early startup) or at all (Linux) - the
+         command itself already no-ops there; nothing to recover from here. */
+    });
+  }, [sessionOpen, tracking, paused, trackingLabel, session?.activeSeconds]);
 
   // For the sidebar's cross-project task list - it only has a projectId per
   // row, never a project name of its own.
@@ -1392,6 +1689,7 @@ function MainApp() {
           profile={profile}
           memberProfile={memberProfile}
           memberLimits={memberLimits}
+          workspace={workspace}
           onBack={() => setView("home")}
           onSignOut={() => void handleSignOut()}
           signingOut={signingOut}
@@ -1400,39 +1698,39 @@ function MainApp() {
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">
         {/* Everything above Start tracking can genuinely outgrow 680px -
-            two 3-row lists plus the weekly ring plus the hero card is more
-            content than a fixed-height window can always show at once.
-            This region scrolls on its own so the primary action and the
-            footer below never do - they're always on screen. */}
+            two 3-row lists plus the weekly ring is more content than a
+            fixed-height window can always show at once. This region scrolls
+            on its own so the primary action and the footer below never do -
+            they're always on screen. */}
         <div className="side-panel-scroll">
-          {/* Identity moved to the footer bar, which now carries the avatar,
-              the name and the live status - it was duplicated here and there.
-              What is left is the one thing that isn't repeated anywhere: what
-              is happening right now. */}
-          <section className="hero-card">
-            <div className={`signal${tracking ? " live" : ""}`}>
-              <p className="signal-text">
-                {loadingProfile
-                  ? "Checking your session…"
-                  : paused
-                    ? "On a break — time is counting as idle"
-                    : tracking
-                      ? trackingLabel || "Tracking"
-                      : signedIn
-                        ? !taskRequired
-                          ? "Start when you're ready"
-                          : "Select a task and start when you're ready"
-                        : "Sign in to link this PC to your account"}
-              </p>
-            </div>
-          </section>
-
+          {/* The hero "signal" card that used to open this column is gone: a
+              tall card whose whole job was restating status that's already on
+              screen twice - the main pane's own title and clock label carry
+              the task name and tracking/break state, and the footer's status
+              dot carries tracking/paused/offline. Its remaining branches were
+              instructions ("Select a task and start when you're ready") that
+              cost more vertical space in a 680px window than they were worth,
+              and a signed-out line that could never render at all, since
+              !signedIn on the home view returns SignInPanel long before
+              this. */}
           <WeeklyActivityCard
             signedIn={signedIn}
             dashboardSummary={dashboardSummary}
             weekActivityDash={weekActivityDash}
             weekActiveSeconds={weekActiveSeconds}
             weekIdleSeconds={weekIdleSeconds}
+          />
+
+          {/* Both render only when the backend actually sent their section -
+              a lead gets the team roster, a management role gets the
+              approvals queue, an org admin also gets the pulse. Entitlement
+              is decided server-side (workspace.service.js), never here. */}
+          <TeamStatusCard team={workspace?.team ?? null} />
+
+          <ManagementCard
+            approvals={workspace?.approvals ?? null}
+            pulse={workspace?.pulse ?? null}
+            onOpenDashboard={() => void invoke("open_web_app")}
           />
 
           <ProjectsList
@@ -1444,6 +1742,7 @@ function MainApp() {
             openTaskCountByProject={openTaskCountByProject}
             projectProgressById={projectProgressById}
             onSelectProject={jumpToProject}
+            onCreateTask={handleOpenNewTask}
           />
 
           <TasksList
@@ -1535,6 +1834,19 @@ function MainApp() {
             onStop={() => void handleStop(stopNoteDraft.trim())}
           />
 
+          <NewTaskModal
+            open={newTaskProject != null}
+            projectName={newTaskProject?.name ?? ""}
+            title={newTaskTitle}
+            estimateHours={newTaskEstimateHours}
+            busy={creatingTask}
+            error={newTaskError}
+            onTitleChange={setNewTaskTitle}
+            onEstimateHoursChange={setNewTaskEstimateHours}
+            onCancel={handleCancelNewTask}
+            onCreate={() => void handleCreateTask()}
+          />
+
         </aside>
 
         {signedIn ? (
@@ -1624,6 +1936,21 @@ function MainApp() {
                   </p>
                 ) : null}
               </>
+            ) : !projectsLoaded || !assignedTasksLoaded ? (
+              /* Still loading, not empty. Without this the pane rendered
+                 "No task selected" the moment it mounted - before the app
+                 had any idea whether a project or task existed - which read
+                 as a real answer rather than as a pending one. Shaped like
+                 the layout it precedes, so nothing jumps when data lands. */
+              <div className="page-skeleton page-content-swap" aria-hidden="true">
+                <span className="skeleton-bar skeleton-bar-clock" />
+                <span className="skeleton-bar skeleton-bar-panel" />
+                <div className="page-skeleton-row">
+                  <span className="skeleton-bar" />
+                  <span className="skeleton-bar" />
+                  <span className="skeleton-bar" />
+                </div>
+              </div>
             ) : (
               <div className="page-empty page-content-swap">
                 <span className="page-empty-title">No task selected</span>

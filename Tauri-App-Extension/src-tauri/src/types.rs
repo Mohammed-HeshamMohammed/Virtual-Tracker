@@ -101,6 +101,20 @@ pub struct AgentTask {
     pub project_id: String,
 }
 
+/// create_task's result: the new task, plus whether the create call also
+/// managed to self-assign it (POST /api/task-assignments). Self-assign is
+/// gated separately server-side (org-wide management role, not just a
+/// per-project "manager" role - see MANAGEMENT_WRITE_KEYS in
+/// schema/routes.js), so it can fail even when creating the task itself
+/// succeeded. When it does, the task exists but won't show up in "Your
+/// tasks" (assigned_to-filtered) until someone else assigns it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateTaskResult {
+    pub task: AgentTask,
+    pub self_assigned: bool,
+}
+
 /// Whether the agent can actually reach the backend, as distinct from merely
 /// holding a token. `Disconnected` is the state that shows the recovery view.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -151,6 +165,15 @@ pub struct ProjectInfo {
     /// visible: explaining why it can't start beats hiding it.
     #[serde(default)]
     pub budget_exhausted: bool,
+    /// Server-derived from viewerCanCreateProjectTasks (org admin, or this
+    /// member's own project_role = "manager" on this project) - gates the
+    /// "+ New task" row action so it only appears where the create call
+    /// would actually succeed, instead of every viewer seeing an affordance
+    /// that 403s for everyone but managers. Defaults false so an older
+    /// backend without this field simply hides the button rather than
+    /// showing one that always fails.
+    #[serde(default)]
+    pub can_create_tasks: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -315,6 +338,141 @@ pub struct MemberLimits {
     /// "nothing tracked yet" and hides.
     #[serde(default)]
     pub today_activity: TodayActivity,
+    /// Same split as today_activity, scoped to the project the caller asked
+    /// about (get_member_limits' project_id argument) instead of every
+    /// project - `None` when no project was asked about, or on an older
+    /// backend without this field. Feeds the main pane's Activity ring
+    /// ("current project"), separate from the sidebar's person-wide ring.
+    #[serde(default)]
+    pub project_today_activity: Option<TodayActivity>,
+}
+
+// ── Agent workspace (GET /api/activity/workspace) ──────────────────────────
+// Everything the agent shows beyond the timer itself, resolved per-role
+// server-side. Every section but `own` is Option: the backend omits (nulls)
+// whichever the viewer isn't entitled to, so the UI renders what arrived and
+// carries no role logic of its own.
+
+/// One time-off policy's standing for this member.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimeOffBalance {
+    #[serde(default)]
+    pub policy_name: String,
+    #[serde(default)]
+    pub balance_days: f64,
+    #[serde(default)]
+    pub entitlement_days: f64,
+}
+
+/// The member's most recent timesheet, whatever state it's in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimesheetStatus {
+    #[serde(default)]
+    pub period_start: String,
+    #[serde(default)]
+    pub period_end: String,
+    /// draft | submitted | approved | rejected (the timesheets CHECK set).
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub total_hours: f64,
+}
+
+/// Tracked-time earnings at the member's own rate. `hourly_rate` of 0 means
+/// no rate is configured (or the viewer may not see it) - the UI hides the
+/// card rather than showing an authoritative-looking zero.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EarningsSummary {
+    #[serde(default)]
+    pub currency: String,
+    #[serde(default)]
+    pub hourly_rate: f64,
+    #[serde(default)]
+    pub week_amount: f64,
+    #[serde(default)]
+    pub month_amount: f64,
+}
+
+/// The viewer's own standing - present for every role that can sign in.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSelf {
+    #[serde(default)]
+    pub time_off: Vec<TimeOffBalance>,
+    #[serde(default)]
+    pub timesheet: Option<TimesheetStatus>,
+    #[serde(default)]
+    pub earnings: EarningsSummary,
+}
+
+/// One member of a team the viewer leads.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamMemberStatus {
+    #[serde(default)]
+    pub member_id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub tracking_now: bool,
+    #[serde(default)]
+    pub on_break: bool,
+    #[serde(default)]
+    pub active_seconds_today: i64,
+}
+
+/// Present only for a viewer flagged `is_lead` on at least one team.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceTeam {
+    #[serde(default)]
+    pub team_count: i64,
+    #[serde(default)]
+    pub members: Vec<TeamMemberStatus>,
+    #[serde(default)]
+    pub tracking_now_count: i64,
+    #[serde(default)]
+    pub not_started_count: i64,
+    #[serde(default)]
+    pub total_active_seconds_today: i64,
+}
+
+/// Present only for a management role.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceApprovals {
+    #[serde(default)]
+    pub pending_count: i64,
+}
+
+/// Present only for an org-admin role (Super Manager and up).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePulse {
+    #[serde(default)]
+    pub total_active_seconds_today: i64,
+    #[serde(default)]
+    pub tracking_now_count: i64,
+    #[serde(default)]
+    pub members_worked_today_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentWorkspace {
+    /// Named `own` because `self` is a Rust keyword - the wire field really
+    /// is "self", which the serde rename below restores on both sides.
+    #[serde(rename = "self", default)]
+    pub own: WorkspaceSelf,
+    #[serde(default)]
+    pub team: Option<WorkspaceTeam>,
+    #[serde(default)]
+    pub approvals: Option<WorkspaceApprovals>,
+    #[serde(default)]
+    pub pulse: Option<WorkspacePulse>,
 }
 
 /// Active vs idle seconds for a day - the ratio behind the activity meter.

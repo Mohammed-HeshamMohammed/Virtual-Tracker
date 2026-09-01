@@ -21,6 +21,7 @@ const baseMemberLimits: MemberLimits = {
   workingToday: true,
   isMakeupDay: false,
   todayActivity: { activeSeconds: 0, idleSeconds: 0 },
+  projectTodayActivity: null,
 };
 
 const emptyInput = {
@@ -124,20 +125,35 @@ describe("computeHomeStats - daily cap", () => {
   });
 });
 
-describe("computeHomeStats - activity ring", () => {
+describe("computeHomeStats - activity ring (current project)", () => {
   it("is null (no ring) when nothing has been tracked at all", () => {
     const stats = computeHomeStats({
       ...emptyInput,
-      memberLimits: { ...baseMemberLimits, todayActivity: { activeSeconds: 0, idleSeconds: 0 } },
+      memberLimits: { ...baseMemberLimits, projectTodayActivity: { activeSeconds: 0, idleSeconds: 0 } },
     });
     expect(stats.activityPercent).toBeNull();
     expect(stats.activityDash).toBe(0);
   });
 
-  it("rounds active/(active+idle) to a whole percent and draws a proportional dash", () => {
+  it("is null (no ring) when no project is selected, even with a member-wide total", () => {
     const stats = computeHomeStats({
       ...emptyInput,
-      memberLimits: { ...baseMemberLimits, todayActivity: { activeSeconds: 30, idleSeconds: 10 } },
+      memberLimits: { ...baseMemberLimits, todayActivity: { activeSeconds: 30, idleSeconds: 10 }, projectTodayActivity: null },
+    });
+    expect(stats.activityPercent).toBeNull();
+    expect(stats.activityDash).toBe(0);
+  });
+
+  it("rounds active/(active+idle) to a whole percent and draws a proportional dash, from the current project's own split", () => {
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits: {
+        ...baseMemberLimits,
+        // Member-wide total left deliberately different, to prove the ring
+        // reads projectTodayActivity and not todayActivity.
+        todayActivity: { activeSeconds: 999, idleSeconds: 999 },
+        projectTodayActivity: { activeSeconds: 30, idleSeconds: 10 },
+      },
     });
     expect(stats.activityPercent).toBe(75);
     expect(stats.activityLabel).toBe("75%");

@@ -76,7 +76,14 @@ export function computeHomeStats({
   // the agent never showed - so the number someone is judged by was only
   // visible by opening the web app. Idle time is what the 5/10/15-minute
   // banners below warn about while it accrues; this is the running total.
-  const activityToday = memberLimits?.todayActivity;
+  //
+  // Scoped to the current project (projectTodayActivity), not the member's
+  // whole day (todayActivity) - the sidebar's Weekly activity ring already
+  // covers "this person, every project"; this tile is the one that answers
+  // "how am I doing on what I'm looking at right now". No project selected
+  // (or an older backend without the field) reads as nothing tracked yet,
+  // same as before.
+  const activityToday = memberLimits?.projectTodayActivity ?? undefined;
   const activityTrackedSeconds = activityToday
     ? activityToday.activeSeconds + activityToday.idleSeconds
     : 0;

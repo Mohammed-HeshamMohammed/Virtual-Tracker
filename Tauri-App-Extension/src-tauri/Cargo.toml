@@ -30,6 +30,8 @@ tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
 # "deep-link" feature: forwards the URL a second OS-spawned instance was
 # launched with (Windows/Linux custom-scheme launch) to the deep-link
 # plugin's on_open_url listener below, instead of only the raw argv this

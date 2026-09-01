@@ -18,7 +18,7 @@ use tauri::{AppHandle, Manager, WindowEvent};
 // don't exist in the dependency graph at all when building for Linux.
 #[cfg(not(target_os = "linux"))]
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 use tauri_plugin_autostart::MacosLauncher;
@@ -36,6 +36,24 @@ use crate::types::{
 struct AppState {
     controller: Arc<AgentController>,
 }
+
+/// Handles to the tray menu's live-status items, so set_tray_status (called
+/// from the frontend's own existing 5s session poll - see App.tsx's
+/// refresh() - can update them in place instead of rebuilding the whole
+/// menu on a second, independent timer that would double the
+/// GET /api/activity/session traffic the frontend already generates.
+/// `None` until the tray is actually built in .setup() below, and always
+/// `None` on Linux (no tray icon at all there - see the Cargo.toml comment).
+#[cfg(not(target_os = "linux"))]
+struct TrayStatusItems {
+    status: MenuItem<tauri::Wry>,
+    pause: MenuItem<tauri::Wry>,
+    resume: MenuItem<tauri::Wry>,
+    stop: MenuItem<tauri::Wry>,
+}
+
+#[cfg(not(target_os = "linux"))]
+type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
 
 // Commands that touch the network are declared `#[tauri::command(async)]`.
 // A plain `#[tauri::command]` on a non-async fn runs on the main thread, so a
@@ -157,6 +175,33 @@ fn get_status(state: tauri::State<'_, AppState>) -> String {
     state.controller.status()
 }
 
+/// Pushed from the frontend's own existing 5s session poll (App.tsx's
+/// refresh()) rather than driven by a second poller here - see
+/// TrayStatusItems's own doc comment for why. A no-op before the tray
+/// finishes building (brief startup window) or on Linux (no tray at all).
+/// Stays synchronous: MenuItem::set_text/set_enabled are main-thread UI
+/// calls, not network I/O - nothing here needs run_blocking.
+#[tauri::command]
+#[cfg(not(target_os = "linux"))]
+fn set_tray_status(
+    state: tauri::State<'_, TrayStatusState>,
+    label: String,
+    tracking: bool,
+    paused: bool,
+    session_open: bool,
+) {
+    let guard = state.lock().unwrap();
+    let Some(items) = guard.as_ref() else { return };
+    let _ = items.status.set_text(&label);
+    let _ = items.pause.set_enabled(tracking);
+    let _ = items.resume.set_enabled(paused);
+    let _ = items.stop.set_enabled(session_open);
+}
+
+#[tauri::command]
+#[cfg(target_os = "linux")]
+fn set_tray_status(_label: String, _tracking: bool, _paused: bool, _session_open: bool) {}
+
 #[tauri::command]
 fn get_version() -> String {
     APP_VERSION.to_string()
@@ -217,6 +262,17 @@ async fn list_tasks(
 }
 
 #[tauri::command]
+async fn create_task(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+    title: String,
+    estimate_hours: Option<f64>,
+) -> Result<crate::types::CreateTaskResult, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.create_task(&project_id, &title, estimate_hours)).await
+}
+
+#[tauri::command]
 async fn get_session(state: tauri::State<'_, AppState>) -> Result<SessionInfo, String> {
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.get_session()).await)
@@ -232,9 +288,20 @@ async fn get_task_time_tracking(
 }
 
 #[tauri::command]
-async fn get_member_limits(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MemberLimits>, String> {
+async fn get_member_limits(
+    state: tauri::State<'_, AppState>,
+    project_id: Option<String>,
+) -> Result<Option<crate::types::MemberLimits>, String> {
     let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_member_limits()).await)
+    Ok(run_blocking(move || controller.get_member_limits(project_id.as_deref())).await)
+}
+
+#[tauri::command]
+async fn get_agent_workspace(
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<crate::types::AgentWorkspace>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_agent_workspace()).await)
 }
 
 #[tauri::command]
@@ -446,6 +513,39 @@ fn notify_hidden_to_tray_once(controller: &Arc<AgentController>) {
     show_tray_hidden_notice();
 }
 
+/// CommandOrControl+Shift+P - Pause/Resume toggle. Named functions (not
+/// constants) because `Shortcut` isn't `const`-constructible; called once at
+/// plugin-build time and once at registration time in .setup(), so the two
+/// call sites can never drift out of sync with each other.
+fn pause_resume_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    tauri_plugin_global_shortcut::Shortcut::new(
+        Some(tauri_plugin_global_shortcut::Modifiers::SHIFT | tauri_plugin_global_shortcut::Modifiers::CONTROL),
+        tauri_plugin_global_shortcut::Code::KeyP,
+    )
+}
+
+/// CommandOrControl+Shift+X - Stop.
+fn stop_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    tauri_plugin_global_shortcut::Shortcut::new(
+        Some(tauri_plugin_global_shortcut::Modifiers::SHIFT | tauri_plugin_global_shortcut::Modifiers::CONTROL),
+        tauri_plugin_global_shortcut::Code::KeyX,
+    )
+}
+
+/// The one thing that confirms a global shortcut actually landed - it fires
+/// while some other app is focused by definition, so there's no toast/tray
+/// label on screen to notice otherwise. Best-effort: a notification failure
+/// here must never surface as if the action itself failed.
+fn notify_shortcut_action(app: &AppHandle, action: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let _ = app
+        .notification()
+        .builder()
+        .title("Virtual Tracker")
+        .body(format!("{action} tracking"))
+        .show();
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
@@ -466,6 +566,9 @@ pub fn run() {
 
     // Taken before `.setup()` moves `controller` wholesale into its closure.
     let exit_controller = Arc::clone(&controller);
+    // Same reason: the global-shortcut handler below is registered as part
+    // of the plugin chain, before `.setup()` runs.
+    let shortcut_controller = Arc::clone(&controller);
 
     tauri::Builder::default()
         // Must be registered first: a second launch hits this instead of running
@@ -484,6 +587,38 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
+        // System-wide, so Pause/Resume/Stop work while some other app is
+        // focused - the tray menu (set_tray_status et al.) needs a click to
+        // even see, this needs neither. Deliberately no "Start" shortcut:
+        // starting a specific task/project is a choice the webview's own
+        // state has to make (see TrayStatusItems's doc comment for the same
+        // limitation on the tray side) - a global hotkey has nothing to
+        // pick from.
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(move |app, shortcut, event| {
+                    if event.state() != tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        return;
+                    }
+                    if shortcut == &pause_resume_shortcut() {
+                        let (action, result) = if shortcut_controller.is_session_paused() {
+                            ("Resumed", shortcut_controller.resume_session())
+                        } else {
+                            ("Paused", shortcut_controller.pause_session())
+                        };
+                        if result.success {
+                            notify_shortcut_action(app, action);
+                        }
+                    } else if shortcut == &stop_shortcut() {
+                        let result = shortcut_controller.stop_session(None);
+                        if result.success {
+                            notify_shortcut_action(app, "Stopped");
+                        }
+                    }
+                })
+                .build(),
+        )
         .manage(AppState {
             controller: Arc::clone(&controller),
         })
@@ -498,6 +633,7 @@ pub fn run() {
             close_window,
             get_status,
             get_version,
+            set_tray_status,
             get_profile,
             get_link_status,
             get_app_settings,
@@ -505,9 +641,11 @@ pub fn run() {
             save_preferences,
             list_projects,
             list_tasks,
+            create_task,
             get_session,
             get_task_time_tracking,
             get_member_limits,
+            get_agent_workspace,
             get_project_budget_status,
             get_member_profile,
             get_dashboard_summary,
@@ -523,6 +661,17 @@ pub fn run() {
             is_session_paused,
         ])
         .setup(move |app| {
+            // Registration is separate from the handler wired into the
+            // plugin above - the handler fires for a shortcut whether or
+            // not it happens to be one of these two, so an unregistered
+            // shortcut here would just mean this app is never given the
+            // keypress to begin with, not that it's silently ignored later.
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                let _ = app.global_shortcut().register(pause_resume_shortcut());
+                let _ = app.global_shortcut().register(stop_shortcut());
+            }
+
             // Dev builds and Linux have no installer to write the OS-level
             // scheme registration, so the plugin has to do it at runtime.
             // Release Windows/macOS builds get it from the NSIS/Info.plist
@@ -600,12 +749,34 @@ pub fn run() {
             // back in on that platform instead.
             #[cfg(not(target_os = "linux"))]
             {
+                // Disabled by design - a label, not a control. Kept in sync
+                // by set_tray_status (see TrayStatusItems's own doc comment)
+                // rather than a second poller of its own.
+                let status_i =
+                    MenuItem::with_id(app, "status", "Not tracking", false, None::<&str>)?;
+                let pause_i = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
+                let resume_i = MenuItem::with_id(app, "resume", "Resume", false, None::<&str>)?;
+                let stop_i = MenuItem::with_id(app, "stop", "Stop", false, None::<&str>)?;
+                let sep_i = PredefinedMenuItem::separator(app)?;
                 let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
                 let sign_in_i = MenuItem::with_id(app, "sign_in", "Sign in", true, None::<&str>)?;
                 let open_i =
                     MenuItem::with_id(app, "open", "Open Virtual Tracker", true, None::<&str>)?;
                 let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&show_i, &sign_in_i, &open_i, &quit_i])?;
+                let menu = Menu::with_items(
+                    app,
+                    &[
+                        &status_i, &pause_i, &resume_i, &stop_i, &sep_i, &show_i, &sign_in_i,
+                        &open_i, &quit_i,
+                    ],
+                )?;
+
+                app.manage(std::sync::Mutex::new(Some(TrayStatusItems {
+                    status: status_i,
+                    pause: pause_i,
+                    resume: resume_i,
+                    stop: stop_i,
+                })));
 
                 let tray_controller = Arc::clone(&controller);
                 let mut tray_builder = TrayIconBuilder::new()
@@ -617,6 +788,20 @@ pub fn run() {
                             let _ = tray_controller.open_sign_in(None);
                         }
                         "open" => tray_controller.open_web_app(),
+                        // No stop-note prompt here (P6/handleStopClick's
+                        // dialog is a webview form the tray menu can't show)
+                        // - a project that requires one still gets it
+                        // enforced server-side; this just can't collect the
+                        // text itself.
+                        "pause" => {
+                            let _ = tray_controller.pause_session();
+                        }
+                        "resume" => {
+                            let _ = tray_controller.resume_session();
+                        }
+                        "stop" => {
+                            let _ = tray_controller.stop_session(None);
+                        }
                         "quit" => {
                             tray_controller.stop();
                             app.exit(0);

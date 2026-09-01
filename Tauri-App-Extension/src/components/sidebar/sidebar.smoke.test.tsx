@@ -10,7 +10,9 @@ import { ProjectsList } from "./ProjectsList";
 import { TasksList } from "./TasksList";
 import { SidebarActions } from "./SidebarActions";
 import { SidebarFooter } from "./SidebarFooter";
-import type { AgentTask, DashboardSummary, ProjectInfo } from "../../types";
+import { TeamStatusCard } from "./TeamStatusCard";
+import { ManagementCard } from "./ManagementCard";
+import type { AgentTask, DashboardSummary, ProjectInfo, WorkspaceTeam } from "../../types";
 
 const noop = () => {};
 
@@ -44,8 +46,8 @@ describe("WeeklyActivityCard", () => {
 
 describe("ProjectsList", () => {
   const projects: ProjectInfo[] = [
-    { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false },
-    { id: "p2", name: "Out of Budget", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: true },
+    { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false, canCreateTasks: true },
+    { id: "p2", name: "Out of Budget", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: true, canCreateTasks: false },
   ];
 
   it("renders nothing with an empty list", () => {
@@ -90,6 +92,65 @@ describe("ProjectsList", () => {
     expect(html).toContain("55%");
     expect(html).not.toContain("open task");
   });
+
+  it("hides the filter box under the search threshold - .side-tasklist-body's own scroll area covers a short list", () => {
+    const html = renderToStaticMarkup(
+      <ProjectsList signedIn projects={projects} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+    );
+    expect(html).not.toContain("side-tasklist-search");
+  });
+
+  it("shows the filter box once the list is long enough to need one", () => {
+    const many: ProjectInfo[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `p${i}`,
+      name: `Project ${i}`,
+      projectType: "normal",
+      hasTasks: true,
+      requireTaskToTrack: true,
+      requireStopNote: false,
+      budgetExhausted: false,
+      canCreateTasks: false,
+    }));
+    const html = renderToStaticMarkup(
+      <ProjectsList signedIn projects={many} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+    );
+    expect(html).toContain("side-tasklist-search");
+    expect(html).toContain("Filter projects");
+  });
+
+  it("shows the + New task row action only for a task-based project the viewer can create tasks on", () => {
+    const html = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        projects={projects}
+        selectedProjectId=""
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        onSelectProject={noop}
+        onCreateTask={noop}
+      />,
+    );
+    expect(html).toContain("New task in Bana Test");
+    expect(html).not.toContain("New task in Out of Budget");
+  });
+
+  it("hides the row action entirely when onCreateTask is omitted", () => {
+    const html = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        projects={[projects[0]]}
+        selectedProjectId=""
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        onSelectProject={noop}
+      />,
+    );
+    expect(html).not.toContain("side-task-row-add");
+  });
 });
 
 describe("TasksList", () => {
@@ -100,14 +161,22 @@ describe("TasksList", () => {
     // renderToStaticMarkup HTML-escapes the apostrophe (Couldn&#x27;t) -
     // match a substring that avoids it rather than the raw text.
     expect(html).toContain("load your tasks");
-    expect(html).not.toContain("Nothing open assigned");
+    // A genuine failure keeps the alarming tone; only the empty state lost it.
+    expect(html).toContain("side-tasklist-empty bad");
+    expect(html).not.toContain("No tasks assigned to you");
   });
 
-  it("shows the genuine all-clear when there's simply nothing assigned", () => {
+  it("reads as neutral guidance, not success or failure, when nothing is assigned", () => {
     const html = renderToStaticMarkup(
       <TasksList signedIn assignedTasks={[]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
-    expect(html).toContain("Nothing open assigned");
+    expect(html).toContain("No tasks assigned to you");
+    // Points at the next step rather than just stating the absence.
+    expect(html).toContain("Pick a project that has tasks");
+    // Neither the red failure tone nor the green all-clear it used to carry -
+    // having no task assigned is a state to act on, not one to celebrate.
+    expect(html).not.toContain("side-tasklist-empty bad");
+    expect(html).not.toContain("side-tasklist-empty ok");
   });
 
   it("falls back to 'Unknown project' for a task whose project isn't in the lookup", () => {
@@ -116,6 +185,33 @@ describe("TasksList", () => {
       <TasksList signedIn assignedTasks={[task]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     expect(html).toContain("Unknown project");
+  });
+
+  it("hides the filter box under the search threshold", () => {
+    const tasks: AgentTask[] = Array.from({ length: 3 }, (_, i) => ({
+      id: `t${i}`,
+      title: `Task ${i}`,
+      status: "todo",
+      projectId: "",
+    }));
+    const html = renderToStaticMarkup(
+      <TasksList signedIn assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+    );
+    expect(html).not.toContain("side-tasklist-search");
+  });
+
+  it("shows the filter box once the list is long enough to need one", () => {
+    const tasks: AgentTask[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `t${i}`,
+      title: `Task ${i}`,
+      status: "todo",
+      projectId: "",
+    }));
+    const html = renderToStaticMarkup(
+      <TasksList signedIn assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+    );
+    expect(html).toContain("side-tasklist-search");
+    expect(html).toContain("Filter tasks");
   });
 });
 
@@ -281,5 +377,106 @@ describe("SidebarFooter", () => {
     );
     expect(html).not.toContain("<img");
     expect(html).toContain(">MH<");
+  });
+});
+
+// Both cards are entitlement-driven: the backend nulls the section a viewer
+// isn't allowed, so "renders nothing for null" is the security-relevant case
+// here, not just an empty-state nicety.
+describe("TeamStatusCard", () => {
+  const team: WorkspaceTeam = {
+    teamCount: 1,
+    trackingNowCount: 1,
+    notStartedCount: 1,
+    totalActiveSecondsToday: 5400,
+    members: [
+      { memberId: "t1", name: "Ada", trackingNow: true, onBreak: false, activeSecondsToday: 3600 },
+      { memberId: "t2", name: "Grace", trackingNow: false, onBreak: false, activeSecondsToday: 0 },
+      { memberId: "t3", name: "Alan", trackingNow: false, onBreak: true, activeSecondsToday: 1800 },
+    ],
+  };
+
+  it("renders nothing when the viewer got no team section", () => {
+    expect(renderToStaticMarkup(<TeamStatusCard team={null} />)).toBe("");
+  });
+
+  it("renders nothing for a team section with no members rather than an empty card", () => {
+    expect(
+      renderToStaticMarkup(<TeamStatusCard team={{ ...team, members: [] }} />),
+    ).toBe("");
+  });
+
+  it("shows each member with the state that applies to them", () => {
+    const html = renderToStaticMarkup(<TeamStatusCard team={team} />);
+    expect(html).toContain("Ada");
+    expect(html).toContain("Tracking");
+    expect(html).toContain("Grace");
+    // Grace has tracked nothing today; Alan has, but is on a break.
+    expect(html).toContain("Nothing today");
+    expect(html).toContain("On a break");
+    expect(html).toContain("1 not started");
+  });
+
+  it("hides the not-started stat when everyone has started", () => {
+    const html = renderToStaticMarkup(
+      <TeamStatusCard team={{ ...team, notStartedCount: 0 }} />,
+    );
+    expect(html).not.toContain("not started");
+  });
+});
+
+describe("ManagementCard", () => {
+  it("renders nothing when the viewer got neither section", () => {
+    expect(
+      renderToStaticMarkup(<ManagementCard approvals={null} pulse={null} onOpenDashboard={noop} />),
+    ).toBe("")
+  });
+
+  it("shows a pending count as an actionable row", () => {
+    const html = renderToStaticMarkup(
+      <ManagementCard approvals={{ pendingCount: 3 }} pulse={null} onOpenDashboard={noop} />,
+    );
+    expect(html).toContain("3");
+    expect(html).toContain("timesheets waiting on you");
+  });
+
+  it("singularizes a lone pending timesheet", () => {
+    const html = renderToStaticMarkup(
+      <ManagementCard approvals={{ pendingCount: 1 }} pulse={null} onOpenDashboard={noop} />,
+    );
+    expect(html).toContain("timesheet waiting on you");
+    expect(html).not.toContain("timesheets waiting");
+  });
+
+  it("shows the all-clear rather than a zero count", () => {
+    const html = renderToStaticMarkup(
+      <ManagementCard approvals={{ pendingCount: 0 }} pulse={null} onOpenDashboard={noop} />,
+    );
+    expect(html).toContain("No timesheets waiting on you");
+  });
+
+  it("titles itself Organization once the pulse section is present, and shows its numbers", () => {
+    const html = renderToStaticMarkup(
+      <ManagementCard
+        approvals={{ pendingCount: 0 }}
+        pulse={{ totalActiveSecondsToday: 7200, trackingNowCount: 2, membersWorkedTodayCount: 5 }}
+        onOpenDashboard={noop}
+      />,
+    );
+    expect(html).toContain("Organization");
+    expect(html).toContain("2 tracking");
+    expect(html).toContain("5 worked today");
+  });
+
+  it("renders the pulse alone for an org admin with nothing pending", () => {
+    const html = renderToStaticMarkup(
+      <ManagementCard
+        approvals={null}
+        pulse={{ totalActiveSecondsToday: 0, trackingNowCount: 0, membersWorkedTodayCount: 0 }}
+        onOpenDashboard={noop}
+      />,
+    );
+    expect(html).toContain("Organization");
+    expect(html).not.toContain("waiting on you");
   });
 });

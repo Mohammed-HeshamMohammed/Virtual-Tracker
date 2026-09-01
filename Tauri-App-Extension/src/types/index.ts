@@ -92,6 +92,21 @@ export type ProjectInfo = {
   // This project's Hours budget is spent - it stays in the list, shown as
   // unselectable with a reason, rather than silently vanishing.
   budgetExhausted: boolean;
+  // Server-derived from viewerCanCreateProjectTasks (org admin, or this
+  // member's own project_role = "manager" on this project) - gates the
+  // "+ New task" row action so it only shows where the create call would
+  // actually succeed, instead of every viewer seeing an affordance that
+  // 403s for everyone but managers.
+  canCreateTasks: boolean;
+};
+
+export type CreateTaskResult = {
+  task: AgentTask;
+  // False when the task was created but self-assignment failed (a separate,
+  // stricter server-side gate - see create_task's own doc comment on the
+  // Rust side). The task is real either way; this only says whether it will
+  // show up in "Your tasks" without someone else assigning it first.
+  selfAssigned: boolean;
 };
 
 export type SessionInfo = {
@@ -190,9 +205,87 @@ export type MemberLimits = {
   /** Today's active/idle split - the ratio the dashboard grades activity on.
    *  Both zero means nothing tracked today (or an older backend). */
   todayActivity: TodayActivity;
+  /** Same split as todayActivity, scoped to whichever project_id was passed
+   *  to get_member_limits - null when no project was asked about, or on an
+   *  older backend without this field. Feeds the main pane's Activity ring
+   *  ("current project"), separate from todayActivity's person-wide total. */
+  projectTodayActivity: TodayActivity | null;
 };
 
 export type TodayActivity = { activeSeconds: number; idleSeconds: number };
+
+// ── Agent workspace (GET /api/activity/workspace) ─────────────────────────
+// Everything the agent shows beyond the timer itself, resolved per-role
+// server-side. Every section but `self` is nullable: the backend omits
+// whichever the viewer isn't entitled to, so the UI renders what arrived and
+// carries no role logic of its own (and can't be tricked into showing a
+// section by a spoofed local role).
+
+export type TimeOffBalance = {
+  policyName: string;
+  balanceDays: number;
+  entitlementDays: number;
+};
+
+/** The member's most recent timesheet, whatever state it's in. */
+export type TimesheetStatus = {
+  periodStart: string;
+  periodEnd: string;
+  /** draft | submitted | approved | rejected */
+  status: string;
+  totalHours: number;
+};
+
+/** hourlyRate 0 = no rate configured (or not visible) - the UI hides the
+ *  card rather than showing an authoritative-looking $0.00. */
+export type EarningsSummary = {
+  currency: string;
+  hourlyRate: number;
+  weekAmount: number;
+  monthAmount: number;
+};
+
+export type WorkspaceSelf = {
+  timeOff: TimeOffBalance[];
+  timesheet: TimesheetStatus | null;
+  earnings: EarningsSummary;
+};
+
+export type TeamMemberStatus = {
+  memberId: string;
+  name: string;
+  trackingNow: boolean;
+  onBreak: boolean;
+  activeSecondsToday: number;
+};
+
+/** Present only for a viewer flagged `is_lead` on at least one team. */
+export type WorkspaceTeam = {
+  teamCount: number;
+  members: TeamMemberStatus[];
+  trackingNowCount: number;
+  /** Worked nothing at all today and isn't tracking - the number a lead
+   *  actually chases, distinct from "idle right now". */
+  notStartedCount: number;
+  totalActiveSecondsToday: number;
+};
+
+/** Present only for a management role. */
+export type WorkspaceApprovals = { pendingCount: number };
+
+/** Present only for an org-admin role (Super Manager and up). */
+export type WorkspacePulse = {
+  totalActiveSecondsToday: number;
+  trackingNowCount: number;
+  membersWorkedTodayCount: number;
+};
+
+export type AgentWorkspace = {
+  self: WorkspaceSelf;
+  team: WorkspaceTeam | null;
+  approvals: WorkspaceApprovals | null;
+  pulse: WorkspacePulse | null;
+};
 
 // The viewer's own People-page member record - richer than what's in the
 // Firebase JWT claims (role, status, date added, team count).

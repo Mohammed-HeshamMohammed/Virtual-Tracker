@@ -652,48 +652,10 @@ body {
   overflow-y: auto;
 }
 
-.hero-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 16px;
-  border-radius: 14px;
-  background: linear-gradient(
-    160deg,
-    rgb(var(--c-surface-highest) / 0.9),
-    rgb(var(--c-surface-low) / 0.95)
-  );
-  border: 1px solid rgb(var(--c-line) / 0.12);
-}
-
-.hero-top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.hero-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.hero-kicker {
-  display: block;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--on-surface-variant);
-}
-
-.hero-name {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--on-surface);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
+/* .hero-card / .hero-top / .hero-copy / .hero-kicker / .hero-name and the
+   .signal rules that lived below removed with the sidebar's hero card - see
+   the comment where it used to render in App.tsx. (.stat-hero-* further down
+   is a different family, still used by TodayPanel.) */
 
 .pill {
   flex-shrink: 0;
@@ -723,26 +685,6 @@ body {
 .pill-warn {
   background: rgb(var(--c-warn) / 0.14);
   color: rgb(var(--c-warn));
-}
-
-.signal {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.signal .viz-bars {
-  opacity: 0.35;
-}
-
-.signal.live .viz-bars {
-  opacity: 1;
-}
-
-.signal-text {
-  font-size: 12px;
-  color: rgb(var(--c-line) / 0.8);
-  line-height: 1.4;
 }
 
 .app-body {
@@ -1536,6 +1478,98 @@ body {
   overflow-y: auto;
 }
 
+/* Only rendered once a list is long enough that .side-tasklist-body's own
+   143px scroll area can't show it all at a glance (see SEARCH_THRESHOLD in
+   ProjectsList/TasksList) - sized to match the compact sidebar scale
+   instead of a full-height .modal-input/.input-field text box. */
+.side-tasklist-search {
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--on-surface);
+  background: rgb(var(--c-overlay) / 0.04);
+  border: 1px solid var(--outline-variant);
+  border-radius: 7px;
+}
+
+.side-tasklist-search:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.side-tasklist-search::placeholder {
+  color: var(--on-surface-faint);
+}
+
+/* The at-a-glance numbers above a roster (TeamStatusCard) or standing alone
+   as the org pulse (ManagementCard) - a wrapping row of small stats, sized
+   to the same compact sidebar scale as .side-task-row-project. */
+.side-team-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 0 2px;
+}
+
+.side-team-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface);
+  white-space: nowrap;
+}
+
+.side-team-stat.muted {
+  font-weight: 500;
+  color: var(--on-surface-faint);
+}
+
+.side-team-stat.warn {
+  color: rgb(var(--c-warn));
+}
+
+/* The pending-approvals row: a real button, because the only useful thing to
+   do with it is open the dashboard and clear the queue. */
+.side-team-cta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: rgb(var(--c-warn) / 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--c-warn) / 0.28);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.side-team-cta:hover {
+  background: rgb(var(--c-warn) / 0.2);
+}
+
+.side-team-cta-count {
+  flex-shrink: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: rgb(var(--c-warn));
+  font-variant-numeric: tabular-nums;
+}
+
+.side-team-cta-copy {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--on-surface);
+}
+
 /* Weekly activity - same percentage as the web dashboard's own "Weekly
    trends" widget, drawn as a ring (reusing .activity-ring/-value/-legend
    from the main pane's Activity tile) instead of a second chart shape. */
@@ -1606,11 +1640,16 @@ body {
   transition: background 0.15s ease;
 }
 
-.side-task-row:hover:not(:disabled) {
+.side-task-row:hover:not(:disabled):not(.row-disabled) {
   background: rgb(var(--c-overlay) / 0.09);
 }
 
-.side-task-row:disabled {
+/* :disabled fires on TasksList's row, which is still a plain <button>;
+   .row-disabled fires on ProjectsList's row, which had to become a <div> so
+   its "+ New task" button (side-task-row-add below) could sit beside the
+   selectable area without HTML's button-in-button restriction. */
+.side-task-row:disabled,
+.side-task-row.row-disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
@@ -1669,6 +1708,61 @@ body {
 .side-task-row .capacity-bar {
   display: block;
   margin-top: 4px;
+}
+
+/* ProjectsList only - the inner button that carries the actual
+   click-to-select behavior once .side-task-row itself became a <div> (see
+   the .row-disabled comment above). Resets its own button chrome so it
+   reads as the row, not a nested control inside it. */
+.side-task-row-select {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.side-task-row-select:disabled {
+  cursor: not-allowed;
+}
+
+/* The "+ New task" row action - only rendered for a task-based project the
+   viewer can actually create tasks on (ProjectInfo.canCreateTasks). Sized
+   well under .icon-btn's 34px so it reads as a row accent, not a peer of
+   the page-level icon buttons. */
+.side-task-row-add {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--on-surface-faint);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.side-task-row-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+.side-task-row-add:hover:not(:disabled) {
+  background: rgb(var(--c-primary) / 0.16);
+  color: rgb(var(--c-primary));
+}
+
+.side-task-row-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .btn:disabled {
@@ -1790,6 +1884,36 @@ body {
 
 .skeleton-bar-lg {
   height: 44px;
+}
+
+/* Main-pane placeholder held until projects and assigned tasks have both
+   loaded once, so the pane never flashes "No task selected" at someone who
+   simply hasn't finished loading yet. Mirrors the real layout underneath it
+   (clock, then the Today panel, then the 3-tile row) rather than being a
+   generic spinner, so nothing shifts when the data arrives. */
+.page-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.page-skeleton .skeleton-bar-clock {
+  height: 74px;
+}
+
+.page-skeleton .skeleton-bar-panel {
+  height: 118px;
+}
+
+.page-skeleton-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.page-skeleton-row .skeleton-bar {
+  height: 92px;
 }
 
 @keyframes skeleton-sweep {
@@ -2728,7 +2852,10 @@ body {
 
 
 /* Stop-note prompt — shown only when the project has require_stop_note on. */
-.stop-note-backdrop {
+/* Shared by every small confirm/input dialog (StopNoteModal, NewTaskModal -
+   position:fixed, so where each lives in the DOM tree doesn't affect where
+   it renders). Named .modal-* rather than after either one specifically. */
+.modal-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
@@ -2739,7 +2866,7 @@ body {
   background: rgb(var(--c-surface) / 0.72);
 }
 
-.stop-note-card {
+.modal-card {
   width: 100%;
   max-width: 360px;
   display: flex;
@@ -2752,18 +2879,18 @@ body {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
-.stop-note-title {
+.modal-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--on-surface);
 }
 
-.stop-note-sub {
+.modal-sub {
   font-size: 12px;
   color: var(--on-surface-variant);
 }
 
-.stop-note-input {
+.modal-input {
   width: 100%;
   resize: none;
   padding: 10px 12px;
@@ -2776,15 +2903,42 @@ body {
   user-select: text;
 }
 
-.stop-note-input:focus {
+.modal-input:focus {
   outline: none;
   border-color: var(--primary);
 }
 
-.stop-note-actions {
+.modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* input variant of .modal-input needs its own height - the textarea variant
+   (StopNoteModal) sizes from its rows attribute instead. Labelling a field
+   (NewTaskModal's estimate) reuses .input-field-label from the auth forms
+   rather than a new class. */
+.modal-input[type="text"],
+.modal-input[type="number"] {
+  height: 38px;
+}
+
+/* The estimate field's native up/down stepper renders as a plain grey OS
+   widget with no theme awareness at all - the one piece of un-styled
+   browser chrome anywhere in the app, and it stands out for it (confirmed
+   in a live render: a flat grey box against the dark input and green focus
+   ring). Nothing else here relies on a spinner to be usable - typing a
+   number, or the browser's own arrow-key increment/decrement, both still
+   work with it hidden. */
+.modal-input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.modal-input[type="number"]::-webkit-outer-spin-button,
+.modal-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 /* ── Shared controls ────────────────────────────────────────────────────
@@ -3122,6 +3276,14 @@ body {
   background: rgb(var(--c-warn) / 0.12);
   color: rgb(var(--c-warn));
   box-shadow: inset 0 0 0 1px rgb(var(--c-warn) / 0.3);
+}
+
+/* Completes the tone set the other three already cover - a rejected
+   timesheet is the first thing in the app that needs it. */
+.badge.bad {
+  background: rgb(var(--c-bad) / 0.12);
+  color: rgb(var(--c-bad));
+  box-shadow: inset 0 0 0 1px rgb(var(--c-bad) / 0.3);
 }
 
 .detail-rows {

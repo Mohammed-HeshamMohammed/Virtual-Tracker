@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
@@ -140,6 +140,11 @@ impl ApiClient {
                 .or_else(|| item.get("has_tasks"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);
+            let can_create_tasks = item
+                .get("canCreateTasks")
+                .or_else(|| item.get("can_create_tasks"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             projects.push(crate::types::ProjectInfo {
                 id,
                 name,
@@ -148,6 +153,7 @@ impl ApiClient {
                 require_task_to_track,
                 require_stop_note,
                 budget_exhausted,
+                can_create_tasks,
             });
         }
         projects.sort_by_key(|p| p.name.to_lowercase());
@@ -236,6 +242,112 @@ impl ApiClient {
         }
         tasks.sort_by_key(|t| t.title.to_lowercase());
         Ok(tasks)
+    }
+
+    /// Creates a task on a task-based project (POST /api/tasks - gated
+    /// server-side by viewerCanCreateProjectTasks, the same check
+    /// ProjectInfo.can_create_tasks already reflects), then best-effort
+    /// self-assigns it (POST /api/task-assignments) so it actually shows up
+    /// in "Your tasks" (fetch_assigned_tasks is assigned_to-filtered) without
+    /// a trip to the web dashboard first. Self-assign is gated separately
+    /// (org-wide management role - see CreateTaskResult's own doc comment)
+    /// and can fail on its own; that failure doesn't unwind the task, which
+    /// already exists and is real - self_assigned just tells the caller
+    /// whether to say so.
+    pub fn create_task(
+        &mut self,
+        project_id: &str,
+        title: &str,
+        estimate_hours: Option<f64>,
+    ) -> Result<crate::types::CreateTaskResult, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let create_url = format!("{}/api/tasks", self.api_url);
+        let mut create_body = json!({
+            "project_id": project_id,
+            "title": title,
+            "status": "todo",
+        });
+        // estimateAssignmentSeconds (task-schedule-math.js) is
+        // working_days * (duration_hours_per_day + overtime_hours_per_day) *
+        // 3600 - with no start/due date range set, working_days=1 makes
+        // duration_hours_per_day alone equal to the plain hour estimate the
+        // dialog collects, without also needing a date-range picker here.
+        if let Some(hours) = estimate_hours.filter(|h| *h > 0.0) {
+            create_body["working_days"] = json!(1);
+            create_body["duration_hours_per_day"] = json!(hours);
+        }
+        let res = self
+            .client
+            .post(create_url)
+            .header("Authorization", auth)
+            .header("Content-Type", "application/json")
+            .json(&create_body)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        let status = res.status();
+        let body: Value = res.json().unwrap_or_else(|_| json!({}));
+        if !status.is_success() {
+            let message = body
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Could not create the task")
+                .to_string();
+            return Err(ApiError::Rejected(message));
+        }
+        let data = body.get("data").ok_or(ApiError::Network)?;
+        let id = data
+            .get("id")
+            .and_then(|v| v.as_str())
+            .ok_or(ApiError::Network)?
+            .to_string();
+        let task = crate::types::AgentTask {
+            id: id.clone(),
+            title: data
+                .get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or(title)
+                .to_string(),
+            status: data
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("todo")
+                .to_string(),
+            project_id: data
+                .get("projectId")
+                .or_else(|| data.get("project_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(project_id)
+                .to_string(),
+        };
+
+        let self_assigned = self.assign_task_to_self(&id).unwrap_or(false);
+        Ok(crate::types::CreateTaskResult { task, self_assigned })
+    }
+
+    /// Best-effort - see create_task's own doc comment for why a `false`
+    /// here is an expected outcome, not treated as this call's error.
+    fn assign_task_to_self(&mut self, task_id: &str) -> Result<bool, ApiError> {
+        let member_id = self
+            .fetch_viewer_member_id()
+            .ok_or(ApiError::Unauthorized)?;
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/task-assignments", self.api_url);
+        let body = json!({
+            "task_id": task_id,
+            "member_id": member_id,
+            "status": "todo",
+        });
+        let res = self
+            .client
+            .post(url)
+            .header("Authorization", auth)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        Ok(res.status().is_success())
     }
 
     /// Per-task time-tracking summary — daily total, task estimate, and any
@@ -339,9 +451,19 @@ impl ApiClient {
     }
 
     /// The viewer's own daily/weekly work-hour limits, for the profile view.
-    pub fn fetch_member_limits(&mut self) -> Result<crate::types::MemberLimits, ApiError> {
+    pub fn fetch_member_limits(
+        &mut self,
+        project_id: Option<&str>,
+    ) -> Result<crate::types::MemberLimits, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/activity/limits", self.api_url);
+        let url = match project_id.filter(|id| !id.trim().is_empty()) {
+            Some(id) => format!(
+                "{}/api/activity/limits?projectId={}",
+                self.api_url,
+                urlencoding::encode(id.trim())
+            ),
+            None => format!("{}/api/activity/limits", self.api_url),
+        };
         let res = self
             .client
             .get(url)
@@ -392,7 +514,48 @@ impl ApiClient {
                     idle_seconds: field("idleSeconds"),
                 }
             },
+            project_today_activity: data.get("projectTodayActivity").filter(|v| !v.is_null()).map(|node| {
+                let field = |key: &str| -> i64 {
+                    node.get(key).and_then(|v| v.as_i64()).unwrap_or(0)
+                };
+                crate::types::TodayActivity {
+                    active_seconds: field("activeSeconds"),
+                    idle_seconds: field("idleSeconds"),
+                }
+            }),
         })
+    }
+
+    /// Everything the agent shows beyond the timer itself (time off, timesheet,
+    /// earnings, and - per role - team status, pending approvals, org pulse),
+    /// in one round trip. The whole payload is serde-shaped, so unlike the
+    /// hand-parsed fetches above this is a straight deserialize; every section
+    /// but `self` is Option and simply arrives null for a viewer the backend
+    /// doesn't entitle to it. `Ok(None)` on a 404 (older backend without the
+    /// route), same convention as fetch_dashboard_summary.
+    pub fn fetch_agent_workspace(&mut self) -> Result<Option<crate::types::AgentWorkspace>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!("{}/api/activity/workspace", self.api_url);
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let Some(data) = body.get("data").filter(|d| !d.is_null()) else {
+            return Ok(None);
+        };
+        serde_json::from_value(data.clone())
+            .map(Some)
+            .map_err(|_| ApiError::Network)
     }
 
     /// The viewer's own People-page member record, for the profile view.
