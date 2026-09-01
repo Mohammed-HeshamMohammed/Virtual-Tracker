@@ -8,7 +8,12 @@ interface RawMemberDay {
   name: string
   activeSeconds: number
   idleSeconds: number
-  /** Tracked cost; 0 when the viewer may not see this member's pay rate. */
+  /** Hand-entered time. Optional so an older backend that omits it reads as
+   *  0 rather than NaN. Deliberately separate from activeSeconds: manual
+   *  time is asserted, not observed, so it must not feed the activity %. */
+  manualSeconds?: number
+  /** Cost of tracked + manual time; 0 when the viewer may not see this
+   *  member's pay rate. */
   spentAmount?: number
   projectNames: string[]
 }
@@ -28,6 +33,7 @@ interface RawEntry {
   teamName: string
   activeSeconds: number
   idleSeconds: number
+  manualSeconds?: number
   spentAmount: number
 }
 
@@ -62,11 +68,16 @@ function pctString(idleSeconds: number, activeSeconds: number): string {
 }
 
 function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
-  const totalHours = formatSecondsAsHMS(member.activeSeconds)
+  const manualSeconds = member.manualSeconds ?? 0
+  // Regular hours are what was tracked; total adds the hand-entered time on
+  // top, which is what makes a manual entry show up against its project at
+  // all. activityPct below stays on active/idle only - see manualSeconds.
+  const regularHours = formatSecondsAsHMS(member.activeSeconds)
+  const totalHours = formatSecondsAsHMS(member.activeSeconds + manualSeconds)
   return {
     name: member.name,
     avatar: initialsFor(member.name),
-    regularHours: totalHours,
+    regularHours,
     totalHours,
     breakTime: "00:00:00",
     activityPct: member.activeSeconds + member.idleSeconds > 0
@@ -76,7 +87,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
     idleHr: formatSecondsAsHMS(member.idleSeconds),
     totalSpent: formatMoney(member.spentAmount),
     trackedHours: member.activeSeconds / 3600,
-    manualHours: 0,
+    manualHours: manualSeconds / 3600,
     projectNames: member.projectNames,
   }
 }
@@ -84,8 +95,10 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
 function toDayRow(day: RawReportDay): TimeActivityDayRow {
   const totalActive = day.members.reduce((sum, m) => sum + m.activeSeconds, 0)
   const totalIdle = day.members.reduce((sum, m) => sum + m.idleSeconds, 0)
+  const totalManual = day.members.reduce((sum, m) => sum + (m.manualSeconds ?? 0), 0)
   const projectNames = new Set(day.members.flatMap((m) => m.projectNames))
-  const totalHours = formatSecondsAsHMS(totalActive)
+  const regularHours = formatSecondsAsHMS(totalActive)
+  const totalHours = formatSecondsAsHMS(totalActive + totalManual)
 
   return {
     date: day.date,
@@ -95,7 +108,7 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     client: "",
     team: "",
     todo: "",
-    regularHours: totalHours,
+    regularHours,
     breakTime: "00:00:00",
     totalHours,
     activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
@@ -103,7 +116,7 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     idleHr: formatSecondsAsHMS(totalIdle),
     totalSpent: formatMoney(day.members.reduce((sum, m) => sum + (m.spentAmount ?? 0), 0)),
     trackedHours: totalActive / 3600,
-    manualHours: 0,
+    manualHours: totalManual / 3600,
   }
 }
 
@@ -117,6 +130,7 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
     clientName: raw.clientName,
     teamName: raw.teamName,
     activeSeconds: raw.activeSeconds,
+    manualSeconds: raw.manualSeconds ?? 0,
     idleSeconds: raw.idleSeconds,
     spentAmount: raw.spentAmount,
   }
