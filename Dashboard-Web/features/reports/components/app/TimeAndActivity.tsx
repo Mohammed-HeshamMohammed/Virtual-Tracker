@@ -41,7 +41,7 @@ export {
 
 /** Empty default payload until report data is loaded from the API. */
 export function buildDefaultTimeActivityReportData(): TimeActivityReportData {
-  return { days: [], memberRows: {} }
+  return { days: [], memberRows: {}, entries: [] }
 }
 
 function toDateParam(d: Date): string {
@@ -91,6 +91,7 @@ export function TimeAndActivityReport() {
     <TimeActivityReportView
       days={reportData.days}
       memberRows={reportData.memberRows}
+      entries={reportData.entries}
       onRangeApply={(start, end) => setRange({ start, end })}
       range={{ from: toDateParam(range.start), to: toDateParam(range.end) }}
       onReload={() => setReloadKey((k) => k + 1)}

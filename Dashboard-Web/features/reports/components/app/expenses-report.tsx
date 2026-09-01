@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { cn } from "@/shared/utils/utils"
 import {
@@ -18,7 +19,12 @@ import {
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  STANDARD_REPORT_GROUP_BY_OPTIONS,
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+} from "@/features/reports/components/shared/constants"
+import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
 function initialsFor(name: string): string {
   return (
@@ -53,11 +59,32 @@ const STATUS_STYLE: Record<string, string> = {
   pending: "bg-amber-50 text-amber-600",
 }
 
+function keyForExpenseGroup(r: ExpenseReportRow, groupBy: string): string {
+  switch (groupBy) {
+    case "member":
+      return r.memberName
+    case "project":
+      return r.projectName || "No project"
+    case "client":
+      return r.clientName || "No client"
+    case "date":
+    default:
+      return r.day
+  }
+}
+
 function ExpensesTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ExpenseReportRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
   // A failed request used to fall through to the empty state, so an
   // outage read as "no data for this range". reloadKey re-runs the fetch
   // when the viewer retries.
@@ -119,6 +146,11 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
     const mixed = new Set(rows.map((r) => r.currency)).size > 1
     return { currency, total, approved, pending, billable, mixed }
   }, [rows])
+
+  const grouped = useMemo(
+    () => groupReportRows(rows, (r) => keyForExpenseGroup(r, groupBy)),
+    [rows, groupBy]
+  )
 
   useEffect(() => {
     const runPdfExport = () => {
@@ -256,56 +288,84 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}>
-                  <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {formatDay(r.day)}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <ReportMemberAvatar initials={initialsFor(r.memberName)} />
-                      <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                        {r.memberName}
-                      </span>
-                    </div>
-                  </td>
-                  <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.projectName || "—"}
-                  </td>
-                  <td className={cn("px-4 py-3 text-sm capitalize", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.category}
-                  </td>
-                  <td
-                    className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}
-                    title={r.description}
-                  >
-                    {r.description}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-4 py-3 text-right text-sm tabular-nums",
-                      isDark ? "text-[#dce1fb]" : "text-slate-800"
-                    )}
-                  >
-                    {money(r.amount, r.currency)}
-                  </td>
-                  <td className={cn("px-4 py-3 text-center text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.billable ? "Yes" : "No"}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
-                        STATUS_STYLE[r.status] ?? "bg-slate-100 text-slate-600"
-                      )}
-                    >
-                      {r.status}
-                    </span>
-                  </td>
-                </tr>
+              {grouped.map((g) => (
+                <Fragment key={g.key}>
+                  <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                    <td colSpan={8} className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapsed(g.key)}
+                        className={cn(
+                          "flex w-full items-center gap-2 text-left text-sm font-medium",
+                          isDark ? "text-[#dce1fb]" : "text-slate-800"
+                        )}
+                      >
+                        <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                        <span>{g.label}</span>
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto h-4 w-4 transition-transform",
+                            isDark ? "text-white/40" : "text-slate-400",
+                            collapsedGroups.has(g.key) && "-rotate-90"
+                          )}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                  {!collapsedGroups.has(g.key)
+                    ? g.rows.map((r) => (
+                        <tr key={r.id} className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}>
+                          <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {formatDay(r.day)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <ReportMemberAvatar initials={initialsFor(r.memberName)} />
+                              <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                                {r.memberName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.projectName || "—"}
+                          </td>
+                          <td className={cn("px-4 py-3 text-sm capitalize", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.category}
+                          </td>
+                          <td
+                            className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}
+                            title={r.description}
+                          >
+                            {r.description}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-right text-sm tabular-nums",
+                              isDark ? "text-[#dce1fb]" : "text-slate-800"
+                            )}
+                          >
+                            {money(r.amount, r.currency)}
+                          </td>
+                          <td className={cn("px-4 py-3 text-center text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.billable ? "Yes" : "No"}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
+                                STATUS_STYLE[r.status] ?? "bg-slate-100 text-slate-600"
+                              )}
+                            >
+                              {r.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -325,7 +385,8 @@ export function ExpensesReport({ onNavigate }: { onNavigate?: (id: string) => vo
       exportFileBaseName="expenses"
       pageId="reports-expenses"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={STANDARD_REPORT_GROUP_BY_OPTIONS}
       filtersPanel={(close) => (
         <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
       )}

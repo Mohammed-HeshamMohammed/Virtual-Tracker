@@ -74,6 +74,9 @@ interface AddProjectFormState {
   requireStopNote: boolean
   /** Lets this project's client run it, rather than only read it. */
   clientCanManage: boolean
+  /** Lets this project's client clock in on it, alongside its other
+   *  members - independent of clientCanManage. Off by default. */
+  clientCanTrack: boolean
   /** Management projects only: projects grouped beneath this one. */
   subProjectIds: string[]
   disableIdleTime: boolean
@@ -185,6 +188,7 @@ function createDefaultAddForm(): AddProjectFormState {
     restrictTaskCreation: true,
     requireStopNote: false,
     clientCanManage: false,
+    clientCanTrack: false,
     subProjectIds: [],
     disableIdleTime: false,
     // Matches ID-1's server-side default (450s) - shown up front on a new
@@ -354,6 +358,7 @@ function formStateToPayload(
     restrictTaskCreation: addForm.restrictTaskCreation,
     requireStopNote: addForm.requireStopNote,
     clientCanManage: addForm.clientCanManage,
+    clientCanTrack: addForm.clientCanTrack,
     // Only meaningful for types that group projects; sending [] otherwise
     // keeps the server from having to special-case an absent field.
     subProjectIds: projectTypeDef(addForm.type).hasSubProjects ? addForm.subProjectIds : [],
@@ -720,6 +725,7 @@ export function ProjectModal({
           restrictTaskCreation: payload.restrictTaskCreation,
           requireStopNote: payload.requireStopNote,
           clientCanManage: payload.clientCanManage,
+          clientCanTrack: payload.clientCanTrack,
           subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
           // Real stored value in edit mode - the "7.5" default above is
@@ -1874,6 +1880,21 @@ export function ProjectModal({
                     <p className={cn("text-xs", formTheme.mutedText)}>
                       On lets the client create and edit this project&apos;s tasks. Off, they can still see the
                       project, its activity and its reports, but change nothing.
+                    </p>
+                  </div>
+
+                  {/* Off by default, independent of clientCanManage above -
+                      a client that can edit tasks isn't automatically one
+                      that can clock in, and vice versa. */}
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <SettingToggleRow
+                      checked={addForm.clientCanTrack}
+                      onChange={(next) => setAddForm((p) => ({ ...p, clientCanTrack: next }))}
+                      label="This project's client can clock in"
+                    />
+                    <p className={cn("text-xs", formTheme.mutedText)}>
+                      On lets the client run a timer on this project from the desktop app, alongside its other
+                      members. Off, they can&apos;t track time on it at all.
                     </p>
                   </div>
                 </div>

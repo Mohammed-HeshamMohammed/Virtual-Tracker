@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { cn } from "@/shared/utils/utils"
 import {
@@ -22,7 +23,13 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  CLIENT_INVOICE_GROUP_BY_OPTIONS,
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+  TEAM_INVOICE_GROUP_BY_OPTIONS,
+} from "@/features/reports/components/shared/constants"
+import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
 type InvoiceKind = "client" | "team"
 
@@ -70,13 +77,32 @@ function useCurrencySummary(rows: { currency: string }[]) {
 
 // ─── Invoice list ──────────────────────────────────────────────────────────
 
+function keyForInvoiceGroup(r: InvoiceReportRow, groupBy: string): string {
+  switch (groupBy) {
+    case "member":
+      return r.memberName || "—"
+    case "client":
+      return r.clientName || "—"
+    case "date":
+    default:
+      return r.issueDate
+  }
+}
+
 function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<InvoiceReportRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
 
   useEffect(() => {
     let cancelled = false
@@ -138,6 +164,11 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
       due: rows.reduce((s, r) => s + r.dueAmount, 0),
     }),
     [rows]
+  )
+
+  const grouped = useMemo(
+    () => groupReportRows(rows, (r) => keyForInvoiceGroup(r, groupBy)),
+    [rows, groupBy]
   )
 
   useEffect(() => {
@@ -252,48 +283,76 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}>
-                <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                  {r.number}
-                </td>
-                <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {kind === "client" ? r.clientName || "—" : r.memberName || "—"}
-                </td>
-                <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {formatDay(r.issueDate)}
-                </td>
-                <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {formatDay(r.dueDate)}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
-                      STATUS_STYLE[r.status] ?? "bg-slate-100 text-slate-600"
-                    )}
-                  >
-                    {r.status}
-                  </span>
-                </td>
-                <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                  {money(r.total, r.currency)}
-                </td>
-                <td className="px-4 py-3 text-right text-sm tabular-nums text-emerald-600">
-                  {money(r.paidAmount, r.currency)}
-                </td>
-                <td
-                  className={cn(
-                    "px-4 py-3 text-right text-sm font-semibold tabular-nums",
-                    r.dueAmount > 0 ? "text-red-500" : isDark ? "text-white/40" : "text-slate-400"
-                  )}
-                >
-                  {money(r.dueAmount, r.currency)}
-                </td>
-              </tr>
+            {grouped.map((g) => (
+              <Fragment key={g.key}>
+                <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                  <td colSpan={8} className="px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupCollapsed(g.key)}
+                      className={cn(
+                        "flex w-full items-center gap-2 text-left text-sm font-medium",
+                        isDark ? "text-[#dce1fb]" : "text-slate-800"
+                      )}
+                    >
+                      <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                      <span>{g.label}</span>
+                      <ChevronDown
+                        className={cn(
+                          "ml-auto h-4 w-4 transition-transform",
+                          isDark ? "text-white/40" : "text-slate-400",
+                          collapsedGroups.has(g.key) && "-rotate-90"
+                        )}
+                      />
+                    </button>
+                  </td>
+                </tr>
+                {!collapsedGroups.has(g.key)
+                  ? g.rows.map((r) => (
+                      <tr key={r.id} className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}>
+                        <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                          {r.number}
+                        </td>
+                        <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {kind === "client" ? r.clientName || "—" : r.memberName || "—"}
+                        </td>
+                        <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {formatDay(r.issueDate)}
+                        </td>
+                        <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {formatDay(r.dueDate)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
+                              STATUS_STYLE[r.status] ?? "bg-slate-100 text-slate-600"
+                            )}
+                          >
+                            {r.status}
+                          </span>
+                        </td>
+                        <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                          {money(r.total, r.currency)}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm tabular-nums text-emerald-600">
+                          {money(r.paidAmount, r.currency)}
+                        </td>
+                        <td
+                          className={cn(
+                            "px-4 py-3 text-right text-sm font-semibold tabular-nums",
+                            r.dueAmount > 0 ? "text-red-500" : isDark ? "text-white/40" : "text-slate-400"
+                          )}
+                        >
+                          {money(r.dueAmount, r.currency)}
+                        </td>
+                      </tr>
+                    ))
+                  : null}
+              </Fragment>
             ))}
             <tr className={cn("border-t-2 font-semibold", isDark ? "border-white/10" : "border-slate-200")}>
               <td colSpan={5} className={cn("px-4 py-3 text-sm", isDark ? "text-[#dce1fb]" : "text-slate-900")}>
@@ -318,14 +377,33 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
 
 // ─── Aging ─────────────────────────────────────────────────────────────────
 
+function keyForAgingGroup(r: InvoiceAgingRow, groupBy: string): string {
+  switch (groupBy) {
+    case "member":
+      return r.memberName || "—"
+    case "client":
+      return r.clientName || "—"
+    case "date":
+    default:
+      return r.dueDate
+  }
+}
+
 function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeEnd, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeEnd, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<InvoiceAgingRow[]>([])
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
 
   useEffect(() => {
     let cancelled = false
@@ -375,6 +453,11 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
     rows.forEach((r) => totals.set(r.bucket, (totals.get(r.bucket) ?? 0) + r.dueAmount))
     return BUCKET_ORDER.map((b) => ({ bucket: b, label: BUCKET_LABEL[b], amount: totals.get(b) ?? 0 }))
   }, [rows])
+
+  const grouped = useMemo(
+    () => groupReportRows(rows, (r) => keyForAgingGroup(r, groupBy)),
+    [rows, groupBy]
+  )
 
   useEffect(() => {
     const runPdfExport = () => {
@@ -491,35 +574,63 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}>
-                  <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                    {r.number}
-                  </td>
-                  <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {kind === "client" ? r.clientName || "—" : r.memberName || "—"}
-                  </td>
-                  <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {formatDay(r.dueDate)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-4 py-3 text-right text-sm tabular-nums",
-                      r.daysOverdue > 60 ? "text-red-500" : isDark ? "text-[#bccbb9]" : "text-slate-600"
-                    )}
-                  >
-                    {r.daysOverdue}
-                  </td>
-                  <td className={cn("px-4 py-3 text-center text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {BUCKET_LABEL[r.bucket] ?? r.bucket}
-                  </td>
-                  <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-red-500">
-                    {money(r.dueAmount, r.currency)}
-                  </td>
-                </tr>
+              {grouped.map((g) => (
+                <Fragment key={g.key}>
+                  <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                    <td colSpan={6} className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapsed(g.key)}
+                        className={cn(
+                          "flex w-full items-center gap-2 text-left text-sm font-medium",
+                          isDark ? "text-[#dce1fb]" : "text-slate-800"
+                        )}
+                      >
+                        <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                        <span>{g.label}</span>
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto h-4 w-4 transition-transform",
+                            isDark ? "text-white/40" : "text-slate-400",
+                            collapsedGroups.has(g.key) && "-rotate-90"
+                          )}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                  {!collapsedGroups.has(g.key)
+                    ? g.rows.map((r) => (
+                        <tr key={r.id} className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}>
+                          <td className={cn("px-4 py-3 text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                            {r.number}
+                          </td>
+                          <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {kind === "client" ? r.clientName || "—" : r.memberName || "—"}
+                          </td>
+                          <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {formatDay(r.dueDate)}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-right text-sm tabular-nums",
+                              r.daysOverdue > 60 ? "text-red-500" : isDark ? "text-[#bccbb9]" : "text-slate-600"
+                            )}
+                          >
+                            {r.daysOverdue}
+                          </td>
+                          <td className={cn("px-4 py-3 text-center text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {BUCKET_LABEL[r.bucket] ?? r.bucket}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm font-semibold tabular-nums text-red-500">
+                            {money(r.dueAmount, r.currency)}
+                          </td>
+                        </tr>
+                      ))
+                    : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -555,7 +666,10 @@ function InvoiceReportPage({
       exportFileBaseName={exportFileBaseName}
       pageId={pageId}
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      // Client invoices carry no member dimension (no project dimension
+      // either way - invoice rows have no project_id at all).
+      groupByOptions={kind === "team" ? TEAM_INVOICE_GROUP_BY_OPTIONS : CLIENT_INVOICE_GROUP_BY_OPTIONS}
       // Client invoices have no member dimension to filter on.
       filtersPanel={
         kind === "team"

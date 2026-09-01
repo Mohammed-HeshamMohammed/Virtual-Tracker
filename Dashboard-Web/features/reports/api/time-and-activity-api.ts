@@ -1,7 +1,7 @@
 import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
-import type { TimeActivityDayRow, TimeActivityMemberSubRow, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
+import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityMemberSubRow, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 
 interface RawMemberDay {
   memberId: string
@@ -18,8 +18,23 @@ interface RawReportDay {
   members: RawMemberDay[]
 }
 
+interface RawEntry {
+  date: string
+  memberId: string
+  memberName: string
+  projectId: string | null
+  projectName: string
+  clientName: string
+  teamName: string
+  activeSeconds: number
+  idleSeconds: number
+  spentAmount: number
+}
+
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
+  /** Absent on an older backend without this field yet - mapReport falls back to []. */
+  entries?: RawEntry[]
 }
 
 function formatMoney(amount: number | undefined): string {
@@ -92,13 +107,29 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
   }
 }
 
+function toEntry(raw: RawEntry): TimeActivityEntry {
+  return {
+    date: raw.date,
+    memberId: raw.memberId,
+    memberName: raw.memberName,
+    projectId: raw.projectId,
+    projectName: raw.projectName,
+    clientName: raw.clientName,
+    teamName: raw.teamName,
+    activeSeconds: raw.activeSeconds,
+    idleSeconds: raw.idleSeconds,
+    spentAmount: raw.spentAmount,
+  }
+}
+
 function mapReport(raw: RawTimeAndActivityReport): TimeActivityReportData {
   const days = raw.days.map(toDayRow)
   const memberRows: Record<string, TimeActivityMemberSubRow[]> = {}
   for (const day of raw.days) {
     memberRows[day.date] = day.members.map(toMemberSubRow)
   }
-  return { days, memberRows }
+  const entries = (raw.entries ?? []).map(toEntry)
+  return { days, memberRows, entries }
 }
 
 /** @param range 'YYYY-MM-DD' start/end, inclusive. memberId omitted = every member the viewer can see. */

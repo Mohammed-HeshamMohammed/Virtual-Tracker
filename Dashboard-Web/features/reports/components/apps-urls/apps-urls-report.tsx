@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
 import { fetchAppsUrlsReport } from "@/features/reports/api/misc-reports-api"
@@ -14,8 +15,20 @@ import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-ur
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  MEMBER_ONLY_GROUP_BY_OPTIONS,
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+} from "@/features/reports/components/shared/constants"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
+import { groupReportRows } from "@/features/reports/utils/report-grouping"
+
+// AppUsageRow/UrlUsageRow are pre-aggregated per member for the whole
+// selected range - no per-row date and no project, so "Member" (the
+// dropdown's only option) is the one real key to bucket by.
+function keyForUsageGroup<T extends { memberName: string }>(row: T): string {
+  return row.memberName
+}
 
 function UsageTable<T extends { memberName: string; durationHms: string }>({
   title,
@@ -29,6 +42,14 @@ function UsageTable<T extends { memberName: string; durationHms: string }>({
   getLabel: (row: T) => string
 }) {
   const { isDark } = useTheme()
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
+  const grouped = useMemo(() => groupReportRows(rows, keyForUsageGroup), [rows])
   const th = cn(
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",
     isDark ? "text-white/40" : "text-slate-500"
@@ -55,15 +76,43 @@ function UsageTable<T extends { memberName: string; durationHms: string }>({
               </td>
             </tr>
           ) : null}
-          {rows.map((row, i) => (
-            <tr key={`${row.memberName}-${getLabel(row)}-${i}`} className={cn(
-              "border-b transition-colors last:border-b-0",
-              isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-            )}>
-              <td className={cn("px-4 py-3", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.memberName}</td>
-              <td className={cn("px-4 py-3", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{getLabel(row)}</td>
-              <td className={cn("px-4 py-3 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.durationHms}</td>
-            </tr>
+          {grouped.map((g) => (
+            <Fragment key={g.key}>
+              <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                <td colSpan={3} className="px-4 py-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroupCollapsed(g.key)}
+                    className={cn(
+                      "flex w-full items-center gap-2 text-left text-sm font-medium",
+                      isDark ? "text-[#dce1fb]" : "text-slate-800"
+                    )}
+                  >
+                    <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                    <span>{g.label}</span>
+                    <ChevronDown
+                      className={cn(
+                        "ml-auto h-4 w-4 transition-transform",
+                        isDark ? "text-white/40" : "text-slate-400",
+                        collapsedGroups.has(g.key) && "-rotate-90"
+                      )}
+                    />
+                  </button>
+                </td>
+              </tr>
+              {!collapsedGroups.has(g.key)
+                ? g.rows.map((row, i) => (
+                    <tr key={`${row.memberName}-${getLabel(row)}-${i}`} className={cn(
+                      "border-b transition-colors last:border-b-0",
+                      isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                    )}>
+                      <td className={cn("px-4 py-3", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.memberName}</td>
+                      <td className={cn("px-4 py-3", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{getLabel(row)}</td>
+                      <td className={cn("px-4 py-3 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{row.durationHms}</td>
+                    </tr>
+                  ))
+                : null}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -190,7 +239,9 @@ export function AppsUrlsReport({ onNavigate }: { onNavigate?: (id: string) => vo
       exportFileBaseName="apps-urls"
       pageId="reports-apps-urls"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={MEMBER_ONLY_GROUP_BY_OPTIONS}
+      defaultGroupBy="member"
       filtersPanel={(close) => (
         <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
       )}

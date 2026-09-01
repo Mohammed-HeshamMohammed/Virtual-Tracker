@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { cn } from "@/shared/utils/utils"
 import {
@@ -23,7 +24,13 @@ import {
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  DATE_MEMBER_GROUP_BY_OPTIONS,
+  MEMBER_ONLY_GROUP_BY_OPTIONS,
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+} from "@/features/reports/components/shared/constants"
+import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
 function initialsFor(name: string): string {
   return (
@@ -53,12 +60,26 @@ const thBase = "px-4 py-3 text-sm font-semibold"
 
 // ─── Balances ──────────────────────────────────────────────────────────────
 
+// Balances are a single as-of snapshot per member/policy - every row shares
+// the same date, so "Member" (the dropdown's only option) is the one real
+// key to bucket by.
+function keyForBalanceGroup(r: TimeOffBalanceRow): string {
+  return r.memberName
+}
+
 function BalancesTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
   const { rangeEnd, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimeOffBalanceRow[]>([])
   const [asOf, setAsOf] = useState("")
   const [loading, setLoading] = useState(true)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
   // A failed request used to fall through to the empty state, so an
   // outage read as "no data for this range". reloadKey re-runs the fetch
   // when the viewer retries.
@@ -86,6 +107,8 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
       cancelled = true
     }
   }, [rangeEnd, filters, reloadKey])
+
+  const grouped = useMemo(() => groupReportRows(rows, keyForBalanceGroup), [rows])
 
   useEffect(() => {
     registerExportHandler(() => {
@@ -201,43 +224,71 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={`${r.memberId}-${r.policyId}`}
-                  className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}
-                >
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <ReportMemberAvatar initials={initialsFor(r.memberName)} />
-                      <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                        {r.memberName}
-                      </span>
-                    </div>
-                  </td>
-                  <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {r.policyName}
-                  </td>
-                  <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {days(r.entitlementDays)}
-                  </td>
-                  <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {days(r.accruedDays)}
-                  </td>
-                  <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                    {days(r.usedDays)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-4 py-3 text-right text-sm font-semibold tabular-nums",
-                      r.balanceDays < 0 ? "text-red-500" : isDark ? "text-[#dce1fb]" : "text-slate-900"
-                    )}
-                  >
-                    {days(r.balanceDays)}
-                  </td>
-                </tr>
+              {grouped.map((g) => (
+                <Fragment key={g.key}>
+                  <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                    <td colSpan={6} className="px-4 py-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapsed(g.key)}
+                        className={cn(
+                          "flex w-full items-center gap-2 text-left text-sm font-medium",
+                          isDark ? "text-[#dce1fb]" : "text-slate-800"
+                        )}
+                      >
+                        <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                        <span>{g.label}</span>
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto h-4 w-4 transition-transform",
+                            isDark ? "text-white/40" : "text-slate-400",
+                            collapsedGroups.has(g.key) && "-rotate-90"
+                          )}
+                        />
+                      </button>
+                    </td>
+                  </tr>
+                  {!collapsedGroups.has(g.key)
+                    ? g.rows.map((r) => (
+                        <tr
+                          key={`${r.memberId}-${r.policyId}`}
+                          className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2">
+                              <ReportMemberAvatar initials={initialsFor(r.memberName)} />
+                              <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                                {r.memberName}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {r.policyName}
+                          </td>
+                          <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {days(r.entitlementDays)}
+                          </td>
+                          <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {days(r.accruedDays)}
+                          </td>
+                          <td className={cn("px-4 py-3 text-right text-sm tabular-nums", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                            {days(r.usedDays)}
+                          </td>
+                          <td
+                            className={cn(
+                              "px-4 py-3 text-right text-sm font-semibold tabular-nums",
+                              r.balanceDays < 0 ? "text-red-500" : isDark ? "text-[#dce1fb]" : "text-slate-900"
+                            )}
+                          >
+                            {days(r.balanceDays)}
+                          </td>
+                        </tr>
+                      ))
+                    : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
@@ -257,7 +308,9 @@ export function TimeOffBalancesReport({ onNavigate }: { onNavigate?: (id: string
       exportFileBaseName="time-off-balances"
       pageId="reports-time-off-balances"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={MEMBER_ONLY_GROUP_BY_OPTIONS}
+      defaultGroupBy="member"
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}
@@ -281,11 +334,28 @@ const KIND_STYLE: Record<string, string> = {
   adjustment: "bg-amber-50 text-amber-600",
 }
 
+function keyForTransactionGroup(r: TimeOffTransactionRow, groupBy: string): string {
+  switch (groupBy) {
+    case "member":
+      return r.memberName
+    case "date":
+    default:
+      return r.effectiveOn
+  }
+}
+
 function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
-  const { rangeStart, rangeEnd, dateLabel, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
+  const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimeOffTransactionRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupCollapsed = (key: string) =>
+    setCollapsedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
   // A failed request used to fall through to the empty state, so an
   // outage read as "no data for this range". reloadKey re-runs the fetch
   // when the viewer retries.
@@ -336,6 +406,11 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
   }, [rows, registerExportHandler])
 
   const net = useMemo(() => rows.reduce((s, r) => s + r.days, 0), [rows])
+
+  const grouped = useMemo(
+    () => groupReportRows(rows, (r) => keyForTransactionGroup(r, groupBy)),
+    [rows, groupBy]
+  )
 
   useEffect(() => {
     const runPdfExport = () => {
@@ -429,50 +504,78 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.id} className={cn(
-                  "border-b transition-colors",
-                  isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
-                )}>
-                <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {formatDay(r.effectiveOn)}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <ReportMemberAvatar initials={initialsFor(r.memberName)} />
-                    <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                      {r.memberName}
-                    </span>
-                  </div>
-                </td>
-                <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                  {r.policyName}
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <span
-                    className={cn(
-                      "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
-                      KIND_STYLE[r.kind] ?? "bg-slate-100 text-slate-600"
-                    )}
-                  >
-                    {r.kind}
-                  </span>
-                </td>
-                <td
-                  className={cn(
-                    "px-4 py-3 text-right text-sm font-semibold tabular-nums",
-                    r.days < 0 ? "text-red-500" : "text-emerald-600"
-                  )}
-                >
-                  {r.days > 0 ? `+${days(r.days)}` : days(r.days)}
-                </td>
-                <td
-                  className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}
-                  title={r.note}
-                >
-                  {r.note || "—"}
-                </td>
-              </tr>
+            {grouped.map((g) => (
+              <Fragment key={g.key}>
+                <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
+                  <td colSpan={6} className="px-4 py-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupCollapsed(g.key)}
+                      className={cn(
+                        "flex w-full items-center gap-2 text-left text-sm font-medium",
+                        isDark ? "text-[#dce1fb]" : "text-slate-800"
+                      )}
+                    >
+                      <LayoutList className={cn("h-4 w-4 shrink-0", isDark ? "text-white/45" : "text-slate-500")} />
+                      <span>{g.label}</span>
+                      <ChevronDown
+                        className={cn(
+                          "ml-auto h-4 w-4 transition-transform",
+                          isDark ? "text-white/40" : "text-slate-400",
+                          collapsedGroups.has(g.key) && "-rotate-90"
+                        )}
+                      />
+                    </button>
+                  </td>
+                </tr>
+                {!collapsedGroups.has(g.key)
+                  ? g.rows.map((r) => (
+                      <tr key={r.id} className={cn(
+                          "border-b transition-colors",
+                          isDark ? "border-white/5 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
+                        )}>
+                        <td className={cn("px-4 py-3 text-sm whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {formatDay(r.effectiveOn)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <ReportMemberAvatar initials={initialsFor(r.memberName)} />
+                            <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
+                              {r.memberName}
+                            </span>
+                          </div>
+                        </td>
+                        <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+                          {r.policyName}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span
+                            className={cn(
+                              "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
+                              KIND_STYLE[r.kind] ?? "bg-slate-100 text-slate-600"
+                            )}
+                          >
+                            {r.kind}
+                          </span>
+                        </td>
+                        <td
+                          className={cn(
+                            "px-4 py-3 text-right text-sm font-semibold tabular-nums",
+                            r.days < 0 ? "text-red-500" : "text-emerald-600"
+                          )}
+                        >
+                          {r.days > 0 ? `+${days(r.days)}` : days(r.days)}
+                        </td>
+                        <td
+                          className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}
+                          title={r.note}
+                        >
+                          {r.note || "—"}
+                        </td>
+                      </tr>
+                    ))
+                  : null}
+              </Fragment>
             ))}
             <tr className={cn("border-t-2 font-semibold", isDark ? "border-white/10" : "border-slate-200")}>
               <td colSpan={4} className={cn("px-4 py-3 text-sm", isDark ? "text-[#dce1fb]" : "text-slate-900")}>
@@ -505,7 +608,8 @@ export function TimeOffTransactionsReport({ onNavigate }: { onNavigate?: (id: st
       exportFileBaseName="time-off-transactions"
       pageId="reports-time-off-transactions"
       showScopeTabs={false}
-      showGroupBy={false}
+      showGroupBy={true}
+      groupByOptions={DATE_MEMBER_GROUP_BY_OPTIONS}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}
