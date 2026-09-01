@@ -8,6 +8,9 @@ const SEARCH_THRESHOLD = 6;
 
 type TasksListProps = {
   signedIn: boolean;
+  /** First load still in flight. Distinct from "loaded and empty" and from
+   *  "loaded and failed" - all three used to collapse into one row. */
+  loading: boolean;
   assignedTasks: AgentTask[];
   assignedTasksFailed: boolean;
   selectedTaskId: string;
@@ -23,6 +26,7 @@ type TasksListProps = {
 // it, no dropdown.
 export function TasksList({
   signedIn,
+  loading,
   assignedTasks,
   assignedTasksFailed,
   selectedTaskId,
@@ -82,6 +86,14 @@ export function TasksList({
               <span className={`badge ${taskStatusTone(task.status)}`}>{taskStatusLabel(task.status)}</span>
             </button>
           ))}
+        </div>
+      ) : loading ? (
+        /* First load still in flight. This used to fall straight through to
+           the failure row, so a slow network announced itself as
+           "Couldn't load your tasks" before anything had actually failed. */
+        <div className="side-skeleton" aria-hidden="true">
+          <span className="skeleton-bar" />
+          <span className="skeleton-bar" />
         </div>
       ) : assignedTasksFailed ? (
         <p className="side-tasklist-empty bad">

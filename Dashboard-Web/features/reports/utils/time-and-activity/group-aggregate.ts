@@ -64,10 +64,16 @@ type Bucket = {
   label: string
   activeSeconds: number
   idleSeconds: number
+  /** Hand-entered time, totalled alongside the observed seconds but never
+   *  mixed into them - the activity ratio is built from active/idle only. */
+  manualSeconds: number
   spentAmount: number
   memberIds: Set<string>
   projectIds: Set<string>
-  sub: Map<string, { label: string; activeSeconds: number; idleSeconds: number; spentAmount: number }>
+  sub: Map<
+    string,
+    { label: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentAmount: number }
+  >
 }
 
 function keyLabelFor(mode: "member" | "project" | "client" | "team", e: TimeActivityEntry): [string, string] {
@@ -108,18 +114,21 @@ export function buildGroupedRows(
 
   function addTo(key: string, label: string, e: TimeActivityEntry, subKey: string, subLabel: string) {
     if (!buckets.has(key)) {
-      buckets.set(key, { label, activeSeconds: 0, idleSeconds: 0, spentAmount: 0, memberIds: new Set(), projectIds: new Set(), sub: new Map() })
+      buckets.set(key, { label, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentAmount: 0, memberIds: new Set(), projectIds: new Set(), sub: new Map() })
     }
     const b = buckets.get(key)!
     b.activeSeconds += e.activeSeconds
     b.idleSeconds += e.idleSeconds
+    b.manualSeconds += e.manualSeconds
     b.spentAmount += e.spentAmount
     b.memberIds.add(e.memberId)
     if (e.projectId) b.projectIds.add(e.projectId)
-    if (!b.sub.has(subKey)) b.sub.set(subKey, { label: subLabel, activeSeconds: 0, idleSeconds: 0, spentAmount: 0 })
+    if (!b.sub.has(subKey))
+      b.sub.set(subKey, { label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentAmount: 0 })
     const s = b.sub.get(subKey)!
     s.activeSeconds += e.activeSeconds
     s.idleSeconds += e.idleSeconds
+    s.manualSeconds += e.manualSeconds
     s.spentAmount += e.spentAmount
   }
 
@@ -151,20 +160,22 @@ export function buildGroupedRows(
       todo: "",
       regularHours: totalHours,
       breakTime: "00:00:00",
-      totalHours,
+      // Total carries the hand-entered time; activityPct deliberately does
+      // not - only observed time can support an activity ratio.
+      totalHours: formatSecondsAsHMS(b.activeSeconds + b.manualSeconds),
       activityPct:
         b.activeSeconds + b.idleSeconds > 0 ? Math.round((b.activeSeconds / (b.activeSeconds + b.idleSeconds)) * 100) : 0,
       idlePct: pctString(b.idleSeconds, b.activeSeconds),
       idleHr: formatSecondsAsHMS(b.idleSeconds),
       totalSpent: formatMoney(b.spentAmount),
       trackedHours: b.activeSeconds / 3600,
-      manualHours: 0,
+      manualHours: b.manualSeconds / 3600,
     })
     subRowsByKey[key] = [...b.sub.entries()].map(([, s]) => ({
       name: s.label,
       avatar: initialsFor(s.label),
       regularHours: formatSecondsAsHMS(s.activeSeconds),
-      totalHours: formatSecondsAsHMS(s.activeSeconds),
+      totalHours: formatSecondsAsHMS(s.activeSeconds + s.manualSeconds),
       breakTime: "00:00:00",
       activityPct:
         s.activeSeconds + s.idleSeconds > 0 ? Math.round((s.activeSeconds / (s.activeSeconds + s.idleSeconds)) * 100) : 0,
@@ -172,7 +183,7 @@ export function buildGroupedRows(
       idleHr: formatSecondsAsHMS(s.idleSeconds),
       totalSpent: formatMoney(s.spentAmount),
       trackedHours: s.activeSeconds / 3600,
-      manualHours: 0,
+      manualHours: s.manualSeconds / 3600,
       projectNames: [],
     }))
   }

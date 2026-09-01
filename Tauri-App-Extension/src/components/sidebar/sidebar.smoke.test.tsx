@@ -156,7 +156,7 @@ describe("ProjectsList", () => {
 describe("TasksList", () => {
   it("shows the failure state, not the green all-clear, when the fetch failed", () => {
     const html = renderToStaticMarkup(
-      <TasksList signedIn assignedTasks={[]} assignedTasksFailed={true} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+      <TasksList signedIn loading={false} assignedTasks={[]} assignedTasksFailed={true} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     // renderToStaticMarkup HTML-escapes the apostrophe (Couldn&#x27;t) -
     // match a substring that avoids it rather than the raw text.
@@ -168,7 +168,7 @@ describe("TasksList", () => {
 
   it("reads as neutral guidance, not success or failure, when nothing is assigned", () => {
     const html = renderToStaticMarkup(
-      <TasksList signedIn assignedTasks={[]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+      <TasksList signedIn loading={false} assignedTasks={[]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     expect(html).toContain("No tasks assigned to you");
     // Points at the next step rather than just stating the absence.
@@ -182,7 +182,7 @@ describe("TasksList", () => {
   it("falls back to 'Unknown project' for a task whose project isn't in the lookup", () => {
     const task: AgentTask = { id: "t1", title: "Do the thing", status: "todo", projectId: "missing" };
     const html = renderToStaticMarkup(
-      <TasksList signedIn assignedTasks={[task]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+      <TasksList signedIn loading={false} assignedTasks={[task]} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     expect(html).toContain("Unknown project");
   });
@@ -195,7 +195,7 @@ describe("TasksList", () => {
       projectId: "",
     }));
     const html = renderToStaticMarkup(
-      <TasksList signedIn assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+      <TasksList signedIn loading={false} assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     expect(html).not.toContain("side-tasklist-search");
   });
@@ -208,7 +208,7 @@ describe("TasksList", () => {
       projectId: "",
     }));
     const html = renderToStaticMarkup(
-      <TasksList signedIn assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
+      <TasksList signedIn loading={false} assignedTasks={tasks} assignedTasksFailed={false} selectedTaskId="" busy={false} sessionOpen={false} projectNameById={new Map()} onSelectTask={noop} />,
     );
     expect(html).toContain("side-tasklist-search");
     expect(html).toContain("Filter tasks");
@@ -478,5 +478,39 @@ describe("ManagementCard", () => {
     );
     expect(html).toContain("Organization");
     expect(html).not.toContain("waiting on you");
+  });
+});
+
+// The three states used to collapse into one: in-flight, loaded-and-empty,
+// and loaded-and-failed all reached the same row, so a slow network
+// announced itself as a hard failure before anything had failed.
+describe("TasksList loading state", () => {
+  const base = {
+    signedIn: true as const,
+    assignedTasks: [],
+    selectedTaskId: "",
+    busy: false,
+    sessionOpen: false,
+    projectNameById: new Map(),
+    onSelectTask: noop,
+  };
+
+  it("shows a skeleton while the first load is in flight, not an error", () => {
+    const html = renderToStaticMarkup(<TasksList {...base} loading assignedTasksFailed={false} />);
+    expect(html).toContain("skeleton-bar");
+    expect(html).not.toContain("load your tasks");
+    expect(html).not.toContain("No tasks assigned to you");
+  });
+
+  it("still shows the skeleton rather than the error if a failure flag is already set mid-load", () => {
+    const html = renderToStaticMarkup(<TasksList {...base} loading assignedTasksFailed={true} />);
+    expect(html).toContain("skeleton-bar");
+    expect(html).not.toContain("load your tasks");
+  });
+
+  it("shows the failure only once loading has finished", () => {
+    const html = renderToStaticMarkup(<TasksList {...base} loading={false} assignedTasksFailed={true} />);
+    expect(html).toContain("load your tasks");
+    expect(html).not.toContain("skeleton-bar");
   });
 });

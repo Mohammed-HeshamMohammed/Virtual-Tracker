@@ -371,6 +371,23 @@ function MainApp() {
     }
   }, [signedIn]);
 
+  // Projects and tasks are independent fetches against the same backend, so
+  // one failing is a real per-resource error worth showing in place - but
+  // both failing at the same moment is almost always the connection, not two
+  // coincidental server errors. Showing two separate "Couldn't load" rows
+  // there described the symptom and hid the cause; the reconnect view can
+  // actually be acted on.
+  //
+  // Gated on both having completed a load, so the in-flight state (when both
+  // are still false) never trips it.
+  useEffect(() => {
+    if (!signedIn) return;
+    if (!projectsLoaded || !assignedTasksLoaded) return;
+    if (projectsFailed && assignedTasksFailed) {
+      setConnection("disconnected");
+    }
+  }, [signedIn, projectsLoaded, assignedTasksLoaded, projectsFailed, assignedTasksFailed]);
+
   // Time off, timesheet, earnings, and - per role, decided server-side -
   // team status, pending approvals and the org pulse, in one call. Same 60s
   // cadence as the dashboard summary above: none of it changes faster than
@@ -1962,6 +1979,7 @@ function MainApp() {
 
           <TasksList
             signedIn={signedIn}
+            loading={!assignedTasksLoaded}
             assignedTasks={assignedTasks}
             assignedTasksFailed={assignedTasksFailed}
             selectedTaskId={selectedTaskId}
@@ -1988,7 +2006,19 @@ function MainApp() {
                   row, and a dropdown next to each was a second, redundant
                   control for the same choice. Only the "nothing to pick
                   from" fallback is left to show here. */}
-              {projects.length === 0 ? (
+              {/* Skeleton while the first load is still in flight - "Couldn't
+                  load your projects" was shown for the in-flight case too,
+                  so a slow network read as a hard failure. The error text is
+                  now reachable only once a load has actually finished and
+                  failed, and even then only when tasks loaded fine: both
+                  failing together is a connection problem, handled by the
+                  reconnect view rather than by two error rows. */}
+              {projects.length === 0 && !projectsLoaded ? (
+                <div className="side-skeleton" aria-hidden="true">
+                  <span className="skeleton-bar" />
+                  <span className="skeleton-bar" />
+                </div>
+              ) : projects.length === 0 ? (
                 <p className={`side-tasklist-empty side-panel-swap${projectsFailed ? " bad" : ""}`}>
                   <Icon name={projectsFailed ? "warn" : "info"} />
                   {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}

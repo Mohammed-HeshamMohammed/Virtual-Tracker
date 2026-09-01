@@ -96,3 +96,71 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
     idle_seconds: Math.max(0, Number(row.idle_seconds) || 0),
   }));
 }
+
+/**
+ * Manual time entries for the same window the session query above covers.
+ *
+ * These live in a different table for a good reason - a manual entry is an
+ * assertion about time that was never observed, so it carries a duration but
+ * no active/idle split and no real start timestamp. The report was already
+ * built to hold them separately (every row model down to the CSV has carried
+ * a "Manual hours" column since it was written), but nothing ever filled it,
+ * so time added through "Add time for someone" was stored correctly and then
+ * never appeared in the report it was added from.
+ *
+ * `source = 'manual'` is not cosmetic: the column also permits 'tracked', and
+ * a tracked row would mirror an activity_sessions row that this report
+ * already counts. Without the filter this would double-count that time.
+ *
+ * No timezone splitting here, unlike sessions: `date` is a DATE column, so
+ * the entry is already attributed to a calendar day by whoever entered it.
+ *
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
+ */
+export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
+  const rows = await query(
+    `SELECT
+       te.member_id,
+       te.project_id,
+       te.date,
+       te.duration,
+       COALESCE(p.name, '') AS project_name,
+       COALESCE(client_lookup.client_name, '') AS client_name,
+       COALESCE(team_lookup.team_name, '')     AS team_name
+     FROM time_entries te
+     LEFT JOIN projects p ON p.id = te.project_id
+     LEFT JOIN LATERAL (
+       SELECT c.name AS client_name
+       FROM client_projects cp
+       JOIN clients c ON c.id = cp.client_id
+       WHERE cp.project_id = p.id
+       ORDER BY cp.assigned_at ASC
+       LIMIT 1
+     ) client_lookup ON p.id IS NOT NULL
+     LEFT JOIN LATERAL (
+       SELECT tm_t.name AS team_name
+       FROM team_members tm
+       JOIN teams tm_t ON tm_t.id = tm.team_id
+       WHERE tm.member_id = te.member_id
+       ORDER BY tm.joined_at ASC
+       LIMIT 1
+     ) team_lookup ON true
+     WHERE te.source = 'manual'
+       AND te.date >= $1::date AND te.date <= $2::date
+       AND ($3::uuid[] IS NULL OR te.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR te.project_id = ANY($4::uuid[]))
+     ORDER BY te.date ASC
+     LIMIT 5000`,
+    [fromDay, toDay, memberIds, projectIds],
+  );
+
+  return rows.map((row) => ({
+    member_id: row.member_id,
+    project_id: row.project_id,
+    day: String(row.date).slice(0, 10),
+    project_name: row.project_name,
+    client_name: row.client_name,
+    team_name: row.team_name,
+    manual_seconds: Math.max(0, Number(row.duration) || 0),
+  }));
+}

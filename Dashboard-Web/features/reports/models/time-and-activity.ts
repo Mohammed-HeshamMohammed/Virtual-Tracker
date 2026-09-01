@@ -59,6 +59,10 @@ export interface TimeActivityEntry {
   teamName: string
   activeSeconds: number
   idleSeconds: number
+  /** Hand-entered time for this day/member/project. Kept apart from
+   *  activeSeconds so grouped views can total it without it ever feeding
+   *  the activity percentage, which only observed time can support. */
+  manualSeconds: number
   spentAmount: number
 }
 

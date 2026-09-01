@@ -6,7 +6,10 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { getDb } from "../../config/firebase.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { buildMemberMetaMap } from "../activity/activity-scope.js";
-import { getTimeAndActivityReportRowsPg } from "../../lib/postgres/time-and-activity-report-postgres.service.js";
+import {
+  getManualTimeEntryRowsPg,
+  getTimeAndActivityReportRowsPg,
+} from "../../lib/postgres/time-and-activity-report-postgres.service.js";
 import { buildTimeAndActivityReportPayload } from "./build-time-and-activity-rows.js";
 import { getMemberTimezones } from "./member-timezones.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
@@ -208,7 +211,13 @@ async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
  * @param {string} to
  */
 export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null) {
-  const rawRows = await getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
+  // Sessions and manual entries live in different tables and are fetched
+  // together - manual time was previously stored and then never read back
+  // here, so the report's own "Manual hours" column always read 0.
+  const [rawRows, manualRows] = await Promise.all([
+    getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
+    getManualTimeEntryRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
+  ]);
   const memberIdsInResult = [...new Set(rawRows.map((r) => r.member_id))];
   const [nameMap, tzMap] = await Promise.all([
     buildMemberMetaMap(db, memberIdsInResult),
@@ -230,7 +239,7 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
       }
     }
   }
-  return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap);
+  return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows);
 }
 
 /**
