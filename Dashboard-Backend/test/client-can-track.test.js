@@ -18,6 +18,14 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
 });
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
+    // mock.module replaces the whole namespace, so every export anything in
+    // the transitive chain touches must exist - role-hierarchy.js reaches
+    // lookup-availability.js, which needs isPostgresConfigured.
+    getPostgresPool: () => null,
+    isPostgresConfigured: () => true,
+    withTransaction: async (fn) => fn(),
+    probePostgresReadiness: async () => true,
+    __closePostgresPoolForTests: async () => {},
     query: async (sql) => {
       // isProjectMemberForTimer's plain project_members lookup for non-client
       // roles - no rows means "not a member" for every case below that

@@ -56,6 +56,7 @@ import {
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
 import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
+import { isAdminLevelRole } from "../../http/role-hierarchy.js";
 import { buildAgentWorkspace } from "./workspace.service.js";
 import {
   getProjectPg,
@@ -511,6 +512,42 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
+  // The viewer's own recent screenshots, ids + timestamps only. Deliberately
+  // self-scoped with no memberId parameter: this backs the agent's "what is
+  // actually being captured on my machine" panel, which is a transparency
+  // surface, not the managers' activity feed (that is /api/activity/feed,
+  // which carries its own scope resolution). Image bytes are not included -
+  // the agent fetches one at a time from /api/activity/screenshot/:id, which
+  // already returns a data URL and runs its own ownership check.
+  if (pn === "/api/activity/my-screenshots" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      const rawLimit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
+      const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 12;
+      const rows = await fetchPgScreenshots([member.memberId], null, limit);
+      sendJson(res, origin, 200, {
+        success: true,
+        data: rows.map((row) => ({
+          id: String(row.id ?? ""),
+          capturedAt: row.captured_at ?? row.capturedAt ?? null,
+        })),
+      });
+    } catch (e) {
+      logSafeError("[activity/my-screenshots]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load screenshots." });
+    }
+    return true;
+  }
+
   if (pn === "/api/activity/session" && req.method === "POST") {
     let body;
     try {
@@ -656,9 +693,17 @@ export async function routeActivity(req, res, url, origin) {
           // project's own members track, and clientMayTrackProject already
           // no-ops (false) for every non-client role, so this never widens
           // access for anyone else.
+          //
+          // The org-admin leg mirrors the same override GET /api/projects
+          // reports to these roles: Owner/Super Admin/Admin may already time
+          // any task in any project, but are never themselves assigned tasks,
+          // so requiring one made normal projects untrackable for them.
+          // Which projects they may track is unchanged (isProjectMemberForTimer
+          // already returned true) - only the "pick a task first" step goes.
           const allowsTaskLessTimer =
             isTaskLessProjectType(project.type) ||
             project.require_task_to_track === false ||
+            isAdminLevelRole(viewer?.roleName ?? "") ||
             (await clientMayTrackProject({ memberId: member.memberId, roleName: viewer?.roleName ?? "" }, sessionProjectId));
           if (!allowsTaskLessTimer) {
             sendJson(res, origin, 400, {
