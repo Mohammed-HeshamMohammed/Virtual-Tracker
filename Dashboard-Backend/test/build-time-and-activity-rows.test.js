@@ -50,6 +50,7 @@ test("a single session on one project produces one entry carrying its client/tea
     teamName: "Core Team",
     activeSeconds: 3000,
     idleSeconds: 600,
+    manualSeconds: 0,
     spentAmount: 0,
   });
 });
@@ -115,4 +116,91 @@ test("entries from different members on the same project/day stay separate", () 
   const byMember = new Map(entries.map((e) => [e.memberId, e]));
   assert.equal(byMember.get("m1").activeSeconds, 1000);
   assert.equal(byMember.get("m2").activeSeconds, 2000);
+});
+
+// Manual time entries. These used to be written to time_entries and then
+// never read back by this report, so its own "Manual hours" column - which
+// has existed since the report was written - always displayed 0 for time the
+// user had just added through "Add time for someone".
+function manual(overrides = {}) {
+  return {
+    member_id: "m1",
+    project_id: "p1",
+    day: "2026-08-25",
+    project_name: "Project One",
+    client_name: "Acme Co",
+    team_name: "Core Team",
+    manual_seconds: 1800,
+    ...overrides,
+  };
+}
+
+test("a manual entry reaches the entry for its own day, member and project", () => {
+  const { entries } = buildTimeAndActivityReportPayload(
+    [], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(), [manual()],
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].projectId, "p1", "attributed to the project it was filed against");
+  assert.equal(entries[0].manualSeconds, 1800);
+  assert.equal(entries[0].activeSeconds, 0, "manual time is not tracked time");
+});
+
+test("manual time never lands in active/idle, so it cannot inflate the activity ratio", () => {
+  const { days } = buildTimeAndActivityReportPayload(
+    [session()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(),
+    [manual({ manual_seconds: 36000 })],
+  );
+  const member = days[0].members[0];
+  // Ten hours hand-typed against 50 minutes actually observed - if this bled
+  // into activeSeconds the member would read as near-100% active.
+  assert.equal(member.activeSeconds, 3000, "unchanged by the manual entry");
+  assert.equal(member.idleSeconds, 600, "unchanged by the manual entry");
+  assert.equal(member.manualSeconds, 36000);
+});
+
+test("a manual entry merges into the same bucket as a session on that day/member/project", () => {
+  const { entries, days } = buildTimeAndActivityReportPayload(
+    [session()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(), [manual()],
+  );
+  assert.equal(entries.length, 1, "one bucket, not a duplicate row");
+  assert.equal(entries[0].activeSeconds, 3000);
+  assert.equal(entries[0].manualSeconds, 1800);
+  assert.equal(days[0].members.length, 1);
+});
+
+test("a manual entry on a day with no session still creates that day", () => {
+  const { days, entries } = buildTimeAndActivityReportPayload(
+    [], memberNameMap, memberTimezones, "2026-08-25", "2026-08-26",
+    new Map(), [manual({ day: "2026-08-26" })],
+  );
+  assert.equal(days.length, 1);
+  assert.equal(days[0].date, "2026-08-26");
+  assert.equal(entries[0].manualSeconds, 1800);
+});
+
+test("manual entries outside the requested range are dropped", () => {
+  const { days } = buildTimeAndActivityReportPayload(
+    [], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25",
+    new Map(), [manual({ day: "2026-08-24" }), manual({ day: "2026-08-26" })],
+  );
+  assert.equal(days.length, 0);
+});
+
+test("manual hours are paid at the member's rate, same as tracked ones", () => {
+  const rates = new Map([["m1", 60]]);
+  const { days } = buildTimeAndActivityReportPayload(
+    [], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", rates,
+    [manual({ manual_seconds: 3600 })],
+  );
+  assert.equal(days[0].members[0].spentAmount, 60, "one hand-entered hour at $60/h");
+});
+
+test("two manual entries on different projects stay separate entries", () => {
+  const { entries } = buildTimeAndActivityReportPayload(
+    [], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(),
+    [manual(), manual({ project_id: "p2", project_name: "Project Two", manual_seconds: 900 })],
+  );
+  assert.equal(entries.length, 2);
+  const byProject = Object.fromEntries(entries.map((e) => [e.projectId, e.manualSeconds]));
+  assert.deepEqual(byProject, { p1: 1800, p2: 900 });
 });
