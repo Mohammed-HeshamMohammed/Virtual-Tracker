@@ -22,6 +22,7 @@ export const projectSchemas = [
       restrict_task_creation: "boolean",
       require_stop_note: "boolean",
       client_can_manage: "boolean",
+      client_can_track: "boolean",
       status: "string",
       created_at: "timestamp",
       created_by: "uuid",

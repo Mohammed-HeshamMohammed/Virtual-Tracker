@@ -3,9 +3,11 @@ import { getAuthContext, isManagementRole, requireManagementRole } from "../../h
 import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import {
   assertProjectAccessible,
+  clientMayTrackProject,
   getViewerProjectIds,
   isOrgProjectAdminRole,
   toAllowedProjectSet,
+  viewerCanCreateProjectTasks,
   viewerCanWriteProject,
 } from "../../http/project-access.js";
 import { canEditTeam } from "../../http/team-edit-access.js";
@@ -429,6 +431,7 @@ export async function routeProjects(req, res, url, db, origin) {
           restrictTaskCreation: Boolean(project.restrict_task_creation ?? project.restrictTaskCreation ?? true),
           requireStopNote: Boolean(project.require_stop_note ?? project.requireStopNote ?? false),
           clientCanManage: Boolean(project.client_can_manage ?? project.clientCanManage ?? false),
+          clientCanTrack: Boolean(project.client_can_track ?? project.clientCanTrack ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           // Only management projects can have these; an empty array for every
           // other type keeps the response shape uniform for the client.
@@ -642,10 +645,35 @@ export async function routeProjects(req, res, url, db, origin) {
       // to show a task picker from one boolean instead of carrying its own
       // copy of which type names are task-less, which would need an agent
       // release every time a type is added.
-      const withDerived = rows.map((row) => ({
-        ...row,
-        has_tasks: projectTypeDef(row.type).hasTasks,
-      }));
+      //
+      // can_create_tasks is the same idea applied to viewerCanCreateProjectTasks
+      // (org admin, or this member's own project_role = "manager") - the
+      // desktop agent's "+ New task" affordance reads it directly instead of
+      // guessing from role name and risking a 403 on every regular member's
+      // task-based project. ORG_PROJECT_TASK_ADMIN_ROLES short-circuits
+      // before any query, so this only costs a row lookup per project for
+      // members who aren't already an org-wide admin.
+      const viewer = getAuthContext(req);
+      const withDerived = await Promise.all(
+        rows.map(async (row) => {
+          // A client_can_track project reads as task-less for a client
+          // specifically, independent of require_task_to_track's real value
+          // (which still governs everyone else unchanged) - clients are
+          // never assigned tasks, so without this override a project that
+          // requires one would be untrackable for them even with the flag
+          // on. clientMayTrackProject already no-ops (false) for every
+          // non-client role, so the desktop agent's own require_task_to_track
+          // gate just works unchanged, with no client-specific branching
+          // needed on that side at all.
+          const clientTrackable = viewer ? await clientMayTrackProject(viewer, row.id) : false;
+          return {
+            ...row,
+            has_tasks: projectTypeDef(row.type).hasTasks,
+            can_create_tasks: viewer ? await viewerCanCreateProjectTasks(db, viewer, row.id) : false,
+            ...(clientTrackable ? { require_task_to_track: false } : {}),
+          };
+        }),
+      );
       sendJson(res, origin, 200, { success: true, data: withDerived });
     } catch (e) {
       logSafeError("[projects GET]", e);
@@ -678,6 +706,7 @@ export async function routeProjects(req, res, url, db, origin) {
         restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
         requireStopNote: body.require_stop_note ?? body.requireStopNote,
         clientCanManage: (body.client_can_manage ?? body.clientCanManage) === true,
+        clientCanTrack: (body.client_can_track ?? body.clientCanTrack) === true,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       // Management projects group other projects; linking also rolls those
@@ -770,6 +799,7 @@ export async function routeProjects(req, res, url, db, origin) {
           restrictTaskCreation: body.restrict_task_creation ?? body.restrictTaskCreation,
           requireStopNote: body.require_stop_note ?? body.requireStopNote,
           clientCanManage: body.client_can_manage ?? body.clientCanManage,
+          clientCanTrack: body.client_can_track ?? body.clientCanTrack,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {

@@ -52,6 +52,7 @@ function splitSessionByLocalDay(session, timeZone) {
 /**
  * @param {Array<{
  *   member_id: string, project_id: string | null, project_name: string,
+ *   client_name: string, team_name: string,
  *   started_at: string, ended_at: string | null, updated_at: string,
  *   active_seconds: number, idle_seconds: number,
  * }>} rawRows
@@ -64,6 +65,11 @@ function splitSessionByLocalDay(session, timeZone) {
  *   days: Array<{
  *     date: string,
  *     members: Array<{ memberId: string, name: string, activeSeconds: number, idleSeconds: number, spentAmount: number, projectNames: string[] }>,
+ *   }>,
+ *   entries: Array<{
+ *     date: string, memberId: string, memberName: string,
+ *     projectId: string | null, projectName: string, clientName: string, teamName: string,
+ *     activeSeconds: number, idleSeconds: number, spentAmount: number,
  *   }>,
  * }}
  */
@@ -81,6 +87,16 @@ export function buildTimeAndActivityReportPayload(
 ) {
   /** @type {Map<string, Map<string, { activeSeconds: number, idleSeconds: number, projectNames: Set<string> }>>} */
   const byDay = new Map();
+  // Finer-grained than `byDay` (day+member+project, not just day+member) -
+  // the "group by" dropdown (member/project/client/team/week) needs real
+  // per-project seconds to aggregate from, which the day/member shape above
+  // can't give it: a member touching two projects in one day collapses into
+  // one row there with a Set of project *names*, never per-project time.
+  // Kept as a second, parallel structure instead of restructuring `days`
+  // itself, so every existing reader of `days`/`memberRows` (CSV/PDF export,
+  // the chart, the default date-per-day view) is untouched.
+  /** @type {Map<string, { date: string, memberId: string, projectId: string | null, projectName: string, clientName: string, teamName: string, activeSeconds: number, idleSeconds: number }>} */
+  const byDayMemberProject = new Map();
 
   for (const row of rawRows) {
     const timeZone = memberTimezones.get(row.member_id) ?? "UTC";
@@ -98,6 +114,23 @@ export function buildTimeAndActivityReportPayload(
       entry.activeSeconds += segment.activeSeconds;
       entry.idleSeconds += segment.idleSeconds;
       if (row.project_name) entry.projectNames.add(row.project_name);
+
+      const entryKey = `${segment.day}::${row.member_id}::${row.project_id ?? "none"}`;
+      if (!byDayMemberProject.has(entryKey)) {
+        byDayMemberProject.set(entryKey, {
+          date: segment.day,
+          memberId: row.member_id,
+          projectId: row.project_id,
+          projectName: row.project_name || "",
+          clientName: row.client_name || "",
+          teamName: row.team_name || "",
+          activeSeconds: 0,
+          idleSeconds: 0,
+        });
+      }
+      const fine = byDayMemberProject.get(entryKey);
+      fine.activeSeconds += segment.activeSeconds;
+      fine.idleSeconds += segment.idleSeconds;
     }
   }
 
@@ -119,5 +152,20 @@ export function buildTimeAndActivityReportPayload(
       })),
     }));
 
-  return { days };
+  const entries = [...byDayMemberProject.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((entry) => ({
+      date: entry.date,
+      memberId: entry.memberId,
+      memberName: memberNameMap.get(entry.memberId)?.name ?? "Unknown",
+      projectId: entry.projectId,
+      projectName: entry.projectName,
+      clientName: entry.clientName,
+      teamName: entry.teamName,
+      activeSeconds: entry.activeSeconds,
+      idleSeconds: entry.idleSeconds,
+      spentAmount: round2((entry.activeSeconds / 3600) * (memberRates.get(entry.memberId) ?? 0)),
+    }));
+
+  return { days, entries };
 }

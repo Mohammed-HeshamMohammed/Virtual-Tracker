@@ -3,6 +3,7 @@ import { sendJson } from "./response.js";
 import {
   getProjectPg,
   listClientManagedProjectIdsPg,
+  listClientTrackableProjectIdsPg,
   listViewerProjectIdsPg,
 } from "../lib/postgres/projects-postgres.service.js";
 import { query } from "../lib/postgres/client.js";
@@ -47,6 +48,20 @@ export async function clientMayManageProject(viewer, projectId) {
   if (normalizeRole(viewer.roleName) !== "client") return false;
   const managed = await listClientManagedProjectIdsPg(viewer.memberId);
   return managed.has(projectId);
+}
+
+/**
+ * Whether this viewer may run a task-less timer on this project as its
+ * client - the tracking equivalent of clientMayManageProject, gated by the
+ * independent client_can_track flag instead of client_can_manage.
+ * @param {{ memberId: string; roleName: string }} viewer
+ * @param {string} projectId
+ */
+export async function clientMayTrackProject(viewer, projectId) {
+  if (!viewer?.memberId || !projectId) return false;
+  if (normalizeRole(viewer.roleName) !== "client") return false;
+  const trackable = await listClientTrackableProjectIdsPg(viewer.memberId);
+  return trackable.has(projectId);
 }
 
 const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
@@ -109,7 +124,13 @@ export async function isProjectMemberForTimer(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!viewer?.memberId || !pid) return false;
 
-  if (ORG_PROJECT_TASK_ADMIN_ROLES.has(normalizeRole(viewer.roleName))) return true;
+  const roleKey = normalizeRole(viewer.roleName);
+  if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
+  // A client is never a project_members row (their link is client_projects,
+  // a different table) - client_can_track is its own equivalent of
+  // "membership" for this specific check, same pattern clientMayManageProject
+  // already is for the write-access check.
+  if (roleKey === "client") return clientMayTrackProject(viewer, pid);
 
   const rows = await query(
     "SELECT 1 FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 1",

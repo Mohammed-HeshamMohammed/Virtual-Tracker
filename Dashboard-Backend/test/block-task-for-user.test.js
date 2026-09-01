@@ -75,6 +75,7 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     linkTeamProjectPg: async () => null,
     listClientIdsForProjectPg: async () => [],
     listClientManagedProjectIdsPg: async () => new Set(),
+    listClientTrackableProjectIdsPg: async () => new Set(),
     listMemberIdsForProjectsPg: async () => [],
     listProjectIdsForClientPg: async () => [],
     listProjectIdsForTeamPg: async () => [],

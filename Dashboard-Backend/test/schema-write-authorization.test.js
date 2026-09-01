@@ -14,8 +14,8 @@ import assert from "node:assert/strict";
 
 const AUTH_CONTEXT = Symbol.for("virtual-tracker.auth-context");
 
-/** @type {{ writes: string[], viewer: any, rows: Record<string, any> }} */
-const stub = { writes: [], viewer: null, rows: {} };
+/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null }} */
+const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null };
 
 mock.module("../src/http/auth-context.js", {
   namedExports: {
@@ -31,7 +31,7 @@ mock.module("../src/http/auth-context.js", {
 // Every write funnels through these - recording a call means a gate let it past.
 mock.module("../src/modules/schema/services/postgres-crud.service.js", {
   namedExports: {
-    POSTGRES_ENTITY_KEYS: new Set(["teams", "employment", "task-comments", "tasks"]),
+    POSTGRES_ENTITY_KEYS: new Set(["teams", "employment", "task-comments", "tasks", "projects"]),
     shouldRouteEntityToPostgres: async () => true,
     listPostgresRows: async () => [],
     getPostgresRow: async (key, id) => stub.rows[`${key}:${id}`] ?? null,
@@ -119,7 +119,8 @@ mock.module("../src/http/project-access.js", {
     viewerCanCreateProjectTasks: async () => true,
     assertAuthenticated: async () => null,
     assertProjectAccessible: async () => null,
-    clientMayManageProject: async () => null,
+    clientMayManageProject: async (_viewer, projectId) =>
+      stub.clientManagesProjectId != null && projectId === stub.clientManagesProjectId,
     isOrgProjectAdminRole: async () => null,
     isProjectMemberForTimer: async () => null,
   },
@@ -145,6 +146,7 @@ mock.module("../src/modules/schema/catalog/index.js", {
       ["teams", { key: "teams", collection: "teams", fields: { id: "uuid", name: "string" } }],
       ["employment", { key: "employment", collection: "employment", fields: { id: "uuid", member_id: "uuid" } }],
       ["task-comments", { key: "task-comments", collection: "tasks", fields: { id: "uuid", task_id: "uuid", body: "text" } }],
+      ["projects", { key: "projects", collection: "projects", fields: { id: "uuid", client_can_manage: "boolean", client_can_track: "boolean" } }],
     ]),
     foreignKeyCollectionByField: async () => null,
     generateUUID: async () => null,
@@ -210,11 +212,13 @@ function reset(viewer) {
   stub.writes = [];
   stub.viewer = viewer;
   stub.rows = {};
+  stub.clientManagesProjectId = null;
   lastResponse = null;
 }
 
 const EMPLOYEE = { memberId: "m1", roleName: "Employee", isManagement: false };
 const ADMIN = { memberId: "m9", roleName: "Admin", isManagement: true };
+const CLIENT = { memberId: "c1", roleName: "Client", isManagement: false };
 
 test("an employee cannot create a team through the generic entity route", async () => {
   reset(EMPLOYEE);
@@ -274,4 +278,46 @@ test("a comment cannot be created on a task the viewer cannot access", async () 
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(lastResponse.status, 404, "inaccessible task must read as Not found");
   assert.deepEqual(stub.writes, [], "no comment may be written for an inaccessible task");
+});
+
+// A client_can_manage client can edit a project's tasks - that's the whole
+// point of the flag - but the flag itself, and its independent
+// client_can_track sibling, are not theirs to grant themselves.
+test("a client_can_manage client can PATCH their project's ordinary fields", async () => {
+  reset(CLIENT);
+  stub.clientManagesProjectId = "p1";
+  stub.rows["projects:p1"] = { id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { name: "Renamed by client" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("update:projects:p1"), true, "an ordinary field edit must succeed");
+});
+
+test("a client_can_manage client cannot grant themselves client_can_track via the same PATCH", async () => {
+  reset(CLIENT);
+  stub.clientManagesProjectId = "p1";
+  stub.rows["projects:p1"] = { id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { client_can_track: true });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, [], "no write may reach the database");
+});
+
+test("a client_can_manage client cannot grant themselves client_can_manage either (pre-existing gate, still covered)", async () => {
+  reset(CLIENT);
+  stub.clientManagesProjectId = "p1";
+  stub.rows["projects:p1"] = { id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { client_can_manage: true });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 403);
+  assert.deepEqual(stub.writes, []);
+});
+
+test("a client with neither flag on cannot write to the project at all", async () => {
+  reset(CLIENT);
+  stub.clientManagesProjectId = null;
+  stub.rows["projects:p1"] = { id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { name: "Sneaky rename" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 403);
+  assert.deepEqual(stub.writes, []);
 });

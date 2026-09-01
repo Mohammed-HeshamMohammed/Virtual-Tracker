@@ -764,6 +764,41 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
 }
 
 /**
+ * Same shape as sumMemberActiveIdleSeconds, scoped to one project - the
+ * agent's main-pane Activity ring shows "this project, today", separate
+ * from the member-wide "today" figure the rest of /api/activity/limits
+ * still reports (and from the sidebar's person-wide weekly ring). Sessions
+ * predating the project_id column (see ensure-lookup-schema.js) simply
+ * don't count toward any project's total - same gap task/time-tracking
+ * already accepts for pre-migration rows.
+ * @param {string} memberId
+ * @param {string} projectId
+ * @param {{ fromDay: string, toDay: string }} range
+ * @returns {Promise<{ activeSeconds: number, idleSeconds: number }>}
+ */
+export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  const pId = projectId ? parseProgressUuid(projectId) : null;
+  if (!id || !pId) return { activeSeconds: 0, idleSeconds: 0 };
+  const result = await pgQuery(
+    `SELECT COALESCE(SUM(s.active_seconds), 0) AS active_seconds,
+            COALESCE(SUM(s.idle_seconds), 0)   AS idle_seconds
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND s.project_id = $4
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date`,
+    [id, fromDay, toDay, pId],
+  );
+  const row = result?.rows?.[0] ?? {};
+  return {
+    activeSeconds: Math.max(0, Math.floor(Number(row.active_seconds ?? 0))),
+    idleSeconds: Math.max(0, Math.floor(Number(row.idle_seconds ?? 0))),
+  };
+}
+
+/**
  * @param {string} memberId
  * @param {string} taskId
  * @param {string} day 'YYYY-MM-DD'

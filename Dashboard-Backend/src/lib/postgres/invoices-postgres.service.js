@@ -150,8 +150,13 @@ export async function recordInvoicePaymentPg(data) {
 
 /**
  * Invoices with what has been paid against them and what is still due.
+ * `projectIds` narrows to invoices with at least one line item billed against
+ * one of those projects - invoices are against a client/member, not a project
+ * directly, so this reaches project_id via the invoice_line_items join
+ * (line items with no project_id, e.g. a flat fee, don't count towards it).
  * @param {{ kind: 'client'|'team', memberIds?: string[]|null, clientIds?: string[]|null,
- *           fromDay?: string|null, toDay?: string|null, status?: string|null }} params
+ *           fromDay?: string|null, toDay?: string|null, status?: string|null,
+ *           projectIds?: string[]|null }} params
  */
 export async function listInvoicesWithBalancePg({
   kind,
@@ -160,6 +165,7 @@ export async function listInvoicesWithBalancePg({
   fromDay = null,
   toDay = null,
   status = null,
+  projectIds = null,
 }) {
   const rows = await query(
     `SELECT i.*,
@@ -177,9 +183,13 @@ export async function listInvoicesWithBalancePg({
        AND ($4::date IS NULL OR i.issue_date >= $4::date)
        AND ($5::date IS NULL OR i.issue_date <= $5::date)
        AND ($6::text IS NULL OR i.status = $6::text)
+       AND ($7::uuid[] IS NULL OR EXISTS (
+             SELECT 1 FROM invoice_line_items ili
+             WHERE ili.invoice_id = i.id AND ili.project_id = ANY($7::uuid[])
+           ))
      ORDER BY i.issue_date DESC, i.number DESC
      LIMIT 2000`,
-    [kind, memberIds, clientIds, fromDay, toDay, status],
+    [kind, memberIds, clientIds, fromDay, toDay, status, projectIds],
   );
   return rows.map((r) => ({
     id: String(r.id),
@@ -201,9 +211,10 @@ export async function listInvoicesWithBalancePg({
 /**
  * Outstanding invoices bucketed by how overdue they are - backs the aging
  * reports. Draft and void are excluded: neither is money anyone owes yet.
- * @param {{ kind: 'client'|'team', memberIds?: string[]|null, asOf: string }} params
+ * `projectIds` narrows via invoice_line_items, same as listInvoicesWithBalancePg.
+ * @param {{ kind: 'client'|'team', memberIds?: string[]|null, asOf: string, projectIds?: string[]|null }} params
  */
-export async function listInvoiceAgingPg({ kind, memberIds = null, asOf }) {
+export async function listInvoiceAgingPg({ kind, memberIds = null, asOf, projectIds = null }) {
   const rows = await query(
     `SELECT i.id, i.number, i.client_id, i.member_id, i.due_date, i.issue_date,
             i.total, i.currency,
@@ -223,9 +234,13 @@ export async function listInvoiceAgingPg({ kind, memberIds = null, asOf }) {
        AND i.status IN ('sent', 'paid')
        AND (i.total - COALESCE(pay.paid, 0)) > 0
        AND ($2::uuid[] IS NULL OR i.member_id = ANY($2::uuid[]))
+       AND ($4::uuid[] IS NULL OR EXISTS (
+             SELECT 1 FROM invoice_line_items ili
+             WHERE ili.invoice_id = i.id AND ili.project_id = ANY($4::uuid[])
+           ))
      ORDER BY days_overdue DESC, i.due_date ASC NULLS LAST
      LIMIT 2000`,
-    [kind, memberIds, asOf],
+    [kind, memberIds, asOf, projectIds],
   );
   return rows.map((r) => {
     const daysOverdue = Math.max(0, Number(r.days_overdue) || 0);
@@ -250,9 +265,14 @@ export async function listInvoiceAgingPg({ kind, memberIds = null, asOf }) {
 
 /**
  * Payments actually recorded in a period - backs the Payments report.
- * @param {{ memberIds?: string[]|null, fromDay: string, toDay: string }} params
+ * `projectIds` narrows to payments on invoices that carry at least one line
+ * item billed against one of those projects (a payment is against the whole
+ * invoice, not a specific line item, so this is "was any of what this invoice
+ * billed for on an allowed project", the same invoice_line_items join the
+ * invoice reports use).
+ * @param {{ memberIds?: string[]|null, fromDay: string, toDay: string, projectIds?: string[]|null }} params
  */
-export async function listInvoicePaymentsPg({ memberIds = null, fromDay, toDay }) {
+export async function listInvoicePaymentsPg({ memberIds = null, fromDay, toDay, projectIds = null }) {
   const rows = await query(
     `SELECT p.id, p.amount, p.paid_on, p.method, p.reference, p.note,
             i.id AS invoice_id, i.number, i.kind, i.currency,
@@ -263,9 +283,13 @@ export async function listInvoicePaymentsPg({ memberIds = null, fromDay, toDay }
      LEFT JOIN clients c ON c.id = i.client_id
      WHERE p.paid_on >= $1 AND p.paid_on <= $2
        AND ($3::uuid[] IS NULL OR i.member_id IS NULL OR i.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR EXISTS (
+             SELECT 1 FROM invoice_line_items ili
+             WHERE ili.invoice_id = i.id AND ili.project_id = ANY($4::uuid[])
+           ))
      ORDER BY p.paid_on DESC
      LIMIT 2000`,
-    [fromDay, toDay, memberIds],
+    [fromDay, toDay, memberIds, projectIds],
   );
   return rows.map((r) => ({
     id: String(r.id),

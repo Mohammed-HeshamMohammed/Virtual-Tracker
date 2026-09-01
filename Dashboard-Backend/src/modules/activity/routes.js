@@ -55,7 +55,8 @@ import {
   currentDayRange,
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
-import { isProjectMemberForTimer } from "../../http/project-access.js";
+import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
+import { buildAgentWorkspace } from "./workspace.service.js";
 import {
   getProjectPg,
   getProjectBudgetPg,
@@ -79,6 +80,7 @@ import {
   insertActivityScreenshot,
   insertActivityUrlLog,
   sumMemberActiveIdleSeconds,
+  sumMemberActiveIdleSecondsForProject,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
@@ -428,6 +430,10 @@ export async function routeActivity(req, res, url, origin) {
       // gates on below, so what the agent displays as "remaining today" and
       // what actually blocks the start button can never disagree.
       const { todayDay } = currentDayRange();
+      // Optional - the agent's main-pane Activity ring wants "this project,
+      // today" rather than the member-wide todayActivity below (that one
+      // stays as-is; it's what a project-less view falls back to).
+      const projectId = (url.searchParams.get("projectId") || "").trim();
       const [
         dailyHours,
         weeklyHours,
@@ -436,6 +442,7 @@ export async function routeActivity(req, res, url, origin) {
         assignedDemand,
         todayWorkStatus,
         todayActivity,
+        projectTodayActivity,
       ] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
@@ -444,6 +451,9 @@ export async function routeActivity(req, res, url, origin) {
         computeAssignedTodayDemand(member.memberId),
         getMemberTodayWorkStatus(db, member.memberId),
         sumMemberActiveIdleSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay }),
+        projectId
+          ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, { fromDay: todayDay, toDay: todayDay })
+          : null,
       ]);
       // Shift-based members have no daily/weekly cap (loadMemberCapContext
       // zeroes it out), so nothing caps their assigned demand either -
@@ -463,10 +473,40 @@ export async function routeActivity(req, res, url, origin) {
           // Both halves from activity_sessions, so the agent's activity meter
           // matches the percentage the dashboard reports for the same day.
           todayActivity,
+          // null unless ?projectId= was given - the main-pane ring's own
+          // "current project, today" figure.
+          projectTodayActivity,
         },
       });
     } catch (e) {
       sendJson(res, origin, 401, { success: false, error: e instanceof Error ? e.message : "Unauthorized" });
+    }
+    return true;
+  }
+
+  // Everything the desktop agent shows beyond the timer itself, resolved
+  // per-role server-side in one round trip - see workspace.service.js for why
+  // this is one endpoint rather than one per section.
+  if (pn === "/api/activity/workspace" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      const data = await buildAgentWorkspace(db, {
+        memberId: member.memberId,
+        roleName: getAuthContext(req)?.roleName ?? "",
+      });
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      logSafeError("[activity/workspace]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load workspace." });
     }
     return true;
   }
@@ -611,8 +651,15 @@ export async function routeActivity(req, res, url, origin) {
           }
           // Strict `=== false`: an un-migrated row reads undefined here and
           // must fall back to requiring a task, not to allowing everything.
+          // The client_can_track leg is independent of require_task_to_track -
+          // a client can be let in task-lessly without changing how the
+          // project's own members track, and clientMayTrackProject already
+          // no-ops (false) for every non-client role, so this never widens
+          // access for anyone else.
           const allowsTaskLessTimer =
-            isTaskLessProjectType(project.type) || project.require_task_to_track === false;
+            isTaskLessProjectType(project.type) ||
+            project.require_task_to_track === false ||
+            (await clientMayTrackProject({ memberId: member.memberId, roleName: viewer?.roleName ?? "" }, sessionProjectId));
           if (!allowsTaskLessTimer) {
             sendJson(res, origin, 400, {
               success: false,

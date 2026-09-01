@@ -188,9 +188,12 @@ export async function getTimesheetApprovalRowsPg({ memberIds, fromDay, toDay }) 
  * Per-member total seconds by app, over [fromDay, toDay] - backs the "Apps"
  * side of the Apps & URLs report. Grouped server-side (activity_app_logs can
  * run to thousands of 30s-granularity rows per member per day).
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
+ * `projectIds` narrows to logs tied to a task in one of those projects (the
+ * same task_id -> tasks.project_id join getManualTimeEditRowsPg uses) - a log
+ * with no task_id is excluded when a project filter is active.
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
  */
-export async function getAppUsageRowsPg({ memberIds, fromDay, toDay }) {
+export async function getAppUsageRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
   to.setUTCDate(to.getUTCDate() + 1);
@@ -199,12 +202,14 @@ export async function getAppUsageRowsPg({ memberIds, fromDay, toDay }) {
     `SELECT l.member_id, a.name AS app_name, SUM(l.duration_seconds) AS total_seconds
      FROM activity_app_logs l
      JOIN apps a ON a.id = l.app_id
+     LEFT JOIN tasks t ON t.id = l.task_id
      WHERE l.started_at >= $1 AND l.started_at < $2
        AND ($3::uuid[] IS NULL OR l.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR t.project_id = ANY($4::uuid[]))
      GROUP BY l.member_id, a.name
      ORDER BY total_seconds DESC
      LIMIT 500`,
-    [from.toISOString(), to.toISOString(), memberIds],
+    [from.toISOString(), to.toISOString(), memberIds, projectIds],
   );
   return rows.map((r) => ({
     memberId: r.member_id,
@@ -215,24 +220,27 @@ export async function getAppUsageRowsPg({ memberIds, fromDay, toDay }) {
 
 /**
  * Per-member total seconds by domain, over [fromDay, toDay] - the "URLs" side
- * of the Apps & URLs report.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
+ * of the Apps & URLs report. `projectIds` narrows the same way getAppUsageRowsPg
+ * does, via the log's task_id -> tasks.project_id.
+ * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
  */
-export async function getUrlUsageRowsPg({ memberIds, fromDay, toDay }) {
+export async function getUrlUsageRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
   to.setUTCDate(to.getUTCDate() + 1);
 
   const rows = await query(
-    `SELECT member_id, domain, SUM(duration_seconds) AS total_seconds
-     FROM activity_url_logs
-     WHERE visited_at >= $1 AND visited_at < $2
-       AND domain <> ''
-       AND ($3::uuid[] IS NULL OR member_id = ANY($3::uuid[]))
-     GROUP BY member_id, domain
+    `SELECT l.member_id, l.domain, SUM(l.duration_seconds) AS total_seconds
+     FROM activity_url_logs l
+     LEFT JOIN tasks t ON t.id = l.task_id
+     WHERE l.visited_at >= $1 AND l.visited_at < $2
+       AND l.domain <> ''
+       AND ($3::uuid[] IS NULL OR l.member_id = ANY($3::uuid[]))
+       AND ($4::uuid[] IS NULL OR t.project_id = ANY($4::uuid[]))
+     GROUP BY l.member_id, l.domain
      ORDER BY total_seconds DESC
      LIMIT 500`,
-    [from.toISOString(), to.toISOString(), memberIds],
+    [from.toISOString(), to.toISOString(), memberIds, projectIds],
   );
   return rows.map((r) => ({
     memberId: r.member_id,

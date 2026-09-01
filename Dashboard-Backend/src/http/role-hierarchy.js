@@ -58,6 +58,19 @@ export function requiresAdminDeactivationGovernance(roleName) {
 }
 
 /**
+ * Viewer is read-only access to whatever the org chose to show it directly
+ * (dashboards, the People directory) - not a reporting seat. Reports carry
+ * compensation, activity, and cross-member detail no Viewer grant was ever
+ * meant to include, so this is a hard block, not the self-only scoping every
+ * other non-management role gets (see resolveReportVisibleIds in
+ * reports/routes.js).
+ * @param {string} roleName
+ */
+export function isViewerRole(roleName) {
+  return normalizeRoleKey(roleName) === "viewer";
+}
+
+/**
  * Non-viewer accounts that must submit deactivation requests (not self-delete).
  * @param {string} roleName
  */
