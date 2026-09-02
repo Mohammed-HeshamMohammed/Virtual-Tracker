@@ -11,6 +11,7 @@ import type { ClientBudgetRow } from "@/features/reports/models/client-budgets"
 import type { LimitUsageRow } from "@/features/reports/models/limits"
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
 import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-urls"
+import { formatMoney } from "@/features/reports/utils/money"
 
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -84,9 +85,12 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
     members: day.members.map((m) => ({
       name: m.name,
       initials: initialsFor(m.name),
+      // Both the rate and the amount are this member's own currency, not a
+      // flat "$" - a member paid in EGP used to see "EGP 50.00/hr" right
+      // next to "$400.00" for the same row.
       rateLabel: m.rate > 0 ? `${m.currency} ${m.rate.toFixed(2)}/hr` : "No rate set",
       hours: formatHms(m.activeSeconds),
-      amount: `$${m.amount.toFixed(2)}`,
+      amount: formatMoney(m.amount, m.currency),
     })),
   }))
 }

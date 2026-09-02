@@ -2,6 +2,7 @@ import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityMemberSubRow, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
+import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 interface RawMemberDay {
   memberId: string
@@ -15,6 +16,9 @@ interface RawMemberDay {
   /** Cost of tracked + manual time; 0 when the viewer may not see this
    *  member's pay rate. */
   spentAmount?: number
+  /** This member's own pay currency as of that day - absent on an older
+   *  backend without it yet, defaults to USD same as formatMoney always did. */
+  currency?: string
   projectNames: string[]
 }
 
@@ -35,16 +39,13 @@ interface RawEntry {
   idleSeconds: number
   manualSeconds?: number
   spentAmount: number
+  currency?: string
 }
 
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
   /** Absent on an older backend without this field yet - mapReport falls back to []. */
   entries?: RawEntry[]
-}
-
-function formatMoney(amount: number | undefined): string {
-  return `$${(amount ?? 0).toFixed(2)}`
 }
 
 function initialsFor(name: string): string {
@@ -85,7 +86,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
       : 0,
     idlePct: pctString(member.idleSeconds, member.activeSeconds),
     idleHr: formatSecondsAsHMS(member.idleSeconds),
-    totalSpent: formatMoney(member.spentAmount),
+    totalSpent: formatMoney(member.spentAmount ?? 0, member.currency),
     trackedHours: member.activeSeconds / 3600,
     manualHours: manualSeconds / 3600,
     projectNames: member.projectNames,
@@ -114,7 +115,11 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
     idlePct: pctString(totalIdle, totalActive),
     idleHr: formatSecondsAsHMS(totalIdle),
-    totalSpent: formatMoney(day.members.reduce((sum, m) => sum + (m.spentAmount ?? 0), 0)),
+    // A day mixes however many members worked it, each possibly paid in a
+    // different currency - grouped per currency rather than summed as if
+    // they were all the same unit (sumMoneyByCurrency joins with " + " only
+    // when more than one currency is actually present that day).
+    totalSpent: sumMoneyByCurrency(day.members.map((m) => ({ amount: m.spentAmount ?? 0, currency: m.currency }))),
     trackedHours: totalActive / 3600,
     manualHours: totalManual / 3600,
   }
@@ -133,6 +138,7 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
     manualSeconds: raw.manualSeconds ?? 0,
     idleSeconds: raw.idleSeconds,
     spentAmount: raw.spentAmount,
+    currency: raw.currency || "USD",
   }
 }
 

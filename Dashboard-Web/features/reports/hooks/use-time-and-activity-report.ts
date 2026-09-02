@@ -12,7 +12,6 @@ import {
   filterEntries,
   getFilteredSubRows,
   getMemberFilterOptions,
-  getMetricNumeric,
   getProjectFilterOptions,
   groupByColumnLabel,
   type TrackedTimeFilter,
@@ -20,6 +19,7 @@ import {
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 import { getMembers } from "@/features/members/api/member-api"
 import { formatRangeLabel } from "@/features/reports/utils/time-and-activity"
+import { sumMoneyStrings } from "@/features/reports/utils/money"
 
 const DEFAULT_PERIOD_COLS = [
   "client",
@@ -237,16 +237,17 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     const m = Math.floor((secs % 3600) / 60)
     const s = secs % 60
     // Was hardcoded to "$0.00" unconditionally - every row already carries a
-    // real totalSpent ("$X.XX") the table renders correctly per-day, it just
-    // never got summed into this card. getMetricNumeric is the same parser
-    // row-aggregate.ts already uses for this exact field (the chart's
-    // total_spent series), so this can't drift from what the rest of the
-    // report considers "spent" for a row.
-    const spentTotal = activeRows.reduce((a, d) => a + getMetricNumeric("total_spent", d), 0)
+    // real totalSpent the table renders correctly per-day, it just never got
+    // summed into this card. Summed off each row's own totalSpent string
+    // (sumMoneyStrings), not getMetricNumeric's raw-number parse - a row can
+    // itself already be a "$300.00 + EGP 200.00" mixed-currency total (see
+    // toDayRow), and summing raw numbers across rows paid in different
+    // currencies would add amounts that aren't the same unit.
+    const spent = sumMoneyStrings(activeRows.map((d) => d.totalSpent))
     return {
       time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
       activity: Math.round(activeRows.reduce((a, d) => a + d.activityPct, 0) / activeRows.length),
-      spent: `$${spentTotal.toFixed(2)}`,
+      spent,
     }
   }, [activeRows])
 

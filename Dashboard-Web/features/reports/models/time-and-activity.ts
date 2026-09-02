@@ -64,6 +64,9 @@ export interface TimeActivityEntry {
    *  the activity percentage, which only observed time can support. */
   manualSeconds: number
   spentAmount: number
+  /** This member's own pay currency as of `date` - what spentAmount is
+   *  actually denominated in. */
+  currency: string
 }
 
 export interface TimeActivityCustomFilterRow {

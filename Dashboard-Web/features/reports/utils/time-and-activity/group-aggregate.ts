@@ -2,6 +2,7 @@ import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/compon
 import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityGroupBy, TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import type { TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import { sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 // Same shape the day/member rows already use (row-aggregate.ts / time-and-activity-api.ts)
 // - duplicated rather than imported since neither is exported today and each
@@ -18,10 +19,6 @@ function pctString(idleSeconds: number, activeSeconds: number): string {
   const total = idleSeconds + activeSeconds
   if (total <= 0) return "-"
   return `${Math.round((idleSeconds / total) * 100)}%`
-}
-
-function formatMoney(amount: number): string {
-  return `$${amount.toFixed(2)}`
 }
 
 /** Monday of the ISO week containing `day` ('YYYY-MM-DD'), as a 'YYYY-MM-DD' key. */
@@ -60,6 +57,14 @@ export function filterEntries(
   })
 }
 
+/** One entry's contribution to a bucket's spend, kept as {amount, currency}
+ *  pairs rather than summed into a single number as they're added - a
+ *  project/client/team/week bucket can (and regularly will) mix entries
+ *  from members paid in different currencies, and summing those into one
+ *  number would add amounts that aren't the same unit. sumMoneyByCurrency
+ *  does the actual grouped summing once, when the bucket is finalized. */
+type SpentPoint = { amount: number; currency: string }
+
 type Bucket = {
   label: string
   activeSeconds: number
@@ -67,12 +72,12 @@ type Bucket = {
   /** Hand-entered time, totalled alongside the observed seconds but never
    *  mixed into them - the activity ratio is built from active/idle only. */
   manualSeconds: number
-  spentAmount: number
+  spentPoints: SpentPoint[]
   memberIds: Set<string>
   projectIds: Set<string>
   sub: Map<
     string,
-    { label: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentAmount: number }
+    { label: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentPoints: SpentPoint[] }
   >
 }
 
@@ -114,22 +119,22 @@ export function buildGroupedRows(
 
   function addTo(key: string, label: string, e: TimeActivityEntry, subKey: string, subLabel: string) {
     if (!buckets.has(key)) {
-      buckets.set(key, { label, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentAmount: 0, memberIds: new Set(), projectIds: new Set(), sub: new Map() })
+      buckets.set(key, { label, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [], memberIds: new Set(), projectIds: new Set(), sub: new Map() })
     }
     const b = buckets.get(key)!
     b.activeSeconds += e.activeSeconds
     b.idleSeconds += e.idleSeconds
     b.manualSeconds += e.manualSeconds
-    b.spentAmount += e.spentAmount
+    b.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
     b.memberIds.add(e.memberId)
     if (e.projectId) b.projectIds.add(e.projectId)
     if (!b.sub.has(subKey))
-      b.sub.set(subKey, { label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentAmount: 0 })
+      b.sub.set(subKey, { label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [] })
     const s = b.sub.get(subKey)!
     s.activeSeconds += e.activeSeconds
     s.idleSeconds += e.idleSeconds
     s.manualSeconds += e.manualSeconds
-    s.spentAmount += e.spentAmount
+    s.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
   }
 
   for (const e of entries) {
@@ -167,7 +172,7 @@ export function buildGroupedRows(
         b.activeSeconds + b.idleSeconds > 0 ? Math.round((b.activeSeconds / (b.activeSeconds + b.idleSeconds)) * 100) : 0,
       idlePct: pctString(b.idleSeconds, b.activeSeconds),
       idleHr: formatSecondsAsHMS(b.idleSeconds),
-      totalSpent: formatMoney(b.spentAmount),
+      totalSpent: sumMoneyByCurrency(b.spentPoints),
       trackedHours: b.activeSeconds / 3600,
       manualHours: b.manualSeconds / 3600,
     })
@@ -181,7 +186,7 @@ export function buildGroupedRows(
         s.activeSeconds + s.idleSeconds > 0 ? Math.round((s.activeSeconds / (s.activeSeconds + s.idleSeconds)) * 100) : 0,
       idlePct: pctString(s.idleSeconds, s.activeSeconds),
       idleHr: formatSecondsAsHMS(s.idleSeconds),
-      totalSpent: formatMoney(s.spentAmount),
+      totalSpent: sumMoneyByCurrency(s.spentPoints),
       trackedHours: s.activeSeconds / 3600,
       manualHours: s.manualSeconds / 3600,
       projectNames: [],
