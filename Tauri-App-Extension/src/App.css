@@ -724,6 +724,57 @@ body {
   min-width: 0;
 }
 
+.page-header-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Small, extra, member-wide - not another stat-tile. Sits next to Refresh
+   rather than as a full-width card in the main pane, since it's about every
+   project a member has tasks on, not whichever one is open here. */
+.assigned-today-badge {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid rgb(var(--c-line) / 0.14);
+  background: rgb(var(--c-overlay) / 0.045);
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+
+.assigned-today-badge .vt-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  opacity: 0.8;
+}
+
+.assigned-today-badge-label {
+  font-size: 12px;
+}
+
+.assigned-today-badge-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+@media (max-width: 880px) {
+  /* The label is the first thing that can go - the value alone still
+     answers "how much", and the icon plus tooltip cover the rest. */
+  .assigned-today-badge-label {
+    display: none;
+  }
+}
+
 .page-refresh-btn {
   flex-shrink: 0;
   width: 34px;
@@ -983,6 +1034,12 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
+}
+
+/* No project-budget tile in play - two tiles fill the row instead of
+   leaving a blank third cell. */
+.stat-row-3-partial {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .stat-tile {

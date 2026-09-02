@@ -12,7 +12,7 @@ import { TodayPanel } from "./TodayPanel";
 import { ActivityTile } from "./ActivityTile";
 import { WeekTile } from "./WeekTile";
 import { ProjectBudgetTile } from "./ProjectBudgetTile";
-import { AssignedTile } from "./AssignedTile";
+import { AssignedTodayBadge } from "./AssignedTodayBadge";
 import type { MemberLimits, ProjectBudgetStatus } from "../../types";
 
 const memberLimits: MemberLimits = {
@@ -127,36 +127,45 @@ describe("stat tiles render without throwing", () => {
     expect(html).toContain("yours");
   });
 
-  it("AssignedTile - with a deferred split", () => {
+  it("AssignedTodayBadge - renders the header pill with a value, not a full stat-tile", () => {
     const html = renderToStaticMarkup(
-      <AssignedTile
+      <AssignedTodayBadge
+        memberLimits={memberLimits}
+        assignedTodayLabel="1h"
+        assignedTaskCountLabel="1 task"
+        assignedCarriedLabel="across every project"
+      />,
+    );
+    expect(html).toContain("assigned-today-badge");
+    expect(html).toContain("1h");
+    expect(html).not.toContain("stat-tile");
+  });
+
+  it("AssignedTodayBadge - carries the deferred split in its tooltip, not a visible bar", () => {
+    const html = renderToStaticMarkup(
+      <AssignedTodayBadge
         memberLimits={{
           ...memberLimits,
           assignedToday: { ...memberLimits.assignedToday, deferredSeconds: 1800 },
         }}
-        assignedTaskCountLabel="1 task"
         assignedTodayLabel="1h 30m"
+        assignedTaskCountLabel="1 task"
         assignedCarriedLabel=""
-        assignedPlannedPercent={66}
-        assignedDeferredPercent={34}
-        assignedSplitLabel=""
       />,
     );
     expect(html).toContain("moves on");
+    expect(html).not.toContain("split-bar");
   });
 
-  it("AssignedTile - with null memberLimits (still loading) does not throw", () => {
+  it("AssignedTodayBadge - renders nothing while memberLimits hasn't loaded yet", () => {
     const html = renderToStaticMarkup(
-      <AssignedTile
+      <AssignedTodayBadge
         memberLimits={null}
-        assignedTaskCountLabel=""
         assignedTodayLabel="—"
+        assignedTaskCountLabel=""
         assignedCarriedLabel=""
-        assignedPlannedPercent={0}
-        assignedDeferredPercent={0}
-        assignedSplitLabel=""
       />,
     );
-    expect(html).toContain("fits today");
+    expect(html).toBe("");
   });
 });

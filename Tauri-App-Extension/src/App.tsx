@@ -38,7 +38,7 @@ import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
 import { WeekTile } from "./components/stats/WeekTile";
 import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
-import { AssignedTile } from "./components/stats/AssignedTile";
+import { AssignedTodayBadge } from "./components/stats/AssignedTodayBadge";
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
 import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
 import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
@@ -446,13 +446,17 @@ function MainApp() {
     [signedIn, selectedProjectId, isCallingProject, assignedTasks],
   );
 
-  // Keeps the selection valid as `tasks` changes (project switch, or a poll
-  // that removed the open task) without clearing a still-valid choice.
+  // Clears the selection when it's no longer valid (project switch, or a
+  // poll that removed the open task) - but never invents a new one. This
+  // used to fall back to `tasks[0]`, silently picking a task nobody chose
+  // the moment its project was selected: "This task" and the whole
+  // task-scoped main pane would appear for a task the member never clicked,
+  // just from picking a project that happened to have one. Picking a task is
+  // now always an explicit act - the "Your tasks" list in the sidebar (or
+  // jumpToAssignedTask from anywhere else) - same as picking a project
+  // never used to imply picking a task in the first place.
   useEffect(() => {
-    setSelectedTaskId((current) => {
-      if (current && tasks.some((t) => t.id === current)) return current;
-      return tasks[0]?.id || "";
-    });
+    setSelectedTaskId((current) => (current && tasks.some((t) => t.id === current) ? current : ""));
   }, [tasks]);
 
   const handleManualRefresh = async () => {
@@ -1749,11 +1753,8 @@ function MainApp() {
     weekFootLabel,
     projectedCapTimeLabel,
     assignedTodayLabel,
-    assignedPlannedPercent,
-    assignedDeferredPercent,
     assignedCarriedLabel,
     assignedTaskCountLabel,
-    assignedSplitLabel,
     projectBudgetReached,
     projectBudgetPercent,
     taskBudgetRemainingLabel,
@@ -1813,31 +1814,25 @@ function MainApp() {
     />
   ) : null;
 
-  const assignedTile = (
-    <AssignedTile
-      memberLimits={memberLimits}
-      assignedTaskCountLabel={assignedTaskCountLabel}
-      assignedTodayLabel={assignedTodayLabel}
-      assignedCarriedLabel={assignedCarriedLabel}
-      assignedPlannedPercent={assignedPlannedPercent}
-      assignedDeferredPercent={assignedDeferredPercent}
-      assignedSplitLabel={assignedSplitLabel}
-    />
-  );
-
   // Rendered under both project types. A project's own budget is independent
   // of, and stacks with, a task's own estimate - both can apply to the same
-  // task-based session at once, so the budget tile takes the third slot and
-  // pushes the workload tile onto its own row rather than displacing it.
+  // task-based session at once, so the budget tile takes the third slot when
+  // one exists; otherwise the row simply has two tiles. Assigned-today used
+  // to fill this slot as a full stat-tile - it's member-wide, not scoped to
+  // whichever project/task is open here, so it now lives as a small badge in
+  // the header instead (see AssignedTodayBadge, next to Refresh).
   const hoursTodayCards = (
     <div className="stats-stack page-content-swap" style={{ animationDelay: "0.04s" }}>
       {todayPanel}
-      <div className="stat-row-3">
+      {/* Two tiles reflow to fill the row on their own when there's no
+          budget tile to take the third slot - a fixed 3-column grid would
+          otherwise leave a visible blank cell where assignedTile used to
+          sit. */}
+      <div className={projectBudgetTile ? "stat-row-3" : "stat-row-3 stat-row-3-partial"}>
         {activityTile}
         {weekTile}
-        {projectBudgetTile ?? assignedTile}
+        {projectBudgetTile}
       </div>
-      {projectBudgetTile ? assignedTile : null}
     </div>
   );
 
@@ -2182,41 +2177,56 @@ function MainApp() {
                 <span className="page-eyebrow">Today</span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
-              {/* Manual time entry. Rendered purely from the server-decided
-                  capability (Manager and above) - the agent holds no role
-                  logic of its own for this, so a spoofed local role cannot
-                  reveal the control. */}
-              {workspace?.capabilities.canLogManualTime ? (
+              {/* Grouped so Assigned-today, manual time entry and Refresh sit
+                  as one cluster on the right, separated as a whole from the
+                  titles - not spread apart individually by the header's own
+                  space-between. Assigned-today used to be a full-width card
+                  in the main pane below; it's member-wide, not scoped to
+                  whichever project/task is open here, so this small badge is
+                  what it actually deserved. */}
+              <div className="page-header-actions">
+                <AssignedTodayBadge
+                  memberLimits={memberLimits}
+                  assignedTodayLabel={assignedTodayLabel}
+                  assignedTaskCountLabel={assignedTaskCountLabel}
+                  assignedCarriedLabel={assignedCarriedLabel}
+                />
+                {/* Manual time entry. Rendered purely from the server-decided
+                    capability (Manager and above) - the agent holds no role
+                    logic of its own for this, so a spoofed local role cannot
+                    reveal the control. */}
+                {workspace?.capabilities.canLogManualTime ? (
+                  <button
+                    className="icon-btn"
+                    type="button"
+                    title="Log time that wasn't tracked"
+                    aria-label="Log time that wasn't tracked"
+                    onClick={openLogTime}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm1-13h-2v6l5 3 1-1.73-4-2.37V7Z"
+                      />
+                    </svg>
+                  </button>
+                ) : null}
                 <button
                   className="icon-btn"
                   type="button"
-                  title="Log time that wasn't tracked"
-                  aria-label="Log time that wasn't tracked"
-                  onClick={openLogTime}
+                  title="Refresh projects & tasks"
+                  aria-label="Refresh projects & tasks"
+                  disabled={refreshingData}
+                  onClick={() => void handleManualRefresh()}
                 >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshingData ? "spin" : undefined}>
                     <path
                       fill="currentColor"
-                      d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16Zm1-13h-2v6l5 3 1-1.73-4-2.37V7Z"
+                      d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
                     />
                   </svg>
                 </button>
-              ) : null}
-              <button
-                className="icon-btn"
-                type="button"
-                title="Refresh projects & tasks"
-                aria-label="Refresh projects & tasks"
-                disabled={refreshingData}
-                onClick={() => void handleManualRefresh()}
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" className={refreshingData ? "spin" : undefined}>
-                  <path
-                    fill="currentColor"
-                    d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
-                  />
-                </svg>
-              </button>
+              </div>
             </div>
 
             {signedIn && (selectedTaskId || (taskLessSession && selectedProjectId)) ? (
