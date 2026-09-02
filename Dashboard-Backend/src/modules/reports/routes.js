@@ -53,6 +53,10 @@ import {
   listInvoicesWithBalancePg,
 } from "../../lib/postgres/invoices-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
+import {
+  deleteActivitySessionWithChildrenPg,
+  getPgSessionById,
+} from "../../lib/postgres/activity-events-postgres.service.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
@@ -662,6 +666,42 @@ export async function routeReports(req, res, url, origin) {
     } catch (e) {
       logSafeError("[reports/work-sessions]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
+    }
+    return true;
+  }
+
+  // A tracked session and everything captured under it - screenshots, app
+  // usage, URL visits (see deleteActivitySessionWithChildrenPg's own doc
+  // comment) - deleted together in one transaction. Manager and above only
+  // (same tier canManageActivityData already anticipated for this exact
+  // capability), and only for a member within the viewer's own visible
+  // scope, same rule every other report route in this file already enforces
+  // for reading - a scoped Manager cannot delete what they cannot see.
+  const workSessionDeleteMatch = pn.match(/^\/api\/reports\/work-sessions\/([^/]+)$/);
+  if (workSessionDeleteMatch && req.method === "DELETE") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to delete a work session." });
+      return true;
+    }
+    const sessionId = decodeURIComponent(workSessionDeleteMatch[1]);
+    try {
+      const session = await getPgSessionById(sessionId);
+      if (!session) {
+        sendJson(res, origin, 404, { success: false, error: "Work session not found." });
+        return true;
+      }
+      const visibleIds = await resolveReportVisibleIds(getDb(), viewer);
+      if (visibleIds !== null && !visibleIds.includes(session.member_id)) {
+        sendJson(res, origin, 403, { success: false, error: "Cannot delete a work session outside your access scope." });
+        return true;
+      }
+      const result = await deleteActivitySessionWithChildrenPg(sessionId);
+      sendJson(res, origin, 200, { success: true, data: { id: sessionId, deleted: true, ...result } });
+    } catch (e) {
+      logSafeError("[reports/work-sessions delete]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to delete work session." });
     }
     return true;
   }
