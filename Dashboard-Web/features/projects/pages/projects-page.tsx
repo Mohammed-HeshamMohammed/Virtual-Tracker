@@ -27,6 +27,7 @@ import type { ProjectType } from "@/features/projects/api/project-api"
 import { useProjectColumns } from "@/features/projects/hooks/use-project-columns"
 import { useProjectMutations } from "@/features/projects/hooks/use-project-mutations"
 import { ProjectModal } from "@/features/projects/components/modals/project-modal"
+import { AnchorBudgetDialog } from "@/features/projects/components/menus/anchor-budget-dialog"
 import { BatchMemberLimitsModal } from "@/features/projects/components/modals/batch-member-limits-modal"
 import { ProjectsToolbar } from "@/features/projects/components/projects-toolbar"
 import { DeleteConfirmDialog } from "@/features/projects/ui-components"
@@ -113,6 +114,7 @@ export function ProjectsPage() {
   // Double-click a row - separate from editingProjectId so it opens read-only
   // for anyone who can see the table, not gated on canManage the way Edit is.
   const [previewProjectId, setPreviewProjectId] = useComponentState<string | null>(null)
+  const [anchorProjectId, setAnchorProjectId] = useComponentState<string | null>(null)
 
   // Columns Hook
   const {
@@ -343,6 +345,7 @@ export function ProjectsPage() {
               onEdit={openEditProject}
               onArchive={archiveProject}
               onDelete={deleteProject}
+              onAnchor={canManage ? (id) => setAnchorProjectId(id) : undefined}
               onPreview={(id) => setPreviewProjectId(id)}
               isDark={isDark}
               canManageProjects={canManage}
@@ -408,6 +411,14 @@ export function ProjectsPage() {
           </div>
         )}
       </AnimatePresence>
+
+      <AnchorBudgetDialog
+        projectId={anchorProjectId ?? ""}
+        projectName={projectList.find((p) => p.id === anchorProjectId)?.name ?? ""}
+        open={anchorProjectId !== null}
+        onOpenChange={(open) => { if (!open) setAnchorProjectId(null) }}
+        onSaved={() => void refetchProjects({ forceRefetch: true })}
+      />
 
       <BatchMemberLimitsModal
         open={batchMemberLimitsOpen}
