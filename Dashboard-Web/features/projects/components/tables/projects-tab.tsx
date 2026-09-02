@@ -56,6 +56,7 @@ export function ProjectsTab({
   onEdit,
   onArchive,
   onDelete,
+  onAnchor,
   onPreview,
   isDark = false,
   canManageProjects = true,
@@ -79,6 +80,8 @@ export function ProjectsTab({
   onEdit: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
+  /** Opens the "Anchor" small form. Omitted when nothing should offer it. */
+  onAnchor?: (id: string) => void
   /** Double-click a row - opens the same edit form read-only, for anyone who
    *  can see the table, not just roles that can manage projects. */
   onPreview?: (id: string) => void
@@ -410,6 +413,7 @@ export function ProjectsTab({
                             onEdit={() => onEdit(project.id)}
                             onArchive={() => onArchive(project.id)}
                             onDelete={() => onDelete(project.id)}
+                            onAnchor={project.budget && onAnchor ? () => onAnchor(project.id) : undefined}
                             isDark={isDark}
                           />
                         </td>

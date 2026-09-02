@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Archive, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Anchor, Archive, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   TABLE_ROW_MENU_ITEM_BASE,
@@ -16,12 +16,16 @@ export function ProjectRowMenu({
   onEdit,
   onArchive,
   onDelete,
+  onAnchor,
   isDark = false,
 }: {
   project: ProjectListItem
   onEdit: () => void
   onArchive: () => void
   onDelete: () => void
+  /** Opens the "Anchor" small form - set the next reset period's start/end.
+   *  Omitted entirely (not shown) when the project has no budget yet. */
+  onAnchor?: () => void
   isDark?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -32,6 +36,9 @@ export function ProjectRowMenu({
       label: project.status === "active" ? "Archive" : "Unarchive",
       action: () => { onArchive(); setOpen(false) },
     },
+    ...(onAnchor
+      ? [{ icon: <Anchor className="h-3.5 w-3.5" />, label: "Anchor", action: () => { onAnchor(); setOpen(false) } }]
+      : []),
     { icon: <Trash2 className="h-3.5 w-3.5" />, label: "Delete", action: () => { onDelete(); setOpen(false) }, danger: true },
   ]
   return (

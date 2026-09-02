@@ -240,6 +240,22 @@ export async function updateProject(id: string, data: UpdateProjectInput): Promi
   return toProject(json.data ?? {})
 }
 
+/** "Anchor" (3-dot menu) - sets only the current budget's reset-period start
+ *  (required) and end (optional), leaving every other budget setting alone. */
+export async function anchorProjectBudget(
+  projectId: string,
+  data: { startDate: string; endDate?: string | null },
+): Promise<void> {
+  const res = await apiFetch(apiPath(`/api/projects/${projectId}/budget-anchor`), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start_date: data.startDate, end_date: data.endDate ?? null }),
+  })
+  const json = (await res.json()) as Envelope<Record<string, unknown>>
+  if (!res.ok) throw extractApiError(res.status, "Failed to anchor the reset period", json)
+  if (!json.success) throw new Error(json.error || "Failed to anchor the reset period")
+}
+
 export async function deleteProject(id: string): Promise<void> {
   const res = await apiFetch(apiPath(`/api/projects/${id}`), { method: "DELETE" })
   if (res.status === 404) return

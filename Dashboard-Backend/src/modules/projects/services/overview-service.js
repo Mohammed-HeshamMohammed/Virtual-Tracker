@@ -140,6 +140,8 @@ export async function getOverviewCore(db, options = {}) {
       type: row.budget_type,
       based_on: row.based_on,
       include_non_billable_time: row.include_non_billable_time,
+      start_date: row.start_date,
+      end_date: row.end_date,
     }));
   const spentByProject = await computeProjectSpentForAllPg(db, budgetRowsForSpend);
 
@@ -283,7 +285,7 @@ export async function getOverviewPanels(db, options = {}) {
     // checked "done", contradicting the Progress column right above it.
     pgQuery(
       `SELECT p.id, p.name, pb.cost AS budget_total, pb.type AS budget_type,
-              pb.based_on, pb.scope AS budget_scope, pb.include_non_billable_time
+              pb.based_on, pb.scope AS budget_scope, pb.include_non_billable_time, pb.start_date, pb.end_date
        FROM projects p
        LEFT JOIN project_budgets pb ON pb.project_id = p.id
        ORDER BY p.created_at`,
@@ -322,6 +324,8 @@ export async function getOverviewPanels(db, options = {}) {
         type: row.budget_type,
         based_on: row.based_on,
         include_non_billable_time: row.include_non_billable_time,
+        start_date: row.start_date,
+        end_date: row.end_date,
       })),
     ),
     computeProjectBudgetTargetForAllPg(
@@ -432,7 +436,7 @@ export async function getOverviewPanels(db, options = {}) {
   const clientLinkedProjectIds = [...new Set(clientProjectRows.map((r) => r.project_id).filter(Boolean))];
   const clientProjectBudgetRows = clientLinkedProjectIds.length
     ? await pgQuery(
-        `SELECT project_id, cost, type, based_on, scope, include_non_billable_time
+        `SELECT project_id, cost, type, based_on, scope, include_non_billable_time, start_date, end_date
          FROM project_budgets WHERE project_id = ANY($1::uuid[]) AND cost > 0`,
         [clientLinkedProjectIds],
       )
@@ -445,6 +449,8 @@ export async function getOverviewPanels(db, options = {}) {
         type: r.type,
         based_on: r.based_on,
         include_non_billable_time: r.include_non_billable_time,
+        start_date: r.start_date,
+        end_date: r.end_date,
       })),
     ),
     computeProjectBudgetTargetForAllPg(

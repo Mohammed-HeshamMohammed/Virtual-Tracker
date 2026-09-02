@@ -15,8 +15,9 @@ import { getProjects } from "@/features/projects/api/project-api"
 import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
+import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field"
 
 /** Today as YYYY-MM-DD in local time (not UTC, which shifts the day). */
 function todayLocal(): string {
@@ -54,6 +55,7 @@ export function AddManualEntryDialog({
   onSaved?: () => void
 }) {
   const { memberId: viewerMemberId } = useAuth()
+  const { isDark } = useTheme()
 
   const [members, setMembers] = useState<{ id: string; name: string }[]>([])
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
@@ -63,7 +65,6 @@ export function AddManualEntryDialog({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const [memberSearch, setMemberSearch] = useState("")
   const [selectedMemberId, setSelectedMemberId] = useState("")
   const [projectId, setProjectId] = useState("")
   const [taskId, setTaskId] = useState("")
@@ -80,7 +81,6 @@ export function AddManualEntryDialog({
   useEffect(() => {
     if (!open) return
     setError(null)
-    setMemberSearch("")
     setSelectedMemberId("")
     setProjectId("")
     setTaskId("")
@@ -147,13 +147,6 @@ export function AddManualEntryDialog({
     }
   }, [projectId])
 
-  const filteredMembers = useMemo(() => {
-    const q = memberSearch.trim().toLowerCase()
-    if (!q) return members
-    return members.filter((m) => m.name.toLowerCase().includes(q))
-  }, [members, memberSearch])
-
-  const selectedMember = members.find((m) => m.id === selectedMemberId)
 
   async function submit() {
     setError(null)
@@ -211,54 +204,14 @@ export function AddManualEntryDialog({
 
         <div className="space-y-4">
           <div>
-            <label htmlFor="ame-member" className={labelCls}>
-              Member
-            </label>
-            {selectedMember ? (
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm text-slate-800 dark:text-slate-100">
-                <span>{selectedMember.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedMemberId("")}
-                  className="text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <>
-                <input
-                  id="ame-member"
-                  type="text"
-                  value={memberSearch}
-                  onChange={(e) => setMemberSearch(e.target.value)}
-                  placeholder={loadingOptions ? "Loading members…" : "Search members…"}
-                  disabled={loadingOptions}
-                  className={inputCls}
-                />
-                {memberSearch.trim() ? (
-                  <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    {filteredMembers.length === 0 ? (
-                      <p className="px-3 py-2 text-sm text-slate-400">No members match.</p>
-                    ) : (
-                      filteredMembers.slice(0, 20).map((m) => (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedMemberId(m.id)
-                            setMemberSearch("")
-                          }}
-                          className="block w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
-                        >
-                          {m.name}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                ) : null}
-              </>
-            )}
+            <label className={labelCls}>Member</label>
+            <SearchableSelectField
+              value={selectedMemberId || null}
+              onChange={(v) => setSelectedMemberId(v ?? "")}
+              options={members.map((m) => ({ value: m.id, label: m.name }))}
+              placeholder={loadingOptions ? "Loading members…" : "Select a member"}
+              isDark={isDark}
+            />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
