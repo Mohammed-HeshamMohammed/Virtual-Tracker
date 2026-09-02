@@ -331,7 +331,7 @@ export function MemberEntryModal({
 
   const showFormTabs = focusedAction === "edit-role" || focusedAction === "edit-payment" || focusedAction === "edit-limits"
   const modalWidthClass =
-    focusedAction === "edit-limits" || focusedAction === "edit-payment" ? "max-w-3xl" : "max-w-lg"
+    focusedAction === "edit-payment" ? "max-w-4xl" : focusedAction === "edit-limits" ? "max-w-3xl" : "max-w-lg"
 
   return (
     <div

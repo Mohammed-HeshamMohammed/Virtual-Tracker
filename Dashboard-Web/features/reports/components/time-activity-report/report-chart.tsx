@@ -174,7 +174,15 @@ export function ReportTimeActivityChart({
         ) : (
           <div
             className="relative"
-            style={{ height: CHART_H, minWidth: vbW }}
+            // A fixed width, not minWidth: the SVG below stretches to fill
+            // whatever this div ends up (preserveAspectRatio="none", so it
+            // has no aspect ratio of its own to fall back on) - minWidth is
+            // only a floor, so this div (and the chart with it) was filling
+            // the full width of whatever oversized card/page it sat in,
+            // turning a week of bars into a thin, flat smear. Pinned to the
+            // chart's own natural data-driven width instead; overflow-x-auto
+            // on the wrapper above still scrolls for a range with many days.
+            style={{ height: CHART_H, width: vbW }}
             onMouseMove={(e) => setHovered(indexFromClientX(e.clientX))}
             onMouseLeave={() => setHovered(null)}
           >
