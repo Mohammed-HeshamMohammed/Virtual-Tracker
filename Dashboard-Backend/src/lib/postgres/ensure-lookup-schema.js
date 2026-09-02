@@ -731,6 +731,31 @@ const MEMBER_DATA_DDL = [
   updated_at                  TIMESTAMPTZ   NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_pay_rates_member ON pay_rates (member_id)",
+  // Append-only audit trail: pay_rates itself is a single upserted row per
+  // member (whatever is current), so every past rate/currency/pay-period was
+  // silently overwritten with nothing to show for it - the Pay/Bill tab's
+  // "history" table only ever displayed that one current row relabeled
+  // "Current". Every accepted pay-rate save now also inserts one row here
+  // (member-profile.service.js), capturing what the rate became and what it
+  // was before, so the tab has real history to show.
+  `CREATE TABLE IF NOT EXISTS pay_rate_history (
+  id                     UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id              UUID          NOT NULL,
+  type                   VARCHAR(30)   NOT NULL DEFAULT 'hourly',
+  rate                   NUMERIC(10, 2) NOT NULL DEFAULT 0,
+  currency               VARCHAR(10)   NOT NULL DEFAULT 'USD',
+  pay_period             VARCHAR(30)   NOT NULL DEFAULT 'None',
+  effective_date         DATE,
+  status                 VARCHAR(20)   NOT NULL DEFAULT 'active',
+  note                   TEXT          NOT NULL DEFAULT '',
+  previous_rate          NUMERIC(10, 2),
+  previous_currency      VARCHAR(10),
+  previous_pay_period    VARCHAR(30),
+  changed_by_member_id   UUID,
+  changed_by_name        VARCHAR(255)  NOT NULL DEFAULT '',
+  created_at             TIMESTAMPTZ   NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_pay_rate_history_member ON pay_rate_history (member_id, created_at DESC)",
   `CREATE TABLE IF NOT EXISTS member_onboarding (
   id                      UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id               UUID,

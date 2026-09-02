@@ -267,6 +267,61 @@ export async function getPayRatesBatchPg(memberIds) {
   return rows.map((row) => normalizeMemberDataRow(row));
 }
 
+/**
+ * Append-only audit row for a pay/bill rate change - see pay_rate_history's
+ * own comment in ensure-lookup-schema.js. Written by member-profile.service.js
+ * right after an accepted payBill save, never by anything else.
+ * @param {Record<string, unknown>} payload
+ */
+export async function insertPayRateHistoryRowPg(payload) {
+  const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
+  await query(
+    `INSERT INTO pay_rate_history (
+      id, member_id, type, rate, currency, pay_period, effective_date, status, note,
+      previous_rate, previous_currency, previous_pay_period,
+      changed_by_member_id, changed_by_name, created_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+    [
+      id,
+      payload.member_id,
+      String(payload.type ?? "hourly"),
+      Number(payload.rate ?? 0),
+      String(payload.currency ?? "USD"),
+      String(payload.pay_period ?? "None"),
+      parseDateOnly(payload.effective_date),
+      String(payload.status ?? "active"),
+      String(payload.note ?? ""),
+      payload.previous_rate == null ? null : Number(payload.previous_rate),
+      payload.previous_currency == null ? null : String(payload.previous_currency),
+      payload.previous_pay_period == null ? null : String(payload.previous_pay_period),
+      uuidOrNull(payload.changed_by_member_id),
+      String(payload.changed_by_name ?? ""),
+      payload.created_at ?? new Date(),
+    ],
+  );
+  return id;
+}
+
+/**
+ * Most recent history rows first - what the Pay/Bill tab's history table
+ * renders. Capped well above what the UI shows so it never silently looks
+ * truncated for a member with a long compensation history.
+ * @param {string} memberId
+ * @param {number} [limit]
+ */
+export async function listPayRateHistoryByMemberIdPg(memberId, limit = 50) {
+  const rows = await query(
+    `SELECT * FROM pay_rate_history WHERE member_id = $1 ORDER BY created_at DESC LIMIT $2`,
+    [memberId, limit],
+  );
+  return rows.map((row) => normalizeMemberDataRow(row));
+}
+
+/** @param {string} memberId */
+export async function deletePayRateHistoryByMemberIdPg(memberId) {
+  await query(`DELETE FROM pay_rate_history WHERE member_id = $1`, [memberId]);
+}
+
 const EMPLOYMENT_UPDATABLE_COLUMNS = [
   "job_title_id",
   "department_id",

@@ -4,6 +4,7 @@ import { isPostgresConfigured, query } from "../../lib/postgres/client.js";
 import { createOrgFieldOptionPg, listOrgFieldOptionsPg, ORG_FIELD_OPTION_TYPES } from "../../lib/postgres/lookup-postgres.service.js";
 import { listMemberFormSnapshotsPg } from "../../lib/postgres/member-form-snapshot-postgres.service.js";
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
+import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
 import { canViewerManageInvite } from "../../http/invite-scope.js";
@@ -946,8 +947,24 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to change role." });
         return true;
       }
-      if (!canManage && body.payBill && typeof body.payBill === "object" && body.payBill.payRate !== undefined) {
-        sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to change pay rate." });
+      // Pay/bill rate is Super Manager and above only - narrower than
+      // canManage (requireManagementRole), which also lets a plain Manager
+      // through for every other section. This is a fast-fail mirror of the
+      // real enforcement in updateMemberProfile (member-profile.service.js),
+      // which is what actually protects every write path, including
+      // members/batch-update. Any field in the payload counts, not just
+      // payRate - a Manager could otherwise slip currency/payPeriod/note/
+      // effectiveDate through unblocked.
+      if (
+        !isOrgProjectAdminRole(viewer?.roleName ?? "") &&
+        body.payBill &&
+        typeof body.payBill === "object" &&
+        Object.keys(body.payBill).some((k) => k !== "paySegment")
+      ) {
+        sendJson(res, origin, 403, {
+          success: false,
+          error: "Only Super Manager and above can edit pay rates.",
+        });
         return true;
       }
       if (canManage && body.roles && typeof body.roles === "object" && typeof body.roles.role === "string") {
