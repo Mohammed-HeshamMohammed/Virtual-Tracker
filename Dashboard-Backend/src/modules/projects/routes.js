@@ -968,6 +968,8 @@ export async function routeProjects(req, res, url, db, origin) {
           type: row.type,
           based_on: row.based_on,
           include_non_billable_time: row.include_non_billable_time,
+          start_date: row.start_date,
+          end_date: row.end_date,
         })),
       );
       // scope='per_person' rows store hours-per-member in `cost`, not a total -
@@ -1132,6 +1134,59 @@ export async function routeProjects(req, res, url, db, origin) {
       logSafeError("[project-budgets/:id PATCH]", e);
       if (sendPgConstraintError(res, origin, e, req)) return true;
       sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to update project budget" });
+    }
+    return true;
+  }
+
+  // "Anchor" (3-dot menu action): sets only the current budget's reset-period
+  // start (required) and end (optional), leaving every other budget setting
+  // untouched - a focused alternative to the full budget edit form for the
+  // one field people actually reach for after moving a project's start date.
+  const projectAnchorMatch = /^\/api\/projects\/([^/]+)\/budget-anchor$/.exec(pn);
+  if (projectAnchorMatch && req.method === "PATCH") {
+    try {
+      const projectId = projectAnchorMatch[1];
+      const current = await getProjectBudgetPg(projectId);
+      if (!current) {
+        sendJson(res, origin, 404, { success: false, error: "Set up a budget for this project before anchoring its reset period." });
+        return true;
+      }
+      const viewer = await assertProjectDomainWrite(projectId, null);
+      if (!viewer) return true;
+      const body = await readJsonBody(req);
+      const startDate = String(body.start_date ?? body.startDate ?? "").trim();
+      if (!startDate) {
+        sendJson(res, origin, 400, { success: false, error: "Pick a start date for the next reset period." });
+        return true;
+      }
+      const endDate = String(body.end_date ?? body.endDate ?? "").trim() || null;
+      if (endDate && endDate < startDate) {
+        sendJson(res, origin, 400, { success: false, error: "End date can't be before the start date." });
+        return true;
+      }
+      const row = await upsertProjectBudgetPg(
+        projectId,
+        {
+          type: current.type,
+          basedOn: current.based_on,
+          scope: current.scope,
+          cost: current.cost,
+          notifyProjectMembers: current.notify_project_members,
+          notifyAtPct: current.notify_at_pct,
+          whoToNotify: current.who_to_notify,
+          stopTimersWhenReached: current.stop_timers_when_reached,
+          stopTimersAtPct: current.stop_timers_at_pct,
+          resets: current.resets,
+          includeNonBillableTime: current.include_non_billable_time,
+          startDate,
+          endDate,
+        },
+        viewer.memberId,
+      );
+      sendJson(res, origin, 200, { success: true, data: row });
+    } catch (e) {
+      logSafeError("[projects/:id/budget-anchor PATCH]", e);
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to anchor the reset period" });
     }
     return true;
   }

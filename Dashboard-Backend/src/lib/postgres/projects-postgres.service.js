@@ -24,6 +24,14 @@ function dateOrNull(value) {
   return value;
 }
 
+/** A budget row's start_date read back as 'YYYY-MM-DD' - pg returns DATE
+ *  columns as JS Date objects, but every fromDate/toDate comparison in this
+ *  file is written against a plain date string. */
+export function toDayStrOrNull(value) {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
+}
+
 // ---------------------------------------------------------------------------
 // projects
 // ---------------------------------------------------------------------------
@@ -359,7 +367,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
       `UPDATE project_budgets SET
          type = $2, based_on = $3, scope = $4, cost = $5, notify_project_members = $6, notify_at_pct = $7,
          who_to_notify = $8, stop_timers_when_reached = $9, stop_timers_at_pct = $10, resets = $11,
-         start_date = $12, include_non_billable_time = $13, updated_by = $14, updated_at = now()
+         start_date = $12, include_non_billable_time = $13, updated_by = $14, updated_at = now(), end_date = $16
        WHERE project_id = $1 AND date_trunc('milliseconds', updated_at) = $15::timestamptz
        RETURNING *`,
       [
@@ -378,6 +386,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
         data.includeNonBillableTime ?? true,
         uuidOrNull(actorId),
         expectedUpdatedAt,
+        dateOrNull(data.endDate),
       ],
     );
     if (rows.length === 0) {
@@ -393,15 +402,15 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
     `INSERT INTO project_budgets (
        id, project_id, type, based_on, scope, cost, notify_project_members, notify_at_pct, who_to_notify,
        stop_timers_when_reached, stop_timers_at_pct, resets, start_date, include_non_billable_time,
-       created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15)
+       created_by, updated_by, end_date
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$15,$16)
      ON CONFLICT (project_id) DO UPDATE SET
        type = EXCLUDED.type, based_on = EXCLUDED.based_on, scope = EXCLUDED.scope, cost = EXCLUDED.cost,
        notify_project_members = EXCLUDED.notify_project_members, notify_at_pct = EXCLUDED.notify_at_pct,
        who_to_notify = EXCLUDED.who_to_notify, stop_timers_when_reached = EXCLUDED.stop_timers_when_reached,
        stop_timers_at_pct = EXCLUDED.stop_timers_at_pct, resets = EXCLUDED.resets,
        start_date = EXCLUDED.start_date, include_non_billable_time = EXCLUDED.include_non_billable_time,
-       updated_by = EXCLUDED.updated_by, updated_at = now()
+       updated_by = EXCLUDED.updated_by, updated_at = now(), end_date = EXCLUDED.end_date
      RETURNING *`,
     [
       id,
@@ -419,6 +428,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
       dateOrNull(data.startDate),
       data.includeNonBillableTime ?? true,
       uuidOrNull(actorId),
+      dateOrNull(data.endDate),
     ],
   );
   const budget = rows[0] ?? null;
@@ -651,11 +661,27 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
  *
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} projectId
- * @param {{ basedOn?: string, includeNonBillable?: boolean }} [options]
+ * @param {{ basedOn?: string, includeNonBillable?: boolean, fromDate?: string, toDate?: string }} [options]
+ *   fromDate/toDate ('YYYY-MM-DD') bound the budget's own reset period, if it
+ *   has one - fromDate is start_date, toDate is the optional Anchor end_date.
+ *   Either absent sums that side unbounded, same as always.
  */
 export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   const basedOn = String(options.basedOn || "").toLowerCase();
   const billableClause = options.includeNonBillable === false ? "AND billable = true" : "";
+  const params = [projectId];
+  let sessionDateClause = "";
+  let entryDateClause = "";
+  if (options.fromDate) {
+    params.push(options.fromDate);
+    sessionDateClause += ` AND started_at::date >= $${params.length}`;
+    entryDateClause += ` AND date >= $${params.length}`;
+  }
+  if (options.toDate) {
+    params.push(options.toDate);
+    sessionDateClause += ` AND started_at::date <= $${params.length}`;
+    entryDateClause += ` AND date <= $${params.length}`;
+  }
 
   if (basedOn.includes("pay")) {
     // Same two-source union as getProjectTrackedSecondsPg, but grouped by
@@ -666,13 +692,13 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
     const rows = await query(
       `SELECT member_id, SUM(secs) AS secs FROM (
          SELECT member_id, active_seconds AS secs FROM activity_sessions
-         WHERE project_id = $1
+         WHERE project_id = $1 ${sessionDateClause}
          UNION ALL
          SELECT member_id, duration AS secs FROM time_entries
-         WHERE project_id = $1 AND status != 'rejected' ${billableClause}
+         WHERE project_id = $1 AND status != 'rejected' ${billableClause} ${entryDateClause}
        ) tracked
        GROUP BY member_id`,
-      [projectId],
+      params,
     );
     let total = 0;
     for (const row of rows) {
@@ -693,6 +719,8 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
 
   const seconds = await getProjectTrackedSecondsPg(projectId, {
     includeNonBillable: options.includeNonBillable,
+    fromDate: options.fromDate,
+    toDate: options.toDate,
   });
   const hours = seconds / 3600;
   return Math.round(hours * rate * 100) / 100;
@@ -705,16 +733,20 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
  * fabricating a number or hand-picking which helper above to use.
  * @param {import("firebase-admin/firestore").Firestore} db
  * @param {string} projectId
- * @param {{ type?: string, based_on?: string, include_non_billable_time?: boolean } | null} budgetRow
+ * @param {{ type?: string, based_on?: string, include_non_billable_time?: boolean, start_date?: unknown, end_date?: unknown } | null} budgetRow
  */
 export async function computeProjectSpentPg(db, projectId, budgetRow) {
   if (!budgetRow) return 0;
   const includeNonBillable = budgetRow.include_non_billable_time !== false;
+  const fromDate = toDayStrOrNull(budgetRow.start_date);
+  const toDate = toDayStrOrNull(budgetRow.end_date);
   if (String(budgetRow.type) === "Hours based") {
-    const seconds = await getProjectTrackedSecondsPg(projectId, { includeNonBillable });
+    const seconds = await getProjectTrackedSecondsPg(projectId, { includeNonBillable, fromDate, toDate });
     return Math.round((seconds / 3600) * 100) / 100;
   }
   return computeProjectSpentCostPg(db, projectId, {
+    fromDate,
+    toDate,
     basedOn: budgetRow.based_on,
     includeNonBillable,
   });
@@ -730,8 +762,10 @@ export async function computeProjectSpentPg(db, projectId, budgetRow) {
  * once via Promise.all, no matter how many projects reference it.
  *
  * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ id: string, type?: string, based_on?: string, include_non_billable_time?: boolean }[]} budgetRows
+ * @param {{ id: string, type?: string, based_on?: string, include_non_billable_time?: boolean, start_date?: unknown, end_date?: unknown }[]} budgetRows
  *   One row per project that has a budget (skip projects with none - they're 0 spend, not worth a query).
+ *   start_date/end_date, if the budget has them, bound what counts toward
+ *   this period - the Anchor menu action is what sets end_date.
  * @returns {Promise<Map<string, number>>} project_id -> spent, in the budget's own unit (hours or cost)
  */
 export async function computeProjectSpentForAllPg(db, budgetRows) {
@@ -744,29 +778,35 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
   const billRateCostRows = costRows.filter((r) => !String(r.based_on || "").toLowerCase().includes("pay"));
 
   // One grouped query for every Hours-based project's seconds. Per-project
-  // includeNonBillable flags ride along as a joined VALUES list rather than
-  // branching into one query per distinct flag value.
+  // includeNonBillable flags (and start_date bounds) ride along as a joined
+  // VALUES list rather than branching into one query per distinct value.
   async function trackedSecondsByProject(rows) {
     if (!rows.length) return new Map();
     const ids = rows.map((r) => r.id);
     const includeFlags = rows.map((r) => r.include_non_billable_time !== false);
+    const startDates = rows.map((r) => toDayStrOrNull(r.start_date));
+    const endDates = rows.map((r) => toDayStrOrNull(r.end_date));
     const dbRows = await query(
       `WITH proj_flags AS (
-         SELECT * FROM UNNEST($1::uuid[], $2::boolean[]) AS t(project_id, include_non_billable)
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[]) AS t(project_id, include_non_billable, start_date, end_date)
        )
        SELECT project_id, SUM(secs) AS total_seconds FROM (
          SELECT s.project_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
+         WHERE (f.start_date IS NULL OR s.started_at::date >= f.start_date)
+           AND (f.end_date IS NULL OR s.started_at::date <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.duration AS secs
          FROM time_entries te
          JOIN proj_flags f ON f.project_id = te.project_id
          WHERE te.status != 'rejected'
            AND (f.include_non_billable OR te.billable = true)
+           AND (f.start_date IS NULL OR te.date >= f.start_date)
+           AND (f.end_date IS NULL OR te.date <= f.end_date)
        ) tracked
        GROUP BY project_id`,
-      [ids, includeFlags],
+      [ids, includeFlags, startDates, endDates],
     );
     return new Map(dbRows.map((r) => [r.project_id, Math.max(0, Number(r.total_seconds ?? 0))]));
   }
@@ -782,23 +822,29 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
   if (payRateCostRows.length) {
     const ids = payRateCostRows.map((r) => r.id);
     const includeFlags = payRateCostRows.map((r) => r.include_non_billable_time !== false);
+    const startDates = payRateCostRows.map((r) => toDayStrOrNull(r.start_date));
+    const endDates = payRateCostRows.map((r) => toDayStrOrNull(r.end_date));
     const memberRows = await query(
       `WITH proj_flags AS (
-         SELECT * FROM UNNEST($1::uuid[], $2::boolean[]) AS t(project_id, include_non_billable)
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[]) AS t(project_id, include_non_billable, start_date, end_date)
        )
        SELECT project_id, member_id, SUM(secs) AS secs FROM (
          SELECT s.project_id, s.member_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
+         WHERE (f.start_date IS NULL OR s.started_at::date >= f.start_date)
+           AND (f.end_date IS NULL OR s.started_at::date <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.member_id, te.duration AS secs
          FROM time_entries te
          JOIN proj_flags f ON f.project_id = te.project_id
          WHERE te.status != 'rejected'
            AND (f.include_non_billable OR te.billable = true)
+           AND (f.start_date IS NULL OR te.date >= f.start_date)
+           AND (f.end_date IS NULL OR te.date <= f.end_date)
        ) tracked
        GROUP BY project_id, member_id`,
-      [ids, includeFlags],
+      [ids, includeFlags, startDates, endDates],
     );
     const distinctMemberIds = [...new Set(memberRows.map((r) => r.member_id))];
     const rateEntries = await Promise.all(

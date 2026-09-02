@@ -1465,6 +1465,7 @@ GROUP BY task_id`,
   stop_timers_at_pct          NUMERIC(5, 2),
   resets                      VARCHAR(20) NOT NULL DEFAULT 'Never' CHECK (resets IN ('Never', 'Weekly', 'Monthly')),
   start_date                  DATE,
+  end_date                    DATE,
   include_non_billable_time   BOOLEAN NOT NULL DEFAULT true,
   created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -1474,6 +1475,10 @@ GROUP BY task_id`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_pb_project ON project_budgets (project_id)`,
   // Pre-existing databases created before the per-person budget scope existed.
   `ALTER TABLE project_budgets ADD COLUMN IF NOT EXISTS scope VARCHAR(20) NOT NULL DEFAULT 'per_project'`,
+  // Pre-existing databases created before the reset-period anchor ("Anchor"
+  // menu action) existed - the period's own end, optional, distinct from
+  // projects.end_date (the project's overall deadline).
+  `ALTER TABLE project_budgets ADD COLUMN IF NOT EXISTS end_date DATE`,
   // Dedupe state for the notify-at-threshold check (item 4 of the budget
   // fixes plan) - one row per project, tracking which reset period a
   // notification has already gone out for. Postgres-resident (not Firestore

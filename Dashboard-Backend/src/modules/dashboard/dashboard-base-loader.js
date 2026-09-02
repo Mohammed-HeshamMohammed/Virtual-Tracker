@@ -76,7 +76,7 @@ async function fetchFreshBase(db) {
   const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
     pgQuery(
-      "SELECT id, project_id, cost, type, based_on, scope, include_non_billable_time FROM project_budgets LIMIT 300",
+      "SELECT id, project_id, cost, type, based_on, scope, include_non_billable_time, start_date, end_date FROM project_budgets LIMIT 300",
     ),
     pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
     listTasksPg({ limit: 800 }),
@@ -122,6 +122,8 @@ async function fetchFreshBase(db) {
         type: row.type,
         based_on: row.based_on,
         include_non_billable_time: row.include_non_billable_time,
+        start_date: row.start_date,
+        end_date: row.end_date,
       })),
   ).catch((err) => {
     logSafeWarn("[dashboard-base-loader] budget spend computation failed:", err);

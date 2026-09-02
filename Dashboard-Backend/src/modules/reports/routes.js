@@ -38,6 +38,7 @@ import {
   getAllProjectBudgetsPg,
   getProjectTrackedSecondsPg,
   computeProjectSpentCostPg,
+  toDayStrOrNull,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
 import { canViewCompensation } from "../../http/field-policy.js";
@@ -1130,7 +1131,11 @@ export async function routeReports(req, res, url, origin) {
           const cost = budget ? Number(budget.cost) || 0 : 0;
           const spentSeconds = await getProjectTrackedSecondsPg(project.id, {});
           const spentAmount = budget && cost > 0
-            ? await computeProjectSpentCostPg(getDb(), project.id, { basedOn: budget.based_on })
+            ? await computeProjectSpentCostPg(getDb(), project.id, {
+                basedOn: budget.based_on,
+                fromDate: toDayStrOrNull(budget.start_date) || undefined,
+                toDate: toDayStrOrNull(budget.end_date) || undefined,
+              })
             : 0;
           return {
             projectId: project.id,
