@@ -529,7 +529,15 @@ export type MemberProfilePayload = {
   }
   employment?: Record<string, unknown>
   roles?: { role?: MemberRole }
-  payBill?: { paySegment?: string; payRate?: string; currency?: string; payPeriod?: string }
+  payBill?: {
+    paySegment?: string
+    payRate?: string
+    currency?: string
+    payPeriod?: string
+    /** Owner/Super Admin/Admin/Super Manager only - see canEditPayRates. */
+    note?: string
+    effectiveDate?: string
+  }
   workLimits?: {
     weeklyLimit?: string
     dailyLimit?: string
@@ -546,6 +554,21 @@ export type MemberProfilePayload = {
     requireApproval?: boolean
     manageEmployeeTeams?: boolean
   }
+}
+
+/** One row of the real Pay/Bill rate audit trail (pay_rate_history) - most
+ * recent first. Replaces the old fabricated single "Current" row that was
+ * really just pay_rates' own current values relabeled. */
+export type PayRateHistoryEntry = {
+  id: string
+  rate: number
+  currency: string
+  payPeriod: string
+  effectiveDate: string
+  note: string
+  previousRate: number | null
+  changedByName: string
+  createdAt: string
 }
 
 export type MemberProfileForm = MemberProfilePayload["info"] &
@@ -568,6 +591,9 @@ export type MemberProfileForm = MemberProfilePayload["info"] &
     currency: string
     paySegment: "pay" | "bill"
     payPeriod: string
+    payNote: string
+    payEffectiveDate: string
+    payRateHistory: PayRateHistoryEntry[]
     weeklyLimit: string
     dailyLimit: string
     disableTrackingSpecificDays: boolean

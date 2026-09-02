@@ -101,6 +101,11 @@ export function redactProfileFormCompensation(form, viewer, targetMemberId) {
     payPeriod: "None",
     weeklyLimit: "",
     dailyLimit: "",
+    // Same audit trail as payRate itself (pay_rate_history) - a viewer who
+    // can't see the current rate shouldn't see what it used to be either.
+    payNote: "",
+    payEffectiveDate: "",
+    payRateHistory: [],
   };
 }
 

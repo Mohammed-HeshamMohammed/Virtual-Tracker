@@ -181,6 +181,18 @@ export function canSeeClientBudgets(role: string): boolean {
   return ORG_TASK_CREATE_ROLES.has(normalizeMemberRole(role))
 }
 
+/**
+ * Pay/bill rate is Owner/Super Admin/Admin/Super Manager only - narrower than
+ * canManageMembers (which also lets a plain Manager edit a member's other
+ * tabs). Mirrors Backend's own gate: isOrgProjectAdminRole in
+ * project-access.js, enforced in member-profile.service.js's hasPayBill
+ * branch (the actual authority - this is a UI hint only, so the tab reads
+ * as read-only for a Manager instead of erroring after they try to save).
+ */
+export function canEditPayRates(role: string): boolean {
+  return ORG_TASK_CREATE_ROLES.has(normalizeMemberRole(role))
+}
+
 export function isProjectManagerRole(projectRole: string): boolean {
   return normalizeMemberRole(projectRole) === "manager"
 }

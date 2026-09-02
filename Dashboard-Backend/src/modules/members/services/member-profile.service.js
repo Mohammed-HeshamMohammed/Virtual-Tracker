@@ -23,7 +23,13 @@ import { syncUserProfilePhoneForUid } from "../../auth/profile-settings.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
 import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
-import { deleteMemberOnboardingByMemberIdPg } from "../../../lib/postgres/member-data-postgres.service.js";
+import {
+  deleteMemberOnboardingByMemberIdPg,
+  deletePayRateHistoryByMemberIdPg,
+  insertPayRateHistoryRowPg,
+  listPayRateHistoryByMemberIdPg,
+} from "../../../lib/postgres/member-data-postgres.service.js";
+import { isOrgProjectAdminRole } from "../../../http/project-access.js";
 import {
   deleteLimitsDoc,
   deleteMemberScopedRows,
@@ -213,6 +219,14 @@ function parsePayRate(raw) {
   return 0;
 }
 
+/** YYYY-MM-DD from a Date, an ISO string, or a plain date string - "" for
+ * nothing on file, never "undefined"/"null" as a string. */
+function toDateOnly(value) {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
 export const MEMBER_PROFILE_SECTIONS = Object.freeze([
   "info",
   "employment",
@@ -288,6 +302,8 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
   let employment = {};
   /** @type {Record<string, unknown>} */
   let payRateRow = {};
+  /** @type {Record<string, unknown>[]} */
+  let payRateHistoryRows = [];
   /** @type {Record<string, unknown>} */
   let timeSettings = {};
   /** @type {Record<string, unknown>} */
@@ -304,6 +320,13 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     pending.push(
       getSingleByMemberId(db, "pay_rates", memberId).then((row) => {
         payRateRow = row || {};
+      }),
+    );
+  }
+  if (want("payBill")) {
+    pending.push(
+      listPayRateHistoryByMemberIdPg(memberId, 50).then((rows) => {
+        payRateHistoryRows = rows;
       }),
     );
   }
@@ -369,6 +392,22 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.payRate = String(parsePayRate(payRateRow.rate ?? 0) || "");
     form.paySegment = "pay";
     form.payPeriod = typeof payRateRow.pay_period === "string" ? payRateRow.pay_period : "None";
+    form.payNote = typeof payRateRow.note === "string" ? payRateRow.note : "";
+    form.payEffectiveDate = payRateRow.effective_date ? String(payRateRow.effective_date).slice(0, 10) : "";
+    // Real audit trail (§ pay_rate_history) - one row per accepted change,
+    // most recent first. The tab used to fabricate a single "Current" row
+    // from whatever pay_rates held; this is what actually happened.
+    form.payRateHistory = payRateHistoryRows.map((row) => ({
+      id: String(row.id ?? ""),
+      rate: parsePayRate(row.rate ?? 0),
+      currency: typeof row.currency === "string" ? row.currency : "USD",
+      payPeriod: typeof row.pay_period === "string" ? row.pay_period : "None",
+      effectiveDate: row.effective_date ? String(row.effective_date).slice(0, 10) : "",
+      note: typeof row.note === "string" ? row.note : "",
+      previousRate: row.previous_rate == null ? null : parsePayRate(row.previous_rate),
+      changedByName: typeof row.changed_by_name === "string" ? row.changed_by_name : "",
+      createdAt: toIsoTimestamp(row.created_at),
+    }));
     form.payBillUpdatedAt = toIsoTimestamp(payRateRow.updated_at);
   }
 
@@ -608,7 +647,30 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   }
 
   if (hasPayBill) {
+    // Only Super Manager and above may change compensation - narrower than
+    // isManagementRole (which also lets a plain Manager through). Resolved
+    // fresh against the DB rather than trusting a caller-supplied role, same
+    // reasoning as the manageEmployeeTeams check above. This is the one path
+    // every payBill write actually funnels through (both the single-member
+    // profile PATCH and members/batch-update call updateMemberProfile
+    // directly), so it's the real enforcement point, not just a mirror of
+    // the route's own check.
+    const actorRoleName = actor && actor !== "system" ? await resolveMemberRoleName(db, actor) : "";
+    if (!isOrgProjectAdminRole(actorRoleName)) {
+      throw new Error("Only Super Manager and above can edit pay rates.");
+    }
+
     const payRate = parsePayRate(payBill.payRate);
+    const currency =
+      typeof payBill.currency === "string" && payBill.currency.trim() ? payBill.currency.trim().toUpperCase() : "USD";
+    const payPeriod = typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None";
+    const note = typeof payBill.note === "string" ? payBill.note.trim() : "";
+    const existingPayRate = await getSingleByMemberId(db, "pay_rates", memberId);
+    const effectiveDate =
+      typeof payBill.effectiveDate === "string" && payBill.effectiveDate.trim()
+        ? payBill.effectiveDate.trim()
+        : (existingPayRate?.effective_date ?? now);
+
     const payBillResult = await upsertSingleByMemberIdConditional(
       db,
       "pay_rates",
@@ -616,10 +678,11 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       {
         type: "hourly",
         rate: payRate,
-        currency: typeof payBill.currency === "string" && payBill.currency.trim() ? payBill.currency.trim().toUpperCase() : "USD",
-        pay_period: typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None",
+        currency,
+        pay_period: payPeriod,
+        note,
         ...(hasSettings ? { require_timesheet_approval: settings.requireApproval === true } : {}),
-        effective_date: now,
+        effective_date: effectiveDate,
         status: "active",
         updated_by: actor,
         updated_at: now,
@@ -630,6 +693,44 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       const err = new Error("Someone else changed this member's pay/billing info while you were editing.");
       err.staleWrite = true;
       throw err;
+    }
+
+    // One audit row per accepted change - skipped for a re-save that landed
+    // on the exact same rate/currency/period/note/date (switching tabs and
+    // saving again shouldn't manufacture a fake "change"), always written
+    // the first time a member gets a rate at all.
+    const existingEffectiveDate = toDateOnly(existingPayRate?.effective_date);
+    const newEffectiveDate = toDateOnly(effectiveDate);
+    const ratesDiffer =
+      !existingPayRate ||
+      parsePayRate(existingPayRate.rate ?? 0) !== payRate ||
+      String(existingPayRate.currency ?? "USD") !== currency ||
+      String(existingPayRate.pay_period ?? "None") !== payPeriod ||
+      String(existingPayRate.note ?? "") !== note ||
+      existingEffectiveDate !== newEffectiveDate;
+    if (ratesDiffer) {
+      let changedByName = "";
+      if (actor === memberId) {
+        changedByName = [memberData.first_name, memberData.last_name].filter(Boolean).join(" ").trim();
+      } else if (actor && actor !== "system") {
+        const actorRow = await getMemberByIdPg(actor);
+        if (actorRow) changedByName = [actorRow.first_name, actorRow.last_name].filter(Boolean).join(" ").trim();
+      }
+      await insertPayRateHistoryRowPg({
+        member_id: memberId,
+        type: "hourly",
+        rate: payRate,
+        currency,
+        pay_period: payPeriod,
+        effective_date: newEffectiveDate,
+        note,
+        previous_rate: existingPayRate ? parsePayRate(existingPayRate.rate ?? 0) : null,
+        previous_currency: existingPayRate ? String(existingPayRate.currency ?? "USD") : null,
+        previous_pay_period: existingPayRate ? String(existingPayRate.pay_period ?? "None") : null,
+        changed_by_member_id: actor === "system" ? null : actor,
+        changed_by_name: changedByName,
+        created_at: now,
+      });
     }
   }
 
@@ -764,6 +865,7 @@ export async function deleteMemberProfileData(db, memberId) {
   for (const collection of ["employment", "time_settings", "pay_rates"]) {
     await deleteMemberScopedRows(db, collection, memberId);
   }
+  await deletePayRateHistoryByMemberIdPg(memberId);
   await deleteMemberOnboardingByMemberIdPg(memberId);
   // Same defect the memberFormSnapshot cleanup had: these two ran as Firestore
   // queries against collections that stopped receiving writes when teams and
