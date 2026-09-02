@@ -32,16 +32,13 @@ import { useAuth } from "@/shared/providers/app"
 import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { sumMoneyStrings } from "@/features/reports/utils/money"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
   return formatSecondsAsHMS(sec)
 }
 
-function sumAmountStrings(amountList: string[]): string {
-  const total = amountList.reduce((a, v) => a + (Number.parseFloat(v.replace(/[^0-9.-]/g, "")) || 0), 0)
-  return `$${total.toFixed(2)}`
-}
 const yTicks = [0, 2, 4, 6, 8, 10]
 
 function downloadAmountsOwedCsv(groups: AmountsOwedDayGroup[]): void {
@@ -79,7 +76,7 @@ function downloadAmountsOwedPdf(groups: AmountsOwedDayGroup[], dateLabel: string
     rangeLabel: dateLabel,
     summary: [
       { label: "Hours", value: sumHoursStrings(allHours) },
-      { label: "Amount", value: sumAmountStrings(allAmounts) },
+      { label: "Amount", value: sumMoneyStrings(allAmounts) },
     ],
     charts: [
       ...(groups.length > 0
@@ -320,7 +317,7 @@ export function AmountsOwedReport() {
 
   const totalAmountSummary = useMemo(() => {
     const all = groups.flatMap((g) => g.members.map((m) => m.amount))
-    return sumAmountStrings(all)
+    return sumMoneyStrings(all)
   }, [groups])
 
   return (
@@ -548,7 +545,7 @@ export function AmountsOwedReport() {
                       ) : null}
                       {visibleColumns.has("amount") ? (
                         <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-900 dark:text-[#dce1fb]">
-                          {sumAmountStrings(group.members.map((x) => x.amount))}
+                          {sumMoneyStrings(group.members.map((x) => x.amount))}
                         </td>
                       ) : null}
                     </tr>
