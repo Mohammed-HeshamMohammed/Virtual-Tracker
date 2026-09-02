@@ -1,4 +1,4 @@
-import { getPostgresPool } from "./client.js";
+import { getPostgresPool, withTransaction } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
@@ -504,6 +504,36 @@ export async function getPgSessionById(sessionId) {
     sessionId,
   ]);
   return result?.rows?.[0] ?? null;
+}
+
+/**
+ * Deletes one tracked work session and everything captured under it -
+ * screenshots, app usage, URL visits - in one transaction, so a failure
+ * partway through can never leave orphaned activity rows with no session to
+ * belong to (or the reverse: a deleted session whose screenshots outlive it).
+ *
+ * `session_id` on the three child tables is VARCHAR while activity_sessions.id
+ * is UUID (same cast every other session_id join in this file already needs -
+ * see fetchActivityScreenshotsPg's own comment on why), hence `$1::text`
+ * rather than a plain equality.
+ * @param {string} sessionId
+ * @returns {Promise<{ deletedSession: boolean, screenshots: number, appLogs: number, urlLogs: number }>}
+ */
+export async function deleteActivitySessionWithChildrenPg(sessionId) {
+  return withTransaction(async (client) => {
+    const screenshots = await client.query(`DELETE FROM activity_screenshots WHERE session_id = $1::text`, [
+      sessionId,
+    ]);
+    const appLogs = await client.query(`DELETE FROM activity_app_logs WHERE session_id = $1::text`, [sessionId]);
+    const urlLogs = await client.query(`DELETE FROM activity_url_logs WHERE session_id = $1::text`, [sessionId]);
+    const session = await client.query(`DELETE FROM activity_sessions WHERE id = $1`, [sessionId]);
+    return {
+      deletedSession: (session.rowCount ?? 0) > 0,
+      screenshots: screenshots.rowCount ?? 0,
+      appLogs: appLogs.rowCount ?? 0,
+      urlLogs: urlLogs.rowCount ?? 0,
+    };
+  });
 }
 
 /**

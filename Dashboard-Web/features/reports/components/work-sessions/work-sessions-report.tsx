@@ -13,9 +13,11 @@ import {
   Download,
   LayoutList,
   LineChart,
+  Loader2,
   Menu,
   Send,
   Settings2,
+  Trash2,
   X,
 } from "lucide-react"
 import { useWorkSessionsReport } from "@/features/reports/hooks/use-work-sessions-report"
@@ -227,10 +229,22 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     loading,
     error,
     retry,
+    canDelete,
+    deletingId,
+    deleteError,
+    deleteSession,
   } = useWorkSessionsReport()
 
   const visibleCols = COLUMN_META.filter((c) => columnVisibility[c.key])
-  const colCount = visibleCols.length
+  const colCount = visibleCols.length + (canDelete ? 1 : 0)
+
+  function confirmDeleteSession(row: { id: string; memberName: string; date: string; durationHms: string }) {
+    const ok = window.confirm(
+      `Delete this work session for ${row.memberName} on ${row.date} (${row.durationHms})? ` +
+        `This also permanently deletes its screenshots, app usage, and URL visits. This cannot be undone.`,
+    )
+    if (ok) void deleteSession(row.id)
+  }
 
   return (
     <div className="relative isolate min-h-0">
@@ -435,6 +449,12 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
             </div>
           </div>
 
+          {deleteError ? (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+              {deleteError}
+            </div>
+          ) : null}
+
           {loading ? (
             <ReportTableSkeleton rows={8} columns={6} />
           ) : error ? (
@@ -466,6 +486,11 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                         {c.label}
                       </th>
                     ))}
+                    {canDelete ? (
+                      <th className="w-[6%] px-4 py-3 text-right text-sm font-semibold text-slate-700 dark:text-[#dce1fb]">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    ) : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -533,6 +558,24 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                               ) : null}
                               {columnVisibility.activity ? (
                                 <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{r.activityPct}%</td>
+                              ) : null}
+                              {canDelete ? (
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => confirmDeleteSession(r)}
+                                    disabled={deletingId === r.id}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white/40 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                    title="Delete this session and its screenshots, app usage, and URL visits"
+                                    aria-label="Delete session"
+                                  >
+                                    {deletingId === r.id ? (
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                </td>
                               ) : null}
                             </tr>
                           ))

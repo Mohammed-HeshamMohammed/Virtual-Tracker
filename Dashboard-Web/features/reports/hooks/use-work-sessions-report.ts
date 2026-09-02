@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useAuth } from "@/shared/providers/app"
+import { canManageActivityData } from "@/features/auth"
 import { WORK_SESSIONS_GROUP_BY_OPTIONS } from "@/features/reports/components/shared/constants"
 import {
   aggregateWorkSessionTotals,
@@ -11,7 +12,7 @@ import {
   groupWorkSessions,
 } from "@/features/reports/utils/work-sessions"
 import { formatRangeLabel, startOfDay, endOfDay, formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
-import { fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
+import { deleteWorkSession, fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
 import { getMembers } from "@/features/members/api/member-api"
 import type {
   WorkSessionColumnKey,
@@ -40,7 +41,13 @@ const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
 }
 
 export function useWorkSessionsReport() {
-  const { memberId } = useAuth()
+  const { memberId, memberRole } = useAuth()
+  // Server re-checks this on every delete regardless (Manager+, same tier
+  // canManageActivityData already names for "delete screenshots, block
+  // URLs, etc.") - this only decides whether the row action renders at all.
+  const canDelete = canManageActivityData(memberRole ?? "")
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [scope, setScope] = useState<WorkSessionScope>("all")
   const [rangeStart, setRangeStart] = useState(() => {
     const d = startOfDay(new Date())
@@ -175,6 +182,24 @@ export function useWorkSessionsReport() {
       }
       return { ...p, [k]: next }
     })
+  }, [])
+
+  // Permanently deletes this session and everything captured under it
+  // (screenshots, app usage, URL visits - see deleteActivitySessionWithChildrenPg).
+  // Removed from local state on success rather than a full refetch - the
+  // date range/filters that produced `rows` haven't changed, only one row
+  // in it no longer exists server-side.
+  const deleteSession = useCallback(async (id: string) => {
+    setDeleteError(null)
+    setDeletingId(id)
+    try {
+      await deleteWorkSession(id)
+      setRows((prev) => prev.filter((r) => r.id !== id))
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete this session.")
+    } finally {
+      setDeletingId(null)
+    }
   }, [])
 
   const downloadCsv = useCallback(() => {
@@ -345,5 +370,9 @@ export function useWorkSessionsReport() {
     goToToday,
     downloadCsv,
     downloadPdf,
+    canDelete,
+    deletingId,
+    deleteError,
+    deleteSession,
   }
 }

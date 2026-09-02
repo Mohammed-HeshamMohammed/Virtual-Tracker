@@ -1,8 +1,9 @@
 "use client"
 
 import { Fragment, useEffect, useMemo, useState } from "react"
-import { ChevronDown, LayoutList } from "lucide-react"
-import { useTheme } from "@/shared/providers/app"
+import { ChevronDown, LayoutList, Loader2, Trash2 } from "lucide-react"
+import { useAuth, useTheme } from "@/shared/providers/app"
+import { isManagementRole } from "@/features/auth"
 import { cn } from "@/shared/utils/utils"
 import {
   ReportEmptyState,
@@ -10,6 +11,7 @@ import {
   useStandardReportLayout,
 } from "@/features/reports/components/app/standard-report-layout"
 import { fetchManualTimeEditsReport, type ManualTimeEditRow } from "@/features/reports/api/misc-reports-api"
+import { deleteTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import {
   ReportFiltersPanel,
   emptyReportFilters,
@@ -71,6 +73,7 @@ function keyForManualEditGroup(r: ManualTimeEditRow, groupBy: string): string {
 
 function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
+  const { memberId, memberRole } = useAuth()
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ManualTimeEditRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -86,6 +89,35 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  // Server allows self (any status) or Manager+ (with scope) to delete a
+  // time entry - matches assertTimeEntryWriteAuthorized. Approved entries
+  // stay off-limits here too, same as the personal "Your manual entries"
+  // list (ManualTimeContent.tsx) already restricts, so this report can't
+  // remove something the personal page won't.
+  const isManager = isManagementRole(memberRole ?? "")
+  function canDeleteRow(r: ManualTimeEditRow): boolean {
+    if (r.status === "approved") return false
+    return isManager || r.memberId === memberId
+  }
+
+  async function deleteRow(r: ManualTimeEditRow) {
+    const ok = window.confirm(
+      `Delete this manual time entry for ${r.memberName} on ${formatDay(r.day)} (${formatHours(r.hours)})? This cannot be undone.`,
+    )
+    if (!ok) return
+    setDeleteError(null)
+    setDeletingId(r.id)
+    try {
+      await deleteTimeEntry(r.id)
+      setRows((prev) => prev.filter((row) => row.id !== r.id))
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete this entry.")
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -252,13 +284,25 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
                   {label}
                 </th>
               ))}
+              <th className="w-[4%] px-4 py-3 text-right text-sm font-semibold">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
+            {deleteError ? (
+              <tr>
+                <td colSpan={9} className="px-4 py-2">
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+                    {deleteError}
+                  </p>
+                </td>
+              </tr>
+            ) : null}
             {grouped.map((g) => (
               <Fragment key={g.key}>
                 <tr className={cn(isDark ? "bg-white/10" : "bg-slate-100")}>
-                  <td colSpan={8} className="px-4 py-2">
+                  <td colSpan={9} className="px-4 py-2">
                     <button
                       type="button"
                       onClick={() => toggleGroupCollapsed(g.key)}
@@ -335,6 +379,24 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
                         </td>
                         <td className={cn("truncate px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
                           {r.editedByName || "—"}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {canDeleteRow(r) ? (
+                            <button
+                              type="button"
+                              onClick={() => void deleteRow(r)}
+                              disabled={deletingId === r.id}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-white/40 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                              title="Delete this manual time entry"
+                              aria-label="Delete entry"
+                            >
+                              {deletingId === r.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
+                            </button>
+                          ) : null}
                         </td>
                       </tr>
                     ))
