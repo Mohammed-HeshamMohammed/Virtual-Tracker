@@ -1,10 +1,11 @@
 // Generic schema CRUD routes (/api/v1/:entity) with access gates per entity type.
-import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
+import { getAuthContext, isManagementRole, requireManagementRole } from "../../http/auth-context.js";
 import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { canAccessTask } from "../../http/task-access.js";
 import {
   clientMayManageProject,
+  clientMayTrackProject,
   getViewerProjectIds,
   toAllowedProjectSet,
   viewerCanWriteProject,
@@ -381,6 +382,66 @@ async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existi
 }
 
 /**
+ * Whether this viewer's manual time entries land pre-approved (Manager and
+ * above, or a client on a project they're allowed to clock in on) or as a
+ * request awaiting review (everyone else - Employee, Intern, Team Lead).
+ * Mirrors the workspace endpoint's canLogManualTime split at the org-role
+ * boundary, with the client carve-out layered on top for the one project
+ * they were actually granted clock-in rights on.
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {string} projectId
+ */
+async function timeEntryAutoApproves(viewer, projectId) {
+  if (isManagementRole(viewer.roleName)) return true;
+  if (!projectId) return false;
+  return clientMayTrackProject(viewer, projectId);
+}
+
+/**
+ * Manual time is a self-reported claim about work nobody observed - whether
+ * it lands approved or pending can only be decided by who is actually
+ * making the claim, never by what the request body says. Without this, a
+ * client-supplied `status: "approved"` on create (or a PATCH to `status`
+ * from the entry's own creator, who assertTimeEntryWriteAuthorized already
+ * lets touch their own row) would let anyone self-approve their own
+ * request outright.
+ *
+ * Mutates `payload.status`:
+ *  - create (`existingStatus` undefined): always server-decided from who is
+ *    creating it - the client's own `status`, if it sent one at all, is
+ *    discarded entirely. Nobody chooses to create their own entry pending
+ *    when they could just send "approved" instead; this is the fact that
+ *    matters, not a preference.
+ *  - update, not touching status: left alone completely - editing your own
+ *    still-pending entry's hours or description is unaffected either way.
+ *  - update, touching status (an approve/reject action): honored only from
+ *    someone entitled to approve entries on this project (the same test as
+ *    create's auto-approve) - anyone else's attempt to change it is
+ *    reverted to whatever it already was, including the entry's own
+ *    creator trying to flip their own pending request to approved by hand.
+ * @param {{ memberId: string, roleName: string }} viewer
+ * @param {Record<string, unknown>} payload
+ * @param {string} projectId Resolved by the caller as payload.project_id ??
+ *   existing.project_id - an update that doesn't touch the project must
+ *   still check against the entry's real, existing one, not an absent field.
+ * @param {string} [existingStatus]
+ */
+async function resolveTimeEntryStatus(viewer, payload, projectId, existingStatus) {
+  const isCreate = existingStatus === undefined;
+  if (!isCreate && !("status" in payload)) return;
+
+  const canApprove = await timeEntryAutoApproves(viewer, projectId);
+
+  if (isCreate) {
+    payload.status = canApprove ? "approved" : "pending";
+    return;
+  }
+  // An approver's update is honored as requested (they may approve or
+  // reject, freely) - only a non-approver's attempt is overwritten.
+  if (!canApprove) payload.status = existingStatus;
+}
+
+/**
  * Every write gate the generic Firestore fallback used to apply, in the same
  * order it applied them.
  *
@@ -605,6 +666,10 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             date: payload.date,
             durationSeconds: Number(payload.duration) || 0,
           });
+          // Last write to `payload` before the INSERT, deliberately - see
+          // resolveTimeEntryStatus's own doc comment for why this can never
+          // be decided from the request body.
+          await resolveTimeEntryStatus(getAuthContext(req), payload, String(payload.project_id ?? ""));
         }
         const created = await createPostgresRow(parsed.key, payload);
         if (teamRoster && created?.id) {
@@ -678,6 +743,18 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             durationSeconds: Number(payload.duration ?? existing.duration) || 0,
             excludeEntryId: String(parsed.id),
           });
+        }
+        if (parsed.key === TIME_ENTRY_WRITE_KEY) {
+          // Last write to `payload` before the UPDATE - see
+          // resolveTimeEntryStatus's own doc comment. A status-only PATCH
+          // (the approve/reject action) still needs the entry's real
+          // project, which a status-only body never carries itself.
+          await resolveTimeEntryStatus(
+            getAuthContext(req),
+            payload,
+            String(payload.project_id ?? existing.project_id ?? ""),
+            String(existing.status ?? "pending"),
+          );
         }
         // §6.9 - optional; only forwarded to the "tasks" branch of
         // updatePostgresRow today (see that function's comment for scope).
