@@ -1,4 +1,4 @@
-/* eslint-disable react-doctor/exhaustive-deps */
+﻿/* eslint-disable react-doctor/exhaustive-deps */
 "use client"
 
 import { useMemo, useRef, useState } from "react"
@@ -35,6 +35,7 @@ export function ReportTimeActivityChart({
     const found = CHART_METRIC_ORDER.filter((m) => enabledMetrics.has(m))
     return found.length > 0 ? found : ["total_hours"]
   }, [enabledMetrics])
+
   const primaryMetric: TimeActivityMetric = activeMetrics[0] ?? "total_hours"
   const multi = activeMetrics.length > 1
 
@@ -48,39 +49,38 @@ export function ReportTimeActivityChart({
   const plotH = CHART_H - padT - padB
 
   const n = Math.max(days.length, 1)
-  const xAt = (i: number) => padL + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW)
-  const yBase = padT + plotH
 
-  const singleSeries = useMemo(() => {
+  // Bar layout constants
+  const BAR_GAP_RATIO = 0.25   // fraction of slot width used as gap between day-slots
+  const GROUP_GAP_RATIO = 0.08 // fraction of bar width used as gap between bars in a group
+  const BAR_RADIUS = 3
+
+  const slotW = plotW / n
+  const dayPad = slotW * BAR_GAP_RATIO
+  const groupW = slotW - dayPad
+
+  // Single-metric bar data
+  const singleBar = useMemo(() => {
     if (multi || days.length === 0) return null
     const series = days.map((d) => getMetricNumeric(primaryMetric, d))
     const rawMax = Math.max(0, ...series)
     const yTicks = buildYTicks(rawMax, primaryMetric)
     const yMax = Math.max(yTicks[yTicks.length - 1] ?? 1, 1e-6)
     const yAtAbs = (val: number) => padT + plotH - (val / yMax) * plotH
-    const polyPoints = days.map((_, i) => `${xAt(i)},${yAtAbs(series[i] ?? 0)}`).join(" ")
-    let areaD = ""
-    if (n > 0) {
-      areaD = `M ${xAt(0)} ${yBase} L ${xAt(0)} ${yAtAbs(series[0] ?? 0)}`
-      for (let i = 1; i < n; i++) {
-        areaD += ` L ${xAt(i)} ${yAtAbs(series[i] ?? 0)}`
-      }
-      areaD += ` L ${xAt(n - 1)} ${yBase} Z`
-    }
-    return { series, yTicks, yAtAbs, polyPoints, areaD, yMax }
-  }, [multi, days, primaryMetric, n, padT, plotH, yBase])
+    return { series, yTicks, yAtAbs, yMax }
+  }, [multi, days, primaryMetric, padT, plotH])
 
-  const multiSeries = useMemo(() => {
+  // Multi-metric bar data (normalised 0-1 per series)
+  const multiBar = useMemo(() => {
     if (!multi || days.length === 0) return null
     return activeMetrics.map((m) => {
       const raw = days.map((d) => getMetricNumeric(m, d))
       const norm = normalizeSeriesTo01(raw)
-      const yAtN = (t: number) => padT + plotH - t * plotH
-      const polyPoints = norm.map((t, i) => `${xAt(i)},${yAtN(t)}`).join(" ")
-      return { metric: m, raw, norm, polyPoints, style: CHART_SERIES_STYLES[m] }
+      return { metric: m, raw, norm, style: CHART_SERIES_STYLES[m] }
     })
-  }, [multi, days, activeMetrics, padT, plotH, n])
+  }, [multi, days, activeMetrics])
 
+  /** Map a clientX position to the nearest day index */
   function indexFromClientX(clientX: number): number {
     const el = svgRef.current
     if (!el || days.length === 0) return 0
@@ -93,8 +93,25 @@ export function ReportTimeActivityChart({
     return Math.max(0, Math.min(days.length - 1, idx))
   }
 
+  /** Render a single bar with a rounded top via SVG path */
+  function renderBar(
+    x: number,
+    barW: number,
+    yTop: number,
+    fill: string,
+    opacity = 1,
+    key?: string | number,
+  ) {
+    const h = padT + plotH - yTop
+    if (h <= 0) return null
+    const r = Math.min(BAR_RADIUS, barW / 2, h / 2)
+    const d = `M${x + r},${yTop} h${barW - 2 * r} a${r},${r} 0 0 1 ${r},${r} v${h - r} h${-barW} v${-(h - r)} a${r},${r} 0 0 1 ${r},${-r}z`
+    return <path key={key} d={d} fill={fill} opacity={opacity} />
+  }
+
   return (
     <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+      {/* Header: title + metric toggle pills */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-50 dark:border-slate-800 px-6 py-3">
         <h3 className="shrink-0 text-base font-semibold text-slate-800 dark:text-slate-100">Chart</h3>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
@@ -109,7 +126,9 @@ export function ReportTimeActivityChart({
                 onClick={() => onToggleMetric(m)}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
-                  on ? CHART_METRIC_PILL_ON[m] : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                  on
+                    ? CHART_METRIC_PILL_ON[m]
+                    : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800",
                 )}
               >
                 {opt.label}
@@ -118,20 +137,30 @@ export function ReportTimeActivityChart({
           })}
         </div>
       </div>
+
+      {/* Legend - square swatch suits bars better than a line swatch */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-50/80 dark:border-slate-800/80 px-6 py-2">
         {activeMetrics.map((m) => (
           <div key={m} className="flex items-center gap-1.5">
-            <div className="h-0.5 w-5 rounded-full" style={{ backgroundColor: CHART_SERIES_STYLES[m].stroke }} />
-            <span className="text-xs text-slate-500 dark:text-slate-400">{METRIC_OPTIONS.find((o) => o.value === m)?.label}</span>
+            <div className="h-3 w-3 rounded-sm" style={{ backgroundColor: CHART_SERIES_STYLES[m].stroke }} />
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {METRIC_OPTIONS.find((o) => o.value === m)?.label}
+            </span>
           </div>
         ))}
         {multi && (
-          <span className="text-[10px] text-slate-400 dark:text-slate-500">(Y axis: 0–100% of each series&apos; range)</span>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">
+            (Y axis: 0-100% of each series&apos; range)
+          </span>
         )}
       </div>
+
+      {/* Chart body */}
       <div className="px-6 pb-6 pt-1">
         {days.length === 0 ? (
-          <div className="flex h-[240px] items-center justify-center text-sm text-slate-400 dark:text-slate-500">No data for this filter</div>
+          <div className="flex h-[240px] items-center justify-center text-sm text-slate-400 dark:text-slate-500">
+            No data for this filter
+          </div>
         ) : (
           <div
             className="relative w-full"
@@ -145,89 +174,102 @@ export function ReportTimeActivityChart({
               viewBox={`0 0 ${vbW} ${CHART_H}`}
               preserveAspectRatio="none"
               role="img"
-              aria-label="Time series chart"
+              aria-label="Bar chart"
             >
-              <defs>
-                <linearGradient id="ta-area-blue" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(59 130 246)" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="rgb(59 130 246)" stopOpacity="0.02" />
-                </linearGradient>
-                <linearGradient id="ta-area-green" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(34 197 94)" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="rgb(34 197 94)" stopOpacity="0.02" />
-                </linearGradient>
-                <linearGradient id="ta-area-amber" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="rgb(245 158 11)" stopOpacity="0.3" />
-                  <stop offset="100%" stopColor="rgb(245 158 11)" stopOpacity="0.02" />
-                </linearGradient>
-              </defs>
-              {!multi && singleSeries && (
-                <>
-                  {singleSeries.yTicks.map((t) => {
-                    const yy = singleSeries.yAtAbs(t)
-                    return (
-                      <text key={t} x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" style={{ fontSize: 10 }}>
-                        {formatYTick(primaryMetric, t)}
-                      </text>
-                    )
-                  })}
-                  {singleSeries.areaD && (
-                    <path d={singleSeries.areaD} fill={`url(#${CHART_SERIES_STYLES[primaryMetric].gradientId})`} />
-                  )}
-                  {singleSeries.polyPoints && (
-                    <polyline
-                      fill="none"
-                      stroke={CHART_SERIES_STYLES[primaryMetric].stroke}
-                      strokeWidth={2.25}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      points={singleSeries.polyPoints}
-                    />
-                  )}
-                  {days.map((d, i) => {
-                    const cx = xAt(i)
-                    const cy = singleSeries.yAtAbs(singleSeries.series[i] ?? 0)
-                    const dense = days.length > 10
-                    const r = hovered === i ? (dense ? 4.5 : 5) : dense ? 2.75 : 3.5
-                    return (
-                      <circle
-                        key={d.date}
-                        cx={cx}
-                        cy={cy}
-                        r={r}
-                        fill="white"
-                        stroke={CHART_SERIES_STYLES[primaryMetric].stroke}
-                        strokeWidth={2}
-                      />
-                    )
-                  })}
-                </>
-              )}
-              {multi && multiSeries && (
-                <>
-                  {[0, 25, 50, 75, 100].map((pct) => {
-                    const yy = padT + plotH - (pct / 100) * plotH
-                    return (
-                      <text key={pct} x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" style={{ fontSize: 10 }}>
-                        {pct}%
-                      </text>
-                    )
-                  })}
-                  {multiSeries.map(({ metric: m, polyPoints, style }) => (
-                    <polyline
-                      key={m}
-                      fill="none"
-                      stroke={style.stroke}
-                      strokeWidth={2}
-                      strokeLinejoin="round"
-                      strokeLinecap="round"
-                      points={polyPoints}
-                      opacity={0.95}
-                    />
-                  ))}
-                </>
-              )}
+              {/* Single-metric bars */}
+              {!multi && singleBar && (() => {
+                const { series, yTicks, yAtAbs } = singleBar
+                const style = CHART_SERIES_STYLES[primaryMetric]
+                return (
+                  <>
+                    {yTicks.map((t) => {
+                      const yy = yAtAbs(t)
+                      return (
+                        <g key={t}>
+                          <line
+                            x1={padL} x2={padL + plotW} y1={yy} y2={yy}
+                            stroke="#e2e8f0" strokeWidth={0.75} strokeDasharray="3 3"
+                          />
+                          <text x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" style={{ fontSize: 10 }}>
+                            {formatYTick(primaryMetric, t)}
+                          </text>
+                        </g>
+                      )
+                    })}
+                    {days.map((d, i) => {
+                      const val = series[i] ?? 0
+                      const yTop = yAtAbs(val)
+                      const x = padL + i * slotW + dayPad / 2
+                      const isHov = hovered === i
+                      return (
+                        <g key={d.date}>
+                          {renderBar(x, groupW, yTop, style.stroke, isHov ? 1 : 0.75)}
+                          {isHov && val > 0 && (
+                            <rect x={x} y={yTop - 2} width={groupW} height={3} rx={1.5} fill={style.stroke} />
+                          )}
+                        </g>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+
+              {/* Multi-metric grouped bars */}
+              {multi && multiBar && (() => {
+                const mc = multiBar.length
+                const barW = (groupW - (mc - 1) * groupW * GROUP_GAP_RATIO) / mc
+                const barGap = groupW * GROUP_GAP_RATIO
+                const yAtN = (t: number) => padT + plotH - t * plotH
+                return (
+                  <>
+                    {[0, 25, 50, 75, 100].map((pct) => {
+                      const yy = padT + plotH - (pct / 100) * plotH
+                      return (
+                        <g key={pct}>
+                          <line
+                            x1={padL} x2={padL + plotW} y1={yy} y2={yy}
+                            stroke="#e2e8f0" strokeWidth={0.75} strokeDasharray="3 3"
+                          />
+                          <text x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" style={{ fontSize: 10 }}>
+                            {pct}%
+                          </text>
+                        </g>
+                      )
+                    })}
+                    {days.map((d, i) => {
+                      const groupX = padL + i * slotW + dayPad / 2
+                      const isHov = hovered === i
+                      return (
+                        <g key={d.date}>
+                          {multiBar.map(({ metric: m, norm, style }, mi) => {
+                            const val = norm[i] ?? 0
+                            const barX = groupX + mi * (barW + barGap)
+                            const yTop = yAtN(val)
+                            return (
+                              <g key={m}>
+                                {renderBar(barX, barW, yTop, style.stroke, isHov ? 1 : 0.75)}
+                                {isHov && val > 0 && (
+                                  <rect x={barX} y={yTop - 2} width={barW} height={3} rx={1.5} fill={style.stroke} />
+                                )}
+                              </g>
+                            )
+                          })}
+                        </g>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+
+              {/* Baseline */}
+              <line
+                x1={padL} x2={padL + plotW}
+                y1={padT + plotH} y2={padT + plotH}
+                stroke="#cbd5e1" strokeWidth={1}
+              />
             </svg>
+
+            {/* Hover tooltip */}
             {hovered !== null && days[hovered] && (
               <div className="pointer-events-none absolute left-1/2 top-2 z-10 max-w-sm -translate-x-1/2 rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-lg">
                 <div className="font-semibold">{days[hovered].dateLabel}</div>
@@ -241,6 +283,8 @@ export function ReportTimeActivityChart({
                 </div>
               </div>
             )}
+
+            {/* X-axis labels */}
             <div
               className="pointer-events-none absolute bottom-0 left-0 right-0 flex justify-between gap-0.5 px-1"
               style={{ paddingLeft: padL, paddingRight: padR }}
@@ -259,4 +303,3 @@ export function ReportTimeActivityChart({
     </div>
   )
 }
-
