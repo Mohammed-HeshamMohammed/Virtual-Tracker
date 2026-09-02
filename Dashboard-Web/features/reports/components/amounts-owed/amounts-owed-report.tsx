@@ -171,7 +171,12 @@ function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
         <h3 className="text-base font-semibold text-slate-800 dark:text-[#dce1fb]">Total amount per day</h3>
       </div>
       <div className="px-6 pb-6 pt-2">
-        <div className="w-full" style={{ height: CHART_H }}>
+        {/* maxWidth caps this at the chart's own natural (960-unit) size -
+            w-full alone let it stretch to fill whatever wide card/page it
+            sat in, and with preserveAspectRatio="none" that didn't just
+            widen the chart, it distorted the line's own slope. Still
+            shrinks on a narrow viewport (w-full below the cap). */}
+        <div className="w-full" style={{ height: CHART_H, maxWidth: vbW }}>
           <svg
             className="h-full w-full"
             viewBox={`0 0 ${vbW} ${CHART_H}`}
