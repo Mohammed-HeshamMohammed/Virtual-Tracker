@@ -106,6 +106,17 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
     "SELECT project_role FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 10",
     [pid, viewer.memberId],
   );
+  if (rows.length === 0) return false;
+
+  // restrict_task_creation defaults true (manager-only, the behavior this
+  // function has always enforced). false is a real, user-facing project
+  // setting ("Off lets any assigned member of this project add tasks to
+  // it." - project-modal.tsx) that this gate never read, so setting it had
+  // no effect: the "+ New task" button would show for a non-manager member
+  // (Dashboard-Web's canCreateTasksInProject already mirrors this branch)
+  // and then 403 the moment they actually pressed it.
+  const project = await getProjectPg(pid);
+  if (project?.restrict_task_creation === false) return true;
 
   return rows.some((row) => normalizeProjectRole(row.project_role) === "manager");
 }

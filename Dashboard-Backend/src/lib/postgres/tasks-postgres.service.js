@@ -113,7 +113,14 @@ export async function createTaskPg(payload) {
       payload.title,
       payload.description ?? null,
       payload.status ?? "todo",
-      payload.priority ?? null,
+      // "medium" mirrors the Dashboard wizard's own default (task-wizard-
+      // modal.tsx) - every priority-rendering surface in Dashboard-Web
+      // (PriorityDot, PRIORITY_CONFIG lookups on the board/list views)
+      // indexes PRIORITY_CONFIG[priority] with no undefined-safe fallback,
+      // so a task actually created with a null priority crashed that render
+      // - which a task created without going through the wizard (the Tauri
+      // agent's create_task, which never sent one) always would have been.
+      payload.priority ?? "medium",
       payload.order_index ?? null,
       payload.duration_hours_per_day ?? null,
       payload.duration_days ?? null,

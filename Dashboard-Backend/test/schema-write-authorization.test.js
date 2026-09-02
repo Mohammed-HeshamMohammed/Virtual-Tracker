@@ -14,8 +14,8 @@ import assert from "node:assert/strict";
 
 const AUTH_CONTEXT = Symbol.for("virtual-tracker.auth-context");
 
-/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null }} */
-const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null };
+/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null }} */
+const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null, clientTracksProjectId: null };
 
 mock.module("../src/http/auth-context.js", {
   namedExports: {
@@ -31,7 +31,7 @@ mock.module("../src/http/auth-context.js", {
 // Every write funnels through these - recording a call means a gate let it past.
 mock.module("../src/modules/schema/services/postgres-crud.service.js", {
   namedExports: {
-    POSTGRES_ENTITY_KEYS: new Set(["teams", "employment", "task-comments", "tasks", "projects"]),
+    POSTGRES_ENTITY_KEYS: new Set(["teams", "employment", "task-comments", "tasks", "projects", "time-entries"]),
     shouldRouteEntityToPostgres: async () => true,
     listPostgresRows: async () => [],
     getPostgresRow: async (key, id) => stub.rows[`${key}:${id}`] ?? null,
@@ -39,9 +39,9 @@ mock.module("../src/modules/schema/services/postgres-crud.service.js", {
       stub.writes.push(`create:${key}`);
       return { id: "new-row", ...payload };
     },
-    updatePostgresRow: async (key, id) => {
+    updatePostgresRow: async (key, id, payload) => {
       stub.writes.push(`update:${key}:${id}`);
-      return { id };
+      return { id, ...payload };
     },
     deletePostgresRow: async (key, id) => {
       stub.writes.push(`delete:${key}:${id}`);
@@ -121,6 +121,8 @@ mock.module("../src/http/project-access.js", {
     assertProjectAccessible: async () => null,
     clientMayManageProject: async (_viewer, projectId) =>
       stub.clientManagesProjectId != null && projectId === stub.clientManagesProjectId,
+    clientMayTrackProject: async (_viewer, projectId) =>
+      stub.clientTracksProjectId != null && projectId === stub.clientTracksProjectId,
     isOrgProjectAdminRole: async () => null,
     isProjectMemberForTimer: async () => null,
   },
@@ -147,6 +149,7 @@ mock.module("../src/modules/schema/catalog/index.js", {
       ["employment", { key: "employment", collection: "employment", fields: { id: "uuid", member_id: "uuid" } }],
       ["task-comments", { key: "task-comments", collection: "tasks", fields: { id: "uuid", task_id: "uuid", body: "text" } }],
       ["projects", { key: "projects", collection: "projects", fields: { id: "uuid", client_can_manage: "boolean", client_can_track: "boolean" } }],
+      ["time-entries", { key: "time-entries", collection: "time_entries", fields: { id: "uuid", member_id: "uuid", project_id: "uuid", status: "string" } }],
     ]),
     foreignKeyCollectionByField: async () => null,
     generateUUID: async () => null,
@@ -171,6 +174,9 @@ mock.module("../src/lib/firestore/task-subcollections.js", {
     isTaskChildEntityKey: (k) => k.startsWith("task-") && k !== "task-assignments",
     deleteTaskWithChildren: async () => {},
   },
+});
+mock.module("../src/modules/tasks/manual-time-entry-limits.js", {
+  namedExports: { assertManualTimeEntryWithinLimits: async () => null },
 });
 mock.module("../src/modules/clients/services/client-budget-notify.js", {
   namedExports: { maybeNotifyClientBudgetsForProject: async () => {},
@@ -213,6 +219,7 @@ function reset(viewer) {
   stub.viewer = viewer;
   stub.rows = {};
   stub.clientManagesProjectId = null;
+  stub.clientTracksProjectId = null;
   lastResponse = null;
 }
 
@@ -320,4 +327,93 @@ test("a client with neither flag on cannot write to the project at all", async (
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(lastResponse.status, 403);
   assert.deepEqual(stub.writes, []);
+});
+
+// Manual time entry status: who is making the claim decides whether it
+// lands approved or pending, never the request body - see
+// resolveTimeEntryStatus's own doc comment in schema/routes.js.
+
+test("an employee's own manual time entry lands pending, even if they explicitly asked for approved", async () => {
+  reset(EMPLOYEE);
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+    status: "approved",
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 201, "the entry is still created");
+  assert.equal(lastResponse.payload.data.status, "pending", "their own requested status is discarded");
+});
+
+test("a management-role's manual time entry lands approved automatically", async () => {
+  reset(ADMIN);
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "approved");
+});
+
+test("a client entitled to track the entry's project gets an approved entry too", async () => {
+  reset(CLIENT);
+  stub.clientTracksProjectId = "p1";
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "c1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "approved");
+});
+
+test("a client NOT entitled to track this particular project still lands pending", async () => {
+  reset(CLIENT);
+  stub.clientTracksProjectId = "p2"; // a different project
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "c1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "pending");
+});
+
+test("an employee cannot flip their own still-pending entry to approved by hand", async () => {
+  reset(EMPLOYEE);
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "pending" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { status: "approved" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "pending", "reverted to what it already was");
+});
+
+test("an employee editing their own pending entry's hours (not touching status) is unaffected", async () => {
+  reset(EMPLOYEE);
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "pending" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { duration: 7200 });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.duration, 7200, "the real edit still goes through");
+  assert.equal(lastResponse.payload.data.status, undefined, "status was never part of this payload at all");
+});
+
+test("a management role can approve someone else's pending entry", async () => {
+  reset(ADMIN);
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "pending" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { status: "approved" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "approved");
+});
+
+test("a management role can also reject a pending entry - not forced to approved", async () => {
+  reset(ADMIN);
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "pending" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { status: "rejected" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.payload.data.status, "rejected");
 });
