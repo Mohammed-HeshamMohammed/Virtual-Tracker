@@ -149,6 +149,7 @@ export function MemberRowMenu({
         onSaveProfile={onSaveProfile}
         onRemoveMember={onRemoveMember}
         onRemoveFromTree={onRemoveFromTree}
+        onNavigate={onNavigate}
       />
     </div>
   )

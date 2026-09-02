@@ -1,7 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Info, Lock } from "lucide-react"
+import { ExternalLink, Info, Lock } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { formatDateAdded } from "@/features/members/utils/member-utils"
 import { formatPayRateDisplay } from "@/features/members/config/pay-currencies"
@@ -98,7 +98,13 @@ function buildDisplayRows(
   ]
 }
 
-export function PayBillTab({ member, state, setState, canEditPayRate }: PayBillTabProps) {
+export function PayBillTab({ member, state, setState, canEditPayRate, onNavigate, onClose }: PayBillTabProps) {
+  // Leaving the page behind this modal, not opening a second one on top of
+  // it - close first so the report is what's on screen after the click.
+  function goToReport(pageId: string) {
+    onClose?.()
+    onNavigate?.(pageId)
+  }
   const payRate = state.payRate == null ? "" : String(state.payRate)
   const payPeriod = state.payPeriod || "None"
   const isPay = state.paySegment === "pay"
@@ -236,6 +242,32 @@ export function PayBillTab({ member, state, setState, canEditPayRate }: PayBillT
                     USD/hr
                   </span>
                 </div>
+              </div>
+            ) : null}
+            {onNavigate ? (
+              <div>
+                <span className={MODAL_LABEL}>See it in Reports</span>
+                <div className="mt-2 flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => goToReport("reports-amounts")}
+                    className="flex items-center gap-1.5 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Amounts owed
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => goToReport("reports-payments")}
+                    className="flex items-center gap-1.5 text-left text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline dark:text-blue-400 dark:hover:text-blue-300"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Payments
+                  </button>
+                </div>
+                <p className="mt-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  Both use the rate that was actually in effect on each day, not just the current one.
+                </p>
               </div>
             ) : null}
           </div>
