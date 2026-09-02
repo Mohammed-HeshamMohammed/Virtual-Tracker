@@ -4,7 +4,7 @@
 // so the existing date-per-day view and its CSV/PDF export stay untouched.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTimeAndActivityReportPayload, resolveRateForDay } from "../src/modules/reports/build-time-and-activity-rows.js";
+import { buildTimeAndActivityReportPayload, resolveRateForDay, resolveCurrencyForDay } from "../src/modules/reports/build-time-and-activity-rows.js";
 
 const memberNameMap = new Map([
   ["m1", { name: "Ada Lovelace" }],
@@ -52,6 +52,7 @@ test("a single session on one project produces one entry carrying its client/tea
     idleSeconds: 600,
     manualSeconds: 0,
     spentAmount: 0,
+    currency: "USD",
   });
 });
 
@@ -241,6 +242,35 @@ test("a rate change through the report doesn't retroactively rewrite an already-
   const septemberRow = session({ started_at: "2026-09-15T10:00:00.000Z", ended_at: "2026-09-15T11:00:00.000Z", active_seconds: 3600, idle_seconds: 0 });
   const { days: septemberDays } = buildTimeAndActivityReportPayload([septemberRow], memberNameMap, memberTimezones, "2026-09-15", "2026-09-15", rates);
   assert.equal(septemberDays[0].members[0].spentAmount, 40, "September uses the new rate");
+});
+
+// A member's currency now travels with the report, same as their rate does.
+test("resolveCurrencyForDay: a flat number (no history) reads USD, the old unconditional default", () => {
+  const rates = new Map([["m1", 40]]);
+  assert.equal(resolveCurrencyForDay(rates, "m1", "2026-01-01"), "USD");
+});
+
+test("resolveCurrencyForDay: an unknown member reads USD, not a crash", () => {
+  assert.equal(resolveCurrencyForDay(new Map(), "ghost", "2026-01-01"), "USD");
+});
+
+test("resolveCurrencyForDay: a day picks the currency point on or before it, same walk as the rate", () => {
+  const rates = new Map([
+    ["m1", [
+      { effectiveDate: "2026-01-01", rate: 20, currency: "EGP" },
+      { effectiveDate: "2026-06-01", rate: 30, currency: "USD" },
+    ]],
+  ]);
+  assert.equal(resolveCurrencyForDay(rates, "m1", "2026-03-15"), "EGP", "before the switch");
+  assert.equal(resolveCurrencyForDay(rates, "m1", "2026-07-01"), "USD", "after the switch");
+});
+
+test("days/members and entries both carry the currency that was actually in effect that day, not USD by default when the member is paid in EGP", () => {
+  const rates = new Map([["m1", [{ effectiveDate: "2026-08-01", rate: 100, currency: "EGP" }]]]);
+  const row = session({ started_at: "2026-08-15T10:00:00.000Z", ended_at: "2026-08-15T11:00:00.000Z", active_seconds: 3600, idle_seconds: 0 });
+  const { days, entries } = buildTimeAndActivityReportPayload([row], memberNameMap, memberTimezones, "2026-08-15", "2026-08-15", rates);
+  assert.equal(days[0].members[0].currency, "EGP");
+  assert.equal(entries[0].currency, "EGP");
 });
 
 test("two manual entries on different projects stay separate entries", () => {

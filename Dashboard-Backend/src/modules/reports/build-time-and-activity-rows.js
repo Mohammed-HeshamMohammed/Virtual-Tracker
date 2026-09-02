@@ -106,6 +106,31 @@ export function resolveRateForDay(memberRates, memberId, day) {
   return rate;
 }
 
+/**
+ * The currency that rate was actually paid in, same day-resolution logic as
+ * resolveRateForDay (a member can in principle switch currency the same way
+ * they can get a raise, so this walks the same timeline rather than always
+ * reading whatever pay_rates currently says). The flat-number legacy shape
+ * carries no currency at all - "USD" is what every amount in this report
+ * defaulted to before real currency was threaded through, so that stays the
+ * fallback rather than silently changing old behavior.
+ * @param {Map<string, number | Array<{ effectiveDate: string, rate: number, currency?: string }>>} memberRates
+ * @param {string} memberId
+ * @param {string} day
+ */
+export function resolveCurrencyForDay(memberRates, memberId, day) {
+  const entry = memberRates.get(memberId);
+  if (entry == null) return "USD";
+  if (typeof entry === "number") return "USD";
+  if (!Array.isArray(entry) || entry.length === 0) return "USD";
+  let currency = entry[0].currency || "USD";
+  for (const point of entry) {
+    if (point.effectiveDate <= day) currency = point.currency || "USD";
+    else break;
+  }
+  return currency;
+}
+
 export function buildTimeAndActivityReportPayload(
   rawRows,
   memberNameMap,
@@ -235,6 +260,7 @@ export function buildTimeAndActivityReportPayload(
         spentAmount: round2(
           ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * resolveRateForDay(memberRates, memberId, date),
         ),
+        currency: resolveCurrencyForDay(memberRates, memberId, date),
         projectNames: [...entry.projectNames],
       })),
     }));
@@ -256,6 +282,7 @@ export function buildTimeAndActivityReportPayload(
         ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) *
           resolveRateForDay(memberRates, entry.memberId, entry.date),
       ),
+      currency: resolveCurrencyForDay(memberRates, entry.memberId, entry.date),
     }));
 
   return { days, entries };

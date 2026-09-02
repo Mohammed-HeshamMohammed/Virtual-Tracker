@@ -114,16 +114,18 @@ function toDayStr(value) {
  * resolveRateForDay already falls back to for a day before the earliest
  * point, so nothing changes for them.
  * @param {string[]} memberIds
- * @returns {Promise<Map<string, Array<{ effectiveDate: string, rate: number }>>>}
+ * @returns {Promise<Map<string, Array<{ effectiveDate: string, rate: number, currency: string }>>>}
  */
 async function buildHistoricalRateMap(memberIds) {
   const [historyRows, currentRows] = await Promise.all([
     pgQuery(
-      `SELECT member_id, rate, effective_date, created_at FROM pay_rate_history
+      `SELECT member_id, rate, currency, effective_date, created_at FROM pay_rate_history
        WHERE member_id = ANY($1::uuid[]) ORDER BY member_id, effective_date ASC, created_at ASC`,
       [memberIds],
     ),
-    pgQuery(`SELECT member_id, rate, effective_date FROM pay_rates WHERE member_id = ANY($1::uuid[])`, [memberIds]),
+    pgQuery(`SELECT member_id, rate, currency, effective_date FROM pay_rates WHERE member_id = ANY($1::uuid[])`, [
+      memberIds,
+    ]),
   ]);
   const rateMap = new Map();
   for (const row of historyRows) {
@@ -132,6 +134,7 @@ async function buildHistoricalRateMap(memberIds) {
     points.push({
       effectiveDate: toDayStr(row.effective_date) || "0001-01-01",
       rate: Math.max(0, Number(row.rate) || 0),
+      currency: (row.currency || "USD").toUpperCase(),
     });
     rateMap.set(id, points);
   }
@@ -144,6 +147,7 @@ async function buildHistoricalRateMap(memberIds) {
       // unconditional-everywhere behavior a flat rate number already had.
       effectiveDate: row.effective_date ? toDayStr(row.effective_date) : "0001-01-01",
       rate: Math.max(0, Number(row.rate) || 0),
+      currency: (row.currency || "USD").toUpperCase(),
     });
     rateMap.set(id, points);
   }
