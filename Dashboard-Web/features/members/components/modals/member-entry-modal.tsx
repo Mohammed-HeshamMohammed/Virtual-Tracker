@@ -148,6 +148,7 @@ export function MemberEntryModal({
   onSaveProfile,
   onRemoveMember,
   onRemoveFromTree,
+  onNavigate,
 }: {
   open: boolean
   action: MemberEntryAction | null
@@ -159,6 +160,7 @@ export function MemberEntryModal({
   onSaveProfile?: (id: string, payload: MemberProfilePayload, expectedUpdatedAt?: string) => Promise<Member>
   onRemoveMember: (id: string) => void | Promise<void>
   onRemoveFromTree?: (id: string) => void | Promise<void>
+  onNavigate?: (id: string) => void
 }) {
   const { user } = useAuth()
   const assignableRoles = useMemo(() => listAssignableRoles(actorRole), [actorRole])
@@ -228,6 +230,8 @@ export function MemberEntryModal({
     state: formState,
     setState: setFormState,
     actorRole: actorRoleContext,
+    onNavigate,
+    onClose,
   }
 
   async function handleSaveProfilePayload(payload: MemberProfilePayload) {
@@ -327,7 +331,7 @@ export function MemberEntryModal({
 
   const showFormTabs = focusedAction === "edit-role" || focusedAction === "edit-payment" || focusedAction === "edit-limits"
   const modalWidthClass =
-    focusedAction === "edit-limits" ? "max-w-3xl" : focusedAction === "edit-payment" ? "max-w-xl" : "max-w-lg"
+    focusedAction === "edit-limits" || focusedAction === "edit-payment" ? "max-w-3xl" : "max-w-lg"
 
   return (
     <div
