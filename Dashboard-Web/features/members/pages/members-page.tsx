@@ -23,6 +23,7 @@ import type { Member, MemberPatchBody, MemberEntryAction, Invite } from "@/featu
 import type { PresenceDelta } from "@/features/auth/services/presence-events-sse"
 import { isOwnerRoleName, getMemberRoleLabel, isLimitedSelfManageRole } from "@/features/auth"
 import { canActorManageTargetRole } from "@/features/auth/permissions/role-hierarchy"
+import { canEditPayRates } from "@/features/auth/permissions/member-role-access"
 import { AddMembersModal, OnboardingModal, formatAddMembersPending, formatAddMembersSuccess } from "@/features/members/components/modals"
 import { RecruitMemberModal } from "@/features/members/components/modals/recruit-member-modal"
 import { NotifyToastHost } from "@/shared/ui/layout"
@@ -137,6 +138,10 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   } = usePermissions()
 
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading, refreshTeamMemberIds } = usePeopleTeamScope()
+  // Owner/Super Admin/Admin/Super Manager only - narrower than
+  // canUseBatchMemberActions (Manager+), which gates the whole dropdown.
+  // Server enforces this too (updateMemberProfile's hasPayBill branch).
+  const canBatchEditPayRate = canEditPayRates(viewerRole)
 
   const restrictedHiddenCols = new Set(["payment", "limits", "date_added"])
   const effectiveEnabledCols = canManageMembers
@@ -688,6 +693,7 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 onOpenAction={setBatchAction}
                 onImportClick={() => showMemberImportExportComingSoon("Import")}
                 isDark={isDark}
+                canEditPayRate={canBatchEditPayRate}
               />
             )}
             {canManageMembers && (
