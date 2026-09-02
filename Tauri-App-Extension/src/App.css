@@ -1375,13 +1375,15 @@ body {
   line-height: 1.5;
 }
 
-/* Two 3-row lists plus the weekly ring plus the hero card is genuinely
-   more content than a fixed 680px window always has room for. Rather than
-   let the whole sidebar scroll as one block - which can push Start
-   tracking and the footer off-screen - only .side-panel-scroll (hero
-   through Your tasks) scrolls; .side-panel-pinned (actions + footer)
-   never does, so the primary action and profile/settings stay reachable
-   no matter how tall the lists above get. */
+/* The weekly ring, team/approvals/pulse cards and two 3-row lists is
+   genuinely more content than even a 1200x840 window always has room for
+   (window bumped up from 1050x680 once those cards landed - see
+   tauri.conf.json). Rather than let the whole sidebar scroll as one block
+   - which can push Start tracking and the footer off-screen - only
+   .side-panel-scroll (weekly ring through Your tasks) scrolls;
+   .side-panel-pinned (actions + footer) never does, so the primary action
+   and profile/settings stay reachable no matter how tall the cards above
+   get. */
 .side-panel {
   position: relative;
   width: 290px;

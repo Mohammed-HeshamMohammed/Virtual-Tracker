@@ -29,7 +29,17 @@ impl ApiClient {
     /// network/parse failure - an empty map reads downstream as "no project
     /// has a budget limit," which would fail-open a budget gate on a
     /// transient blip instead of surfacing the problem.
-    pub fn fetch_project_budgets_map(&mut self) -> Result<std::collections::HashMap<String, bool>, ApiError> {
+    ///
+    /// Value is (limit_reached, spent_percent). spent_percent is computed for
+    /// every row with a real target, not only ones with stop_timers_when_reached
+    /// on - it used to be thrown away for every project that hadn't opted into
+    /// stopping timers, which was every project the sidebar showed 0% progress
+    /// for despite real budget spend: the task-completion percentage
+    /// (recentProjects) reads 0% until a task is marked done, and nothing else
+    /// filled in for a project tracked by budget instead of a task checklist.
+    pub fn fetch_project_budgets_map(
+        &mut self,
+    ) -> Result<std::collections::HashMap<String, (bool, Option<f64>)>, ApiError> {
         let mut map = std::collections::HashMap::new();
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/project-budgets", self.api_url);
@@ -54,25 +64,30 @@ impl ApiClient {
                 Some(id) if !id.is_empty() => id.to_string(),
                 _ => continue,
             };
+            let spent = item.get("spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let target = item.get("target").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            // None (not 0.0) when there's no real target to divide by - a
+            // project with a budget row but nothing to compare against isn't
+            // "0% spent", it's "not measurable", same distinction
+            // budget_exhausted already draws elsewhere.
+            let spent_percent = if target > 0.0 { Some((spent / target) * 100.0) } else { None };
+
             let stop_when_reached = item
                 .get("stop_timers_when_reached")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            if !stop_when_reached {
-                map.insert(pid, false);
-                continue;
-            }
-            let stop_pct = match item.get("stop_timers_at_pct") {
-                Some(v) if v.is_number() => v.as_f64().unwrap_or(100.0),
-                Some(v) if v.is_string() => v.as_str().unwrap_or("100").parse::<f64>().unwrap_or(100.0),
-                _ => 100.0,
+            let limit_reached = if stop_when_reached {
+                let stop_pct = match item.get("stop_timers_at_pct") {
+                    Some(v) if v.is_number() => v.as_f64().unwrap_or(100.0),
+                    Some(v) if v.is_string() => v.as_str().unwrap_or("100").parse::<f64>().unwrap_or(100.0),
+                    _ => 100.0,
+                };
+                spent_percent.is_some_and(|p| p >= stop_pct)
+            } else {
+                false
             };
-            let spent = item.get("spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let target = item.get("target").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let usage_pct = if target > 0.0 { (spent / target) * 100.0 } else { 0.0 };
 
-            let limit_reached = stop_when_reached && (usage_pct >= stop_pct);
-            map.insert(pid, limit_reached);
+            map.insert(pid, (limit_reached, spent_percent));
         }
 
         Ok(map)
@@ -114,7 +129,8 @@ impl ApiClient {
             if id.is_empty() {
                 continue;
             }
-            let budget_exhausted = budget_map.get(&id).copied().unwrap_or(false);
+            let (budget_exhausted, budget_spent_percent) =
+                budget_map.get(&id).copied().unwrap_or((false, None));
             let name = item
                 .get("name")
                 .and_then(|v| v.as_str())
@@ -153,6 +169,7 @@ impl ApiClient {
                 require_task_to_track,
                 require_stop_note,
                 budget_exhausted,
+                budget_spent_percent,
                 can_create_tasks,
             });
         }
@@ -272,6 +289,17 @@ impl ApiClient {
         project_id: &str,
         title: &str,
         estimate_hours: Option<f64>,
+        description: Option<&str>,
+        // "low" | "medium" | "high" | "urgent" - PRIORITY_CONFIG's own key
+        // set (Dashboard-Web task-constants.tsx). Not validated here; an
+        // unrecognized value is the server's to reject, same as every other
+        // field in this body.
+        priority: Option<&str>,
+        // "YYYY-MM-DD". The column is a timestamptz, but the server already
+        // date-only-coerces this on write (dateOnly() in tasks-postgres.
+        // service.js) - a plain date string matches what the web wizard
+        // itself sends.
+        due_date: Option<&str>,
     ) -> Result<crate::types::CreateTaskResult, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let create_url = format!("{}/api/tasks", self.api_url);
@@ -288,6 +316,20 @@ impl ApiClient {
         if let Some(hours) = estimate_hours.filter(|h| *h > 0.0) {
             create_body["working_days"] = json!(1);
             create_body["duration_hours_per_day"] = json!(hours);
+        }
+        // Same field names task-api.ts's own outgoing payload uses
+        // (description, priority, due_date) - matching the web wizard's
+        // wire shape rather than inventing a parallel one.
+        if let Some(d) = description.filter(|d| !d.trim().is_empty()) {
+            create_body["description"] = json!(d);
+        }
+        // Defaults to "medium" server-side when omitted (tasks-postgres.
+        // service.js), same as the web wizard's own default - sent
+        // explicitly anyway so a blank picker and an active "Medium"
+        // selection produce an identical task either way.
+        create_body["priority"] = json!(priority.filter(|p| !p.trim().is_empty()).unwrap_or("medium"));
+        if let Some(d) = due_date.filter(|d| !d.trim().is_empty()) {
+            create_body["due_date"] = json!(d);
         }
         let res = self
             .client
@@ -564,7 +606,15 @@ impl ApiClient {
             return Ok(None);
         }
         if !res.status().is_success() {
-            return Err(ApiError::Network);
+            // Was collapsed to a bare ApiError::Network, indistinguishable
+            // from a real connection failure - which made a 401 (stale
+            // token) or a 500 (real server error) impossible to tell apart
+            // from "route not deployed yet" in the log. The status code is
+            // the one piece of information worth keeping here.
+            let status = res.status();
+            let body: Value = res.json().unwrap_or_else(|_| json!({}));
+            let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
+            return Err(ApiError::Rejected(format!("HTTP {status}: {message}")));
         }
         let body: Value = res.json().map_err(|_| ApiError::Network)?;
         let Some(data) = body.get("data").filter(|d| !d.is_null()) else {
@@ -636,7 +686,13 @@ impl ApiClient {
             return Ok(Vec::new());
         }
         if !res.status().is_success() {
-            return Err(ApiError::Network);
+            // Same reasoning as fetch_agent_workspace: keep the real status
+            // instead of a bare ApiError::Network, so a 401/500 is
+            // distinguishable from "not deployed yet" in the log.
+            let status = res.status();
+            let body: Value = res.json().unwrap_or_else(|_| json!({}));
+            let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
+            return Err(ApiError::Rejected(format!("HTTP {status}: {message}")));
         }
         let body: Value = res.json().map_err(|_| ApiError::Network)?;
         let list = body.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
@@ -993,5 +1049,137 @@ mod tests {
         });
         let mut api = authed_client(url);
         assert_eq!(api.assign_task_to_self("t1"), Ok(false));
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_error_tests {
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+
+    fn authed_client(api_url: String) -> ApiClient {
+        let mut api = ApiClient::new(api_url, "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        api
+    }
+
+    // Regression for a real diagnostic dead end: both fetches used to
+    // collapse every non-404 failure into a bare ApiError::Network, making a
+    // 401 (stale/invalid token) indistinguishable from an actual dropped
+    // connection - and, since get_agent_workspace/get_my_screenshots then
+    // discarded the error entirely (.ok().flatten() / .unwrap_or_default()),
+    // indistinguishable from "nothing to show" too. Nothing in agent.log
+    // could tell "the backend refused this" apart from "the request never
+    // reached it" or "there was simply no data".
+    #[test]
+    fn workspace_401_is_a_rejected_error_naming_its_status_not_a_bare_network_error() {
+        let url = fake_server(|_request| (401, r#"{"error": "Invalid token"}"#.to_string()));
+        let mut api = authed_client(url);
+        let err = api.fetch_agent_workspace().unwrap_err();
+        match err {
+            ApiError::Rejected(msg) => {
+                assert!(msg.contains("401"), "expected the status code in the message, got: {msg}");
+                assert!(msg.contains("Invalid token"), "expected the server's own message, got: {msg}");
+            }
+            other => panic!("expected ApiError::Rejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn screenshots_500_is_a_rejected_error_naming_its_status() {
+        let url = fake_server(|_request| (500, r#"{"error": "Internal error"}"#.to_string()));
+        let mut api = authed_client(url);
+        let err = api.fetch_my_screenshots(12).unwrap_err();
+        match err {
+            ApiError::Rejected(msg) => assert!(msg.contains("500"), "expected the status code, got: {msg}"),
+            other => panic!("expected ApiError::Rejected, got {other:?}"),
+        }
+    }
+
+    // Unchanged behavior, pinned so the branch above can't accidentally
+    // swallow the still-important "older backend" case into Rejected too.
+    #[test]
+    fn workspace_404_is_still_ok_none_not_an_error() {
+        let url = fake_server(|_request| (404, "not found".to_string()));
+        let mut api = authed_client(url);
+        // matches!, not assert_eq! - Ok(None) doesn't need AgentWorkspace to
+        // implement PartialEq, and adding that derive just for a test that
+        // never actually compares one isn't worth it.
+        assert!(matches!(api.fetch_agent_workspace(), Ok(None)));
+    }
+}
+
+#[cfg(test)]
+mod project_budget_percent_tests {
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+
+    fn authed_client(api_url: String) -> ApiClient {
+        let mut api = ApiClient::new(api_url, "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        api
+    }
+
+    // The actual bug: a project's real spend/target was only ever kept for
+    // projects with stop_timers_when_reached on - every other budgeted
+    // project's spend was computed by the server, sent over the wire, and
+    // then discarded here into a bare `false`. The sidebar's other progress
+    // source (task-completion percent) reads 0% until a task is marked
+    // done, so a project tracked by budget instead of a checklist showed a
+    // flat, misleading 0% no matter how much had actually been spent.
+    #[test]
+    fn spent_percent_is_kept_even_when_stop_timers_when_reached_is_off() {
+        let url = fake_server(|_request| {
+            (
+                200,
+                r#"{"data": [{
+                    "project_id": "p1",
+                    "spent": 30,
+                    "target": 100,
+                    "stop_timers_when_reached": false
+                }]}"#
+                    .to_string(),
+            )
+        });
+        let mut api = authed_client(url);
+        let map = api.fetch_project_budgets_map().expect("ok");
+        let (exhausted, spent_percent) = map.get("p1").copied().expect("p1 present");
+        assert_eq!(exhausted, false, "never exhausted when the project opted out of stopping timers");
+        assert_eq!(spent_percent, Some(30.0), "30/100 spent, not thrown away");
+    }
+
+    #[test]
+    fn spent_percent_is_none_not_zero_when_there_is_no_real_target() {
+        let url = fake_server(|_request| {
+            (200, r#"{"data": [{"project_id": "p1", "spent": 0, "target": 0}]}"#.to_string())
+        });
+        let mut api = authed_client(url);
+        let map = api.fetch_project_budgets_map().expect("ok");
+        let (_, spent_percent) = map.get("p1").copied().expect("p1 present");
+        assert_eq!(spent_percent, None, "nothing to divide by is not the same as 0% spent");
+    }
+
+    #[test]
+    fn exhausted_still_requires_stop_timers_when_reached_and_crossing_the_threshold() {
+        let url = fake_server(|_request| {
+            (
+                200,
+                r#"{"data": [{
+                    "project_id": "p1",
+                    "spent": 95,
+                    "target": 100,
+                    "stop_timers_when_reached": true,
+                    "stop_timers_at_pct": 90
+                }]}"#
+                    .to_string(),
+            )
+        });
+        let mut api = authed_client(url);
+        let map = api.fetch_project_budgets_map().expect("ok");
+        let (exhausted, spent_percent) = map.get("p1").copied().expect("p1 present");
+        assert_eq!(exhausted, true, "95% >= the 90% stop threshold");
+        assert_eq!(spent_percent, Some(95.0));
     }
 }

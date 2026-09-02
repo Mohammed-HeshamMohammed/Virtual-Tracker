@@ -167,6 +167,20 @@ pub struct ProjectInfo {
     /// visible: explaining why it can't start beats hiding it.
     #[serde(default)]
     pub budget_exhausted: bool,
+    /// Real spend / target for this project's own budget, as a 0-100+
+    /// percent (can exceed 100 - that's exactly what budget_exhausted
+    /// means). `None` when the project has no budget configured, or its
+    /// target is 0 (nothing to divide by) - distinct from Some(0.0), a
+    /// budget that's real but genuinely untouched so far.
+    ///
+    /// Exists because the sidebar's other progress source (recentProjects,
+    /// task-completion percent) reads 0% for any project with no task
+    /// marked "done" yet, which is indistinguishable from a project that
+    /// has never been worked on at all - even when its budget shows real
+    /// spend. The UI prefers this field over the task-completion one
+    /// whenever a project actually has a budget to report.
+    #[serde(default)]
+    pub budget_spent_percent: Option<f64>,
     /// Server-derived from viewerCanCreateProjectTasks (org admin, or this
     /// member's own project_role = "manager" on this project) - gates the
     /// "+ New task" row action so it only appears where the create call

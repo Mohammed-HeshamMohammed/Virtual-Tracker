@@ -736,10 +736,13 @@ impl AgentController {
         project_id: &str,
         title: &str,
         estimate_hours: Option<f64>,
+        description: Option<&str>,
+        priority: Option<&str>,
+        due_date: Option<&str>,
     ) -> Result<crate::types::CreateTaskResult, String> {
         self.api
             .lock()
-            .create_task(project_id, title, estimate_hours)
+            .create_task(project_id, title, estimate_hours, description, priority, due_date)
             .map_err(|e| e.to_string())
     }
 
@@ -771,7 +774,19 @@ impl AgentController {
     /// this route - the panels it feeds simply don't render, same convention
     /// get_dashboard_summary already uses for its own optional payload.
     pub fn get_agent_workspace(&self) -> Option<crate::types::AgentWorkspace> {
-        self.api.lock().fetch_agent_workspace().ok().flatten()
+        match self.api.lock().fetch_agent_workspace() {
+            Ok(workspace) => workspace,
+            Err(e) => {
+                // This used to be silently swallowed (.ok().flatten()), which
+                // made "every panel this feeds is just missing" indistinguishable
+                // from "nothing is entitled to show" from the agent's own log -
+                // there was no way to tell a 401/500 apart from an older
+                // backend without the route (that case returns Ok(None), not
+                // Err, and never reaches here).
+                log::warn!("Could not load workspace: {e}");
+                None
+            }
+        }
     }
 
     /// Errors surface as their server message (Err(String)) rather than a
@@ -815,7 +830,13 @@ impl AgentController {
     /// Empty on any failure - the screenshots panel is a transparency
     /// surface, not something worth surfacing an error banner for.
     pub fn get_my_screenshots(&self, limit: u32) -> Vec<crate::types::ScreenshotRef> {
-        self.api.lock().fetch_my_screenshots(limit).unwrap_or_default()
+        match self.api.lock().fetch_my_screenshots(limit) {
+            Ok(shots) => shots,
+            Err(e) => {
+                log::warn!("Could not load screenshots: {e}");
+                Vec::new()
+            }
+        }
     }
 
     /// Empty string when the image can't be loaded - the caller renders a

@@ -185,6 +185,13 @@ function MainApp() {
   const [newTaskProject, setNewTaskProject] = useState<ProjectInfo | null>(null);
   const [newTaskTitle, setNewTaskTitle] = useState("");
   const [newTaskEstimateHours, setNewTaskEstimateHours] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  // "medium" up front, matching the web wizard's own default (task-wizard-
+  // modal.tsx) and the server's create-time fallback (tasks-postgres.
+  // service.js) - the picker starting on a real, valid selection rather
+  // than a blank one that has to be explicitly set to match.
+  const [newTaskPriority, setNewTaskPriority] = useState("medium");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [creatingTask, setCreatingTask] = useState(false);
   const [newTaskError, setNewTaskError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
@@ -1407,6 +1414,9 @@ function MainApp() {
     setNewTaskProject(project);
     setNewTaskTitle("");
     setNewTaskEstimateHours("");
+    setNewTaskDescription("");
+    setNewTaskPriority("medium");
+    setNewTaskDueDate("");
     setNewTaskError(null);
   };
 
@@ -1434,10 +1444,16 @@ function MainApp() {
         projectId: project.id,
         title,
         estimateHours,
+        description: newTaskDescription.trim() || null,
+        priority: newTaskPriority,
+        dueDate: newTaskDueDate || null,
       });
       setNewTaskProject(null);
       setNewTaskTitle("");
       setNewTaskEstimateHours("");
+      setNewTaskDescription("");
+      setNewTaskPriority("medium");
+      setNewTaskDueDate("");
       // The task exists either way (create_task only throws if the create
       // step itself failed) - self-assignment is a separate, stricter gate
       // (see CreateTaskResult's own doc comment), so a false here isn't an
@@ -1664,9 +1680,21 @@ function MainApp() {
   // Same "Recent projects" progress the web dashboard's general view shows
   // for this member - keyed by id so the quick-switch list below can show
   // it next to a project without re-deriving it from anything client-side.
+  //
+  // Overridden per-project by budgetSpentPercent when the project actually
+  // has one: recentProjects' own number is task-completion (done/total),
+  // which reads a flat 0% for any project with no task marked "done" yet -
+  // indistinguishable from a project nothing has happened on at all, even
+  // when real budget spend says otherwise. A project's own budget is the
+  // more honest number whenever one exists.
   const projectProgressById = new Map(
     (dashboardSummary?.recentProjects ?? []).map((p) => [p.id, p.progress]),
   );
+  for (const project of projects) {
+    if (project.budgetSpentPercent != null) {
+      projectProgressById.set(project.id, project.budgetSpentPercent);
+    }
+  }
 
   // The same payload is already ordered most-recently-touched first
   // (general-dashboard-service.js sorts by updatedMs and takes the top 5) -
@@ -2131,6 +2159,12 @@ function MainApp() {
             projectName={newTaskProject?.name ?? ""}
             title={newTaskTitle}
             estimateHours={newTaskEstimateHours}
+            description={newTaskDescription}
+            priority={newTaskPriority}
+            dueDate={newTaskDueDate}
+            onDescriptionChange={setNewTaskDescription}
+            onPriorityChange={setNewTaskPriority}
+            onDueDateChange={setNewTaskDueDate}
             busy={creatingTask}
             error={newTaskError}
             onTitleChange={setNewTaskTitle}

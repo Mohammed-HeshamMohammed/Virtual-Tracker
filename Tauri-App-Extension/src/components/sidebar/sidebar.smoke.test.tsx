@@ -46,8 +46,8 @@ describe("WeeklyActivityCard", () => {
 
 describe("ProjectsList", () => {
   const projects: ProjectInfo[] = [
-    { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false, canCreateTasks: true },
-    { id: "p2", name: "Out of Budget", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: true, canCreateTasks: false },
+    { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false, budgetSpentPercent: null, canCreateTasks: true },
+    { id: "p2", name: "Out of Budget", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: true, budgetSpentPercent: null, canCreateTasks: false },
   ];
 
   it("renders nothing with an empty list", () => {
@@ -109,6 +109,7 @@ describe("ProjectsList", () => {
       requireTaskToTrack: true,
       requireStopNote: false,
       budgetExhausted: false,
+      budgetSpentPercent: null,
       canCreateTasks: false,
     }));
     const html = renderToStaticMarkup(

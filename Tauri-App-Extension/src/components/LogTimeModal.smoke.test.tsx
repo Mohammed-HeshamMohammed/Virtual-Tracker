@@ -6,7 +6,7 @@ import type { ProjectInfo, TeamMemberStatus } from "../types";
 const noop = () => {};
 
 const projects: ProjectInfo[] = [
-  { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false, canCreateTasks: true },
+  { id: "p1", name: "Bana Test", projectType: "normal", hasTasks: true, requireTaskToTrack: true, requireStopNote: false, budgetExhausted: false, budgetSpentPercent: null, canCreateTasks: true },
 ];
 
 const teammates: TeamMemberStatus[] = [

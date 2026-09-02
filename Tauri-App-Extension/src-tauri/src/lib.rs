@@ -267,9 +267,22 @@ async fn create_task(
     project_id: String,
     title: String,
     estimate_hours: Option<f64>,
+    description: Option<String>,
+    priority: Option<String>,
+    due_date: Option<String>,
 ) -> Result<crate::types::CreateTaskResult, String> {
     let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.create_task(&project_id, &title, estimate_hours)).await
+    run_blocking(move || {
+        controller.create_task(
+            &project_id,
+            &title,
+            estimate_hours,
+            description.as_deref(),
+            priority.as_deref(),
+            due_date.as_deref(),
+        )
+    })
+    .await
 }
 
 #[tauri::command]

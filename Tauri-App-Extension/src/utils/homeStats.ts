@@ -156,10 +156,20 @@ export function computeHomeStats({
   const assignedDeferredPercent = memberLimits
     ? Math.min(100 - assignedPlannedPercent, (memberLimits.assignedToday.deferredSeconds / assignedDemandSeconds) * 100)
     : 0;
+  // Always says so, not just when there's rollover to report: this tile
+  // sums assigned work across every project a member has tasks on, but sits
+  // directly under whichever single project happens to be selected - the
+  // same disambiguation TodayPanel's own "across every project" caption
+  // exists for, and just as needed here. Without it, "Assigned today: 1
+  // task" read as "1 task on the project I'm looking at", when the task
+  // could belong to any project, including one with no tasks of its own at
+  // all.
   const assignedCarriedLabel =
     memberLimits && memberLimits.assignedToday.rolloverSeconds > 0
-      ? `incl. ${fmtHours(memberLimits.assignedToday.rolloverSeconds)} carried`
-      : "";
+      ? `incl. ${fmtHours(memberLimits.assignedToday.rolloverSeconds)} carried · across every project`
+      : memberLimits
+        ? "across every project"
+        : "";
   const assignedTaskCountLabel = !memberLimits
     ? ""
     : memberLimits.assignedToday.taskCount === 1

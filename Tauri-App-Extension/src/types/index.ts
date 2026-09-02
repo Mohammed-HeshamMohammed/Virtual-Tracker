@@ -92,6 +92,13 @@ export type ProjectInfo = {
   // This project's Hours budget is spent - it stays in the list, shown as
   // unselectable with a reason, rather than silently vanishing.
   budgetExhausted: boolean;
+  // Real spend / target as a 0-100+ percent. null when there's no budget
+  // configured, or nothing to divide by - distinct from 0, a budget that's
+  // real but genuinely untouched. Preferred over recentProjects' own
+  // task-completion percent whenever present: that one reads 0% for any
+  // project with no task marked done yet, indistinguishable from a project
+  // nothing has happened on at all, even when its budget shows real spend.
+  budgetSpentPercent: number | null;
   // Server-derived from viewerCanCreateProjectTasks (org admin, or this
   // member's own project_role = "manager" on this project) - gates the
   // "+ New task" row action so it only shows where the create call would
