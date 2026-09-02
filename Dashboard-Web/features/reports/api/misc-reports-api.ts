@@ -181,6 +181,18 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
   })
 }
 
+/** Permanently deletes one tracked session and everything captured under it
+ *  (screenshots, app usage, URL visits) - server-side cascade, see
+ *  deleteActivitySessionWithChildrenPg. Manager and above only; the server
+ *  re-checks that regardless of what the UI shows. */
+export async function deleteWorkSession(id: string): Promise<void> {
+  const res = await apiFetch(apiPath(`/api/reports/work-sessions/${id}`), { method: "DELETE" })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || `Failed to delete work session (${res.status}).`)
+  }
+}
+
 // ─── Audit Log ────────────────────────────────────────────────────────────
 
 interface RawAuditRow {

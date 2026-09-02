@@ -7,6 +7,13 @@ import { ChevronDown, Upload } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { BatchEditAction } from "@/features/members/components/modals/batch-edit-modal"
 
+/** Owner/Super Admin/Admin/Super Manager only - server enforces this too
+ *  (updateMemberProfile's hasPayBill branch, every payBill write including
+ *  batch-update funnels through it), so without this a Manager could pick
+ *  "Edit pay rate", fill in a value, and only find out it was refused after
+ *  submitting. */
+const PAY_RATE_ACTIONS = new Set<BatchEditAction>(["payRate", "billRate", "payPeriod"])
+
 const groups: {
   label: string | null
   items: { label: string; icon?: ReactNode; danger?: boolean; action: BatchEditAction | "import" }[]
@@ -31,15 +38,23 @@ export function BatchActionsDropdown({
   onOpenAction,
   onImportClick,
   isDark = false,
+  canEditPayRate = true,
 }: {
   disabled: boolean
   selectedIds: string[]
   onOpenAction: (action: BatchEditAction) => void
   onImportClick?: () => void
   isDark?: boolean
+  canEditPayRate?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const selectedCount = selectedIds.length
+  const visibleGroups = canEditPayRate
+    ? groups
+    : groups.map((group) => ({
+        ...group,
+        items: group.items.filter((item) => item.action === "import" || !PAY_RATE_ACTIONS.has(item.action as BatchEditAction)),
+      }))
 
   useEffect(() => {
     if (disabled) setOpen(false)
@@ -97,7 +112,7 @@ export function BatchActionsDropdown({
                 isDark ? "border-[#3d4a3d]/40 bg-[#191f31]" : "border-slate-100 bg-white",
               )}
             >
-              {groups.map((group, gi) => (
+              {visibleGroups.map((group, gi) => (
                 <div key={gi}>
                   {group.label && (
                     <div
