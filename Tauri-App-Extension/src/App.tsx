@@ -1447,7 +1447,15 @@ function MainApp() {
         toast.success(`"${result.task.title}" created`);
         jumpToAssignedTask(result.task);
       } else {
-        toast.message(`"${result.task.title}" created — ask a manager to assign it to you to start tracking it.`);
+        // Now that assign_task_to_self hits the endpoint that allows
+        // the task's own creator, a failure here is no longer a
+        // permissions gap (that copy used to say "ask a manager") - the
+        // realistic cause is the creator already being at their own
+        // work-hour limit, or a transient network hiccup on that second
+        // call. The task is real either way; only the assignment failed.
+        toast.message(
+          `"${result.task.title}" created, but couldn't be assigned to you automatically — open it from the web app to assign it.`,
+        );
       }
       await refreshAssignedTasks();
     } catch (err) {

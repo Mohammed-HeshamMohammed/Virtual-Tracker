@@ -247,12 +247,25 @@ impl ApiClient {
     /// Creates a task on a task-based project (POST /api/tasks - gated
     /// server-side by viewerCanCreateProjectTasks, the same check
     /// ProjectInfo.can_create_tasks already reflects), then best-effort
-    /// self-assigns it (POST /api/task-assignments) so it actually shows up
-    /// in "Your tasks" (fetch_assigned_tasks is assigned_to-filtered) without
-    /// a trip to the web dashboard first. Self-assign is gated separately
-    /// (org-wide management role - see CreateTaskResult's own doc comment)
-    /// and can fail on its own; that failure doesn't unwind the task, which
-    /// already exists and is real - self_assigned just tells the caller
+    /// self-assigns it so it actually shows up in "Your tasks"
+    /// (fetch_assigned_tasks is assigned_to-filtered) without a trip to the
+    /// web dashboard first.
+    ///
+    /// Self-assign goes through POST /api/tasks/:id/assignments, not the
+    /// flat POST /api/task-assignments this used to call. The flat one is
+    /// gated by requireManagementRole - org-wide Manager tier or above, with
+    /// no exception for the task's own creator - so a per-project manager
+    /// (project_role = "manager" in project_members, which is exactly who
+    /// can_create_tasks already let create this task) whose org-wide role
+    /// sits below Manager would create the task and then be silently
+    /// refused assigning it to themselves, with no way to tell why from the
+    /// agent. The per-task endpoint's canSyncTaskAssignments explicitly
+    /// allows the task's own creator in addition to management, which is
+    /// exactly who is calling this method.
+    ///
+    /// This can still fail on its own (e.g. the member is already at their
+    /// daily/weekly work-hour limit) - that failure doesn't unwind the task,
+    /// which already exists and is real; self_assigned just tells the caller
     /// whether to say so.
     pub fn create_task(
         &mut self,
@@ -327,17 +340,21 @@ impl ApiClient {
 
     /// Best-effort - see create_task's own doc comment for why a `false`
     /// here is an expected outcome, not treated as this call's error.
+    ///
+    /// assigneeIds carries only the caller's own id and removeUnlisted is
+    /// left false (the server default): on a brand-new task there are no
+    /// other assignees yet, so this only ever adds, never removes.
     fn assign_task_to_self(&mut self, task_id: &str) -> Result<bool, ApiError> {
         let member_id = self
             .fetch_viewer_member_id()
             .ok_or(ApiError::Unauthorized)?;
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/task-assignments", self.api_url);
-        let body = json!({
-            "task_id": task_id,
-            "member_id": member_id,
-            "status": "todo",
-        });
+        let url = format!(
+            "{}/api/tasks/{}/assignments",
+            self.api_url,
+            urlencoding::encode(task_id)
+        );
+        let body = json!({ "assigneeIds": [member_id] });
         let res = self
             .client
             .post(url)
@@ -914,5 +931,67 @@ fn parse_assigned_today(node: Option<&Value>) -> crate::types::AssignedToday {
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+
+    fn authed_client(api_url: String) -> ApiClient {
+        let mut api = ApiClient::new(api_url, "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        api
+    }
+
+    // Regression for the bug this endpoint switch fixed: a per-project
+    // manager (project_role = "manager" - the same check that lets
+    // can_create_tasks show the "+ New task" button at all) whose org-wide
+    // role sat below Manager tier could create a task and then be silently
+    // refused assigning it to themselves, because the old call
+    // (POST /api/task-assignments) is gated by an org-wide-management-only
+    // check with no exception for the task's own creator. This asserts the
+    // call now reaches the per-task endpoint, whose canSyncTaskAssignments
+    // explicitly allows the creator - which is always who calls this.
+    #[test]
+    fn assign_task_to_self_posts_to_the_per_task_assignments_endpoint_not_the_flat_one() {
+        let url = fake_server(|request| {
+            let path = request.url().to_string();
+            if path == "/api/activity/scope" {
+                return (200, r#"{"data": {"viewerMemberId": "m1"}}"#.to_string());
+            }
+            // The bug this test guards against: a regression back to the
+            // flat endpoint would hit this path instead and fail here.
+            assert_ne!(
+                path, "/api/task-assignments",
+                "must not use the flat endpoint - it has no creator exception",
+            );
+            assert_eq!(
+                path, "/api/tasks/t1/assignments",
+                "must hit the per-task endpoint for task t1, whose canSyncTaskAssignments \
+                 allows the task's own creator",
+            );
+            assert_eq!(request.method(), &tiny_http::Method::Post);
+            (200, r#"{"success": true, "data": []}"#.to_string())
+        });
+        let mut api = authed_client(url);
+        assert_eq!(api.assign_task_to_self("t1"), Ok(true));
+    }
+
+    #[test]
+    fn assign_task_to_self_reports_false_rather_than_erroring_on_a_business_rejection() {
+        // e.g. the creator is already at their own daily/weekly work-hour
+        // limit - create_task's own doc comment covers why this must not
+        // unwind the already-created task.
+        let url = fake_server(|request| {
+            if request.url() == "/api/activity/scope" {
+                return (200, r#"{"data": {"viewerMemberId": "m1"}}"#.to_string());
+            }
+            (400, r#"{"success": false, "error": "You have reached your daily limit."}"#.to_string())
+        });
+        let mut api = authed_client(url);
+        assert_eq!(api.assign_task_to_self("t1"), Ok(false));
     }
 }

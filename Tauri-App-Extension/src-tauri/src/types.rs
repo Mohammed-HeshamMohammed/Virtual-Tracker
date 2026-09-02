@@ -102,12 +102,14 @@ pub struct AgentTask {
 }
 
 /// create_task's result: the new task, plus whether the create call also
-/// managed to self-assign it (POST /api/task-assignments). Self-assign is
-/// gated separately server-side (org-wide management role, not just a
-/// per-project "manager" role - see MANAGEMENT_WRITE_KEYS in
-/// schema/routes.js), so it can fail even when creating the task itself
-/// succeeded. When it does, the task exists but won't show up in "Your
-/// tasks" (assigned_to-filtered) until someone else assigns it.
+/// managed to self-assign it (POST /api/tasks/:id/assignments, which
+/// explicitly allows the task's own creator - see assign_task_to_self's own
+/// doc comment for why that endpoint and not the flat
+/// POST /api/task-assignments). Self-assign can still fail on its own (e.g.
+/// the member is already at their work-hour limit), so it can fail even
+/// when creating the task itself succeeded. When it does, the task exists
+/// but won't show up in "Your tasks" (assigned_to-filtered) until someone
+/// assigns it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTaskResult {
