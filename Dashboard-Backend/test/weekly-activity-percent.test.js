@@ -75,6 +75,43 @@ test("a week with sessions but no screenshots still computes the ratio - it no l
   assert.equal(payload.stats.activityWeekPercent, 73, "matches rounded 0.8h/0.3h, not raw 2700s/900s");
 });
 
+test("a real (snake_case-only) session row is not silently dropped for a scoped 'me' view", () => {
+  // The shape buildViewPayload actually gets fed in production
+  // (dashboard-base-loader.js's fetchFreshBase) - member_id only, no
+  // memberId camelCase key at all. Every test above uses memberIds: null
+  // (an unrestricted scope), which bypasses the member-id comparison
+  // entirely (inMemberScope short-circuits to true) and would have passed
+  // even with the bug this guards: session.memberId read as undefined,
+  // so every session was silently dropped for any *scoped* view - "me"
+  // (memberIds: [viewerMemberId]) always, and "all" for anyone but an
+  // unrestricted org admin. weeklyActivity's hours (and the ring's percent
+  // derived from them) read zero regardless of what was actually tracked.
+  const startedAt = timeInWeek(2);
+  const payload = buildViewPayload({
+    ...BASE_ARGS,
+    memberIds: ["m1"],
+    sessions: [
+      { member_id: "m1", started_at: startedAt, active_seconds: 3600, idle_seconds: 3600, task_id: null, project_id: "p1" },
+    ],
+    screenshots: [],
+  });
+  assert.equal(payload.stats.activityWeekPercent, 50, "1h active of 2h total tracked - not silently dropped to 0");
+  assert.equal(payload.weeklyActivity.reduce((sum, d) => sum + d.activeHours, 0), 1, "1h shows up in the legend too");
+});
+
+test("a scoped view still excludes another member's sessions (the fix isn't just 'always true')", () => {
+  const startedAt = timeInWeek(2);
+  const payload = buildViewPayload({
+    ...BASE_ARGS,
+    memberIds: ["m1"],
+    sessions: [
+      { member_id: "m2", started_at: startedAt, active_seconds: 3600, idle_seconds: 0, task_id: null, project_id: "p1" },
+    ],
+    screenshots: [],
+  });
+  assert.equal(payload.stats.activityWeekPercent, 0, "m2's session is out of m1's scope");
+});
+
 test("activityTodayPercent is untouched - still the screenshot-level average, a separate metric", () => {
   // Built from startOfDay() itself, not a plain new Date() - todayKey
   // (inside buildViewPayload) is startOfDay().toISOString().slice(0, 10),
