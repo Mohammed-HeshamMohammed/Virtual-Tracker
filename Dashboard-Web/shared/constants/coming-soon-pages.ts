@@ -46,9 +46,10 @@ COMING_SOON_PAGES.add("general")
 // Favorites hub is not yet implemented.
 COMING_SOON_PAGES.add("favorites")
 
-// timesheets-approvals now has a real pending-approvals queue (approve/reject
-// via the generic timesheets schema CRUD, already management-role-gated
-// server-side) — unlocked.
+// timesheets-approvals (now split into timesheets-submissions and
+// timesheets-manual-requests) has real pending-approvals queues
+// (approve/reject via the generic schema CRUD, already
+// management-role-gated server-side) — unlocked.
 
 export function isComingSoonPage(pageId: string): boolean {
   return COMING_SOON_PAGES.has(pageId)

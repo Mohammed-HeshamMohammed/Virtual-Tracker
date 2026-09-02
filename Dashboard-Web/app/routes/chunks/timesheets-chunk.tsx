@@ -1,14 +1,16 @@
 "use client"
 
 import { PeopleTeamScopeProvider } from "@/features/members/context/people-team-scope-context"
-import { TimesheetsViewEdit, TimesheetsApprovalsContent } from "@/features/timesheets"
+import { TimesheetsViewEdit, TimesheetsPage, ManualTimeRequestsPage } from "@/features/timesheets"
 import { TimeAndActivityReport } from "@/features/reports"
 import type { PageChunkProps } from "@/app/routes/types"
 
 export default function TimesheetsChunk({ pageId, onNavigate: _onNavigate }: PageChunkProps) {
   switch (pageId) {
-    case "timesheets-approvals":
-      return <TimesheetsApprovalsContent />
+    case "timesheets-submissions":
+      return <TimesheetsPage />
+    case "timesheets-manual-requests":
+      return <ManualTimeRequestsPage />
     case "timesheets-time-activity":
       return <TimeAndActivityReport />
     case "timesheets-view":

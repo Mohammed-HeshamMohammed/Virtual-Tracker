@@ -153,6 +153,7 @@ export function TasksToolbar({
           selectedTask={selectedTask}
           projectTeams={projectTeams}
           memberLookups={memberLookups}
+          directProjectMembers={projectMembers}
           isDark={isDark}
           onAssign={async ({ teamId, assignedTo, assigneeIds }) => {
             if (!selectedTask) return

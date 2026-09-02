@@ -436,7 +436,8 @@ function getRestrictedPageIds(role: string): Set<string> {
     ids.add("pm-projects")
     ids.add("calendar-timeoff")
     ids.add("timesheets-view")
-    ids.add("timesheets-approvals")
+    ids.add("timesheets-submissions")
+    ids.add("timesheets-manual-requests")
     ids.add("timesheets-time-activity")
   }
   return ids

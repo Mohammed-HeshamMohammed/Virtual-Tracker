@@ -65,7 +65,7 @@ export function TaskAssignButton({
   /** Direct project members (not via team). Merged into the roster for display. */
   directProjectMembers?: MemberLookup[]
   isDark: boolean
-  onAssign: (patch: { teamId: string; assignedTo: string | null; assigneeIds: string[] }) => void | Promise<void>
+  onAssign: (patch: { teamId: string | null; assignedTo: string | null; assigneeIds: string[] }) => void | Promise<void>
 }) {
   const [selectedMemberIds, setSelectedMemberIds] = useComponentState<string[]>([])
   const t = isDark ? dark : light
@@ -147,8 +147,21 @@ export function TaskAssignButton({
     }
   }, [open, selectedTask])
 
-  // Build roster from the selected team only
-  const roster = useMemo(() => {
+  // A project with no linked teams has no "team members" to fetch at all -
+  // everyone on it is there directly (project_members), which is exactly
+  // what directProjectMembers already is. Team roster stays exactly as
+  // before; this only adds the branch that used to not exist.
+  const hasTeams = projectTeams.length > 0
+
+  const directRoster = useMemo(
+    () =>
+      [...directProjectMembers]
+        .map((m) => ({ id: m.id, name: m.name, avatar: m.avatar, color: m.color, isLead: false }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [directProjectMembers],
+  )
+
+  const teamRoster = useMemo(() => {
     const seen = new Set<string>()
     const list: Array<{
       id: string
@@ -180,15 +193,20 @@ export function TaskAssignButton({
     })
   }, [teamMembers, memberById])
 
+  const roster = hasTeams ? teamRoster : directRoster
+
   const disabled = !selectedTask
-  const needsTeamPick = projectTeams.length > 0 && !activeTeamId
+  // Only a team-linked project ever needs a team picked before showing a
+  // roster - a team-less project's roster (directRoster) is already the
+  // whole story, no picker step in front of it.
+  const needsTeamPick = hasTeams && !activeTeamId
   const borderedInputClass = cn(
     "w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-blue-500 text-sm",
     isDark ? "bg-[#191f31] border-[#2e3447]" : "bg-white border-slate-200",
   )
   const sectionLabelClass = cn("text-xs font-semibold", isDark ? "text-slate-400" : "text-slate-500")
 
-  async function applyAssign(teamId: string, assigneeIds: string[]) {
+  async function applyAssign(teamId: string | null, assigneeIds: string[]) {
     setAssigning(true)
     setAssignError(null)
     try {
@@ -254,59 +272,62 @@ export function TaskAssignButton({
           </DialogHeader>
 
           <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto py-4 pr-1">
-            {projectTeams.length === 0 ? (
+            {roster.length === 0 && !hasTeams ? (
               <p className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-                Link a team to this project first (Project → Teams tab).
+                No one is on this project yet. Add members from Project → Members or Teams first.
               </p>
             ) : (
-              <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
-                <div className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className={sectionLabelClass}>
-                      TEAM {projectTeams.length > 1 ? <span className="text-red-500">*</span> : null}
-                    </label>
-                    <SearchableSelectField
-                      value={activeTeamId}
-                      onChange={(teamId) => setActiveTeamId(teamId)}
-                      placeholder="Select team"
-                      className="w-full"
-                      isDark={isDark}
-                      options={projectTeams.map((team) => ({ value: team.id, label: team.name }))}
-                    />
-                    {needsTeamPick ? (
-                      <p className={cn("text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-                        Pick a team, then assign the whole team or one member.
-                      </p>
+              <div className={cn("grid grid-cols-1 gap-5", hasTeams && "lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]")}>
+                {hasTeams ? (
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className={sectionLabelClass}>
+                        TEAM {projectTeams.length > 1 ? <span className="text-red-500">*</span> : null}
+                      </label>
+                      <SearchableSelectField
+                        value={activeTeamId}
+                        onChange={(teamId) => setActiveTeamId(teamId)}
+                        placeholder="Select team"
+                        className="w-full"
+                        isDark={isDark}
+                        options={projectTeams.map((team) => ({ value: team.id, label: team.name }))}
+                      />
+                      {needsTeamPick ? (
+                        <p className={cn("text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
+                          Pick a team, then assign the whole team or one member.
+                        </p>
+                      ) : null}
+                    </div>
+
+                    {!needsTeamPick ? (
+                      <div className="space-y-2">
+                        <p className={sectionLabelClass}>WHO GETS THIS TASK?</p>
+                        {/* Entire Teams button */}
+                        <button
+                          type="button"
+                          onClick={() => applyAssign(activeTeamId, roster.map((m) => m.id))}
+                          className={cn(
+                            "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
+                            borderedInputClass,
+                            isDark ? "hover:bg-[#2e3447]" : "hover:bg-slate-50",
+                          )}
+                        >
+                          <UsersRound className="h-5 w-5 shrink-0 opacity-70" />
+                          <span className="min-w-0 font-medium truncate">
+                            Entire team ({roster.length} members)
+                          </span>
+                        </button>
+                      </div>
                     ) : null}
                   </div>
-
-                  {!needsTeamPick ? (
-                    <div className="space-y-2">
-                      <p className={sectionLabelClass}>WHO GETS THIS TASK?</p>
-                      {/* Entire Teams button */}
-                      <button
-                        type="button"
-                        onClick={() => applyAssign(activeTeamId!, roster.map((m) => m.id))}
-                        className={cn(
-                          "flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors",
-                          borderedInputClass,
-                          isDark ? "hover:bg-[#2e3447]" : "hover:bg-slate-50",
-                        )}
-                      >
-                        <UsersRound className="h-5 w-5 shrink-0 opacity-70" />
-                        <span className="min-w-0 font-medium truncate">
-                          Entire team ({roster.length} members)
-                        </span>
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                ) : null}
 
                 {!needsTeamPick ? (
                   <div
                     className={cn(
-                      "space-y-2 lg:border-l lg:pl-5",
-                      isDark ? "lg:border-[#2e3447]" : "lg:border-slate-200",
+                      "space-y-2",
+                      hasTeams && "lg:border-l lg:pl-5",
+                      hasTeams && (isDark ? "lg:border-[#2e3447]" : "lg:border-slate-200"),
                     )}
                   >
                     <p className={cn("text-[10px] font-semibold uppercase tracking-wide", t.tableCellMuted)}>
@@ -396,7 +417,7 @@ export function TaskAssignButton({
               <button
                 type="button"
                 disabled={selectedMemberIds.length === 0 || assigning}
-                onClick={() => void applyAssign(activeTeamId!, selectedMemberIds)}
+                onClick={() => void applyAssign(activeTeamId, selectedMemberIds)}
                 className={cn(
                   "rounded-lg px-6 py-2.5 text-sm font-medium text-white transition-colors disabled:opacity-50",
                   isDark ? "bg-[#4be277] text-black hover:bg-[#4be277]/90" : "bg-blue-500 hover:bg-blue-600",

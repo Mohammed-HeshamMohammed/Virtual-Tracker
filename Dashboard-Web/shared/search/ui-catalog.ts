@@ -49,8 +49,13 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
 
   // ── Timesheets ──
   ui({ pageId: "timesheets-view", title: "View & edit timesheets", section: "Timesheets", kind: "page", keywords: ["hours", "entries"] }),
-  ui({ pageId: "timesheets-view", title: "Add time entry", section: "Timesheets", pageLabel: "View & edit", kind: "action", keywords: ["manual time", "log hours"] }),
-  ui({ pageId: "timesheets-approvals", title: "Timesheet approvals", section: "Timesheets", kind: "page", keywords: ["approve", "review"] }),
+  ui({ pageId: "timesheets-submissions", title: "Timesheets", section: "Timesheets", kind: "page", keywords: ["submit", "approve", "review"] }),
+  // pageId corrected to the page "Add time entry" actually describes - it
+  // pointed at timesheets-view (Task Approvals, an unrelated task-review
+  // queue) before the Approvals page this split from existed as a search
+  // target at all.
+  ui({ pageId: "timesheets-manual-requests", title: "Add time entry", section: "Timesheets", pageLabel: "Manual Time Requests", kind: "action", keywords: ["manual time", "log hours"] }),
+  ui({ pageId: "timesheets-manual-requests", title: "Manual time requests", section: "Timesheets", kind: "page", keywords: ["manual time", "log hours", "approve", "review"] }),
 
   // ── Activity ──
   ui({ pageId: "activity-screenshots", title: "Screenshots", section: "Activity", kind: "page", keywords: ["screen capture", "monitoring"] }),
