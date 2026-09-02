@@ -88,7 +88,11 @@ function buildSparklineFromDays(dayBuckets, days) {
   });
 }
 
-function buildViewPayload({
+// Exported for its own regression test (activityWeekPercent must derive
+// from the same sessions weeklyActivity does, not a second, independent
+// screenshot-based score) - otherwise a pure function of already-fetched
+// data, called only from getGeneralDashboardPayload below.
+export function buildViewPayload({
   memberIds,
   timeEntries,
   sessions,
@@ -160,8 +164,6 @@ function buildViewPayload({
     }
   }
 
-  let activitySum = 0;
-  let activityCount = 0;
   let activityTodaySum = 0;
   let activityTodayCount = 0;
 
@@ -172,10 +174,6 @@ function buildViewPayload({
     const level = shot.activityLevel ?? 0;
     activityByDay.set(capturedKey, activityByDay.get(capturedKey) ?? []);
     activityByDay.get(capturedKey).push(level);
-    if (weekDateKeys.has(capturedKey)) {
-      activitySum += level;
-      activityCount += 1;
-    }
     if (capturedKey === todayKey) {
       activityTodaySum += level;
       activityTodayCount += 1;
@@ -312,6 +310,25 @@ function buildViewPayload({
 
   const { chartPath, chartFill } = buildTrendPaths(weeklyActivity.map((d) => d.activeHours));
 
+  // Same active/idle hours weeklyActivity already summed per day, not a
+  // second, unrelated measurement - activityWeekPercent used to average
+  // screenshots' own per-capture activityLevel score instead, which is a
+  // completely different quantity (a moment-by-moment keystroke/mouse
+  // score) than "share of tracked time that was active". The agent's
+  // sidebar draws this percent as a ring with an active/idle-hours legend
+  // directly beneath it (WeeklyActivityCard) built from these same
+  // weeklyActivity hours - the two numbers could disagree by construction
+  // (e.g. read 63% from a handful of active-looking screenshots while the
+  // legend read 0s active / 0s idle from a week with almost no tracked
+  // sessions at all). Deriving both from the same array makes them agree
+  // by construction instead.
+  const weekActiveHoursTotal = weeklyActivity.reduce((sum, d) => sum + d.activeHours, 0);
+  const weekIdleHoursTotal = weeklyActivity.reduce((sum, d) => sum + d.idleHours, 0);
+  const activityWeekPercent =
+    weekActiveHoursTotal + weekIdleHoursTotal > 0
+      ? Math.round((weekActiveHoursTotal / (weekActiveHoursTotal + weekIdleHoursTotal)) * 100)
+      : 0;
+
   return {
     stats: {
       workedTodayHours: Math.round(workedTodayHours * 100) / 100,
@@ -321,7 +338,7 @@ function buildViewPayload({
       spentWeekHours: Math.round(spentWeekHours * 100) / 100,
       spentSparkline: buildSparklineFromDays(spentByDay, sparkDays),
       activityTodayPercent: activityTodayCount ? Math.round(activityTodaySum / activityTodayCount) : 0,
-      activityWeekPercent: activityCount ? Math.round(activitySum / activityCount) : 0,
+      activityWeekPercent,
       activitySparkline,
       membersWorkedToday,
       membersSparkline,
