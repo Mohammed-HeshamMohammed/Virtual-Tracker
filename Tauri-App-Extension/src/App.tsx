@@ -2201,6 +2201,7 @@ function MainApp() {
                     type="button"
                     title="Log time that wasn't tracked"
                     aria-label="Log time that wasn't tracked"
+                    disabled={busy}
                     onClick={openLogTime}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -2236,7 +2237,11 @@ function MainApp() {
                     {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
                   </span>
                   <span className="page-clock-label">
-                    {tracking ? "Elapsed · Tracking" : paused ? "On a break" : "Paused"}
+                    {/* sessionOpen = tracking || paused - neither true means no
+                        session exists at all (never started, or fully
+                        stopped), which is a different condition from "on a
+                        break" and was mislabeled the same as a real pause. */}
+                    {tracking ? "Elapsed · Tracking" : paused ? "On a break" : "Not tracking"}
                     {timerViewMode === "task" ? " · whole task" : ""}
                   </span>
                   {!taskLessSession && taskTracking ? (
@@ -2246,6 +2251,7 @@ function MainApp() {
                       title={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       aria-label={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       style={{ marginLeft: "auto", alignSelf: "center" }}
+                      disabled={busy}
                       onClick={() => setTimerViewMode((m) => (m === "task" ? "day" : "task"))}
                     >
                       <svg viewBox="0 0 24 24" aria-hidden="true">
