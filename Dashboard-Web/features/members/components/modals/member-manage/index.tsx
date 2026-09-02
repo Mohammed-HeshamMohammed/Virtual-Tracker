@@ -21,6 +21,7 @@ import { memberEntryToTab, splitMemberDisplayName, parseUsdHrPayment, weeklyLimi
 import { parsePayRateDisplay } from "@/features/members/config/pay-currencies"
 import { validateMemberFormStateForTabs } from "@/shared/validation/member-form"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
+import { canEditPayRates } from "@/features/auth/permissions/member-role-access"
 import { Avatar } from "@/shared/ui/avatar";
 import { InfoTab, EmploymentTab, RolesTab, PayBillTab, WorkLimitsTab, SettingsTab } from "@/features/members/components/modals/member-manage/tabs"
 import { MemberManageModalSkeleton } from "@/features/members/components/modals/member-manage/member-manage-modal-skeleton"
@@ -81,6 +82,8 @@ function buildProfilePayload(
       payRate: formState.payRate,
       currency: formState.currency,
       payPeriod: formState.payPeriod,
+      note: formState.payNote,
+      effectiveDate: formState.payEffectiveDate,
     }
   }
   if (allow.has("workLimits")) {
@@ -167,6 +170,11 @@ export function MemberManageModal({
   const isSelfEdit = isSameMember(member, actorMemberId, user?.uid, user?.email ?? undefined)
   const assignableRoles = useMemo(() => listAssignableRoles(actorRole), [actorRole])
   const actorRoleContext = useMemo(() => ({ assignableRoles }), [assignableRoles])
+  // Server enforces this (member-profile.service.js's hasPayBill branch,
+  // narrower than the Manager+ tier every other tab here allows) - this is
+  // only a UI hint so the Pay/Bill tab reads as read-only for a Manager
+  // instead of letting them edit it and then 403ing on save.
+  const canEditPayRate = useMemo(() => canEditPayRates(actorRole), [actorRole])
   const [activeTab, setActiveTab] = useComponentState<MemberManageTab>("info")
   const [busy, setBusy] = useComponentState(false)
   const [loadingTabs, setLoadingTabs] = useComponentState<Set<MemberManageTab>>(() => new Set())
@@ -199,7 +207,12 @@ export function MemberManageModal({
     loadedTabs.has(activeTab) ||
     isMemberProfileSectionLoaded(member.id, activeTab)
   const showProfileSkeleton = loadingTabs.has(activeTab) && !activeTabReady
-  const canSaveProfile = canSave && !failedTabs.has(activeTab) && activeTabReady && !liveDeleted
+  const canSaveProfile =
+    canSave &&
+    !failedTabs.has(activeTab) &&
+    activeTabReady &&
+    !liveDeleted &&
+    (activeTab !== "payBill" || canEditPayRate)
 
   const [prevId, setPrevId] = useComponentState<string | null>(null)
   const [prevOpen, setPrevOpen] = useComponentState(false)
@@ -609,7 +622,7 @@ export function MemberManageModal({
                   )}
                   {activeTab === "payBill" && (
                     <motion.div key="payBill" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                      <PayBillTab {...tabProps} />
+                      <PayBillTab {...tabProps} canEditPayRate={canEditPayRate} />
                     </motion.div>
                   )}
                   {activeTab === "workLimits" && (

@@ -1,6 +1,7 @@
 import type { RefObject } from "react"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
 import type { Member, MemberEntryAction, MemberPatchBody, MemberManageTab, MemberRole } from "@/features/members/models/member"
+import type { PayRateHistoryEntry } from "@/features/members/api/member-api"
 
 export interface MemberManageModalProps {
   open: boolean
@@ -49,6 +50,12 @@ export interface MemberFormState {
   weeklyLimit: string
   paySegment: "pay" | "bill"
   payPeriod: string
+  /** Owner/Super Admin/Admin/Super Manager only - see canEditPayRates. */
+  payNote: string
+  payEffectiveDate: string
+  /** Real audit trail, most recent first - read-only, never sent back on
+   * save (the server writes it itself from what actually changed). */
+  payRateHistory: PayRateHistoryEntry[]
   ableToTrack: boolean
   idleMode: "Prompt" | "Always" | "Never"
   idleTimeout: string
@@ -107,6 +114,9 @@ export function normalizeMemberFormState(state: MemberFormState): MemberFormStat
     payRate: state.payRate == null ? "" : String(state.payRate),
     currency: state.currency || "USD",
     payPeriod: state.payPeriod || "None",
+    payNote: state.payNote ?? "",
+    payEffectiveDate: state.payEffectiveDate ?? "",
+    payRateHistory: Array.isArray(state.payRateHistory) ? state.payRateHistory : [],
     weeklyLimit: state.weeklyLimit ?? "",
     dailyLimit: state.dailyLimit ?? "",
     workDays: workDays.length > 0 ? workDays : [0, 1, 2, 3, 4],
@@ -129,6 +139,9 @@ export const initialFormState: MemberFormState = {
   weeklyLimit: "",
   paySegment: "pay",
   payPeriod: "None",
+  payNote: "",
+  payEffectiveDate: "",
+  payRateHistory: [],
   ableToTrack: true,
   idleMode: "Never",
   idleTimeout: "5 min",

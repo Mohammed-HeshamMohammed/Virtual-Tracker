@@ -6,8 +6,9 @@ import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
 import { isOwnerRoleName } from "@/features/auth"
+import { canEditPayRates } from "@/features/auth/permissions/member-role-access"
 import { sendFirebasePasswordResetEmail } from "@/features/auth/services/password-reset"
-import type { MemberProfilePayload } from "@/features/members/api/member-api"
+import { getMemberProfile, type MemberProfilePayload } from "@/features/members/api/member-api"
 import { RolesTab, PayBillTab, WorkLimitsTab } from "@/features/members/components/modals/member-manage/tabs"
 import {
   initialFormState,
@@ -108,7 +109,10 @@ function buildPayloadForAction(action: MemberEntryAction, formState: MemberFormS
       payBill: {
         paySegment: formState.paySegment,
         payRate: formState.payRate,
+        currency: formState.currency,
         payPeriod: formState.payPeriod,
+        note: formState.payNote,
+        effectiveDate: formState.payEffectiveDate,
       },
     }
   }
@@ -159,6 +163,9 @@ export function MemberEntryModal({
   const { user } = useAuth()
   const assignableRoles = useMemo(() => listAssignableRoles(actorRole), [actorRole])
   const actorRoleContext = useMemo(() => ({ assignableRoles }), [assignableRoles])
+  // Server enforces this (member-profile.service.js's hasPayBill branch) -
+  // this only decides whether the payBill tab reads as editable here.
+  const canEditPayRate = useMemo(() => canEditPayRates(actorRole), [actorRole])
 
   const [formState, setFormState] = useState<MemberFormState>(initialFormState)
   const [busy, setBusy] = useState(false)
@@ -174,6 +181,36 @@ export function MemberEntryModal({
     setError(null)
     setResetMessage(null)
     setBusy(false)
+    if (action !== "edit-payment") return
+    // This modal builds its form from the already-loaded member row alone
+    // (buildFormFromMember), which carries no pay note/effective date/history
+    // - only the full Manage-options modal did a per-tab profile fetch. This
+    // quick modal is the OTHER of the two payment-editing entry points, so it
+    // needs the same real payBill section, not just the bare pay rate.
+    let cancelled = false
+    void getMemberProfile(member.id, ["payBill"])
+      .then(({ form }) => {
+        if (cancelled) return
+        setFormState((prev) =>
+          normalizeMemberFormState({
+            ...prev,
+            payRate: form.payRate ?? prev.payRate,
+            currency: form.currency ?? prev.currency,
+            payPeriod: form.payPeriod ?? prev.payPeriod,
+            payNote: form.payNote ?? prev.payNote,
+            payEffectiveDate: form.payEffectiveDate ?? prev.payEffectiveDate,
+            payRateHistory: form.payRateHistory ?? prev.payRateHistory,
+          }),
+        )
+      })
+      .catch(() => {
+        // Quick modal already has a usable fallback (buildFormFromMember's
+        // bare pay rate, PayBillTab's own synthesized "Current" row) - a
+        // failed background fetch here degrades to that, not an error state.
+      })
+    return () => {
+      cancelled = true
+    }
   }, [open, action, member])
 
   if (!open || !action || !isFocusedMemberEntryAction(action)) return null
@@ -373,7 +410,7 @@ export function MemberEntryModal({
           {showFormTabs && (
             <div className={cn(isDark && "[&_label]:text-[#bccbb9] [&_h3]:text-[#dce1fb] [&_input]:border-[#3d4a3d]/40 [&_input]:bg-[#191f31] [&_input]:text-[#dce1fb] [&_section]:border-[#3d4a3d]/40")}>
               {focusedAction === "edit-role" && <RolesTab {...tabProps} />}
-              {focusedAction === "edit-payment" && <PayBillTab {...tabProps} />}
+              {focusedAction === "edit-payment" && <PayBillTab {...tabProps} canEditPayRate={canEditPayRate} />}
               {focusedAction === "edit-limits" && <WorkLimitsTab {...tabProps} />}
             </div>
           )}
@@ -406,7 +443,8 @@ export function MemberEntryModal({
             type="submit"
             disabled={
               busy ||
-              ((focusedAction === "remove-member" || focusedAction === "remove-from-tree") && ownerBlocked)
+              ((focusedAction === "remove-member" || focusedAction === "remove-from-tree") && ownerBlocked) ||
+              (focusedAction === "edit-payment" && !canEditPayRate)
             }
             className={cn(
               "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50",
