@@ -16,6 +16,7 @@ import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
 import { useAuth } from "@/shared/providers/app"
+import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 
 /** Today as YYYY-MM-DD in local time (not UTC, which shifts the day). */
 function todayLocal(): string {
@@ -291,44 +292,30 @@ export function AddManualEntryDialog({
               ) : null}
             </div>
             <div>
-              <label htmlFor="ame-project" className={labelCls}>
-                Project
-              </label>
-              <select
-                id="ame-project"
+              <span className={labelCls}>Project</span>
+              <ReportSimpleDropdown
                 value={projectId}
-                onChange={(e) => setProjectId(e.target.value)}
+                onChange={setProjectId}
+                options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                placeholder="Select a project"
                 disabled={loadingOptions}
-                className={inputCls}
-              >
-                <option value="">Select a project</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                width="w-full"
+                accentBar={false}
+              />
             </div>
             <div>
-              <label htmlFor="ame-task" className={labelCls}>
+              <span className={labelCls}>
                 To-do <span className="font-normal text-slate-400">(optional)</span>
-              </label>
-              <select
-                id="ame-task"
+              </span>
+              <ReportSimpleDropdown
                 value={taskId}
-                onChange={(e) => setTaskId(e.target.value)}
+                onChange={setTaskId}
+                options={tasks.map((t) => ({ value: t.id, label: t.title }))}
+                placeholder={!projectId ? "Pick a project first" : loadingTasks ? "Loading to-dos…" : "Whole project (no to-do)"}
                 disabled={!projectId || loadingTasks}
-                className={inputCls}
-              >
-                <option value="">
-                  {!projectId ? "Pick a project first" : loadingTasks ? "Loading to-dos…" : "Whole project (no to-do)"}
-                </option>
-                {tasks.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title}
-                  </option>
-                ))}
-              </select>
+                width="w-full"
+                accentBar={false}
+              />
             </div>
           </div>
 
