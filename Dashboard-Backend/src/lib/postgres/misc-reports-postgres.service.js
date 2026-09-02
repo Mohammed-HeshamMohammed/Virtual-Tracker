@@ -11,9 +11,18 @@ function toDayString(value) {
 }
 
 /**
- * Per-member per-day tracked seconds + current pay rate - backs Amounts Owed,
- * Daily Totals, and Payments (all the same "hours x rate" shape, grouped
- * differently on the frontend).
+ * Per-member per-day tracked seconds + the rate actually in effect on that
+ * day - backs Amounts Owed, Daily Totals, and Payments (all the same "hours
+ * x rate" shape, grouped differently on the frontend).
+ *
+ * The LEFT JOIN LATERAL against pay_rate_history picks that day's real rate
+ * (the most recent point with effective_date <= the day), falling back to
+ * the member's current pay_rates row via COALESCE only when no history
+ * point qualifies - a day before their earliest recorded change, or a
+ * member whose rate has never changed since pay_rate_history existed. Below
+ * this, a raise or cut applied today no longer silently rewrites what a
+ * past day was already reported as worth.
+ *
  * `projectIds` narrows to time tracked against tasks in those projects. That
  * has to come from the per-task rollup rather than daily_member_active_seconds,
  * which carries no project dimension at all - so a project-filtered total
@@ -27,10 +36,17 @@ export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, pr
   const rows = hasProjectFilter
     ? await query(
         `SELECT dt.member_id, dt.day, SUM(dt.active_seconds) AS active_seconds,
-                MIN(pr.rate) AS rate, MIN(pr.type) AS rate_type, MIN(pr.currency) AS currency
+                MIN(COALESCE(h.rate, pr.rate)) AS rate,
+                MIN(COALESCE(h.type, pr.type)) AS rate_type,
+                MIN(COALESCE(h.currency, pr.currency)) AS currency
          FROM daily_member_task_active_seconds dt
          JOIN tasks t ON t.id = dt.task_id
          LEFT JOIN pay_rates pr ON pr.member_id = dt.member_id
+         LEFT JOIN LATERAL (
+           SELECT rate, type, currency FROM pay_rate_history
+           WHERE member_id = dt.member_id AND effective_date <= dt.day
+           ORDER BY effective_date DESC, created_at DESC LIMIT 1
+         ) h ON true
          WHERE dt.day >= $1 AND dt.day <= $2
            AND ($3::uuid[] IS NULL OR dt.member_id = ANY($3::uuid[]))
            AND t.project_id = ANY($4::uuid[])
@@ -40,9 +56,16 @@ export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, pr
       )
     : await query(
         `SELECT d.member_id, d.day, d.active_seconds,
-                pr.rate AS rate, pr.type AS rate_type, pr.currency AS currency
+                COALESCE(h.rate, pr.rate) AS rate,
+                COALESCE(h.type, pr.type) AS rate_type,
+                COALESCE(h.currency, pr.currency) AS currency
          FROM daily_member_active_seconds d
          LEFT JOIN pay_rates pr ON pr.member_id = d.member_id
+         LEFT JOIN LATERAL (
+           SELECT rate, type, currency FROM pay_rate_history
+           WHERE member_id = d.member_id AND effective_date <= d.day
+           ORDER BY effective_date DESC, created_at DESC LIMIT 1
+         ) h ON true
          WHERE d.day >= $1 AND d.day <= $2
            AND ($3::uuid[] IS NULL OR d.member_id = ANY($3::uuid[]))
          ORDER BY d.day ASC`,

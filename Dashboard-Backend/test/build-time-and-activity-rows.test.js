@@ -4,7 +4,7 @@
 // so the existing date-per-day view and its CSV/PDF export stay untouched.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildTimeAndActivityReportPayload } from "../src/modules/reports/build-time-and-activity-rows.js";
+import { buildTimeAndActivityReportPayload, resolveRateForDay } from "../src/modules/reports/build-time-and-activity-rows.js";
 
 const memberNameMap = new Map([
   ["m1", { name: "Ada Lovelace" }],
@@ -193,6 +193,54 @@ test("manual hours are paid at the member's rate, same as tracked ones", () => {
     [manual({ manual_seconds: 3600 })],
   );
   assert.equal(days[0].members[0].spentAmount, 60, "one hand-entered hour at $60/h");
+});
+
+// A rate change no longer silently rewrites what past days were worth -
+// see resolveRateForDay's own doc comment.
+test("resolveRateForDay: a flat number (no history) applies to every day unchanged", () => {
+  const rates = new Map([["m1", 40]]);
+  assert.equal(resolveRateForDay(rates, "m1", "2026-01-01"), 40);
+  assert.equal(resolveRateForDay(rates, "m1", "2026-12-31"), 40);
+});
+
+test("resolveRateForDay: an unknown member reads 0, not a crash", () => {
+  assert.equal(resolveRateForDay(new Map(), "ghost", "2026-01-01"), 0);
+});
+
+test("resolveRateForDay: a day picks the last rate point on or before it, not today's", () => {
+  const rates = new Map([
+    ["m1", [
+      { effectiveDate: "2026-01-01", rate: 20 },
+      { effectiveDate: "2026-06-01", rate: 30 },
+      { effectiveDate: "2026-09-01", rate: 45 },
+    ]],
+  ]);
+  assert.equal(resolveRateForDay(rates, "m1", "2026-03-15"), 20, "before the first raise");
+  assert.equal(resolveRateForDay(rates, "m1", "2026-06-01"), 30, "on the effective date itself");
+  assert.equal(resolveRateForDay(rates, "m1", "2026-07-01"), 30, "after the raise, before the next one");
+  assert.equal(resolveRateForDay(rates, "m1", "2026-09-01"), 45, "on the most recent change");
+  assert.equal(resolveRateForDay(rates, "m1", "2026-12-31"), 45, "stays at the latest rate going forward");
+});
+
+test("resolveRateForDay: a day before the earliest known point uses that earliest point, not 0", () => {
+  const rates = new Map([["m1", [{ effectiveDate: "2026-06-01", rate: 50 }]]]);
+  assert.equal(resolveRateForDay(rates, "m1", "2020-01-01"), 50);
+});
+
+test("a rate change through the report doesn't retroactively rewrite an already-reported day", () => {
+  const rates = new Map([
+    ["m1", [
+      { effectiveDate: "2026-08-01", rate: 20 },
+      { effectiveDate: "2026-09-01", rate: 40 },
+    ]],
+  ]);
+  const augustRow = session({ started_at: "2026-08-15T10:00:00.000Z", ended_at: "2026-08-15T11:00:00.000Z", active_seconds: 3600, idle_seconds: 0 });
+  const { days: augustDays } = buildTimeAndActivityReportPayload([augustRow], memberNameMap, memberTimezones, "2026-08-15", "2026-08-15", rates);
+  assert.equal(augustDays[0].members[0].spentAmount, 20, "August is still paid at the August rate");
+
+  const septemberRow = session({ started_at: "2026-09-15T10:00:00.000Z", ended_at: "2026-09-15T11:00:00.000Z", active_seconds: 3600, idle_seconds: 0 });
+  const { days: septemberDays } = buildTimeAndActivityReportPayload([septemberRow], memberNameMap, memberTimezones, "2026-09-15", "2026-09-15", rates);
+  assert.equal(septemberDays[0].members[0].spentAmount, 40, "September uses the new rate");
 });
 
 test("two manual entries on different projects stay separate entries", () => {
