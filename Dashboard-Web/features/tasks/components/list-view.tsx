@@ -511,7 +511,11 @@ function DroppableListGroup({
                     0,
                     (task.totalAssignees ?? assigneeIds.length ?? (assignee ? 1 : 0)) - 1,
                   )
-                  const pCfg = PRIORITY_CONFIG[task.priority as Priority]
+                  // Fallback for the same reason PriorityDot has one: tasks.priority is
+            // nullable, and PRIORITY_CONFIG has no undefined-safe entry - an
+            // unset priority (any caller that skips it, or a pre-default-fix row)
+            // must not crash this card's render.
+            const pCfg = PRIORITY_CONFIG[task.priority as Priority] ?? PRIORITY_CONFIG.medium
                   const teamName = task.teamId ? teamNamesById[task.teamId] : undefined
                   return (
                     <DraggableListRow

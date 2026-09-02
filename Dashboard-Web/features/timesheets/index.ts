@@ -1,2 +1,3 @@
 export { TimesheetsViewEdit } from "@/features/timesheets/components/view-edit";
-export { TimesheetsApprovalsContent } from "@/features/timesheets/components/approvals";
+export { TimesheetsPage } from "@/features/timesheets/components/timesheets-page";
+export { ManualTimeRequestsPage } from "@/features/timesheets/components/manual-time-requests-page";

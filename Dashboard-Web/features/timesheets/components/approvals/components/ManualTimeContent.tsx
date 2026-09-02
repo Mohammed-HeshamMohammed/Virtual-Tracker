@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
+import { isManagementRole } from "@/features/auth"
 import { getProjects } from "@/features/projects/api/project-api"
 import { createTimeEntry, deleteTimeEntry, getTimeEntries, type TimeEntry } from "@/features/timesheets/api/timesheet-api"
 
@@ -43,7 +44,15 @@ const inputCls =
  * static illustration describing the feature.
  */
 export function ManualTimeContent() {
-  const { memberId } = useAuth()
+  const { memberId, memberRole } = useAuth()
+  // A hint for the copy only, not a security decision - the server
+  // independently re-decides this on every submit (resolveTimeEntryStatus,
+  // schema/routes.js) regardless of what this evaluates to, and its own
+  // check also covers a client entitled to track a specific project, which
+  // isn't knowable from a role name alone. The post-submit notice below
+  // reads the real outcome back from the response either way, so a client
+  // who does qualify simply sees this copy undersell what actually happens.
+  const likelyInstant = isManagementRole(memberRole)
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,7 +114,7 @@ export function ManualTimeContent() {
     }
     setSaving(true)
     try {
-      await createTimeEntry(
+      const created = await createTimeEntry(
         {
           memberId,
           projectId,
@@ -120,7 +129,14 @@ export function ManualTimeContent() {
       )
       setHours("")
       setDescription("")
-      setNotice("Manual time added.")
+      // Whether this landed approved or pending is the server's call, not
+      // this form's (resolveTimeEntryStatus, schema/routes.js) - Manager and
+      // above, and a client entitled to track the project, get an approved
+      // entry immediately; everyone else gets a request awaiting review.
+      // Read back from the real response rather than guessed from the
+      // viewer's role client-side, so this notice can never say something
+      // the server didn't actually do.
+      setNotice(created.status === "approved" ? "Manual time added." : "Request submitted — awaiting approval.")
       loadEntries()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not add manual time.")
@@ -142,10 +158,13 @@ export function ManualTimeContent() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
-        <h2 className="text-2xl font-semibold text-slate-800 dark:text-slate-100">Manual time</h2>
+        <h2 className="text-2xl font-semibold text-slate-800 dark:text-slate-100">
+          {likelyInstant ? "Manual time" : "Request manual time"}
+        </h2>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-          Add time you worked but did not track. Entries are attributed to you, count towards your timesheet, and
-          appear in the Manual time edits report for managers to review.
+          {likelyInstant
+            ? "Add time that wasn't tracked live. Entries are attributed to you, count towards your timesheet, and appear in the Manual time edits report."
+            : "Time you worked but did not track. This is a request - a manager reviews it before it counts towards your timesheet."}
         </p>
       </div>
 
@@ -239,7 +258,7 @@ export function ManualTimeContent() {
           disabled={saving || !memberId}
           className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? "Adding…" : "Add manual time"}
+          {saving ? "Saving…" : likelyInstant ? "Add manual time" : "Submit request"}
         </button>
       </div>
 

@@ -23,7 +23,11 @@ function toTimeEntry(input: any): TimeEntry {
     duration: Number(input.duration ?? 0),
     description: input.description ?? "",
     billable: Boolean(input.billable),
-    status: input.status ?? "draft",
+    // "pending" - not "draft", which is a Timesheet-only status (see
+    // toTimesheet below). time_entries.status is a real DB CHECK
+    // constraint of exactly pending/approved/rejected; the type below had
+    // silently carried the wrong enum since this function was written.
+    status: input.status ?? "pending",
     createdAt: input.createdAt ?? input.created_at ?? "",
     updatedAt: input.updatedAt ?? input.updated_at ?? "",
   }
@@ -58,7 +62,7 @@ export interface TimeEntry {
   duration: number
   description: string
   billable: boolean
-  status: "draft" | "submitted" | "approved" | "rejected"
+  status: "pending" | "approved" | "rejected"
   createdAt: string
   updatedAt: string
 }
@@ -98,6 +102,13 @@ export interface UpdateTimeEntryInput {
   duration?: number
   description?: string
   billable?: boolean
+  /** The approve/reject action - not "pending", which is a decision this
+   *  type doesn't offer a way to undo. The server decides who is actually
+   *  allowed to set this regardless of what's sent (resolveTimeEntryStatus,
+   *  schema/routes.js) - a non-approver's attempt is silently reverted, not
+   *  rejected with an error, so this being in the type is not itself a
+   *  permission grant. */
+  status?: "approved" | "rejected"
 }
 
 // API Functions
@@ -330,4 +341,17 @@ export function approveTimesheet(id: string, approvedBy: string): Promise<Timesh
 
 export function rejectTimesheet(id: string, approvedBy: string): Promise<Timesheet> {
   return patchTimesheet(id, { status: "rejected", approved_at: new Date().toISOString(), approved_by: approvedBy })
+}
+
+// Same pair for a manual time entry - reviewing someone's request, not
+// approving a whole timesheet period. There's no approved_by/approved_at
+// column on time_entries to stamp the way approveTimesheet/rejectTimesheet
+// do; updatedBy (updateTimeEntry's own existing param) is the record of who
+// acted, same as it already is for every other time-entry edit.
+export function approveTimeEntry(id: string, updatedBy?: string): Promise<TimeEntry> {
+  return updateTimeEntry(id, { status: "approved" }, updatedBy)
+}
+
+export function rejectTimeEntry(id: string, updatedBy?: string): Promise<TimeEntry> {
+  return updateTimeEntry(id, { status: "rejected" }, updatedBy)
 }

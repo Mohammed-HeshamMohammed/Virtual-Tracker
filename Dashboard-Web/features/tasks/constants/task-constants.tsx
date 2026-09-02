@@ -116,5 +116,11 @@ export function AvatarBubble({ member, size = "sm" }: { member: Member; size?: "
 }
 
 export function PriorityDot({ priority }: { priority: Priority }) {
-  return <div className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_CONFIG[priority].dot}`} />
+  // Falls back rather than indexing PRIORITY_CONFIG directly: `priority` is
+  // a nullable DB column (tasks.priority has no NOT NULL), so a task from
+  // before the column got a create-time default, or from any caller that
+  // skips it, reaches here as undefined - which crashed every board/list
+  // render for that task with no fallback.
+  const cfg = PRIORITY_CONFIG[priority] ?? PRIORITY_CONFIG.medium
+  return <div className={`w-2 h-2 rounded-full shrink-0 ${cfg.dot}`} />
 }

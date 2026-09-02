@@ -41,9 +41,10 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Timesheets",
     icon: Clock,
     pages: [
-      { label: "Time & Activity", id: "timesheets-time-activity"  },
-      { label: "Task Approvals",  id: "timesheets-view"           },
-      { label: "Approvals",       id: "timesheets-approvals"      },
+      { label: "Time & Activity",      id: "timesheets-time-activity"  },
+      { label: "Task Approvals",       id: "timesheets-view"           },
+      { label: "Timesheets",           id: "timesheets-submissions"    },
+      { label: "Manual Time Requests", id: "timesheets-manual-requests" },
     ],
   },
   {

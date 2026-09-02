@@ -136,8 +136,66 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
   }
 }
 
-function mapReport(raw: RawTimeAndActivityReport): TimeActivityReportData {
-  const days = raw.days.map(toDayRow)
+/** One all-zero row for a calendar day nobody tracked or logged anything on.
+ *  Same shape toDayRow produces for a real day with zero members - a day
+ *  with genuinely no activity has to render identically to one that did,
+ *  just with nothing in it. */
+function zeroDayRow(date: string): TimeActivityDayRow {
+  return {
+    date,
+    dateLabel: formatDateLabel(date),
+    memberCount: 0,
+    projectCount: 0,
+    client: "",
+    team: "",
+    todo: "",
+    regularHours: "00:00:00",
+    breakTime: "00:00:00",
+    totalHours: "00:00:00",
+    activityPct: 0,
+    idlePct: pctString(0, 0),
+    idleHr: "00:00:00",
+    totalSpent: formatMoney(0),
+    trackedHours: 0,
+    manualHours: 0,
+  }
+}
+
+/** 'YYYY-MM-DD' + n days, in UTC so this never drifts a day near a local
+ *  DST boundary - date-only arithmetic has no timezone to begin with. */
+function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** The API only ever sends a day that has a real session or manual entry on
+ *  it (buildTimeAndActivityReportPayload never emits an empty one) - a
+ *  quiet day in the middle of the requested range was simply absent from
+ *  `days`, not present with zeros. The table and chart both render exactly
+ *  what's in this array with no gap-filling of their own (the date-range
+ *  label already had to work around the same sparseness - see this hook's
+ *  own `range`-based label fix), so a mostly-quiet range rendered as a
+ *  handful of far-apart entries instead of one per day, each mislabeled
+ *  with a wrong x-position implied by its array index. Filled here, once,
+ *  so the table, the chart and CSV export all inherit a complete series
+ *  without each having to know the requested range separately.
+ */
+function fillMissingDays(days: TimeActivityDayRow[], range?: { from: string; to: string }): TimeActivityDayRow[] {
+  if (!range) return days
+  const byDate = new Map(days.map((d) => [d.date, d]))
+  const filled: TimeActivityDayRow[] = []
+  for (let date = range.from; date <= range.to; date = addDays(date, 1)) {
+    filled.push(byDate.get(date) ?? zeroDayRow(date))
+    // A malformed range (from > to, or either not a real date) must not
+    // loop forever - bail once it's clearly not converging.
+    if (filled.length > 3660) break
+  }
+  return filled
+}
+
+function mapReport(raw: RawTimeAndActivityReport, range?: { from: string; to: string }): TimeActivityReportData {
+  const days = fillMissingDays(raw.days.map(toDayRow), range)
   const memberRows: Record<string, TimeActivityMemberSubRow[]> = {}
   for (const day of raw.days) {
     memberRows[day.date] = day.members.map(toMemberSubRow)
@@ -168,7 +226,7 @@ export async function fetchTimeAndActivityReport(range: {
   }
   const json = await res.json()
   if (!json?.data) throw new Error("The report response was empty.")
-  return mapReport(json.data as RawTimeAndActivityReport)
+  return mapReport(json.data as RawTimeAndActivityReport, { from: range.from, to: range.to })
 }
 
 export interface SendTimeAndActivityReportInput {
