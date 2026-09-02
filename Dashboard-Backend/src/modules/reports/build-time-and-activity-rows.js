@@ -77,6 +77,35 @@ function round2(value) {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * A member's rate as of a given calendar day - what "spent" should actually
+ * mean, now that pay_rate_history exists. A flat number (the old shape,
+ * still what every pre-existing test and any caller that hasn't been
+ * updated passes) is a rate with no history to speak of - used unchanged
+ * for every day, exactly like before this existed. An array is that
+ * member's real timeline (ascending by effectiveDate, including their
+ * current rate as its last point) - this picks whichever point was
+ * actually in effect on `day`, so a raise or cut today no longer silently
+ * changes what a *past* day's amount reads as. A day before the member's
+ * earliest known point uses that earliest point, the same "only one rate
+ * on file" assumption the flat-number shape already made for everything.
+ * @param {Map<string, number | Array<{ effectiveDate: string, rate: number }>>} memberRates
+ * @param {string} memberId
+ * @param {string} day
+ */
+export function resolveRateForDay(memberRates, memberId, day) {
+  const entry = memberRates.get(memberId);
+  if (entry == null) return 0;
+  if (typeof entry === "number") return entry;
+  if (!Array.isArray(entry) || entry.length === 0) return 0;
+  let rate = entry[0].rate;
+  for (const point of entry) {
+    if (point.effectiveDate <= day) rate = point.rate;
+    else break;
+  }
+  return rate;
+}
+
 export function buildTimeAndActivityReportPayload(
   rawRows,
   memberNameMap,
@@ -204,7 +233,7 @@ export function buildTimeAndActivityReportPayload(
         // Manual seconds are paid the same as tracked ones, so they belong
         // in the cost even though they stay out of the activity ratio.
         spentAmount: round2(
-          ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * (memberRates.get(memberId) ?? 0),
+          ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * resolveRateForDay(memberRates, memberId, date),
         ),
         projectNames: [...entry.projectNames],
       })),
@@ -225,7 +254,7 @@ export function buildTimeAndActivityReportPayload(
       manualSeconds: entry.manualSeconds ?? 0,
       spentAmount: round2(
         ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) *
-          (memberRates.get(entry.memberId) ?? 0),
+          resolveRateForDay(memberRates, entry.memberId, entry.date),
       ),
     }));
 

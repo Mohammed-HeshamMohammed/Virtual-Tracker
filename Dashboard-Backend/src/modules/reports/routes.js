@@ -96,6 +96,63 @@ function parseDateParam(value) {
   return Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) ? null : value;
 }
 
+/** @param {Date | string | null | undefined} value */
+function toDayStr(value) {
+  if (!value) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+/**
+ * Each visible member's real rate timeline - pay_rate_history's points plus
+ * their current pay_rates row as the latest one - for resolveRateForDay to
+ * pick the rate that was actually in effect on a given report day, instead
+ * of (as before) applying whatever the rate happens to be right now to
+ * every day in the report. A member with no history yet (their rate has
+ * never changed since this table existed) gets a single-point timeline from
+ * their current row alone - same "only one rate on file" result
+ * resolveRateForDay already falls back to for a day before the earliest
+ * point, so nothing changes for them.
+ * @param {string[]} memberIds
+ * @returns {Promise<Map<string, Array<{ effectiveDate: string, rate: number }>>>}
+ */
+async function buildHistoricalRateMap(memberIds) {
+  const [historyRows, currentRows] = await Promise.all([
+    pgQuery(
+      `SELECT member_id, rate, effective_date, created_at FROM pay_rate_history
+       WHERE member_id = ANY($1::uuid[]) ORDER BY member_id, effective_date ASC, created_at ASC`,
+      [memberIds],
+    ),
+    pgQuery(`SELECT member_id, rate, effective_date FROM pay_rates WHERE member_id = ANY($1::uuid[])`, [memberIds]),
+  ]);
+  const rateMap = new Map();
+  for (const row of historyRows) {
+    const id = String(row.member_id);
+    const points = rateMap.get(id) ?? [];
+    points.push({
+      effectiveDate: toDayStr(row.effective_date) || "0001-01-01",
+      rate: Math.max(0, Number(row.rate) || 0),
+    });
+    rateMap.set(id, points);
+  }
+  for (const row of currentRows) {
+    const id = String(row.member_id);
+    const points = rateMap.get(id) ?? [];
+    points.push({
+      // No effective_date on file at all (a row predating that column ever
+      // being written) is treated as "since the beginning" - the same
+      // unconditional-everywhere behavior a flat rate number already had.
+      effectiveDate: row.effective_date ? toDayStr(row.effective_date) : "0001-01-01",
+      rate: Math.max(0, Number(row.rate) || 0),
+    });
+    rateMap.set(id, points);
+  }
+  for (const points of rateMap.values()) {
+    points.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : a.effectiveDate > b.effectiveDate ? 1 : 0));
+  }
+  return rateMap;
+}
+
 /**
  * Report-scoped visible ids. getVisibleMemberIds gives Employee-tier roles a
  * full read of their org/team subtree for the People directory, but reports
@@ -230,17 +287,11 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
   // Money columns are compensation data - only populate them for a viewer
   // allowed to see each member's rate, same gate the rest of the app uses.
   // Without a viewer (internal callers) rates stay empty and cost reports 0.
-  const rateMap = new Map();
+  let rateMap = new Map();
   if (viewer && memberIdsInResult.length > 0) {
     const visibleRateMemberIds = memberIdsInResult.filter((id) => canViewCompensation(viewer, id));
     if (visibleRateMemberIds.length > 0) {
-      const rateRows = await pgQuery(
-        "SELECT member_id, rate FROM pay_rates WHERE member_id = ANY($1::uuid[])",
-        [visibleRateMemberIds],
-      );
-      for (const row of rateRows) {
-        rateMap.set(String(row.member_id), Math.max(0, Number(row.rate) || 0));
-      }
+      rateMap = await buildHistoricalRateMap(visibleRateMemberIds);
     }
   }
   return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows);

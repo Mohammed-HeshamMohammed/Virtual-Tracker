@@ -140,7 +140,18 @@ export function buildViewPayload({
   }
 
   for (const session of sessions) {
-    if (!inMemberScope(session.memberId, memberIds)) continue;
+    // The real row this ever gets fed in production (dashboard-base-loader.js's
+    // fetchFreshBase) only ever carries member_id (snake_case) - there is no
+    // memberId key at all. Reading session.memberId here always read
+    // undefined, so inMemberScope(undefined, [...]) was always false and
+    // every session was silently dropped for every scoped view ("me", and
+    // "all" for anyone but an unrestricted org admin) - weeklyActivity's
+    // hours (and this loop's workedByDay/membersByDay/projectsByDay) read
+    // zero regardless of how much was actually tracked. str() falls back to
+    // memberId too, so a caller that already passes the camelCase shape
+    // (e.g. this file's own unit tests) keeps working unchanged.
+    const sessionMemberId = str(session, "member_id", "memberId");
+    if (!inMemberScope(sessionMemberId, memberIds)) continue;
     const startedMs = timestampMs(session.started_at ?? session.startedAt);
     const startedKey = new Date(startedMs).toISOString().slice(0, 10);
     const activeSec = num(session, "active_seconds", "activeSeconds");
@@ -150,7 +161,7 @@ export function buildViewPayload({
     }
     if (startedKey === todayKey) {
       const mset = membersByDay.get(todayKey) ?? new Set();
-      mset.add(session.memberId);
+      mset.add(sessionMemberId);
       membersByDay.set(todayKey, mset);
       // project_id direct for task-less (calling project) sessions; via the
       // task for normal ones, which is all sessions predating that column.
@@ -290,7 +301,8 @@ export function buildViewPayload({
 
   const weeklyActivity = weekDays.map((day) => {
     const daySessions = sessions.filter((s) => {
-      if (!inMemberScope(s.memberId, memberIds)) return false;
+      // Same member_id/memberId mismatch as the loop above - see its comment.
+      if (!inMemberScope(str(s, "member_id", "memberId"), memberIds)) return false;
       const startedMs = timestampMs(s.started_at ?? s.startedAt);
       return startedMs >= day.startMs && startedMs <= day.endMs;
     });
