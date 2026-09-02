@@ -3186,6 +3186,24 @@ select.modal-input {
   cursor: not-allowed;
 }
 
+/* A toggle wearing .icon-btn (the clock row's day/whole-task switch is the
+   only one today) needs its own pressed look - same active-state colors
+   .segmented-btn.active already uses, so "this is the selected option"
+   reads the same way everywhere it appears. Without this the icon never
+   changed at all between its two states, so the button looked like it only
+   had one - clicking it did something, but nothing on screen ever showed
+   which state you were in. */
+.icon-btn.active {
+  background: rgb(var(--c-primary));
+  border-color: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+}
+
+.icon-btn.active:hover:not(:disabled) {
+  background: rgb(var(--c-primary) / 0.88);
+  color: rgb(var(--c-on-primary));
+}
+
 /* Back: labelled, not a bare chevron. */
 .btn-back {
   display: inline-flex;

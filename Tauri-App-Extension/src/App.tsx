@@ -2247,9 +2247,14 @@ function MainApp() {
                   {!taskLessSession && taskTracking ? (
                     <button
                       type="button"
-                      className="icon-btn"
+                      className={`icon-btn${timerViewMode === "task" ? " active" : ""}`}
                       title={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       aria-label={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
+                      // A real toggle needs to look like one - the icon
+                      // itself never changes between the two states, so
+                      // without this the button appeared to have only one
+                      // state no matter which view was actually showing.
+                      aria-pressed={timerViewMode === "task"}
                       style={{ marginLeft: "auto", alignSelf: "center" }}
                       disabled={busy}
                       onClick={() => setTimerViewMode((m) => (m === "task" ? "day" : "task"))}
