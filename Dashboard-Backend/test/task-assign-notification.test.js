@@ -63,6 +63,10 @@ mock.module("../src/modules/tasks/task-workload-validation.js", {
   },
 });
 
+mock.module("../src/modules/tasks/task-budget-validation.js", {
+  namedExports: { assertTaskWithinProjectBudget: async () => null },
+});
+
 mock.module("../src/modules/tasks/task-time-tracking.js", {
   namedExports: { aggregateTaskProgress: async () => null,
     getManagementTaskTrackingRows: async () => null,

@@ -1,4 +1,5 @@
 import { validateAssigneeWorkLimits } from "./task-workload-validation.js";
+import { assertTaskWithinProjectBudget } from "./task-budget-validation.js";
 import { estimateAssignmentSeconds, toIso } from "./task-schedule-math.js";
 import { createNotification } from "../notifications/service.js";
 import { getMemberAncestors, getVisibleMemberIds } from "../member-relationships/service.js";
@@ -376,6 +377,12 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
 
   if (ids.length > 0) {
     await validateAssigneeWorkLimits(db, { ...task, id: taskId }, ids, { taskId });
+    await assertTaskWithinProjectBudget(db, {
+      projectId,
+      taskId,
+      taskDraft: task,
+      assigneeIds: ids,
+    });
   }
 
   const existingRows = await getTaskAssignmentsPg(taskId);
