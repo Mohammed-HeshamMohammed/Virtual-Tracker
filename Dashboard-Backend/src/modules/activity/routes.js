@@ -1516,6 +1516,28 @@ export async function routeActivity(req, res, url, origin) {
 
       if (feedType === "urls") {
         const byUrl = new Map();
+        const byMember = new Map();
+
+        // Mirrors ingestAppRow's byMember tally in the "apps" branch above -
+        // the URLs page's "Members with activity" section used to just list
+        // names from scopeMeta with no numbers behind them, unlike Apps'
+        // real per-member breakdown. member_id was already on every row
+        // fetched below; it just wasn't being rolled up.
+        const touchMember = (memberIdKey, domain, dur, category) => {
+          if (!memberIdKey) return;
+          const meta = memberMeta.get(memberIdKey) || { name: "Unknown", initials: "??" };
+          const memRow = byMember.get(memberIdKey) || {
+            member: meta.name,
+            avatar: meta.initials,
+            totalSeconds: 0,
+            domains: new Map(),
+            categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
+          };
+          memRow.totalSeconds += dur;
+          memRow.categorySeconds[category] = (memRow.categorySeconds[category] ?? 0) + dur;
+          if (domain) memRow.domains.set(domain, (memRow.domains.get(domain) || 0) + dur);
+          byMember.set(memberIdKey, memRow);
+        };
 
         const ingestUrlRow = (d, timeField) => {
           const urlStr = typeof d.url === "string" ? d.url.trim() : "";
@@ -1550,6 +1572,7 @@ export async function routeActivity(req, res, url, origin) {
           row.visits += 1;
           if (visitedAt > (row.lastVisit || "")) row.lastVisit = visitedAt;
           byUrl.set(key, row);
+          touchMember(String(d.member_id ?? ""), row.domain, dur, categoryLookup("domain", row.domain));
         };
 
         const ingestAppUrlRow = (d) => {
@@ -1574,6 +1597,7 @@ export async function routeActivity(req, res, url, origin) {
             row.visits += 1;
             if (startedIso > (row.lastVisit || "")) row.lastVisit = startedIso;
             byUrl.set(key, row);
+            touchMember(String(d.member_id ?? ""), row.domain, dur, categoryLookup("domain", row.domain));
             return;
           }
           const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
@@ -1602,6 +1626,7 @@ export async function routeActivity(req, res, url, origin) {
           row.visits += 1;
           if (startedIso > (row.lastVisit || "")) row.lastVisit = startedIso;
           byUrl.set(key, row);
+          touchMember(String(d.member_id ?? ""), row.domain, dur, categoryLookup("domain", row.domain));
         };
 
         const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
@@ -1636,7 +1661,34 @@ export async function routeActivity(req, res, url, origin) {
             sourceKind: r.sourceKind === "window" ? "window" : "url",
           }));
 
-        sendJson(res, origin, 200, { success: true, data: urls, ...scopeMeta });
+        // Mirrors apps' memberRows shape (topApp -> topDomain here) so the
+        // URLs page's "Members with activity" section can show real numbers
+        // instead of just names pulled from scopeMeta.
+        const members = [...byMember.entries()].map(([id, r]) => {
+          let topDomain = "—";
+          let topDur = 0;
+          for (const [domain, dur] of r.domains.entries()) {
+            if (dur > topDur) {
+              topDur = dur;
+              topDomain = domain;
+            }
+          }
+          const byCategory = r.categorySeconds;
+          const neutralSeconds = byCategory.neutral + byCategory.unclassified;
+          const totalSeconds = r.totalSeconds || 1;
+          return {
+            memberId: id,
+            member: r.member,
+            avatar: r.avatar,
+            productiveTime: formatDur(byCategory.productive),
+            productivePercent: Math.round((byCategory.productive / totalSeconds) * 100),
+            neutralTime: formatDur(neutralSeconds),
+            unproductiveTime: formatDur(byCategory.distracting),
+            topDomain,
+          };
+        });
+
+        sendJson(res, origin, 200, { success: true, data: { urls, members }, ...scopeMeta });
         return true;
       }
 

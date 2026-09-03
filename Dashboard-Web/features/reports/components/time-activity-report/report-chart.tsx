@@ -8,6 +8,7 @@ import {
   CHART_SERIES_STYLES,
   METRIC_OPTIONS,
 } from "@/features/reports/components/shared/constants"
+import { useFillChartWidth } from "@/features/reports/hooks/use-fill-chart-width"
 import { cn } from "@/shared/utils/utils"
 import {
   buildYTicks,
@@ -42,7 +43,6 @@ export function ReportTimeActivityChart({
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const wrapRef = useRef<HTMLDivElement>(null)
 
   const activeMetrics = useMemo((): TimeActivityMetric[] => {
     const found = CHART_METRIC_ORDER.filter((m) => enabledMetrics.has(m))
@@ -59,17 +59,21 @@ export function ReportTimeActivityChart({
   const padT     = 16
   const padB     = 52   // room for angled X-axis labels
 
-  // Each day gets a fixed slot width so bars stay wide even with few points.
-  // For many points the SVG scrolls horizontally.
-  const MIN_SLOT = 52
+  // Each day's slot grows to fill the card's real width (few points spread
+  // out, using the space that used to sit empty), shrinking as more days
+  // are added, down to a 44px floor. Past that floor the chart's own width
+  // exceeds the container's and the wrapper below scrolls horizontally
+  // instead of squeezing bars unreadably thin.
+  const MIN_SLOT = 44
   const n = Math.max(days.length, 1)
-
-  // dynamic viewbox width: at least fill the container, at most scroll
-  const VB_MIN_W = 700
-  const slotW    = Math.max(MIN_SLOT, (VB_MIN_W - padL - padR) / n)
-  const vbW      = padL + n * slotW + padR
-  const plotW    = n * slotW
-  const plotH    = CHART_H - padT - padB
+  const { containerRef: wrapRef, slotW, vbW } = useFillChartWidth({
+    pointCount: n,
+    minSlot: MIN_SLOT,
+    padL,
+    padR,
+  })
+  const plotW = n * slotW
+  const plotH = CHART_H - padT - padB
 
   // Bar width: ~80 % of slot, flat tops (radius = 0)
   const BAR_PAD  = slotW * 0.10

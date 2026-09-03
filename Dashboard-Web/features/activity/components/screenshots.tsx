@@ -411,6 +411,7 @@ export function ActivityScreenshots() {
     searchQuery,
     viewMode,
     sortOrder,
+    resetPageFilters,
   } = useActivityShell()
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null)
   const { data: liveRows, loading, error, disabledReason, reload } = useActivityFeed<Screenshot[]>("screenshots", {
@@ -572,7 +573,11 @@ export function ActivityScreenshots() {
       ) : null}
 
       {showDayEmpty ? (
-        <ActivityDayEmptyState icon={Monitor} title="No screenshots for this day" />
+        <ActivityDayEmptyState
+          icon={Monitor}
+          title="No screenshots for this day"
+          onShowAllDays={day.dayMode !== "all" ? day.setAllDays : undefined}
+        />
       ) : null}
 
       {showAllDaysEmpty ? (
@@ -580,7 +585,7 @@ export function ActivityScreenshots() {
       ) : null}
 
       {!loading && showSearchEmpty ? (
-        <ActivitySearchEmptyState entityLabel="screenshots" />
+        <ActivitySearchEmptyState entityLabel="screenshots" onClear={resetPageFilters} />
       ) : null}
 
       {!loading && displayScreenshots.length > 0 && viewMode === "grid" ? (

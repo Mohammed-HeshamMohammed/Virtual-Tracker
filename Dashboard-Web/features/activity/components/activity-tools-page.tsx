@@ -1,8 +1,64 @@
 "use client"
 
+import { CheckCircle2, XCircle } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { AgentDownloadChoices } from "@/shared/ui/agent-download-choices"
+import { useAgentStatus } from "@/features/activity/components/agent-status-context"
+
+/** "3 minutes ago" / "2 hours ago" / "on Sep 1" - coarse enough that a poll
+ *  jitter doesn't make it visibly tick, precise enough to say "is this
+ *  stale". */
+function agentLinkedAgo(linkedAt: string | null): string | null {
+  if (!linkedAt) return null
+  const d = new Date(linkedAt)
+  if (!Number.isFinite(d.getTime())) return null
+  const mins = Math.round((Date.now() - d.getTime()) / 60_000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`
+  const hours = Math.round(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`
+  return `on ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+}
+
+function AgentStatusCard({ isDark }: { isDark: boolean }) {
+  const { isLocalAgentRunning, isAgentLinked, linkedAt } = useAgentStatus()
+  const connected = isLocalAgentRunning && isAgentLinked
+  const linkedAgo = agentLinkedAgo(linkedAt)
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-2xl border p-4 shadow-sm backdrop-blur-xl",
+        connected
+          ? isDark
+            ? "border-emerald-900/60 bg-emerald-950/30"
+            : "border-emerald-200 bg-emerald-50"
+          : isDark
+            ? "border-amber-900/60 bg-amber-950/30"
+            : "border-amber-200 bg-amber-50",
+      )}
+    >
+      {connected ? (
+        <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+      ) : (
+        <XCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+      )}
+      <div className="min-w-0">
+        <p className={cn("text-sm font-semibold", isDark ? "text-slate-100" : "text-slate-900")}>
+          {connected ? "Agent connected" : "Agent not detected on this device"}
+        </p>
+        <p className={cn("mt-0.5 text-xs", isDark ? "text-slate-400" : "text-slate-600")}>
+          {connected
+            ? linkedAgo
+              ? `Last linked ${linkedAgo}`
+              : "Ready to track time"
+            : "Install it below, then sign in - the topbar timer stays disabled until it's running."}
+        </p>
+      </div>
+    </div>
+  )
+}
 
 export function ActivityToolsPage() {
   const { isDark } = useTheme()
@@ -12,6 +68,8 @@ export function ActivityToolsPage() {
       <h1 className={cn("text-xl font-bold tracking-tight sm:text-2xl", isDark ? "text-slate-100" : "text-slate-900")}>
         Tools
       </h1>
+
+      <AgentStatusCard isDark={isDark} />
 
       <div
         className={cn(
