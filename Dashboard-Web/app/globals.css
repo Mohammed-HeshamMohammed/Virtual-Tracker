@@ -136,6 +136,18 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #cbd5e1 #f1f5f9; }
 
+/* Horizontal variant - a chart/table that only ever scrolls sideways past
+   its own too-many-columns floor, not the OS's thick default bar sitting
+   under the card. */
+.custom-scrollbar-x::-webkit-scrollbar { height: 6px; }
+.custom-scrollbar-x::-webkit-scrollbar-track { background: transparent; }
+.custom-scrollbar-x::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+.custom-scrollbar-x::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+.custom-scrollbar-x { scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb { background: #475569; }
+.dark .custom-scrollbar-x::-webkit-scrollbar-thumb:hover { background: #64748b; }
+.dark .custom-scrollbar-x { scrollbar-color: #475569 transparent; }
+
 
 /* Table row height distribution fix: make cells inherit height from row */
 tr[style*="height"] > td {

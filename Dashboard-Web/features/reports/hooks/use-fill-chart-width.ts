@@ -32,7 +32,14 @@ export function useFillChartWidth({
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
-    return () => observer.disconnect()
+    // Belt-and-suspenders alongside ResizeObserver, matching this codebase's
+    // own useDistributedRowHeight - a window-level resize (sidebar toggle,
+    // browser zoom) that doesn't itself resize this element's box.
+    window.addEventListener("resize", measure)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener("resize", measure)
+    }
     // eslint-disable-next-line react-doctor/exhaustive-deps
   }, [])
 
