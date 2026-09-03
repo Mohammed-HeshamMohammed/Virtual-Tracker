@@ -130,7 +130,7 @@ export function ActivityControlBar({
           />
         </div>
 
-        <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:ml-auto sm:w-auto">
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-start gap-1.5 sm:ml-auto sm:w-auto sm:flex-nowrap sm:justify-end">
           {canFilterByProject && onToggleProjectScope ? (
             <ActivityToolbarTextButton
               onClick={onToggleProjectScope}
