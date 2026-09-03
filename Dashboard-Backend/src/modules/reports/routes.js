@@ -1129,7 +1129,14 @@ export async function routeReports(req, res, url, origin) {
         projects.map(async (project) => {
           const budget = budgetByProject.get(project.id);
           const cost = budget ? Number(budget.cost) || 0 : 0;
-          const spentSeconds = await getProjectTrackedSecondsPg(project.id, {});
+          // Bounded to the budget's own reset period (start_date/end_date),
+          // same as spentAmount just below - was unbounded (all-time) here,
+          // so an Hours-based project's "Spent" column disagreed with what
+          // its own Anchor period said the current period actually covers.
+          const spentSeconds = await getProjectTrackedSecondsPg(project.id, {
+            fromDate: budget ? toDayStrOrNull(budget.start_date) || undefined : undefined,
+            toDate: budget ? toDayStrOrNull(budget.end_date) || undefined : undefined,
+          });
           const spentAmount = budget && cost > 0
             ? await computeProjectSpentCostPg(getDb(), project.id, {
                 basedOn: budget.based_on,

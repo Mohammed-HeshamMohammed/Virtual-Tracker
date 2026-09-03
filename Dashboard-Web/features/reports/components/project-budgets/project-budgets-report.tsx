@@ -4,6 +4,7 @@ import { ChevronDown, LayoutList } from "lucide-react"
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { PROJECT_BUDGETS_GROUP_BY_OPTIONS } from "@/features/reports/components/shared/constants"
 import { formatDurationHms } from "@/features/reports/utils/format-duration-hms"
+import { formatMoney } from "@/features/reports/utils/money"
 import type { ProjectBudgetRow, ProjectBudgetSection } from "@/features/reports/models/project-budgets"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
@@ -18,6 +19,33 @@ import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+
+// A project's budget is either a time cap or a dollar cap (project_budgets.type)
+// - never both, and never convertible into the other without a rate. These four
+// read straight off whichever unit the row's own budgetType actually is, so a
+// cost-based project shows real money instead of a misleading 0:00 duration.
+function budgetSpentDisplay(row: ProjectBudgetRow): string {
+  return row.budgetType === "cost" ? formatMoney(row.spentAmount) : formatDurationHms(row.spentSeconds)
+}
+function budgetCapDisplay(row: ProjectBudgetRow): string {
+  if (row.budgetType === "cost") return formatMoney(row.budgetAmount)
+  if (row.budgetType === "hours") return formatDurationHms(row.budgetSeconds)
+  return "No budget"
+}
+function budgetRemainingDisplay(row: ProjectBudgetRow): string {
+  if (row.budgetType === "cost") return formatMoney(Math.max(0, row.budgetAmount - row.spentAmount))
+  if (row.budgetType === "hours") return formatDurationHms(Math.max(0, row.budgetSeconds - row.spentSeconds))
+  return "—"
+}
+export function budgetPercentUsed(row: ProjectBudgetRow): number {
+  if (row.budgetType === "cost") {
+    return row.budgetAmount > 0 ? Math.min(100, Math.round((row.spentAmount / row.budgetAmount) * 100)) : 0
+  }
+  if (row.budgetType === "hours") {
+    return row.budgetSeconds > 0 ? Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)) : 0
+  }
+  return 0
+}
 
 /**
  * ProjectBudgetRow is already one row per project with no date, member, or
@@ -52,18 +80,16 @@ function groupProjectBudgetRows(
 }
 
 function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow }[], dateLabel: string): void {
-  const header = ["Section", "Project", "Spent (H:MM:SS)", "Budget (H:MM:SS)", "Remaining (H:MM:SS)", "% used"]
+  const header = ["Section", "Project", "Budget type", "Spent", "Budget", "Remaining", "% used"]
   const lines = rows.map(({ section, row }) => {
-    const remaining = Math.max(0, row.budgetSeconds - row.spentSeconds)
-    const pct =
-      row.budgetSeconds > 0 ? Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)) : 0
     return [
       section,
       row.projectName,
-      formatDurationHms(row.spentSeconds),
-      formatDurationHms(row.budgetSeconds),
-      formatDurationHms(remaining),
-      String(pct),
+      row.budgetType === "cost" ? "Cost" : row.budgetType === "hours" ? "Hours" : "None",
+      budgetSpentDisplay(row),
+      budgetCapDisplay(row),
+      budgetRemainingDisplay(row),
+      String(budgetPercentUsed(row)),
     ]
       .map((c) => `"${String(c).replace(/"/g, '""')}"`)
       .join(",")
@@ -137,7 +163,10 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
 
   useEffect(() => {
     const runPdfExport = () => {
-      const withBudget = flatRows.filter(({ row }) => row.budgetSeconds > 0)
+      // Was row.budgetSeconds > 0, which silently dropped every cost-based
+      // project from this chart (their budgetSeconds is always 0) - both
+      // unit types belong here, each read through its own real percentage.
+      const withBudget = flatRows.filter(({ row }) => row.budgetType !== null)
       downloadReportPdf({
         title: "Project Budgets Report",
         subtitle: "How much of each project's budget has been spent.",
@@ -151,11 +180,11 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
                   title: "Budget used",
                   rows: withBudget
                     .slice()
-                    .sort((a, b) => b.row.spentSeconds / b.row.budgetSeconds - a.row.spentSeconds / a.row.budgetSeconds)
+                    .sort((a, b) => budgetPercentUsed(b.row) - budgetPercentUsed(a.row))
                     .map(({ row }) => ({
                       label: row.projectName,
-                      pct: Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)),
-                      sublabel: `${formatDurationHms(row.spentSeconds)} of ${formatDurationHms(row.budgetSeconds)}`,
+                      pct: budgetPercentUsed(row),
+                      sublabel: `${budgetSpentDisplay(row)} of ${budgetCapDisplay(row)}`,
                     })),
                 },
               ]
@@ -169,18 +198,14 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
             { header: "Remaining", key: "remaining", align: "right" },
             { header: "% used", key: "pct", align: "right" },
           ],
-          rows: flatRows.map(({ section, row }) => {
-            const remaining = Math.max(0, row.budgetSeconds - row.spentSeconds)
-            const pct = row.budgetSeconds > 0 ? Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100)) : 0
-            return {
-              section,
-              project: row.projectName,
-              spent: formatDurationHms(row.spentSeconds),
-              budget: row.budgetSeconds > 0 ? formatDurationHms(row.budgetSeconds) : "No budget",
-              remaining: row.budgetSeconds > 0 ? formatDurationHms(remaining) : "—",
-              pct: row.budgetSeconds > 0 ? `${pct}%` : "—",
-            }
-          }),
+          rows: flatRows.map(({ section, row }) => ({
+            section,
+            project: row.projectName,
+            spent: budgetSpentDisplay(row),
+            budget: budgetCapDisplay(row),
+            remaining: budgetRemainingDisplay(row),
+            pct: row.budgetType !== null ? `${budgetPercentUsed(row)}%` : "—",
+          })),
           emptyMessage: "No projects found.",
         },
         filename: "project-budgets",
@@ -248,11 +273,7 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
                 </td>
               </tr>
               {!collapsedGroups.has(g.key) && g.rows.map((row) => {
-                const remaining = Math.max(0, row.budgetSeconds - row.spentSeconds)
-                const percentUsed =
-                  row.budgetSeconds > 0
-                    ? Math.min(100, Math.round((row.spentSeconds / row.budgetSeconds) * 100))
-                    : 0
+                const percentUsed = budgetPercentUsed(row)
                 return (
                   <tr
                     key={row.projectName}
@@ -277,26 +298,30 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
                       </div>
                     </td>
                     <td className={cn("px-4 py-3.5 tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                      {formatDurationHms(row.spentSeconds)}
+                      {budgetSpentDisplay(row)}
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="space-y-2">
                         <div className={cn("tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                          {formatDurationHms(row.budgetSeconds)}
+                          {budgetCapDisplay(row)}
                         </div>
-                        <div className={cn("h-1.5 w-full overflow-hidden rounded-full", isDark ? "bg-white/10" : "bg-slate-200")}>
-                          <div
-                            className="h-full rounded-full bg-blue-500 transition-[width]"
-                            style={{ width: `${percentUsed}%` }}
-                          />
-                        </div>
-                        <div className={cn("text-xs tabular-nums", isDark ? "text-white/45" : "text-slate-500")}>
-                          {percentUsed}%
-                        </div>
+                        {row.budgetType !== null ? (
+                          <>
+                            <div className={cn("h-1.5 w-full overflow-hidden rounded-full", isDark ? "bg-white/10" : "bg-slate-200")}>
+                              <div
+                                className="h-full rounded-full bg-blue-500 transition-[width]"
+                                style={{ width: `${percentUsed}%` }}
+                              />
+                            </div>
+                            <div className={cn("text-xs tabular-nums", isDark ? "text-white/45" : "text-slate-500")}>
+                              {percentUsed}%
+                            </div>
+                          </>
+                        ) : null}
                       </div>
                     </td>
                     <td className={cn("px-4 py-3.5 tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                      {formatDurationHms(remaining)}
+                      {budgetRemainingDisplay(row)}
                     </td>
                   </tr>
                 )
