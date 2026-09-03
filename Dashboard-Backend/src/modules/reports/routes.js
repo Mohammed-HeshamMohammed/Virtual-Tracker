@@ -117,7 +117,7 @@ function toDayStr(value) {
  * @param {string[]} memberIds
  * @returns {Promise<Map<string, Array<{ effectiveDate: string, rate: number, currency: string }>>>}
  */
-async function buildHistoricalRateMap(memberIds) {
+export async function buildHistoricalRateMap(memberIds) {
   const [historyRows, currentRows] = await Promise.all([
     pgQuery(
       `SELECT member_id, rate, currency, effective_date, created_at FROM pay_rate_history

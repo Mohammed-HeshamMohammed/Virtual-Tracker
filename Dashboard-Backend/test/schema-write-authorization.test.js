@@ -46,7 +46,6 @@ mock.module("../src/modules/schema/services/postgres-crud.service.js", {
     deletePostgresRow: async (key, id) => {
       stub.writes.push(`delete:${key}:${id}`);
     },
-    computeTimesheetHours: async () => null,
     fetchTimeEntriesSinceDate: async () => null,
     sumBillableHoursForProjectInPeriod: async () => null,
   },
