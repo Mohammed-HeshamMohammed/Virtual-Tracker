@@ -506,7 +506,7 @@ export function AmountsOwedReport() {
                       <tr key={`${group.date}-${m.name}`} className="border-b border-slate-100 bg-white transition-colors hover:bg-slate-50/80 dark:border-white/10 dark:bg-[#151b2d] dark:hover:bg-white/5">
                         <td className="px-5 py-3">
                           <div className="flex items-center gap-3">
-                            <ReportMemberAvatar initials={m.initials} />
+                            <ReportMemberAvatar initials={m.initials} imageUrl={m.avatarUrl} />
                             <span className="text-sm text-slate-800 dark:text-[#dce1fb]">{m.name}</span>
                           </div>
                         </td>

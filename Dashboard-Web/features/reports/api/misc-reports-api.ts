@@ -53,6 +53,7 @@ async function getJson<T>(path: string): Promise<T> {
 interface RawAmountMember {
   memberId: string
   name: string
+  avatarUrl?: string | null
   activeSeconds: number
   rate: number
   rateType: string
@@ -71,6 +72,7 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
     members: day.members.map((m) => ({
       name: m.name,
       initials: initialsFor(m.name),
+      avatarUrl: m.avatarUrl,
       rateLabel: m.rate > 0 ? `${m.currency} ${m.rate.toFixed(2)}/hr` : "No rate set",
       hours: formatHms(m.activeSeconds),
       amount: formatMoney(m.amount, m.currency),
@@ -401,6 +403,7 @@ export interface ManualTimeEditRow {
   day: string
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   projectName: string
   taskTitle: string
   hours: number
@@ -422,6 +425,7 @@ export async function fetchManualTimeEditsReport(range: ReportQuery): Promise<Ma
 export interface WorkBreakRow {
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   day: string
   startedAt: string | null
   endedAt: string | null
@@ -445,6 +449,7 @@ export interface ExpenseReportRow {
   day: string
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   projectName: string
   clientName: string
   category: string
@@ -464,6 +469,7 @@ export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseRe
 export interface TimeOffBalanceRow {
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   policyId: string
   policyName: string
   entitlementDays: number
@@ -485,6 +491,7 @@ export interface TimeOffTransactionRow {
   id: string
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   policyId: string
   policyName: string
   requestId: string | null
@@ -567,6 +574,7 @@ export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<P
 export interface ShiftAttendanceRow {
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   day: string
   scheduled: boolean
   activeSeconds: number
