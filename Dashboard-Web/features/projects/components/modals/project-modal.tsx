@@ -46,6 +46,7 @@ import { ProjectNamesPreviewButton } from "@/features/projects/components/projec
 import { ProjectModalSkeleton } from "@/features/projects/components/skeletons/project-modal-skeleton"
 import { getProjectBudgetFieldErrors, validateProjectBudgetFields, validateProjectNames, type ProjectBudgetFieldErrors } from "@/shared/validation/project-form"
 import { filterProjectFormMemberIds } from "@/features/projects/utils/project-form-member-filter"
+import { decimalHoursToParts, partsToDecimalHours } from "@/shared/utils/hours-minutes"
 import { syncProjectMembersFromTeams } from "@/features/projects/utils/sync-members-from-teams"
 import {
   aggregateClientBudgetsForProject,
@@ -194,23 +195,6 @@ function createDefaultAddForm(): AddProjectFormState {
 
 function toSelectOptions(items: string[], placeholder = "Select") {
   return [{ value: "", label: placeholder }, ...items.map((item) => ({ value: item, label: item }))]
-}
-
-function decimalHoursToParts(value: string): { hours: string; minutes: string } {
-  const trimmed = value.trim()
-  if (!trimmed) return { hours: "", minutes: "" }
-  const total = Number(trimmed)
-  if (!Number.isFinite(total) || total < 0) return { hours: "", minutes: "" }
-  const totalMinutes = Math.round(total * 60)
-  return { hours: String(Math.floor(totalMinutes / 60)), minutes: String(totalMinutes % 60) }
-}
-
-function partsToDecimalHours(hoursRaw: string, minutesRaw: string): string {
-  const hours = Math.max(0, Number(hoursRaw) || 0)
-  const minutes = Math.max(0, Math.min(59, Number(minutesRaw) || 0))
-  const total = hours + minutes / 60
-  if (total <= 0) return ""
-  return String(Math.round(total * 100) / 100)
 }
 
 function ProjectModalSelect({
