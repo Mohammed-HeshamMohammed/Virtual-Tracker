@@ -7,6 +7,7 @@ import { DatePickerField } from "@/shared/ui/forms/date-picker-field"
 import { Toggle } from "@/shared/ui/forms/toggle"
 import { cn } from "@/shared/utils/utils"
 import { parseNonNegativeNumber, validateRequiredText } from "@/shared/validation"
+import { decimalHoursToParts, partsToDecimalHours } from "@/shared/utils/hours-minutes"
 import { buildScopedAssigneeOptions } from "@/features/tasks/utils/team-assignee-options"
 import { fetchTaskParticipation } from "@/features/tasks/api/task-assignments-api"
 import {
@@ -19,6 +20,54 @@ import {
   BOARD_COLUMNS,
 } from "@/features/projects/constants"
 import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
+
+/** Decimal-hours field split into separate hour/minute inputs, same pattern
+ *  the project modal's Hours-based budget field uses (see
+ *  shared/utils/hours-minutes.ts) - lets someone type "1h 30m" as two plain
+ *  numbers instead of doing the /60 math themselves. */
+function HoursMinutesInput({
+  value,
+  onChange,
+  isDark,
+}: {
+  value: string
+  onChange: (value: string) => void
+  isDark: boolean
+}) {
+  const { hours, minutes } = decimalHoursToParts(value)
+  const inputCls = cn(
+    "w-full rounded-lg border px-3 py-2 pr-7 text-sm focus:border-blue-500 focus:outline-none",
+    isDark ? "border-[#2e3447] bg-[#191f31]" : "border-slate-200 bg-white",
+  )
+  const suffixCls = "absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400"
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex-1">
+        <input
+          type="number"
+          min={0}
+          value={hours}
+          onChange={(e) => onChange(partsToDecimalHours(e.target.value, minutes))}
+          placeholder="0"
+          className={inputCls}
+        />
+        <span className={suffixCls}>h</span>
+      </div>
+      <div className="relative flex-1">
+        <input
+          type="number"
+          min={0}
+          max={59}
+          value={minutes}
+          onChange={(e) => onChange(partsToDecimalHours(hours, e.target.value))}
+          placeholder="0"
+          className={inputCls}
+        />
+        <span className={suffixCls}>m</span>
+      </div>
+    </div>
+  )
+}
 
 interface TaskWizardModalProps {
   open: boolean
@@ -404,34 +453,20 @@ export function TaskWizardModal({
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
               DURATION HOURLY / DAY
             </label>
-            <input
-              type="number"
-              min={0}
-              step={0.25}
+            <HoursMinutesInput
               value={newTaskDurationHoursPerDay}
-              onChange={(e) => setNewTaskDurationHoursPerDay(e.target.value)}
-              placeholder="e.g. 8"
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none",
-                isDark ? "border-[#2e3447] bg-[#191f31]" : "border-slate-200 bg-white",
-              )}
+              onChange={setNewTaskDurationHoursPerDay}
+              isDark={isDark}
             />
           </div>
           <div className="space-y-1.5">
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
               OVERTIME HOURLY PER DAY
             </label>
-            <input
-              type="number"
-              min={0}
-              step={0.25}
+            <HoursMinutesInput
               value={newTaskOvertimeHoursPerDay}
-              onChange={(e) => setNewTaskOvertimeHoursPerDay(e.target.value)}
-              placeholder="e.g. 2"
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-sm focus:border-blue-500 focus:outline-none",
-                isDark ? "border-[#2e3447] bg-[#191f31]" : "border-slate-200 bg-white",
-              )}
+              onChange={setNewTaskOvertimeHoursPerDay}
+              isDark={isDark}
             />
           </div>
           <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
