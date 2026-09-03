@@ -55,8 +55,18 @@ export async function processDueReportSchedules(db) {
       processed += 1;
 
       const didSend = await runReportSchedule(db, schedule, timeZone);
-      if (didSend) sent += 1;
-      await markReportScheduleSentPg(schedule.id);
+      // Only stamp last_sent_at on a real delivery - marking it unconditionally
+      // meant a Notify outage or every recipient bouncing (sendEmailViaNotify
+      // fails soft, not a thrown error) still reset the clock, so the schedule
+      // looked like it had run and silently skipped its next real chance to
+      // send for a full frequency period. Leaving last_sent_at untouched lets
+      // the next hourly check retry instead of going quiet.
+      if (didSend) {
+        sent += 1;
+        await markReportScheduleSentPg(schedule.id);
+      } else {
+        logSafeWarn(`[report-schedule] delivery failed for schedule ${schedule.id}, will retry next check`);
+      }
     } catch (err) {
       logSafeWarn(`[report-schedule] failed for schedule ${schedule.id}:`, err);
     }
