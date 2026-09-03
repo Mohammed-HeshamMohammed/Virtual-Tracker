@@ -41,7 +41,14 @@ import { ReportTimeActivityChart } from "@/features/reports/components/time-acti
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import {
+  STANDARD_REPORT_ORG_LABEL,
+  STANDARD_REPORT_TIMEZONE_LABEL,
+  TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
+  TIME_ACTIVITY_TABLE_COL_MIN_WIDTH,
+  TIME_ACTIVITY_TABLE_FIXED_WIDTH,
+} from "@/features/reports/components/shared/constants"
+import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 
 /** 'YYYY-MM-DD' -> local midnight Date. Bare "YYYY-MM-DD" parses as UTC
@@ -104,6 +111,20 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     saveView,
     justSaved,
   } = useTimeAndActivityReport({ days, memberRows, entries, range })
+
+  // Same width-aware auto-hide the Members/Projects tables already use -
+  // visibleMetricColumns is already narrowed by the column picker's manual
+  // toggles; this narrows it further by whatever the card's real measured
+  // width can actually fit, instead of the table spilling into a wide
+  // horizontal scrollbar with columns the viewport had room to show.
+  const { containerRef: tableWidthRef, visibleColumns: fittedMetricColumns } = useReportColumnAutoHide(
+    visibleMetricColumns,
+    {
+      minWidths: TIME_ACTIVITY_TABLE_COL_MIN_WIDTH,
+      hidePriority: TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
+      fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH,
+    },
+  )
 
   function downloadPdf() {
     const byMemberHours = new Map<string, number>()
@@ -345,7 +366,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
 
         <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} />
 
-        <div className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+        <div ref={tableWidthRef} className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
           <AnimatePresence>
             {showColumnPicker && (
               <motion.div
@@ -395,7 +416,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                     onSort={handleSortClick}
                     className="whitespace-nowrap px-5"
                   />
-                  {visibleMetricColumns.map((col) => (
+                  {fittedMetricColumns.map((col) => (
                     <ReportSortableTh
                       key={col.key}
                       colKey={col.key}
@@ -435,7 +456,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                             </span>
                           </div>
                         </td>
-                        {visibleMetricColumns.map((col) => {
+                        {fittedMetricColumns.map((col) => {
                           const on = enabledPeriodCols.has(col.key)
                           return (
                             <td key={col.key} className={cn("px-4 py-3.5", !on && "text-slate-300 dark:text-slate-700")}>
@@ -461,7 +482,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                                   <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
                                 </div>
                               </td>
-                              {visibleMetricColumns.map((col) => {
+                              {fittedMetricColumns.map((col) => {
                                 const on = enabledMemberCols.has(col.key)
                                 return (
                                   <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
