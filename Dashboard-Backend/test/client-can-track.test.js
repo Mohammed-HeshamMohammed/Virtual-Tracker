@@ -5,8 +5,8 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
-/** @type {{ trackable: Set<string> }} */
-const stub = { trackable: new Set() };
+/** @type {{ trackable: Set<string>, memberships: string[] }} */
+const stub = { trackable: new Set(), memberships: [] };
 
 mock.module("../src/lib/postgres/projects-postgres.service.js", {
   namedExports: {
@@ -27,19 +27,23 @@ mock.module("../src/lib/postgres/client.js", {
     probePostgresReadiness: async () => true,
     __closePostgresPoolForTests: async () => {},
     query: async (sql) => {
-      // isProjectMemberForTimer's plain project_members lookup for non-client
-      // roles - no rows means "not a member" for every case below that
-      // reaches it (all client-role cases short-circuit before this).
+      // isProjectMemberForTimer/listTrackableProjectIdsPg's plain
+      // project_members lookup for non-client roles - stub.memberships
+      // stands in for whatever rows that query would return (all
+      // client-role cases short-circuit before reaching this).
       void sql;
-      return [];
+      return stub.memberships.map((project_id) => ({ project_id }));
     },
   },
 });
 
-const { clientMayTrackProject, isProjectMemberForTimer } = await import("../src/http/project-access.js");
+const { clientMayTrackProject, isProjectMemberForTimer, listTrackableProjectIdsPg } = await import(
+  "../src/http/project-access.js"
+);
 
 function reset() {
   stub.trackable = new Set();
+  stub.memberships = [];
 }
 
 test("clientMayTrackProject is false for a non-client role even if the project happens to be in the trackable set", async () => {
@@ -84,4 +88,37 @@ test("isProjectMemberForTimer for a non-client, non-admin role falls through to 
   reset();
   const employee = { memberId: "m1", roleName: "Employee" };
   assert.equal(await isProjectMemberForTimer(null, employee, "p1"), false);
+});
+
+// listTrackableProjectIdsPg - same access rule as isProjectMemberForTimer,
+// as a list. Backs the Project dropdown in "add manual time for someone".
+
+test("listTrackableProjectIdsPg returns null (every project) for an org admin tier role", async () => {
+  reset();
+  assert.equal(await listTrackableProjectIdsPg("o1", "Owner"), null);
+});
+
+test("listTrackableProjectIdsPg for a client returns exactly their client_can_track projects", async () => {
+  reset();
+  stub.trackable = new Set(["p1", "p2"]);
+  const ids = await listTrackableProjectIdsPg("c1", "Client");
+  assert.deepEqual(new Set(ids), new Set(["p1", "p2"]));
+});
+
+test("listTrackableProjectIdsPg for a regular member returns their project_members rows", async () => {
+  reset();
+  stub.memberships = ["p3", "p4"];
+  assert.deepEqual(await listTrackableProjectIdsPg("m1", "Employee"), ["p3", "p4"]);
+});
+
+test("listTrackableProjectIdsPg for a regular member with no project_members rows returns an empty list, not null", async () => {
+  reset();
+  const ids = await listTrackableProjectIdsPg("m1", "Employee");
+  assert.deepEqual(ids, []);
+  assert.notEqual(ids, null);
+});
+
+test("listTrackableProjectIdsPg with no memberId returns an empty list", async () => {
+  reset();
+  assert.deepEqual(await listTrackableProjectIdsPg("", "Employee"), []);
 });
