@@ -303,6 +303,42 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
+/** The Date column itself (not part of TABLE_METRIC_COLUMNS) plus the
+ *  expand-row chevron - space every metric column has to fit around. */
+export const TIME_ACTIVITY_TABLE_FIXED_WIDTH = 170
+
+export const TIME_ACTIVITY_TABLE_COL_MIN_WIDTH: Record<string, number> = {
+  client: 120,
+  team: 100,
+  todo: 130,
+  project: 130,
+  regular_hours: 110,
+  break_time: 100,
+  manual_hours: 110,
+  total_hours: 100,
+  activity_pct: 90,
+  idle_pct: 80,
+  idle_hr: 90,
+  total_spent: 100,
+}
+
+/** Least-important first - the headline stats (Total hours/Activity %/
+ *  Total spent, already surfaced on the summary cards above the table)
+ *  stay visible longest; supplementary breakdown columns go first. */
+export const TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY = [
+  "team",
+  "todo",
+  "client",
+  "break_time",
+  "manual_hours",
+  "idle_hr",
+  "idle_pct",
+  "regular_hours",
+  "project",
+  "activity_pct",
+  "total_spent",
+] as const
+
 // ==========================================
 // 8. Work Sessions Report
 // ==========================================

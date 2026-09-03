@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react"
 import { ChevronDown, LayoutList } from "lucide-react"
 import { useTheme } from "@/shared/providers/app"
 import { StandardReportLayout, useStandardReportLayout } from "@/features/reports/components/app"
@@ -20,6 +20,7 @@ import {
   STANDARD_REPORT_TIMEZONE_LABEL,
   TIMESHEET_APPROVALS_GROUP_BY_OPTIONS,
 } from "@/features/reports/components/shared/constants"
+import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 
 /**
  * TimesheetApprovalRow (see models/timesheet-approvals.ts) carries no
@@ -81,8 +82,32 @@ function formatDateLabel(date: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
+// Member (identity) is always shown; these are the columns that hide first
+// as the card narrows, same width-aware auto-hide the Members/Projects
+// tables already use - was a hardcoded min-w-[760px] table that just
+// scrolled sideways below that width regardless of how many columns the
+// viewport actually had room for.
+const OPTIONAL_COLUMNS: { key: string; header: string; minWidth: number; align?: "right" }[] = [
+  { key: "period", header: "Period", minWidth: 160 },
+  { key: "status", header: "Status", minWidth: 110 },
+  { key: "total_hours", header: "Total hours", minWidth: 100, align: "right" },
+  { key: "billable", header: "Billable", minWidth: 90, align: "right" },
+  { key: "approved_by", header: "Approved by", minWidth: 130 },
+]
+const OPTIONAL_COLUMN_MIN_WIDTH = Object.fromEntries(OPTIONAL_COLUMNS.map((c) => [c.key, c.minWidth]))
+// Total hours/Billable are the numbers this report exists to show - kept
+// visible longest, ahead of who reviewed it or the exact date range.
+const OPTIONAL_COLUMN_HIDE_PRIORITY = ["approved_by", "period", "status", "billable", "total_hours"] as const
+// The Member column (avatar + name) plus the row's own padding.
+const TIMESHEET_APPROVALS_FIXED_WIDTH = 220
+
 function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
+  const { containerRef: tableWidthRef, visibleColumns: fittedColumns } = useReportColumnAutoHide(OPTIONAL_COLUMNS, {
+    minWidths: OPTIONAL_COLUMN_MIN_WIDTH,
+    hidePriority: OPTIONAL_COLUMN_HIDE_PRIORITY,
+    fixedWidth: TIMESHEET_APPROVALS_FIXED_WIDTH,
+  })
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -207,25 +232,47 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",
     isDark ? "text-white/40" : "text-slate-500"
   )
+  const colCount = 1 + fittedColumns.length
+
+  function renderOptionalCell(key: string, row: TimesheetApprovalRow): ReactNode {
+    switch (key) {
+      case "period":
+        return `${formatDateLabel(row.periodStart)} – ${formatDateLabel(row.periodEnd)}`
+      case "status":
+        return (
+          <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", statusBadgeClass(row.status))}>
+            {row.status}
+          </span>
+        )
+      case "total_hours":
+        return `${row.totalHours.toFixed(2)}h`
+      case "billable":
+        return `${row.billableHours.toFixed(2)}h`
+      case "approved_by":
+        return row.approvedByName ?? "—"
+      default:
+        return null
+    }
+  }
 
   return (
     <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10" : "border-slate-200")}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+      <div ref={tableWidthRef} className="overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
           <thead>
             <tr className={cn("border-b", isDark ? "border-white/10 bg-white/3" : "border-slate-200 bg-slate-50")}>
               <th className={th}>Member</th>
-              <th className={th}>Period</th>
-              <th className={th}>Status</th>
-              <th className={cn(th, "text-right")}>Total hours</th>
-              <th className={cn(th, "text-right")}>Billable</th>
-              <th className={th}>Approved by</th>
+              {fittedColumns.map((col) => (
+                <th key={col.key} className={cn(th, col.align === "right" && "text-right")}>
+                  {col.header}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className={cn("px-4 py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-500")}>
+                <td colSpan={colCount} className={cn("px-4 py-12 text-center text-sm", isDark ? "text-white/40" : "text-slate-500")}>
                   No timesheets in this date range.
                 </td>
               </tr>
@@ -233,7 +280,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
             {grouped.map((g) => (
               <Fragment key={g.key}>
                 <tr className={cn(isDark ? "bg-white/6" : "bg-slate-100")}>
-                  <td colSpan={6} className="px-4 py-2">
+                  <td colSpan={colCount} className="px-4 py-2">
                     <button
                       type="button"
                       onClick={() => toggleGroupCollapsed(g.key)}
@@ -265,21 +312,19 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
                             <span className={cn("font-medium", isDark ? "text-[#dce1fb]" : "text-slate-900")}>{row.memberName}</span>
                           </div>
                         </td>
-                        <td className={cn("px-4 py-3.5 whitespace-nowrap", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                          {formatDateLabel(row.periodStart)} – {formatDateLabel(row.periodEnd)}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={cn("inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize", statusBadgeClass(row.status))}>
-                            {row.status}
-                          </span>
-                        </td>
-                        <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                          {row.totalHours.toFixed(2)}h
-                        </td>
-                        <td className={cn("px-4 py-3.5 text-right tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                          {row.billableHours.toFixed(2)}h
-                        </td>
-                        <td className={cn("px-4 py-3.5", isDark ? "text-[#bccbb9]" : "text-slate-600")}>{row.approvedByName ?? "—"}</td>
+                        {fittedColumns.map((col) => (
+                          <td
+                            key={col.key}
+                            className={cn(
+                              "px-4 py-3.5",
+                              col.align === "right" && "text-right tabular-nums",
+                              col.key === "period" && "whitespace-nowrap",
+                              isDark ? "text-[#dce1fb]" : "text-slate-800",
+                            )}
+                          >
+                            {renderOptionalCell(col.key, row)}
+                          </td>
+                        ))}
                       </tr>
                     ))
                   : null}
