@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useMemo, useEffect, useCallback } from "react"
+import { createPortal } from "react-dom"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import {
   getCachedScreenshotImage,
@@ -399,6 +400,7 @@ export function ActivityScreenshots() {
     viewMode,
     sortOrder,
     resetPageFilters,
+    summarySlotEl,
   } = useActivityShell()
   const [selectedScreenshot, setSelectedScreenshot] = useState<Screenshot | null>(null)
   const { data: liveRows, loading, error, disabledReason, reload } = useActivityFeed<Screenshot[]>("screenshots", {
@@ -582,32 +584,35 @@ export function ActivityScreenshots() {
         <ActivitySearchEmptyState entityLabel="screenshots" onClear={resetPageFilters} />
       ) : null}
 
-      {showInsights ? (
-        <ActivitySection title="Insights" description="Overview across every captured day, not just the one shown below">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4"
-        >
-          {insightCards.map(({ id, icon, title, Component }, i) => (
-            <motion.div
-              key={id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.06 + i * 0.04 }}
-              className="flex flex-col gap-3 p-4"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-slate-400 dark:text-slate-500">{icon}</span>
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500">{title}</span>
-              </div>
-              <Component data={allTimeScreenshots} />
-            </motion.div>
-          ))}
-        </motion.div>
-        </ActivitySection>
-      ) : null}
+      {showInsights && summarySlotEl
+        ? createPortal(
+            <ActivitySection title="Insights" description="Overview across every captured day, not just the one shown below">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4"
+              >
+                {insightCards.map(({ id, icon, title, Component }, i) => (
+                  <motion.div
+                    key={id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.06 + i * 0.04 }}
+                    className="flex flex-col gap-3 p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 dark:text-slate-500">{icon}</span>
+                      <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500">{title}</span>
+                    </div>
+                    <Component data={allTimeScreenshots} />
+                  </motion.div>
+                ))}
+              </motion.div>
+            </ActivitySection>,
+            summarySlotEl,
+          )
+        : null}
 
       {!loading && displayScreenshots.length > 0 && viewMode === "grid" ? (
         <div className="space-y-4">

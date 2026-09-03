@@ -211,6 +211,14 @@ function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; chil
   )
 }
 
+/** A page's Summary/Insights portals into this - it isn't scoped to the day
+ *  picker below it, so it renders above the control bar entirely rather
+ *  than between the bar and the table. */
+function ActivitySummarySlot() {
+  const { setSummarySlotEl } = useActivityShell()
+  return <div ref={setSummarySlotEl} className="shrink-0 pb-4 empty:hidden" />
+}
+
 export function ActivityShell({
   pageId,
   children,
@@ -224,6 +232,7 @@ export function ActivityShell({
   return (
     <ActivityShellProvider pageId={normalizedPage}>
       <div className="-mt-2 flex h-full min-h-0 w-full flex-col">
+        <ActivitySummarySlot />
         <ActivityShellStickyBar />
         <ActivityShellBody pageId={normalizedPage}>{children}</ActivityShellBody>
       </div>

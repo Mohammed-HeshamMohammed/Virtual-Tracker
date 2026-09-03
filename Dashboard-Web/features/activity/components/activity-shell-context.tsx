@@ -48,6 +48,14 @@ interface ActivityShellContextValue {
   canClassify: boolean
   triggerClassify: () => void
   registerClassify: (fn: (() => void) | null) => void
+  /** DOM node ActivityShell renders above its sticky control bar - a page's
+   *  Summary/Insights portal into this so it's the first thing on the page,
+   *  above the filters that don't actually apply to it (it isn't scoped to
+   *  the day picker), without restructuring the shell's children API or
+   *  splitting each page into two components. Null until ActivityShell has
+   *  mounted the slot. */
+  summarySlotEl: HTMLDivElement | null
+  setSummarySlotEl: (el: HTMLDivElement | null) => void
 }
 
 const ActivityShellContext = createContext<ActivityShellContextValue | undefined>(undefined)
@@ -127,6 +135,7 @@ export function ActivityShellProvider({
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
   const [showBlocked, setShowBlocked] = useState(false)
   const [sortByPage, setSortByPage] = useState<SortByPage>({ ...DEFAULT_SORT })
+  const [summarySlotEl, setSummarySlotEl] = useState<HTMLDivElement | null>(null)
 
   const key = pageKey(pageId)
   const searchQuery = searchByPage[key]
@@ -213,6 +222,8 @@ export function ActivityShellProvider({
       canClassify,
       triggerClassify,
       registerClassify,
+      summarySlotEl,
+      setSummarySlotEl,
     }),
     [
       pageId,
@@ -232,6 +243,7 @@ export function ActivityShellProvider({
       canClassify,
       triggerClassify,
       registerClassify,
+      summarySlotEl,
     ],
   )
 

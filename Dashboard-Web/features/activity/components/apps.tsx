@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
@@ -61,7 +62,7 @@ export function ActivityAppsContent() {
   const canExport = canExportActivity(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
-  const { day, searchQuery, selectedCategory, resetPageFilters } = useActivityShell()
+  const { day, searchQuery, selectedCategory, resetPageFilters, summarySlotEl } = useActivityShell()
   const { setSelectedMemberId } = useActivityFeedContext()
   const { data: feed, loading, reload } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
   // Summary is a standing overview, not a reflection of whatever single day
@@ -227,46 +228,51 @@ export function ActivityAppsContent() {
         <ActivitySearchEmptyState entityLabel="apps" onClear={resetPageFilters} />
       ) : null}
 
+      {summarySlotEl && summaryStats.appCount > 0
+        ? createPortal(
+            <ActivitySection title="Summary" description="Productivity breakdown across every tracked day, not just the one shown below">
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl sm:grid-cols-3 sm:divide-y-0 sm:divide-x"
+              >
+                <div className="flex items-center gap-3 p-5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
+                    <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+                    <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 p-5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
+                    <TrendingDown className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
+                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
+                  </div>
+                </div>
+              </motion.div>
+            </ActivitySection>,
+            summarySlotEl,
+          )
+        : null}
+
       {!loading && showMainContent ? (
         <div className="space-y-8">
-          <ActivitySection title="Summary" description="Productivity breakdown across every tracked day, not just the one shown below">
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl sm:grid-cols-3 sm:divide-y-0 sm:divide-x"
-            >
-              <div className="flex items-center gap-3 p-5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
-                  <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
-                  <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 p-5">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
-                  <TrendingDown className="h-5 w-5 text-rose-600 dark:text-rose-400" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
-                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
-                </div>
-              </div>
-            </motion.div>
-          </ActivitySection>
-
           <ActivitySection
             title="Application records"
             description={`${filteredApps.length} app${filteredApps.length !== 1 ? "s" : ""} tracked for ${day.selectedDayLabel}`}
