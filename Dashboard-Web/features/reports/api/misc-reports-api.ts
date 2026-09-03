@@ -272,17 +272,20 @@ export async function fetchProjectBudgetsReport(query?: { projectIds?: string[] 
   const withoutBudget: ProjectBudgetRow[] = []
 
   data.rows.forEach((row, i) => {
-    // Hours-based budgets are a real time cap (cost = hours) - render faithfully.
-    // Cost-based budgets are a dollar cap, not a time quantity; this table is
-    // seconds-only, so we show real tracked time with no (misleading) cap line
-    // rather than fake-converting dollars into a duration.
-    const budgetSeconds = row.budgetType === "Hours based" ? Math.round(row.cost * 3600) : 0
+    // Hours-based budgets are a real time cap (cost = hours) - render as
+    // duration. Cost-based budgets are a dollar cap - render as money,
+    // using spentAmount (already computed server-side against the real
+    // rate) rather than fake-converting either unit into the other.
+    const isHours = row.budgetType === "Hours based"
     const mapped: ProjectBudgetRow = {
       projectName: row.projectName,
       initial: (row.projectName[0] ?? "?").toUpperCase(),
       avatarClassName: AVATAR_CLASS_BY_INDEX[i % AVATAR_CLASS_BY_INDEX.length]!,
+      budgetType: row.hasBudget ? (isHours ? "hours" : "cost") : null,
       spentSeconds: row.spentSeconds,
-      budgetSeconds,
+      budgetSeconds: isHours ? Math.round(row.cost * 3600) : 0,
+      spentAmount: isHours ? 0 : row.spentAmount,
+      budgetAmount: isHours ? 0 : row.cost,
     }
     ;(row.hasBudget ? withBudget : withoutBudget).push(mapped)
   })

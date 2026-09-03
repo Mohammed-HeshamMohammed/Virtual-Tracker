@@ -12,6 +12,7 @@ import {
   fetchDailyLimitsReport,
 } from "@/features/reports/api/misc-reports-api"
 import { ReportCard } from "@/features/reports/components/shared/report-ui"
+import { budgetPercentUsed } from "@/features/reports/components/project-budgets/project-budgets-report"
 
 interface Tile {
   id: string
@@ -63,10 +64,13 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
     ]).then(([projectSections, clientRows, weekly, daily]) => {
       if (cancelled) return
 
-      // ProjectBudgetRow carries seconds rather than a percentage, so derive
-      // "over budget" the same way the project budgets report renders it.
-      const projectRows = projectSections.flatMap((s) => s.rows).filter((r) => r.budgetSeconds > 0)
-      const projectsOver = projectRows.filter((r) => r.spentSeconds >= r.budgetSeconds).length
+      // budgetType !== null, not budgetSeconds > 0 - a cost-based project's
+      // budgetSeconds is always 0 (its cap is dollars, not time), so that
+      // filter silently dropped every cost-based project from both this
+      // count and the over-budget one. budgetPercentUsed reads whichever
+      // unit the row's own budgetType actually is.
+      const projectRows = projectSections.flatMap((s) => s.rows).filter((r) => r.budgetType !== null)
+      const projectsOver = projectRows.filter((r) => budgetPercentUsed(r) >= 100).length
       const clientsOver = clientRows.filter((r) => r.pctUsed >= 100).length
       const weeklyOver = weekly.filter((r) => r.pctUsed >= 100).length
       const dailyOver = daily.filter((r) => r.pctUsed >= 100).length
