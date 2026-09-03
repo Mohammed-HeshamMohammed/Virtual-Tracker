@@ -233,6 +233,18 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     return rows
   }, [activeRows, sortKey, sortDir])
 
+  // fillMissingDays pads the default "Date per day" view with one zeroed
+  // row per quiet day so the chart keeps a real x-axis point for every day
+  // in the range (see its own doc comment) - the table, CSV and PDF don't
+  // share that need and were inheriting the padding anyway, showing a row
+  // for a day nobody did anything on. Grouped modes never produce an empty
+  // bucket in the first place (buildGroupedRows only creates one per entry
+  // it actually sees), so memberCount > 0 is a no-op there.
+  const tableDisplayRows = useMemo(
+    () => sortedDisplayRows.filter((d) => d.memberCount > 0),
+    [sortedDisplayRows],
+  )
+
   const visibleMetricColumns = useMemo(
     () => TABLE_METRIC_COLUMNS.filter((c) => columnVisibleInTable(enabledPeriodCols, enabledMemberCols, c.key)),
     [enabledPeriodCols, enabledMemberCols]
@@ -327,6 +339,7 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     displayRows,
     totals,
     sortedDisplayRows,
+    tableDisplayRows,
     visibleMetricColumns,
     toggleCol,
     handleSortClick,

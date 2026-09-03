@@ -104,6 +104,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     sortKey,
     sortDir,
     sortedDisplayRows,
+    tableDisplayRows,
     totals,
     visibleMetricColumns,
     toggleCol,
@@ -198,7 +199,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
           { header: "Idle hours", key: "idleHr", align: "right" },
           { header: "Total spent", key: "totalSpent", align: "right" },
         ],
-        rows: sortedDisplayRows.map((d) => ({
+        rows: tableDisplayRows.map((d) => ({
           date: d.dateLabel,
           members: d.memberCount,
           totalHours: d.totalHours,
@@ -315,7 +316,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(sortedDisplayRows, "time-and-activity", groupColumnLabel)}>
+                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(tableDisplayRows, "time-and-activity", groupColumnLabel)}>
                   To CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
@@ -462,7 +463,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                 </tr>
               </thead>
               <tbody>
-                {sortedDisplayRows.map((day) => {
+                {tableDisplayRows.map((day) => {
                   const isExpanded = expandedRows.has(day.date)
                   const subRows = getSubRowsForDay(day.date)
                   return (
@@ -555,7 +556,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
 
           <div className="flex items-center justify-between border-t border-slate-50 dark:border-slate-800 px-5 py-3">
             <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-              Showing {sortedDisplayRows.length} rows
+              Showing {tableDisplayRows.length} rows
               <div className="relative">
                 <select className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none">
                   <option>50</option>
