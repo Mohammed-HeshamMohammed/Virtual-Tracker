@@ -56,6 +56,7 @@ import {
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import {
   deleteActivitySessionWithChildrenPg,
+  deleteMemberDayActivityWithChildrenPg,
   getPgSessionById,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../clients/services/budget-logic.js";
@@ -758,6 +759,40 @@ export async function routeReports(req, res, url, origin) {
     } catch (e) {
       logSafeError("[reports/work-sessions delete]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to delete work session." });
+    }
+    return true;
+  }
+
+  // DELETE /api/reports/time-and-activity/day?memberId=X&date=YYYY-MM-DD
+  // One member's whole tracked record for one day, and everything captured
+  // under it (see deleteMemberDayActivityWithChildrenPg's own doc comment) -
+  // the Time & Activity report's own per-row delete. Same tier and same
+  // visible-scope rule as the work-sessions delete right above; classification
+  // (activity_categories) is never touched by the cascade underneath this.
+  if (pn === "/api/reports/time-and-activity/day" && req.method === "DELETE") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to delete tracked activity." });
+      return true;
+    }
+    const targetMemberId = (url.searchParams.get("memberId") || "").trim();
+    const day = parseDateParam(url.searchParams.get("date"));
+    if (!targetMemberId || !day) {
+      sendJson(res, origin, 400, { success: false, error: "memberId and a valid date (YYYY-MM-DD) are required." });
+      return true;
+    }
+    try {
+      const visibleIds = await resolveReportVisibleIds(getDb(), viewer);
+      if (visibleIds !== null && !visibleIds.includes(targetMemberId)) {
+        sendJson(res, origin, 403, { success: false, error: "Cannot delete activity outside your access scope." });
+        return true;
+      }
+      const result = await deleteMemberDayActivityWithChildrenPg(targetMemberId, day);
+      sendJson(res, origin, 200, { success: true, data: { memberId: targetMemberId, date: day, deleted: true, ...result } });
+    } catch (e) {
+      logSafeError("[reports/time-and-activity day delete]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to delete this day's activity." });
     }
     return true;
   }

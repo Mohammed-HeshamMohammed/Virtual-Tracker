@@ -28,6 +28,7 @@ export interface TimeActivityDayRow {
 }
 
 export interface TimeActivityMemberSubRow {
+  memberId: string
   name: string
   avatar: string
   regularHours: string

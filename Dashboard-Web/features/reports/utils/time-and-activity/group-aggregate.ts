@@ -77,7 +77,19 @@ type Bucket = {
   projectIds: Set<string>
   sub: Map<
     string,
-    { label: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentPoints: SpentPoint[] }
+    {
+      /** The real member this drill-down row belongs to - always e.memberId,
+       *  whether the row drills into projects (member-grouped mode) or
+       *  members (every other mode). Needed for the per-row delete action,
+       *  which is keyed by memberId regardless of what dimension the outer
+       *  grouping used. */
+      memberId: string
+      label: string
+      activeSeconds: number
+      idleSeconds: number
+      manualSeconds: number
+      spentPoints: SpentPoint[]
+    }
   >
 }
 
@@ -129,7 +141,7 @@ export function buildGroupedRows(
     b.memberIds.add(e.memberId)
     if (e.projectId) b.projectIds.add(e.projectId)
     if (!b.sub.has(subKey))
-      b.sub.set(subKey, { label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [] })
+      b.sub.set(subKey, { memberId: e.memberId, label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [] })
     const s = b.sub.get(subKey)!
     s.activeSeconds += e.activeSeconds
     s.idleSeconds += e.idleSeconds
@@ -177,6 +189,7 @@ export function buildGroupedRows(
       manualHours: b.manualSeconds / 3600,
     })
     subRowsByKey[key] = [...b.sub.entries()].map(([, s]) => ({
+      memberId: s.memberId,
       name: s.label,
       avatar: initialsFor(s.label),
       regularHours: formatSecondsAsHMS(s.activeSeconds),

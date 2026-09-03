@@ -537,6 +537,58 @@ export async function deleteActivitySessionWithChildrenPg(sessionId) {
 }
 
 /**
+ * Deletes one member's entire tracked record for one calendar day -
+ * everything the Time & Activity report's per-member row for that day
+ * represents: tracked sessions, manual time entries, and every screenshot/
+ * app-usage/URL-visit captured that day. Every table here carries its own
+ * member_id and its own capture-time column, so this scopes directly by
+ * (member, day) rather than relaying through session_id like
+ * deleteActivitySessionWithChildrenPg does - a session that started this
+ * day but ran past midnight would otherwise pull the next day's captures
+ * in with it.
+ *
+ * Deliberately does NOT touch activity_categories (the app/domain ->
+ * productivity classification table) or the apps/projects/tasks catalogs
+ * a log row references - those are shared org config, not this member's
+ * own data, even when this member's activity happened to be what first
+ * caused an app or domain to get classified.
+ * @param {string} memberId
+ * @param {string} day 'YYYY-MM-DD'
+ * @returns {Promise<{ sessions: number, entries: number, screenshots: number, appLogs: number, urlLogs: number }>}
+ */
+export async function deleteMemberDayActivityWithChildrenPg(memberId, day) {
+  return withTransaction(async (client) => {
+    const screenshots = await client.query(
+      `DELETE FROM activity_screenshots WHERE member_id = $1 AND captured_at::date = $2::date`,
+      [memberId, day],
+    );
+    const appLogs = await client.query(
+      `DELETE FROM activity_app_logs WHERE member_id = $1 AND started_at::date = $2::date`,
+      [memberId, day],
+    );
+    const urlLogs = await client.query(
+      `DELETE FROM activity_url_logs WHERE member_id = $1 AND visited_at::date = $2::date`,
+      [memberId, day],
+    );
+    const sessions = await client.query(
+      `DELETE FROM activity_sessions WHERE member_id = $1 AND started_at::date = $2::date`,
+      [memberId, day],
+    );
+    const entries = await client.query(`DELETE FROM time_entries WHERE member_id = $1 AND date = $2::date`, [
+      memberId,
+      day,
+    ]);
+    return {
+      sessions: sessions.rowCount ?? 0,
+      entries: entries.rowCount ?? 0,
+      screenshots: screenshots.rowCount ?? 0,
+      appLogs: appLogs.rowCount ?? 0,
+      urlLogs: urlLogs.rowCount ?? 0,
+    };
+  });
+}
+
+/**
  * @param {{ id: string, memberId: string, taskId?: string|null, projectId?: string|null,
  *   status: string, startedAt: Date, endedAt?: Date|null, activeSeconds?: number,
  *   idleSeconds?: number, source?: string, updatedAt: Date }} row
