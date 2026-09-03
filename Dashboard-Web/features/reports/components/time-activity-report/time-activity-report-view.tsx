@@ -13,23 +13,30 @@ import {
   CreditCard,
   Download,
   Filter,
+  Loader2,
   Play,
   Plus,
   Save,
   Table2,
+  Trash2,
   TrendingUp,
 } from "lucide-react"
 import { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
 import { isManagementRole } from "@/features/auth"
+import { changedEvent } from "@/infrastructure/api/change-events"
 import { AddManualEntryDialog } from "@/features/reports/components/time-activity-report/add-manual-entry-dialog"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { downloadTimeActivityCsv } from "@/features/reports/utils/time-and-activity/csv-export"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
-import { sendTimeAndActivityReport, scheduleTimeAndActivityReport } from "@/features/reports/api/time-and-activity-api"
+import {
+  deleteTimeAndActivityDay,
+  sendTimeAndActivityReport,
+  scheduleTimeAndActivityReport,
+} from "@/features/reports/api/time-and-activity-api"
 import type { TimeActivityGroupBy, TimeActivityReportViewProps } from "@/features/reports/models/time-and-activity"
 import { ReportColumnPicker } from "@/features/reports/components/time-activity-report/column-picker"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
@@ -65,6 +72,10 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
+  // Keyed "memberId::date" so a spinner only shows on the row actually being
+  // deleted - a plain boolean would spin every row's button at once.
+  const [deletingKey, setDeletingKey] = useComponentState<string | null>(null)
+  const [deleteError, setDeleteError] = useComponentState<string | null>(null)
   const {
     chartMetrics,
     toggleChartMetric,
@@ -125,6 +136,33 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
       fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH,
     },
   )
+
+  // Permanently deletes this member's whole tracked record for this one day
+  // (sessions, manual entries, screenshots, app usage, URL visits - see
+  // deleteMemberDayActivityWithChildrenPg). Only meaningful in "Date per
+  // day" mode: every other groupBy repurposes a row's `date` field as a
+  // group key (member/project/client/team name), not a real calendar date,
+  // so the delete action is hidden outside that mode rather than risking a
+  // wrong day getting deleted.
+  function confirmDeleteDay(memberId: string, date: string, memberName: string, dateLabel: string) {
+    const ok = window.confirm(
+      `Delete ${memberName}'s tracked activity for ${dateLabel}? ` +
+        `This also permanently deletes their screenshots, app usage, and URL visits for that day. This cannot be undone.`,
+    )
+    if (!ok) return
+    const key = `${memberId}::${date}`
+    setDeleteError(null)
+    setDeletingKey(key)
+    deleteTimeAndActivityDay(memberId, date)
+      .then(() => {
+        onReload?.()
+        window.dispatchEvent(new Event(changedEvent("activity")))
+      })
+      .catch((err) => {
+        setDeleteError(err instanceof Error ? err.message : "Could not delete this day's activity.")
+      })
+      .finally(() => setDeletingKey(null))
+  }
 
   function downloadPdf() {
     const byMemberHours = new Map<string, number>()
@@ -366,6 +404,12 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
 
         <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} />
 
+        {deleteError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+            {deleteError}
+          </div>
+        ) : null}
+
         <div ref={tableWidthRef} className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
           <AnimatePresence>
             {showColumnPicker && (
@@ -477,9 +521,30 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                               className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
                             >
                               <td className="px-5 py-3">
-                                <div className="flex items-center gap-2.5 pl-6">
-                                  <ReportMemberAvatar initials={member.avatar} />
-                                  <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
+                                <div className="flex items-center justify-between gap-2.5 pl-6">
+                                  <div className="flex items-center gap-2.5">
+                                    <ReportMemberAvatar initials={member.avatar} />
+                                    <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
+                                  </div>
+                                  {canAddForOthers && groupBy === "date_per_day" ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        confirmDeleteDay(member.memberId, day.date, member.name, day.dateLabel)
+                                      }}
+                                      disabled={deletingKey === `${member.memberId}::${day.date}`}
+                                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                      title="Delete this day's activity and its screenshots, app usage, and URL visits"
+                                      aria-label="Delete this day's activity"
+                                    >
+                                      {deletingKey === `${member.memberId}::${day.date}` ? (
+                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      )}
+                                    </button>
+                                  ) : null}
                                 </div>
                               </td>
                               {fittedMetricColumns.map((col) => {

@@ -76,6 +76,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
   const regularHours = formatSecondsAsHMS(member.activeSeconds)
   const totalHours = formatSecondsAsHMS(member.activeSeconds + manualSeconds)
   return {
+    memberId: member.memberId,
     name: member.name,
     avatar: initialsFor(member.name),
     regularHours,
@@ -298,5 +299,23 @@ export async function scheduleTimeAndActivityReport(
   } catch (err) {
     if (err instanceof Error) throw err
     throw new Error("Failed to save the schedule.")
+  }
+}
+
+/** Permanently deletes one member's whole tracked record for one day -
+ *  sessions, manual entries, and every screenshot/app-usage/URL-visit
+ *  captured that day (server-side cascade, see
+ *  deleteMemberDayActivityWithChildrenPg). Never touches classification
+ *  (activity_categories) - that's shared org config, not this member's own
+ *  data. Manager and above only; the server re-checks that regardless of
+ *  what the UI shows. */
+export async function deleteTimeAndActivityDay(memberId: string, date: string): Promise<void> {
+  const params = new URLSearchParams({ memberId, date })
+  const res = await apiFetch(apiPath(`/api/reports/time-and-activity/day?${params.toString()}`), {
+    method: "DELETE",
+  })
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null
+    throw new Error(body?.error || `Failed to delete this day's activity (${res.status}).`)
   }
 }
