@@ -173,50 +173,45 @@ export function BatchEditModal({
         className={cn(
           "w-full rounded-xl border p-6 shadow-xl max-h-[90vh] overflow-y-auto",
           action === "workTimeLimits" ? "max-w-2xl" : "max-w-md",
-          isDark ? "border-[#3d4a3d]/40 bg-[#151b2d] text-[#dce1fb]" : "border-slate-200 bg-white text-slate-900",
+          "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100",
         )}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">{meta.title}</h2>
-            <p className={cn("mt-1 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>{meta.description}</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{meta.description}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className={cn("rounded-lg p-1", isDark ? "text-[#bccbb9] hover:bg-[#2e3447]" : "text-slate-400 hover:bg-slate-100")}
+            className="rounded-lg p-1 text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"
             aria-label="Close"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
-        <p className={cn("mb-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+        <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
           {effectiveIds.length} member{effectiveIds.length === 1 ? "" : "s"} selected
         </p>
 
         {ownerBlocked && (action === "removeFromTree" || action === "remove") && (
-          <div
-            className={cn(
-              "mb-4 flex gap-2 rounded-lg border px-3 py-2 text-sm",
-              isDark ? "border-amber-500/30 bg-amber-500/10 text-amber-200" : "border-amber-200 bg-amber-50 text-amber-800",
-            )}
-          >
+          <div className="mb-4 flex gap-2 rounded-lg border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             <span>The Owner account cannot be removed and will be skipped.</span>
           </div>
         )}
 
         {(action === "removeFromTree" || action === "remove") ? (
-          <p className={cn("mb-4 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
+          <p className="mb-4 text-sm text-slate-600 dark:text-slate-400">
             You are about to remove{" "}
             <strong>{removableMembers.length}</strong> member{removableMembers.length === 1 ? "" : "s"}.
           </p>
         ) : action === "payPeriod" ? (
           <div className="mb-4">
-            <label className={cn("mb-1 block text-xs font-semibold uppercase tracking-wide", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Pay period
             </label>
             <SimpleSelect
@@ -238,7 +233,7 @@ export function BatchEditModal({
           <div className="mb-4">
             <label
               htmlFor="batch-edit-value"
-              className={cn("mb-1 block text-xs font-semibold uppercase tracking-wide", isDark ? "text-[#bccbb9]" : "text-slate-500")}
+              className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400"
             >
               Hourly rate
             </label>
@@ -250,12 +245,7 @@ export function BatchEditModal({
                 step={0.01}
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                className={cn(
-                  "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2",
-                  isDark
-                    ? "border-[#3d4a3d]/40 bg-[#191f31] text-[#dce1fb] focus:ring-[#4be277]/40"
-                    : "border-slate-200 bg-white text-slate-900 focus:ring-blue-500/30",
-                )}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 dark:focus:ring-emerald-500/40"
                 disabled={busy}
               />
               <div className="w-24 shrink-0">
@@ -266,7 +256,7 @@ export function BatchEditModal({
         )}
 
         {error && (
-          <p className="mb-4 text-sm text-red-500" role="alert">
+          <p className="mb-4 text-sm text-red-500 dark:text-red-400" role="alert">
             {error}
           </p>
         )}
@@ -276,10 +266,7 @@ export function BatchEditModal({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className={cn(
-              "rounded-lg px-4 py-2 text-sm font-medium",
-              isDark ? "text-[#bccbb9] hover:bg-[#2e3447]" : "text-slate-600 hover:bg-slate-100",
-            )}
+            className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
           >
             Cancel
           </button>
@@ -291,7 +278,7 @@ export function BatchEditModal({
             }
             className={cn(
               "rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50",
-              meta.danger ? "bg-red-600 hover:bg-red-700" : isDark ? "bg-[#4be277] text-[#0c1324] hover:bg-[#3dd068]" : "bg-blue-600 hover:bg-blue-700",
+              meta.danger ? "bg-red-600 hover:bg-red-700" : "bg-blue-500 dark:bg-emerald-600 hover:bg-blue-600 dark:hover:bg-emerald-500",
             )}
           >
             {busy ? "Working…" : meta.submitLabel}
