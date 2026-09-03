@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/async-await-in-loop */
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { extractRoleFromRecord } from "@/features/auth"
 import { apiPath } from "@/infrastructure/api/path"
@@ -11,7 +10,6 @@ import { isEmailLikeNamePart } from "@/shared/validation/person-name"
 import { formatPayRateDisplay } from "@/features/members/config/pay-currencies"
 
 
-/** Make invite URLs absolute for clipboard/share (backend may return path-only). */
 export function resolveInviteUrl(url: string): string {
   const trimmed = url.trim()
   if (!trimmed) return ""
@@ -78,10 +76,6 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []
 }
 
-// Backend never assigns members.avatar_color (no writer anywhere in the API) -
-// it's always null, so every member fell back to the same hardcoded blue.
-// Hash the member id into a fixed palette instead, so avatars are visually
-// distinct without needing a schema/backend change.
 const AVATAR_COLOR_PALETTE = [
   "#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#22c55e",
   "#06b6d4", "#ef4444", "#eab308", "#6366f1", "#14b8a6",
@@ -105,12 +99,6 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
   const workEmail = asString(input.work_email) || asString(input.email) || ""
   const firstName = sanitizeDisplayNamePart(asString(input.first_name), workEmail)
   const lastName = sanitizeDisplayNamePart(asString(input.last_name), workEmail)
-  // display_name is where the members table actually keeps a full name -
-  // profile updates and invite acceptance write it, and first_name/last_name
-  // stay empty for those members. Reading only first/last is why they
-  // rendered as the fallback. Order matches memberMetaFromRow on the server,
-  // which resolves display_name first and is why activity and reports showed
-  // the right names all along.
   const displayName = sanitizeDisplayNamePart(
     asString(input.display_name ?? input.displayName),
     workEmail,
@@ -187,7 +175,6 @@ function mapInviteStatus(raw: string): Invite["status"] {
 
 function projectCountFromCsv(projectIdsCsv: string): number {
   if (!projectIdsCsv || typeof projectIdsCsv !== "string") return 0
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   return projectIdsCsv
     .split(",")
     .map((s) => s.trim())
@@ -240,8 +227,6 @@ function normalizeInvite(input: Partial<Invite> & Record<string, unknown>): Invi
   }
 }
 
-// API Functions
-/** GET /api/members/current — provisions row if missing. */
 export async function fetchCurrentMember(): Promise<Member | null> {
   if (!getFirebaseAuth().currentUser) return null
   try {
@@ -301,7 +286,6 @@ export async function getMembers(
   return all
 }
 
-/** Paginated members list (`GET /api/members?limit=&cursor=`). */
 export async function getMembersPage(
   options: RequestOptions & {
     fields?: string[]
@@ -365,7 +349,6 @@ async function getMember(id: string): Promise<Member> {
   return normalizeMember((pickPayload(json) ?? {}) as Record<string, unknown>)
 }
 
-/** Loads signed-in member; falls back to `GET /api/members/:id` when verify returned an id. */
 export async function fetchCurrentMemberWithFallback(memberId?: string): Promise<Member | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const member = await fetchCurrentMember()
@@ -534,7 +517,6 @@ export type MemberProfilePayload = {
     payRate?: string
     currency?: string
     payPeriod?: string
-    /** Owner/Super Admin/Admin/Super Manager only - see canEditPayRates. */
     note?: string
     effectiveDate?: string
   }
@@ -556,9 +538,6 @@ export type MemberProfilePayload = {
   }
 }
 
-/** One row of the real Pay/Bill rate audit trail (pay_rate_history) - most
- * recent first. Replaces the old fabricated single "Current" row that was
- * really just pay_rates' own current values relabeled. */
 export type PayRateHistoryEntry = {
   id: string
   rate: number
@@ -622,13 +601,6 @@ export type MemberProfileForm = MemberProfilePayload["info"] &
     empEndDate: string
     empTermination: string
     empComments: string
-    /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
-     * employment/payBill/settings each have their own backing table's
-     * updated_at. info/roles each get a dedicated stamp field on the shared
-     * `members` doc (bumped only by their own section's save, not by every
-     * other section touching that doc). workLimits gets one composite token
-     * packing both of its backing tables' timestamps. See
-     * member-profile.service.js for the write side of each. */
     infoUpdatedAt: string
     employmentUpdatedAt: string
     rolesUpdatedAt: string
@@ -694,14 +666,10 @@ export async function updateMemberProfile(
   const res = await apiFetch(apiPath(`/api/members/${id}/profile`), {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    // §6.9 - optional, only present when the caller sends back the
-    // section-specific *UpdatedAt it loaded the form with.
     body: JSON.stringify({ ...payload, updatedBy, ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}) }),
   })
   const json = (await res.json()) as ApiEnvelope<{ form: Partial<MemberProfileForm>; member: Member }>
   if (!res.ok || !json.success) {
-    // §6.9 - same convention updateProject/updateTask/updateClient use:
-    // attach .status so the caller can branch on a stale-write conflict.
     const err = new Error(json.error || `Failed to save member profile: ${res.status}`) as Error & {
       status?: number
       conflictData?: unknown
@@ -778,7 +746,6 @@ export async function generateMemberEmployeeId(
   return data
 }
 
-// Invites
 export async function getInvites(options: RequestOptions & { fields?: string[] } = {}): Promise<Invite[]> {
   const params = new URLSearchParams()
   if (options.fields?.length) params.set("fields", options.fields.join(","))
@@ -844,9 +811,7 @@ export async function updateInvite(id: string, data: Partial<CreateInviteInput>,
 }
 
 export type CreateInvitesBulkOptions = {
-  /** Default `email` — each row must include an email. */
   inviteKind?: "email" | "open_link"
-  /** Used to build absolute invite URLs in the API response (e.g. `window.location.origin`). */
   appOrigin?: string
   createdBy?: string
   createdByUid?: string
@@ -952,7 +917,6 @@ export type ValidateAddEmailResult = {
   message: string
 }
 
-/** Check emails are eligible for invite/pre-provision. */
 export async function validateEmailsForAddMembers(
   emails: string[],
   options: { forOpenInviteLink?: boolean } = {},
@@ -977,7 +941,6 @@ export async function validateEmailsForAddMembers(
   }
 }
 
-/** Firebase Auth users not yet linked to a `members` row — Migrate tab candidates. */
 export async function fetchMigratableUsers(
   params: { pageToken?: string; email?: string; phone?: string } = {},
 ): Promise<{ users: MigratableAuthUser[]; nextPageToken: string | null }> {
@@ -999,7 +962,6 @@ export async function fetchMigratableUsers(
   return { users: Array.isArray(json.users) ? json.users : [], nextPageToken: json.nextPageToken ?? null }
 }
 
-/** Adopt existing Firebase Auth users (already signed in elsewhere, e.g. the mobile app) into Virtual Tracker — each with its own role. */
 export async function migrateAuthUsers(migrations: { uid: string; role: MemberRole }[]): Promise<MigrateResultRow[]> {
   const res = await apiFetch(apiPath("/api/members/migrate"), {
     method: "POST",

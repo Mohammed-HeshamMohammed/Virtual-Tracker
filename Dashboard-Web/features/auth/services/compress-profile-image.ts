@@ -1,10 +1,8 @@
 const MAX_DIMENSION = 512
-/** Keep encoded bytes under 500 KB for Firestore document limits. */
 export const TARGET_MAX_BYTES = 500 * 1024
 
 const ALLOWED_INPUT_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"])
 
-/** Resize/re-encode profile image before upload (max 500 KB). */
 export async function prepareProfileImageForUpload(file: File): Promise<File> {
   const inputType = file.type.toLowerCase()
   if (!ALLOWED_INPUT_TYPES.has(inputType)) {

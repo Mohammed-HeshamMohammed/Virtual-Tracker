@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/js-combine-iterations, react-doctor/async-await-in-loop, react-doctor/js-set-map-lookups */
 import { extractApiError, apiFetch, fetchJsonWithRetry, type ApiEnvelope, type RequestOptions } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import { resolveCurrentMemberId } from "@/features/members/services/current-member"
@@ -20,8 +19,6 @@ import {
 } from "@/features/projects/api/project-api"
 
 
-/** One member's project-level limit - a tightening measure applied on top of
- * that member's own daily/weekly cap, never a replacement for it. */
 export interface ProjectMemberLimitEntry {
   memberId: string
   type: string
@@ -31,7 +28,6 @@ export interface ProjectMemberLimitEntry {
   startDate: string
 }
 
-/** Payload mirroring the Desktop add-project form (all tabs). */
 export interface CreateProjectFormPayload {
   name: string
   type: ProjectType
@@ -41,21 +37,11 @@ export interface CreateProjectFormPayload {
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
-  /** Lets this project's client run it, rather than only read it. */
   clientCanManage: boolean
-  /** Lets this project's client clock in on it, alongside its other
-   *  members - independent of clientCanManage. */
   clientCanTrack: boolean
   disableIdleTime: boolean
-  /** Total idle-time threshold in seconds (hours+minutes in the UI, stored as
-   * seconds on the wire) - how long without activity before time on this
-   * project is marked idle. Defaults to 450 (7.5 minutes) on creation. */
   idleTimeSeconds: number
-  /** Optional, informational only - see item 5 of the budget fixes plan. */
   endDate: string
-  /** Management projects only: the projects grouped beneath this one. Linking
-   * one also rolls its managers into this project's members (server-side, in
-   * management-rollup.service.js). Empty for every other type. */
   subProjectIds: string[]
   clientIds: string[]
   teamIds: string[]
@@ -63,20 +49,11 @@ export interface CreateProjectFormPayload {
   userIds: string[]
   viewerIds: string[]
   memberLimitMemberIds: string[]
-  /** One independent limit per member. Replaces the old single shared block,
-   * which could only ever describe one member even though the table is keyed
-   * (project_id, member_id). */
   memberLimits: ProjectMemberLimitEntry[]
-  /** Each member's OWN daily/weekly hour cap, read-only - shown next to the
-   * project field so it's visible a project limit tightens on top of it. */
   memberOwnLimits: Record<string, { daily: number; weekly: number }>
-  /** Whether timers stop once the budget cap is reached - not "does this
-   * project have a budget" (every project always does, see item 6). */
   budgetStopTimers: boolean
   budgetType: string
   budgetBasedOn: string
-  /** 'per_project' (flat total, the only prior behavior) or 'per_person'
-   * (budgetTotal is hours-per-member; the real total scales with headcount). */
   budgetScope: string
   budgetTotal: string
   budgetResets: string
@@ -107,13 +84,7 @@ export interface ProjectBudgetRow {
   resets: string
   startDate: string
   includeNonBillableTime: boolean
-  /** Real value computed server-side from tracked time x rate - not stored, not
-   * fabricated, and not something to send back on create/update (read-only). */
   spent?: number
-  /** The real budget total to display: for scope='per_person' rows `cost` is
-   * hours-per-member, not a total - this is `cost` scaled live by current
-   * headcount (and rate, for Cost based). For scope='per_project' this just
-   * equals `cost`. Read-only, never sent back on create/update. */
   target?: number
 }
 
@@ -220,9 +191,6 @@ async function syncClientLinks(
   const desired = new Set(filterValidUuids(clientIds))
   const existing = await getClientProjectLinksForProject(projectId)
 
-  // Derive "already linked" from the one fetch above instead of re-fetching
-  // after the deletes - the set of links being kept is just existing minus
-  // the ones about to be removed, no round-trip needed to know that.
   const toDelete = existing.filter((link) => !desired.has(link.clientId))
   const keptClientIds = new Set(
     existing.filter((link) => desired.has(link.clientId)).map((link) => link.clientId),
@@ -264,14 +232,9 @@ async function updateProjectBudget(
   if (data.stopTimersWhenReached !== undefined) body.stop_timers_when_reached = data.stopTimersWhenReached
   if (data.stopTimersAtPct !== undefined) body.stop_timers_at_pct = data.stopTimersAtPct
   if (data.resets !== undefined) body.resets = data.resets
-  // null (not undefined) when cleared - JSON.stringify drops undefined keys
-  // entirely, and the backend's `??` fallback-to-current can't tell "not
-  // sent" from "sent empty" unless the key is actually present.
   if (data.startDate !== undefined) body.start_date = data.startDate || null
   if (data.includeNonBillableTime !== undefined) body.include_non_billable_time = data.includeNonBillableTime
   if (data.updatedBy && isValidUuid(data.updatedBy)) body.updated_by = data.updatedBy
-  // §6.9 - optional, only present when the caller sends back the
-  // budgetUpdatedAt it loaded the budget with.
   if (data.expectedUpdatedAt) body.expected_updated_at = data.expectedUpdatedAt
   const res = await apiFetch(apiPath(`/api/project-budgets/${id}`), {
     method: "PATCH",
@@ -280,8 +243,6 @@ async function updateProjectBudget(
   })
   const json = (await res.json()) as ApiEnvelope<unknown>
   if (!res.ok) {
-    // §6.9 - same convention updateProject/updateTask use: attach .status
-    // so the caller can branch on a stale-write conflict.
     const err = extractApiError(res.status, "Failed to update project budget", json) as Error & {
       status?: number
       conflictData?: unknown
@@ -350,9 +311,6 @@ async function createProjectBudget(
   const json = (await res.json()) as ApiEnvelope<Record<string, unknown>>
   if (!res.ok) throw extractApiError(res.status, "Failed to create project budget", json)
   if (!json.success) throw new Error(json.error || "Failed to create project budget")
-  // The POST response already IS the created row - no need for the follow-up
-  // GET /api/project-budgets this used to do just to hand back a value the
-  // create path never even read.
   return mapBudgetRow(json.data ?? {})
 }
 
@@ -432,7 +390,6 @@ export async function getTeamProjectLinksForProject(projectId: string): Promise<
     { retries: 1 },
   )
   if (!res.ok) return []
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   return (json?.data ?? [])
     .map((row) => ({
       id: String(row.id ?? ""),
@@ -478,9 +435,7 @@ export type CreateProjectActor = {
 
 export type ProjectEditLoadedState = CreateProjectFormPayload & {
   budgetId?: string
-  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
   updatedAt?: string
-  /** Same, for the budget row specifically - it saves through its own PATCH. */
   budgetUpdatedAt?: string
 }
 
@@ -521,10 +476,6 @@ function buildBudgetFields(payload: CreateProjectFormPayload) {
     scope: payload.budgetScope === "per_person" ? "per_person" : "per_project",
     cost: parseOptionalNumber(payload.budgetTotal) ?? 0,
     notifyProjectMembers: payload.budgetNotifyMembers,
-    // Dependent fields are already cleared to "" by the modal when their
-    // owning switch is toggled off (see project-modal.tsx), so an empty
-    // string here already means "send null" via parseOptionalNumber - no
-    // second gate needed on this side.
     notifyAtPct: parseOptionalNumber(payload.budgetNotifyAt),
     whoToNotify: payload.budgetWhoToNotify,
     stopTimersWhenReached: payload.budgetStopTimers,
@@ -535,7 +486,6 @@ function buildBudgetFields(payload: CreateProjectFormPayload) {
   }
 }
 
-/** Loads project + relations into the add/edit project form shape. */
 export async function fetchProjectForEdit(projectId: string): Promise<ProjectEditLoadedState> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<ProjectEditLoadedState>>(
     apiPath(`/api/projects/${encodeURIComponent(projectId)}/edit-state`),
@@ -557,8 +507,6 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
       : []
   return {
     ...data,
-    // Was `type === "calling" ? "calling" : "normal"`, which silently
-    // rewrote every other type into "normal" on load.
     type: normalizeProjectType(data.type),
     subProjectIds: Array.isArray(data.subProjectIds) ? (data.subProjectIds as string[]) : [],
     clientIds: filterValidUuids(rawClientIds.map((id) => String(id))),
@@ -582,8 +530,6 @@ async function syncTeamLinks(
   )
   const existing = await getTeamProjectLinksForProject(projectId)
 
-  // Same one-fetch diff as syncClientLinks - no need to re-fetch after
-  // deleting to know what's left, it's derivable from `existing`.
   const toDelete = existing.filter((link) => !desired.has(link.teamId))
   const keptTeamIds = new Set(
     existing.filter((link) => desired.has(link.teamId)).map((link) => link.teamId),
@@ -633,17 +579,6 @@ async function syncProjectMembers(
   ])
 }
 
-// ---------------------------------------------------------------------------
-// Create-only fast paths (item 3 of the budget fixes plan)
-//
-// syncClientLinks / syncProjectMembers / syncTeamLinks above exist to diff
-// against links that might already exist - correct for editing a project,
-// pure overhead for a project created milliseconds ago that has none. Each
-// of these skips the read-then-diff and just posts what's desired, so the
-// create flow trades ~13 sequential round-trips for a handful of ones that
-// all run in parallel (see createProjectWithDetails below). The edit path
-// keeps using the sync* functions unchanged.
-// ---------------------------------------------------------------------------
 
 async function linkClientsFast(
   projectId: string,
@@ -698,19 +633,11 @@ async function addProjectMembersFast(
   await Promise.all(desired.map((link) => addProjectMember(projectId, link.memberId, link.role, actorMemberId)))
 }
 
-/** Upserts one row per member and deletes rows for members no longer listed.
- * Each member carries independent values, so this can't be a single shared
- * write - the table is keyed (project_id, member_id) and POST upserts on that
- * key. Notify-at / notify-members stay project-wide, matching the UI. */
 async function syncProjectMemberLimits(
   projectId: string,
   payload: CreateProjectFormPayload,
   actorMemberId?: string,
 ): Promise<void> {
-  // A positive amount is what makes a row a limit at all. Type/basedOn are
-  // derived from the project budget upstream and are always populated, so an
-  // amount-less member is simply "not capped" rather than a 0 row the backend
-  // would read back as "no limit" anyway.
   const rows = (payload.memberLimits ?? []).filter(
     (row) => isValidUuid(row.memberId) && row.type.trim() && row.basedOn.trim() && Number(row.cost) > 0,
   )
@@ -734,9 +661,6 @@ async function syncProjectMemberLimits(
         console.warn("project-member-limits upsert failed", err)
       }),
     ),
-    // memberId is nullable on the row; narrowing it to string here (rather
-    // than filtering whole rows) is what lets deleteProjectMemberLimit take a
-    // plain string instead of re-checking for null.
     ...existing
       .map((row) => row.memberId)
       .filter((memberId): memberId is string => !!memberId && !keep.has(memberId))
@@ -753,28 +677,9 @@ export type BatchMemberLimitStatus = "applied" | "skipped" | "error"
 export type BatchMemberLimitResult = {
   projectId: string
   status: BatchMemberLimitStatus
-  /** Set for "skipped" (why nothing was written) and "error" (what failed). */
   reason?: string
 }
 
-/**
- * The Projects page's batch action for the Members Limits tab: one amount,
- * applied to a set of members across many projects at once, instead of
- * opening each project's own edit form.
- *
- * Each project keeps its own denomination - hours vs cost, and which rate a
- * cost limit is measured against - exactly as the per-project editor derives
- * it from that project's own budget (derivedLimitType/derivedBasedOn). A
- * project with no budget at all has nothing for a member limit to tighten,
- * so it is skipped rather than silently given a cost-based cap with no real
- * budget behind it.
- *
- * A member who already has a limit row on a project keeps that row's own
- * resets/start date/notify settings - only the amount changes. upsertProject-
- * MemberLimitPg overwrites every column on conflict, so passing those fields
- * as undefined here would blank out settings the batch action was never
- * asked to touch.
- */
 export async function applyMemberLimitToProjects(input: {
   projectIds: string[]
   memberIds: string[]
@@ -838,7 +743,6 @@ async function deleteProjectMemberLimit(projectId: string, memberId: string): Pr
   if (!res.ok) throw new Error("Failed to remove project member limit")
 }
 
-/** Updates project + budget, member links, and team links. */
 export async function updateProjectWithDetails(
   projectId: string,
   payload: CreateProjectFormPayload,
@@ -853,10 +757,6 @@ export async function updateProjectWithDetails(
   const primaryClientId = clientIds[0]
   const memberPayload = ensureActorInMembers(payload, actorMemberId)
 
-  // projectId already exists (this is the edit path), so - same as
-  // createProjectWithDetails below - the core field update and every link/
-  // budget sync are independent of each other and run concurrently instead
-  // of as a 4+ round-trip serial chain.
   const [updated] = await Promise.all([
     updateProject(projectId, {
       name: payload.name,
@@ -882,8 +782,6 @@ export async function updateProjectWithDetails(
     shouldPersistBudget(payload)
       ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId, options?.expectedBudgetUpdatedAt)
       : Promise.resolve(),
-    // Edits used to skip member limits entirely (create-only), so any change
-    // made on the Members Limits tab in edit mode was silently discarded.
     syncProjectMemberLimits(projectId, payload, actorMemberId),
   ])
 
@@ -913,7 +811,6 @@ async function persistBudgetForProject(
   }
 }
 
-/** Creates project + budget, member limit, team links, and optional client link. */
 export async function createProjectWithDetails(
   payload: CreateProjectFormPayload,
   actor?: CreateProjectActor,
@@ -947,10 +844,6 @@ export async function createProjectWithDetails(
 
   const created = await createProject(projectInput)
 
-  // Every one of these is independent once the project id exists - no
-  // ordering dependency between budget, client links, member links, team
-  // links, and member limits, so they run concurrently instead of as a
-  // 13-round-trip serial chain (item 3 of the budget fixes plan).
   const memberPayload = ensureActorInMembers(payload, actorMemberId)
   await Promise.all([
     shouldPersistBudget(payload)
@@ -984,8 +877,6 @@ async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
     getProjectMemberRows({ fields: ["id", "project_id", "member_id"] }).catch(() => [] as ProjectMemberRow[]),
     getTeamProjectLinks().catch(() => [] as TeamProjectLink[]),
     getProjectMemberLimits(undefined, { fields: ["id", "project_id", "cost"] }).catch(() => [] as ProjectMemberLimitRow[]),
-    // Task counts come from the overview endpoint's SQL aggregate rather than
-    // pulling every task row down to count client-side.
     getProjectOverviewCore().catch(() => null),
   ])
 

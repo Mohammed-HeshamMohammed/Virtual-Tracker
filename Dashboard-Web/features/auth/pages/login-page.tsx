@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import React, { useState as useComponentState, useEffect } from "react"
@@ -116,11 +114,6 @@ const AuthPage: React.FC = () => {
     window.history.replaceState({}, document.title, next)
   }, [searchParams])
 
-  // Desktop-agent Google sign-in lands back here from Auth-Backend's
-  // /api/auth/google/callback (server-side OAuth flow — see google-oauth.js),
-  // not from this page's own sign-in form. Success takes over the whole page
-  // (AgentLinkedSuccessScreen) instead of a banner - that screen owns firing
-  // the virtualtracker:// deep link and auto-closing this tab.
   useEffect(() => {
     const linked = searchParams.get("agentLinked")
     const linkError = searchParams.get("agentLinkError")
@@ -140,8 +133,6 @@ const AuthPage: React.FC = () => {
     }
   }, [searchParams])
 
-  // Desktop-agent deep link (?mode=signup|forgot-password): jump straight to
-  // that pane instead of always landing on plain sign-in.
   useEffect(() => {
     const mode = searchParams.get("mode")
     if (mode !== "signup" && mode !== "forgot-password") return
@@ -155,8 +146,6 @@ const AuthPage: React.FC = () => {
     }
   }, [searchParams])
 
-  // Desktop-agent deep link (?provider=google|apple): auto-run that
-  // provider's sign-in instead of making the user click it again.
   useEffect(() => {
     const provider = searchParams.get("provider")
     if (provider !== "google" && provider !== "apple") return
@@ -479,7 +468,6 @@ const AuthPage: React.FC = () => {
                         onPasswordPanelChange={setShowPasswordPanel}
                       />
 
-                      {/* Trouble options menu pane */}
                       <LoginTroublePane
                         isDark={isDark}
                         isActive={loginPane === "trouble-menu"}
@@ -491,7 +479,6 @@ const AuthPage: React.FC = () => {
                         onBackToSignIn={() => setLoginPane("main")}
                       />
 
-                      {/* Recovery input form pane */}
                       <LoginRecoveryPane
                         isDark={isDark}
                         isActive={
@@ -520,7 +507,6 @@ const AuthPage: React.FC = () => {
                         clearAuthError={clearAuthError}
                       />
 
-                      {/* Work email input form pane */}
                       <LoginWorkEmailPane
                         isDark={isDark}
                         isActive={
@@ -560,7 +546,6 @@ const AuthPage: React.FC = () => {
                   </div>
                 </AuthMotionPane>
 
-                {/* Request Access Card view */}
                 <RequestAccessCard
                   isDark={isDark}
                   isActive={cardView === "request"}

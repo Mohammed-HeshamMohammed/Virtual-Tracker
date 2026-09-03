@@ -1,4 +1,3 @@
-/** Browser activity capture — real screen frames when opted in, tab thumbnail fallback. */
 
 import { getActivityLevel } from "@/features/activity/utils/activity-level"
 import { captureAppName, captureScreenFrame, isScreenCaptureActive } from "@/features/activity/utils/screen-capture"
@@ -64,7 +63,6 @@ export function trackedAppName(): string {
   return isScreenCaptureActive() ? captureAppName() : "Browser · Virtual Tracker"
 }
 
-/** Real screen JPEG when capture is active; otherwise a tab summary thumbnail. */
 export async function captureScreenshot(): Promise<string> {
   if (isScreenCaptureActive()) {
     const frame = await captureScreenFrame()

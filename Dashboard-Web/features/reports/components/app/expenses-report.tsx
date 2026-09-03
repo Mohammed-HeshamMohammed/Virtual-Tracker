@@ -85,9 +85,6 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
       n.has(key) ? n.delete(key) : n.add(key)
       return n
     })
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -141,8 +138,6 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
     const approved = rows.filter((r) => r.status === "approved").reduce((s, r) => s + r.amount, 0)
     const pending = rows.filter((r) => r.status === "pending").reduce((s, r) => s + r.amount, 0)
     const billable = rows.filter((r) => r.billable).reduce((s, r) => s + r.amount, 0)
-    // Mixed currencies can't be summed honestly - say so instead of adding
-    // numbers that don't share a unit.
     const mixed = new Set(rows.map((r) => r.currency)).size > 1
     return { currency, total, approved, pending, billable, mixed }
   }, [rows])

@@ -1,4 +1,3 @@
-// App shell — dashboard layout + lazy route chunks for app/page.tsx.
 
 export { DashboardShell } from "@/app/dashboard-shell"
 export { HomeClient } from "@/app/home-client"

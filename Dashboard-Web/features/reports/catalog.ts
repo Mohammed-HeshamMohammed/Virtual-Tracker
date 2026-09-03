@@ -1,27 +1,14 @@
-/**
- * Every report the hub lists, in one flat table.
- *
- * This replaces the three overlapping constants the hub used to read
- * (REPORTS_POPULAR, REPORTS_SECTIONS, REPORTS_CUSTOMIZED): a report appeared
- * in two of them with its description written out twice, and the third was a
- * hardcoded empty array. Sections and the popular row are derived from this
- * list, so a report is described once and cannot drift between the two places
- * it renders.
- */
 
 export type ReportCatalogCard = {
-  /** Nav page id the hub navigates to, and the id saved reports pin against. */
   pageId: string
   title: string
   description: string
-  /** Hub section heading. Null for a report that only appears under Popular. */
   section: string | null
   badge?: string
 }
 
 const SECTION_ORDER = ["General", "Payment", "Budgets and limits", "Time off", "Invoice", "Schedule"] as const
 
-/** Ordered - this is the order the three popular cards render in. */
 const POPULAR_PAGE_IDS = ["reports-time", "reports-amounts", "reports-daily"] as const
 
 export const REPORT_CATALOG: ReportCatalogCard[] = [
@@ -29,8 +16,6 @@ export const REPORT_CATALOG: ReportCatalogCard[] = [
     pageId: "reports-time",
     title: "Time & activity",
     description: "See team members' time worked, activity levels, and amounts earned per project or to-do.",
-    // Popular-only, the way the hub has always listed it - the General grid
-    // never carried a second copy of this card.
     section: null,
     badge: "New",
   },
@@ -164,12 +149,10 @@ export const REPORT_CATALOG: ReportCatalogCard[] = [
 
 const BY_PAGE_ID = new Map(REPORT_CATALOG.map((card) => [card.pageId, card]))
 
-/** The three cards on the Popular row, in order. */
 export const POPULAR_REPORTS: ReportCatalogCard[] = POPULAR_PAGE_IDS.map((id) => BY_PAGE_ID.get(id)).filter(
   (card): card is ReportCatalogCard => Boolean(card),
 )
 
-/** The categorized grids below the popular row. */
 export const REPORT_SECTIONS: { heading: string; cards: ReportCatalogCard[] }[] = SECTION_ORDER.map((heading) => ({
   heading,
   cards: REPORT_CATALOG.filter((card) => card.section === heading),

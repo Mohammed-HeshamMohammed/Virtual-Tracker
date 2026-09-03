@@ -1,7 +1,6 @@
 import { useEffect, useState, type RefObject } from "react"
 import { distributeRowHeight, measureTbodyArea } from "@/shared/tables/utils/table-layout"
 
-/** Returns a row height so visible rows fill the table body without vertical scroll. */
 export function useDistributedRowHeight(
   containerRef: RefObject<HTMLElement | null>,
   visibleRowCount: number,

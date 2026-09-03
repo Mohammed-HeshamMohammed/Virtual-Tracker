@@ -1,4 +1,3 @@
-/** Main content areas that manage their own scroll (full-bleed tables/trees). */
 export const FULL_BLEED_PAGE_IDS = new Set([
   "people-members",
   "people-teams",

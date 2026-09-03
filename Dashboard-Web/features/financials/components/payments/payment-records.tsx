@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState, useMemo, useCallback, useEffect } from "react"
@@ -34,7 +33,6 @@ export function PaymentRecordsContent() {
   const filtered = useMemo(() => {
     return records.filter((r) => {
       const matchSearch = r.name.toLowerCase().includes(searchQ.toLowerCase()) || r.id.toLowerCase().includes(searchQ.toLowerCase())
-      // Team filtering mock logic: if not "All teams", we could filter if we had teams in records, but we don't, so we'll just return true or mock it
       return matchSearch
     })
   }, [records, searchQ])
@@ -74,7 +72,6 @@ export function PaymentRecordsContent() {
 
   return (
     <div className="max-w-[1300px] mx-auto space-y-6">
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative w-full max-w-[280px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -114,7 +111,6 @@ export function PaymentRecordsContent() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full">

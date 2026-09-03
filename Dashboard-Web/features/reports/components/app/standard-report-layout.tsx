@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import {
@@ -116,45 +114,19 @@ export function StandardReportLayout({
   onNavigate?: (id: string) => void
   groupByOptions?: { value: string; label: string }[]
   defaultGroupBy?: string
-  /** Node, or a render function given a close callback so the panel's own
-   *  Done/Close buttons can dismiss the layout-owned overlay. */
   filtersPanel?: ReactNode | ((close: () => void) => ReactNode)
   exportFileBaseName?: string
-  /** Nav page id. Supplies the subtitle from the report catalog, so the line
-   *  under the title is the same sentence the hub card shows for this report
-   *  and there is only one place to write it. */
   pageId?: string
-  /** Overrides the catalog description when a report needs its own line. */
   subtitle?: string
-  // Send and Schedule used to render on every report, and on all but Time &
-  // Activity the dialog just closed itself and did nothing - no email, no
-  // schedule row, no error. The scheduler is worse than a no-op for the
-  // others: it builds a Time & Activity payload whatever report_type says, so
-  // a scheduled "Payments report" would arrive as someone's time report. A
-  // report gets the button only once it can honour it.
-  /** Emails this report now. Without it, Send is not offered. */
   onSend?: (input: ReportSendInput) => Promise<void>
-  /** Saves a recurring delivery. Without it, Schedule is not offered. */
   onSchedule?: (input: ReportScheduleInput) => Promise<void>
-  // A report that never reads `rangeStart`/`rangeEnd`, `scope`, or `groupBy`
-  // out of this layout's context must hide the matching control rather than
-  // render a dead one. Several reports used to show all three and consume
-  // none, so clicking them visibly did nothing.
-  /** Date nav (prev / picker / next / Today). Off for period-scoped reports. */
   showDateRange?: boolean
-  /** ME / ALL scope tabs. */
   showScopeTabs?: boolean
-  /** "Group by:" dropdown. */
   showGroupBy?: boolean
   children: ReactNode
 }) {
   const { isDark } = useTheme()
   const [scope, setScope] = useComponentState<StandardReportScope>("all")
-  // Last 7 days, the default every hand-built report page already uses
-  // (work sessions, audit log, amounts owed, daily totals, time & activity).
-  // This layout opened on today alone, so the seventeen reports that use it
-  // rendered "nothing to report" on load unless someone had tracked time
-  // since midnight - the reports looked broken rather than narrow.
   const [rangeStart, setRangeStart] = useComponentState(() => {
     const d = startOfDay(new Date())
     d.setDate(d.getDate() - 6)
@@ -174,10 +146,6 @@ export function StandardReportLayout({
     setCanExport(Boolean(fn))
   }, [])
 
-  // Same registration pattern as CSV above, for the real generated-PDF export
-  // (see features/reports/utils/pdf/report-pdf-kit.ts). A report gets "To
-  // PDF" only once it has registered a builder for its own data - same "no
-  // dead options" rule the CSV item already follows.
   const pdfExportHandlerRef = useRef<(() => void) | null>(null)
   const [canExportPdf, setCanExportPdf] = useComponentState(false)
   const registerPdfExportHandler = useCallback((fn: (() => void) | null) => {
@@ -201,12 +169,6 @@ export function StandardReportLayout({
     [scope, rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler]
   )
 
-  /**
-   * Page by a whole window, which is what the buttons are labelled
-   * ("Previous period" / "Next period"). Shifting a single day across a
-   * seven-day window would leave six days of overlap between one click and
-   * the next.
-   */
   function shiftRangeByPeriods(direction: -1 | 1) {
     const spanDays = Math.max(1, Math.round((endOfDay(rangeEnd).getTime() - startOfDay(rangeStart).getTime()) / 86_400_000))
     const s = new Date(rangeStart)
@@ -217,8 +179,6 @@ export function StandardReportLayout({
     setRangeEnd(endOfDay(e))
   }
 
-  /** Back to the default window, not to today alone - the button sits next to
-   *  the range picker and is the way back after paging through history. */
   function resetRange() {
     const end = endOfDay(new Date())
     const start = startOfDay(new Date())
@@ -228,9 +188,6 @@ export function StandardReportLayout({
   }
 
   function runExport() {
-    // Only a child-registered handler can export real rows. There used to be
-    // a fallback here writing a literal "Demo,<range>" CSV, which looked like
-    // a genuine (if empty) export of the report the user was looking at.
     exportHandlerRef.current?.()
   }
 
@@ -238,9 +195,6 @@ export function StandardReportLayout({
     pdfExportHandlerRef.current?.()
   }
 
-  // A report with no filters panel simply doesn't get a Filters button. There
-  // used to be a stand-in panel here reading "No additional filters for this
-  // report (demo)", which made an unbuilt feature look like an empty one.
   const closeFilters = useCallback(() => setShowFilters(false), [])
   const panel =
     typeof filtersPanel === "function" ? filtersPanel(closeFilters) : (filtersPanel ?? null)
@@ -250,12 +204,8 @@ export function StandardReportLayout({
       <div className="relative isolate min-h-0">
         <div className="relative mx-auto min-h-0 max-w-[1400px] space-y-5 px-0 py-0">
 
-          {/* Row 1: title (left) + date range + Today + Filters (right) — matches reference */}
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
             <div className="min-w-0 max-w-xl">
-              {/* One title treatment. This used to be two - a `muted` variant
-                  rendered the report name in light grey at 3xl, which read as
-                  a disabled heading rather than the page title. */}
               <h1
                 className={cn(
                   "truncate text-2xl font-semibold tracking-tight",
@@ -355,9 +305,6 @@ export function StandardReportLayout({
             </div>
           </div>
 
-          {/* Row 2: ME / ALL. Hidden entirely when the report has no scope -
-              this used to still render its bottom border, leaving a stray
-              divider line floating under the title. */}
           {showScopeTabs ? (
           <div
             className={cn(
@@ -387,7 +334,6 @@ export function StandardReportLayout({
           </div>
           ) : null}
 
-          {/* Row 3: TVC + group by (left) · Send / Schedule / Export (right) */}
           <div
             className={cn(
               "flex flex-col gap-4 border-b pb-5 pt-1 lg:flex-row lg:items-end lg:justify-between",
@@ -395,10 +341,6 @@ export function StandardReportLayout({
             )}
           >
             <div className="space-y-1">
-              {/* One org/timezone treatment. Three variants used to exist and
-                  which one a report got was decided by unrelated title props,
-                  so the same header block rendered at three different sizes
-                  across the reports section. */}
               <div className="flex flex-wrap items-baseline gap-x-2">
                 <span className={cn("text-base font-semibold", isDark ? "text-white/90" : "text-slate-900")}>
                   {STANDARD_REPORT_ORG_LABEL}

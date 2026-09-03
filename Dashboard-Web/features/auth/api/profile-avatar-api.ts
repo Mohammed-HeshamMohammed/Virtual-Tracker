@@ -93,7 +93,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
-/** Upload avatar via backend (User_profiles). */
 export async function uploadProfileAvatarWithBackend(
   user: User,
   file: File,
@@ -108,7 +107,6 @@ export async function uploadProfileAvatarWithBackend(
   return postProfileAvatar({ imageBase64, contentType })
 }
 
-/** Remove uploaded avatar; OAuth provider photos stay. */
 export async function clearUploadedProfileAvatarWithBackend(user: User): Promise<AuthProfileSnapshot | undefined> {
   void user
   return postProfileAvatar({ clear: true })

@@ -1,4 +1,3 @@
-/** Visual tokens aligned with the signed-in dashboard shell (sidebar + main panel). */
 export function getDashboardStatusStyles(isDark: boolean) {
   return {
     pageBg: isDark ? "bg-[#151b2d]" : "bg-[#f0f4f8]",

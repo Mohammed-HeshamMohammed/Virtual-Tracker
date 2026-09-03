@@ -66,7 +66,6 @@ export function AuthHelperPanel({
   )
 }
 
-/** Mobile fallback — same content below the form on small screens. */
 export function AuthMobileHelperStrip({
   visible,
   children,

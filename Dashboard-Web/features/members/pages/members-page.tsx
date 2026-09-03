@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useEffect, useMemo, useRef, useState as useComponentState, useCallback } from "react"
@@ -50,7 +48,6 @@ import { TableRefreshButton, TableToolbarIconButton } from "@/shared/tables/ui"
 import { MyTeamScopeIconButton } from "@/features/members/components/my-team-scope-controls"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
 
-// Custom hooks for extracted logic
 import { useMemberColumns } from "@/features/members/hooks/use-member-columns"
 import { useInviteColumns } from "@/features/members/hooks/use-invite-columns"
 import { useMemberScope } from "@/features/members/hooks/use-members-hierarchy"
@@ -96,9 +93,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   const membersListEnabled = Boolean(sessionReady && isLoggedIn && !profile?.mustChangePassword)
   const [activeTab, setActiveTab] = useComponentState<"members" | "invites">("members")
   const [showAdd, setShowAdd] = useComponentState(false)
-  // Bumped on every open so AddMembersModal gets a fresh `key` — otherwise AnimatePresence can
-  // hand back the still-exiting instance instead of remounting, leaving stale state (isClosing
-  // stuck true -> pointer-events-none never clears -> modal looks unresponsive).
   const addMembersInstanceRef = useRef(0)
   const [showRecruit, setShowRecruit] = useComponentState(false)
   const [showFilters, setShowFilters] = useComponentState(false)
@@ -138,9 +132,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
   } = usePermissions()
 
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading, refreshTeamMemberIds } = usePeopleTeamScope()
-  // Owner/Super Admin/Admin/Super Manager only - narrower than
-  // canUseBatchMemberActions (Manager+), which gates the whole dropdown.
-  // Server enforces this too (updateMemberProfile's hasPayBill branch).
   const canBatchEditPayRate = canEditPayRates(viewerRole)
 
   const restrictedHiddenCols = new Set(["payment", "limits", "date_added"])
@@ -174,9 +165,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     staleMs: 300_000,
     minLoadingMs: 0,
     initialData: [],
-    // Was the generic presence-ping heartbeat; changedEvent("invites") only
-    // fires when invites actually changed (case 6), and forceRefetch
-    // bypasses staleMs so it repaints without waiting on the next ping.
     presencePingEvent: changedEvent("invites"),
     backgroundRefetch: { forceRefetch: true },
   })
@@ -224,7 +212,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     })
   }
 
-  // Custom Invites Columns Hook
   const {
     inviteSortCol,
     inviteSortDir,
@@ -245,7 +232,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     members.find((m) => (m.email || "").trim().toLowerCase() === currentEmail)
   const currentMemberId = authMemberId || currentMemberRecord?.id
 
-  // Custom Hierarchy Hook
   const { visibleMemberIds: scopedVisibleIds, manageableMemberIds: scopedManageableIds, refreshScope } =
     useMemberScope({
     canSeeAllMembers,
@@ -269,7 +255,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     scopedMembersRefetchRef.current = false
   }, [currentMemberId])
 
-  // Bust stale Viewer-era caches after promotion to Manager / Super Manager.
   useEffect(() => {
     if (canSeeAllMembers || !authMemberId) return
     const bustKey = `${authMemberId}:${memberRole}`
@@ -301,7 +286,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     void refetchMembersList({ forceRefetch: true, showLoading: false })
   }, [canSeeAllMembers, scopedVisibleIds, members, isLoading, isRefreshing, refetchMembersList])
 
-  /** IDs the viewer may edit/remove — backend manageable scope + role policy. */
   const manageableMemberIds = useMemo(() => {
     if (canSeeAllMembers) {
       return new Set(
@@ -338,7 +322,6 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     }
   }, [refetchAllLists, refreshScope, refreshTeamMemberIds, setIsRefreshing])
 
-  // Custom Mutations Hook
   const {
     handleAddMembers,
     handleCreateShareLink,
@@ -381,10 +364,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       return Array.from(byKey.values()).filter((member) => member.status !== "banned")
     })()
 
-    // Admin/Owner/SuperAdmin see all members
     if (canSeeAllMembers) return deduped
 
-    // Managers / Super Managers: server returns visible list (subtree + upline read-only + org pool)
     if (!currentMemberId) return []
     return deduped
   }, [members, canSeeAllMembers, currentMemberId])
@@ -429,13 +410,11 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     [organizationScopedMembers, memberFilters],
   )
 
-  // Pending email invites only — share links and joined members are excluded.
   const visibleInvites = useMemo(() => {
     const pending = invites.filter(
       (invite) => invite.status !== "Joined" && invite.inviteKind !== "open_link",
     )
     if (canSeeAllMembers) return pending
-    // Non-admins: API already scopes invites; show all returned pending invites.
     return pending
   }, [invites, canSeeAllMembers])
 

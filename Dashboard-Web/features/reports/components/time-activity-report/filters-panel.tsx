@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState, type CSSProperties } from "react"
@@ -29,7 +28,6 @@ export function ReportFiltersPanel({
   panelStyle?: CSSProperties | null
   trackedTimeFilter: TrackedTimeFilter
   setTrackedTimeFilter: (value: TrackedTimeFilter) => void
-  /** Resets project/tracked-time filters on the report (owned by the parent hook). */
   onClearFilters: () => void
 }) {
   const [includeArchived, setIncludeArchived] = useState(true)

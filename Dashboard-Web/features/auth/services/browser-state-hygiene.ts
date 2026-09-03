@@ -4,10 +4,8 @@ import { clearAllListCaches } from "@/shared/tables/hooks/list-cache-registry"
 import { resetFirebaseClient } from "@/infrastructure/firebase/config"
 import type { FirebaseOptions } from "firebase/app"
 
-/** Last time soft/hard cache purge ran (ms epoch). */
 export const VT_LAST_CACHE_PURGE_AT = "vt_last_cache_purge_at"
 
-/** Firebase project id last bound after a successful backend verify. */
 const VT_FIREBASE_PROJECT_ID = "vt_firebase_project_id"
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000
@@ -23,7 +21,6 @@ export class AuthSessionInvalidatedError extends Error {
   }
 }
 
-/** Token / project mismatch and similar cases that require a silent full auth reset. */
 export function isSuspiciousAuthError(message: string): boolean {
   const m = message.toLowerCase()
   return (
@@ -72,14 +69,12 @@ function touchPurgeTimestamp(): void {
   localStorage.setItem(VT_LAST_CACHE_PURGE_AT, String(Date.now()))
 }
 
-/** Soft purge: list caches + session tab data (keeps Firebase auth persistence). */
 function purgeSoftBrowserCaches(): void {
   clearAllListCaches()
   clearVtSessionStorage()
   touchPurgeTimestamp()
 }
 
-/** Full sign-out purge — Firebase reset + clear app storage (keeps theme). */
 async function purgeHardBrowserState(): Promise<void> {
   clearAllListCaches()
   clearVtSessionStorage()
@@ -99,7 +94,6 @@ export function markAuthProjectBound(projectId: string): void {
   localStorage.setItem(VT_FIREBASE_PROJECT_ID, projectId)
 }
 
-/** Post redirect/email-link hygiene — do NOT purge firebase keys on cold start. */
 export function runPostAuthRedirectHygiene(config: FirebaseOptions): void {
   if (typeof window === "undefined") return
 
@@ -120,12 +114,10 @@ export function runPostAuthRedirectHygiene(config: FirebaseOptions): void {
   }
 }
 
-/** @deprecated Prefer {@link runPostAuthRedirectHygiene} after `getRedirectResult` (see doc there). Kept name for tooling; same implementation. */
 function runStartupBrowserHygiene(config: FirebaseOptions): void {
   runPostAuthRedirectHygiene(config)
 }
 
-/** Call when backend rejects a token for project mismatch etc. */
 export async function handleSuspiciousAuthFailure(): Promise<never> {
   await purgeHardBrowserState()
   throw new AuthSessionInvalidatedError()

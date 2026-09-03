@@ -2,7 +2,6 @@
 
 import { TeamsSkeleton } from "./teams-skeleton"
 
-/** Chunk-route fallback — table-only skeleton; toolbar chrome stays on TeamsPage during data load. */
 export function TeamsPageSkeleton({ isDark = false }: { isDark?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">

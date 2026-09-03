@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState, useMemo } from "react"
@@ -84,10 +83,6 @@ export function TasksBreakdown({
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {/* Status filter pills - only statuses with at least one task, so
-              the row doesn't waste space on permanently-zero bubbles; flex
-              `gap` (not justify-between) keeps spacing equal regardless of
-              how many end up visible. */}
           <div className="flex flex-nowrap items-center gap-1.5 overflow-hidden">
             {statusKeys.filter((s) => (grouped[s]?.length || 0) > 0).map((s) => {
               const cfg = STATUS_CONFIG[s]
@@ -120,7 +115,6 @@ export function TasksBreakdown({
         </div>
       </div>
 
-      {/* Task grid — 2 cols, max 6 visible */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-2 overflow-hidden p-4 md:grid-cols-2">
         <AnimatePresence>
           {filteredTasks.length === 0 ? (
@@ -179,7 +173,6 @@ export function TasksBreakdown({
         </AnimatePresence>
       </div>
 
-      {/* Task Detail Dialog */}
       <AnimatePresence>
         {selectedTask && (
           <motion.div
@@ -200,7 +193,6 @@ export function TasksBreakdown({
               )}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Header */}
               <div className={cn("flex items-center justify-between px-6 py-4 border-b", isDark ? "border-[#3d4a3d]/40" : "border-slate-100")}>
                 <div className="flex items-center gap-2">
                   {STATUS_CONFIG[selectedTask.status]?.icon}
@@ -214,15 +206,12 @@ export function TasksBreakdown({
                 </button>
               </div>
 
-              {/* Content */}
               <div className="p-6 space-y-4">
-                {/* Title */}
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1 block" htmlFor="fallback-id">Title</label>
                   <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>{selectedTask.title}</p>
                 </div>
 
-                {/* Status */}
                 <div className="flex items-center gap-4">
                   <div className="flex-1">
                     <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1 block">Status</label>
@@ -236,13 +225,11 @@ export function TasksBreakdown({
                   </div>
                 </div>
 
-                {/* Project */}
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1 block">Project</label>
                   <p className={cn("text-sm", isDark ? "text-[#dce1fb]/80" : "text-slate-600")}>{projectNames[selectedTask.projectId] || "Unknown"}</p>
                 </div>
 
-                {/* Assignee */}
                 <div>
                   <label className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1 block">Assigned To</label>
                   <p className={cn("text-sm", isDark ? "text-[#dce1fb]/80" : "text-slate-600")}>
@@ -251,7 +238,6 @@ export function TasksBreakdown({
                 </div>
               </div>
 
-              {/* Footer */}
               <div className={cn("flex justify-end px-6 py-4 border-t", isDark ? "border-[#3d4a3d]/40" : "border-slate-100")}>
                 <button
                   onClick={() => {

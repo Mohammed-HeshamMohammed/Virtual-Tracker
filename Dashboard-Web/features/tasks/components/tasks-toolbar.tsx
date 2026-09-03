@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { motion } from "framer-motion"

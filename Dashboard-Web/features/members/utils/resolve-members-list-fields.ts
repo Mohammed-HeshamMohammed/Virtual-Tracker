@@ -1,12 +1,10 @@
 import { DEFAULT_ENABLED_MEMBER_COLS } from "@/features/members/config/members-config"
 import type { MemberListFilters } from "@/features/members/components/filters/member-filters-panel"
 
-/** Always required for identity, permissions, filters, and live presence — not tied to optional columns. */
 export const MEMBERS_LIST_CORE_API_FIELDS = [
   "id",
   "first_name",
   "last_name",
-  // The full name for members whose first/last are empty.
   "display_name",
   "work_email",
   "personal_email",
@@ -18,14 +16,9 @@ export const MEMBERS_LIST_CORE_API_FIELDS = [
   "role",
   "role_name",
   "tracking_status",
-  // Always fetched (not gated on the Projects filter being active) so
-  // applying that filter never has to wait on a refetch first - without
-  // this, every member's projectIds is [] until the field arrives, and the
-  // filter matches nothing for one render, flashing an empty table.
   "project_ids",
 ] as const
 
-/** Optional table columns → API / enrichment fields. */
 export const MEMBER_COLUMN_API_FIELDS: Record<string, readonly string[]> = {
   status: ["tracking_status"],
   role: ["role", "role_name", "role_id"],
@@ -47,7 +40,6 @@ function normalizeEnabledCols(enabledCols: Set<string> | readonly string[]): Set
   return enabledCols instanceof Set ? enabledCols : new Set(enabledCols)
 }
 
-/** Build the `fields` query param for `GET /api/members`. */
 export function resolveMembersListFields(input: ResolveMembersListFieldsInput): string[] {
   const enabled = normalizeEnabledCols(input.enabledCols)
   const fields = new Set<string>(MEMBERS_LIST_CORE_API_FIELDS)
@@ -71,7 +63,6 @@ export function resolveMembersListFields(input: ResolveMembersListFieldsInput): 
   return [...fields].sort()
 }
 
-/** Stable cache key suffix for a resolved field list. */
 export function membersListFieldSignature(fields: readonly string[]): string {
   return fields.join(",")
 }
@@ -80,7 +71,6 @@ export function membersListCacheKey(fields: readonly string[]): string {
   return `people-members:members:${membersListFieldSignature(fields)}`
 }
 
-/** Default bootstrap / legacy prefetch field set. */
 export function resolveDefaultMembersListFields(): string[] {
   return resolveMembersListFields({
     enabledCols: DEFAULT_ENABLED_MEMBER_COLS,

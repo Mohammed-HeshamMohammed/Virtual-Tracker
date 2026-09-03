@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState, useRef, useEffect } from "react"
@@ -133,7 +132,7 @@ export function Tip({ text, preferLeft }: { text: string; preferLeft?: boolean }
   const show = () => {
     if (!iconRef.current) return
     const rect = iconRef.current.getBoundingClientRect()
-    const tipWidth = 208 // w-52
+    const tipWidth = 208
     const spaceRight = window.innerWidth - rect.right
     if (preferLeft || spaceRight >= tipWidth + 12) {
       setPos({ top: rect.top + rect.height / 2, left: rect.right + 8 })

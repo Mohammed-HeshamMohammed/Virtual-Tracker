@@ -50,7 +50,6 @@ export default function Payments({ onNavigate }: { onNavigate: (id: string) => v
 
   return (
     <div className="flex justify-between gap-6">
-      {/* left: settings */}
       <div className="space-y-8 max-w-xl">
         <div>
           <h3 className={cn("text-base font-bold mb-1 flex items-center gap-1.5", isDark ? "text-white" : "text-slate-800")}>
@@ -115,7 +114,6 @@ export default function Payments({ onNavigate }: { onNavigate: (id: string) => v
         </div>
       </div>
 
-      {/* right: save/cancel + disclaimer + payslip */}
       <div className="w-72 shrink-0 flex flex-col gap-4">
         <div className="flex items-center gap-2 justify-end">
           <button className={cn("px-4 py-1.5 text-sm font-medium transition-colors", isDark ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700")} type="button">Cancel</button>

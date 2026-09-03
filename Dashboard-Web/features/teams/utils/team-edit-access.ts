@@ -6,7 +6,6 @@ type TeamWithMembers = {
   members: Array<{ id: string; is_lead?: boolean }>
 }
 
-/** Owner-tier or team lead may edit team (UI hint — backend enforces). */
 export function canEditTeam(
   team: TeamWithMembers,
   memberId: string,

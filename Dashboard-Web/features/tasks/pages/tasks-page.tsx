@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-chain-state-updates, react-doctor/no-derived-state */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useEffect, useMemo, useState as useComponentState, type MouseEvent } from "react"
@@ -29,7 +27,6 @@ import { TasksContentSkeleton } from "@/features/tasks/components/skeletons/task
 import { TaskDetailPopover, openTaskPreviewAtClick, type TaskPreviewAnchor } from "@/features/tasks/components/task-detail-popover"
 import { DndContext, closestCorners, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core"
 
-// Custom hooks, components, modals & helpers
 import {
   type Task,
   type Member,
@@ -73,7 +70,6 @@ export function TasksPage() {
   const { query: search, setQuery: setSearch } = usePageSearch()
   const [syncPulse, setSyncPulse] = useComponentState(false)
 
-  // Dialog & popover states
   const [isProjectPickerOpen, setIsProjectPickerOpen] = useComponentState(false)
   const [isTaskModalOpen, setIsTaskModalOpen] = useComponentState(false)
   const [editingTaskId, setEditingTaskId] = useComponentState<string | null>(null)
@@ -115,9 +111,6 @@ export function TasksPage() {
     refetchOnVisibility: true,
     backgroundRefetchKeys: ["tasks"],
     initialData: { projects: [], tasks: [] },
-    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 3): replaces the
-    // 50s poll - forceRefetch bypasses staleMs so a broadcast repaints in
-    // under a second instead of waiting out the interval.
     presencePingEvent: changedEvent("tasks"),
     backgroundRefetch: { forceRefetch: true },
   })
@@ -126,8 +119,6 @@ export function TasksPage() {
     setTasksListData("tasks", value)
   }
 
-  // Declared after rawProjectList - the project's own restrictTaskCreation
-  // setting decides whether "manager only" applies here at all.
   const canAddTask = useMemo(
     () =>
       canCreateTasksInProject(
@@ -141,7 +132,6 @@ export function TasksPage() {
     [memberRole, currentMemberId, selectedProjectId, projectMemberLinks, rawProjectList],
   )
 
-  // Mutations Hook
   const {
     deleteTask,
     updateTask,
@@ -161,7 +151,6 @@ export function TasksPage() {
     canMarkCompleted,
   })
 
-  // Drag end callback for @dnd-kit
   function handleDragEnd(event: any) {
     const { active, over } = event
     if (!over) return
@@ -176,7 +165,6 @@ export function TasksPage() {
     }
   }
 
-  // Initial loads — prefer bootstrap cache to avoid duplicate API round-trips
   useEffect(() => {
     let cancelled = false
 
@@ -218,9 +206,6 @@ export function TasksPage() {
 
     loadMembers(false)
 
-    // Live sync (§6.6/case 16): previously `[]` deps, never refreshed at
-    // all - a member deleted while a task modal had them selected stayed
-    // selectable for the rest of the tab's life.
     const onMembersChanged = () => loadMembers(true)
     window.addEventListener(changedEvent("members"), onMembersChanged)
     return () => {
@@ -285,16 +270,7 @@ export function TasksPage() {
   }, [selectedProjectId])
 
   const projectList = useMemo(() => {
-    // "calling" projects have no tasks by design - the desktop tracker
-    // already runs timers straight against the project for them, no task
-    // needed, and the Tasks page has nothing to show or let anyone edit for
-    // one. Keeping them out of the picker gates this whole page (board,
-    // list, add task, wizard) at once.
     const taskProjects = rawProjectList.filter((p: any) => !isTaskLessProjectType(p.type))
-    // A client has no project_members row - they are attached through their
-    // client record - so this membership filter emptied their list even
-    // though the server had already scoped the response to exactly their
-    // projects. Roles whose scope the server resolves are passed through.
     if (SERVER_SCOPED_PROJECT_ROLES.has(normalizedRole)) return taskProjects
     if (!currentMemberId) return taskProjects
     return taskProjects.filter((p: any) =>
@@ -389,8 +365,6 @@ export function TasksPage() {
     void refetchTaskLists()
   }
 
-  /** Self-service "I'm blocked, waiting on X" - blocks only the current
-   * user's own assignment, not the whole task. Mirrors handleStartTask. */
   async function handleBlockTask(task: Task) {
     const result = await blockTaskAssignment(task.id)
     if (!result) return
@@ -444,8 +418,6 @@ export function TasksPage() {
     const ids = [...selectedTaskIds]
     setBatchBusy(true)
     try {
-      // Reuses the single-task delete, which already clears
-      // selectedTaskId/taskPreview if the deleted task was focused/previewed.
       await Promise.all(ids.map((id) => deleteTask(id)))
     } finally {
       setSelectedTaskIds(new Set())
@@ -489,7 +461,6 @@ export function TasksPage() {
     })
   }
 
-  // Hours submission functions
   function openHoursSubmission(taskId: string) {
     setHoursSubmissionTaskId(taskId)
     setHoursSpent("")
@@ -512,7 +483,6 @@ export function TasksPage() {
     await loadTaskHours(hoursSubmissionTaskId)
   }
 
-  // Review functions
   function openReviewDialog(taskId: string) {
     setReviewTaskId(taskId)
     setReviewDialogOpen(true)
@@ -665,7 +635,6 @@ export function TasksPage() {
         onConfirm={() => setIsTaskModalOpen(true)}
       />
 
-      {/* Task Wizard Modal */}
       {isTaskModalOpen && (
         <TaskWizardModal
           open={isTaskModalOpen}
@@ -690,7 +659,6 @@ export function TasksPage() {
         />
       )}
 
-      {/* Hours Submission Modal */}
       {hoursSubmissionOpen && (
         <TaskHoursModal
           open={hoursSubmissionOpen}
@@ -701,7 +669,6 @@ export function TasksPage() {
         />
       )}
 
-      {/* Task Review Modal */}
       {reviewDialogOpen && (
         <TaskReviewModal
           open={reviewDialogOpen}

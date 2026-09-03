@@ -1,4 +1,3 @@
-// App shell — sidebar, topbar, nav, search, toasts.
 
 export { Sidebar } from "@/shared/ui/layout/components/sidebar/sidebar"
 export { Topbar } from "@/shared/ui/layout/components/topbar/topbar"

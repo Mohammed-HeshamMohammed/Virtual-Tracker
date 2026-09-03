@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/js-combine-iterations, react-doctor/no-derived-state */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useCallback, useEffect, useMemo, useState as useComponentState, type ComponentProps } from "react"
@@ -71,8 +69,6 @@ export type ClientSaveMeta = {
   budgetId?: string
   invoicingId?: string
   newClientMember?: ClientMemberDraft
-  /** Optimistic-concurrency token (§6.9) - the client's updatedAt when the
-   * form loaded, sent back unchanged so a stale write 409s. */
   expectedUpdatedAt?: string
 }
 const TAB_ICONS: Record<ClientModalTab, React.ReactNode> = {
@@ -101,8 +97,6 @@ export function ClientModal({
   mode?: "create" | "edit"
   initialData?: ApiClient
   editClientId?: string
-  /** Live sync (§6.7) - the client was deleted by someone else while this
-   * modal was open. */
   onEntityGone?: (message: string) => void
 }) {
   const isEdit = mode === "edit"
@@ -118,10 +112,6 @@ export function ClientModal({
   const [saveError, setSaveError] = useComponentState<string | null>(null)
   const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
 
-  // Live sync (§6.7): this modal receives initialData as a prop (from the
-  // already-cached Clients list, refreshed by fetchClientForEdit after
-  // open), so - same as the task modal - "reload" here means closing
-  // rather than an in-place refetch.
   const handleLiveDeleted = useCallback(() => {
     onClose()
     onEntityGone?.("This client was deleted by another user - your changes weren't saved.")
@@ -137,7 +127,7 @@ export function ClientModal({
   })
 
   const eligibleMembers = useMemo(() => {
-    return members // Allow any member to be selected as a client
+    return members
   }, [members])
 
   useEffect(() => {
@@ -157,7 +147,6 @@ export function ClientModal({
     getClientFormConfig()
       .then((config) => {
         if (cancelled) return
-// eslint-disable-next-line react-doctor/js-combine-iterations
         setProjectOptions(
           config.options.projects
             .filter((p) => p.id)
@@ -269,8 +258,6 @@ export function ClientModal({
       )
       onClose()
     } catch (error) {
-      // §6.9 - a stale-write 409 gets the same non-blocking notice as a
-      // live update arriving while the form was open, not a generic error.
       if ((error as Error & { status?: number })?.status === 409) {
         setLiveUpdateNotice(true)
       } else {
@@ -403,7 +390,6 @@ export function ClientModal({
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal header */}
         <div className={cn("flex shrink-0 items-center justify-between border-b px-5 py-4", theme.modal.headerBorder)}>
           <div>
             <h2 className={cn("text-lg font-bold", theme.modal.title)}>
@@ -425,14 +411,12 @@ export function ClientModal({
           </button>
         </div>
 
-        {/* Tab bar */}
         <LayoutGroup id="client-modal-tabs">
           <div className={cn("flex shrink-0 gap-1 border-b px-5", TAB_BAR_SCROLL, theme.modal.headerBorder)}>
             {isEdit ? MODAL_TABS.map((t) => renderTabButton(t)) : renderCreateModeTabs()}
           </div>
         </LayoutGroup>
 
-        {/* Tab content */}
         <motion.div
           layout
           transition={{ layout: CLIENT_MODAL_LAYOUT }}
@@ -652,7 +636,6 @@ export function ClientModal({
                     transition={{ layout: CLIENT_MODAL_LAYOUT }}
                     className={cn(FORM_STACK, "pr-1")}
                   >
-                  {/* Custom toggle */}
                   <div className={cn("flex items-center justify-between", theme.card)}>
                     <div>
                       <p className={cn("font-medium", theme.bodyText)}>Custom for this client</p>
@@ -703,7 +686,6 @@ export function ClientModal({
                     </div>
                   </ExpandCollapse>
 
-                  {/* Auto invoicing */}
                   <div className={cn("border-t pt-4", theme.modal.headerBorder)}>
                     <div className="mb-1 flex items-center justify-between">
                       <div>
@@ -723,7 +705,6 @@ export function ClientModal({
                     <ExpandCollapse show={form.invoicing.autoInvoicing}>
                       <div className={cn(FORM_STACK, "pt-4")}>
 
-                          {/* Amount based on */}
                           <FormField label="Amount based on">
                             <div className="flex gap-2">
                               {([
@@ -763,7 +744,6 @@ export function ClientModal({
                             </ExpandCollapse>
                           </FormField>
 
-                          {/* Frequency */}
                           <FormField label="Frequency">
                             <SelectField
                               value={form.invoicing.autoFrequency}
@@ -776,7 +756,6 @@ export function ClientModal({
                             />
                           </FormField>
 
-                          {/* Delay sending + Reminder */}
                           <div className={FORM_GRID}>
                             <FormField label="Delay sending">
                               <div className="relative">
@@ -804,12 +783,10 @@ export function ClientModal({
                             </FormField>
                           </div>
 
-                          {/* Line items */}
                           <FormField label="Line items">
                             <LineItemsDropdown value={form.invoicing.autoLineItems} onChange={(v) => setInvoicing("autoLineItems", v)} />
                           </FormField>
 
-                          {/* Toggles */}
                           <div className="space-y-3 pt-1">
                             <div className="flex items-center justify-between">
                               <span className={theme.mutedText}>Include non-billable time</span>
@@ -830,7 +807,6 @@ export function ClientModal({
             </CrossfadePanel>
         </motion.div>
 
-        {/* Footer */}
         {liveUpdateNotice ? (
           <motion.div className="mx-5 mb-2 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             <span>Someone else changed this client while you had it open.</span>

@@ -9,9 +9,6 @@ import { ExpandCollapse } from "@/shared/ui/motion/expand-collapse"
 import { FormField } from "@/shared/ui/forms/form-field"
 import { SelectField } from "@/shared/ui/forms/select-field"
 import type { ProjectMemberLimitEntry } from "@/features/projects/api/project-details-api"
-// Pure derivations, factored out so the batch-apply API function can share
-// them without the API layer importing this "use client" component module.
-// Re-exported here so nothing that already imports them from this file breaks.
 import { derivedBasedOn, derivedLimitType, isHoursLimit } from "@/features/projects/utils/member-limit-rules"
 
 export { derivedBasedOn, derivedLimitType, isHoursLimit }
@@ -20,10 +17,6 @@ export type MemberOwnLimit = { daily: number; weekly: number }
 
 const RESET_OPTIONS = ["Never", "Weekly", "Monthly"]
 
-/** A row only reaches the server once it has the fields the API requires -
- * syncProjectMemberLimits silently drops anything short of this. Type and
- * basedOn are derived now, so the only thing a person can leave blank is the
- * amount. */
 export function isLimitComplete(row: ProjectMemberLimitEntry): boolean {
   return Number(row.cost) > 0
 }
@@ -47,23 +40,13 @@ interface MemberLimitsEditorProps {
   rows: Record<string, ProjectMemberLimitEntry>
   ownLimits: Record<string, MemberOwnLimit>
   memberLabels: Record<string, string>
-  /** From the Budget Limits tab - "Cost based" | "Hours based". */
   budgetType: string
-  /** From the Budget Limits tab - "Bill rate" | "Pay rate", blank for hours. */
   budgetBasedOn: string
   onChange: (memberId: string, patch: Partial<ProjectMemberLimitEntry>) => void
   onRemove: (memberId: string) => void
   onCopyToAll: (memberId: string) => void
 }
 
-/**
- * One member's limit at a time. The previous version rendered every selected
- * member as a full-size card stacked vertically, so picking six members meant
- * six identical five-field forms with nothing to tell them apart - unusable
- * for setting a limit "for each member alone". This is the same data as an
- * accordion: collapsed rows summarize each member's limit at a glance, and
- * exactly one is open for editing.
- */
 export function MemberLimitsEditor({
   memberIds,
   rows,
@@ -78,8 +61,6 @@ export function MemberLimitsEditor({
   const theme = useClientFormTheme()
   const hours = budgetType === "Hours based"
   const basedOn = derivedBasedOn(budgetType, budgetBasedOn)
-  // Opening the first unconfigured member on mount would fight the user's own
-  // clicks as they fill rows in; start collapsed and let them choose.
   const [openId, setOpenId] = useState<string | null>(null)
 
   if (memberIds.length === 0) {
@@ -96,10 +77,6 @@ export function MemberLimitsEditor({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* A member limit only tightens the project budget, so it is measured
-          in the same unit and off the same rate. Stating that here is what
-          replaces the per-member Type/Based-on pickers that used to let the
-          two contradict each other. */}
       <div
         className={cn(
           "rounded-lg border px-3 py-2 text-xs",
@@ -240,10 +217,6 @@ export function MemberLimitsEditor({
                     </FormField>
                   </div>
 
-                  {/* Filling five fields per member by hand does not scale
-                      past a few people. Only offered once this row is
-                      actually complete - copying a half-filled row would
-                      spread the same gap everywhere. */}
                   {memberIds.length > 1 ? (
                     <div className="mt-3 flex items-center justify-end">
                       <button

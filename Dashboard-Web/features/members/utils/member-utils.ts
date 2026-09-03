@@ -1,6 +1,5 @@
 import type { Member, MemberEntryAction, MemberManageTab } from "@/features/members/models/member"
 
-/** Formats a member's raw ISO date_added (or any ISO date string) for display; "—" when missing/invalid. */
 export function formatDateAdded(value: string | undefined): string {
   if (!value) return "—"
   const d = new Date(value)
@@ -8,7 +7,6 @@ export function formatDateAdded(value: string | undefined): string {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
 }
 
-/** True when the signed-in user is viewing their own member record. */
 export function isSameMember(
   member: Member,
   currentMemberId?: string | null,
@@ -56,7 +54,6 @@ export function memberEntryToTab(entry: MemberEntryAction): MemberManageTab {
   return "settings"
 }
 
-/** Coerce API / row role values to a display string for forms and selects. */
 export function memberRoleAsString(role: unknown, fallback = "Viewer"): string {
   if (typeof role === "string" && role.trim()) return role.trim()
   if (role && typeof role === "object") {

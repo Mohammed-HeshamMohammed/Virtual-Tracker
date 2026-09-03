@@ -1,4 +1,3 @@
-// Auth-Backend paths — keep in sync with Caddyfile + authn-paths.js.
 const AUTHN_EXACT = new Set([
   "/api/auth/firebase-config",
   "/api/auth/readiness",

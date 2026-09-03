@@ -1,4 +1,3 @@
-// Re-export shared types
 export type {
   Tab,
   PayPeriod,

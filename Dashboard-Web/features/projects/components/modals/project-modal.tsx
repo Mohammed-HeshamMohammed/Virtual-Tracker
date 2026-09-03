@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-initialize-state */
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useCallback, useEffect, useMemo, useState as useComponentState, type FormEvent, type ReactNode } from "react"
@@ -67,21 +64,13 @@ interface AddProjectFormState {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
-  /** Per-project escape hatches for rules otherwise enforced everywhere.
-   * Both default true, preserving the prior unconditional behavior. */
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
-  /** Lets this project's client run it, rather than only read it. */
   clientCanManage: boolean
-  /** Lets this project's client clock in on it, alongside its other
-   *  members - independent of clientCanManage. Off by default. */
   clientCanTrack: boolean
-  /** Management projects only: projects grouped beneath this one. */
   subProjectIds: string[]
   disableIdleTime: boolean
-  /** Decimal minutes as a string (e.g. "7.5") - the hours+minutes inputs in
-   * the General tab both read/write this one field. */
   idleTimeMinutes: string
   endDate: string
   clientIds: string[]
@@ -90,20 +79,10 @@ interface AddProjectFormState {
   users: string[]
   viewers: string[]
   memberLimit: string
-  // Whether timers stop once the budget cap is reached - NOT "does this
-  // project have a budget" (every project always does, see item 6). Was
-  // named `hasBudget` before, which conflated the two.
   budgetStopTimers: boolean
   budgetType: string
-  // True once the user has explicitly set a budget type - either by loading
-  // an existing project (its saved type IS an explicit choice) or by using
-  // the Cost/Hours toggle. Client-budget aggregation must never overwrite a
-  // type the user (or a prior save) already chose.
   budgetTypeTouched: boolean
   budgetBasedOn: string
-  // 'per_project': budgetTotal is a flat total (the only behavior before this
-  // field existed). 'per_person': budgetTotal is hours-per-member - the real
-  // total scales with current headcount, so it's read-only/derived, not typed.
   budgetScope: string
   budgetResets: string
   budgetNotifyAt: string
@@ -115,11 +94,7 @@ interface AddProjectFormState {
   memberLimitNotifyAt: string
   memberLimitNotifyMembers: boolean
   memberLimitMembers: string[]
-  /** One independent limit per selected member, keyed by memberId. The old
-   * single shared Type/Based-on/Cost block could only ever describe one
-   * member, even though the row is keyed (project_id, member_id). */
   memberLimitRows: Record<string, ProjectMemberLimitEntry>
-  /** Each member's own daily/weekly hour cap, loaded read-only in edit mode. */
   memberOwnLimits: Record<string, { daily: number; weekly: number }>
   includeNonBillableTime: boolean
   budgetSpent: number
@@ -163,12 +138,7 @@ function normalizeProjectModalTabs(tabs: ProjectFormTab[]): ProjectFormTab[] {
         continue
       }
     }
-    // Label comes from this file, not the server, so an un-updated backend
-    // can't put a stale name ("BUDGET & LIMITS") back on the tab.
     normalized.push({ ...tab, label: TAB_LABEL_OVERRIDES[tab.key] ?? tab.label })
-    // Legacy single "budget" tab -> two tabs. Only formConfig.tabs from an
-    // un-updated backend would still carry this; DEFAULT_ADD_PROJECT_TABS
-    // above already ships split.
     if (tab.key === "budget" && !tabs.some((t) => t.key === LIMITS_TAB_KEY)) {
       normalized.push({ key: LIMITS_TAB_KEY, label: "MEMBERS LIMITS" })
     }
@@ -191,8 +161,6 @@ function createDefaultAddForm(): AddProjectFormState {
     clientCanTrack: false,
     subProjectIds: [],
     disableIdleTime: false,
-    // Matches ID-1's server-side default (450s) - shown up front on a new
-    // project, not silently inferred after the fact.
     idleTimeMinutes: "7.5",
     endDate: "",
     clientIds: [],
@@ -228,10 +196,6 @@ function toSelectOptions(items: string[], placeholder = "Select") {
   return [{ value: "", label: placeholder }, ...items.map((item) => ({ value: item, label: item }))]
 }
 
-/** Budget hours are stored as a single decimal-hours string (`budgetTotal`,
- * unchanged on the wire) - these let the input show/take hours AND minutes
- * instead of forcing e.g. "8.5" for 8h30m. formatHoursLabel itself lives in
- * project-table-cells.tsx, shared with the Projects table's budget column. */
 function decimalHoursToParts(value: string): { hours: string; minutes: string } {
   const trimmed = value.trim()
   if (!trimmed) return { hours: "", minutes: "" }
@@ -281,10 +245,6 @@ function SettingToggleRow({
   )
 }
 
-/** Icon + title + one-line description, with a divider above every section
- * but the first - the same "labeled section" rhythm the client modal uses
- * for e.g. its "Auto invoicing" block, applied here so the Budget tab reads
- * as a sequence of distinct decisions instead of one flat field list. */
 function BudgetSection({
   icon,
   title,
@@ -320,9 +280,6 @@ function BudgetSection({
   )
 }
 
-/** Class hooks for SegmentedControl matching this file's own tokens - reuses
- * the sub-tab pill's track color and the theme's solid-accent pill, rather
- * than inventing a third set of segmented-control colors. */
 function useSegmentedClasses() {
   const theme = useClientFormTheme()
   return {
@@ -359,8 +316,6 @@ function formStateToPayload(
     requireStopNote: addForm.requireStopNote,
     clientCanManage: addForm.clientCanManage,
     clientCanTrack: addForm.clientCanTrack,
-    // Only meaningful for types that group projects; sending [] otherwise
-    // keeps the server from having to special-case an absent field.
     subProjectIds: projectTypeDef(addForm.type).hasSubProjects ? addForm.subProjectIds : [],
     disableIdleTime: addForm.disableIdleTime,
     idleTimeSeconds: Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60)),
@@ -383,14 +338,6 @@ function formStateToPayload(
     budgetStartDate: addForm.budgetStartDate,
     budgetIncludeNonBillable: addForm.budgetIncludeNonBillable,
     budgetNotifyMembers: addForm.budgetNotifyMembers,
-    // Only members still selected contribute a row - a member removed from
-    // the picker must not keep a stale limit, and syncProjectMemberLimits
-    // deletes whatever isn't in this list.
-    //
-    // type/basedOn are stamped from the budget here rather than stored per
-    // row, so they cannot drift: switching the project from Hours based to
-    // Cost based after limits were entered re-denominates every row on save
-    // instead of leaving hours rows behind a cost budget.
     memberLimits: memberLimitMemberIds.map((memberId) => ({
       ...(addForm.memberLimitRows[memberId] ?? emptyMemberLimitRow(memberId)),
       type: derivedLimitType(addForm.budgetType),
@@ -415,13 +362,7 @@ interface ProjectModalProps {
     expectedUpdatedAt?: string,
     expectedBudgetUpdatedAt?: string,
   ) => Promise<void>
-  /** Called instead of showing an in-form error when the project being edited no longer exists. */
   onEntityGone?: (message: string) => void
-  /** Opens the same edit form, browsable across every tab, but nothing in it
-   *  can be changed - no Save button, and the field area is `inert` so it
-   *  cannot be clicked, tabbed into, or typed in. For a double-click preview
-   *  from the table, which should show exactly what Edit shows without
-   *  offering a way to change it. Requires an existing projectId. */
   readOnly?: boolean
 }
 
@@ -440,13 +381,9 @@ export function ProjectModal({
   const [addForm, setAddForm] = useComponentState<AddProjectFormState>(createDefaultAddForm)
   const [budgetFieldErrors, setBudgetFieldErrors] = useComponentState<ProjectBudgetFieldErrors>({})
   const [editingBudgetId, setEditingBudgetId] = useComponentState<string | undefined>(undefined)
-  // §6.9 - the version token this form loaded the project with, sent back
-  // unchanged on save so a stale-snapshot write can be detected server-side.
   const [editingUpdatedAt, setEditingUpdatedAt] = useComponentState<string | undefined>(undefined)
-  // Same, for the budget row - it saves through its own PATCH with its own version token.
   const [editingBudgetUpdatedAt, setEditingBudgetUpdatedAt] = useComponentState<string | undefined>(undefined)
   const [addProjectTab, setAddProjectTab] = useComponentState<AddProjectTab>("general")
-  // Type is create-time only, so editing an existing project skips the picker.
   const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
     isEditMode ? "form" : "type",
   )
@@ -467,15 +404,12 @@ export function ProjectModal({
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
   const [submitError, setSubmitError] = useComponentState<string | null>(null)
   const [budgetFromClientsCount, setBudgetFromClientsCount] = useComponentState(0)
-  // Live sync (§6.7): bumped by "Reload" on the banner below to force the
-  // edit-state effect to refetch without needing a projectId change.
   const [reloadKey, setReloadKey] = useComponentState(0)
   const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
   const [staleSelectionNote, setStaleSelectionNote] = useComponentState<string | null>(null)
 
   const modalContentLoading = isEditMode && editFormLoading
   const formConfigPending = formConfigLoading && !formConfig && !formConfigError
-  /** Why Save is unavailable, or null when it is available. */
   const saveDisabledReason = useMemo((): string | null => {
     if (isSubmitting) return "Saving…"
     if (modalContentLoading || formConfigPending) return "Still loading this project's settings."
@@ -504,9 +438,6 @@ export function ProjectModal({
     [formConfig?.options.members],
   )
 
-  // Candidate sub-projects for a management project, plus who manages each -
-  // shown so it is visible which people linking will pull in. Loaded only for
-  // types that can group projects, so every other type pays nothing.
   const [subProjectOptions, setSubProjectOptions] = useComponentState<SubProjectOption[]>([])
   const [managerNamesByProject, setManagerNamesByProject] = useComponentState<Record<string, string[]>>({})
 
@@ -579,10 +510,6 @@ export function ProjectModal({
     }
   }
 
-  // Fetch configs (clients + members options). Re-run on mount and whenever
-  // a clients/members change broadcasts (§6.6) - this effect previously ran
-  // once and never again, so a member or client deleted while the modal
-  // stayed open kept showing as selectable here.
   useEffect(() => {
     let cancelled = false
     const load = () => {
@@ -614,7 +541,6 @@ export function ProjectModal({
     }
   }, [])
 
-  // Fetch teams - same treatment, refreshed on a "teams" broadcast too.
   useEffect(() => {
     let cancelled = false
     const load = () => {
@@ -641,8 +567,6 @@ export function ProjectModal({
     }
   }, [user?.uid, user?.email])
 
-  // Previously `[]` deps - never refreshed at all, the exact gap §6.6
-  // calls out. Now also reruns on team/member changes.
   useEffect(() => {
     let cancelled = false
     const load = () => {
@@ -665,9 +589,6 @@ export function ProjectModal({
     }
   }, [])
 
-  // §6.6/6.8 - after clients/members options refresh, drop any selection
-  // that's no longer among them (deleted mid-edit) so a dead id can never
-  // reach the save payload, and say so rather than silently vanishing it.
   useEffect(() => {
     if (!formConfig) return
     const validClientIds = new Set(formConfig.options.clients.map((c) => c.id))
@@ -700,7 +621,6 @@ export function ProjectModal({
     })
   }, [formConfig])
 
-  // Fetch project details for editing
   useEffect(() => {
     if (!projectId) return
     let cancelled = false
@@ -728,8 +648,6 @@ export function ProjectModal({
           clientCanTrack: payload.clientCanTrack,
           subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
-          // Real stored value in edit mode - the "7.5" default above is
-          // create-mode-only and never overwrites an existing project's saved seconds.
           idleTimeMinutes: String((payload.idleTimeSeconds ?? 450) / 60),
           endDate: payload.endDate || "",
           clientIds: payload.clientIds,
@@ -740,12 +658,7 @@ export function ProjectModal({
           memberLimit: payload.memberLimitMembers ?? "",
           memberLimitMembers: payload.memberLimitMemberIds,
           budgetStopTimers: payload.budgetStopTimers,
-          // A project with no budget row loads with an empty type and stays
-          // that way. Defaulting it to "Cost based" here meant opening such a
-          // project and saving silently gave it a budget it never had.
           budgetType: payload.budgetType,
-          // Loaded from a saved project - already an explicit choice, not a
-          // blank default, so client-budget aggregation must not touch it.
           budgetTypeTouched: true,
           budgetBasedOn: payload.budgetBasedOn || "Bill rate",
           budgetScope: payload.budgetScope === "per_person" ? "per_person" : "per_project",
@@ -788,12 +701,6 @@ export function ProjectModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, reloadKey])
 
-  // Live sync (§6.7): reacts when another user deletes or edits the project
-  // this modal has open. Deleted -> close and toast, same path a 404 on
-  // initial load already takes. Updated -> non-blocking banner; the user
-  // chooses whether to reload (re-fetching edit-state) or keep editing
-  // (proceeds to the 6.9 conflict check on save) - nothing is discarded
-  // behind their back.
   const handleLiveDeleted = useCallback(() => {
     onClose()
     onEntityGone?.("This project was deleted by another user - your changes weren't saved.")
@@ -857,9 +764,6 @@ export function ProjectModal({
       return { ...prev, clientIds }
     }
     setBudgetFromClientsCount(aggregated.fromClientCount)
-    // Only prefill from the linked client's budget when the user hasn't
-    // already chosen a budget type - a client link should never silently
-    // flip an existing/manually-picked Cost vs Hours setting.
     if (prev.budgetTypeTouched) {
       return { ...prev, clientIds }
     }
@@ -895,9 +799,6 @@ export function ProjectModal({
     }))
   }
 
-  /** Copies one member's limit onto every other selected member. Each row
-   * keeps its own memberId - the table is keyed (project_id, member_id), so
-   * reusing the source id would collapse them all onto one row. */
   function copyMemberLimitToAll(sourceMemberId: string) {
     setAddForm((prev) => {
       const source = prev.memberLimitRows[sourceMemberId]
@@ -911,9 +812,6 @@ export function ProjectModal({
     })
   }
 
-  /** Drops the member from the limits list entirely - both the selection the
-   * picker drives and any values already typed, so a half-filled row can't
-   * linger invisibly after the member is removed. */
   function removeMemberLimit(memberId: string) {
     setAddForm((prev) => {
       const nextRows = { ...prev.memberLimitRows }
@@ -958,8 +856,6 @@ export function ProjectModal({
     })
   }
 
-  /** Quick-add-client popover finished — reload the client list (same call the modal already
-   * makes on mount) and select the new client in the form, same as picking it from the dropdown. */
   function handleClientAdded(clientId: string) {
     getProjectFormConfig()
       .then((config) => {
@@ -1019,9 +915,6 @@ export function ProjectModal({
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    // Belt and suspenders: the Save button is not rendered in read-only mode
-    // and the field area is inert, so this should be unreachable - but the
-    // form itself still has an onSubmit, and nothing should ever write from it.
     if (readOnly) return
     const projectNames = parseProjectNamesFromInput(addForm.projectNames)
     const namesError = validateProjectNames(projectNames)
@@ -1029,10 +922,6 @@ export function ProjectModal({
     const budgetError = validateProjectBudgetFields(addForm)
     if (budgetError) {
       setBudgetFieldErrors(budgetErrors)
-      // A budget is required for every project (item 6) - if the failure is
-      // on the BUDGET tab and the user is looking at a different tab, jump
-      // them there. Otherwise the error text above renders on a tab nobody's
-      // looking at.
       if (addProjectTab !== "budget") {
         setAddProjectTab("budget")
       }
@@ -1046,11 +935,6 @@ export function ProjectModal({
     setSubmitError(null)
 
     try {
-      // §6.8 - defense in depth: the reactive prune above already keeps
-      // addForm in sync with formConfig as it refreshes, but a picker that
-      // never got a chance to refresh (e.g. no broadcast reached this tab
-      // before submit) must still not be able to submit an id formConfig
-      // already knows is gone.
       const sanitizedAddForm = formConfig
         ? {
             ...addForm,
@@ -1067,10 +951,6 @@ export function ProjectModal({
       await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt, editingBudgetUpdatedAt)
       onClose()
     } catch (err) {
-      // §6.9 - a stale-write 409 gets the same non-blocking reload banner
-      // as a live update arriving while the form was open (6.7), not a
-      // generic error: the save didn't fail because of bad input, it
-      // failed because someone else's change landed first.
       const status = err instanceof Error ? (err as Error & { status?: number }).status : undefined
       if (status === 409) {
         setLiveUpdateNotice(true)
@@ -1144,11 +1024,6 @@ export function ProjectModal({
           ))}
         </div>
 
-        {/* `inert` (not just disabling each field) is what makes this
-            actually read-only: it blocks every click, drag, and keystroke in
-            one place and removes the whole subtree from the tab order,
-            rather than relying on every current and future control in this
-            ~2000-line form remembering to check a readOnly flag itself. */}
         <div className={MODAL_BODY_CLASS} inert={readOnly}>
           <AnimatePresence mode="wait" initial={false}>
           {addProjectStep === "type" ? (
@@ -1165,11 +1040,6 @@ export function ProjectModal({
                   setAddForm((p) => ({
                     ...p,
                     type,
-                    // Seed the type's preset. billable/requireTaskToTrack/resets
-                    // are defaults the creator can still change; forcesHours is
-                    // an invariant the backend also enforces, so it is applied
-                    // here rather than offered - a Cost based budget on a type
-                    // with no rate anchor has nothing coherent to multiply.
                     billable: def.billable,
                     requireTaskToTrack: def.requiresTask,
                     budgetResets: def.defaultResets,
@@ -1367,10 +1237,6 @@ export function ProjectModal({
                   <div className={FORM_STACK}>
                     <AddProjectDynamicFields
                       fields={
-                        // Manager-only types (management) have no place for an
-                        // Employees picker - the server rejects those members
-                        // anyway, so offering the field would only produce a
-                        // confusing 400 on save.
                         projectTypeDef(addForm.type).membersRoleFilter === "manager_and_above"
                           ? formConfig.fields.filter((f) => f.roleFilter !== "employee")
                           : formConfig.fields
@@ -1429,9 +1295,6 @@ export function ProjectModal({
                     <div className={FORM_GRID}>
                       <FormField label="Type" required className="sm:col-span-2">
                         {projectTypeDef(addForm.type).forcesHours ? (
-                          // Types with no rate anchor - no tasks to price, or
-                          // non-billable work with no rate at all - can only be
-                          // measured in hours, so this isn't a choice here.
                           <div
                             className={cn(
                               "flex h-9 items-center rounded-lg border px-3 text-sm",
@@ -1485,11 +1348,6 @@ export function ProjectModal({
                     </ExpandCollapse>
 
                     {(() => {
-                      // A per_person scope always takes hours-per-member as
-                      // its input, regardless of budget type - Cost based
-                      // multiplies those hours by each member's own rate at
-                      // read time (see computeProjectBudgetTargetForAllPg),
-                      // it isn't a dollar figure typed here.
                       const isHoursInput = addForm.budgetType === "Hours based" || addForm.budgetScope === "per_person"
                       const label =
                         addForm.budgetScope === "per_person"
@@ -1629,8 +1487,6 @@ export function ProjectModal({
                           setAddForm((p) => ({
                             ...p,
                             budgetNotifyMembers: next,
-                            // Off means off - clear the dependent fields so a
-                            // stale value isn't silently what gets submitted.
                             ...(next ? {} : { budgetNotifyAt: "", budgetWhoToNotify: "" }),
                           }))
                         }
@@ -1833,9 +1689,6 @@ export function ProjectModal({
                     />
                   </div>
 
-                  {/* These two loosen rules that are otherwise enforced
-                      everywhere. Both default ON, so an existing project keeps
-                      behaving exactly as before until someone opts out here. */}
                   {!projectTypeDef(addForm.type).hasTasks ? null : (
                     <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
                       <SettingToggleRow
@@ -1868,9 +1721,6 @@ export function ProjectModal({
                     </p>
                   </div>
 
-                  {/* Off by default: a client reads everything about the
-                      projects linked to them either way, and this is the only
-                      thing that also lets them change any of it. */}
                   <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
                     <SettingToggleRow
                       checked={addForm.clientCanManage}
@@ -1883,9 +1733,6 @@ export function ProjectModal({
                     </p>
                   </div>
 
-                  {/* Off by default, independent of clientCanManage above -
-                      a client that can edit tasks isn't automatically one
-                      that can clock in, and vice versa. */}
                   <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
                     <SettingToggleRow
                       checked={addForm.clientCanTrack}
@@ -2010,11 +1857,6 @@ export function ProjectModal({
             {addProjectStep === "form" && !readOnly ? (
               <button
                 type="submit"
-                // A budget row is only written when a budget type is chosen
-                // (shouldPersistBudget), so requiring an amount unconditionally
-                // meant clearing the budget field - the way to say "this
-                // project has no budget" - disabled Save with nothing on screen
-                // explaining why.
                 disabled={saveDisabledReason !== null}
                 title={saveDisabledReason ?? undefined}
                 className={cn(

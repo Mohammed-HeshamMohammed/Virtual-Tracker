@@ -47,7 +47,6 @@ export async function confirmPhoneVerificationCode(
   return json.data
 }
 
-/** Compare phone numbers loosely (digits-only, last 10). */
 export function phoneNumbersMatch(a: string, b: string): boolean {
   const left = a.replace(/\D/g, "")
   const right = b.replace(/\D/g, "")
@@ -57,7 +56,6 @@ export function phoneNumbersMatch(a: string, b: string): boolean {
   return false
 }
 
-/** Normalize user input to E.164 for Firebase SMS (US + Egypt friendly). */
 export function formatPhoneE164(phone: string): string {
   const trimmed = phone.trim()
   if (!trimmed) return ""

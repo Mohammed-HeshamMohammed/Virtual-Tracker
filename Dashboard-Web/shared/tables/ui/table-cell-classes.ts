@@ -1,6 +1,5 @@
 import { cn } from "@/shared/utils/utils"
 
-/** Consistent table cell padding; expands vertically when row height is distributed. */
 export function peopleTableCellClass(
   base: string,
   distributedRowHeight?: number,

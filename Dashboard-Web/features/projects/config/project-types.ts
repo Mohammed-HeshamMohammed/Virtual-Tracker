@@ -9,35 +9,18 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-/**
- * Mirror of Dashboard-Backend/src/modules/projects/project-types.js. The
- * backend owns enforcement (the DB CHECK constraint and the Hours-only budget
- * gate); this copy exists so the create form can present the same presets
- * without a round-trip. Keep the two in step - `hasTasks` and `forcesHours`
- * are invariants the server also enforces, so a mismatch here shows up as a
- * confusing 400 rather than a wrong save.
- */
 export type ProjectTypeDef = {
   value: ProjectType
   label: string
   blurb: string
   hover: string
   Icon: LucideIcon
-  /** Whether the project has a task list at all. false = the timer runs
-   * against the project itself and the desktop hides its task picker. */
   hasTasks: boolean
-  /** Default for require_task_to_track. Meaningless when hasTasks is false. */
   requiresTask: boolean
-  /** Cost based budgets are rejected server-side for these. */
   forcesHours: boolean
-  /** Default for the General tab's Billable toggle. */
   billable: boolean
-  /** Default for the Budget Limits tab's Resets field. */
   defaultResets: string
-  /** Restricts who may be assigned at all. null = anyone. Enforced server-side. */
   membersRoleFilter: "manager_and_above" | null
-  /** Whether this project can group other projects beneath it, rolling their
-   * managers up into its own member list. */
   hasSubProjects: boolean
 }
 
@@ -153,12 +136,6 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
 
 const BY_VALUE = new Map(PROJECT_TYPE_DEFS.map((def) => [def.value, def]))
 
-/**
- * Falls back to the "normal" preset for anything unrecognized. This replaces
- * the `type === "calling" ? "calling" : "normal"` coercions that used to sit
- * on the read paths - those silently rewrote every type that wasn't calling
- * into "normal", which would have made a new type impossible to even load.
- */
 export function projectTypeDef(type: string | null | undefined): ProjectTypeDef {
   return BY_VALUE.get(String(type ?? "").trim().toLowerCase() as ProjectType) ?? PROJECT_TYPE_DEFS[0]!
 }
@@ -167,12 +144,10 @@ export function normalizeProjectType(type: string | null | undefined): ProjectTy
   return projectTypeDef(type).value
 }
 
-/** True for types whose timers never have a task (calling, support). */
 export function isTaskLessProjectType(type: string | null | undefined): boolean {
   return !projectTypeDef(type).hasTasks
 }
 
-/** True for types that group other projects beneath them (management). */
 export function projectTypeHasSubProjects(type: string | null | undefined): boolean {
   return projectTypeDef(type).hasSubProjects
 }

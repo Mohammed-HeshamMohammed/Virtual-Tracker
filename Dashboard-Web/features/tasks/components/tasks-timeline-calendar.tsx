@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/no-initialize-state, react-doctor/exhaustive-deps, react-doctor/no-derived-state, react-doctor/js-min-max-loop */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import type { ReactNode, MouseEvent } from "react"
@@ -389,7 +387,6 @@ export function TasksTimelineCalendar({
       )}
       {...fade}
     >
-      {/* Toolbar */}
       <div
         className={cn(
           "flex shrink-0 flex-col gap-3 border-b px-3 py-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:px-4",
@@ -482,7 +479,6 @@ export function TasksTimelineCalendar({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-        {/* Calendar grid */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div
             className={cn(
@@ -821,7 +817,6 @@ export function TasksTimelineCalendar({
             )}
           </div>
 
-          {/* Legend */}
           <div className={cn("shrink-0 border-t px-3 py-2", t.tableBorder)}>
             <p className={cn("mb-1.5 text-[10px] font-semibold uppercase tracking-wider", t.tableCellMuted)}>Status</p>
             <div className="flex flex-wrap gap-1.5">

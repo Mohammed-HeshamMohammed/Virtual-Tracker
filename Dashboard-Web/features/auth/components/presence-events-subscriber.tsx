@@ -10,7 +10,6 @@ import {
 
 const CONNECT_RETRY_MS = 10_000
 
-/** App-wide SSE presence updates for member lists and dashboards. */
 export function PresenceEventsSubscriber() {
   const { isLoggedIn, sessionReady, profile } = useAuth()
   const shouldSubscribe = Boolean(isLoggedIn && sessionReady && !profile?.mustChangePassword)

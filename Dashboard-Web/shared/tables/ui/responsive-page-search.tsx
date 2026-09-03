@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-multi-comp */
 "use client"
 
 import { useEffect, useRef, useState, type RefObject } from "react"

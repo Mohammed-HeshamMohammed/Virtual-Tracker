@@ -1,4 +1,3 @@
-/** Shared motion presets for the clients feature. */
 
 const fade = {
   initial: { opacity: 0 },

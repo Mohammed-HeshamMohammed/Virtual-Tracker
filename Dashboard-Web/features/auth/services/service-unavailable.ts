@@ -1,4 +1,3 @@
-/** Backend / database infrastructure failures (distinct from auth gate errors). */
 
 export class ServiceUnavailableError extends Error {
   readonly code: string

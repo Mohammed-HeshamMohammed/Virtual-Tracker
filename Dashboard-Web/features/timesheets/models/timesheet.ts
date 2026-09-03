@@ -1,4 +1,3 @@
-// Timesheets types
 
 export interface TimeEntry {
   id: string
@@ -23,7 +22,6 @@ export interface AddEntryFormState {
   status: TimeEntry["status"]
 }
 
-// Approvals types
 export type Tab = "timesheets" | "manual-time"
 export type PayPeriod = "weekly" | "none" | "twice-per-month" | "bi-weekly" | "monthly"
 

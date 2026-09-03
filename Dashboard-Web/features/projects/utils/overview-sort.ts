@@ -8,9 +8,6 @@ export type OverviewSortableProject = {
   budget: { spent: number; total: number | null; type: "hours" | "cost" } | null
 }
 
-/** Higher = better for descending sort. "no_tasks" (nothing to judge yet)
- * ranks above "stalled" (confirmed struggling) but below any project with
- * real, healthy evidence. */
 function healthRank(health: OverviewProjectHealth): number {
   if (health === "on_track") return 4
   if (health === "at_risk") return 3
@@ -18,10 +15,6 @@ function healthRank(health: OverviewProjectHealth): number {
   return 1
 }
 
-/** Overview table sort: health → progress → budget headroom, so the
- * best-performing projects surface first instead of merely-unspent ones (a
- * brand new project with 100% of its budget untouched used to outrank one
- * that's actually on track and mostly done). */
 export function sortProjectsForOverview<T extends OverviewSortableProject>(projects: T[]): T[] {
   return projects.toSorted((a, b) => {
     const healthDiff = healthRank(b.health) - healthRank(a.health)

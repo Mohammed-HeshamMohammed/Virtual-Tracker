@@ -11,15 +11,16 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { getMembers } from "@/features/members/api/member-api"
-import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
+import { getProjectMembers, getProjects, getTrackableProjects } from "@/features/projects/api/project-api"
 import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
 import { useAuth, useTheme } from "@/shared/providers/app"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
-import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field"
+import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/forms/searchable-select-field"
+import { initialsFromName } from "@/features/members/utils/build-tree"
 
-/** Today as YYYY-MM-DD in local time (not UTC, which shifts the day). */
 function todayLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
@@ -35,16 +36,6 @@ const inputCls =
   "w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-hidden focus:border-blue-400 dark:focus:border-blue-500 focus:ring-1 focus:ring-blue-400 dark:focus:ring-blue-500"
 const labelCls = "mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300"
 
-/**
- * Backfills time for someone else - a manager filling in for a member who
- * forgot to start the timer, without asking that member to do it themself.
- * Same write path features/timesheets/.../ManualTimeContent.tsx already uses
- * for self-service manual time (time_entries, source='manual'); the backend's
- * assertTimeEntryWriteAuthorized (schema/routes.js) is what actually makes
- * "for someone else" possible - it already allows a management-role viewer
- * to write a time entry for any member in their access scope, this dialog is
- * just the first UI that hands it a memberId other than the viewer's own.
- */
 export function AddManualEntryDialog({
   open,
   onOpenChange,
@@ -60,11 +51,12 @@ export function AddManualEntryDialog({
   const [members, setMembers] = useState<{ id: string; name: string }[]>([])
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
   const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
-  // null until a project is picked - the member field is scoped to whoever
-  // is actually on that project, not the whole org roster (a member not on
-  // the project could otherwise be picked here and the entry never shows up
-  // anywhere real, since nothing ties it to the project it claims).
   const [projectMemberIds, setProjectMemberIds] = useState<Set<string> | null>(null)
+  // Projects the viewer themself can clock in on - used only to decide
+  // whether "Myself" belongs in the Member list for whatever project is
+  // currently selected (a viewer can see/manage a project without being a
+  // trackable member of it, e.g. a manager not personally assigned to it).
+  const [viewerTrackableProjectIds, setViewerTrackableProjectIds] = useState<Set<string>>(new Set())
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [loadingProjectMembers, setLoadingProjectMembers] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(false)
@@ -81,9 +73,6 @@ export function AddManualEntryDialog({
 
   const durationSeconds = useMemo(() => parseHoursInput(hours), [hours])
 
-  // Reset to a blank form each time the dialog opens, and load the member +
-  // project rosters fresh - stale options from a previous open would let
-  // someone submit against a project or member no longer valid.
   useEffect(() => {
     if (!open) return
     setError(null)
@@ -102,8 +91,9 @@ export function AddManualEntryDialog({
     Promise.all([
       getMembers({ fields: ["id", "name"], singlePage: true, limit: 500 }),
       getProjects({ fields: ["id", "name", "status"] }),
+      getTrackableProjects().catch(() => []),
     ])
-      .then(([memberRows, projectRows]) => {
+      .then(([memberRows, projectRows, trackableRows]) => {
         if (cancelled) return
         setMembers(
           memberRows
@@ -116,6 +106,7 @@ export function AddManualEntryDialog({
             .map((p) => ({ id: String(p.id), name: String(p.name ?? "Untitled project") }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         )
+        setViewerTrackableProjectIds(new Set(trackableRows.map((p) => p.id)))
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load members and projects.")
@@ -128,9 +119,6 @@ export function AddManualEntryDialog({
     }
   }, [open])
 
-  // Tasks are per-project - re-fetched (and the picked task cleared) every
-  // time the project changes, so a stale task from a different project can
-  // never be submitted alongside a newly picked one.
   useEffect(() => {
     setTaskId("")
     if (!projectId) {
@@ -154,11 +142,6 @@ export function AddManualEntryDialog({
     }
   }, [projectId])
 
-  // Member choices are scoped to this project's own roster - re-fetched (and
-  // the picked member cleared if they turn out not to be on the new
-  // project) every time the project changes, mirroring the To-do effect
-  // above. The backend enforces the same rule on submit; this just keeps
-  // the dropdown from offering a choice it would reject anyway.
   useEffect(() => {
     if (!projectId) {
       setProjectMemberIds(null)
@@ -188,6 +171,23 @@ export function AddManualEntryDialog({
     () => (projectMemberIds ? members.filter((m) => projectMemberIds.has(m.id)) : []),
     [members, projectMemberIds],
   )
+
+  // "Myself" is a convenience shortcut, not a second listing of the viewer's
+  // own name - excluded from the regular roster below whenever it's shown.
+  const viewerCanTrackSelectedProject = Boolean(projectId) && viewerTrackableProjectIds.has(projectId)
+
+  const memberOptions = useMemo<SearchableSelectOption[]>(() => {
+    const roster = projectMembers.filter((m) => m.id !== viewerMemberId)
+    const options = roster.map((m) => ({
+      value: m.id,
+      label: m.name,
+      meta: <ReportMemberAvatar initials={initialsFromName(m.name)} />,
+    }))
+    if (viewerCanTrackSelectedProject && viewerMemberId) {
+      options.unshift({ value: viewerMemberId, label: "Myself", meta: <ReportMemberAvatar initials="Me" /> })
+    }
+    return options
+  }, [projectMembers, viewerCanTrackSelectedProject, viewerMemberId])
 
   async function submit() {
     setError(null)
@@ -262,13 +262,13 @@ export function AddManualEntryDialog({
             <SearchableSelectField
               value={selectedMemberId || null}
               onChange={(v) => setSelectedMemberId(v ?? "")}
-              options={projectMembers.map((m) => ({ value: m.id, label: m.name }))}
+              options={memberOptions}
               placeholder={
                 !projectId
                   ? "Pick a project first"
                   : loadingProjectMembers
                     ? "Loading this project's members…"
-                    : projectMembers.length === 0
+                    : memberOptions.length === 0
                       ? "No members on this project"
                       : "Select a member"
               }

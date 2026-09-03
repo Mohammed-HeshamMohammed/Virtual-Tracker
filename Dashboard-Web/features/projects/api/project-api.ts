@@ -51,8 +51,6 @@ function toProjectPayload(
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
   if (input.clientCanManage !== undefined) out.client_can_manage = input.clientCanManage
   if (input.clientCanTrack !== undefined) out.client_can_track = input.clientCanTrack
-  // Management-project links. Sent only when present so a normal project's
-  // update body stays exactly as it was.
   if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
   if (input.idleTimeSeconds !== undefined) out.idle_time_seconds = input.idleTimeSeconds
@@ -79,11 +77,6 @@ function toProjectPayload(
   return out
 }
 
-/**
- * Set at creation only; the backend rejects changing it afterwards. The full
- * set and what each type means live in config/project-types.ts, which mirrors
- * the backend's project-types.js.
- */
 import type { ProjectType } from "@/features/projects/config/project-types"
 export type { ProjectType }
 
@@ -99,10 +92,7 @@ export interface Project {
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
-  /** The project's client may run it - create and edit its tasks. Off by default. */
   clientCanManage: boolean
-  /** The project's client may clock in on it, alongside its other members.
-   *  Independent of clientCanManage. Off by default. */
   clientCanTrack: boolean
   disableIdleTime: boolean
   idleTimeSeconds?: number
@@ -172,9 +162,6 @@ export interface UpdateProjectInput {
   updatedBy?: string
   archivedBy?: string
   archivedAt?: string | null
-  /** Optimistic-concurrency token (§6.9) - the updatedAt the modal loaded
-   * the project with. Optional: omitting it keeps the old blind-write
-   * behavior. */
   expectedUpdatedAt?: string
 }
 
@@ -225,9 +212,6 @@ export async function updateProject(id: string, data: UpdateProjectInput): Promi
   })
   const json = (await res.json()) as Envelope<Record<string, unknown>>
   if (!res.ok) {
-    // §6.9: same convention fetchProjectForEdit's 404 path already uses -
-    // attach .status so the caller can branch on a stale-write conflict
-    // instead of treating it like any other failed save.
     const err = extractApiError(res.status, "Failed to update project", json) as Error & {
       status?: number
       conflictData?: Record<string, unknown>
@@ -240,8 +224,6 @@ export async function updateProject(id: string, data: UpdateProjectInput): Promi
   return toProject(json.data ?? {})
 }
 
-/** "Anchor" (3-dot menu) - sets only the current budget's reset-period start
- *  (required) and end (optional), leaving every other budget setting alone. */
 export async function anchorProjectBudget(
   projectId: string,
   data: { startDate: string; endDate?: string | null },
@@ -284,6 +266,25 @@ export async function archiveProject(
     archivedAt: null,
     updatedBy: userId,
   })
+}
+
+/** Projects the given member can actually clock in on (org admin tier: every
+ *  project; client role: only client_can_track projects; everyone else:
+ *  only projects they're a project_members row on) - see
+ *  listTrackableProjectIdsPg. memberId omitted = the caller's own trackable
+ *  projects. Managers need explicit access to query someone else's. */
+export async function getTrackableProjects(memberId?: string): Promise<{ id: string; name: string }[]> {
+  const params = new URLSearchParams()
+  if (memberId) params.set("memberId", memberId)
+  const query = params.toString() ? `?${params.toString()}` : ""
+  const { res, json } = await fetchJsonWithRetry<Envelope<{ id: string; name: string }[]>>(
+    apiPath(`/api/projects/trackable${query}`),
+    {},
+    { retries: 1 },
+  )
+  if (!res.ok) throw extractApiError(res.status, "Failed to fetch trackable projects", json)
+  if (!json?.success) throw new Error(json?.error || "Failed to fetch trackable projects")
+  return json.data ?? []
 }
 
 export async function getProjectMembers(

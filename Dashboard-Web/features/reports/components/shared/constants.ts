@@ -1,34 +1,14 @@
 import type { TimeActivityColumnPickerSection, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 
-// ==========================================
-// 1. Hub Shift-Style Reports Configuration
-// ==========================================
 
-/**
- * Reports that render through the generic hub shell rather than a hand-built
- * page. Every entry that used to live here now has a real backend and its own
- * component, so the map is empty - kept because resolve-chunk.ts and
- * coming-soon-pages.ts both iterate it, and a future generic report belongs
- * here rather than in a new mechanism.
- */
 export const SHIFT_STYLE_HUB_REPORTS: Record<
   string,
   { title: string; exportFileBaseName: string }
 > = {}
 
-// ==========================================
-// 2. Shared Report Layout & Settings
-// ==========================================
 
 const DEFAULT_ORG_LABEL = "TVC"
 
-/**
- * The timezone a report's day boundaries are read in, shown in its header.
- * This used to be the literal string "America - Denver" for every viewer,
- * which is actively misleading on a report whose rows are bucketed by day -
- * a viewer in another zone was told their days were cut in Denver. Resolved
- * from the browser instead, so the label matches the dates on screen.
- */
 export function resolveReportTimezoneLabel(): string {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -49,9 +29,6 @@ export const STANDARD_REPORT_ORG_LABEL = DEFAULT_ORG_LABEL
 export const STANDARD_REPORT_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const STANDARD_REPORT_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
 
-// ==========================================
-// 3. Report Send & Schedule Dialog Modals
-// ==========================================
 
 export const SCHEDULE_REPORT_DATE_RANGE_OPTIONS: string[] = [
   "Today",
@@ -76,15 +53,7 @@ export const AMOUNTS_OWED_SCHEDULE_SUBJECT_DEFAULT = "TVC Amounts Owed Report fo
 export const REPORT_EMAIL_DEFAULT_MESSAGE =
   "We've prepared your latest report. Contact support if you have any questions or need assistance."
 
-// ==========================================
-// 4. Amounts Owed Report
-// ==========================================
 
-/** Columns the Amounts Owed / Daily Totals table can hide. "Member" is always
- *  shown - a row with no member is meaningless. These are the columns the
- *  report genuinely renders; the previous list offered member profile fields
- *  (email, job title, tax info, ...) that neither the table nor the endpoint
- *  has. */
 export type AmountsOwedColumnKey = "rate" | "hours" | "amount"
 
 export const AMOUNTS_OWED_TOGGLEABLE_COLUMNS: { key: AmountsOwedColumnKey; label: string }[] = [
@@ -109,16 +78,10 @@ export interface AmountsOwedDayGroup {
   members: AmountsOwedMemberLine[]
 }
 
-// ==========================================
-// 5. Audit Log Report
-// ==========================================
 
 export const AUDIT_LOG_ORG_LABEL = DEFAULT_ORG_LABEL
 export const AUDIT_LOG_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 
-// ==========================================
-// 6. Project Budgets Report
-// ==========================================
 
 export const PROJECT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "month", label: "Month" },
@@ -128,9 +91,6 @@ export const PROJECT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[
   { value: "client", label: "Client" },
 ]
 
-// ==========================================
-// 7. Time & Activity Report
-// ==========================================
 
 const TIME_PERIODS = [
   { k: "today", l: "Today" },
@@ -303,8 +263,6 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
-/** The Date column itself (not part of TABLE_METRIC_COLUMNS) plus the
- *  expand-row chevron - space every metric column has to fit around. */
 export const TIME_ACTIVITY_TABLE_FIXED_WIDTH = 170
 
 export const TIME_ACTIVITY_TABLE_COL_MIN_WIDTH: Record<string, number> = {
@@ -322,9 +280,6 @@ export const TIME_ACTIVITY_TABLE_COL_MIN_WIDTH: Record<string, number> = {
   total_spent: 100,
 }
 
-/** Least-important first - the headline stats (Total hours/Activity %/
- *  Total spent, already surfaced on the summary cards above the table)
- *  stay visible longest; supplementary breakdown columns go first. */
 export const TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY = [
   "team",
   "todo",
@@ -339,89 +294,49 @@ export const TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY = [
   "total_spent",
 ] as const
 
-// ==========================================
-// 8. Work Sessions Report
-// ==========================================
 
 export const WORK_SESSIONS_ORG_LABEL = DEFAULT_ORG_LABEL
 export const WORK_SESSIONS_TIMEZONE_LABEL = resolveReportTimezoneLabel()
-// No "Client": /api/reports/work-sessions returns no client for a session, so
-// grouping by it collapsed every row into one blank-labelled group.
 export const WORK_SESSIONS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value !== "client",
 )
 
-// ==========================================
-// 9. Limits Reports (Weekly / Daily)
-// ==========================================
 
-/** LimitUsageRow is one aggregate row per member for the whole selected
- *  range - no per-row date and no project, so "Member" is the only
- *  dimension that means anything here. */
 export const LIMITS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "member", label: "Member" },
 ]
 
-// ==========================================
-// 10. Payments Report
-// ==========================================
 
-// No "Project": PaymentReportRow carries a client or a member (whichever
-// side of the payment it is), never a project.
 export const PAYMENTS_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value !== "project",
 )
 
-// ==========================================
-// 11. Timesheet Approvals Report
-// ==========================================
 
-/** TimesheetApprovalRow carries no project - "Status" replaces it as a
- *  dimension the row actually has. */
 export const TIMESHEET_APPROVALS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "date", label: "Date" },
   { value: "member", label: "Member" },
   { value: "status", label: "Status" },
 ]
 
-// ==========================================
-// 12. Client Budgets Report
-// ==========================================
 
-/** ClientBudgetRow carries no date/period and no member - "Budget type" is
- *  the one real secondary dimension the row has (Hours based / Cost based /
- *  No budget set). "Client" groups one row per client (identity). */
 export const CLIENT_BUDGETS_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
   { value: "budgetType", label: "Budget type" },
   { value: "client", label: "Client" },
 ]
 
-// ==========================================
-// 13. Invoice Reports (client / team, list + aging)
-// ==========================================
 
-// No "Project": invoice rows carry no project dimension.
 export const TEAM_INVOICE_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value !== "project",
 )
-// Client invoices carry no member dimension either - the party being
-// invoiced is the client, not a team member.
 export const CLIENT_INVOICE_GROUP_BY_OPTIONS = TEAM_INVOICE_GROUP_BY_OPTIONS.filter(
   (option) => option.value !== "member",
 )
 
-// ==========================================
-// 14. Reports with only a date + member dimension
-// ==========================================
 
-// Shift attendance, work breaks, and time-off transactions rows carry a day
-// and a member and nothing else - no project, no client.
 export const DATE_MEMBER_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value === "date" || option.value === "member",
 )
 
-// Time-off balances are a single as-of snapshot per member/policy - every
-// row shares the same date, so there is nothing to group by except member.
 export const MEMBER_ONLY_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS.filter(
   (option) => option.value === "member",
 )

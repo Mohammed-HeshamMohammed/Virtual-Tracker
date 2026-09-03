@@ -141,11 +141,6 @@ export function ReviewQueueTable({
     void loadRows()
   }, [loadRows])
 
-  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 7): this queue
-  // previously never refreshed on its own - only a filter change re-ran
-  // loadRows. Review-state transitions publish as "task-assignments"
-  // changes on the backend (updateAssignmentPg), the same resource a
-  // submission-for-review or a reviewer's decision both go through.
   useEffect(() => {
     const handler = () => void loadRows()
     window.addEventListener(changedEvent("task-assignments"), handler)

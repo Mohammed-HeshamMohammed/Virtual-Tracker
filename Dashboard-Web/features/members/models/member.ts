@@ -18,48 +18,33 @@ export type InviteListKind = "invite" | "pending_account"
 
 export interface Member {
   id: string
-  /** Stable UUID for this member (FK for related rows). Assigned on create or first save. */
   memberUid?: string
-  /** Firebase Auth UID when this member is linked to an auth user. */
   firebaseUid?: string
-  /** Raw creator marker from backend (`created_by`). */
   createdBy?: string
-  /** UID of the user who created this member/group entry when available. */
   createdByUid?: string
   name: string
   email: string
-  /** Work email from members row; personal email when stored separately. */
   personalEmail?: string
-  /** Phone / mobile from members row or member field data. */
   phone?: string
-  /** True when the stored phone number has passed verification. */
   phoneVerified?: boolean
-  /** Profile photo URL (Firebase Auth / Storage) when available. */
   avatarUrl?: string
-  /** Last IP observed at sign-in (server-tracked; read-only in Info tab). */
   lastIp?: string
   avatar: string
   avatarColor: string
   status: MemberStatus
   role: MemberRole
-  /** Role from backend member_roles / roles enrichment. */
   role_name?: string
-  /** Optional product privileges stored on the member document. */
   privileges?: {
     manage_employee_teams?: boolean
   }
-  /** Backend hierarchy placement status (`unassigned`, `assigned`, `hierarchy_assignment_required`). */
   hierarchy_status?: string
   projects: number
   payment: string
   limits: string
   trackingStatus: TrackingStatus
   dateAdded: string
-  /** Number of teams this member belongs to (list view). */
   teams: number
-  /** Team display names for manage modal / detail (from API `team_names`). */
   teamNames?: string[]
-  /** Project IDs this member belongs to (from API `project_ids`). */
   projectIds?: string[]
   weeklyLimit: string
 }
@@ -73,7 +58,6 @@ export interface Invite {
   payment: string
   weeklyLimit: string
   status: InviteStatus
-  /** Pre-provisioned Auth users (pending_auth_members) vs email/open-link rows in `invites`. */
   listKind?: InviteListKind
   inviteKind?: "email" | "open_link" | "preprovision"
   expiresAt?: string
@@ -88,21 +72,16 @@ export interface OnboardingMember {
 }
 
 export type InviteFormRow = { email: string; payRate: string; currency: string }
-/** Sent to API (member display name). */
 export type AccountFormRow = { name: string; email: string; payRate: string; currency: string }
-/** Local fields for create-account modal. */
 export type AccountFormFields = { firstName: string; lastName: string; email: string; payRate: string; currency: string }
 
-/** Firebase Auth user not yet linked to a `members` row (Migrate tab candidate). Joined with their mobile-app Firestore profile. */
 export type MigratableAuthUser = {
   uid: string
   email: string
   displayName: string
   phoneNumber: string
   creationTime: string | null
-  /** Mobile-app profile photo (Firestore `users/{uid}.avatarUrl`), when present. */
   avatarUrl?: string
-  /** Suggested app role, mapped server-side from the mobile-app `users/{uid}.role` value. Undefined when unmapped. */
   suggestedRole?: MemberRole
 }
 

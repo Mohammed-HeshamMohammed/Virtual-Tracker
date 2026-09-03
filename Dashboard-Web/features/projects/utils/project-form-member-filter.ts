@@ -5,7 +5,6 @@ import {
   normalizeMemberRole,
 } from "@/features/auth"
 
-/** Matches Backend `memberMatchesProjectFormRoleFilter` in project-form-member-filter.js */
 export function memberMatchesProjectFormRoleFilter(
   role: string | undefined,
   roleFilter: ProjectFormField["roleFilter"],

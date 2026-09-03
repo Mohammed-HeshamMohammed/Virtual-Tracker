@@ -28,7 +28,6 @@ export function isActivitySubpage(pageId: string): pageId is ActivitySubpageId {
   return (ACTIVITY_SUBPAGE_IDS as readonly string[]).includes(pageId)
 }
 
-/** Stable shell key so Members ↔ Tree ↔ Bans (and Activity's Screenshots ↔ Apps ↔ URLs) animate inside their own section content, not the whole app shell. */
 export function resolvePageTransitionKey(pageId: string): string {
   if (isPeopleMemberSubpage(pageId)) return "people-member-section"
   if (isActivitySubpage(pageId)) return "activity-section"

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-initialize-state */
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -75,12 +74,6 @@ export function NotificationsBell({ onNavigate }: NotificationsBellProps) {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 11): previously
-  // gated on `open`, so the badge only ever moved after the dropdown had
-  // been opened once, and only kept moving on a 30s poll while it stayed
-  // open. Now fetches on login and again on every "notifications"
-  // broadcast, whether or not the dropdown is open - that's the whole
-  // point of a badge tracking live.
   useEffect(() => {
     if (!isLoggedIn || !sessionReady || profile?.mustChangePassword) return
 

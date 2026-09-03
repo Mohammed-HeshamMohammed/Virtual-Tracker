@@ -1,7 +1,6 @@
 import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, apiFetch, fetchJsonWithRetry, type ApiEnvelope, type RequestOptions } from "@/infrastructure/api/http"
 
-/** Schema CRUD at /api/time-entries and /api/timesheets (see Backend schema catalog). */
 const TIMESHEETS_NOT_ON_BACKEND =
   "Timesheets API is not available. Ensure Backend is running and schema catalog includes time-entries."
 
@@ -23,18 +22,12 @@ function toTimeEntry(input: any): TimeEntry {
     duration: Number(input.duration ?? 0),
     description: input.description ?? "",
     billable: Boolean(input.billable),
-    // "pending" - not "draft", which is a Timesheet-only status (see
-    // toTimesheet below). time_entries.status is a real DB CHECK
-    // constraint of exactly pending/approved/rejected; the type below had
-    // silently carried the wrong enum since this function was written.
     status: input.status ?? "pending",
     createdAt: input.createdAt ?? input.created_at ?? "",
     updatedAt: input.updatedAt ?? input.updated_at ?? "",
   }
 }
 
-/** project_breakdown comes back from Postgres as a JSONB value - already a
- *  real array via the pg driver, but tolerate a stringified one too. */
 function toProjectBreakdown(input: any): TimesheetProjectAmount[] {
   const raw = typeof input === "string" ? (() => { try { return JSON.parse(input) } catch { return [] } })() : input
   if (!Array.isArray(raw)) return []
@@ -65,7 +58,6 @@ function toTimesheet(input: any): Timesheet {
   }
 }
 
-// Types
 export interface TimeEntry {
   id: string
   memberId: string
@@ -74,7 +66,6 @@ export interface TimeEntry {
   date: string
   startTime: string
   endTime: string
-  /** Seconds. Matches the backend column and every reader of it. */
   duration: number
   description: string
   billable: boolean
@@ -98,8 +89,6 @@ export interface Timesheet {
   status: "draft" | "submitted" | "approved" | "rejected"
   totalHours: number
   billableHours: number
-  /** Real historical pay rate x hours, resolved server-side - see
-   *  computeTimesheetSummary (Dashboard-Backend). */
   amount: number
   currency: string
   projectBreakdown: TimesheetProjectAmount[]
@@ -130,16 +119,9 @@ export interface UpdateTimeEntryInput {
   duration?: number
   description?: string
   billable?: boolean
-  /** The approve/reject action - not "pending", which is a decision this
-   *  type doesn't offer a way to undo. The server decides who is actually
-   *  allowed to set this regardless of what's sent (resolveTimeEntryStatus,
-   *  schema/routes.js) - a non-approver's attempt is silently reverted, not
-   *  rejected with an error, so this being in the type is not itself a
-   *  permission grant. */
   status?: "approved" | "rejected"
 }
 
-// API Functions
 export async function getTimeEntries(filters?: { 
   memberId?: string; 
   projectId?: string; 
@@ -185,25 +167,12 @@ export async function createTimeEntry(data: CreateTimeEntryInput, createdBy?: st
       member_id: data.memberId,
       project_id: data.projectId,
       task_id: data.taskId,
-      // start_time/end_time are nullable TIME columns - an empty string is
-      // not a valid time value ("" fails Postgres's own parser, not a
-      // validator up here), so every manual entry with no clock times
-      // (the normal case - both this dialog and the self-service Manual
-      // Time form only ever collect a duration, never a start/end clock)
-      // 400'd on a bare `invalid input syntax for type time: ""` that the
-      // caller never got to see (see the error-surfacing fix below).
       start_time: data.startTime || null,
       end_time: data.endTime || null,
       created_by: createdBy,
     }),
   })
   assertTimesheetsAvailable(res.status)
-  // Was throwing on a bare res.status before ever reading the body, so the
-  // backend's real reason (a validator's own message, a foreign-key miss, a
-  // Postgres constraint - schema-crud.service.js's write path always sends
-  // a real error.message on its 400s) never reached the caller. Every 400
-  // read as an identical, useless "Failed to create time entry: 400" no
-  // matter what actually went wrong.
   const json = (await res.json().catch(() => null)) as ApiEnvelope<unknown> | null
   if (!res.ok || json?.success === false) {
     throw extractApiError(res.status, "Failed to create time entry", json)
@@ -220,11 +189,6 @@ export async function updateTimeEntry(id: string, data: UpdateTimeEntryInput, up
       ...data,
       project_id: data.projectId,
       task_id: data.taskId,
-      // Same "" -> null fix as createTimeEntry, but startTime/endTime are
-      // optional here (a PATCH that never mentions them must leave them
-      // untouched) - only rewritten when the caller actually included one,
-      // so an omitted field stays omitted (buildUpdatePayload's own "don't
-      // touch this column" signal) rather than being forced to null.
       ...(data.startTime !== undefined ? { start_time: data.startTime || null } : {}),
       ...(data.endTime !== undefined ? { end_time: data.endTime || null } : {}),
       updated_by: updatedBy,
@@ -245,7 +209,6 @@ export async function deleteTimeEntry(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete time entry: ${res.status}`)
 }
 
-// Timesheets
 export async function getTimesheets(filters?: { 
   memberId?: string; 
   status?: string;
@@ -281,11 +244,6 @@ export async function getTimesheet(id: string): Promise<Timesheet> {
   return toTimesheet(json.data)
 }
 
-// submit/approve/reject all go through the generic schema CRUD PATCH
-// (/api/timesheets/:id) rather than bespoke sub-routes - the backend already
-// gates writes to this entity to management roles there (schema/routes.js),
-// and the field-name mapping (status/approved_at/approved_by) is already
-// declared in the timesheets catalog entity, so no new backend route is needed.
 async function patchTimesheet(id: string, body: Record<string, unknown>): Promise<Timesheet> {
   const res = await apiFetch(apiPath(`/api/timesheets/${id}`), {
     method: "PATCH",
@@ -304,8 +262,6 @@ export interface TimesheetPeriodSummary {
   periodEnd: string
   totalHours: number
   billableHours: number
-  /** Real historical pay rate x hours, resolved server-side. 0 if the
-   *  viewer isn't allowed to see this member's compensation. */
   amount: number
   currency: string
   projects: TimesheetProjectAmount[]
@@ -320,13 +276,6 @@ export interface TimesheetPeriodSummary {
   } | null
 }
 
-/** Hours (and real dollar amount + per-project breakdown) the member has
- *  actually tracked in a period, plus any existing timesheet row for it -
- *  all server-computed, never derived on the client. periodStart/periodEnd
- *  are optional: omitted, the server resolves the member's *current* period
- *  from their own configured pay_rates.pay_period (weekly/bi-weekly/
- *  twice-per-month/monthly), instead of the caller having to know or guess
- *  their cadence. */
 export async function fetchTimesheetPeriodSummary(
   periodStart?: string,
   periodEnd?: string,
@@ -343,9 +292,6 @@ export async function fetchTimesheetPeriodSummary(
   return json.success ? (json.data ?? null) : null
 }
 
-/** Persist the Approvals "Set it up" settings onto each member's pay_rates
- *  row (pay_period + require_timesheet_approval). Management-gated and
- *  scope-checked server-side. */
 export async function saveTimesheetApprovalSetup(input: {
   memberIds: string[]
   payPeriod: string
@@ -363,8 +309,6 @@ export async function saveTimesheetApprovalSetup(input: {
   return json.data?.updated ?? []
 }
 
-/** Submit the signed-in member's own timesheet for a pay period. Hours are
- *  computed server-side from tracked time, so none are sent from here. */
 export async function submitTimesheetPeriod(periodStart: string, periodEnd: string): Promise<Timesheet> {
   const res = await apiFetch(apiPath("/api/timesheets/submit"), {
     method: "POST",
@@ -386,11 +330,6 @@ export function rejectTimesheet(id: string, approvedBy: string): Promise<Timeshe
   return patchTimesheet(id, { status: "rejected", approved_at: new Date().toISOString(), approved_by: approvedBy })
 }
 
-// Same pair for a manual time entry - reviewing someone's request, not
-// approving a whole timesheet period. There's no approved_by/approved_at
-// column on time_entries to stamp the way approveTimesheet/rejectTimesheet
-// do; updatedBy (updateTimeEntry's own existing param) is the record of who
-// acted, same as it already is for every other time-entry edit.
 export function approveTimeEntry(id: string, updatedBy?: string): Promise<TimeEntry> {
   return updateTimeEntry(id, { status: "approved" }, updatedBy)
 }

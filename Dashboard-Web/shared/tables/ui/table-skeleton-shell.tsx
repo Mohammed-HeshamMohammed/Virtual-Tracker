@@ -15,7 +15,6 @@ type PeopleTableSkeletonShellProps = {
   footer?: ReactNode
 }
 
-/** Shared bordered/shadow shell for People table loading placeholders. */
 export function TableSkeletonShell({
   isDark = false,
   rowCount = 10,

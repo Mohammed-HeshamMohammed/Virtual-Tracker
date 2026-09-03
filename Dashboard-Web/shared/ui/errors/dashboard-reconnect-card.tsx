@@ -19,7 +19,6 @@ type DashboardReconnectCardProps = {
   reconnectHint?: string
 }
 
-/** Inline reconnect card shown over the dashboard when the backend drops offline. */
 export function DashboardReconnectCard({
   isDark,
   error,

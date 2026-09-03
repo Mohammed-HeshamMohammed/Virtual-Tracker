@@ -19,7 +19,6 @@ export function AuthHeader({ isDark, onRequestAccess }: AuthHeaderProps) {
 
   return (
     <header className="absolute inset-x-0 top-0 z-20 flex items-center justify-between px-3 pt-3 sm:px-6 sm:pt-4">
-      {/* ── Brand ── */}
       <div className="flex items-center gap-2.5">
         <div className="relative h-9 w-9 shrink-0">
           <Image
@@ -47,10 +46,8 @@ export function AuthHeader({ isDark, onRequestAccess }: AuthHeaderProps) {
         </div>
       </div>
 
-      {/* ── Actions ── */}
       <div className="flex items-center gap-2.5">
         <AuthThemeToggle />
-        {/* Language Globe */}
         <div
           className="relative"
           onMouseEnter={() => setWipHover(true)}

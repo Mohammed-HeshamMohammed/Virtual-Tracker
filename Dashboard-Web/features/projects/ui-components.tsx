@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 import React from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { AlertTriangle, Loader2 } from "lucide-react"
@@ -67,7 +66,6 @@ export function DeleteConfirmDialog({
   actionBusy: boolean
   isDark: boolean
   t: any
-  /** When set (batch delete), pluralizes the message instead of the single-record copy. */
   count?: number
 }) {
   return (

@@ -17,7 +17,6 @@ function assignRef<T>(ref: RefObject<T | null> | undefined, value: T | null) {
   ref.current = value
 }
 
-/** Table body wrapper — distributes row height to fill available space without vertical scroll. */
 export function TableScroll({
   children,
   className,

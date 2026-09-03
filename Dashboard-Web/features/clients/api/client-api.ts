@@ -4,7 +4,6 @@ import { resolveCurrentMemberId } from "@/features/members/services/current-memb
 import { isValidUuid } from "@/shared/utils/uuid"
 import type { ClientEditLoadedState, ClientFormData } from "@/features/clients/models/client"
 
-// Types (API response / list shape)
 export interface Client {
   id: string
   status: "active" | "archived"
@@ -22,7 +21,6 @@ export interface Client {
   invoicing: ClientInvoicing
   budgetId?: string
   invoicingId?: string
-  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
   updatedAt?: string
 }
 
@@ -66,13 +64,10 @@ function buildDetailsBody(
     budgetId: options?.budgetId ?? data.budgetId,
     invoicingId: options?.invoicingId ?? data.invoicingId,
     ...(actorMemberId ? { actorMemberId } : {}),
-    // §6.9 - optional, only present when the caller sends back the
-    // updatedAt it loaded the client with.
     ...(options?.expectedUpdatedAt ? { expected_updated_at: options.expectedUpdatedAt } : {}),
   }
 }
 
-/** Enriched client list (core + budget + invoicing + projects). */
 export async function getClients(): Promise<Client[]> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<Client[]>>(
     apiPath("/api/clients/enriched"),
@@ -86,7 +81,6 @@ export async function getClients(): Promise<Client[]> {
   return json.data
 }
 
-/** Load client for edit modal (all tabs). */
 export async function fetchClientForEdit(clientId: string): Promise<Client> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<Client>>(
     apiPath(`/api/clients/${encodeURIComponent(clientId)}/edit-state`),
@@ -102,7 +96,6 @@ async function getClient(id: string): Promise<Client> {
   return fetchClientForEdit(id)
 }
 
-/** Resolved invoicing settings for billing / invoice generation. */
 async function getClientInvoicingSettings(clientId: string): Promise<ClientInvoicingSettings> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<ClientInvoicingSettings>>(
     apiPath(`/api/clients/${encodeURIComponent(clientId)}/invoicing`),
@@ -114,7 +107,6 @@ async function getClientInvoicingSettings(clientId: string): Promise<ClientInvoi
   return json.data
 }
 
-/** Creates client with budget, invoicing, and project links (single backend transaction). */
 export async function createClientWithDetails(
   data: ClientFormData,
   userId?: string,
@@ -131,7 +123,6 @@ export async function createClientWithDetails(
   return json.data
 }
 
-/** Updates client with budget, invoicing, and project links. */
 export async function updateClientWithDetails(
   clientId: string,
   data: ClientFormData,
@@ -147,8 +138,6 @@ export async function updateClientWithDetails(
   })
   const json = await readJsonSafe<ApiEnvelope<Client>>(res)
   if (!res.ok) {
-    // §6.9 - same convention updateProject/updateTask use: attach .status
-    // so the caller can branch on a stale-write conflict.
     const err = extractApiError(res.status, "Failed to update client", json) as Error & {
       status?: number
       conflictData?: unknown

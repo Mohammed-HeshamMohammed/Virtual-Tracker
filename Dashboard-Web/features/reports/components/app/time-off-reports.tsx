@@ -44,7 +44,6 @@ function initialsFor(name: string): string {
   )
 }
 
-/** Days render as whole numbers when whole, one decimal otherwise. */
 function days(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1)
 }
@@ -58,11 +57,7 @@ function formatDay(day: string): string {
 
 const thBase = "px-4 py-3 text-sm font-semibold"
 
-// ─── Balances ──────────────────────────────────────────────────────────────
 
-// Balances are a single as-of snapshot per member/policy - every row shares
-// the same date, so "Member" (the dropdown's only option) is the one real
-// key to bucket by.
 function keyForBalanceGroup(r: TimeOffBalanceRow): string {
   return r.memberName
 }
@@ -80,9 +75,6 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
       n.has(key) ? n.delete(key) : n.add(key)
       return n
     })
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
@@ -326,7 +318,6 @@ export function TimeOffBalancesReport({ onNavigate }: { onNavigate?: (id: string
   )
 }
 
-// ─── Transactions ──────────────────────────────────────────────────────────
 
 const KIND_STYLE: Record<string, string> = {
   accrual: "bg-emerald-50 text-emerald-600",
@@ -356,9 +347,6 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
       n.has(key) ? n.delete(key) : n.add(key)
       return n
     })
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 

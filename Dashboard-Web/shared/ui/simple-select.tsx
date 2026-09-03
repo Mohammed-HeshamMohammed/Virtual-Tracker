@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useEffect, useMemo, useState, useRef } from "react"
@@ -35,7 +34,6 @@ export function SimpleSelect({
   options: string[]
   portalToBody?: boolean
   disabled?: boolean
-  /** Cap dropdown height; extra options scroll without visible scrollbars. */
   menuMaxVisibleItems?: number
   isDark?: boolean
   size?: "default" | "compact"

@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/async-await-in-loop */
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
 "use client"
 
 import { useRef } from "react"
@@ -33,27 +31,15 @@ function computeOptimisticBudget(
   if (!Number.isFinite(rawTotal)) return prev
 
   if (payload.budgetScope !== "per_person") {
-    // Exact - per_project total is just the typed value, same as the
-    // server's `target` (which equals `cost` for this scope).
     return { spent: prev?.spent ?? 0, total: rawTotal, type }
   }
   if (type === "hours") {
-    // Exact - hours-per-member x headcount needs no rate lookup.
     const memberCount = computeOptimisticMemberIds(payload).length || 1
     return { spent: prev?.spent ?? 0, total: rawTotal * memberCount, type }
   }
-  // Cost based + per_person converts hours-per-member to cost using each
-  // member's own rate, server-side - not derivable here, so leave the
-  // prior total until the background refetch resolves the real one.
   return prev
 }
 
-/** Best-effort local patch applied right after a save succeeds, so the row
- * reflects the edit immediately instead of waiting on the full-context
- * refetch (budgets/members/teams/limits/overview) that used to block the
- * modal from closing. Fields this can't compute exactly client-side (team
- * badge names, per-person cost totals) are left as-is for that refetch to
- * correct moments later. */
 function applyOptimisticProjectEdit(prev: Project, payload: CreateProjectFormPayload): Project {
   const memberIds = computeOptimisticMemberIds(payload)
   return {
@@ -107,9 +93,6 @@ export function useProjectMutations({
   async function batchArchive(ids: string[]) {
     if (!canManageProjects || ids.length === 0) return
     const byId = new Map(data.map((p) => [p.id, p]))
-    // Each item toggles its own current status - same semantics as the
-    // single-row action - so this reads as "archive" when run from the
-    // Active tab and "unarchive" from the Archived tab.
     await Promise.all(
       ids.map((id) => {
         const project = byId.get(id)
@@ -186,9 +169,6 @@ export function useProjectMutations({
       memberId: memberId ?? undefined,
     }
     if (editingProjectId) {
-      // §6.9 - a 409 here (stale write) is deliberately left to propagate:
-      // the modal's own submit handler shows the reload/keep-editing
-      // banner, same as a live update arriving while the form was open.
       await updateProjectWithDetails(
         editingProjectId,
         payloads[0]!,
@@ -198,17 +178,10 @@ export function useProjectMutations({
       setProjects((prev) =>
         prev.map((p) => (p.id === editingProjectId ? applyOptimisticProjectEdit(p, payloads[0]!) : p)),
       )
-      // Reconciles what the optimistic patch above couldn't compute exactly
-      // (team badge names, per-person cost totals, real spent) - runs after
-      // save instead of blocking the modal from closing on it, which used
-      // to be most of the perceived "Save changes" latency.
       void refetchProjects({ forceRefetch: true }).catch((err) => {
         console.error("Failed to refresh projects after save:", err)
       })
     } else {
-      // Each name creates a fully independent project - no ordering
-      // dependency between them, so a multi-name paste creates them
-      // concurrently instead of one full create chain per name, serially.
       await Promise.all(payloads.map((payload) => createProjectWithDetails(payload, actor)))
       await refetchProjects({ forceRefetch: true })
     }

@@ -42,9 +42,6 @@ const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
 
 export function useWorkSessionsReport() {
   const { memberId, memberRole } = useAuth()
-  // Server re-checks this on every delete regardless (Manager+, same tier
-  // canManageActivityData already names for "delete screenshots, block
-  // URLs, etc.") - this only decides whether the row action renders at all.
   const canDelete = canManageActivityData(memberRole ?? "")
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -57,8 +54,6 @@ export function useWorkSessionsReport() {
   const [rangeEnd, setRangeEnd] = useState(() => endOfDay(new Date()))
   const [rows, setRows] = useState<WorkSessionRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table rendered no sessions.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [showDatePicker, setShowDatePicker] = useState(false)
@@ -120,8 +115,6 @@ export function useWorkSessionsReport() {
     }
   }, [])
 
-  // Union with the roster: rows alone miss anyone with zero sessions in the
-  // selected date range, leaving nothing to pick in the dropdown.
   const memberOptions = useMemo(() => {
     const s = new Set<string>(rosterNames)
     rows.forEach((r) => s.add(r.memberName))
@@ -184,11 +177,6 @@ export function useWorkSessionsReport() {
     })
   }, [])
 
-  // Permanently deletes this session and everything captured under it
-  // (screenshots, app usage, URL visits - see deleteActivitySessionWithChildrenPg).
-  // Removed from local state on success rather than a full refetch - the
-  // date range/filters that produced `rows` haven't changed, only one row
-  // in it no longer exists server-side.
   const deleteSession = useCallback(async (id: string) => {
     setDeleteError(null)
     setDeletingId(id)
@@ -216,7 +204,6 @@ export function useWorkSessionsReport() {
   const downloadPdf = useCallback(() => {
     const byMemberSeconds = new Map<string, number>()
     filteredRows.forEach((r) => {
-      // Same parser aggregateWorkSessionTotals already uses on this exact field.
       byMemberSeconds.set(r.memberName, (byMemberSeconds.get(r.memberName) ?? 0) + parseTimeToSeconds(r.durationHms))
     })
     downloadReportPdf({

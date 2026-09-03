@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import React, { createContext, useState as useComponentState, useEffect, useRef, ReactNode, useCallback, use } from "react"
@@ -107,32 +105,22 @@ import {
 
 export interface AuthContextType {
   user: User | null
-  /** True only after Firebase auth AND successful backend `/api/auth/verify` authorization. */
   isLoggedIn: boolean
-  /** Firestore `User_profiles/{uid}` snapshot from the last successful `/api/auth/verify` (same UID as Auth). */
   profile: AuthProfileSnapshot | null
-  /** True while Firebase init or an auth-state sync (verify + member) is in flight. */
   loading: boolean
-  /** False until the first auth bootstrap pass finished (safe to render role-aware shell). */
   sessionReady: boolean
-  /** Human-readable session bootstrap message (loading / reconnecting). */
   sessionStatusMessage: string | null
-  /** Set when verify/bootstrap cannot reach the server; user may retry without re-entering credentials. */
   sessionConnectionError: string | null
   retrySessionSync: () => Promise<void>
-  /** True while backend verify is retrying after a transient failure. */
   backendReconnecting: boolean
   appInitialized: boolean
   appInitProgress: string
   appInitPercent: number
   appInitError: string | null
   retryInit: () => Promise<void>
-  /** Postgres `members` row for the signed-in user (loaded during bootstrap). */
   currentMember: Member | null
-  /** Primary role name from `members` / `member_roles` (default `User`). */
   memberRole: string
   memberId: string | undefined
-  /** Lightweight counts from GET /api/bootstrap for shell hints. */
   dashboardSummary: BootstrapPayload["dashboardSummary"] | null
   initError: string | null
   retryConnection: () => void
@@ -151,9 +139,7 @@ export interface AuthContextType {
   sendWorkEmailLink: (email: string, rememberMe?: boolean) => Promise<void>
   sendPasswordReset: (email: string) => Promise<void>
   logout: () => Promise<void>
-  /** Reloads the Firebase user and re-syncs `profile` from `/api/auth/verify` (e.g. after avatar upload). */
   refreshProfile: () => Promise<void>
-  /** Set when sign-in is blocked pending email verification (auth page only). */
   verificationGate: { email: string; password: string } | null
   clearVerificationGate: () => void
   resendVerificationEmail: () => Promise<void>
@@ -281,12 +267,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const retrySessionSyncRef = useRef<(() => Promise<void>) | null>(null)
   const reconnectAbortRef = useRef<AbortController | null>(null)
 
-  // Live sync (§4.2/§6.3): a scope-changed frame means the viewer's own
-  // permissions changed - handleScopeChanged (change-events.ts) already
-  // clears every cache and force-refetches every mounted list;
-  // router.refresh() is the one thing that plain module can't do itself
-  // (it's not a component), and it's what re-evaluates route guards
-  // against the now-current role.
   useEffect(() => {
     const handler = () => router.refresh()
     window.addEventListener(SCOPE_CHANGED_EVENT, handler)
@@ -452,9 +432,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       setSessionAuthorized(true)
       void syncSharedSessionCookie()
-      // change-events.ts is a plain module with no hook access - this is the
-      // one place that knows the fresh memberId, so it hands it over here
-      // rather than change-events.ts trying to re-derive it.
       if (memberId) {
         void import("@/infrastructure/api/change-events").then(({ setCurrentMemberId }) => {
           setCurrentMemberId(memberId)
@@ -541,8 +518,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
         return
       }
       if (isAuthGateError(e) && e.code === "RATE_LIMITED") {
-        // Fail fast with a manual retry instead of auto-looping — retries would
-        // themselves count against the same rate-limit window and prolong it.
         setSessionConnectionError(e.message || "Too many requests. Please wait a moment and try again.")
         setAuthError(null)
         return
@@ -613,7 +588,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     setConnectionAttempt((attempt) => attempt + 1)
   }, [])
 
-  /** Avoid overlapping OAuth popups (double-clicks, etc.). */
   const oauthPopupLockRef = useRef(false)
 
   useEffect(() => {
@@ -674,14 +648,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       const auth = getFirebaseAuth()
 
-      /** Register before redirect completion so the session is observed as soon as Google returns. */
       unsubscribe = onAuthStateChanged(auth, async (next) => {
         if (!next) {
           if (!crossDomainSsoAttemptedRef.current) {
             crossDomainSsoAttemptedRef.current = true
-            // e.g. the visitor signed in on the landing page and clicked "Open
-            // dashboard" — signInWithCustomToken (if it succeeds) re-triggers
-            // this callback with a real user, so don't flip to signed-out yet.
             if (await attemptCrossDomainSilentSignIn(auth)) return
           }
           setUser(null)
@@ -985,10 +955,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   }
 
-  /**
-   * Google: popup first in normal browsers (redirect fallback when blocked). Apple: popup.
-   * `consumeAuthRedirectResultOnce` + `onAuthStateChanged` complete redirect-based sessions.
-   */
   const runOAuthSignIn = async (rememberMe: boolean, fn: () => Promise<void>) => {
     if (oauthPopupLockRef.current) {
       setAuthError("A sign-in is already in progress. Please wait a moment and try again.")
@@ -1257,7 +1223,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
   )
 }
 
-/** Block email-link completion when account uses another sign-in method. */
 function assertCanUseEmailLinkCompletion(methods: string[] | null, email: string): void {
   if (methods === null || methods.length === 0) return
   if (methods.includes("emailLink")) return

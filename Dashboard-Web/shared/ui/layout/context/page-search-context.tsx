@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-derived-useState */
 "use client"
 
 import {

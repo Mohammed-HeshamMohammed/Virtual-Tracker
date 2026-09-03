@@ -10,7 +10,6 @@ type DashboardStatusShellProps = {
   children: ReactNode
   className?: string
   panelClassName?: string
-  /** Full-screen page, centered overlay card, or bare page background only. */
   mode?: "page" | "overlay" | "embedded"
   showBrand?: boolean
 }

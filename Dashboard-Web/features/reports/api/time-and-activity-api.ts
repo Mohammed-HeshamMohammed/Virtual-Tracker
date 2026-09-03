@@ -9,15 +9,8 @@ interface RawMemberDay {
   name: string
   activeSeconds: number
   idleSeconds: number
-  /** Hand-entered time. Optional so an older backend that omits it reads as
-   *  0 rather than NaN. Deliberately separate from activeSeconds: manual
-   *  time is asserted, not observed, so it must not feed the activity %. */
   manualSeconds?: number
-  /** Cost of tracked + manual time; 0 when the viewer may not see this
-   *  member's pay rate. */
   spentAmount?: number
-  /** This member's own pay currency as of that day - absent on an older
-   *  backend without it yet, defaults to USD same as formatMoney always did. */
   currency?: string
   projectNames: string[]
 }
@@ -44,7 +37,6 @@ interface RawEntry {
 
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
-  /** Absent on an older backend without this field yet - mapReport falls back to []. */
   entries?: RawEntry[]
 }
 
@@ -70,9 +62,6 @@ function pctString(idleSeconds: number, activeSeconds: number): string {
 
 function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
   const manualSeconds = member.manualSeconds ?? 0
-  // Regular hours are what was tracked; total adds the hand-entered time on
-  // top, which is what makes a manual entry show up against its project at
-  // all. activityPct below stays on active/idle only - see manualSeconds.
   const regularHours = formatSecondsAsHMS(member.activeSeconds)
   const totalHours = formatSecondsAsHMS(member.activeSeconds + manualSeconds)
   return {
@@ -116,10 +105,6 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
     idlePct: pctString(totalIdle, totalActive),
     idleHr: formatSecondsAsHMS(totalIdle),
-    // A day mixes however many members worked it, each possibly paid in a
-    // different currency - grouped per currency rather than summed as if
-    // they were all the same unit (sumMoneyByCurrency joins with " + " only
-    // when more than one currency is actually present that day).
     totalSpent: sumMoneyByCurrency(day.members.map((m) => ({ amount: m.spentAmount ?? 0, currency: m.currency }))),
     trackedHours: totalActive / 3600,
     manualHours: totalManual / 3600,
@@ -143,10 +128,6 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
   }
 }
 
-/** One all-zero row for a calendar day nobody tracked or logged anything on.
- *  Same shape toDayRow produces for a real day with zero members - a day
- *  with genuinely no activity has to render identically to one that did,
- *  just with nothing in it. */
 function zeroDayRow(date: string): TimeActivityDayRow {
   return {
     date,
@@ -168,34 +149,18 @@ function zeroDayRow(date: string): TimeActivityDayRow {
   }
 }
 
-/** 'YYYY-MM-DD' + n days, in UTC so this never drifts a day near a local
- *  DST boundary - date-only arithmetic has no timezone to begin with. */
 function addDays(date: string, n: number): string {
   const d = new Date(`${date}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
 
-/** The API only ever sends a day that has a real session or manual entry on
- *  it (buildTimeAndActivityReportPayload never emits an empty one) - a
- *  quiet day in the middle of the requested range was simply absent from
- *  `days`, not present with zeros. The table and chart both render exactly
- *  what's in this array with no gap-filling of their own (the date-range
- *  label already had to work around the same sparseness - see this hook's
- *  own `range`-based label fix), so a mostly-quiet range rendered as a
- *  handful of far-apart entries instead of one per day, each mislabeled
- *  with a wrong x-position implied by its array index. Filled here, once,
- *  so the table, the chart and CSV export all inherit a complete series
- *  without each having to know the requested range separately.
- */
 function fillMissingDays(days: TimeActivityDayRow[], range?: { from: string; to: string }): TimeActivityDayRow[] {
   if (!range) return days
   const byDate = new Map(days.map((d) => [d.date, d]))
   const filled: TimeActivityDayRow[] = []
   for (let date = range.from; date <= range.to; date = addDays(date, 1)) {
     filled.push(byDate.get(date) ?? zeroDayRow(date))
-    // A malformed range (from > to, or either not a real date) must not
-    // loop forever - bail once it's clearly not converging.
     if (filled.length > 3660) break
   }
   return filled
@@ -211,7 +176,6 @@ function mapReport(raw: RawTimeAndActivityReport, range?: { from: string; to: st
   return { days, memberRows, entries }
 }
 
-/** @param range 'YYYY-MM-DD' start/end, inclusive. memberId omitted = every member the viewer can see. */
 export async function fetchTimeAndActivityReport(range: {
   from: string
   to: string
@@ -221,8 +185,6 @@ export async function fetchTimeAndActivityReport(range: {
   if (range.memberId) params.set("memberId", range.memberId)
   const res = await apiFetch(apiPath(`/api/reports/time-and-activity?${params.toString()}`))
   if (!res.ok) {
-    // Returning null here made a 403 or a 500 render as an empty report, the
-    // same as a range nobody tracked in.
     const body = (await res.json().catch(() => null)) as { error?: string } | null
     throw new Error(
       body?.error ||
@@ -255,8 +217,6 @@ export async function sendTimeAndActivityReport(
       body: JSON.stringify(input),
     })
     if (!res.ok) {
-      // The dialog used to report a generic failure for everything, so a
-      // rejected address and an unreachable mail service read the same.
       const body = (await res.json().catch(() => null)) as { error?: string } | null
       throw new Error(body?.error || "Failed to send the report.")
     }
@@ -289,8 +249,6 @@ export async function scheduleTimeAndActivityReport(
       body: JSON.stringify(input),
     })
     if (!res.ok) {
-      // The dialog used to report a generic failure for everything, so a
-      // rejected address and an unreachable mail service read the same.
       const body = (await res.json().catch(() => null)) as { error?: string } | null
       throw new Error(body?.error || "Failed to save the schedule.")
     }
@@ -302,13 +260,6 @@ export async function scheduleTimeAndActivityReport(
   }
 }
 
-/** Permanently deletes one member's whole tracked record for one day -
- *  sessions, manual entries, and every screenshot/app-usage/URL-visit
- *  captured that day (server-side cascade, see
- *  deleteMemberDayActivityWithChildrenPg). Never touches classification
- *  (activity_categories) - that's shared org config, not this member's own
- *  data. Manager and above only; the server re-checks that regardless of
- *  what the UI shows. */
 export async function deleteTimeAndActivityDay(memberId: string, date: string): Promise<void> {
   const params = new URLSearchParams({ memberId, date })
   const res = await apiFetch(apiPath(`/api/reports/time-and-activity/day?${params.toString()}`), {

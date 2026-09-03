@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/js-combine-iterations */
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
@@ -37,9 +36,6 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
   const [showSubsectionDropdown, setShowSubsectionDropdown] = useState(false)
   const sectionRef = useRef<HTMLDivElement>(null)
 
-  // Single source with the sidebar and global search (visibleNavSections) -
-  // each used to carry its own copy of this filtering, so a role could reach
-  // a page from one of them that another didn't show.
   const sectionById = useMemo(() => {
     const map = new Map<string, NavSection>()
     for (const section of visibleNavSections(memberRole)) map.set(section.id, section)
@@ -71,7 +67,6 @@ export function Breadcrumbs({ activeItem, onNavigate }: BreadcrumbsProps) {
     setShowSubsectionDropdown(false)
   }
 
-// eslint-disable-next-line react-doctor/js-combine-iterations
   return (
     <div className="flex items-center">
       <div ref={sectionRef} className="relative flex items-center gap-1.5">

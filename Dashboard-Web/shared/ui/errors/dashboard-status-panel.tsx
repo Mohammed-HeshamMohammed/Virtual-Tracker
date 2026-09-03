@@ -10,7 +10,6 @@ type DashboardStatusPanelProps = {
   className?: string
 }
 
-/** Inner content panel — matches the signed-in dashboard main area (`rounded-3xl` card). */
 export function DashboardStatusPanel({ isDark, children, className }: DashboardStatusPanelProps) {
   const t = getDashboardStatusStyles(isDark)
   return (

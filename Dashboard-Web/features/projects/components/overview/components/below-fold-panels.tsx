@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { motion } from "framer-motion"
@@ -38,11 +37,6 @@ export function BelowFoldPanels({
   clients,
   showClientBudgets,
 }: BelowFoldPanelsProps) {
-  // Covers both "actively fetching" and "hasn't scrolled into view yet, so
-  // the fetch hasn't even started" - without hasPanels, that second window
-  // read as isPanelsLoading=false + tasks=[], which fell through to each
-  // panel's own genuine "no data" empty state and flashed it before real
-  // data ever had a chance to load.
   if (!hasPanels && !panelsError) {
     return (
       <section ref={belowFoldRef} className="mt-6 flex flex-col items-center justify-center gap-3 py-16">

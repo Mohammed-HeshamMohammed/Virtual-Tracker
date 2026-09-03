@@ -34,9 +34,6 @@ let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let intentionalClose = false
 let activityHandler: (() => void) | null = null
-// Distinguishes the very first connect (fresh mount-time fetches already
-// cover it) from a reconnect after a drop (§6.10 - frames missed while
-// down are gone, so a reconnect must force a full refetch instead).
 let hasConnectedBefore = false
 
 function clearTimers() {
@@ -80,7 +77,6 @@ export function isPresenceWebSocketConnected(): boolean {
   return socket?.readyState === WebSocket.OPEN
 }
 
-/** Auth presence WS — online only after connect succeeds. */
 export async function connectPresenceWebSocket(): Promise<boolean> {
   if (typeof window === "undefined") return false
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {

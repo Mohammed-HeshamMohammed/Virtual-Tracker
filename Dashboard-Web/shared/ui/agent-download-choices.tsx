@@ -7,11 +7,9 @@ export type PlatformOption = "windows" | "mac" | "linux"
 export interface AgentDownloadChoicesProps {
   className?: string
   compact?: boolean
-  /** Landing-Backend origin that serves GET /api/download?platform=… */
   apiBaseUrl?: string
 }
 
-/** Classic four-pane Windows logo (Simple Icons) */
 function WindowsIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -20,7 +18,6 @@ function WindowsIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-/** Apple logo (Simple Icons) */
 function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -29,7 +26,6 @@ function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-/** Tux / Linux mark (Simple Icons) */
 function LinuxIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -38,10 +34,6 @@ function LinuxIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-/**
- * Agent installers are proxied by Landing-Backend (GitHub release assets),
- * not by Dashboard-Web / Dashboard-Backend. Same host Landing-Web uses.
- */
 function resolveLandingApiBase(apiBaseUrl?: string): string {
   const explicit = apiBaseUrl?.trim()
   if (explicit) return explicit.replace(/\/$/, "")
@@ -54,7 +46,6 @@ function resolveLandingApiBase(apiBaseUrl?: string): string {
 
   if (typeof window !== "undefined") {
     const host = window.location.hostname
-    // Production: app.myvirtualtracker.com → api.myvirtualtracker.com (Landing-Backend)
     if (host === "app.myvirtualtracker.com" || host.endsWith(".myvirtualtracker.com")) {
       return "https://api.myvirtualtracker.com"
     }
@@ -63,7 +54,6 @@ function resolveLandingApiBase(apiBaseUrl?: string): string {
     }
   }
 
-  // SSR / unknown host — match Landing-Web production default
   return "https://api.myvirtualtracker.com"
 }
 

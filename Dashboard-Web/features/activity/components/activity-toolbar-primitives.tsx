@@ -156,8 +156,6 @@ export function ActivitySegmentedControl<T extends string>({
   )
 }
 
-// Ids match the backend's activity_categories vocabulary - "unproductive"
-// here never matched anything the API returns, so that filter was always empty.
 export const ACTIVITY_CATEGORY_OPTIONS = [
   { id: "all", label: "All", dot: "bg-slate-400 dark:bg-slate-500" },
   { id: "productive", label: "Productive", dot: "bg-emerald-500 dark:bg-emerald-400" },

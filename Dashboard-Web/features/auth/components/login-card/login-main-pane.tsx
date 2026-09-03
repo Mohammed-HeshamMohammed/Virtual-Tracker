@@ -17,7 +17,6 @@ import { isValidEmail } from "@/shared/validation"
 import { sanitizePersonNameInput } from "@/shared/validation/person-name"
 import type { RegisterEmailAvailability } from "@/features/auth/services/use-register-email-availability"
 
-// ─── Google SVG Icon ──────────────────────────────────────────────────────────
 function GoogleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true">
@@ -41,7 +40,6 @@ function GoogleIcon({ className }: { className?: string }) {
   )
 }
 
-// ─── Apple SVG Icon ───────────────────────────────────────────────────────────
 function AppleIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">

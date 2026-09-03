@@ -2,18 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { cn } from "@/shared/utils/utils"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { isManagementRole } from "@/features/auth"
-import { getProjects } from "@/features/projects/api/project-api"
+import { getMembers } from "@/features/members/api/member-api"
+import { initialsFromName } from "@/features/members/utils/build-tree"
+import { getTrackableProjects } from "@/features/projects/api/project-api"
 import { createTimeEntry, deleteTimeEntry, getTimeEntries, type TimeEntry } from "@/features/timesheets/api/timesheet-api"
+import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/forms/searchable-select-field"
 
-/** Today as YYYY-MM-DD in local time (not UTC, which shifts the day). */
 function todayLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-/** "1:30" / "1.5" / "90m" -> seconds. Returns 0 when unparseable. */
 export function parseHoursInput(raw: string): number {
   const value = raw.trim().toLowerCase()
   if (!value) return 0
@@ -35,31 +37,23 @@ function formatSeconds(seconds: number): string {
 const inputCls =
   "w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
 
-/**
- * Add time by hand for work that wasn't tracked, and review what you added.
- *
- * Entries land in `time_entries` with source='manual' (the column default),
- * which is what the Manual Time Edits report reads and what a submitted
- * timesheet counts alongside tracked sessions. This page was previously a
- * static illustration describing the feature.
- */
 export function ManualTimeContent() {
   const { memberId, memberRole } = useAuth()
-  // A hint for the copy only, not a security decision - the server
-  // independently re-decides this on every submit (resolveTimeEntryStatus,
-  // schema/routes.js) regardless of what this evaluates to, and its own
-  // check also covers a client entitled to track a specific project, which
-  // isn't knowable from a role name alone. The post-submit notice below
-  // reads the real outcome back from the response either way, so a client
-  // who does qualify simply sees this copy undersell what actually happens.
+  const { isDark } = useTheme()
   const likelyInstant = isManagementRole(memberRole)
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([])
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
+  const [loadingProjects, setLoadingProjects] = useState(false)
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
+  // Who this entry is for - managers+ can pick a teammate instead of
+  // themselves (folded in from the old separate "Add time for someone"
+  // dialog); everyone else only ever submits for themselves.
+  const [selectedMemberId, setSelectedMemberId] = useState("")
   const [date, setDate] = useState(todayLocal)
   const [projectId, setProjectId] = useState("")
   const [hours, setHours] = useState("")
@@ -67,6 +61,48 @@ export function ManualTimeContent() {
   const [billable, setBillable] = useState(true)
 
   const durationSeconds = useMemo(() => parseHoursInput(hours), [hours])
+  const targetMemberId = selectedMemberId || memberId || ""
+  const targetIsSelf = targetMemberId === memberId
+
+  // Defaults to "myself" the moment auth resolves - only overridden if the
+  // viewer explicitly picks someone else from the Member dropdown below.
+  useEffect(() => {
+    if (memberId && !selectedMemberId) setSelectedMemberId(memberId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberId])
+
+  useEffect(() => {
+    if (!likelyInstant || !memberId) return
+    let cancelled = false
+    getMembers({ fields: ["id", "name"], singlePage: true, limit: 500 })
+      .then((rows) => {
+        if (cancelled) return
+        setTeamMembers(
+          rows
+            .map((m) => ({ id: String(m.id), name: m.name || "Unnamed" }))
+            .filter((m) => m.id !== memberId)
+            .sort((a, b) => a.name.localeCompare(b.name)),
+        )
+      })
+      .catch(() => setTeamMembers([]))
+    return () => {
+      cancelled = true
+    }
+  }, [likelyInstant, memberId])
+
+  // "Myself" (memberId) sits first, then whoever this manager can see/manage
+  // (already server-scoped by getMembers - see getVisibleMemberIds), each
+  // with an avatar for quick scanning.
+  const memberOptions = useMemo<SearchableSelectOption[]>(() => {
+    if (!memberId) return []
+    const options: SearchableSelectOption[] = [
+      { value: memberId, label: "Myself", meta: <ReportMemberAvatar initials="Me" /> },
+    ]
+    for (const m of teamMembers) {
+      options.push({ value: m.id, label: m.name, meta: <ReportMemberAvatar initials={initialsFromName(m.name)} /> })
+    }
+    return options
+  }, [memberId, teamMembers])
 
   const loadEntries = useCallback(() => {
     if (!memberId) return
@@ -77,27 +113,36 @@ export function ManualTimeContent() {
       .finally(() => setLoading(false))
   }, [memberId])
 
+  // The Project list is scoped to whoever this entry is currently for, not
+  // the viewer - a manager backfilling for a teammate needs that teammate's
+  // own trackable projects (see listTrackableProjectIdsPg), which can
+  // differ from the manager's own.
   useEffect(() => {
+    if (!targetMemberId) return
     let cancelled = false
-    void getProjects({ fields: ["id", "name", "status"] })
+    setLoadingProjects(true)
+    getTrackableProjects(targetIsSelf ? undefined : targetMemberId)
       .then((rows) => {
         if (cancelled) return
-        setProjects(
-          rows
-            .filter((p) => String(p.status ?? "").toLowerCase() !== "archived")
-            .map((p) => ({ id: String(p.id), name: String(p.name ?? "Untitled project") }))
-        )
+        const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name))
+        setProjects(sorted)
+        setProjectId((current) => (current && !sorted.some((p) => p.id === current) ? "" : current))
       })
-      .catch(() => setProjects([]))
+      .catch(() => {
+        if (!cancelled) setProjects([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProjects(false)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [targetMemberId, targetIsSelf])
 
   useEffect(loadEntries, [loadEntries])
 
   async function submit() {
-    if (!memberId) return
+    if (!memberId || !targetMemberId) return
     setError(null)
     setNotice(null)
     if (!projectId) {
@@ -116,7 +161,7 @@ export function ManualTimeContent() {
     try {
       const created = await createTimeEntry(
         {
-          memberId,
+          memberId: targetMemberId,
           projectId,
           date,
           startTime: "",
@@ -129,13 +174,6 @@ export function ManualTimeContent() {
       )
       setHours("")
       setDescription("")
-      // Whether this landed approved or pending is the server's call, not
-      // this form's (resolveTimeEntryStatus, schema/routes.js) - Manager and
-      // above, and a client entitled to track the project, get an approved
-      // entry immediately; everyone else gets a request awaiting review.
-      // Read back from the real response rather than guessed from the
-      // viewer's role client-side, so this notice can never say something
-      // the server didn't actually do.
       setNotice(created.status === "approved" ? "Manual time added." : "Request submitted — awaiting approval.")
       loadEntries()
     } catch (e) {
@@ -163,12 +201,24 @@ export function ManualTimeContent() {
         </h2>
         <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           {likelyInstant
-            ? "Add time that wasn't tracked live. Entries are attributed to you, count towards your timesheet, and appear in the Manual time edits report."
+            ? "Add time that wasn't tracked live, for yourself or a teammate. It lands approved right away and appears in the Manual time edits report."
             : "Time you worked but did not track. This is a request - a manager reviews it before it counts towards your timesheet."}
         </p>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        {likelyInstant ? (
+          <div className="mb-4">
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Member</label>
+            <SearchableSelectField
+              value={selectedMemberId || null}
+              onChange={(v) => setSelectedMemberId(v ?? memberId ?? "")}
+              options={memberOptions}
+              placeholder="Select a member"
+              isDark={isDark}
+            />
+          </div>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label htmlFor="mt-date" className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -194,9 +244,10 @@ export function ManualTimeContent() {
               id="mt-project"
               value={projectId}
               onChange={(e) => setProjectId(e.target.value)}
+              disabled={loadingProjects}
               className={inputCls}
             >
-              <option value="">Select a project</option>
+              <option value="">{loadingProjects ? "Loading projects…" : "Select a project"}</option>
               {projects.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}

@@ -1,4 +1,3 @@
-/** Formats a non-negative duration in seconds as `H:MM:SS` (hours may exceed 24). */
 export function formatDurationHms(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds))
   const h = Math.floor(s / 3600)

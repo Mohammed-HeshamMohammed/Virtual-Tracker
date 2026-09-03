@@ -13,7 +13,6 @@ import {
   AuthStaggerItem,
 } from "@/features/auth/components/auth-motion"
 
-/** Flip to `true` when self-service access requests are ready for production. */
 const REQUEST_ACCESS_ENABLED = false
 
 interface RequestAccessCardProps {

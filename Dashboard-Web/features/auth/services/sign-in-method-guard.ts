@@ -3,11 +3,9 @@ import { fetchSignInMethodsForEmail } from "firebase/auth"
 import { resolveSignInMethodsFromApi } from "@/features/auth/api/resolve-sign-in-methods-api"
 
 function uniqStrings(values: string[]): string[] {
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   return [...new Set(values.map((s) => s.trim()).filter(Boolean))]
 }
 
-/** Merge client fetchSignInMethodsForEmail + backend Admin providers. */
 export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string): Promise<string[] | null> {
   const trimmed = email.trim()
   if (!trimmed) return null
@@ -30,7 +28,6 @@ export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string):
 
 const has = (methods: string[], m: string) => methods.includes(m)
 
-/** User message when email has no password provider on file. */
 export function instructionWhenNoPasswordOnFile(methods: string[]): string {
   const g = has(methods, "google.com")
   const a = has(methods, "apple.com")
@@ -60,7 +57,6 @@ export function instructionWhenNoPasswordOnFile(methods: string[]): string {
   return "For this app, that email is not set up for email-and-password sign-in. Use Google, Apple, or “Sign in with work email” according to how you first created the account."
 }
 
-/** Guidance when account exists but methods list is empty/unknown. */
 export function describeExistingAccountGuidance(methods: string[]): string {
   if (methods.length === 0) {
     return "Firebase did not return which sign-in methods exist for this address (privacy protection). Try the Google button if you used Google, the Apple button if you used Apple, or “Sign in with work email” if you used email links; otherwise check the password you chose."
@@ -109,7 +105,6 @@ export function assertCanSendEmailSignInLink(methods: string[] | null, email: st
   throw new Error(`You can’t use an email sign-in link for ${email} with the current sign-in methods. ${describeExistingAccountGuidance(methods)}`)
 }
 
-/** After OAuth error account-exists-with-different-credential */
 export async function messageForAccountExistsWithDifferentCredential(auth: Auth, error: unknown): Promise<string> {
   const email = getEmailFromAccountExistsError(error)
   if (!email) {
@@ -145,7 +140,6 @@ export function isAccountExistsWithDifferentCredential(error: unknown): boolean 
   )
 }
 
-/** Firebase often returns these for “wrong password”, “no user”, or “OAuth-only account” (enumeration-safe). */
 export function isAmbiguousEmailPasswordFailureCode(code: string): boolean {
   return (
     code === "auth/invalid-credential" ||

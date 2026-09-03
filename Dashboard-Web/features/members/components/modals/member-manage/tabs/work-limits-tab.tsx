@@ -13,9 +13,6 @@ import {
 import { Toggle } from "@/shared/ui/toggle";
 import type { TabProps } from "@/features/members/components/modals/member-manage/types"
 
-// Matches LimitInput's own step={0.25} - a computed value (especially from
-// division, e.g. 40 / 3 working days) lands on the same quarter-hour
-// granularity manual entry already uses instead of a long float tail.
 function roundToQuarterHour(hours: number): number {
   return Math.round(hours / 0.25) * 0.25
 }
@@ -126,13 +123,6 @@ export function WorkLimitsTab({ state, setState }: TabProps) {
 
   const selectedDayLabels = WEEKDAYS.filter((d) => selectedDays.includes(d.index)).map((d) => d.label)
 
-  // Daily x working days == weekly is exactly the ceiling
-  // validateWorkLimitsCombo already enforces (it only errors once daily x
-  // days *exceeds* weekly) - auto-filling the other field to that same
-  // product/quotient keeps the two consistent instead of making the person
-  // do the arithmetic and land just under the limit by hand. Only runs once
-  // days are actually selected - with none picked there's no day count to
-  // multiply/divide by, so both fields stay independent, same as before.
   const handleDailyChange = (dailyLimit: string) => {
     setState((s) => {
       const next = { ...s, dailyLimit }

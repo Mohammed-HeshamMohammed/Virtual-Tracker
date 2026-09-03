@@ -1,4 +1,3 @@
-/** @internal Import from `../../shared/ui/<file>` within `people/` only. */
 
 export { TablePagination, type TablePaginationProps } from "@/shared/tables/ui/table-pagination"
 export { PaginatedTableShell, type PaginatedTableShellProps } from "@/shared/tables/ui/paginated-table-shell"

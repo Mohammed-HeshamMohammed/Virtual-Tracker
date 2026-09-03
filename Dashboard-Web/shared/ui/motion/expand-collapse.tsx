@@ -11,10 +11,6 @@ type ExpandCollapseProps = {
   className?: string
 }
 
-/** Height expansion without unmounting its contents - grid-rows animate
- * (0fr -> 1fr) rather than max-height, so it never clips a taller reveal and
- * never needs a magic-number max-height guess. Ported from the Client
- * modal's animated-primitives.tsx, generalized for app-wide reuse. */
 export function ExpandCollapse({ show, children, className }: ExpandCollapseProps) {
   return (
     <div
@@ -41,9 +37,6 @@ type SegmentedControlProps<T extends string> = {
   buttonClassName?: (active: boolean) => string
 }
 
-/** Sliding pill indicator - one element moves, never unmounts. Ported from
- * the Client modal's animated-primitives.tsx, generalized for app-wide reuse
- * (adds an optional per-option icon, unused by the client modal's version). */
 export function SegmentedControl<T extends string>({
   value,
   options,

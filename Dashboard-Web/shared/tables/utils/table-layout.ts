@@ -2,7 +2,6 @@ export const TABLE_MIN_ROW_HEIGHT_PX = 52
 export const TABLE_FALLBACK_THEAD_HEIGHT_PX = 44
 const TABLE_LAYOUT_SAFETY_PX = 4
 
-/** Re-exported from ui-config for table layout helpers. */
 export const TABLE_MIN_VISIBLE_ROWS = 4
 
 export function measureTbodyArea(

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { motion } from "framer-motion"
@@ -19,7 +18,6 @@ export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationS
       </h3>
       <p className="mb-4 text-xs font-medium text-slate-500 dark:text-slate-400">Hours tracked this week against each member&apos;s weekly capacity</p>
 
-      {/* Donut */}
       <div className="relative w-44 h-44 mb-6 self-center">
         <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
           <circle cx="50" cy="50" r="40" fill="transparent" className="stroke-slate-100 dark:stroke-slate-800" strokeWidth="12" />
@@ -51,7 +49,6 @@ export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationS
         </div>
       </div>
 
-      {/* Legend */}
       <div className="w-full space-y-3 mb-6">
         {[
           { dot: "bg-emerald-500 dark:bg-emerald-400", label: "Optimal Load",  value: `${d.utilizationMembers.optimal} Members` },

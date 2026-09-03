@@ -24,7 +24,6 @@ function AuthAmbientBackground({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Full-viewport shell shared by login, invite signup, and password-change gates. */
 export function AuthViewportShell({
   children,
   className,

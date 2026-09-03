@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState, useMemo, useCallback, useEffect } from "react"
@@ -100,14 +99,12 @@ export function InvoicesReportContent() {
 
   return (
     <div className="max-w-[1300px] mx-auto space-y-5">
-      {/* Filters */}
       <div className="flex items-center gap-4 border-b border-slate-200 pb-4">
         <div className="w-56">
           <FilterDropdown value={client} onChange={setClient} options={CLIENTS_LIST} />
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-slate-200 gap-6">
         {TABS.map((t) => (
           <button
@@ -123,7 +120,6 @@ export function InvoicesReportContent() {
         ))}
       </div>
 
-      {/* Overview & Add */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-10">
           <div>
@@ -149,7 +145,6 @@ export function InvoicesReportContent() {
         </button>
       </div>
 
-      {/* Table */}
       <div>
         <table className="w-full">
           <thead>

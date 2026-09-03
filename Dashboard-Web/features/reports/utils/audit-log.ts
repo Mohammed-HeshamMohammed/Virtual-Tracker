@@ -12,7 +12,6 @@ export function filterAuditRows(
     query: string
     rangeStart: Date
     rangeEnd: Date
-    /** Empty set = no restriction. */
     authors?: Set<string>
     actions?: Set<string>
   }
@@ -59,14 +58,6 @@ export function groupAuditRowsByDate(rows: AuditLogRow[]): { dateKey: string; la
 
 export type AuditLogGroupBy = "date" | "author" | "action"
 
-/**
- * AuditLogRow (see models/audit-log.ts) has no identifiable project - the
- * backend maps every row's `member` to a literal "—" placeholder, and
- * `object` is a table name, not a project reference - so there is nothing
- * to build a Projects filter or a "project" group-by option on. Author and
- * Action are real per-row fields the endpoint already populates, so those
- * are offered as the additional dimensions instead.
- */
 export function groupAuditRows(
   rows: AuditLogRow[],
   groupBy: AuditLogGroupBy

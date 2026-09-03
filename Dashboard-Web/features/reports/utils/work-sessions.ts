@@ -30,7 +30,6 @@ export function filterWorkSessions(
     rangeEnd: Date
     projectNames: Set<string> | null
     memberNames: Set<string> | null
-    /** Signed-in member, for the "me" scope. */
     viewerMemberId: string | null
   }
 ): WorkSessionRow[] {
@@ -38,9 +37,6 @@ export function filterWorkSessions(
   const re = new Date(opts.rangeEnd)
   return rows.filter((r) => {
     if (!inDateRange(r.date, rs, re)) return false
-    // "Me" means the signed-in member. This used to compare memberName
-    // against a hardcoded developer's name, so the tab was empty for
-    // literally everyone else.
     if (opts.scope === "me" && (!opts.viewerMemberId || r.memberId !== opts.viewerMemberId)) return false
     if (opts.projectNames !== null) {
       if (opts.projectNames.size === 0) return false
@@ -86,7 +82,6 @@ function toIsoDateLocal(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** Inclusive calendar days from range start through range end (local midnight boundaries). */
 function eachIsoDayInRange(rangeStart: Date, rangeEnd: Date): string[] {
   const out: string[] = []
   const cur: Date = new Date(rangeStart)
@@ -101,7 +96,6 @@ function eachIsoDayInRange(rangeStart: Date, rangeEnd: Date): string[] {
   return out
 }
 
-/** One row per calendar day in the range; days without sessions use avgActivity 0 and hasData false. */
 export function buildDailyAvgActivitySeries(
   rows: WorkSessionRow[],
   rangeStart: Date,

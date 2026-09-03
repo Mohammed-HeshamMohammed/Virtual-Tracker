@@ -63,7 +63,6 @@ async function fetchPasswordPolicyFromNetwork(): Promise<PasswordPolicyResponse>
   }
 }
 
-/** Fetch password policy from server; sessionStorage offline fallback. */
 export async function fetchPasswordPolicy(): Promise<PasswordPolicyResponse> {
   if (memoryCache) return memoryCache
   if (inFlight) return inFlight

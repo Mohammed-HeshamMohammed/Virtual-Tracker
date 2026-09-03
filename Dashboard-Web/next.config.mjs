@@ -12,7 +12,6 @@ const dashboardDevBase = (
   "http://127.0.0.1:5713"
 ).replace(/\/$/, "")
 
-/** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
   async redirects() {

@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-derived-state */
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState as useComponentState } from "react"
@@ -34,14 +32,12 @@ export type OrgFieldOptionType =
 
 const PORTAL_DROPDOWN_BACKDROP_Z = "z-71"
 const PORTAL_DROPDOWN_MENU_Z = "z-80"
-/** Sub-modals (e.g. New option) must sit above member manage modal z-70 and dropdown menus */
 const PORTAL_MODAL_Z = "z-90"
 
 const MODAL_LABEL = "mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500"
 const MODAL_INPUT =
   "w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2.5 py-2 text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-400 dark:focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-blue-400 dark:focus:ring-emerald-500"
 
-/** Matches `SimpleSelect` trigger in members modal (text-sm, py-2.5). */
 const DROPDOWN_TRIGGER_CLASS =
   "flex w-full items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-left text-sm text-slate-700 dark:text-slate-200 transition-colors hover:border-blue-400 dark:hover:border-emerald-500"
 
@@ -77,7 +73,6 @@ const JOB_TITLE_RANKS: RankBandDef[] = [
   { id: "jt_lead", label: "Lead / Principal", ratio: 1 },
 ]
 
-/** Org criticality / exposure for ordering departments. */
 const DEPARTMENT_RANKS: RankBandDef[] = [
   { id: "dept_support", label: "Support / ancillary", ratio: 0 },
   { id: "dept_ops", label: "Operational", ratio: 0.25 },
@@ -86,7 +81,6 @@ const DEPARTMENT_RANKS: RankBandDef[] = [
   { id: "dept_exec", label: "Executive / company-critical", ratio: 1 },
 ]
 
-/** Engagement / role shape for ordering job types. */
 const JOB_TYPE_RANKS: RankBandDef[] = [
   { id: "jt_seasonal", label: "Seasonal / occasional", ratio: 0 },
   { id: "jt_part", label: "Part-time", ratio: 0.25 },
@@ -138,14 +132,8 @@ export function ManageableFieldOptionsSelect({
   value,
   onChange,
   staticOptions = [],
-  /** When true: list only (no search, no “Edit options”) — e.g. Hiring details row. */
   compactMenu = false,
-  /** When true, no built-in label (use an external label so grid rows can align). */
   hideLabel = false,
-  /**
-   * When true, GET options as soon as this control mounts (not only on first open).
-   * Defaults to the same value as `compactMenu` so compact lists show API rows immediately.
-   */
   prefetchOnMount,
 }: {
   fieldType: OrgFieldOptionType
@@ -153,7 +141,6 @@ export function ManageableFieldOptionsSelect({
   placeholder: string
   value: string
   onChange: (v: string) => void
-  /** Merged with server options (deduped by label) */
   staticOptions?: string[]
   compactMenu?: boolean
   hideLabel?: boolean

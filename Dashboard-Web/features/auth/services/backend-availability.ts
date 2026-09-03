@@ -23,7 +23,6 @@ function parseReadinessFailure(
   return { code, error }
 }
 
-/** True when Auth-Backend and Firebase Admin are reachable. */
 export async function checkBackendReadiness(signal?: AbortSignal): Promise<BackendReadiness> {
   try {
     const url = apiPath("/api/auth/readiness")
@@ -48,7 +47,6 @@ export async function checkBackendReadiness(signal?: AbortSignal): Promise<Backe
   }
 }
 
-/** True when Dashboard-Backend, Firestore, and Postgres are all reachable for identity bootstrap. */
 export async function checkDashboardReadiness(signal?: AbortSignal): Promise<BackendReadiness> {
   try {
     const url = apiPath("/api/readiness")
@@ -73,7 +71,6 @@ export async function checkDashboardReadiness(signal?: AbortSignal): Promise<Bac
   }
 }
 
-/** True when both Auth and Dashboard APIs pass readiness probes. */
 export async function checkAllBackendsReady(signal?: AbortSignal): Promise<BackendReadiness> {
   const [auth, dashboard] = await Promise.all([
     checkBackendReadiness(signal),
@@ -84,7 +81,6 @@ export async function checkAllBackendsReady(signal?: AbortSignal): Promise<Backe
   return { ok: true }
 }
 
-/** True when Auth-Backend is reachable and can serve Firebase web config. */
 export async function checkBackendAvailable(signal?: AbortSignal): Promise<boolean> {
   const readiness = await checkAllBackendsReady(signal)
   return readiness.ok

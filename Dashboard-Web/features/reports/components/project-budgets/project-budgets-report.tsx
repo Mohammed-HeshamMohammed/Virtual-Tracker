@@ -20,10 +20,6 @@ import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/compon
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 
-// A project's budget is either a time cap or a dollar cap (project_budgets.type)
-// - never both, and never convertible into the other without a rate. These four
-// read straight off whichever unit the row's own budgetType actually is, so a
-// cost-based project shows real money instead of a misleading 0:00 duration.
 function budgetSpentDisplay(row: ProjectBudgetRow): string {
   return row.budgetType === "cost" ? formatMoney(row.spentAmount) : formatDurationHms(row.spentSeconds)
 }
@@ -47,16 +43,6 @@ export function budgetPercentUsed(row: ProjectBudgetRow): number {
   return 0
 }
 
-/**
- * ProjectBudgetRow is already one row per project with no date, member, or
- * client on it (see models/project-budgets.ts). "project" is the one real
- * dimension the row has (one group per project, alphabetical - effectively
- * identity, per PROJECT_BUDGETS_GROUP_BY_OPTIONS' own doc comment). The rest
- * ("month"/"date"/"member"/"client") don't exist on this row shape, so they
- * fall back to the budget-status split the table already computes
- * (Budgeted projects / No budget set) rather than a single meaningless
- * bucket or fabricated data.
- */
 function groupProjectBudgetRows(
   flatRows: { section: string; row: ProjectBudgetRow }[],
   groupBy: string
@@ -109,8 +95,6 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
   const { dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [sections, setSections] = useState<ProjectBudgetSection[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
@@ -163,9 +147,6 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
 
   useEffect(() => {
     const runPdfExport = () => {
-      // Was row.budgetSeconds > 0, which silently dropped every cost-based
-      // project from this chart (their budgetSeconds is always 0) - both
-      // unit types belong here, each read through its own real percentage.
       const withBudget = flatRows.filter(({ row }) => row.budgetType !== null)
       downloadReportPdf({
         title: "Project Budgets Report",
@@ -345,17 +326,9 @@ export function ProjectBudgetsReport({ onNavigate }: { onNavigate: (id: string) 
       pageId="reports-project-budgets"
       groupByOptions={PROJECT_BUDGETS_GROUP_BY_OPTIONS}
       defaultGroupBy="month"
-      // Budget figures are scoped to the budget's own period (and its reset
-      // cadence), not an arbitrary picked range - the backend has no from/to
-      // for them. Hidden rather than left as controls that change nothing.
       showDateRange={false}
       showScopeTabs={false}
       showGroupBy={true}
-      // Every row here already IS a project, so a Projects filter narrows
-      // which project budgets show. Members has no matching dimension on
-      // ProjectBudgetRow (no memberId) - left visible (the panel always
-      // shows it) but intentionally not wired to the fetch, same as other
-      // single-dimension reports.
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

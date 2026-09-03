@@ -1,4 +1,3 @@
-/** Shared motion presets for the projects feature. */
 
 const fade = {
   initial: { opacity: 0 },

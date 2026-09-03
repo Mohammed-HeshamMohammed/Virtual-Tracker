@@ -1,12 +1,3 @@
-/**
- * Generic row-bucketing shared by every report's "Group by" dropdown. Each
- * report supplies its own key function (a small switch over its own row
- * shape and the current `groupBy` string) - this just buckets the report's
- * already-loaded, already-filtered rows under that key, in first-seen order,
- * and sorts chronologically when every key looks like an ISO date. It does
- * not re-aggregate any numbers - the report's own per-row markup renders
- * unchanged underneath each section header.
- */
 export interface ReportGroupedRows<T> {
   key: string
   label: string

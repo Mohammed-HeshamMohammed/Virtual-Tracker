@@ -10,7 +10,6 @@ function rowCapForWidth(width: number, breakpoints: readonly RowCapBreakpoint[])
   return sorted[sorted.length - 1]?.maxRows ?? 5
 }
 
-/** Responsive max rows for tables (e.g. projects: 5 on small screens, more on xl/2xl). */
 export function useResponsiveRowCap(breakpoints: readonly RowCapBreakpoint[]): number {
   const [cap, setCap] = useState(() =>
     typeof window !== "undefined" ? rowCapForWidth(window.innerWidth, breakpoints) : breakpoints[breakpoints.length - 1]?.maxRows ?? 5,

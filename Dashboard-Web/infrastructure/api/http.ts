@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/async-await-in-loop */
 import { bearerAuthHeaders } from "@/features/auth/services/bearer-headers"
 import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import {
@@ -22,19 +21,15 @@ import { assertSecureFetchUrl } from "@/infrastructure/api/secure-transport"
 export type RequestOptions = {
   signal?: AbortSignal
   retries?: number
-  /** Default true — set false for public routes (invite register, etc.). */
   requireAuth?: boolean
 }
 
 export type ApiFetchOptions = {
-  /** Set Content-Type: application/json when sending a body. */
   json?: boolean
   requireAuth?: boolean
-  /** Internal — forces a fresh Firebase ID token (401 retry). */
   forceRefresh?: boolean
 }
 
-/** Standard Backend JSON envelope (`compat`, `schema`, feature routes). */
 export type ApiEnvelope<T> = {
   success?: boolean
   error?: string
@@ -90,7 +85,6 @@ export async function getApiAuthToken(forceRefresh = false): Promise<string | nu
   }
 }
 
-/** Merge Firebase Bearer token into request headers (browser only). */
 export async function apiAuthHeaders(
   init: RequestInit = {},
   options: ApiFetchOptions = {},
@@ -133,9 +127,6 @@ async function maybeNotifyAuthSessionRestricted(res: Response): Promise<void> {
   }
 }
 
-// ponytail: global gate, not per-caller debouncing. Every burst (rapid toggle, modal
-// close fanning out into several refetches) funnels through apiFetch, so one gate
-// caps request starts app-wide regardless of which feature fired them.
 const BASE_MIN_SPACING_MS = 60
 const MAX_MIN_SPACING_MS = 1000
 const CLEAN_REQUESTS_TO_NARROW = 20
@@ -147,13 +138,11 @@ let consecutiveCleanRequests = 0
 let activeRequestCount = 0
 const concurrencyWaiters: Array<() => void> = []
 
-/** Widen spacing after a 429 — the server just told us to slow down. */
 function widenSpacingAfterRateLimit(): void {
   consecutiveCleanRequests = 0
   currentSpacingMs = Math.min(MAX_MIN_SPACING_MS, currentSpacingMs * 2)
 }
 
-/** Ease spacing back down once things have been clean for a while. */
 function narrowSpacingAfterSuccess(): void {
   if (currentSpacingMs <= BASE_MIN_SPACING_MS) return
   consecutiveCleanRequests += 1
@@ -250,7 +239,6 @@ function normalizeApiFetchInput(input: RequestInfo | URL): RequestInfo | URL {
   }
 }
 
-/** `fetch` with API base paths, HTTPS validation, and optional Firebase auth (default on). */
 export async function apiFetch(
   input: RequestInfo | URL,
   init: RequestInit = {},

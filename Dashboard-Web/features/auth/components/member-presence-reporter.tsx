@@ -13,7 +13,6 @@ import {
 const ACTIVITY_DEBOUNCE_MS = 8_000
 const CONNECT_RETRY_MS = 10_000
 
-/** App-wide presence WS after login — backend tracks online/idle/offline. */
 export function MemberPresenceReporter() {
   const { isLoggedIn, user, profile, sessionReady } = useAuth()
   const shouldConnect = Boolean(isLoggedIn && user && sessionReady && !profile?.mustChangePassword)

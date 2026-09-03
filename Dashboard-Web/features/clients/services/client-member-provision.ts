@@ -13,7 +13,6 @@ export type ProvisionClientMemberResult = {
   invites?: Invite[]
 }
 
-/** Client invite or pre-provision from modal draft. */
 export async function provisionClientMemberFromDraft(
   draft: ClientMemberDraft,
   options?: { createdByUid?: string },

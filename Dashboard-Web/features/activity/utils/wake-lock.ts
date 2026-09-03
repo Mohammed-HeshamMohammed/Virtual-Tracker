@@ -23,7 +23,6 @@ export async function releaseWakeLock(): Promise<void> {
   wakeLock = null
 }
 
-/** Re-acquire after tab becomes visible (browser releases wake lock on hide). */
 export function bindWakeLockVisibility(releaseOnHide = false): () => void {
   if (typeof document === "undefined") return () => {}
   const onVis = () => {

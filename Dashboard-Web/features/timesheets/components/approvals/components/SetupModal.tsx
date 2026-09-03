@@ -42,7 +42,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
           className="bg-white dark:bg-slate-900 rounded-xl w-full max-w-md shadow-2xl overflow-hidden"
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Set up timesheet approvals</h2>
             <button onClick={onClose} className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
@@ -50,7 +49,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
             </button>
           </div>
 
-          {/* Content */}
           <div className="px-6 py-5 space-y-5">
             {saveError ? (
               <p className="rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/60 px-3 py-2 text-sm text-red-700 dark:text-red-300">{saveError}</p>
@@ -63,7 +61,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
               .
             </p>
 
-            {/* Members */}
             <div className="space-y-1.5">
               <label className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 MEMBERS
@@ -80,7 +77,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
               <MemberMultiSelect members={members} selected={selectedMembers} onChange={setSelectedMembers} />
             </div>
 
-            {/* Pay Period */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                 PAY PERIOD
@@ -88,7 +84,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
               <SelectField value={payPeriod} onChange={setPayPeriod} options={PAY_PERIOD_OPTIONS} />
             </div>
 
-            {/* Auto setup checkbox */}
             <label className="flex items-start gap-3 cursor-pointer">
               <button
                 type="button"
@@ -106,7 +101,6 @@ export function SetupModal({ open, members, onClose, onSave }: SetupModalProps) 
             </label>
           </div>
 
-          {/* Footer */}
           <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40">
             <button
               onClick={onClose}

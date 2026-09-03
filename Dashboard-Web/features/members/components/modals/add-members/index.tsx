@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/js-combine-iterations */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState as useComponentState } from "react"
@@ -135,9 +133,6 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
 
   const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate">("invites")
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
-  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
-  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
-  // Kill pointer-events the instant close is requested, independent of animation state.
   const [isClosing, setIsClosing] = useComponentState(false)
   const handleClose = useCallback(() => {
     setIsClosing(true)
@@ -152,11 +147,9 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     return () => window.removeEventListener("keydown", onKeyDown)
   }, [handleClose])
 
-  // Send invites state
   const [inviteRows, setInviteRows] = useComponentState<InviteFormRow[]>([{ email: "", payRate: "", currency: "USD" }])
   const [inviteRole, setInviteRole] = useComponentState<MemberRole>(defaultRole)
 
-  // Create accounts state
   const [accountForm, setAccountForm] = useComponentState<AccountFormFields>({
     firstName: "",
     lastName: "",
@@ -167,7 +160,6 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   const [accountRole, setAccountRole] = useComponentState<MemberRole>(defaultRole)
   const [sendWelcomeEmail, setSendWelcomeEmail] = useComponentState(true)
 
-  // Migrate existing Firebase Auth users state — role is auto-suggested per person, not picked from a shared dropdown.
   const [migratableUsers, setMigratableUsers] = useComponentState<MigratableAuthUser[]>([])
   const [migrateNextPageToken, setMigrateNextPageToken] = useComponentState<string | null>(null)
   const [migrateSelectedUids, setMigrateSelectedUids] = useComponentState<Set<string>>(new Set())
@@ -194,7 +186,6 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     }
   }, [assignableRoles, defaultRole, inviteRole, accountRole, mode, canMigrate])
 
-  /** Suggested role clamped to what the viewer may actually assign; falls back to the lowest assignable role. */
   const resolveMigrateRole = useCallback(
     (user: MigratableAuthUser): MemberRole =>
       user.suggestedRole && assignableRoles.includes(user.suggestedRole) ? user.suggestedRole : defaultRole,
@@ -316,7 +307,6 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     setToast(null)
 
     if (mode === "invites") {
-// eslint-disable-next-line react-doctor/js-flatmap-filter
       const rows = inviteRows
         .map((row) => ({ email: row.email.trim(), payRate: row.payRate.trim(), currency: row.currency || "USD" }))
         .filter((row) => row.email.length > 0)

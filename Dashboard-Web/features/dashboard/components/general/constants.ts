@@ -114,7 +114,6 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
   { id: "recent_projects", label: "Recent projects", size: "panel" },
 ]
 
-/** Default dashboard grid layout (12-col, stacked stats + panels). */
 export const DEFAULT_DASHBOARD_LAYOUT: LayoutBlock[] = [
   { kind: "stack", id: "stack-worked", widgetIds: ["worked_week", "worked_today"] },
   { kind: "stack", id: "stack-activity", widgetIds: ["activity_today", "spent_week"] },
@@ -142,11 +141,8 @@ export const PROJECT_COLORS = [
   "bg-teal-500",
 ] as const
 
-/** Full panel block height (px). Two stacked stats + gap equals this. */
 export const DASHBOARD_PANEL_HEIGHT_PX = 420
-/** Must match `gap-5` on the dashboard grid (1.25rem). */
 export const DASHBOARD_GRID_GAP_PX = 20
-/** Height of one stat slot inside a stack. */
 export const DASHBOARD_STAT_SLOT_PX = (DASHBOARD_PANEL_HEIGHT_PX - DASHBOARD_GRID_GAP_PX) / 2
 
 export function memberInitials(name: string): string {

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -57,7 +56,6 @@ export function NewInvoicePage({ onBack, onSave }: { onBack: () => void; onSave:
 
       <div className="grid grid-cols-1 md:grid-cols-[1fr_300px] gap-8">
         <div className="space-y-8">
-          {/* Header section */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 space-y-5 shadow-sm">
             <div>
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 block" htmlFor="fallback-id">Client</label>
@@ -94,7 +92,6 @@ export function NewInvoicePage({ onBack, onSave }: { onBack: () => void; onSave:
             </div>
           </div>
 
-          {/* Line items section */}
           <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Line items</h3>
@@ -193,7 +190,6 @@ export function NewInvoicePage({ onBack, onSave }: { onBack: () => void; onSave:
           </div>
         </div>
 
-        {/* Totals Sidebar */}
         <div>
           <div className="bg-slate-50 rounded-2xl border border-slate-200 p-6 sticky top-6">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-5">Summary</h3>

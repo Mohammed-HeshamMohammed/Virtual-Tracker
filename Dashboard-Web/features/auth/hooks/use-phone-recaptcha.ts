@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef } from "react"
 import { RecaptchaVerifier } from "firebase/auth"
 import { getFirebaseAuth, initFirebase } from "@/infrastructure/firebase/config"
 
-/** Per-component invisible reCAPTCHA host for Firebase phone auth. */
 export function usePhoneRecaptcha() {
   const hostRef = useRef<HTMLDivElement>(null)
   const verifierRef = useRef<RecaptchaVerifier | null>(null)
@@ -21,7 +20,6 @@ export function usePhoneRecaptcha() {
     hostRef.current?.replaceChildren()
   }, [])
 
-  /** Always returns a fresh verifier bound to this component's DOM node. */
   const createVerifier = useCallback(async (): Promise<RecaptchaVerifier> => {
     await initFirebase()
     const host = hostRef.current

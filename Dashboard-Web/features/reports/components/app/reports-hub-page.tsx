@@ -18,7 +18,6 @@ import {
   type SavedReport,
 } from "@/features/reports/api/saved-reports-api"
 
-/** One icon per popular card, in the order the catalog lists them. */
 const POPULAR_ICONS = [Clock, Wallet, BarChart3] as const
 
 function matchesQuery(card: ReportCatalogCard, query: string): boolean {
@@ -37,9 +36,6 @@ export function ReportsHubPage({ onNavigate }: { onNavigate: (id: string) => voi
   const [savedError, setSavedError] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
 
-  // Only reports this role may actually open. Same rule the sidebar and
-  // deep-link coercion use, so the hub can never offer a card that bounces the
-  // viewer back to the dashboard.
   const role = memberRole ?? ""
   const allowed = useCallback((card: ReportCatalogCard) => isPageAllowedForRole(card.pageId, role), [role])
 
@@ -134,8 +130,6 @@ export function ReportsHubPage({ onNavigate }: { onNavigate: (id: string) => voi
         </div>
       </div>
 
-      {/* Saved reports - persisted per member, so a pin survives a reload and a
-          removal stays removed. */}
       <section className="mt-4 space-y-3">
         {savedError && (
           <p className="text-sm text-rose-500 dark:text-rose-400">{savedError}</p>

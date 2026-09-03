@@ -165,8 +165,6 @@ export function MemberEntryModal({
   const { user } = useAuth()
   const assignableRoles = useMemo(() => listAssignableRoles(actorRole), [actorRole])
   const actorRoleContext = useMemo(() => ({ assignableRoles }), [assignableRoles])
-  // Server enforces this (member-profile.service.js's hasPayBill branch) -
-  // this only decides whether the payBill tab reads as editable here.
   const canEditPayRate = useMemo(() => canEditPayRates(actorRole), [actorRole])
 
   const [formState, setFormState] = useState<MemberFormState>(initialFormState)
@@ -184,11 +182,6 @@ export function MemberEntryModal({
     setResetMessage(null)
     setBusy(false)
     if (action !== "edit-payment") return
-    // This modal builds its form from the already-loaded member row alone
-    // (buildFormFromMember), which carries no pay note/effective date/history
-    // - only the full Manage-options modal did a per-tab profile fetch. This
-    // quick modal is the OTHER of the two payment-editing entry points, so it
-    // needs the same real payBill section, not just the bare pay rate.
     let cancelled = false
     void getMemberProfile(member.id, ["payBill"])
       .then(({ form }) => {
@@ -407,12 +400,6 @@ export function MemberEntryModal({
           )}
 
           {showFormTabs && (
-            // No isDark override here on purpose - RolesTab/PayBillTab/WorkLimitsTab
-            // already carry their own dark: classes (matching how the full
-            // MemberManageModal renders these same tabs); a hex-based
-            // [&_input]:bg-[...] override here used to clobber them with a
-            // different, mismatched palette every time this quick modal - as
-            // opposed to the full Manage modal - was the one opened.
             <>
               {focusedAction === "edit-role" && <RolesTab {...tabProps} />}
               {focusedAction === "edit-payment" && <PayBillTab {...tabProps} canEditPayRate={canEditPayRate} />}

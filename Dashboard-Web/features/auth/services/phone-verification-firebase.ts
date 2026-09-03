@@ -26,7 +26,6 @@ function isRecaptchaRenderError(error: unknown): boolean {
   return message.includes("recaptcha") && message.includes("already been rendered")
 }
 
-/** Ephemeral Firebase users created only for phone OTP — not app sessions. */
 export function isEphemeralPhoneVerificationUser(user: User): boolean {
   if (user.isAnonymous) return true
   const providers = user.providerData.map((provider) => provider.providerId)
@@ -68,7 +67,6 @@ async function sendWithVerifier(auth: ReturnType<typeof getFirebaseAuth>, format
     return linkWithPhoneNumber(existingUser, formatted, verifier)
   }
 
-  // signInWithPhoneNumber sends SMS without signing the user in until confirm().
   return signInWithPhoneNumber(auth, formatted, verifier)
 }
 

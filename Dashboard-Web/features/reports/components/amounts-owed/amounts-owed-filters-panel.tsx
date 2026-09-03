@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useMemo, useState as useComponentState } from "react"
@@ -20,11 +19,8 @@ export function AmountsOwedFiltersPanel({
   onSelectedProjectIdsChange,
 }: {
   onClose: () => void
-  /** Override position (e.g. `absolute right-4 top-32` for in-page overlay). */
   className?: string
-  /** Opens the report's schedule dialog (closes this panel first). */
   onScheduleReport?: () => void
-  /** Real members/projects the viewer may filter by. */
   options: ReportFilterOptions
   selectedMemberIds: Set<string>
   onSelectedMemberIdsChange: (next: Set<string>) => void

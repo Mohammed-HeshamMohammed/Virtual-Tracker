@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useMemo, useRef, type Dispatch, type ReactNode, type SetStateAction } from "react"
@@ -80,10 +79,7 @@ export function ProjectsTab({
   onEdit: (id: string) => void
   onArchive: (id: string) => void
   onDelete: (id: string) => void
-  /** Opens the "Anchor" small form. Omitted when nothing should offer it. */
   onAnchor?: (id: string) => void
-  /** Double-click a row - opens the same edit form read-only, for anyone who
-   *  can see the table, not just roles that can manage projects. */
   onPreview?: (id: string) => void
   isDark?: boolean
   canManageProjects?: boolean
@@ -117,7 +113,6 @@ export function ProjectsTab({
             bVal = b.members
             break
           case "todos":
-            // Calling projects (todos null) sort below 0% rather than as "done".
             aVal = !a.todos || a.todos.total === 0 ? -1 : a.todos.done / a.todos.total
             bVal = !b.todos || b.todos.total === 0 ? -1 : b.todos.done / b.todos.total
             break

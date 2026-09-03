@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/rerender-lazy-state-init */
 "use client"
 
 import { useEffect, useRef, useState } from "react"

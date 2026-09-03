@@ -1,4 +1,3 @@
-﻿/* eslint-disable react-doctor/exhaustive-deps */
 "use client"
 
 import { useMemo, useRef, useState } from "react"
@@ -19,7 +18,6 @@ import {
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityDayRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 
-// Slightly lighter, friendlier palette – closer to the reference screenshot
 const BAR_COLORS: Record<TimeActivityMetric, string> = {
   total_hours: "rgb(56 189 248)",   // sky-400
   activity:    "rgb(74 222 128)",   // green-400
@@ -52,18 +50,12 @@ export function ReportTimeActivityChart({
   const primaryMetric: TimeActivityMetric = activeMetrics[0] ?? "total_hours"
   const multi = activeMetrics.length > 1
 
-  // ── Layout ──────────────────────────────────────────────────────────────
   const CHART_H  = 260
-  const padL     = 48   // room for Y-axis labels
+  const padL     = 48
   const padR     = 16
   const padT     = 16
-  const padB     = 52   // room for angled X-axis labels
+  const padB     = 52
 
-  // Each day's slot grows to fill the card's real width (few points spread
-  // out, using the space that used to sit empty), shrinking as more days
-  // are added, down to a 44px floor. Past that floor the chart's own width
-  // exceeds the container's and the wrapper below scrolls horizontally
-  // instead of squeezing bars unreadably thin.
   const MIN_SLOT = 44
   const n = Math.max(days.length, 1)
   const { containerRef: wrapRef, slotW, vbW } = useFillChartWidth({
@@ -75,11 +67,9 @@ export function ReportTimeActivityChart({
   const plotW = n * slotW
   const plotH = CHART_H - padT - padB
 
-  // Bar width: ~80 % of slot, flat tops (radius = 0)
   const BAR_PAD  = slotW * 0.10
   const barW     = slotW - BAR_PAD * 2
 
-  // ── Data ─────────────────────────────────────────────────────────────────
   const singleBar = useMemo(() => {
     if (multi || days.length === 0) return null
     const series = days.map((d) => getMetricNumeric(primaryMetric, d))
@@ -99,7 +89,6 @@ export function ReportTimeActivityChart({
     })
   }, [multi, days, activeMetrics])
 
-  // ── Hover hit detection ───────────────────────────────────────────────────
   function indexFromClientX(clientX: number): number {
     const el  = svgRef.current
     const wr  = wrapRef.current
@@ -111,7 +100,6 @@ export function ReportTimeActivityChart({
     return Math.max(0, Math.min(days.length - 1, i))
   }
 
-  // ── Bar shape: flat-topped rect ───────────────────────────────────────────
   function renderBar(x: number, w: number, yTop: number, fill: string, opacity = 1, key?: string | number) {
     const h = padT + plotH - yTop
     if (h <= 0) return null
@@ -121,11 +109,9 @@ export function ReportTimeActivityChart({
   return (
     <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
 
-      {/* ── Card header ────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 px-5 py-3">
         <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">Chart</h3>
 
-        {/* Legend – top right, like the reference */}
         <div className="flex items-center gap-4">
           {activeMetrics.map((m) => (
             <button
@@ -139,7 +125,6 @@ export function ReportTimeActivityChart({
                   : "border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800",
               )}
             >
-              {/* dot swatch */}
               <span
                 className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ backgroundColor: enabledMetrics.has(m) ? LEGEND_DOTS[m] : "#94a3b8" }}
@@ -147,9 +132,8 @@ export function ReportTimeActivityChart({
               {METRIC_OPTIONS.find((o) => o.value === m)?.label}
             </button>
           ))}
-          {/* show inactive pills too so user can re-enable */}
           {CHART_METRIC_ORDER.filter((m) => !enabledMetrics.has(m) || !activeMetrics.includes(m)).map((m) => {
-            if (enabledMetrics.has(m)) return null   // already shown above
+            if (enabledMetrics.has(m)) return null
             return (
               <button
                 key={m}
@@ -165,7 +149,6 @@ export function ReportTimeActivityChart({
         </div>
       </div>
 
-      {/* ── Chart area (horizontally scrollable) ───────────────────────── */}
       <div
         ref={wrapRef}
         className="overflow-x-auto custom-scrollbar-x"
@@ -178,14 +161,6 @@ export function ReportTimeActivityChart({
         ) : (
           <div
             className="relative"
-            // A fixed width, not minWidth: the SVG below stretches to fill
-            // whatever this div ends up (preserveAspectRatio="none", so it
-            // has no aspect ratio of its own to fall back on) - minWidth is
-            // only a floor, so this div (and the chart with it) was filling
-            // the full width of whatever oversized card/page it sat in,
-            // turning a week of bars into a thin, flat smear. Pinned to the
-            // chart's own natural data-driven width instead; overflow-x-auto
-            // on the wrapper above still scrolls for a range with many days.
             style={{ height: CHART_H, width: vbW }}
             onMouseMove={(e) => setHovered(indexFromClientX(e.clientX))}
             onMouseLeave={() => setHovered(null)}
@@ -198,7 +173,6 @@ export function ReportTimeActivityChart({
               role="img"
               aria-label="Bar chart"
             >
-              {/* ── Grid lines + Y labels ─────────────────────────────── */}
               {!multi && singleBar && singleBar.yTicks.map((t) => {
                 const yy = singleBar.yAt(t)
                 return (
@@ -222,14 +196,12 @@ export function ReportTimeActivityChart({
                 )
               })}
 
-              {/* ── Baseline ─────────────────────────────────────────── */}
               <line
                 x1={padL} x2={padL + plotW}
                 y1={padT + plotH} y2={padT + plotH}
                 stroke="#94a3b8" strokeWidth={1.5}
               />
 
-              {/* ── Single-metric bars ────────────────────────────────── */}
               {!multi && singleBar && days.map((d, i) => {
                 const val   = singleBar.series[i] ?? 0
                 const yTop  = singleBar.yAt(val)
@@ -237,7 +209,6 @@ export function ReportTimeActivityChart({
                 const isHov = hovered === i
                 return (
                   <g key={d.date}>
-                    {/* hover column highlight */}
                     {isHov && (
                       <rect
                         x={padL + i * slotW} y={padT}
@@ -250,7 +221,6 @@ export function ReportTimeActivityChart({
                 )
               })}
 
-              {/* ── Multi-metric grouped bars ─────────────────────────── */}
               {multi && multiBar && days.map((d, i) => {
                 const mc     = multiBar.length
                 const gW     = barW
@@ -276,7 +246,6 @@ export function ReportTimeActivityChart({
                 )
               })}
 
-              {/* ── X-axis labels (angled) ────────────────────────────── */}
               {days.map((d, i) => {
                 const cx = padL + i * slotW + slotW / 2
                 const label = d.dateLabel
@@ -296,11 +265,9 @@ export function ReportTimeActivityChart({
               })}
             </svg>
 
-            {/* ── Hover tooltip ─────────────────────────────────────── */}
             {hovered !== null && days[hovered] && (() => {
               const d   = days[hovered]
               const cx  = padL + hovered * slotW + slotW / 2
-              // pixel position relative to SVG viewbox, convert to %
               const pct = cx / vbW
               return (
                 <div

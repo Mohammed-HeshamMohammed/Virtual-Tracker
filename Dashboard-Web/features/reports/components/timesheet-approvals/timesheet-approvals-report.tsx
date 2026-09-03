@@ -22,12 +22,6 @@ import {
 } from "@/features/reports/components/shared/constants"
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 
-/**
- * TimesheetApprovalRow (see models/timesheet-approvals.ts) carries no
- * project - a timesheet is a member/period/status record, not a per-project
- * one - so TIMESHEET_APPROVALS_GROUP_BY_OPTIONS offers date/member/status
- * instead of project.
- */
 function groupTimesheetRows(
   rows: TimesheetApprovalRow[],
   groupBy: string
@@ -82,11 +76,6 @@ function formatDateLabel(date: string | null): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-// Member (identity) is always shown; these are the columns that hide first
-// as the card narrows, same width-aware auto-hide the Members/Projects
-// tables already use - was a hardcoded min-w-[760px] table that just
-// scrolled sideways below that width regardless of how many columns the
-// viewport actually had room for.
 const OPTIONAL_COLUMNS: { key: string; header: string; minWidth: number; align?: "right" }[] = [
   { key: "period", header: "Period", minWidth: 160 },
   { key: "status", header: "Status", minWidth: 110 },
@@ -95,10 +84,7 @@ const OPTIONAL_COLUMNS: { key: string; header: string; minWidth: number; align?:
   { key: "approved_by", header: "Approved by", minWidth: 130 },
 ]
 const OPTIONAL_COLUMN_MIN_WIDTH = Object.fromEntries(OPTIONAL_COLUMNS.map((c) => [c.key, c.minWidth]))
-// Total hours/Billable are the numbers this report exists to show - kept
-// visible longest, ahead of who reviewed it or the exact date range.
 const OPTIONAL_COLUMN_HIDE_PRIORITY = ["approved_by", "period", "status", "billable", "total_hours"] as const
-// The Member column (avatar + name) plus the row's own padding.
 const TIMESHEET_APPROVALS_FIXED_WIDTH = 220
 
 function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
@@ -111,8 +97,6 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())

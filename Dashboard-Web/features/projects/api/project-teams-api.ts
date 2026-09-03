@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/js-combine-iterations */
 import { apiPath } from "@/infrastructure/api/path"
 import { extractApiError, apiFetch, fetchJsonWithRetry } from "@/infrastructure/api/http"
 
@@ -9,7 +8,6 @@ export type ProjectTeamOption = {
   name: string
 }
 
-/** All teams linked to a project (resolved by team id, not limited to global teams list). */
 export async function getProjectTeams(projectId: string): Promise<ProjectTeamOption[]> {
   const { res, json } = await fetchJsonWithRetry<Envelope<ProjectTeamOption[]>>(
     apiPath(`/api/projects/${encodeURIComponent(projectId)}/teams`),
@@ -24,7 +22,6 @@ export async function getProjectTeams(projectId: string): Promise<ProjectTeamOpt
     throw new Error(json?.error || "Failed to fetch project teams")
   }
 
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   return (json.data ?? [])
     .map((row) => ({
       id: String(row.id ?? ""),
@@ -34,7 +31,6 @@ export async function getProjectTeams(projectId: string): Promise<ProjectTeamOpt
     .sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** Link team to project in team_projects before task assign. */
 async function ensureTeamLinkedToProject(
   teamId: string,
   projectId: string,

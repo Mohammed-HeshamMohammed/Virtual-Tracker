@@ -1,4 +1,3 @@
-/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js */
 export const ROLE_PRIVILEGE_RANK: Record<string, number> = {
   owner: 100,
   superadmin: 90,

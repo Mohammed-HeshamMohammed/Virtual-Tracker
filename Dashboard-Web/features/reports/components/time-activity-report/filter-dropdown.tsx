@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/no-derived-useState */
 "use client"
 
 import { useState } from "react"
@@ -14,9 +13,7 @@ export function ReportFilterDropdown({
 }: {
   label: string
   options: string[]
-  /** Controlled single-select value (e.g. a real filter option). Falls back to internal-only state when omitted. */
   selectedValue?: string
-  /** Called with the picked option when controlled. */
   onSelect?: (value: string) => void
 }) {
   const [open, setOpen] = useState(false)

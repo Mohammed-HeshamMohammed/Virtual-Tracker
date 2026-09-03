@@ -10,19 +10,10 @@ export type SubProjectOption = { id: string; name: string; type: string }
 interface SubProjectsPickerProps {
   options: SubProjectOption[]
   selectedIds: string[]
-  /** Managers this selection will pull in, by sub-project id. Purely
-   * informational - the roll-up itself happens server-side on save. */
   managerNamesByProject: Record<string, string[]>
   onToggle: (projectId: string) => void
 }
 
-/**
- * Picks the projects a management project oversees. Selecting one also rolls
- * that project's managers into this project's member list (server-side, in
- * management-rollup.service.js), so the row shows who that will be - the
- * membership change is a consequence of linking, and hiding it would make
- * people appear on the project with no visible cause.
- */
 export function SubProjectsPicker({
   options,
   selectedIds,

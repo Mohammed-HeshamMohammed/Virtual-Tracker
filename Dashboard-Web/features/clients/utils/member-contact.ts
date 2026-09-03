@@ -45,7 +45,6 @@ function extractFromFormData(formData: unknown, member: Member): MemberContactDe
   return { email: email || member.email, phone }
 }
 
-/** Reads the latest `memberFormSnapshot` row for a member from `members_field_data`. */
 export async function getMemberContactFromFieldData(member: Member): Promise<MemberContactDetails> {
   const rows = (await getOrganizationFieldOptions("memberFormSnapshot")) as unknown as Array<
     Record<string, unknown> & { id: string }

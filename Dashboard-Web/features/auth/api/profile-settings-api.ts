@@ -12,7 +12,6 @@ export type PatchProfileSettingsPayload = {
   timezone?: string
 }
 
-/** PATCH User_profiles + optional Auth displayName from first/last. */
 export async function patchProfileSettingsWithBackend(
   user: User,
   payload: PatchProfileSettingsPayload,

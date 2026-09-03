@@ -20,7 +20,6 @@ type PasswordStrengthPanelProps = {
   isDark: boolean
   styles: AuthStyles
   compact?: boolean
-  /** `side` — rendered in the auth form's right panel (no duplicate card chrome). */
   variant?: "inline" | "side"
 }
 

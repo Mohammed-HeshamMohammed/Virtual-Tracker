@@ -1,4 +1,3 @@
-/** Rolling input-activity score (0–100) from mouse/keyboard/scroll in the current tab. */
 
 const WINDOW_MS = 60_000
 
@@ -25,7 +24,6 @@ export function ensureActivityLevelListeners(): void {
   attachListeners()
 }
 
-/** Returns 0–100 based on inputs in the last minute (saturates around 120 events/min). */
 export function getActivityLevel(): number {
   const now = Date.now()
   if (now - windowStart > WINDOW_MS) {

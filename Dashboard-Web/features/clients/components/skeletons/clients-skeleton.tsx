@@ -30,7 +30,6 @@ function SkeletonFooter({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Table-only loading placeholder — toolbar stays visible on ClientsPage during data load. */
 export function ClientsSkeleton({
   isDark = false,
   rowCount = PEOPLE_TABLE_ROWS_PER_PAGE,

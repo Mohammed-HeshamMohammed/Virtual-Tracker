@@ -26,7 +26,6 @@ export function ReportSendDialog({
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
-  /** When provided, called on Send instead of just closing the dialog (real delivery). */
   onSend?: (input: ReportSendInput) => Promise<void> | void
 }) {
   const [emails, setEmails] = useComponentState("")

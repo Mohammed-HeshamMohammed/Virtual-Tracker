@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-chain-state-updates, react-doctor/no-derived-state */
 "use client"
 
 import { useState as useComponentState, useEffect } from "react"

@@ -19,7 +19,6 @@ export interface MemberManageModalProps {
   allowedTabs?: MemberManageTab[]
   canSave?: boolean
   actorRole?: string
-  /** Team Lead and below managing their own profile — info + reset password only. */
   limitedSelfManage?: boolean
 }
 
@@ -30,7 +29,6 @@ export interface TabProps {
   onNavigate?: (id: string) => void
   onClose?: () => void
   actorRole?: string | { assignableRoles: MemberRole[] }
-  /** True when the signed-in user is editing their own member record. */
   isSelfEdit?: boolean
   phoneVerifyRef?: RefObject<PhoneVerifyControlHandle | null>
 }
@@ -50,11 +48,8 @@ export interface MemberFormState {
   weeklyLimit: string
   paySegment: "pay" | "bill"
   payPeriod: string
-  /** Owner/Super Admin/Admin/Super Manager only - see canEditPayRates. */
   payNote: string
   payEffectiveDate: string
-  /** Real audit trail, most recent first - read-only, never sent back on
-   * save (the server writes it itself from what actually changed). */
   payRateHistory: PayRateHistoryEntry[]
   ableToTrack: boolean
   idleMode: "Prompt" | "Always" | "Never"
@@ -84,13 +79,7 @@ export interface MemberFormState {
   useShiftsForLimits: boolean
   workDays: number[]
   dailyLimit: string
-  /** Work & Limits "Working days": weekdays double-clicked to flag as a
-   * recurring makeup day (shown red). Same [0-6] indexing as workDays;
-   * stored/displayed only, not enforced against timer/limit checks. */
   makeupDays: number[]
-  /** Optimistic-concurrency tokens (§6.9) - sent back unchanged on save.
-   * See MemberProfileForm in member-api.ts for what each is checked
-   * against. */
   infoUpdatedAt?: string
   employmentUpdatedAt?: string
   rolesUpdatedAt?: string
@@ -99,7 +88,6 @@ export interface MemberFormState {
   settingsUpdatedAt?: string
 }
 
-/** Keep controlled inputs on stable string values (never null/undefined). */
 export function normalizeMemberFormState(state: MemberFormState): MemberFormState {
   const workDays = Array.isArray(state.workDays)
     ? state.workDays.filter((d): d is number => Number.isInteger(d))

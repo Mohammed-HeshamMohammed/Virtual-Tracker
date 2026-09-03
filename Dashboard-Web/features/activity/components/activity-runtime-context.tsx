@@ -15,8 +15,6 @@ import { WebActivityReporter } from "@/features/activity/components/web-activity
 import { ActivityRuntimeBootstrap } from "@/features/activity/components/activity-runtime-bootstrap"
 
 export type ActivityRuntimePending = {
-  /** The only action left: reflect a session the desktop agent already started.
-   * No task-selection, no readiness gate, no POST — the agent owns starting/stopping. */
   action: "adopt"
 }
 
@@ -37,7 +35,6 @@ export function useActivityRuntime(): ActivityRuntimeContextValue {
   return ctx
 }
 
-/** Activity APIs load only after timer start/resume. */
 export function ActivityRuntimeProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState(false)
   const [pending, setPending] = useState<ActivityRuntimePending | null>(null)

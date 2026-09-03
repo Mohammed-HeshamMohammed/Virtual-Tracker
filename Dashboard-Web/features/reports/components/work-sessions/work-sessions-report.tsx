@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { Fragment } from "react"

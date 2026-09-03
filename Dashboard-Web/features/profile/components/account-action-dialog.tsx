@@ -191,7 +191,6 @@ export function AccountActionDialog({
   )
 }
 
-/** Clears local Firebase session after server-side account deletion. */
 export async function clearLocalSessionAfterAccountDeletion(): Promise<void> {
   try {
     await getFirebaseAuth().signOut()

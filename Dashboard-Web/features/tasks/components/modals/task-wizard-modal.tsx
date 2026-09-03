@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import React, { useCallback, useEffect, useState as useComponentState, useMemo } from "react"
@@ -34,9 +32,6 @@ interface TaskWizardModalProps {
   allMembers: Member[]
   allTeamsById: Record<string, string>
   initialStatus?: TaskStatus
-  /** Live sync (§6.7) - the task was deleted by someone else while this
-   * modal was open; parent shows a toast the same way projects-page.tsx
-   * does for the project modal. */
   onEntityGone?: (message: string) => void
 }
 
@@ -86,10 +81,6 @@ export function TaskWizardModal({
 
   const currentTaskId = task ? task.id : null
 
-  // Live sync (§6.7): this modal doesn't own its own fetch (task arrives as
-  // a prop from the already-cached Tasks list), so "reload" here means
-  // closing the modal rather than re-fetching in place - reopening it picks
-  // up whatever the parent's own live-synced list now has.
   const handleLiveDeleted = useCallback(() => {
     onClose()
     onEntityGone?.("This task was deleted by another user - your changes weren't saved.")
@@ -214,7 +205,6 @@ export function TaskWizardModal({
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
   }, [projectTeams, newTaskTeamId, allTeamsById])
 
-  // Build assignee options from the selected team only
   useEffect(() => {
     if (!open) return
     let cancelled = false
@@ -239,9 +229,6 @@ export function TaskWizardModal({
     }
   }, [open, newTaskTeamId, memberLookups, isEditingTask, editPreserveAssigneeIds])
 
-  // §6.6/6.8 - after the assignee options refresh (live or otherwise), drop
-  // any selection no longer among them (deleted mid-edit) instead of
-  // silently letting a dead id reach the save payload.
   useEffect(() => {
     if (!open || formAssigneesLoading) return
     const validIds = new Set(formAssigneeOptions.map((opt) => opt.value))
@@ -279,10 +266,6 @@ export function TaskWizardModal({
     setIsSavingTask(true)
     setCreateTaskError(null)
 
-    // §6.8 - defense in depth: the reactive prune above already keeps
-    // newTaskAssigneeIds in sync with formAssigneeOptions as it refreshes,
-    // but a picker that never got a chance to refresh must still not be
-    // able to submit an id the options already know is gone.
     const validAssigneeIds = new Set(formAssigneeOptions.map((opt) => opt.value))
     const sanitizedAssigneeIds = newTaskAssigneeIds.filter((id) => validAssigneeIds.has(id))
 
@@ -306,8 +289,6 @@ export function TaskWizardModal({
       })
       onClose()
     } catch (error: any) {
-      // §6.9 - a stale-write 409 gets the same non-blocking notice as a
-      // live update arriving while the form was open, not a generic error.
       if (error?.status === 409) {
         setLiveUpdateNotice(true)
       } else {

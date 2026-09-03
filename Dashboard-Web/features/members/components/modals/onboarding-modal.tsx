@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-initialize-state */
 "use client"
 
 import { useEffect, useMemo, useState as useComponentState } from "react"
@@ -20,8 +19,6 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useComponentState("")
   const [sendingReminderForId, setSendingReminderForId] = useComponentState<string | null>(null)
   const [page, setPage] = useComponentState(0)
-  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
-  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
   const [isClosing, setIsClosing] = useComponentState(false)
   const handleClose = () => {
     setIsClosing(true)

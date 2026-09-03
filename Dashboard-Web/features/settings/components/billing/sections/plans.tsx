@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-// components/settings/billing/sections/plans.tsx
 "use client"
 
 import { useState, useRef, useEffect, createContext, use } from "react"

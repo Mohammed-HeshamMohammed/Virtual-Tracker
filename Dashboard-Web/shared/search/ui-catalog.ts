@@ -7,15 +7,12 @@ function ui(input: UiEntryInput): AppSearchEntry {
   return { ...input, id }
 }
 
-/** Buttons, tabs, section titles, and in-page actions across the desktop app. */
 export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
-  // ── Dashboard ──
   ui({ pageId: "command-center", title: "Command Center", section: "Dashboard", kind: "page", keywords: ["home", "overview", "widgets"] }),
   ui({ pageId: "command-center", title: "Manage Widgets", section: "Dashboard", pageLabel: "Command Center", kind: "action", keywords: ["widget", "dashboard", "customize", "layout"] }),
   ui({ pageId: "command-center", title: "Start timer", section: "Dashboard", pageLabel: "Command Center", kind: "action", keywords: ["track", "time", "clock", "timer", "button"] }),
   ui({ pageId: "general", title: "General dashboard", section: "Dashboard", kind: "page", keywords: ["overview", "summary"] }),
 
-  // ── People › Members ──
   ui({ pageId: "people-members", title: "Members", section: "People", kind: "page", keywords: ["people", "users", "team"] }),
   ui({ pageId: "people-members", title: "Add members", section: "People", pageLabel: "Members", kind: "action", keywords: ["invite", "create", "hire", "new member", "button"] }),
   ui({ pageId: "people-members", title: "Invites tab", section: "People", pageLabel: "Members", kind: "tab", keywords: ["pending", "invitation", "awaiting signup"] }),
@@ -29,12 +26,10 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
   ui({ pageId: "people-members", title: "Invite via email", section: "People", pageLabel: "Members", kind: "section", keywords: ["add members modal", "email invite"] }),
   ui({ pageId: "people-members", title: "Create member account", section: "People", pageLabel: "Members", kind: "section", keywords: ["preprovision", "account", "password"] }),
 
-  // ── People › Teams ──
   ui({ pageId: "people-teams", title: "Teams", section: "People", kind: "page", keywords: ["groups", "leads"] }),
   ui({ pageId: "people-teams", title: "Create team", section: "People", pageLabel: "Teams", kind: "action", keywords: ["add team", "new team", "button"] }),
   ui({ pageId: "people-teams", title: "Schedule weekly report", section: "People", pageLabel: "Teams", kind: "action", keywords: ["email report", "team report"] }),
 
-  // ── Project management ──
   ui({ pageId: "pm-overview", title: "Project overview", section: "Project Management", kind: "page", keywords: ["dashboard", "tasks", "budget"] }),
   ui({ pageId: "pm-projects", title: "Projects", section: "Project Management", kind: "page", keywords: ["project list"] }),
   ui({ pageId: "pm-projects", title: "Add project", section: "Project Management", pageLabel: "Projects", kind: "action", keywords: ["create project", "new project", "button"] }),
@@ -47,22 +42,15 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
   ui({ pageId: "pm-clients", title: "Add client", section: "Project Management", pageLabel: "Clients", kind: "action", keywords: ["create client", "new client", "button"] }),
   ui({ pageId: "calendar-timeoff", title: "Time off requests", section: "Project Management", kind: "page", keywords: ["pto", "leave", "vacation"] }),
 
-  // ── Timesheets ──
   ui({ pageId: "timesheets-view", title: "View & edit timesheets", section: "Timesheets", kind: "page", keywords: ["hours", "entries"] }),
   ui({ pageId: "timesheets-submissions", title: "Timesheets", section: "Timesheets", kind: "page", keywords: ["submit", "approve", "review"] }),
-  // pageId corrected to the page "Add time entry" actually describes - it
-  // pointed at timesheets-view (Task Approvals, an unrelated task-review
-  // queue) before the Approvals page this split from existed as a search
-  // target at all.
   ui({ pageId: "timesheets-manual-requests", title: "Add time entry", section: "Timesheets", pageLabel: "Manual Time Requests", kind: "action", keywords: ["manual time", "log hours"] }),
   ui({ pageId: "timesheets-manual-requests", title: "Manual time requests", section: "Timesheets", kind: "page", keywords: ["manual time", "log hours", "approve", "review"] }),
 
-  // ── Activity ──
   ui({ pageId: "activity-screenshots", title: "Screenshots", section: "Activity", kind: "page", keywords: ["screen capture", "monitoring"] }),
   ui({ pageId: "activity-apps", title: "Apps", section: "Activity", kind: "page", keywords: ["applications", "software"] }),
   ui({ pageId: "activity-urls", title: "URLs", section: "Activity", kind: "page", keywords: ["websites", "browsing", "domains"] }),
 
-  // ── Reports (common actions) ──
   ui({ pageId: "reports-all", title: "All reports", section: "Reports", kind: "page", keywords: ["report hub", "catalog"] }),
   ui({ pageId: "reports-all", title: "Customized reports", section: "Reports", pageLabel: "All reports", kind: "section", keywords: ["saved", "favorites"] }),
   ui({ pageId: "reports-time", title: "Export report", section: "Reports", pageLabel: "Time & activity", kind: "action", keywords: ["download", "csv", "pdf", "export button"] }),
@@ -70,7 +58,6 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
   ui({ pageId: "reports-audit", title: "Audit log", section: "Reports", kind: "page", keywords: ["changes", "history", "events"] }),
   ui({ pageId: "reports-audit", title: "Export audit log", section: "Reports", pageLabel: "Audit log", kind: "action", keywords: ["download", "csv"] }),
 
-  // ── Financials ──
   ui({ pageId: "financials-overview", title: "Financials overview", section: "Financials", kind: "page", keywords: ["money", "summary"] }),
   ui({ pageId: "financials-payroll", title: "Manage payroll", section: "Financials", kind: "page", keywords: ["pay", "salary", "wise"] }),
   ui({ pageId: "financials-payroll", title: "Create payroll adjustment", section: "Financials", pageLabel: "Manage payroll", kind: "action", keywords: ["deduction", "bonus", "addition"] }),
@@ -81,7 +68,6 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
   ui({ pageId: "financials-expenses", title: "Expenses", section: "Financials", kind: "page", keywords: ["spending", "receipts"] }),
   ui({ pageId: "financials-expenses", title: "Add expense", section: "Financials", pageLabel: "Expenses", kind: "action", keywords: ["new expense", "receipt"] }),
 
-  // ── Settings ──
   ui({ pageId: "settings-all", title: "All settings", section: "Settings", kind: "page", keywords: ["configuration", "preferences"] }),
   ui({ pageId: "settings-organization", title: "Organization settings", section: "Settings", kind: "page", keywords: ["company", "branding"] }),
   ui({ pageId: "settings-organization", title: "Add a global to-do", section: "Settings", pageLabel: "Organization", kind: "action", keywords: ["todo", "task template"] }),
@@ -98,6 +84,5 @@ export const APP_UI_SEARCH_ENTRIES: AppSearchEntry[] = [
   ui({ pageId: "settings-billing-plans", title: "Subscription plans", section: "Settings", pageLabel: "Billing", kind: "page", keywords: ["pricing", "upgrade"] }),
   ui({ pageId: "settings-enterprise-security", title: "Enterprise security", section: "Settings", kind: "page", keywords: ["sso", "compliance"] }),
 
-  // ── Account ──
   ui({ pageId: "profile", title: "Edit account", section: "Account", kind: "page", keywords: ["profile", "password", "email"] }),
 ]

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps */
 "use client"
 
 import { useEffect, useMemo, useRef, useState as useComponentState } from "react"
@@ -170,10 +169,6 @@ export function MemberManageModal({
   const isSelfEdit = isSameMember(member, actorMemberId, user?.uid, user?.email ?? undefined)
   const assignableRoles = useMemo(() => listAssignableRoles(actorRole), [actorRole])
   const actorRoleContext = useMemo(() => ({ assignableRoles }), [assignableRoles])
-  // Server enforces this (member-profile.service.js's hasPayBill branch,
-  // narrower than the Manager+ tier every other tab here allows) - this is
-  // only a UI hint so the Pay/Bill tab reads as read-only for a Manager
-  // instead of letting them edit it and then 403ing on save.
   const canEditPayRate = useMemo(() => canEditPayRates(actorRole), [actorRole])
   const [activeTab, setActiveTab] = useComponentState<MemberManageTab>("info")
   const [busy, setBusy] = useComponentState(false)
@@ -184,14 +179,6 @@ export function MemberManageModal({
   const [removeConfirm, setRemoveConfirm] = useComponentState(false)
   const [formState, setFormState] = useComponentState<MemberFormState>(initialFormState)
   const phoneVerifyRef = useRef<PhoneVerifyControlHandle>(null)
-  // Live-guard only, not optimistic concurrency: member-api.ts's
-  // updateMemberProfile does support per-section expectedUpdatedAt/409
-  // handling now that member fields are Postgres-resident, but this modal
-  // doesn't wire it in - it relies on the WS live-guard below instead. That
-  // still catches the two failure modes that matter for an open dialog -
-  // editing a member someone else just deleted, or saving over a change
-  // someone else just made - so wiring expectedUpdatedAt in here too is a
-  // deliberate future enhancement, not a gap being worked around.
   const [liveDeleted, setLiveDeleted] = useComponentState(false)
   const [liveUpdateNotice, setLiveUpdateNotice] = useComponentState(false)
 
@@ -217,8 +204,6 @@ export function MemberManageModal({
   const [prevId, setPrevId] = useComponentState<string | null>(null)
   const [prevOpen, setPrevOpen] = useComponentState(false)
   const [prevOpenEntry, setPrevOpenEntry] = useComponentState<MemberEntryAction | null>(null)
-  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
-  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
   const [isClosing, setIsClosing] = useComponentState(false)
   const handleClose = () => {
     setIsClosing(true)
@@ -421,10 +406,6 @@ export function MemberManageModal({
     setSaveError(null)
     try {
       if (onSaveProfile) {
-        // §6.9 - every tab now has its own token (see MemberFormState's
-        // comment for what each is checked against). A missing token sends
-        // undefined, which the backend treats as "no conflict check
-        // requested" - same optional-token convention as Projects/Tasks/Clients.
         const expectedUpdatedAt =
           activeTab === "info"
             ? formState.infoUpdatedAt
@@ -452,9 +433,6 @@ export function MemberManageModal({
       }
       handleClose()
     } catch (e) {
-      // §6.9 - a stale-write 409 gets the same non-blocking reload notice as
-      // a live update arriving while the dialog was open (both funnel into
-      // liveUpdateNotice already), not a generic save error.
       const status = e instanceof Error ? (e as Error & { status?: number }).status : undefined
       if (status === 409) {
         invalidateMemberProfileCache(member.id)
@@ -474,8 +452,6 @@ export function MemberManageModal({
       await Promise.resolve(onRemoveMember(member.id))
       handleClose()
     } catch (e) {
-      // Same gap the invite modal had: an unhandled rejection left the modal
-      // open with no message, so a refused remove read as a dead button.
       setSaveError(e instanceof Error ? e.message : "Could not remove this member.")
     } finally {
       setBusy(false)

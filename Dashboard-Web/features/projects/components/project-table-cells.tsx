@@ -1,11 +1,7 @@
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import { cn } from "@/shared/utils/utils"
 
-/** Hours as "Xh Ym" instead of a decimal - `0.2h` from `toFixed(1)` reads as
- * "12 minutes" when the real value is 10, since round-to-1-decimal loses
- * anything under 6 minutes of precision. */
 export function formatHoursLabel(totalHours: number): string {
   if (!(totalHours > 0)) return "0h"
   const totalMinutes = Math.round(totalHours * 60)
@@ -35,10 +31,6 @@ export function BudgetBar({
 }) {
   const pct = Math.min(Math.round((spent / total) * 100), 100)
   const color = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400"
-  // Logged hours can exceed the budgeted total (nothing stops a timer
-  // mid-session unless the budget's own "stop timers" setting is on) - but
-  // the column itself should never display a spent figure past the limit
-  // the budget defines. "12h/10h" reads as broken math, not as a warning.
   const displaySpent = type === "hours" ? Math.min(spent, total) : spent
   return (
     <div className="flex items-center gap-2">

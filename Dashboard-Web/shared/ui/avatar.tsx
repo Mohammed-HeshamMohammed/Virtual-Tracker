@@ -20,7 +20,6 @@ export function Avatar({
   color: string
   size?: "sm" | "md" | "lg" | "xl"
   isDark?: boolean
-  /** Profile photo URL when available (Firebase Auth / Storage). */
   imageUrl?: string
   alt?: string
 }) {

@@ -3,7 +3,6 @@
 import { AlertTriangle } from "lucide-react"
 import { useAuth } from "@/shared/providers/app"
 
-/** Info banner when member needs hierarchy assignment (backend enforces access). */
 export function HierarchyAssignmentBanner() {
   const { currentMember } = useAuth()
   const hierarchyStatus = currentMember?.hierarchy_status

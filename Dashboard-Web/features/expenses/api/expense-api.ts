@@ -102,7 +102,6 @@ export async function createExpense(input: CreateExpenseInput): Promise<Expense>
   return toExpense(json.data ?? {})
 }
 
-/** Management only; the backend also refuses self-review. */
 export async function reviewExpense(id: string, status: "approved" | "rejected"): Promise<Expense> {
   const res = await apiFetch(apiPath(`/api/expenses/${id}/review`), {
     method: "PATCH",

@@ -68,7 +68,6 @@ function mergeUnique(existing: string[], incoming: string[]): string[] {
   return [...new Set([...existing, ...incoming])]
 }
 
-/** Sync manager / employee picks when project teams change. */
 export function syncProjectMembersFromTeams(
   prev: ProjectMemberLists,
   nextTeamIds: string[],

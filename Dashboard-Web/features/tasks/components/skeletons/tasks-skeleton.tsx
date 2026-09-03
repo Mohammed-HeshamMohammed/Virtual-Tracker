@@ -8,7 +8,6 @@ interface TasksContentSkeletonProps {
   fillHeight?: boolean
 }
 
-/** Content-area loading placeholder — toolbar stays visible on TasksPage during data load. */
 export function TasksContentSkeleton({ isDark = false, fillHeight = false }: TasksContentSkeletonProps) {
   const bone = isDark ? "bg-[#2e3447]" : "bg-slate-200"
   const border = isDark ? "border-[#3d4a3d]/40" : "border-slate-200"
@@ -57,7 +56,6 @@ function ToolbarSkeleton({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Chunk-route fallback — toolbar chrome + content skeleton. */
 export function TasksPageSkeleton({ isDark = false, fillHeight = false }: { isDark?: boolean; fillHeight?: boolean }) {
   return (
     <div className={cn("flex flex-col gap-2", fillHeight && "min-h-0 flex-1")}>
@@ -67,7 +65,6 @@ export function TasksPageSkeleton({ isDark = false, fillHeight = false }: { isDa
   )
 }
 
-/** @deprecated Use TasksContentSkeleton on the page and TasksPageSkeleton for chunk fallback. */
 export function TasksSkeleton(props: TasksContentSkeletonProps) {
   return <TasksPageSkeleton {...props} />
 }

@@ -42,7 +42,6 @@ function WidgetErrorFallback({
   )
 }
 
-/** Isolates widget render failures so one section cannot blank the whole dashboard. */
 export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, WidgetErrorBoundaryState> {
   state: WidgetErrorBoundaryState = { error: null }
 
@@ -66,7 +65,6 @@ export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, Wid
   }
 }
 
-/** Hook-friendly inline widget error state (same visuals as the boundary fallback). */
 export function WidgetErrorState({
   label = "This section",
   isDark = false,

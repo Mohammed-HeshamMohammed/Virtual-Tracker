@@ -6,9 +6,6 @@ import { useTheme } from "@/shared/providers/app"
 import { AgentDownloadChoices } from "@/shared/ui/agent-download-choices"
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 
-/** "3 minutes ago" / "2 hours ago" / "on Sep 1" - coarse enough that a poll
- *  jitter doesn't make it visibly tick, precise enough to say "is this
- *  stale". */
 function agentLinkedAgo(linkedAt: string | null): string | null {
   if (!linkedAt) return null
   const d = new Date(linkedAt)

@@ -19,7 +19,6 @@ type CrossfadePanelProps = {
   variant?: "slide" | "fade"
 }
 
-/** Opacity crossfade with layout-driven height. */
 export function CrossfadePanel({ panelKey, children, className, variant = "slide" }: CrossfadePanelProps) {
   const reduceMotion = useReducedMotion()
   const slide = variant === "slide"
@@ -56,7 +55,6 @@ type ExpandCollapseProps = {
   className?: string
 }
 
-/** Height expansion without unmounting the parent layout. */
 export function ExpandCollapse({ show, children, className }: ExpandCollapseProps) {
   return (
     <div
@@ -79,7 +77,6 @@ type DualPanelSwapProps = {
   className?: string
 }
 
-/** Morph height between two panels without unmounting either side. */
 export function DualPanelSwap({ showSecondary, primary, secondary, className }: DualPanelSwapProps) {
   return (
     <div
@@ -128,7 +125,6 @@ type SegmentedControlProps<T extends string> = {
   buttonClassName?: (active: boolean) => string
 }
 
-/** Sliding pill indicator — one element moves, never unmounts. */
 export function SegmentedControl<T extends string>({
   value,
   options,

@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useEffect, useMemo, useState as useComponentState } from "react"
@@ -26,9 +24,6 @@ function displayNameForMember(
   row: TeamMember,
 ): string {
   if (fromLookup?.name?.trim()) return fromLookup.name.trim()
-  // No email fallback: member emails are Owner/Super Admin only
-  // (field-policy.js) and the roster read no longer returns one. member_name
-  // is already display_name-or-first+last, resolved server-side.
   if (row.member_name?.trim()) return row.member_name.trim()
   return "Unknown member"
 }
@@ -39,8 +34,6 @@ function avatarForMember(
   name: string,
 ): string {
   if (fromLookup?.avatar?.trim()) return fromLookup.avatar.trim()
-  // member_avatar_url is a photo URL, not initials - deliberately not used
-  // here, since this slot renders as text.
   return (
     name
       .split(/\s+/)
@@ -62,7 +55,6 @@ export function TaskAssignButton({
   selectedTask: TaskLike | null
   projectTeams: ProjectTeamOption[]
   memberLookups: MemberLookup[]
-  /** Direct project members (not via team). Merged into the roster for display. */
   directProjectMembers?: MemberLookup[]
   isDark: boolean
   onAssign: (patch: { teamId: string | null; assignedTo: string | null; assigneeIds: string[] }) => void | Promise<void>
@@ -147,10 +139,6 @@ export function TaskAssignButton({
     }
   }, [open, selectedTask])
 
-  // A project with no linked teams has no "team members" to fetch at all -
-  // everyone on it is there directly (project_members), which is exactly
-  // what directProjectMembers already is. Team roster stays exactly as
-  // before; this only adds the branch that used to not exist.
   const hasTeams = projectTeams.length > 0
 
   const directRoster = useMemo(
@@ -196,9 +184,6 @@ export function TaskAssignButton({
   const roster = hasTeams ? teamRoster : directRoster
 
   const disabled = !selectedTask
-  // Only a team-linked project ever needs a team picked before showing a
-  // roster - a team-less project's roster (directRoster) is already the
-  // whole story, no picker step in front of it.
   const needsTeamPick = hasTeams && !activeTeamId
   const borderedInputClass = cn(
     "w-full px-4 py-3 border rounded-lg focus:outline-none focus:border-blue-500 text-sm",
@@ -302,7 +287,6 @@ export function TaskAssignButton({
                     {!needsTeamPick ? (
                       <div className="space-y-2">
                         <p className={sectionLabelClass}>WHO GETS THIS TASK?</p>
-                        {/* Entire Teams button */}
                         <button
                           type="button"
                           onClick={() => applyAssign(activeTeamId, roster.map((m) => m.id))}

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useEffect, useState } from "react"
@@ -13,18 +12,11 @@ const inputCls =
 
 const labelCls = "mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400"
 
-/** Today as YYYY-MM-DD in local time. */
 function todayLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }
 
-/**
- * Claim an expense. Saves to the real `expenses` table as `pending`, attributed
- * to the signed-in member server-side - this form previously built a fake row
- * hardcoded to a person named "Sarah Johnson" and handed it to the caller,
- * which threw it away.
- */
 export function AddExpenseModal({
   open,
   onClose,

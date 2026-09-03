@@ -23,15 +23,6 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: "Rejected — you can resubmit",
 }
 
-/**
- * Lets a member submit their own pay period. Hours, dollar amount, and
- * per-project breakdown are all computed server-side from time actually
- * tracked and the member's own real historical pay rate; nothing about
- * them is sent from the browser. The period itself is server-resolved too
- * (from the member's own configured pay_rates.pay_period) - this no longer
- * hardcodes a Monday-Sunday week regardless of what cadence they're
- * actually on.
- */
 export function SubmitMyTimesheetCard() {
   const [summary, setSummary] = useState<TimesheetPeriodSummary | null>(null)
   const [loading, setLoading] = useState(true)

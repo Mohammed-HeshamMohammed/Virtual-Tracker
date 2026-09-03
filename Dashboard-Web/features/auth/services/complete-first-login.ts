@@ -15,7 +15,6 @@ export type CompleteFirstLoginResult = {
   profile?: AuthProfileSnapshot
 }
 
-/** First-login temp password change via backend. */
 export async function completeFirstLoginWithBackend(
   input: CompleteFirstLoginInput,
 ): Promise<CompleteFirstLoginResult> {

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
 "use client"
 
 import { cn } from "@/shared/utils/utils"
@@ -41,7 +40,6 @@ export function ClientInvoice() {
     <div className="space-y-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
 
-        {/* Left column — General & Payment */}
         <div className="space-y-7">
           <section>
             <h2 className="text-base font-bold text-slate-800 mb-0.5">General</h2>
@@ -106,7 +104,6 @@ export function ClientInvoice() {
           </div>
         </div>
 
-        {/* Right column — Auto invoicing */}
         <div className="space-y-5">
           <h2 className="text-base font-bold text-slate-800">Auto invoicing</h2>
 
@@ -131,7 +128,6 @@ export function ClientInvoice() {
 
           <div className={cn("space-y-5 transition-opacity", !autoInvoicing && "opacity-40 pointer-events-none")}>
 
-            {/* Amount Based On + Frequency — side by side */}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Amount Based On</label>
@@ -160,7 +156,6 @@ export function ClientInvoice() {
               </div>
             </div>
 
-            {/* Delay Sending + Send Reminder — compact inputs, right tooltip anchored left to avoid edge clipping */}
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className={cn(labelCls, "flex items-center gap-1")}>
@@ -178,7 +173,6 @@ export function ClientInvoice() {
               <div>
                 <label className={cn(labelCls, "flex items-center gap-1")}>
                   Send Reminder to Pay After Due
-                  {/* preferLeft keeps the tooltip from overflowing the right edge */}
                   <Tip text="Days after due date to send payment reminder" preferLeft aria-label="Interactive control" />
                 </label>
                 <div className="flex items-center">

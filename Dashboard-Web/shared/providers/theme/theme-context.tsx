@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-initialize-state */
 "use client"
 
 import { createContext, useEffect, useState, use } from "react"

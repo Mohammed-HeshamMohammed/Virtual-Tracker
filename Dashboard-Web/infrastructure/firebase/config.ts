@@ -6,7 +6,6 @@ let app: FirebaseApp | null = null
 let authInstance: Auth | null = null
 let initPromise: Promise<FirebaseApp> | null = null
 
-/** Signs out and tears down the Firebase app so a new project config can load. */
 export async function resetFirebaseClient(): Promise<void> {
   if (authInstance) {
     try {
@@ -29,7 +28,6 @@ export async function resetFirebaseClient(): Promise<void> {
   clearFirebaseWebConfigCache()
 }
 
-/** Init Firebase from backend public config. */
 export async function initFirebase(): Promise<FirebaseApp> {
   if (app) return app
   if (initPromise) return initPromise

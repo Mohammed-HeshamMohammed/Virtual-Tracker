@@ -1,4 +1,3 @@
-/** Opt-in screen/tab capture via getDisplayMedia (replaces desktop screenshot-desktop). */
 
 export type ScreenCaptureState = "inactive" | "active" | "denied"
 
@@ -112,7 +111,6 @@ export function stopScreenCapture(): void {
   }
 }
 
-/** JPEG data URL from the live capture stream, scaled down for upload. */
 export async function captureScreenFrame(): Promise<string> {
   if (!stream || !videoEl || state !== "active") return ""
 
@@ -143,7 +141,6 @@ function isInvalidCaptureLabel(label: string): boolean {
   return lower.includes("://") || lower.includes("media-stream") || lower.startsWith("current-web-contents")
 }
 
-/** App name for activity logs — uses shared surface label when capture is active. */
 export function captureAppName(): string {
   if (!isScreenCaptureActive()) return "Browser · Virtual Tracker"
   const label = captureLabel.trim()

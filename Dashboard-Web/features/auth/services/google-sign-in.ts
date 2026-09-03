@@ -20,7 +20,6 @@ function isPopupBlocked(err: unknown): boolean {
   return code === "auth/popup-blocked"
 }
 
-/** Google sign-in — redirect in launcher; popup in browser tab. */
 export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
   const provider = googleProvider()
 

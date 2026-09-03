@@ -1,13 +1,8 @@
-// ============================================================================
-// Dashboard: Command Center — UI types (data from GET /api/dashboard/command-center)
-// ============================================================================
 
 export type WeeklyTrendDay = {
   key: string
   label: string
-  /** Hours actively worked that day (was: a count of task rows touched). */
   active: number
-  /** Hours idle within tracked sessions that day. */
   idle: number
   activeSeconds: number
   idleSeconds: number
@@ -26,11 +21,9 @@ export type ProjectHealthItem = {
   status: string
   statusColor: string
   barColor: string
-  /** What the bar measures: task progress, budget burn, or nothing tracked yet. */
   hint: string
 }
 
-/** Intern/Employee stand-in for the "Active Members" card: their own tasks, not the team. */
 export type PersonalTaskStats = {
   inProgress: number
   assigned: number
@@ -42,7 +35,6 @@ export interface ProjectData {
   color: string
   stats: {
     timeWorked: string
-    /** Week-over-week change in tracked hours; null when there is no prior week to compare. */
     timeWorkedTrendPercent: number | null
     activeMembers: string
     totalMembers: string
@@ -51,7 +43,6 @@ export interface ProjectData {
     activityPercent: number
     activityBadge: string
   }
-  /** Set only for Intern/Employee (personal view); null for every other role. */
   personalTaskStats: PersonalTaskStats | null
   chartPath: string
   chartFill: string
@@ -63,7 +54,6 @@ export interface ProjectData {
   utilizationBreakdown: UtilizationMember[]
 }
 
-/** One member's own hours against their own weekly capacity. */
 export type UtilizationMember = {
   id: string
   name: string
@@ -83,7 +73,6 @@ export type ActivityFeedItem = {
   time: string
   activityBadge?: string
   type: "screenshot" | "task"
-  /** Screenshot rows only - used to load the capture through the auth-gated endpoint. */
   screenshotId?: string
 }
 
@@ -91,22 +80,18 @@ export type CommandCenterPayload = {
   roleName: string
   isOwner: boolean
   canSeeAllProjects: boolean
-  /** Intern/Employee: cards read as this person's own work, not the project's. */
   isPersonalView: boolean
   globalActivityFeed: ActivityFeedItem[]
   projects: ProjectData[]
 }
 
-/** Raw API health row before UI mapping. */
 export type ApiProjectHealthItem = {
   name: string
   percent: number
   health: string
-  /** Which measure the percent is: task progress, budget burn, or neither. */
   metric?: "progress" | "budget" | "none"
 }
 
-/** Raw API project row (colorIndex + health codes) before UI mapping. */
 export type ApiProjectData = {
   id: string
   name: string

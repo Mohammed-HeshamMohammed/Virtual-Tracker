@@ -1,4 +1,3 @@
-/** Shared retry helper for transient backend failures (5xx, network, unavailable). */
 
 import {
   isInfrastructureError,
@@ -16,12 +15,10 @@ export class RetriableBackendError extends Error {
 }
 
 export type RetryWithBackoffOptions = {
-  /** Keep retrying until this duration elapses (default 60s). */
   minDurationMs?: number
   initialDelayMs?: number
   maxDelayMs?: number
   backoffFactor?: number
-  /** Return false to stop retrying immediately. */
   isRetriable?: (error: unknown) => boolean
   onRetry?: (attempt: number, delayMs: number, error: unknown) => void
   signal?: AbortSignal

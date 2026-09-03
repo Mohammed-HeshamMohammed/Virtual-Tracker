@@ -1,4 +1,3 @@
-// HTTP error page copy + actions by status code.
 
 export type HttpErrorActionKind = "home" | "retry" | "reload" | "back"
 
@@ -12,7 +11,6 @@ export type HttpErrorDefinition = {
   secondaryAction?: HttpErrorActionKind
   secondaryLabel?: string
   showDiagnostics: boolean
-  /** Use the maintenance illustration instead of the status icon. */
   useMaintenanceImage?: boolean
 }
 
@@ -29,7 +27,6 @@ const DEFAULT_SERVER_ERROR: HttpErrorDefinition = {
   showDiagnostics: true,
 }
 
-/** Status code → error screen definition. */
 export const HTTP_ERROR_CATALOG: Record<number, HttpErrorDefinition> = {
   400: {
     status: 400,

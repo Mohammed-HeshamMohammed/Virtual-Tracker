@@ -17,7 +17,6 @@ import {
 import { canApproveDeactivationRequests } from "@/features/auth/permissions/role-hierarchy"
 import { canCreateTeams, hasManageEmployeeTeamsPrivilege } from "@/features/auth/permissions/team-member-assign-policy"
 
-/** UI permission hints from auth context (backend enforces). */
 export function usePermissions() {
   const { memberRole, currentMember } = useAuth()
   const role = memberRole ?? ""

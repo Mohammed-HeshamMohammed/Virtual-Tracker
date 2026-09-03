@@ -1,7 +1,6 @@
 const CHANNEL_NAME = "vt-auth-session"
 const STORAGE_KEY = "vt-auth-session-ready"
 
-/** Notify other same-origin tabs that Firebase auth finished (e.g. OAuth in a browser tab). */
 export function broadcastAuthSessionReady(): void {
   if (typeof window === "undefined") return
   window.dispatchEvent(new Event("vt-auth-session-ready"))

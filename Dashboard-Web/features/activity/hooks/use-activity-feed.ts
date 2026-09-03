@@ -15,7 +15,6 @@ type ReloadOptions = {
   force?: boolean
 }
 
-/** Role-scoped activity feed with shared cache (screenshots / apps / urls). */
 export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", options?: { day?: string }) {
   const feedDay = options?.day
   const { isLoggedIn, memberId: viewerMemberId } = useAuth()
@@ -154,8 +153,6 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
         return
       }
       deleteCache(cacheKey)
-      // Jittered so multiple mounted feed instances (apps/urls/screenshots, different
-      // day/scope variants) don't all refetch in the same tick and trip a rate limit.
       const jitterMs = Math.floor(Math.random() * 400)
       window.setTimeout(() => {
         if (isBackendRateLimited()) return

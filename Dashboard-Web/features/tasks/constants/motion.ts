@@ -1,4 +1,3 @@
-/** Shared motion presets for the tasks feature. */
 
 export const fade = {
   initial: { opacity: 0 },

@@ -18,7 +18,6 @@ export interface CreateTransferRequestResult {
   existing?: boolean
 }
 
-/** Create member transfer request. */
 export async function createMemberTransferRequest(targetEmail: string): Promise<CreateTransferRequestResult> {
   const res = await apiFetch(apiPath("/api/member-transfer-requests"), {
     method: "POST",
@@ -32,7 +31,6 @@ export async function createMemberTransferRequest(targetEmail: string): Promise<
   return json.data
 }
 
-/** Public transfer preview by token. */
 export async function getTransferRequestPreview(token: string): Promise<TransferRequestPreview> {
   const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}`))
   const json = await res.json()
@@ -42,7 +40,6 @@ export async function getTransferRequestPreview(token: string): Promise<Transfer
   return json.data
 }
 
-/** Accept transfer (auth required). */
 export async function acceptMemberTransferRequest(token: string): Promise<void> {
   const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}/accept`), {
     method: "POST",
@@ -55,7 +52,6 @@ export async function acceptMemberTransferRequest(token: string): Promise<void> 
   }
 }
 
-/** Decline transfer (auth required). */
 export async function declineMemberTransferRequest(token: string): Promise<void> {
   const res = await apiFetch(apiPath(`/api/public/member-transfer-requests/${encodeURIComponent(token)}/decline`), {
     method: "POST",
@@ -68,7 +64,6 @@ export async function declineMemberTransferRequest(token: string): Promise<void>
   }
 }
 
-/** Hierarchy audit report (admin only). */
 export async function getHierarchyAuditReport(): Promise<Record<string, unknown>> {
   const res = await apiFetch(apiPath("/api/member-relationships/audit"))
   const json = await res.json()

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -11,11 +10,9 @@ import { ReportCalendarGrid } from "@/features/reports/components/time-activity-
 export function ReportDateRangePicker({
   onApply,
   onDismiss,
-  /** When true, dropdown’s right edge aligns with the anchor (extends left). */
   anchorEnd = false,
   initialStart,
   initialEnd,
-  /** Optional: receive parsed range when user applies (for controlled navigation). */
   onApplyRange,
 }: {
   onApply: (label: string) => void
@@ -25,11 +22,6 @@ export function ReportDateRangePicker({
   initialEnd?: Date | null
   onApplyRange?: (start: Date, end: Date) => void
 }) {
-  // Falls back to "today" (never a fixed calendar date - a caller that
-  // forgets initialStart/initialEnd used to seed this picker at a literal
-  // hardcoded March 2026, so opening it showed a range nobody selected,
-  // built out of a month that may not even be visible from "today" without
-  // clicking back through the calendar).
   const seedStart = initialStart ?? startOfDay(new Date())
   const seedEnd = initialEnd ?? endOfDay(new Date())
   const [leftYear, setLeftYear] = useComponentState(seedStart.getFullYear())

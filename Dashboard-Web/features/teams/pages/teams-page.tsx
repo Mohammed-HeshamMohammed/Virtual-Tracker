@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/async-await-in-loop, react-doctor/js-set-map-lookups, react-doctor/js-combine-iterations */
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useMemo, useState, useRef, useCallback } from "react"
@@ -239,7 +236,6 @@ export function TeamsPage() {
     }
   }
 
-// eslint-disable-next-line react-doctor/js-combine-iterations
   const showListSkeleton = isLoading && teams.length === 0
 
   return (
@@ -357,7 +353,6 @@ export function TeamsPage() {
         </div>
       </div>
 
-      {/* Modal */}
       <AnimatePresence>
         {showModal && (editingTeam ? canUserEditTeam(editingTeam) : canManageTeams) && (
           <AddTeamModal

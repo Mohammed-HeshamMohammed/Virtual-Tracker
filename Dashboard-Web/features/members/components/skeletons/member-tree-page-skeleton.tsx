@@ -29,7 +29,6 @@ function TreeNodeCardSkeleton({ isDark, depth = 0 }: { isDark: boolean; depth?: 
   )
 }
 
-/** Skeleton for the scrollable tree area only. */
 export function MemberTreeContentSkeleton({ isDark = false }: { isDark?: boolean }) {
   const t = isDark ? dark : light
 
@@ -104,7 +103,6 @@ function MemberTreeToolbarShell({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Chunk-route fallback: real toolbar chrome, skeleton tree body only. */
 export function MemberTreePageSkeleton({ isDark = false }: { isDark?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">

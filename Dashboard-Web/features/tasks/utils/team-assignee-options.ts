@@ -18,13 +18,10 @@ function displayNameForMember(
   row: TeamMember,
 ): string {
   if (fromLookup?.name?.trim()) return fromLookup.name.trim()
-  // No email fallback: member emails are Owner/Super Admin only
-  // (field-policy.js) and the roster read no longer returns one.
   if (row.member_name?.trim()) return row.member_name.trim()
   return "Unknown member"
 }
 
-/** Unique members on a team, sorted (leads first, then name). */
 export async function fetchTeamAssigneeOptions(
   teamId: string,
   memberLookups: MemberLookup[],
@@ -53,7 +50,6 @@ export async function fetchTeamAssigneeOptions(
   return list.map((m) => ({ value: m.id, label: m.name }))
 }
 
-/** Members on the selected project team only (no org-wide roster). */
 export async function buildScopedAssigneeOptions(params: {
   teamId: string | null
   memberLookups: MemberLookup[]

@@ -159,8 +159,6 @@ export async function startTaskAssignment(
   }
 }
 
-/** Self-service "I'm blocked, waiting on X" - blocks only the caller's own
- * assignment, not the whole task. Mirrors startTaskAssignment. */
 export async function blockTaskAssignment(
   taskId: string,
 ): Promise<{

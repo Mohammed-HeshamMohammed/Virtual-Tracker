@@ -20,7 +20,6 @@ type DashboardReconnectOverlayProps = {
 const backdropTransition = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const }
 const cardTransition = { duration: 0.32, ease: [0.22, 1, 0.36, 1] as const }
 
-/** Full-dashboard reconnect veil — keeps the workspace visible with a smooth fade in/out. */
 export function DashboardReconnectOverlay({
   open,
   isDark,

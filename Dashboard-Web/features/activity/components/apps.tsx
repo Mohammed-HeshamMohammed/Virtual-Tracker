@@ -51,10 +51,6 @@ interface MemberAppUsage {
   topApp: string
 }
 
-// Category styling now lives in activity-categories.ts, shared with the URLs
-// page and the classify dialog - these three used to disagree about what an
-// unclassified row looks like, and about whether "not productive" is called
-// "unproductive" or "distracting".
 const getCategoryColor = activityCategoryColor
 const getCategoryBgColor = activityCategoryBadgeClass
 
@@ -74,7 +70,6 @@ export function ActivityAppsContent() {
       (feed?.apps ?? []).map((app) => ({
         ...app,
         name: formatActivityAppName(app.name),
-        /** Raw name is what activity_categories keys on; `name` is prettified. */
         pattern: app.name,
         category: normalizeActivityCategory(app.category),
       })),
@@ -93,8 +88,6 @@ export function ActivityAppsContent() {
             app.category.toLowerCase().includes(searchLower),
         )
       : categoryFiltered
-    // Feed order (most time first) is the only ordering now - the By name
-    // sort control it used to back was removed from the toolbar.
     return searched
   }, [categoryFiltered, searchLower])
   const hasData = appsSource.length > 0 || membersSource.length > 0
@@ -118,7 +111,6 @@ export function ActivityAppsContent() {
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     
-    // Apps sheet
     const appsSheet = workbook.addWorksheet("Apps")
     appsSheet.columns = [
       { header: "App", key: "app", width: 20 },
@@ -140,13 +132,11 @@ export function ActivityAppsContent() {
     
     appRows.forEach(row => appsSheet.addRow(row))
     
-    // Add metadata to apps sheet
     appsSheet.addRow({})
     appsSheet.addRow(["Period", day.selectedDayLabel])
     appsSheet.addRow(["Category Filter", selectedCategory])
     appsSheet.addRow(["Exported At", new Date().toLocaleString()])
     
-    // Members sheet
     const membersSheet = workbook.addWorksheet("Members")
     membersSheet.columns = [
       { header: "Member", key: "member", width: 20 },
@@ -178,8 +168,6 @@ export function ActivityAppsContent() {
     URL.revokeObjectURL(url)
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
 
-  // Memoized: built inline, this array was a new reference on every render,
-  // which retriggered the dialog's "load saved labels" fetch in a loop.
   const classifyItems = useMemo(
     () => appsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
     [appsSource],

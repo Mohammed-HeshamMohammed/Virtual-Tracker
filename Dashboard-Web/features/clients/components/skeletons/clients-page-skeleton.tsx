@@ -23,7 +23,6 @@ function ToolbarSkeleton({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Chunk-route fallback — toolbar chrome + table skeleton. */
 export function ClientsPageSkeleton({ isDark = false }: { isDark?: boolean }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">

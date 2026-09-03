@@ -1,9 +1,7 @@
 import { getRedirectResult, type Auth, type UserCredential } from "firebase/auth"
 
-/** One `getRedirectResult` per full page load (React Strict Mode mounts twice in dev). */
 let redirectResultPromise: Promise<UserCredential | null> | null = null
 
-/** Finish signInWithRedirect once per tab load. */
 export function consumeAuthRedirectResultOnce(auth: Auth): Promise<UserCredential | null> {
   if (!redirectResultPromise) {
     redirectResultPromise = getRedirectResult(auth).catch((err) => {
@@ -17,7 +15,6 @@ export function consumeAuthRedirectResultOnce(auth: Auth): Promise<UserCredentia
 const FIREBASE_EMAIL_ACTION_PATH = "/auth/action"
 const FIREBASE_EMAIL_ACTION_MODES = new Set(["verifyEmail", "resetPassword", "recoverEmail"])
 
-/** Email verification / password-reset links share `mode` + `apiKey` query params with OAuth callbacks. */
 function isFirebaseEmailActionUrl(): boolean {
   if (typeof window === "undefined") return false
   if (window.location.pathname !== FIREBASE_EMAIL_ACTION_PATH) return false
@@ -27,7 +24,6 @@ function isFirebaseEmailActionUrl(): boolean {
   return Boolean(params.get("oobCode")?.trim())
 }
 
-/** True when the URL still carries Firebase OAuth callback parameters. */
 export function hasFirebaseAuthCallbackInUrl(): boolean {
   if (typeof window === "undefined") return false
   if (isFirebaseEmailActionUrl()) return false
@@ -43,7 +39,6 @@ export function hasFirebaseAuthCallbackInUrl(): boolean {
 export const GOOGLE_REDIRECT_FAILED_MESSAGE =
   "Google sign-in could not be completed. Try again, allow popups for this site, or use email and password instead."
 
-/** Strip Firebase OAuth query/hash leftovers after redirect completes. */
 export function cleanFirebaseAuthUrl(): void {
   if (typeof window === "undefined") return
   if (isFirebaseEmailActionUrl()) return

@@ -9,7 +9,6 @@ export function isLauncherHost(): boolean {
   return new URLSearchParams(window.location.search).get(LAUNCHER_QUERY) === "1"
 }
 
-/** App is embedded in the launcher shell iframe (OAuth must not run inside it). */
 export function isEmbeddedInLauncherFrame(): boolean {
   if (typeof window === "undefined") return false
   try {

@@ -1,6 +1,5 @@
 import { cn } from "@/shared/utils/utils"
 
-/** Rounded two-arc autorenew icon (matches Hubstaff-style sync glyph). */
 export function SyncAutorenewIcon({ className }: { className?: string }) {
   return (
     <svg

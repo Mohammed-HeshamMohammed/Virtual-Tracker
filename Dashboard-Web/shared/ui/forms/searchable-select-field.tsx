@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-chain-state-updates */
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode } from "react"

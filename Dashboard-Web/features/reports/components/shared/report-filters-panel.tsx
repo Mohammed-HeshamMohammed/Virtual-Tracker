@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
@@ -17,14 +16,10 @@ export function emptyReportFilters(): ReportFilterState {
   return { memberIds: new Set<string>(), projectIds: new Set<string>() }
 }
 
-/** Members/projects the viewer may filter by, fetched once per mount. */
 export function useReportFilterOptions(): ReportFilterOptions {
   const [options, setOptions] = useState<ReportFilterOptions>({ members: [], projects: [] })
   useEffect(() => {
     let cancelled = false
-    // Filter options failing is not fatal: the panel offers nothing to filter
-    // by, which is better than an unhandled rejection taking the report with
-    // it. The report body reports its own failure.
     void fetchReportFilterOptions()
       .then((opts) => {
         if (!cancelled) setOptions(opts)
@@ -168,12 +163,6 @@ function MultiSelect({
   )
 }
 
-/**
- * The filters panel shared by every report that scopes by member and/or
- * project. Options come from /api/reports/filter-options, which returns only
- * what the viewer may filter by - and the backend re-validates every id, so
- * this is a convenience, not the access boundary.
- */
 export function ReportFiltersPanel({
   onClose,
   options,
@@ -185,7 +174,6 @@ export function ReportFiltersPanel({
   options: ReportFilterOptions
   value: ReportFilterState
   onChange: (next: ReportFilterState) => void
-  /** Off for reports with no project dimension (e.g. limits, timesheets). */
   showProjects?: boolean
 }) {
   const { isDark } = useTheme()

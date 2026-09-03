@@ -12,7 +12,6 @@ import {
   notifyAgentTimerBlocked,
 } from "@/features/activity/utils/agent-timer-gate"
 
-/** Pause orphaned backend sessions when the desktop agent is not linked on this PC. */
 export function ActivitySessionGuard() {
   const { isLoggedIn, sessionReady, profile } = useAuth()
   const { refreshAgentStatus } = useAgentStatus()

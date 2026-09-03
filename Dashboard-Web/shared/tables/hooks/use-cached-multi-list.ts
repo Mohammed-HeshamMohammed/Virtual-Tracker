@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -39,7 +38,6 @@ type ListFetcher<T> = {
 export type CachedMultiListRefetchOptions = {
   showLoading?: boolean
   forceRefetch?: boolean
-  /** When set, only these lists are fetched (defaults to all). */
   keys?: string[]
 }
 
@@ -54,7 +52,6 @@ export type UseCachedMultiListOptions<T extends Record<string, unknown>> = {
   refetchIntervalMs?: number
   refetchOnVisibility?: boolean
   presencePingEvent?: string
-  /** Keys refreshed on interval / visibility (defaults to loadingKey only). */
   backgroundRefetchKeys?: (keyof T & string)[]
   backgroundRefetch?: CachedMultiListRefetchOptions
   onError?: (error: unknown) => void

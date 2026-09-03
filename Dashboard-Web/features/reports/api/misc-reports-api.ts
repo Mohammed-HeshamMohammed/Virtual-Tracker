@@ -1,6 +1,3 @@
-// Fetch + map real backend rows (reports/routes.js) into the exact display
-// shapes the existing report components already render against - keeps the
-// component/render code untouched, only the data source changes.
 import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import type { AmountsOwedDayGroup } from "@/features/reports/components/shared/constants"
@@ -35,16 +32,6 @@ function formatDateLabel(date: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
 }
 
-/**
- * Every report read goes through here.
- *
- * This used to return `null` for any failure - a 403 from a role that may not
- * see the report, a 500, a dropped connection - and each caller then mapped
- * `null` to an empty array. So a report the viewer was not allowed to open, a
- * report whose endpoint was erroring, and a report with genuinely no rows all
- * rendered the same "nothing to report" state, with no way to tell them
- * apart. It throws now, and the report pages surface the message.
- */
 async function getJson<T>(path: string): Promise<T> {
   const res = await apiFetch(apiPath(path))
   if (!res.ok) {
@@ -62,7 +49,6 @@ async function getJson<T>(path: string): Promise<T> {
   return (json?.data ?? null) as T
 }
 
-// ─── Amounts Owed / Daily Totals / Payments (same shape) ────────────────────
 
 interface RawAmountMember {
   memberId: string
@@ -85,9 +71,6 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
     members: day.members.map((m) => ({
       name: m.name,
       initials: initialsFor(m.name),
-      // Both the rate and the amount are this member's own currency, not a
-      // flat "$" - a member paid in EGP used to see "EGP 50.00/hr" right
-      // next to "$400.00" for the same row.
       rateLabel: m.rate > 0 ? `${m.currency} ${m.rate.toFixed(2)}/hr` : "No rate set",
       hours: formatHms(m.activeSeconds),
       amount: formatMoney(m.amount, m.currency),
@@ -95,7 +78,6 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
   }))
 }
 
-/** Range plus the shared report filter selections. */
 export interface ReportQuery {
   from: string
   to: string
@@ -103,7 +85,6 @@ export interface ReportQuery {
   projectIds?: string[]
 }
 
-/** Builds the query string every report endpoint understands. */
 function reportParams(q: ReportQuery): URLSearchParams {
   const params = new URLSearchParams({ from: q.from, to: q.to })
   if (q.memberIds?.length) params.set("memberIds", q.memberIds.join(","))
@@ -116,15 +97,11 @@ export interface ReportFilterOptions {
   projects: { id: string; name: string }[]
 }
 
-/** Real members/projects the viewer may filter by, for the report filter panels. */
 export async function fetchReportFilterOptions(): Promise<ReportFilterOptions> {
   const data = await getJson<ReportFilterOptions>("/api/reports/filter-options")
   return { members: data?.members ?? [], projects: data?.projects ?? [] }
 }
 
-/** `memberId` scopes to one member (the "ME" tab); `memberIds`/`projectIds` back
- *  the filter panel's multi-selects. The backend rejects ids outside the
- *  viewer's visible scope, so these are filters, not a trust point. */
 export async function fetchAmountsOwedReport(
   range: ReportQuery & { memberId?: string | null }
 ): Promise<AmountsOwedDayGroup[]> {
@@ -134,7 +111,6 @@ export async function fetchAmountsOwedReport(
   return data ? mapAmountsDays(data.days) : []
 }
 
-// ─── Work Sessions ────────────────────────────────────────────────────────
 
 interface RawWorkSession {
   id: string
@@ -185,10 +161,6 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
   })
 }
 
-/** Permanently deletes one tracked session and everything captured under it
- *  (screenshots, app usage, URL visits) - server-side cascade, see
- *  deleteActivitySessionWithChildrenPg. Manager and above only; the server
- *  re-checks that regardless of what the UI shows. */
 export async function deleteWorkSession(id: string): Promise<void> {
   const res = await apiFetch(apiPath(`/api/reports/work-sessions/${id}`), { method: "DELETE" })
   if (!res.ok) {
@@ -197,7 +169,6 @@ export async function deleteWorkSession(id: string): Promise<void> {
   }
 }
 
-// ─── Audit Log ────────────────────────────────────────────────────────────
 
 interface RawAuditRow {
   id: string
@@ -239,7 +210,6 @@ export async function fetchAuditLogReport(range: ReportQuery): Promise<AuditLogR
   })
 }
 
-// ─── Project Budgets ──────────────────────────────────────────────────────
 
 interface RawProjectBudgetRow {
   projectId: string
@@ -272,10 +242,6 @@ export async function fetchProjectBudgetsReport(query?: { projectIds?: string[] 
   const withoutBudget: ProjectBudgetRow[] = []
 
   data.rows.forEach((row, i) => {
-    // Hours-based budgets are a real time cap (cost = hours) - render as
-    // duration. Cost-based budgets are a dollar cap - render as money,
-    // using spentAmount (already computed server-side against the real
-    // rate) rather than fake-converting either unit into the other.
     const isHours = row.budgetType === "Hours based"
     const mapped: ProjectBudgetRow = {
       projectName: row.projectName,
@@ -296,7 +262,6 @@ export async function fetchProjectBudgetsReport(query?: { projectIds?: string[] 
   return sections
 }
 
-// ─── Client Budgets ───────────────────────────────────────────────────────
 
 interface RawClientBudgetRow {
   clientId: string
@@ -324,7 +289,6 @@ export async function fetchClientBudgetsReport(): Promise<ClientBudgetRow[]> {
   }))
 }
 
-// ─── Weekly Limits / Daily Limits ────────────────────────────────────────
 
 interface RawLimitRow {
   memberId: string
@@ -356,7 +320,6 @@ export function fetchDailyLimitsReport(range: ReportQuery): Promise<LimitUsageRo
   return fetchLimitsReport("daily-limits", range)
 }
 
-// ─── Timesheet Approvals ──────────────────────────────────────────────────
 
 interface RawTimesheetRow {
   id: string
@@ -392,7 +355,6 @@ export async function fetchTimesheetApprovalsReport(range: ReportQuery): Promise
   }))
 }
 
-// ─── Apps & URLs ──────────────────────────────────────────────────────────
 
 interface RawAppUsageRow {
   memberId: string
@@ -431,7 +393,6 @@ export async function fetchAppsUrlsReport(
   }
 }
 
-// ─── Manual Time Edits ────────────────────────────────────────────────────
 
 export interface ManualTimeEditRow {
   id: string
@@ -455,7 +416,6 @@ export async function fetchManualTimeEditsReport(range: ReportQuery): Promise<Ma
   return data?.rows ?? []
 }
 
-// ─── Work Breaks ──────────────────────────────────────────────────────────
 
 export interface WorkBreakRow {
   memberId: string
@@ -477,7 +437,6 @@ export async function fetchWorkBreaksReport(
   return { rows: data?.rows ?? [], minGapMinutes: data?.minGapMinutes ?? 5 }
 }
 
-// ─── Expenses ─────────────────────────────────────────────────────────────
 
 export interface ExpenseReportRow {
   id: string
@@ -499,7 +458,6 @@ export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseRe
   return data?.rows ?? []
 }
 
-// ─── Time off ─────────────────────────────────────────────────────────────
 
 export interface TimeOffBalanceRow {
   memberId: string
@@ -541,7 +499,6 @@ export async function fetchTimeOffTransactionsReport(range: ReportQuery): Promis
   return data?.rows ?? []
 }
 
-// ─── Invoices ─────────────────────────────────────────────────────────────
 
 export interface InvoiceReportRow {
   id: string
@@ -583,7 +540,6 @@ export async function fetchInvoiceAgingReport(
   return { rows: data?.rows ?? [], asOf: data?.asOf ?? range.to }
 }
 
-// ─── Payments ─────────────────────────────────────────────────────────────
 
 export interface PaymentReportRow {
   id: string
@@ -605,7 +561,6 @@ export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<P
   return data?.rows ?? []
 }
 
-// ─── Shift attendance ─────────────────────────────────────────────────────
 
 export interface ShiftAttendanceRow {
   memberId: string

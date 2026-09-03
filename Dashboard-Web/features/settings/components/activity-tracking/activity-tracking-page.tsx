@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -77,7 +76,6 @@ function TimesheetsSection() {
         </div>
       </div>
 
-      {/* Manual Time Requests Toggle */}
       <Card className="p-5">
         <Toggle
           checked={manualTimeRequests}
@@ -87,7 +85,6 @@ function TimesheetsSection() {
         />
       </Card>
 
-      {/* Timesheet Approvals Section */}
       <Card className="p-5">
         <div className="space-y-5">
           <Toggle
@@ -99,7 +96,6 @@ function TimesheetsSection() {
 
           {timesheetApprovals && (
             <div className="pt-4 border-t border-slate-100 space-y-4">
-              {/* Pay Period Dropdown */}
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                   Pay period
@@ -139,7 +135,6 @@ function TimesheetsSection() {
                 </div>
               </div>
 
-              {/* Auto Submit Toggle */}
               <Toggle
                 checked={autoSubmit}
                 onChange={() => setAutoSubmit(!autoSubmit)}
@@ -151,7 +146,6 @@ function TimesheetsSection() {
         </div>
       </Card>
 
-      {/* Save Button */}
       <div className="flex justify-end">
         <button className="px-6 py-2.5 text-sm font-medium text-white bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors" type="button">
           Save changes
