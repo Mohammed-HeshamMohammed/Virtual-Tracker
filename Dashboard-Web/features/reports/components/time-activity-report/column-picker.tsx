@@ -104,7 +104,7 @@ export function ReportColumnPicker({
           Member rows
         </button>
       </div>
-      <div className="max-h-[440px] overflow-y-auto py-1">
+      <div className="max-h-[440px] overflow-y-auto custom-scrollbar py-1">
         {COLUMN_PICKER_SECTIONS.map((section, si) => (
           <div key={si}>
             {section.group && (
@@ -124,7 +124,7 @@ export function ReportColumnPicker({
                       animate={{ opacity: 1, x: 0 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.1 }}
-                      className="absolute right-full top-0 z-40 mr-1 max-h-80 w-64 overflow-y-auto rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-xl"
+                      className="absolute right-full top-0 z-40 mr-1 max-h-80 w-64 overflow-y-auto custom-scrollbar rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-xl"
                       onMouseEnter={() => setFlyout(section.group!)}
                       onMouseLeave={() => setFlyout(null)}
                     >

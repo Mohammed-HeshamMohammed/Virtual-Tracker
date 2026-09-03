@@ -48,7 +48,7 @@ export function ReportFilterDropdown({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.1 }}
-              className="mt-1 max-h-72 overflow-y-auto overscroll-contain rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
+              className="mt-1 max-h-72 overflow-y-auto custom-scrollbar overscroll-contain rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg"
             >
               {options.map((opt) => (
                 <button

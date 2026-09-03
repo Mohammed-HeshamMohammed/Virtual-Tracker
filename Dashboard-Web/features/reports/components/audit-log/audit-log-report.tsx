@@ -391,7 +391,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
         <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
       ) : (
       <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d]">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar-x">
           <table className="w-full min-w-[800px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5">
@@ -497,7 +497,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               <div className="mb-3 text-sm font-semibold text-slate-800 dark:text-[#dce1fb]">Filters</div>
               {/* Author/action values come from the loaded rows themselves, so the
                   panel can only ever offer filters that match real audit data. */}
-              <div className="max-h-[50vh] space-y-4 overflow-y-auto pr-1">
+              <div className="max-h-[50vh] space-y-4 overflow-y-auto custom-scrollbar pr-1">
                 <AuditFacet
                   title="Author"
                   values={authorOptions}

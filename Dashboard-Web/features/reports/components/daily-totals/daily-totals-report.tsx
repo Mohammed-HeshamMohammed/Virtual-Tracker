@@ -492,7 +492,7 @@ export function DailyTotalsReport() {
           <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
         ) : (
         <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar-x">
             <table className="w-full min-w-[640px] table-fixed">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-white/10">
