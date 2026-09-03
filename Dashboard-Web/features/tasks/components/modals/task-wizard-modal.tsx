@@ -273,6 +273,7 @@ export function TaskWizardModal({
       teamId: newTaskTeamId,
       memberLookups,
       preserveMemberIds: isEditingTask ? editPreserveAssigneeIds : [],
+      projectMemberLookups: projectMembers,
     })
       .then((options) => {
         if (!cancelled) setFormAssigneeOptions(options)
@@ -286,7 +287,7 @@ export function TaskWizardModal({
     return () => {
       cancelled = true
     }
-  }, [open, newTaskTeamId, memberLookups, isEditingTask, editPreserveAssigneeIds])
+  }, [open, newTaskTeamId, memberLookups, isEditingTask, editPreserveAssigneeIds, projectMembers])
 
   useEffect(() => {
     if (!open || formAssigneesLoading) return
@@ -532,11 +533,7 @@ export function TaskWizardModal({
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
               ASSIGNEES
             </label>
-            {formTeamOptions.length > 0 && !newTaskTeamId ? (
-              <p className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-                Select a team first.
-              </p>
-            ) : formAssigneesLoading ? (
+            {formAssigneesLoading ? (
               <p className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>Loading members…</p>
             ) : (
               <div

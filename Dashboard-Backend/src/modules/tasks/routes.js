@@ -360,7 +360,11 @@ export async function routeTasks(req, res, url, db, origin) {
     } catch (e) {
       logSafeError("[tasks/assignments]", e);
       const message = e instanceof Error ? e.message : "Failed to sync assignments";
-      const isWorkload = message.includes("daily limit") || message.includes("weekly limit");
+      const isWorkload =
+        message.includes("daily limit") ||
+        message.includes("weekly limit") ||
+        message.includes("budget") ||
+        message.includes("pay rate");
       sendJson(res, origin, message === "Task not found" ? 404 : isWorkload ? 400 : 500, {
         success: false,
         error: message,
