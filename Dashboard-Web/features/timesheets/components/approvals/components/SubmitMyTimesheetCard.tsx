@@ -7,20 +7,8 @@ import {
   submitTimesheetPeriod,
   type TimesheetPeriodSummary,
 } from "@/features/timesheets/api/timesheet-api"
+import { formatMoney } from "@/features/reports/utils/money"
 import { changedEvent } from "@/infrastructure/api/change-events"
-
-/** Monday-start week containing `ref`, as YYYY-MM-DD in local time. */
-function currentWeekPeriod(ref = new Date()): { start: string; end: string } {
-  const day = ref.getDay()
-  const mondayOffset = day === 0 ? -6 : 1 - day
-  const start = new Date(ref)
-  start.setDate(ref.getDate() + mondayOffset)
-  const end = new Date(start)
-  end.setDate(start.getDate() + 6)
-  const iso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-  return { start: iso(start), end: iso(end) }
-}
 
 function formatHours(hours: number): string {
   const whole = Math.floor(hours)
@@ -36,12 +24,15 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 /**
- * Lets a member submit their own pay period. Hours shown here are computed
- * server-side from time actually tracked (manual entries + tracked sessions);
- * nothing about them is sent from the browser.
+ * Lets a member submit their own pay period. Hours, dollar amount, and
+ * per-project breakdown are all computed server-side from time actually
+ * tracked and the member's own real historical pay rate; nothing about
+ * them is sent from the browser. The period itself is server-resolved too
+ * (from the member's own configured pay_rates.pay_period) - this no longer
+ * hardcodes a Monday-Sunday week regardless of what cadence they're
+ * actually on.
  */
 export function SubmitMyTimesheetCard() {
-  const [period] = useState(() => currentWeekPeriod())
   const [summary, setSummary] = useState<TimesheetPeriodSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -49,11 +40,11 @@ export function SubmitMyTimesheetCard() {
 
   const load = useCallback(() => {
     setLoading(true)
-    fetchTimesheetPeriodSummary(period.start, period.end)
+    fetchTimesheetPeriodSummary()
       .then(setSummary)
       .catch(() => setSummary(null))
       .finally(() => setLoading(false))
-  }, [period.start, period.end])
+  }, [])
 
   useEffect(() => {
     load()
@@ -63,10 +54,11 @@ export function SubmitMyTimesheetCard() {
   }, [load])
 
   async function submit() {
+    if (!summary) return
     setSubmitting(true)
     setError(null)
     try {
-      await submitTimesheetPeriod(period.start, period.end)
+      await submitTimesheetPeriod(summary.periodStart, summary.periodEnd)
       load()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to submit timesheet.")
@@ -78,14 +70,15 @@ export function SubmitMyTimesheetCard() {
   const status = summary?.timesheet?.status ?? null
   const alreadyLocked = status === "submitted" || status === "approved"
   const noTime = (summary?.totalHours ?? 0) <= 0
+  const projects = summary?.projects ?? []
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-slate-800">Your timesheet</h3>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {period.start} – {period.end}
+          <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100">Your timesheet</h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {summary ? `${summary.periodStart} – ${summary.periodEnd}` : "Loading period…"}
           </p>
         </div>
         {status ? (
@@ -93,12 +86,12 @@ export function SubmitMyTimesheetCard() {
             className={cn(
               "rounded-full px-2.5 py-1 text-[11px] font-semibold",
               status === "approved"
-                ? "bg-emerald-50 text-emerald-600"
+                ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400"
                 : status === "submitted"
-                  ? "bg-blue-50 text-blue-600"
+                  ? "bg-blue-50 text-blue-600 dark:bg-blue-950/60 dark:text-blue-400"
                   : status === "rejected"
-                    ? "bg-red-50 text-red-600"
-                    : "bg-slate-100 text-slate-600"
+                    ? "bg-red-50 text-red-600 dark:bg-red-950/60 dark:text-red-400"
+                    : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
             )}
           >
             {STATUS_LABEL[status] ?? status}
@@ -107,31 +100,54 @@ export function SubmitMyTimesheetCard() {
       </div>
 
       {loading ? (
-        <p className="mt-4 text-sm text-slate-400">Loading your tracked time…</p>
+        <p className="mt-4 text-sm text-slate-400 dark:text-slate-500">Loading your tracked time…</p>
       ) : (
         <>
           <div className="mt-4 flex flex-wrap gap-6">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Total</div>
-              <div className="text-lg font-semibold tabular-nums text-slate-800">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Total</div>
+              <div className="text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">
                 {formatHours(summary?.totalHours ?? 0)}
               </div>
             </div>
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Billable</div>
-              <div className="text-lg font-semibold tabular-nums text-slate-800">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Billable</div>
+              <div className="text-lg font-semibold tabular-nums text-slate-800 dark:text-slate-100">
                 {formatHours(summary?.billableHours ?? 0)}
               </div>
             </div>
+            {(summary?.amount ?? 0) > 0 ? (
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Amount</div>
+                <div className="text-lg font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {formatMoney(summary?.amount ?? 0, summary?.currency ?? "USD")}
+                </div>
+              </div>
+            ) : null}
           </div>
 
-          {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+          {projects.length > 0 ? (
+            <div className="mt-4 space-y-1.5 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-800/40">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">By project</p>
+              {projects.map((p) => (
+                <div key={p.projectId ?? "none"} className="flex items-center justify-between gap-3 text-xs">
+                  <span className="min-w-0 truncate text-slate-600 dark:text-slate-300">{p.projectName}</span>
+                  <span className="shrink-0 tabular-nums text-slate-500 dark:text-slate-400">
+                    {formatHours(p.hours)}
+                    {p.amount > 0 ? ` · ${formatMoney(p.amount, summary?.currency ?? "USD")}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {error ? <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
 
           <button
             type="button"
             onClick={() => void submit()}
             disabled={submitting || alreadyLocked || noTime}
-            className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-4 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-emerald-600 dark:hover:bg-emerald-500"
           >
             {submitting
               ? "Submitting…"
@@ -140,7 +156,7 @@ export function SubmitMyTimesheetCard() {
                 : "Submit timesheet"}
           </button>
           {noTime && !alreadyLocked ? (
-            <p className="mt-2 text-xs text-slate-400">No tracked time in this period yet.</p>
+            <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">No tracked time in this period yet.</p>
           ) : null}
         </>
       )}
