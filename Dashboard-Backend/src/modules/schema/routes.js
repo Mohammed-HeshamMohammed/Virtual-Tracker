@@ -34,6 +34,10 @@ import { maybeNotifyClientBudgetsForProject } from "../clients/services/client-b
 import { createTeamInitialRoster, parseTeamRosterInput, syncTeamRoster, validateTeamRoster } from "../teams/team-roster.service.js";
 import { isTaskChildEntityKey } from "../../lib/firestore/task-subcollections.js";
 import { getTaskPg, getTasksByIdsPg, updateTaskPg } from "../../lib/postgres/tasks-postgres.service.js";
+import { getProjectPg } from "../../lib/postgres/projects-postgres.service.js";
+import { hasAssignmentPg } from "../../lib/postgres/task-assignments-postgres.service.js";
+import { isAdminLevelRole } from "../../http/role-hierarchy.js";
+import { isTaskLessProjectType } from "../projects/project-types.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
 import { assertManualTimeEntryWithinLimits } from "../tasks/manual-time-entry-limits.js";
@@ -332,12 +336,77 @@ async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existi
   return true;
 }
 
-async function assertMemberOnProjectForTimeEntry(db, memberId, projectId) {
+/**
+ * Whether this member may log time against `projectId` without naming a
+ * task - deliberately the same four escapes the live timer allows before it
+ * will start a task-less session (see the activity module's
+ * allowsTaskLessTimer): a type that has no tasks at all, the project's own
+ * require_task_to_track opt-out, org admin tier, and a client on a
+ * client_can_track project.
+ */
+async function memberMayTrackTaskLess(db, memberId, project) {
+  if (isTaskLessProjectType(project.type)) return true;
+  if (project.require_task_to_track === false) return true;
+  const roleName = await resolveMemberRoleName(db, memberId);
+  if (isAdminLevelRole(roleName)) return true;
+  return clientMayTrackProject({ memberId, roleName }, project.id);
+}
+
+/** A task counts as this member's if it is their legacy single assignment or
+ *  one of their task_assignments rows - the same two sources the assigned-to
+ *  task listing reads (see listTasksForAssignee). */
+async function taskIsAssignedToMember(task, memberId) {
+  if (String(task.assigned_to ?? task.assignedTo ?? "") === memberId) return true;
+  return hasAssignmentPg(String(task.id), memberId);
+}
+
+/**
+ * The rules a time entry has to satisfy to actually count, kept in step with
+ * what the live timer refuses to start in the first place - hand-entered
+ * time was going straight past all of it, so manual entry could create
+ * exactly what the timer would have blocked:
+ *   - the member has to be on the project (isProjectMemberForTimer)
+ *   - a project that tracks against tasks needs one named
+ *   - a task that is named has to be on that project and assigned to them
+ *
+ * Only enforced once the entry counts (approved). A pending request is
+ * deliberately left alone: it is a claim a manager reviews, and the reviewer
+ * can add the member to the project or attach the task before approving.
+ * Refusing to record the request at all would leave someone who really did
+ * work on a project they were never added to with nowhere to report it -
+ * and the same check runs again on the approval, so nothing counts until it
+ * genuinely passes.
+ */
+async function assertTimeEntryCountable(db, { memberId, projectId, taskId, status }) {
   if (!memberId || !projectId) return;
+  if (String(status ?? "") !== "approved") return;
+
   const targetRoleName = await resolveMemberRoleName(db, memberId);
   const onProject = await isProjectMemberForTimer(db, { memberId, roleName: targetRoleName }, projectId);
   if (!onProject) {
     throw new Error("This member is not assigned to the selected project.");
+  }
+
+  const project = await getProjectPg(projectId);
+  if (!project) return;
+
+  const namedTask = typeof taskId === "string" ? taskId.trim() : "";
+  if (!namedTask) {
+    if (!(await memberMayTrackTaskLess(db, memberId, project))) {
+      throw new Error("This project tracks time against tasks - select a task for this time.");
+    }
+    return;
+  }
+
+  const task = await getTaskPg(namedTask);
+  if (!task) {
+    throw new Error("That to-do no longer exists.");
+  }
+  if (String(task.project_id ?? task.projectId ?? "") !== String(projectId)) {
+    throw new Error("That to-do belongs to a different project.");
+  }
+  if (!(await taskIsAssignedToMember(task, memberId))) {
+    throw new Error("That to-do is not assigned to this member.");
   }
 }
 
@@ -540,14 +609,21 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         });
         await validateForeignKeys(db, payload, { entityKey: parsed.key });
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-          await assertMemberOnProjectForTimeEntry(db, payload.member_id, payload.project_id);
           await assertManualTimeEntryWithinLimits(db, {
             memberId: payload.member_id,
             projectId: payload.project_id,
             date: payload.date,
             durationSeconds: Number(payload.duration) || 0,
           });
+          // Status first: the project/task rules below only apply to an
+          // entry that actually counts, and this is what decides that.
           await resolveTimeEntryStatus(getAuthContext(req), payload, String(payload.project_id ?? ""));
+          await assertTimeEntryCountable(db, {
+            memberId: payload.member_id,
+            projectId: payload.project_id,
+            taskId: payload.task_id,
+            status: payload.status,
+          });
         }
         const created = await createPostgresRow(parsed.key, payload);
         if (teamRoster && created?.id) {
@@ -599,9 +675,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
-        if (parsed.key === TIME_ENTRY_WRITE_KEY && payload.project_id !== undefined) {
-          await assertMemberOnProjectForTimeEntry(db, existing.member_id, payload.project_id);
-        }
         if (parsed.key === TIME_ENTRY_WRITE_KEY && (payload.duration !== undefined || payload.date !== undefined || payload.project_id !== undefined)) {
           await assertManualTimeEntryWithinLimits(db, {
             memberId: existing.member_id,
@@ -618,6 +691,16 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             String(payload.project_id ?? existing.project_id ?? ""),
             String(existing.status ?? "pending"),
           );
+          // Re-checked against the merged row on every edit, not just when
+          // the project changes - approving a pending request is the moment
+          // an unvetted claim turns into time that counts, and that arrives
+          // here as a plain status patch touching nothing else.
+          await assertTimeEntryCountable(db, {
+            memberId: existing.member_id,
+            projectId: payload.project_id ?? existing.project_id,
+            taskId: payload.task_id ?? existing.task_id,
+            status: payload.status ?? existing.status,
+          });
         }
         const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
         if (teamRosterPatch) {

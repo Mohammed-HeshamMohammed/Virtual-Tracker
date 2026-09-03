@@ -1,6 +1,7 @@
 import { assertManagementRole, canAccessMember } from "../../http/authorization.js";
 import { getAuthContext, isManagementRole, requireManagementRole } from "../../http/auth-context.js";
 import { isAdminLevelRole } from "../../http/role-hierarchy.js";
+import { normalizeRoleKey } from "../../http/role-key.js";
 import { resolveMemberRoleNameCached } from "../../http/role-cache.js";
 import {
   assertProjectAccessible,
@@ -600,7 +601,25 @@ export async function routeProjects(req, res, url, db, origin) {
         const idSet = new Set(trackableIds);
         rows = rows.filter((p) => idSet.has(String(p.id)));
       }
-      sendJson(res, origin, 200, { success: true, data: rows.map((p) => ({ id: p.id, name: p.name })) });
+      // Whether this member needs to name a task on each project, resolved
+      // server-side so the form doesn't re-derive the timer's rule (see
+      // allowsTaskLessTimer): the two role escapes are decided once for the
+      // whole list rather than per project - an org admin gets trackableIds
+      // === null, and every project in a client's list is by definition one
+      // of their client_can_track ones.
+      const roleTracksTaskLess = trackableIds === null || normalizeRoleKey(targetRoleName) === "client";
+      sendJson(res, origin, 200, {
+        success: true,
+        data: rows.map((p) => {
+          const hasTasks = projectTypeDef(p.type).hasTasks;
+          return {
+            id: p.id,
+            name: p.name,
+            hasTasks,
+            taskRequired: hasTasks && p.require_task_to_track !== false && !roleTracksTaskLess,
+          };
+        }),
+      });
     } catch (e) {
       logSafeError("[projects/trackable]", e);
       sendJson(res, origin, 500, {
