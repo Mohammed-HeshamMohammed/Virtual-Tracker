@@ -7,6 +7,7 @@ import {
   clientMayManageProject,
   clientMayTrackProject,
   getViewerProjectIds,
+  isProjectMemberForTimer,
   toAllowedProjectSet,
   viewerCanWriteProject,
   viewerCanCreateProjectTasks,
@@ -382,6 +383,27 @@ async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existi
 }
 
 /**
+ * A time entry's member must actually belong to its project - the client
+ * already scopes the "Add time for someone" dropdown to the project's own
+ * members, but nothing on the server enforced it, so a stale/bypassed
+ * client could log time for a member with no real tie to the project.
+ * Reuses the exact rule the live task-less timer already applies
+ * (isProjectMemberForTimer): org-admin-tier roles and a client with
+ * client_can_track need no project_members row, anyone else does.
+ * @param {import("firebase-admin/firestore").Firestore} db
+ * @param {string} memberId
+ * @param {string} projectId
+ */
+async function assertMemberOnProjectForTimeEntry(db, memberId, projectId) {
+  if (!memberId || !projectId) return;
+  const targetRoleName = await resolveMemberRoleName(db, memberId);
+  const onProject = await isProjectMemberForTimer(db, { memberId, roleName: targetRoleName }, projectId);
+  if (!onProject) {
+    throw new Error("This member is not assigned to the selected project.");
+  }
+}
+
+/**
  * Whether this viewer's manual time entries land pre-approved (Manager and
  * above, or a client on a project they're allowed to clock in on) or as a
  * request awaiting review (everyone else - Employee, Intern, Team Lead).
@@ -660,6 +682,7 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           // from the same daily/weekly and per-project-member caps a live
           // timer is already stopped at (timer-limit.service.js) - it just
           // used to be created with zero awareness of either.
+          await assertMemberOnProjectForTimeEntry(db, payload.member_id, payload.project_id);
           await assertManualTimeEntryWithinLimits(db, {
             memberId: payload.member_id,
             projectId: payload.project_id,
@@ -731,6 +754,11 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         await validateBusinessRules(parsed.key, { ...payload, id: parsed.id }, db, {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
+        if (parsed.key === TIME_ENTRY_WRITE_KEY && payload.project_id !== undefined) {
+          // Re-pointing an entry at a different project - the member has to
+          // actually belong to that one too, same rule create-time enforces.
+          await assertMemberOnProjectForTimeEntry(db, existing.member_id, payload.project_id);
+        }
         if (parsed.key === TIME_ENTRY_WRITE_KEY && (payload.duration !== undefined || payload.date !== undefined || payload.project_id !== undefined)) {
           // Re-check against the merged row (existing + this edit's
           // overrides), excluding this entry's own current duration from

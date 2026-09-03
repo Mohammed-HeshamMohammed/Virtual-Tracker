@@ -14,8 +14,8 @@ import assert from "node:assert/strict";
 
 const AUTH_CONTEXT = Symbol.for("virtual-tracker.auth-context");
 
-/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null }} */
-const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null, clientTracksProjectId: null };
+/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null, memberOnProject: boolean }} */
+const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null, clientTracksProjectId: null, memberOnProject: true };
 
 mock.module("../src/http/auth-context.js", {
   namedExports: {
@@ -124,7 +124,11 @@ mock.module("../src/http/project-access.js", {
     clientMayTrackProject: async (_viewer, projectId) =>
       stub.clientTracksProjectId != null && projectId === stub.clientTracksProjectId,
     isOrgProjectAdminRole: async () => null,
-    isProjectMemberForTimer: async () => null,
+    // Defaults to "yes, on the project" so the approval-status gates most of
+    // this file exercises aren't shadowed by an unrelated 400; the
+    // membership-gate tests near the bottom flip stub.memberOnProject to
+    // exercise the negative case on purpose.
+    isProjectMemberForTimer: async () => stub.memberOnProject,
   },
 });
 mock.module("../src/modules/schema/visibility.js", {
@@ -220,6 +224,7 @@ function reset(viewer) {
   stub.rows = {};
   stub.clientManagesProjectId = null;
   stub.clientTracksProjectId = null;
+  stub.memberOnProject = true;
   lastResponse = null;
 }
 
@@ -400,6 +405,47 @@ test("an employee editing their own pending entry's hours (not touching status) 
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(lastResponse.payload.data.duration, 7200, "the real edit still goes through");
   assert.equal(lastResponse.payload.data.status, undefined, "status was never part of this payload at all");
+});
+
+// A manual entry's member must actually belong to its project - the client
+// dropdown already scopes to this, but a stale/bypassed client could still
+// send an off-project pairing without this server-side gate.
+
+test("creating a manual entry for a member not on the project is rejected", async () => {
+  reset(ADMIN);
+  stub.memberOnProject = false;
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, [], "no write may reach the database");
+});
+
+test("creating a manual entry for a member who IS on the project succeeds", async () => {
+  reset(ADMIN);
+  stub.memberOnProject = true;
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:time-entries"), true, "expected the write to go through");
+});
+
+test("re-pointing an existing entry at a project the member isn't on is rejected", async () => {
+  reset(ADMIN);
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "approved" };
+  stub.memberOnProject = false;
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { project_id: "p2" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, []);
 });
 
 test("a management role can approve someone else's pending entry", async () => {
