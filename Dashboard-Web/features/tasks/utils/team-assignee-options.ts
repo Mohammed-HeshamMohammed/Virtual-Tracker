@@ -54,11 +54,19 @@ export async function buildScopedAssigneeOptions(params: {
   teamId: string | null
   memberLookups: MemberLookup[]
   preserveMemberIds?: string[]
+  /** Assignee pool to use when no team is picked - the task's own project
+   *  isn't required to be on a team, so "no team selected" must fall back
+   *  to the project's members instead of leaving the Assignees field
+   *  permanently empty (its only source used to be a team roster). */
+  projectMemberLookups?: MemberLookup[]
 }): Promise<AssigneeOption[]> {
-  const { teamId, memberLookups, preserveMemberIds = [] } = params
-  if (!teamId) return []
+  const { teamId, memberLookups, preserveMemberIds = [], projectMemberLookups = [] } = params
 
-  const options = await fetchTeamAssigneeOptions(teamId, memberLookups)
+  const options = teamId
+    ? await fetchTeamAssigneeOptions(teamId, memberLookups)
+    : [...projectMemberLookups]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((m) => ({ value: m.id, label: m.name }))
   const byValue = new Map(options.map((option) => [option.value, option]))
 
   for (const memberId of preserveMemberIds) {
