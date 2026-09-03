@@ -82,6 +82,20 @@ export function ActivityAppsContent() {
     [feed?.apps],
   )
   const membersSource = feed?.members ?? []
+  // Every app ever seen, not just ones with activity on the currently
+  // selected day - classification rules are patterns ("Slack" -> productive),
+  // not day-scoped facts, so picking "today" shouldn't hide an app that was
+  // last used last week from the list of things you can classify.
+  const allTimeAppsSource = useMemo(
+    () =>
+      (allTimeFeed?.apps ?? []).map((app) => ({
+        ...app,
+        name: formatActivityAppName(app.name),
+        pattern: app.name,
+        category: normalizeActivityCategory(app.category),
+      })),
+    [allTimeFeed?.apps],
+  )
 
   const categoryFiltered =
     selectedCategory === "all" ? appsSource : appsSource.filter((app) => app.category === selectedCategory)
@@ -105,16 +119,12 @@ export function ActivityAppsContent() {
   const showMainContent = !loading && hasData && !showSearchEmpty
 
   const summaryStats = useMemo(() => {
-    const allTimeApps = (allTimeFeed?.apps ?? []).map((app) => ({
-      ...app,
-      category: normalizeActivityCategory(app.category),
-    }))
-    const sessionCount = allTimeApps.reduce((sum, app) => sum + app.sessions, 0)
-    const productive = allTimeApps.filter((a) => a.category === "productive").length
-    const neutral = allTimeApps.filter((a) => a.category === "neutral").length
-    const unproductive = allTimeApps.filter((a) => a.category === "distracting").length
-    return { appCount: allTimeApps.length, sessionCount, productive, neutral, unproductive }
-  }, [allTimeFeed?.apps])
+    const sessionCount = allTimeAppsSource.reduce((sum, app) => sum + app.sessions, 0)
+    const productive = allTimeAppsSource.filter((a) => a.category === "productive").length
+    const neutral = allTimeAppsSource.filter((a) => a.category === "neutral").length
+    const unproductive = allTimeAppsSource.filter((a) => a.category === "distracting").length
+    return { appCount: allTimeAppsSource.length, sessionCount, productive, neutral, unproductive }
+  }, [allTimeAppsSource])
 
   const handleExport = useCallback(async () => {
     if (!canExport) return
@@ -179,8 +189,8 @@ export function ActivityAppsContent() {
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
 
   const classifyItems = useMemo(
-    () => appsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
-    [appsSource],
+    () => allTimeAppsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
+    [allTimeAppsSource],
   )
 
   const handleClassify = useCallback(() => {
@@ -210,6 +220,7 @@ export function ActivityAppsContent() {
           items={classifyItems}
           onSaved={() => {
             void reload({ force: true })
+            void reloadAllTime({ force: true })
           }}
         />
       ) : null}
