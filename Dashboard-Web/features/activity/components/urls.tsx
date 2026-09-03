@@ -178,12 +178,17 @@ export function ActivityURLsContent() {
     URL.revokeObjectURL(url)
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, membersSource, selectedCategory])
 
+  // Every domain ever visited, not just ones with activity on the currently
+  // selected day - classification rules are patterns ("reddit.com" ->
+  // distracting), not day-scoped facts, so picking "today" shouldn't hide a
+  // site that was last visited last week from the list of things you can
+  // classify.
   const classifyItems = useMemo(
     () =>
-      urlsSource
+      allTimeUrls
         .filter((url) => url.sourceKind !== "window")
         .map((url) => ({ pattern: url.domain, label: url.domain, category: url.category })),
-    [urlsSource],
+    [allTimeUrls],
   )
 
   const handleClassify = useCallback(() => {
@@ -213,6 +218,7 @@ export function ActivityURLsContent() {
           items={classifyItems}
           onSaved={() => {
             void reload({ force: true })
+            void reloadAllTime({ force: true })
           }}
         />
       ) : null}
