@@ -326,7 +326,7 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-2">
-                            <ReportMemberAvatar initials={initialsFor(r.memberName)} />
+                            <ReportMemberAvatar initials={initialsFor(r.memberName)} imageUrl={r.memberAvatarUrl} />
                             <span className={cn("truncate text-sm", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
                               {r.memberName}
                             </span>

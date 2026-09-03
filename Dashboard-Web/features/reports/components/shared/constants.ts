@@ -67,6 +67,7 @@ export const AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS: AmountsOwedColumnKey[] = ["ra
 export interface AmountsOwedMemberLine {
   name: string
   initials: string
+  avatarUrl?: string | null
   rateLabel: string
   hours: string
   amount: string

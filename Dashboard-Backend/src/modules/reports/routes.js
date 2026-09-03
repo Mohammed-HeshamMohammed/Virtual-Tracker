@@ -555,6 +555,7 @@ export async function routeReports(req, res, url, origin) {
         byDay.get(row.day).push({
           memberId: row.memberId,
           name: nameMap.get(row.memberId)?.name ?? "Unknown",
+          avatarUrl: nameMap.get(row.memberId)?.avatarUrl ?? null,
           activeSeconds: row.activeSeconds,
           rate: row.rate,
           rateType: row.rateType,
@@ -722,6 +723,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = entries.map((e) => ({
         ...e,
         memberName: nameMap.get(String(e.memberId))?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(String(e.memberId))?.avatarUrl ?? null,
         editedByName: nameOf(e.updatedBy) || nameOf(e.createdBy),
         hours: Math.round((e.durationSeconds / 3600) * 100) / 100,
       }));
@@ -753,6 +755,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = breaks.map((b) => ({
         ...b,
         memberName: nameMap.get(String(b.memberId))?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(String(b.memberId))?.avatarUrl ?? null,
       }));
       sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
     } catch (e) {
@@ -787,6 +790,7 @@ export async function routeReports(req, res, url, origin) {
         day: e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10),
         memberId: String(e.member_id),
         memberName: nameMap.get(String(e.member_id))?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(String(e.member_id))?.avatarUrl ?? null,
         projectName: e.project_name || "",
         clientName: e.client_name || "",
         category: e.category || "other",
@@ -816,6 +820,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = balances.map((b) => ({
         ...b,
         memberName: nameMap.get(b.memberId)?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(b.memberId)?.avatarUrl ?? null,
       }));
       sendJson(res, origin, 200, { success: true, data: { rows, asOf: to } });
     } catch (e) {
@@ -842,6 +847,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = transactions.map((t) => ({
         ...t,
         memberName: nameMap.get(t.memberId)?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(t.memberId)?.avatarUrl ?? null,
       }));
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
@@ -956,6 +962,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = attendance.map((a) => ({
         ...a,
         memberName: nameMap.get(a.memberId)?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(a.memberId)?.avatarUrl ?? null,
       }));
       sendJson(res, origin, 200, { success: true, data: { rows } });
     } catch (e) {
