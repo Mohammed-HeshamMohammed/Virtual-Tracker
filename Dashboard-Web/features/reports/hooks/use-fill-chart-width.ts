@@ -44,7 +44,13 @@ export function useFillChartWidth({
   }, [])
 
   const n = Math.max(pointCount, 1)
-  const slotW = Math.max(minSlot, (containerW - padL - padR) / n)
+  // Floored, not exact - (containerW - padL - padR) / n very rarely lands on
+  // a whole pixel, and n * slotW re-summing the fractional remainder back up
+  // could land vbW a hair over containerW. That sub-pixel overflow was
+  // enough for overflow-x-auto to render a scrollbar with nothing real to
+  // scroll to - flooring guarantees vbW <= containerW whenever slotW isn't
+  // already pinned at the minSlot floor.
+  const slotW = Math.max(minSlot, Math.floor((containerW - padL - padR) / n))
   const vbW = padL + n * slotW + padR
 
   return { containerRef, slotW, vbW }
