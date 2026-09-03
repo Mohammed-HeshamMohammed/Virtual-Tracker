@@ -6,7 +6,9 @@ import { useAuth, useTheme } from "@/shared/providers/app"
 import { isManagementRole } from "@/features/auth"
 import { getMembers } from "@/features/members/api/member-api"
 import { initialsFromName } from "@/features/members/utils/build-tree"
-import { getTrackableProjects } from "@/features/projects/api/project-api"
+import { getProjects, getTrackableProjects, type TrackableProject } from "@/features/projects/api/project-api"
+import { projectTypeDef } from "@/features/projects/config/project-types"
+import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry, deleteTimeEntry, getTimeEntries, type TimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/forms/searchable-select-field"
@@ -42,8 +44,10 @@ export function ManualTimeContent() {
   const { isDark } = useTheme()
   const likelyInstant = isManagementRole(memberRole)
   const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([])
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
+  const [projects, setProjects] = useState<TrackableProject[]>([])
   const [loadingProjects, setLoadingProjects] = useState(false)
+  const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
+  const [loadingTasks, setLoadingTasks] = useState(false)
   const [entries, setEntries] = useState<TimeEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -56,6 +60,7 @@ export function ManualTimeContent() {
   const [selectedMemberId, setSelectedMemberId] = useState("")
   const [date, setDate] = useState(todayLocal)
   const [projectId, setProjectId] = useState("")
+  const [taskId, setTaskId] = useState("")
   const [hours, setHours] = useState("")
   const [description, setDescription] = useState("")
   const [billable, setBillable] = useState(true)
@@ -113,15 +118,37 @@ export function ManualTimeContent() {
       .finally(() => setLoading(false))
   }, [memberId])
 
-  // The Project list is scoped to whoever this entry is currently for, not
-  // the viewer - a manager backfilling for a teammate needs that teammate's
-  // own trackable projects (see listTrackableProjectIdsPg), which can
-  // differ from the manager's own.
+  // Two different lists, because these are two different acts.
+  //
+  // An instant add counts the moment it is saved, so it may only offer
+  // projects the member it is for can really clock in on (and the server
+  // enforces exactly that) - scoped to the *target*, not the viewer, since
+  // a manager's own trackable set can differ from their teammate's.
+  //
+  // A request counts for nothing until a manager approves it, so it stays
+  // on the full active list: someone who worked on a project they were
+  // never added to has to be able to say so, and the reviewer can add them
+  // before approving. Narrowing this to project membership left that person
+  // with nowhere to report the time at all.
   useEffect(() => {
     if (!targetMemberId) return
     let cancelled = false
     setLoadingProjects(true)
-    getTrackableProjects(targetIsSelf ? undefined : targetMemberId)
+    const load = likelyInstant
+      ? getTrackableProjects(targetIsSelf ? undefined : targetMemberId)
+      : getProjects({ fields: ["id", "name", "type", "status"] }).then((rows) =>
+          rows
+            .filter((p) => String(p.status ?? "").toLowerCase() !== "archived")
+            .map((p) => ({
+              id: String(p.id),
+              name: String(p.name ?? "Untitled project"),
+              hasTasks: projectTypeDef(p.type).hasTasks,
+              // A request is reviewed before it counts, so the to-do stays
+              // optional here however the project is configured.
+              taskRequired: false,
+            })),
+        )
+    load
       .then((rows) => {
         if (cancelled) return
         const sorted = [...rows].sort((a, b) => a.name.localeCompare(b.name))
@@ -137,7 +164,35 @@ export function ManualTimeContent() {
     return () => {
       cancelled = true
     }
-  }, [targetMemberId, targetIsSelf])
+  }, [targetMemberId, targetIsSelf, likelyInstant])
+
+  const selectedProject = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId])
+
+  // Only the to-dos actually assigned to whoever the time is for - the
+  // server refuses anyone else's on save, so offering them would just be a
+  // dead end. Both assignment sources count (see taskIsAssignedToMember).
+  useEffect(() => {
+    setTaskId("")
+    if (!projectId || !targetMemberId || !selectedProject?.hasTasks) {
+      setTasks([])
+      return
+    }
+    let cancelled = false
+    setLoadingTasks(true)
+    getTasks({ projectId, assignedTo: targetMemberId })
+      .then((rows) => {
+        if (!cancelled) setTasks(rows.map((t) => ({ id: t.id, title: t.title || "Untitled to-do" })))
+      })
+      .catch(() => {
+        if (!cancelled) setTasks([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTasks(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, targetMemberId, selectedProject?.hasTasks])
 
   useEffect(loadEntries, [loadEntries])
 
@@ -147,6 +202,10 @@ export function ManualTimeContent() {
     setNotice(null)
     if (!projectId) {
       setError("Pick a project for this time.")
+      return
+    }
+    if (selectedProject?.taskRequired && !taskId) {
+      setError("This project tracks time against to-dos - pick the one this time was for.")
       return
     }
     if (durationSeconds <= 0) {
@@ -163,6 +222,7 @@ export function ManualTimeContent() {
         {
           memberId: targetMemberId,
           projectId,
+          taskId: taskId || undefined,
           date,
           startTime: "",
           endTime: "",
@@ -174,6 +234,7 @@ export function ManualTimeContent() {
       )
       setHours("")
       setDescription("")
+      setTaskId("")
       setNotice(created.status === "approved" ? "Manual time added." : "Request submitted — awaiting approval.")
       loadEntries()
     } catch (e) {
@@ -255,6 +316,40 @@ export function ManualTimeContent() {
               ))}
             </select>
           </div>
+          {selectedProject?.hasTasks ? (
+            <div className="sm:col-span-2">
+              <label htmlFor="mt-task" className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                To-do{" "}
+                {selectedProject.taskRequired ? null : (
+                  <span className="font-normal text-slate-400">(optional)</span>
+                )}
+              </label>
+              <select
+                id="mt-task"
+                value={taskId}
+                onChange={(e) => setTaskId(e.target.value)}
+                disabled={loadingTasks}
+                className={inputCls}
+              >
+                <option value="">
+                  {loadingTasks
+                    ? "Loading to-dos…"
+                    : tasks.length === 0
+                      ? targetIsSelf
+                        ? "No to-dos assigned to you on this project"
+                        : "No to-dos assigned to them on this project"
+                      : selectedProject.taskRequired
+                        ? "Select a to-do"
+                        : "Whole project (no to-do)"}
+                </option>
+                {tasks.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <div>
             <label htmlFor="mt-hours" className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               Time worked

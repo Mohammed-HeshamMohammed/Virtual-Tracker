@@ -268,16 +268,29 @@ export async function archiveProject(
   })
 }
 
+export interface TrackableProject {
+  id: string
+  name: string
+  /** Whether this project's type keeps to-dos at all (a Calling or Support
+   *  project has none, so nothing to attach time to). */
+  hasTasks: boolean
+  /** Whether *this member* must name a to-do to log time here - the server
+   *  resolves it, including the escapes (require_task_to_track off, org
+   *  admin tier, a client on a client_can_track project), so callers never
+   *  re-derive the timer's rule. */
+  taskRequired: boolean
+}
+
 /** Projects the given member can actually clock in on (org admin tier: every
  *  project; client role: only client_can_track projects; everyone else:
  *  only projects they're a project_members row on) - see
  *  listTrackableProjectIdsPg. memberId omitted = the caller's own trackable
  *  projects. Managers need explicit access to query someone else's. */
-export async function getTrackableProjects(memberId?: string): Promise<{ id: string; name: string }[]> {
+export async function getTrackableProjects(memberId?: string): Promise<TrackableProject[]> {
   const params = new URLSearchParams()
   if (memberId) params.set("memberId", memberId)
   const query = params.toString() ? `?${params.toString()}` : ""
-  const { res, json } = await fetchJsonWithRetry<Envelope<{ id: string; name: string }[]>>(
+  const { res, json } = await fetchJsonWithRetry<Envelope<TrackableProject[]>>(
     apiPath(`/api/projects/trackable${query}`),
     {},
     { retries: 1 },
