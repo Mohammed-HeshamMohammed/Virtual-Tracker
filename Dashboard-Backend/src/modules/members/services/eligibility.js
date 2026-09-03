@@ -2,10 +2,6 @@ import { isInviteConsumed, isInviteExpired } from "./invite-lifecycle.js";
 import { findActiveBanByEmail } from "./member-ban-service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
 
-/**
- * @param {string} raw
- * @returns {string}
- */
 export function normalizeMemberEmail(raw) {
   if (typeof raw !== "string") return "";
   return raw.trim().toLowerCase();
@@ -20,13 +16,6 @@ const REASON = {
   BANNED: "account_banned",
 };
 
-/**
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} emailNorm
- * @param {{ forOpenInviteLink?: boolean, ignoreInviteId?: string }} [opts] Use `ignoreInviteId` when completing that invite (doc still `pending_signup` until the user registers).
- * @returns {Promise<{ ok: boolean, reason: string, message: string }>}
- */
 export async function assertEmailCanUseMemberInviteOrPreprovision(db, auth, emailNorm, opts = {}) {
   const e = normalizeMemberEmail(emailNorm);
   if (!e || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) {
@@ -106,13 +95,6 @@ export async function assertEmailCanUseMemberInviteOrPreprovision(db, auth, emai
   return { ok: true, reason: "", message: "" };
 }
 
-/**
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} rawEmails
- * @param {{ forOpenInviteLink?: boolean }} [opts]
- * @returns {Promise<{ allOk: boolean, results: { email: string, ok: boolean, reason: string, message: string }[] }>}
- */
 export async function validateEmailsForAddMembersFlow(db, auth, rawEmails, opts = {}) {
   const unique = new Map();
   for (const r of Array.isArray(rawEmails) ? rawEmails : []) {

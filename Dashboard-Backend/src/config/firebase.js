@@ -6,22 +6,17 @@ import { getEnv } from "./env.js";
 
 let db = null;
 let initError = "";
-/** @type {import("firebase-admin/firestore").Firestore | null} */
 let testDbOverride = null;
-/** @type {import("firebase-admin/auth").Auth | null} */
 let testAuthOverride = null;
 
-/** @internal Test simulation only — in-memory Firestore stand-in. */
 export function __setTestDb(override) {
   testDbOverride = override ?? null;
 }
 
-/** @internal Test simulation only — mock Firebase Auth Admin. */
 export function __setTestAuth(override) {
   testAuthOverride = override ?? null;
 }
 
-/** @internal */
 export function __resetTestDb() {
   testDbOverride = null;
   testAuthOverride = null;
@@ -58,14 +53,12 @@ function isPlaceholderFirebaseWebValue(value) {
   return lower.includes("your-project-id") || lower.includes("your_project_id");
 }
 
-/** Default RTDB URL for a Firebase project (classic hostname). */
 export function defaultFirebaseDatabaseUrl(projectId) {
   const id = typeof projectId === "string" ? projectId.trim() : "";
   if (!id) return "";
   return `https://${id}-default-rtdb.firebaseio.com`;
 }
 
-/** RTDB URL for Admin SDK / presence. From env or derived from project id. */
 export function resolveFirebaseDatabaseUrl() {
   const projectId = readFirebaseWebConfigFromEnv().projectId;
   const explicit = getEnv().firebase.admin.databaseUrl.trim();
@@ -79,7 +72,6 @@ export function resolveFirebaseDatabaseUrl() {
   return { url: "", source: "none", projectId };
 }
 
-/** @returns {string | null} warning message when misconfigured */
 export function warnIfDatabaseUrlMismatch() {
   const { url, source, projectId } = resolveFirebaseDatabaseUrl();
   if (!url || !projectId || source !== "env") return null;
@@ -212,7 +204,6 @@ function defaultTestAuth() {
   };
 }
 
-/** Firebase Auth Admin API; requires a successful {@link getDb} init (same app instance). */
 export function getAuthAdmin() {
   if (testAuthOverride) return testAuthOverride;
   if (testDbOverride) return defaultTestAuth();
@@ -224,7 +215,6 @@ export function getAuthAdmin() {
   }
 }
 
-/** GCS bucket name — FIREBASE_STORAGE_BUCKET or `{projectId}.appspot.com`. */
 export function resolveStorageBucketName() {
   const web = readFirebaseWebConfigFromEnv();
   const fromEnv = (web.storageBucket || "").trim();
@@ -233,12 +223,10 @@ export function resolveStorageBucketName() {
   return "";
 }
 
-/** @returns {string[]} Candidate bucket names, most preferred first. */
 export function resolveStorageBucketCandidates() {
   const web = readFirebaseWebConfigFromEnv();
   const projectId = (web.projectId || "").trim();
   const configured = (web.storageBucket || "").trim();
-  /** @type {string[]} */
   const candidates = [];
   if (configured) candidates.push(configured);
   if (projectId) {
@@ -248,12 +236,9 @@ export function resolveStorageBucketCandidates() {
   return [...new Set(candidates.filter(Boolean))];
 }
 
-/** @type {import("@google-cloud/storage").Bucket | null} */
 let resolvedStorageBucket = null;
-/** @type {Promise<import("@google-cloud/storage").Bucket | null> | null} */
 let resolveStorageBucketPromise = null;
 
-/** First existing Storage bucket for this project (cached). */
 export async function getStorageBucketAsync() {
   if (!getDb()) return null;
   if (resolvedStorageBucket) return resolvedStorageBucket;
@@ -297,9 +282,6 @@ export async function getStorageBucketAsync() {
   return resolveStorageBucketPromise;
 }
 
-/**
- * @param {string} [detail] Optional underlying error message from GCS.
- */
 export function formatStorageSetupError(detail = "") {
   const web = readFirebaseWebConfigFromEnv();
   const projectId = web.projectId || "your-project-id";
@@ -319,7 +301,6 @@ export function formatStorageSetupError(detail = "") {
   );
 }
 
-/** Default Storage bucket for the initialized app (sync; may be null until {@link getStorageBucketAsync} runs). */
 export function getStorageBucket() {
   if (resolvedStorageBucket) return resolvedStorageBucket;
   if (!getDb()) return null;

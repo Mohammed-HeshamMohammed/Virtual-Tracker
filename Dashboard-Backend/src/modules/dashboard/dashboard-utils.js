@@ -1,4 +1,3 @@
-/** Shared helpers for dashboard aggregation services. */
 
 import { getViewerProjectIds } from "../../http/project-access.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
@@ -6,8 +5,6 @@ import { normalizeRoleKey } from "../../http/role-key.js";
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 export function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
@@ -23,12 +20,6 @@ export function num(row, ...keys) {
   for (const key of keys) {
     const v = row[key];
     if (typeof v === "number" && Number.isFinite(v)) return v;
-    // node-postgres returns NUMERIC and BIGINT columns as strings - no
-    // setTypeParser is registered anywhere in this backend. Without this
-    // branch every numeric-string field read back as 0, which is why the
-    // Command Center reported "No Budget" and 0% progress while the Projects
-    // Overview page (whose own num() already handles this) showed real
-    // figures from the very same project_budgets.cost column.
     if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
   }
   return 0;
@@ -90,11 +81,6 @@ export function buildTrendPaths(values) {
 }
 
 export function budgetSpent(total, row) {
-  // `spent` is the real figure, computed by computeProjectSpentForAllPg in
-  // dashboard-base-loader.js (same source the Projects Overview page uses).
-  // The _seedBudgetSpentPct fallback below is a Firestore-era demo fixture
-  // field; it was the ONLY thing read here, so every dashboard budget stat
-  // sat at 0% for any real org.
   const spent = num(row, "spent");
   if (spent > 0) return spent;
   const pct = num(row, "_seedBudgetSpentPct", "seedBudgetSpentPct");
@@ -112,22 +98,6 @@ export function calculateHealth(status, tasksForProject) {
   return "stalled";
 }
 
-/**
- * Projects a dashboard viewer may see, or null for "every project".
- *
- * This used to read project_members directly and hand back null only for the
- * Owner, so a Super Admin, Admin or Super Manager - none of whom are normally
- * rows in project_members - resolved to an empty set and got "No projects yet"
- * on a fully populated org. It also missed projects the viewer created without
- * a membership row (createProjectPg only stamps created_by). getViewerProjectIds
- * is the codebase's answer to both, and is what every other project-scoped
- * endpoint already uses; the dashboards were the outlier.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @returns {Promise<Set<string> | null>}
- */
 export async function getMemberProjectIds(db, memberId, roleName) {
   const ids = await getViewerProjectIds(db, memberId, roleName);
   return ids === null ? null : new Set(ids);

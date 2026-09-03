@@ -1,8 +1,3 @@
-// Invoices: create, add line items, issue, and record payments.
-//
-// Invoicing is a financial record, so every write here is management-only.
-// A member can read team invoices raised against their own work (that is
-// their own pay record), which the list route scopes for them.
 
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
@@ -32,14 +27,6 @@ function parseDay(value) {
   return DAY_RE.test(day) ? day : "";
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeInvoices(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/invoices")) return false;
@@ -50,7 +37,6 @@ export async function routeInvoices(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/invoices?kind=client|team&status=&from=&to=
   if (pn === "/api/invoices" && req.method === "GET") {
     const kind = (url.searchParams.get("kind") || "client").trim();
     if (!KINDS.has(kind)) {
@@ -58,9 +44,6 @@ export async function routeInvoices(req, res, url, db, origin) {
       return true;
     }
     try {
-      // Client invoices are org financials - management only. Team invoices
-      // are scoped to the members the viewer can see, which for a non-manager
-      // is just themselves.
       let memberIds = null;
       if (kind === "client") {
         if (!requireManagementRole(viewer)) {
@@ -96,13 +79,11 @@ export async function routeInvoices(req, res, url, db, origin) {
     return true;
   }
 
-  // Everything below writes financial records.
   if (!requireManagementRole(viewer)) {
     sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to manage invoices." });
     return true;
   }
 
-  // POST /api/invoices
   if (pn === "/api/invoices" && req.method === "POST") {
     let body;
     try {
@@ -197,8 +178,6 @@ export async function routeInvoices(req, res, url, db, origin) {
         sendJson(res, origin, 404, { success: false, error: "Invoice not found." });
         return true;
       }
-      // An issued invoice is what was billed; editing it after the fact would
-      // change history rather than correct it. Raise a credit/new invoice.
       if (invoice.status !== "draft") {
         sendJson(res, origin, 409, { success: false, error: "Only a draft invoice can be edited." });
         return true;

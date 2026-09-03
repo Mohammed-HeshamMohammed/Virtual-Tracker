@@ -4,23 +4,13 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 
-// Allows a couple of missed 15s agent ticks (network blip, retry) before treating
-// the app/tab as ended and starting a fresh row instead of extending a stale one.
 const APP_LOG_MERGE_GRACE_MS = 120_000;
 
-/**
- * @param {string[] | null | undefined} memberIds
- * @returns {string[] | null}
- */
 function filterMemberIds(memberIds) {
   if (memberIds === null || memberIds === undefined) return null;
   return memberIds.map((id) => parseProgressUuid(id)).filter(Boolean);
 }
 
-/**
- * @param {string} sql
- * @param {unknown[]} params
- */
 async function pgQuery(sql, params = []) {
   const pool = getPostgresPool();
   if (!pool) return null;
@@ -32,21 +22,12 @@ async function pgQuery(sql, params = []) {
   }
 }
 
-/** @param {string} source */
 function normalizeSource(source) {
   const s = String(source ?? "web").toLowerCase();
   if (s === "agent" || s === "desktop_agent") return "agent";
   return "web";
 }
 
-/**
- * ACT-4: raw counters ActivityMeter::score() (Rust) is built from. Optional
- * on the wire - a web-sourced event, or an agent older than ACT-4, sends
- * none of this - so every field defaults to 0 rather than rejecting the
- * capture over a missing signal.
- * @typedef {{ keystrokeCount?: number, distinctKeyCount?: number, mouseDistancePx?: number, injectedEventCount?: number, activeSecondsInWindow?: number }} ActivitySignal
- * @param {ActivitySignal | undefined} signal
- */
 function normalizeActivitySignal(signal) {
   const nonNegativeInt = (value) => Math.max(0, Math.floor(Number(value) || 0));
   return {
@@ -58,24 +39,6 @@ function normalizeActivitySignal(signal) {
   };
 }
 
-/**
- * @param {{
- *   id: string,
- *   memberId: string,
- *   sessionId: string,
- *   taskId?: string | null,
- *   taskTitle?: string | null,
- *   screenshotUrl?: string | null,
- *   imageData?: Buffer | null,
- *   appName: string,
- *   pageTitle: string,
- *   activityLevel: number,
- *   capturedAt: Date,
- *   source: string,
- *   signal?: ActivitySignal,
- *   perceptualHash?: string | null,
- * }} row
- */
 export async function insertActivityScreenshot(row) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return;
@@ -116,7 +79,6 @@ export async function insertActivityScreenshot(row) {
   }
 }
 
-/** Find-or-create the shared app row for this canonical name; returns its id. */
 async function resolveAppId(name) {
   const result = await pgQuery(
     `INSERT INTO apps (name) VALUES ($1)
@@ -127,12 +89,6 @@ async function resolveAppId(name) {
   return result?.rows?.[0]?.id ?? null;
 }
 
-/**
- * Logs one capture tick for a session's foreground app. If the same app+tab is
- * still open in this session (last row updated within the merge grace window),
- * extends its duration instead of inserting a new row - otherwise inserts one.
- * @param {Record<string, unknown>} row
- */
 export async function insertActivityAppLog(row) {
   const memberId = parseProgressUuid(String(row.memberId ?? ""));
   if (!memberId) return;
@@ -147,9 +103,6 @@ export async function insertActivityAppLog(row) {
   try {
     const appId = await resolveAppId(appName);
     const cutoff = new Date(startedAt.getTime() - APP_LOG_MERGE_GRACE_MS);
-    // Accumulate the signal into the still-open row alongside duration_seconds,
-    // so a long-open app/tab carries its full session's counters, not just
-    // whatever the first capture tick happened to see.
     const merged = await pgQuery(
       `UPDATE activity_app_logs
        SET duration_seconds = duration_seconds + $1, ended_at = $2,
@@ -208,7 +161,6 @@ export async function insertActivityAppLog(row) {
   }
 }
 
-/** @param {Record<string, unknown>} row */
 export async function insertActivityUrlLog(row) {
   const memberId = parseProgressUuid(String(row.memberId ?? ""));
   if (!memberId) return;
@@ -239,33 +191,10 @@ export async function insertActivityUrlLog(row) {
   }
 }
 
-// Day-boundary attribution.
-//
-// The pool pins every connection to UTC (see client.js), which makes `::date`
-// deterministic but attributes a capture to its *UTC* day. The Activity page's
-// day picker is built from the browser's local calendar day, so for any member
-// outside UTC a capture near local midnight landed on the wrong day tab - a
-// 11:30pm PST screenshot showed up under the next day.
-//
-// A tracked event belongs to the day it was *worked*, which is the day in the
-// tracked member's own timezone, not the viewer's and not UTC. members.timezone
-// already exists and is written by the Edit-account "Time zone" field
-// (profile-settings.js syncMemberTimezoneForUid); this joins it per row so a
-// feed spanning members in different zones still buckets each one correctly.
-// Members with no timezone set keep the previous UTC behaviour.
-/**
- * Local-day expression for a timestamptz column, in the row member's timezone.
- * @param {string} tsColumn e.g. "sc.captured_at"
- */
 function localDay(tsColumn) {
   return `(${tsColumn} AT TIME ZONE COALESCE(NULLIF(m_tz.timezone, ''), 'UTC'))::date`;
 }
 
-/**
- * @param {string[] | null | undefined} memberIds
- * @param {string} dayFilter
- * @param {number} limit
- */
 export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
@@ -280,20 +209,10 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
     params.push(dayFilter);
     where += ` AND ${localDay("sc.captured_at")} = $${params.length}::date`;
   } else if (options.sinceDay) {
-    // Range bound (e.g. a multi-day sparkline window) instead of an exact-day
-    // match - callers needing "last N days" must pass this, not rely on a
-    // plain recency LIMIT, which silently starves older days once a single
-    // recent day alone exceeds `limit` rows.
     params.push(options.sinceDay);
     where += ` AND ${localDay("sc.captured_at")} >= $${params.length}::date`;
   }
   params.push(limit);
-  // project_name comes along so a capture taken while tracking a project with
-  // no task still says which project it belongs to. Two paths to it: the
-  // task's own project, or - for task-less sessions, which is the case that
-  // used to render as "No task linked" - the session's project_id.
-  // activity_screenshots.session_id is VARCHAR, activity_sessions.id is UUID,
-  // hence the cast rather than a plain equality join.
   const result = await pgQuery(
     `SELECT sc.id, sc.member_id, sc.session_id, sc.task_id, sc.task_title, sc.screenshot_url,
             sc.app_name, sc.page_title, sc.activity_level, sc.captured_at, sc.source,
@@ -312,7 +231,6 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
   return result?.rows ?? [];
 }
 
-/** @param {string[] | null | undefined} memberIds @param {string} dayFilter @param {number} limit */
 export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
@@ -345,7 +263,6 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) 
   return result?.rows ?? [];
 }
 
-/** @param {string[] | null | undefined} memberIds @param {string} dayFilter @param {number} limit */
 export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
@@ -374,12 +291,6 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
   return result?.rows ?? [];
 }
 
-/**
- * CLS-2: total seconds per app name, one member, over a day range - grouped
- * server-side rather than fetching raw rows, since a busy member can have
- * thousands of app-log rows in a week.
- * @param {string} memberId @param {{ fromDay: string, toDay: string }} range
- */
 export async function sumAppLogSecondsByAppNamePg(memberId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   if (!id) return [];
@@ -393,10 +304,6 @@ export async function sumAppLogSecondsByAppNamePg(memberId, { fromDay, toDay }) 
   return result?.rows ?? [];
 }
 
-/**
- * CLS-2: total seconds per domain, one member, over a day range.
- * @param {string} memberId @param {{ fromDay: string, toDay: string }} range
- */
 export async function sumUrlLogSecondsByDomainPg(memberId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   if (!id) return [];
@@ -411,13 +318,6 @@ export async function sumUrlLogSecondsByDomainPg(memberId, { fromDay, toDay }) {
   return result?.rows ?? [];
 }
 
-/**
- * CLS-3: apps seen org-wide in the last `sinceDays` days with no row (or an
- * explicit 'unclassified' row) in activity_categories, ranked by how much
- * they've actually been used - "categorise these 12 new apps your team
- * used" needs the high-volume ones surfaced first, not an alphabetical dump.
- * @param {number} [sinceDays] @param {number} [limit]
- */
 export async function findUnclassifiedAppsPg(sinceDays = 30, limit = 20) {
   const result = await pgQuery(
     `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds, COUNT(*)::int AS log_count
@@ -434,10 +334,6 @@ export async function findUnclassifiedAppsPg(sinceDays = 30, limit = 20) {
   return result?.rows ?? [];
 }
 
-/**
- * CLS-3: same as findUnclassifiedAppsPg, for domains.
- * @param {number} [sinceDays] @param {number} [limit]
- */
 export async function findUnclassifiedDomainsPg(sinceDays = 30, limit = 20) {
   const result = await pgQuery(
     `SELECT l.domain, SUM(l.duration_seconds)::bigint AS total_seconds, COUNT(*)::int AS log_count
@@ -454,7 +350,6 @@ export async function findUnclassifiedDomainsPg(sinceDays = 30, limit = 20) {
   return result?.rows ?? [];
 }
 
-/** @param {string} screenshotId */
 export async function fetchPgScreenshotById(screenshotId) {
   const id = parseProgressUuid(screenshotId);
   if (!id) return null;
@@ -466,7 +361,6 @@ export async function fetchPgScreenshotById(screenshotId) {
   return result?.rows?.[0] ?? null;
 }
 
-/** Latest screenshot for a member+session (for the "no recent screenshot" alert). */
 export async function fetchLatestPgScreenshot(memberId, sessionId) {
   const id = parseProgressUuid(memberId);
   if (!id) return null;
@@ -479,13 +373,9 @@ export async function fetchLatestPgScreenshot(memberId, sessionId) {
   return result?.rows?.[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// activity_sessions
-// ---------------------------------------------------------------------------
 
 const SESSION_COLUMNS = "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at";
 
-/** Most recently started open (ended_at IS NULL) session for a member. */
 export async function findOpenPgSession(memberId) {
   const id = parseProgressUuid(memberId);
   if (!id) return null;
@@ -498,7 +388,6 @@ export async function findOpenPgSession(memberId) {
   return result?.rows?.[0] ?? null;
 }
 
-/** @param {string} sessionId */
 export async function getPgSessionById(sessionId) {
   const result = await pgQuery(`SELECT ${SESSION_COLUMNS} FROM activity_sessions WHERE id = $1 LIMIT 1`, [
     sessionId,
@@ -506,19 +395,6 @@ export async function getPgSessionById(sessionId) {
   return result?.rows?.[0] ?? null;
 }
 
-/**
- * Deletes one tracked work session and everything captured under it -
- * screenshots, app usage, URL visits - in one transaction, so a failure
- * partway through can never leave orphaned activity rows with no session to
- * belong to (or the reverse: a deleted session whose screenshots outlive it).
- *
- * `session_id` on the three child tables is VARCHAR while activity_sessions.id
- * is UUID (same cast every other session_id join in this file already needs -
- * see fetchActivityScreenshotsPg's own comment on why), hence `$1::text`
- * rather than a plain equality.
- * @param {string} sessionId
- * @returns {Promise<{ deletedSession: boolean, screenshots: number, appLogs: number, urlLogs: number }>}
- */
 export async function deleteActivitySessionWithChildrenPg(sessionId) {
   return withTransaction(async (client) => {
     const screenshots = await client.query(`DELETE FROM activity_screenshots WHERE session_id = $1::text`, [
@@ -536,26 +412,6 @@ export async function deleteActivitySessionWithChildrenPg(sessionId) {
   });
 }
 
-/**
- * Deletes one member's entire tracked record for one calendar day -
- * everything the Time & Activity report's per-member row for that day
- * represents: tracked sessions, manual time entries, and every screenshot/
- * app-usage/URL-visit captured that day. Every table here carries its own
- * member_id and its own capture-time column, so this scopes directly by
- * (member, day) rather than relaying through session_id like
- * deleteActivitySessionWithChildrenPg does - a session that started this
- * day but ran past midnight would otherwise pull the next day's captures
- * in with it.
- *
- * Deliberately does NOT touch activity_categories (the app/domain ->
- * productivity classification table) or the apps/projects/tasks catalogs
- * a log row references - those are shared org config, not this member's
- * own data, even when this member's activity happened to be what first
- * caused an app or domain to get classified.
- * @param {string} memberId
- * @param {string} day 'YYYY-MM-DD'
- * @returns {Promise<{ sessions: number, entries: number, screenshots: number, appLogs: number, urlLogs: number }>}
- */
 export async function deleteMemberDayActivityWithChildrenPg(memberId, day) {
   return withTransaction(async (client) => {
     const screenshots = await client.query(
@@ -588,11 +444,6 @@ export async function deleteMemberDayActivityWithChildrenPg(memberId, day) {
   });
 }
 
-/**
- * @param {{ id: string, memberId: string, taskId?: string|null, projectId?: string|null,
- *   status: string, startedAt: Date, endedAt?: Date|null, activeSeconds?: number,
- *   idleSeconds?: number, source?: string, updatedAt: Date }} row
- */
 export async function createPgSession(row) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return null;
@@ -620,34 +471,11 @@ export async function createPgSession(row) {
   return result?.rows?.[0] ?? null;
 }
 
-/**
- * Partial update - only the provided fields change.
- *
- * TC-4: active_seconds/idle_seconds are clamped to never regress, with one
- * deliberate exception. Without this, any request carrying a lower
- * activeSeconds than what's stored - two devices racing on the same session,
- * a slow POST landing after a later one - silently destroys recorded time.
- *
- * idle_seconds never legitimately decreases (nothing in the product rewinds
- * it), so it is always clamped up. active_seconds is clamped up UNLESS
- * `allowDecrease` is set, because the desktop agent's idle-escalation rewind
- * (tracker.rs tick_idle_escalation, posted as action "stop") *must* be able
- * to lower it - that rewind is the entire anti-fraud mechanism. Callers pass
- * `allowDecrease: true` only for that "stop" action; every other action
- * (start/resume/idle/sync) is monotonic.
- *
- * @param {string} sessionId
- * @param {{ status?: string, endedAt?: Date|null, taskId?: string|null, projectId?: string|null, activeSeconds?: number, idleSeconds?: number, updatedAt: Date }} patch
- * @param {{ allowDecrease?: boolean }} [options]
- */
 export async function updatePgSession(sessionId, patch, options = {}) {
   const allowDecrease = options.allowDecrease === true;
   const wantsActive = patch.activeSeconds !== undefined;
   const wantsIdle = patch.idleSeconds !== undefined;
 
-  // Single read backs both the clamp and the daily-rollup delta below - same
-  // read-before-write shape this function already used for the delta alone,
-  // now also the source of truth for "what was here before".
   let prev = null;
   if (wantsActive || wantsIdle) {
     const prevResult = await pgQuery(
@@ -671,9 +499,6 @@ export async function updatePgSession(sessionId, patch, options = {}) {
             to: incoming,
             reason: "idle-rewind/stop",
           });
-          // OBS-2: "a counter on every accepted decrease... unexplained
-          // should be zero once TC-4 lands" - reuses the existing /monitor
-          // security-event feed rather than a new metrics system.
           recordSecurityEvent({
             event: "active_seconds_decreased",
             detail: `session=${sessionId} from=${stored} to=${incoming} reason=stop`,
@@ -684,10 +509,6 @@ export async function updatePgSession(sessionId, patch, options = {}) {
             attempted: incoming,
             keptAt: stored,
           });
-          // A decrease attempted outside the one legitimate action (stop) -
-          // this is exactly the "unexplained" case OBS-2 says should be zero
-          // in steady state. Recorded even though it was clamped away: the
-          // attempt itself is the anomaly worth knowing about.
           recordSecurityEvent({
             event: "active_seconds_decrease_rejected",
             detail: `session=${sessionId} attempted=${incoming} keptAt=${stored} reason=unexplained`,
@@ -719,23 +540,9 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   add("updated_at", patch.updatedAt ?? new Date());
   if (sets.length === 0) return;
 
-  // Delta-attribute to daily rollups using the *effective* (clamped) active
-  // value, not the raw request - the rollup must match what was actually
-  // written, or a rejected downward write would still debit the daily total.
   if (wantsActive && prev) {
     const delta = Math.floor(effectiveActive) - Math.floor(Number(prev.active_seconds ?? 0));
-    // Negative deltas are real: the desktop agent rewinds a session's active
-    // seconds when it auto-stops for idling, and the rollups have to give
-    // that time back too or the daily totals keep hours the session itself
-    // no longer claims.
     if (delta !== 0) {
-      // CQ-2: attribute to the day the session *started*, not "today" - a
-      // rewind just after midnight used to take the time off a day that had
-      // none, clamp at zero, and leave yesterday holding hours the session
-      // no longer claims. Splitting a midnight-crossing session's delta
-      // proportionally across both days is the fuller fix; attributing the
-      // whole thing to the start day is the simpler one the plan calls out
-      // as acceptable, and what's implemented here.
       await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta, prev.started_at);
     }
   }
@@ -743,27 +550,6 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   await pgQuery(`UPDATE activity_sessions SET ${sets.join(", ")} WHERE id = $1`, params);
 }
 
-/**
- * Applies a signed delta to the daily rollups.
- *
- * Negative deltas come from the desktop agent rewinding a session after an
- * idle auto-stop. Two things they must never do: leave a row negative, or wrap.
- * Hence GREATEST(0, ...) on both the insert and the update.
- *
- * CQ-2: attributed to the day the *session started* (falling back to today
- * if that's ever missing), not CURRENT_DATE - a rewind just after midnight
- * used to take the time off today, which had none, clamp at zero, and leave
- * yesterday holding hours the session no longer claims. This attributes the
- * whole delta to the start day rather than splitting it proportionally
- * across a midnight-crossing session - the simpler fix the plan calls out as
- * acceptable. Clamping still keeps a rewind honest (the target day floors at
- * zero) rather than pushing a row negative.
- *
- * @param {string} memberId
- * @param {string | null} taskId
- * @param {number} deltaSeconds signed; negative reverses previously counted time
- * @param {Date | string | null} [attributedTo] the session's started_at; defaults to today if absent
- */
 async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo) {
   const delta = Math.trunc(Number(deltaSeconds) || 0);
   if (delta === 0) return;
@@ -792,13 +578,6 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
   }
 }
 
-/**
- * Sum of the daily rollup across [fromDay, toDay] (inclusive, 'YYYY-MM-DD') - each
- * day's row already reflects only the seconds actually worked on that calendar
- * day (see recordDailyActiveSecondsDelta), so this has no midnight-crossing bug.
- * @param {string} memberId
- * @param {{ fromDay: string, toDay: string }} range
- */
 export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   if (!id) return 0;
@@ -810,21 +589,6 @@ export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay }) 
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
-/**
- * A member's own active AND idle seconds over a day range, for the agent's
- * activity meter.
- *
- * Deliberately not read from daily_member_active_seconds like the function
- * above: that rollup has no idle column, so an activity percentage built from
- * it would divide a rollup number by a sessions number. Both halves come from
- * activity_sessions here, which is also what the dashboard's own
- * getProjectActivityMetricsPg reads - so the agent and the web app report the
- * same percentage for the same day rather than two that drift apart.
- * The day boundary uses the member's own timezone, matching that query.
- * @param {string} memberId
- * @param {{ fromDay: string, toDay: string }} range
- * @returns {Promise<{ activeSeconds: number, idleSeconds: number }>}
- */
 export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   if (!id) return { activeSeconds: 0, idleSeconds: 0 };
@@ -845,19 +609,6 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
   };
 }
 
-/**
- * Same shape as sumMemberActiveIdleSeconds, scoped to one project - the
- * agent's main-pane Activity ring shows "this project, today", separate
- * from the member-wide "today" figure the rest of /api/activity/limits
- * still reports (and from the sidebar's person-wide weekly ring). Sessions
- * predating the project_id column (see ensure-lookup-schema.js) simply
- * don't count toward any project's total - same gap task/time-tracking
- * already accepts for pre-migration rows.
- * @param {string} memberId
- * @param {string} projectId
- * @param {{ fromDay: string, toDay: string }} range
- * @returns {Promise<{ activeSeconds: number, idleSeconds: number }>}
- */
 export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   const pId = projectId ? parseProgressUuid(projectId) : null;
@@ -880,11 +631,6 @@ export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, 
   };
 }
 
-/**
- * @param {string} memberId
- * @param {string} taskId
- * @param {string} day 'YYYY-MM-DD'
- */
 export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
@@ -897,17 +643,6 @@ export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
-/**
- * Sum across [fromDay, toDay] (inclusive) instead of a single day - what
- * rolling_hour_cap tasks need so a session spanning a midnight rollover
- * (e.g. 6pm-2am) sums as one continuous stretch instead of just "today"'s
- * row. Each day's row already reflects only the seconds actually worked on
- * that calendar day (see recordDailyActiveSecondsDelta), so this has no
- * midnight-crossing bug of its own - same reasoning as sumDailyMemberActiveSeconds.
- * @param {string} memberId
- * @param {string} taskId
- * @param {{ fromDay: string, toDay: string }} range
- */
 export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
@@ -920,7 +655,6 @@ export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { f
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
-/** For the dashboard base loader - a bounded snapshot of session rows. */
 export async function fetchPgSessionsForDashboard(limit = 500) {
   const result = await pgQuery(
     `SELECT ${SESSION_COLUMNS} FROM activity_sessions ORDER BY updated_at DESC LIMIT $1`,
@@ -929,7 +663,6 @@ export async function fetchPgSessionsForDashboard(limit = 500) {
   return result?.rows ?? [];
 }
 
-/** Every currently-open (ended_at IS NULL) session, one per member at most is expected but not enforced. */
 export async function fetchAllOpenPgSessions(limit = 2000) {
   const result = await pgQuery(
     `SELECT ${SESSION_COLUMNS} FROM activity_sessions WHERE ended_at IS NULL ORDER BY updated_at DESC LIMIT $1`,
@@ -938,11 +671,7 @@ export async function fetchAllOpenPgSessions(limit = 2000) {
   return result?.rows ?? [];
 }
 
-// ---------------------------------------------------------------------------
-// activity_alert_log
-// ---------------------------------------------------------------------------
 
-/** @param {string} subjectMemberId @param {string} alertType @param {number} cooldownMs */
 export async function wasPgAlertSentRecently(subjectMemberId, alertType, cooldownMs) {
   const id = parseProgressUuid(subjectMemberId);
   if (!id) return false;
@@ -955,7 +684,6 @@ export async function wasPgAlertSentRecently(subjectMemberId, alertType, cooldow
   return (result?.rows?.length ?? 0) > 0;
 }
 
-/** @param {string} subjectMemberId @param {string} alertType @param {string[]} recipientIds */
 export async function recordPgAlertSent(subjectMemberId, alertType, recipientIds) {
   const id = parseProgressUuid(subjectMemberId);
   if (!id) return;
@@ -966,9 +694,6 @@ export async function recordPgAlertSent(subjectMemberId, alertType, recipientIds
   );
 }
 
-// ---------------------------------------------------------------------------
-// member-id reassignment (member dedupe/merge support)
-// ---------------------------------------------------------------------------
 
 const REASSIGNABLE_TABLES = [
   { table: "activity_sessions", column: "member_id" },
@@ -978,7 +703,6 @@ const REASSIGNABLE_TABLES = [
   { table: "activity_alert_log", column: "subject_member_id" },
 ];
 
-/** Repoint every activity_* row's member reference from fromId to toId (member merge/dedupe). */
 export async function reassignPgActivityMemberId(fromId, toId) {
   const from = parseProgressUuid(fromId);
   const to = parseProgressUuid(toId);

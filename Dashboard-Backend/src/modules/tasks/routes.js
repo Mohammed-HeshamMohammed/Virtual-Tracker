@@ -33,14 +33,6 @@ import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getInReviewAssignmentsForTaskPg, hasAssignmentPg } from "../../lib/postgres/task-assignments-postgres.service.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeTasks(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 
@@ -103,9 +95,6 @@ export async function routeTasks(req, res, url, db, origin) {
     try {
       const accessibleIds = [];
       for (const taskId of taskIds) {
-        // canAccessTask always returns an object ({allowed, status, task}),
-        // never undefined - checking the object itself was always truthy,
-        // so this never actually filtered anything.
         const access = await canAccessTask(db, viewer.memberId, viewer.roleName, taskId);
         if (access.allowed) {
           accessibleIds.push(taskId);
@@ -123,12 +112,9 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/task-assignments/review-queue
   if (pn === "/api/task-assignments/review-queue" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    // Employee tier may open this too - getReviewQueue itself scopes their
-    // rows down to their own assignments only.
     if (!isReviewCenterRole(viewer.roleName) && !isEmployeeRole(viewer.roleName)) {
       sendJson(res, origin, 403, { success: false, error: "Only authorized roles can access the review center" });
       return true;
@@ -152,7 +138,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/task-assignments/migrate
   if (pn === "/api/task-assignments/migrate" && req.method === "POST") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -212,10 +197,6 @@ export async function routeTasks(req, res, url, db, origin) {
       logSafeError("[task-assignments/review]", e);
       const message = e instanceof Error ? e.message : "Failed to review assignment";
       if (message.includes("not in review")) {
-        // Case 27 - another reviewer's decision landed first, not a
-        // permissions problem. A clean 409 instead of the 403 this used to
-        // share with the out-of-scope case, so the UI can offer a reload
-        // instead of reading it as "you're not allowed to do this."
         sendJson(res, origin, 409, {
           success: false,
           code: "already_reviewed",
@@ -302,11 +283,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/tasks/:taskId/assignments/block - self-service "I'm blocked,
-  // waiting on X", distinct from the whole task being blocked (board drag).
-  // Same access model as .../start: management bypasses the "must be
-  // assigned" check, but the action always applies to the viewer's own
-  // assignment, never someone else's on their behalf.
   const taskAssignmentBlockMatch = /^\/api\/tasks\/([^/]+)\/assignments\/block$/.exec(pn);
   if (taskAssignmentBlockMatch && req.method === "POST") {
     const taskId = taskAssignmentBlockMatch[1];
@@ -393,7 +369,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/task-time-tracking/management
   if (pn === "/api/task-time-tracking/management" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -455,7 +430,6 @@ export async function routeTasks(req, res, url, db, origin) {
       logSafeError("[tasks/time-tracking/review]", e);
       const message = e instanceof Error ? e.message : "Failed to review task tracking";
       if (message.includes("not in review")) {
-        // Case 27 - see the same branch in the /task-assignments/review route above.
         sendJson(res, origin, 409, {
           success: false,
           code: "already_reviewed",
@@ -626,7 +600,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/tasks/:taskId/hours - Get all hours for a task
   const taskHoursMatch = /^\/api\/tasks\/([^/]+)\/hours$/.exec(pn);
   if (taskHoursMatch && req.method === "GET") {
     const taskId = taskHoursMatch[1];
@@ -645,7 +618,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/tasks/:taskId/hours/:userId - Get hours for a specific user on a task
   const taskUserHoursMatch = /^\/api\/tasks\/([^/]+)\/hours\/([^/]+)$/.exec(pn);
   if (taskUserHoursMatch && req.method === "GET") {
     const taskId = taskUserHoursMatch[1];
@@ -675,7 +647,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/tasks/:taskId/hours - Create hours for a task
   if (taskHoursMatch && req.method === "POST") {
     const taskId = taskHoursMatch[1];
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
@@ -710,7 +681,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // PUT /api/tasks/:taskId/hours/:hoursId - Update hours
   const updateHoursMatch = /^\/api\/tasks\/([^/]+)\/hours\/([^/]+)$/.exec(pn);
   if (updateHoursMatch && req.method === "PUT") {
     const taskId = updateHoursMatch[1];
@@ -761,7 +731,6 @@ export async function routeTasks(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/tasks/:taskId/review - Submit task review
   const taskReviewMatch = /^\/api\/tasks\/([^/]+)\/review$/.exec(pn);
   if (taskReviewMatch && req.method === "POST") {
     const taskId = taskReviewMatch[1];

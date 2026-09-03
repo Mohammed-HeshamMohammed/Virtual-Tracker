@@ -32,13 +32,6 @@ import {
 import { assertDeviceNotBanned, assertMemberNotBanned } from "../members/services/member-ban-service.js";
 import { getRequestIp } from "../../http/request-ip.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {{ email?: string }} [opts]
- * @returns {Promise<boolean>} true when blocked (response already sent)
- */
 async function enforceAuthAccessGuards(req, res, origin, opts = {}) {
   const db = getDb();
   if (!db) return false;
@@ -66,13 +59,6 @@ async function enforceAuthAccessGuards(req, res, origin, opts = {}) {
   return false;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>} true if handled
- */
 export async function routeAuthIdentity(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
@@ -614,11 +600,6 @@ export async function routeAuthIdentity(req, res, url, origin) {
   }
 
   if (authPath === "/api/auth/access-request" && req.method === "POST") {
-    // Was an unconditional Firestore .add() into "access_requests" even
-    // though a Postgres table of that exact name already existed - the
-    // table shipped ahead of this route ever being pointed at it. Nothing
-    // reads this data back yet (no admin UI consumes it), so there was no
-    // reader to keep in sync when moving the write.
     if (!isPostgresConfigured()) {
       sendJson(res, origin, 503, { success: false, error: "Database is not configured" });
       return true;

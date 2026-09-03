@@ -1,22 +1,8 @@
 import { PresenceEvents } from "./presence-events.js";
 
-/**
- * Runtime presence: online / idle / offline only.
- * @param {ReturnType<import("./presence-store.js").createMemoryPresenceStore>} store
- * @param {{
- *   idleAfterMs: number;
- *   onStateChange?: (userId: string, status: import("./presence-events.js").PresenceStatus, record: import("./presence-events.js").PresenceRecord) => void;
- *   onOffline?: (userId: string, lastSeenAt: number) => void | Promise<void>;
- *   persistRecord?: (record: import("./presence-events.js").PresenceRecord) => void | Promise<void>;
- *   loadRecord?: (userId: string) => Promise<import("./presence-events.js").PresenceRecord | null>;
- *   loadMany?: (userIds: string[]) => Promise<Map<string, import("./presence-events.js").PresenceRecord | null>>;
- * }} options
- */
 export function createPresenceService(store, options) {
   const { idleAfterMs, onStateChange, onOffline, persistRecord, loadRecord, loadMany } = options;
-  /** @type {Map<string, ReturnType<typeof setTimeout>>} */
   const idleTimers = new Map();
-  /** @type {Map<string, Set<string>>} */
   const connections = new Map();
 
   function clearIdleTimer(userId) {
@@ -37,10 +23,6 @@ export function createPresenceService(store, options) {
     if (persistRecord) void Promise.resolve(persistRecord(record)).catch(() => {});
   }
 
-  /**
-   * @param {string} userId
-   * @param {import("./presence-events.js").PresenceStatus} status
-   */
   function writeRecord(userId, status) {
     const now = Date.now();
     const prev = store.get(userId);
@@ -141,9 +123,6 @@ export function createPresenceService(store, options) {
     return formatPresence(remote);
   }
 
-  /**
-   * @param {string[]} userIds
-   */
   async function getPresenceMany(userIds) {
     const out = new Map();
     const missing = [];

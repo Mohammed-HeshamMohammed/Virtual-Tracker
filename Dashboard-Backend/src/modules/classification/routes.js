@@ -19,18 +19,6 @@ const ERROR_STATUS = {
   FORBIDDEN: 403,
 };
 
-/**
- * CLS-1 classification map. Reading is open to any authenticated member -
- * this is productivity labelling, not sensitive compliance data, and the
- * (future) dashboard views showing "productive/neutral/distracting minutes"
- * need it. Writing is management-only.
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeClassification(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/classification")) return false;
@@ -47,9 +35,6 @@ export async function routeClassification(req, res, url, origin) {
     return true;
   }
 
-  // CLS-2: "productive/neutral/distracting minutes" for one member over a
-  // day range. Self-service, or management for another member - same
-  // pattern as CF-5's DSAR export.
   if (pn === "/api/classification/focused-time" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -135,14 +120,9 @@ export async function routeClassification(req, res, url, origin) {
     return true;
   }
 
-  // CLS-3: manager review queue - management-only, since deciding what to
-  // classify is a management action (writes go through the existing POST
-  // /categories route above once a decision is made).
   if (pn === "/api/classification/review-queue" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
-    // Same set as the writes: this list exists to feed the classify dialog,
-    // and there is no point showing it to someone who cannot act on it.
     if (!canClassifyActivity(viewer.roleName)) {
       sendJson(res, origin, 403, { success: false, error: CLASSIFY_DENIED_MESSAGE });
       return true;

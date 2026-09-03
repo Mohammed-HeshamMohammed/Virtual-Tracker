@@ -12,13 +12,10 @@ import {
   getMemberTreeCache,
 } from "../../../lib/postgres/member-data-store.js";
 
-/** Singleton per-member rows still worth deduping. pay_rates isn't listed -
- * its Postgres member_id column is UNIQUE, so a duplicate can't exist. */
 export const MEMBER_SINGLETON_COLLECTIONS = [
   "member_onboarding",
 ];
 
-/** Collections with `member_id` cleaned on member delete (see deleteMemberProfileData). */
 export const MEMBER_SCOPED_DELETE_COLLECTIONS = [
   ...MEMBER_SINGLETON_COLLECTIONS,
   "team_members",
@@ -26,8 +23,6 @@ export const MEMBER_SCOPED_DELETE_COLLECTIONS = [
 ];
 
 function normalizeRole(value) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(value);
 }
 
@@ -35,10 +30,6 @@ function isOwnerRole(value) {
   return normalizeRole(value) === "owner";
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Record<string, unknown>} memberData
- */
 async function canonicalRoleNameForBootstrap(db, memberData) {
   const roleId = typeof memberData?.role_id === "string" ? memberData.role_id.trim() : "";
   if (roleId) {
@@ -48,22 +39,10 @@ async function canonicalRoleNameForBootstrap(db, memberData) {
   return "Viewer";
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function dedupeAllMemberScopedEntities(db, memberId) {
-  // limits, employment, time_settings, pay_rates: one row per member_id in
-  // Postgres (UNIQUE constraint), nothing to dedupe.
   return dedupeMemberOnboardingByMemberIdPg(memberId);
 }
 
-/**
- * Create default profile rows for a member (not teams, projects, or invites).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, memberData?: Record<string, unknown>, actor?: string, skipOnboardingForOwner?: boolean }} params
- * @returns {Promise<{ created: string[] }>}
- */
 export async function ensureMemberScopedEntities(db, { memberId, memberData = {}, actor = "system", skipOnboardingForOwner = true }) {
   const created = [];
   const now = () => new Date();

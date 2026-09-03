@@ -1,7 +1,6 @@
 import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 
-/** @param {import("node:http").IncomingMessage} req @param {string[]} allowedKeys */
 export async function readCompatBody(req, allowedKeys) {
   const body = await readJsonBody(req);
   rejectUnknownFields(body, allowedKeys);

@@ -72,7 +72,6 @@ function defaultInvoicing() {
   };
 }
 
-/** Parses request body from frontend ClientFormData shape. */
 export function parseClientDetailsBody(body = {}) {
   const budgetRaw = body.budget ?? null;
   const invoicingRaw = body.invoicing ?? {};
@@ -244,9 +243,6 @@ export function mapClientResponse(clientDoc, budgetDoc, invoicingDoc, projectIds
     budgetId: budget?.id,
     invoicing,
     invoicingId,
-    // Optimistic-concurrency version token (§6.9) - sent back unchanged on
-    // save so a stale-snapshot write can be detected instead of silently
-    // overwriting whatever changed in between.
     updatedAt: toIso(row.updated_at ?? row.updatedAt),
   };
 }
@@ -270,10 +266,6 @@ async function assertProjectsExist(db, projectIds) {
   }
 }
 
-// budgetId param kept for call-site compatibility (edit path used to pass the
-// loaded budget's id) but is no longer needed - client_budgets has a unique
-// index on client_id, so ON CONFLICT (client_id) replaces the Firestore-era
-// "resolve the existing doc id, then branch on create vs update" dance.
 export async function upsertClientBudget(db, clientId, budget, _budgetId, actorId) {
   if (!budget || budget.type === "none") {
     await deleteClientBudgetPg(clientId);
@@ -287,8 +279,6 @@ export async function upsertClientBudget(db, clientId, budget, _budgetId, actorI
   return saved;
 }
 
-// invoicingId param kept for call-site compatibility, unused for the same
-// reason as upsertClientBudget's _budgetId above.
 export async function upsertClientInvoicing(db, clientId, invoicing, _invoicingId, actorId) {
   return upsertClientInvoicingPg(clientId, invoicing, actorId);
 }
@@ -406,17 +396,12 @@ export async function updateClientWithDetails(db, clientId, body, actorId) {
     country: parsed.country,
     phoneNumber: parsed.phone,
     emailAddresses: parsed.email,
-    // Explicitly null when no member is linked - clears the column rather
-    // than leaving the previous value in place (Firestore's FieldValue.delete()
-    // did the equivalent for the doc-field version of this).
     memberId: parsed.clientMember || null,
   };
   if (parsed.name) patch.name = parsed.name
   if (parsed.status) patch.status = String(parsed.status).toLowerCase();
   if (actorId) patch.updatedBy = actorId;
 
-  // §6.9 - optional: only present when the caller sends back the
-  // updatedAt it loaded the client with.
   const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
   const updated = await updateClientPg(clientId, patch, expectedUpdatedAt);
   if (updated && typeof updated === "object" && "conflict" in updated) {
@@ -434,7 +419,6 @@ export async function updateClientWithDetails(db, clientId, body, actorId) {
   return mapClientResponse(updated, budgetDoc, invoicingDoc, projectIds);
 }
 
-/** Resolves invoicing settings for billing (custom overrides when enabled). */
 export async function resolveClientInvoicingSettings(db, clientId) {
   const row = await getClientInvoicingPg(clientId);
   if (!row) return { source: "global", settings: defaultInvoicing() };

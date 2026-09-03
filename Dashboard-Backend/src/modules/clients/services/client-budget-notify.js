@@ -41,8 +41,6 @@ function readBudgetFromDoc(doc) {
 }
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
@@ -52,17 +50,8 @@ function formatMoney(amount) {
   return `$${Math.round(value)}`;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db unused, kept for call-site compatibility
- * @param {string} clientId
- * @param {ReturnType<typeof normalizeBudget>|null} budget
- */
 export async function syncClientBudgetAutomationState(_db, clientId, budget) {
   const normalized = normalizeBudget(budget);
-  // notified_period_key/last_usage_pct/last_sent_at are deliberately not
-  // passed here - upsertClientAutomationStatePg's COALESCE leaves them at
-  // whatever markBudgetNotificationSent below last set, this call only
-  // touches the policy snapshot and threshold.
   await upsertClientAutomationStatePg(clientId, {
     budgetPolicy: buildBudgetPolicy(normalized),
     notifyAtPct: normalized?.notifyAt ?? 0,
@@ -82,11 +71,6 @@ async function loadManagementMemberIds(db) {
     .map((data) => data.id);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} clientId
- * @param {Record<string, unknown>} [clientRow]
- */
 export async function resolveClientBudgetNotifyRecipients(db, clientId, clientRow) {
   const recipients = new Set(await loadManagementMemberIds(db));
 
@@ -124,7 +108,6 @@ async function markBudgetNotificationSent(clientId, periodKey, notifyAtPct, usag
   });
 }
 
-/** Notify when client budget crosses threshold. */
 export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) {
   const client = await getClientPg(clientId);
   if (!client) return { skipped: "client_not_found" };
@@ -172,7 +155,6 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
   return { sent: recipients.length, evaluation };
 }
 
-/** Check linked client budgets after billable time changes on a project. */
 export async function maybeNotifyClientBudgetsForProject(db, projectId) {
   if (!projectId) return [];
 

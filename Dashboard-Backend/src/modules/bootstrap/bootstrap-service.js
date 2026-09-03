@@ -11,10 +11,6 @@ import { normalizeRoleKey } from "../members/services/relation-sync.js";
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 const ORG_TASK_CREATE_ROLES = new Set(["owner", "superadmin", "admin", "supermanager", "supermanger"]);
 
-/**
- * Mirrors frontend ROLE_PRIVILEGE_RANK in member-role-access.ts.
- * Prototype-less — see `ROLE_PRIVILEGE_RANK` in relation-sync.js.
- */
 const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
@@ -28,39 +24,22 @@ const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   viewer: 10,
 });
 
-/**
- * Delegates to the shared normalizer so legacy misspellings ("supermanger") fold onto
- * the canonical key here too.
- * @param {string} roleName
- */
 function normalizeRole(roleName) {
   return normalizeRoleKey(String(roleName || ""));
 }
 
-/**
- * @param {string} roleName
- */
 function roleRank(roleName) {
   return ROLE_PRIVILEGE_RANK[normalizeRole(roleName)] ?? -1;
 }
 
-/**
- * @param {string} roleName
- */
 function canAccessAllSidebarTabs(roleName) {
   return isManagementRole(roleName);
 }
 
-/**
- * @param {string} roleName
- */
 function defaultNavItemForRole(_roleName) {
   return "general";
 }
 
-/**
- * @param {Record<string, unknown> | null | undefined} memberData
- */
 function buildMemberSummary(memberData, memberId, roleName) {
   const first = typeof memberData?.first_name === "string" ? memberData.first_name.trim() : "";
   const last = typeof memberData?.last_name === "string" ? memberData.last_name.trim() : "";
@@ -85,11 +64,6 @@ function buildMemberSummary(memberData, memberId, roleName) {
   };
 }
 
-/**
- * Shell nav counts — aggregate queries only, no scans.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- */
 async function getDashboardSummaryCounts(db, viewer) {
   const normalized = normalizeRole(viewer.roleName);
   const globalScope = PROJECT_SCOPE_ROLES.has(normalized);
@@ -127,11 +101,6 @@ async function getDashboardSummaryCounts(db, viewer) {
   };
 }
 
-/**
- * Dashboard shell bootstrap payload (nav, counts, member summary).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ uid: string, memberId: string, roleName: string, email?: string }} viewer
- */
 export async function getBootstrapPayload(db, viewer) {
   const gov = await enforcePrivilegedRoleGovernanceForMember(db, viewer.memberId);
   if (!gov.ok) {

@@ -1,8 +1,4 @@
-/** Non-secret env snapshot for logs/health. Don't log getEnv() — it has secrets. */
 
-/**
- * @param {import("./env.js").AppEnv} config
- */
 export function toPublicEnv(config) {
   return Object.freeze({
     nodeEnv: config.nodeEnv,

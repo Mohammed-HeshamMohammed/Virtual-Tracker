@@ -6,12 +6,6 @@ import { alignMemberRoleTables, syncMemberPrimaryRole } from "./relation-sync.js
 import { query as pgQuery } from "../../../lib/postgres/client.js";
 import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-/**
- * Clear assigned_to on this member's tasks.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} actorMemberId
- */
 async function unassignMemberFromTasks(db, memberId, actorMemberId) {
   const rows = await pgQuery(
     "UPDATE tasks SET assigned_to = NULL, updated_by = $2, updated_at = now() WHERE assigned_to = $1 RETURNING id",
@@ -20,11 +14,6 @@ async function unassignMemberFromTasks(db, memberId, actorMemberId) {
   return rows.length;
 }
 
-/**
- * Remove from org tree: demote to Viewer, clear hierarchy + assignments. Account stays.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string; actorMemberId: string; actorRoleName: string }} input
- */
 export async function removeMemberFromTree(db, input) {
   const memberId = typeof input.memberId === "string" ? input.memberId.trim() : "";
   const actorMemberId = typeof input.actorMemberId === "string" ? input.actorMemberId.trim() : "";
@@ -83,10 +72,6 @@ export async function removeMemberFromTree(db, input) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberIds: string[]; actorMemberId: string; actorRoleName: string }} input
- */
 export async function batchRemoveMembersFromTree(db, input) {
   const memberIds = Array.isArray(input.memberIds)
     ? [...new Set(input.memberIds.filter((id) => typeof id === "string" && id.trim()))].slice(0, 100)

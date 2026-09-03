@@ -1,7 +1,3 @@
-// CSV / PDF file builders for report Send + Schedule. Takes the same raw
-// payload shape the GET /api/reports/time-and-activity endpoint returns
-// (build-time-and-activity-rows.js), so one aggregation feeds report view,
-// email send, and scheduled delivery alike.
 import { buildReportPdfBuffer } from "./report-pdf-kit.js";
 
 function formatHms(totalSeconds) {
@@ -12,11 +8,6 @@ function formatHms(totalSeconds) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-/** Decimal hours (e.g. 5.25) -> "05:15:00" - same clock format formatHms
- *  produces from raw seconds, for chart value labels computed from a sum of
- *  hours rather than a single seconds count. Matches the frontend's
- *  formatDecimalHoursClock so a hover-free bar/line label never reads as a
- *  bare decimal ("0.37h") in either the download or this emailed copy. */
 function formatDecimalHoursClock(totalHours) {
   return formatHms(Math.round(totalHours * 3600));
 }
@@ -26,10 +17,6 @@ function escapeCsvCell(value) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/**
- * @param {{ days: Array<{ date: string, members: Array<{ memberId: string, name: string, activeSeconds: number, idleSeconds: number }> }> }} payload
- * @returns {string}
- */
 export function buildTimeAndActivityCsv(payload) {
   const header = ["Date", "Member", "Active hours", "Idle hours"];
   const rows = payload.days.flatMap((day) =>
@@ -38,19 +25,6 @@ export function buildTimeAndActivityCsv(payload) {
   return [header, ...rows].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
 }
 
-/**
- * The same "report paper" document (letterhead, KPI summary, vector charts,
- * styled paginated table) the frontend's own Export -> To PDF button
- * generates for this report - built with report-pdf-kit.js, the server-side
- * twin of that browser module. Send and Schedule used to attach a plain
- * pdfkit table with none of that (no letterhead beyond a bare title, no
- * charts, no styling), so the copy that landed in someone's inbox looked
- * like a different, lesser report than the one they could download
- * themselves from the same page.
- * @param {{ days: Array<{ date: string, members: Array<{ memberId: string, name: string, activeSeconds: number, idleSeconds: number, spentAmount?: number }> }> }} payload
- * @param {{ title?: string, rangeLabel?: string }} [opts]
- * @returns {Promise<Buffer>}
- */
 export async function buildTimeAndActivityPdf(payload, opts = {}) {
   const byMemberSeconds = new Map();
   let totalActiveSeconds = 0;

@@ -1,18 +1,6 @@
 import crypto from "node:crypto";
 import { query } from "../../lib/postgres/client.js";
 
-/**
- * Long-lived per-device credential for the desktop agent.
- *
- * Why this exists: the link flow hands the agent the *web app's* Firebase
- * refresh token, so the agent has no credential of its own. Once Firebase
- * rejects that borrowed token the agent cannot re-authenticate at all, and the
- * only cure is another browser round trip. This gives each linked machine its
- * own secret so it can recover in-app. See agent-reconnect-plan.md §4.2a.
- *
- * The secret is only ever stored here as a SHA-256 hash - a database leak must
- * not yield usable agent credentials.
- */
 
 const MAX_FAILED_ATTEMPTS = 10;
 
@@ -20,7 +8,6 @@ function hashSecret(secret) {
   return crypto.createHash("sha256").update(String(secret)).digest("hex");
 }
 
-/** Constant-time compare so a wrong secret can't be recovered by timing. */
 function hashesEqual(a, b) {
   const bufA = Buffer.from(String(a), "hex");
   const bufB = Buffer.from(String(b), "hex");
@@ -32,22 +19,12 @@ export function newDeviceId() {
   return crypto.randomUUID();
 }
 
-/**
- * Records (or re-records) a linked machine. Re-linking the same device rotates
- * its secret rather than accumulating rows.
- * @param {{ memberId: string, deviceId: string, agentSecret: string, agentSource?: string, vmDetected?: boolean, vmSignals?: string[] }} input
- */
 export async function registerAgentDevice(input) {
   const memberId = String(input.memberId || "").trim();
   const deviceId = String(input.deviceId || "").trim();
   const agentSecret = String(input.agentSecret || "");
   if (!memberId || !deviceId || !agentSecret) return null;
 
-  // AC-3: reported by the agent itself once at registration - never
-  // re-derived or verified server-side, since it's a device signal, not a
-  // security boundary. `null` (not sent by an older agent) leaves whatever
-  // was already stored untouched rather than resetting a real prior finding
-  // to false.
   const vmDetected = typeof input.vmDetected === "boolean" ? input.vmDetected : null;
   const vmSignals = Array.isArray(input.vmSignals) ? input.vmSignals.slice(0, 20).join(",").slice(0, 500) : null;
 
@@ -71,13 +48,6 @@ export async function registerAgentDevice(input) {
   return rows[0] ?? null;
 }
 
-/**
- * Verifies a device credential. Returns the owning member id, or a reason.
- * Deliberately returns the same generic error for unknown/revoked/mismatched
- * so a caller cannot probe which device ids exist.
- * @param {string} deviceId
- * @param {string} agentSecret
- */
 export async function verifyAgentDevice(deviceId, agentSecret) {
   const id = String(deviceId || "").trim();
   const secret = String(agentSecret || "");
@@ -110,7 +80,6 @@ export async function verifyAgentDevice(deviceId, agentSecret) {
   return { ok: true, memberId: String(row.member_id) };
 }
 
-/** @param {string} deviceId */
 export async function revokeAgentDevice(deviceId) {
   await query(
     "UPDATE agent_devices SET revoked_at = now(), updated_at = now() WHERE device_id = $1 AND revoked_at IS NULL",
@@ -118,13 +87,6 @@ export async function revokeAgentDevice(deviceId) {
   );
 }
 
-/**
- * Kills every device belonging to a member. Must be called anywhere an account
- * loses access (ban, removal, deactivation) - a device credential that
- * outlives the account it belongs to is a way back in for someone who was
- * deliberately cut off.
- * @param {string} memberId
- */
 export async function revokeAgentDevicesForMember(memberId) {
   const id = String(memberId || "").trim();
   if (!id) return 0;
@@ -135,7 +97,6 @@ export async function revokeAgentDevicesForMember(memberId) {
   return rows.length;
 }
 
-/** CF-6: a single device row (any status), for ownership-check call sites that need to know who owns it before allowing a self-classification. @param {string} deviceId */
 export async function getAgentDevice(deviceId) {
   const rows = await query(
     `SELECT device_id, member_id, ownership, revoked_at FROM agent_devices WHERE device_id = $1 LIMIT 1`,
@@ -144,13 +105,6 @@ export async function getAgentDevice(deviceId) {
   return rows[0] ?? null;
 }
 
-/**
- * CF-6/AC-3: every non-revoked device linked to a member, with its ownership
- * classification and AC-3's VM signal - the two device-level context flags a
- * manager weighs together (a VM flag on a company-owned box reads very
- * differently than one on a declared-personal machine).
- * @param {string} memberId
- */
 export async function listAgentDevicesForMember(memberId) {
   const id = String(memberId || "").trim();
   if (!id) return [];
@@ -162,13 +116,6 @@ export async function listAgentDevicesForMember(memberId) {
   );
 }
 
-/**
- * CF-6: classify a linked device as company-owned, personal (BYOD), or back
- * to unspecified. `setBy` is recorded regardless of who it is (the device's
- * own owner self-declaring, or management correcting it) - "recorded and
- * auditable" means knowing who classified it, not just what it's set to.
- * @param {string} deviceId @param {'company'|'personal'|'unspecified'} ownership @param {string} setBy
- */
 export async function setAgentDeviceOwnership(deviceId, ownership, setBy) {
   if (!["company", "personal", "unspecified"].includes(ownership)) {
     const err = new Error(`Unknown ownership value: ${ownership}`);

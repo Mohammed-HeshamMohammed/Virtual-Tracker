@@ -14,12 +14,6 @@ function str(row, ...keys) {
   return "";
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRole
- * @param {string} taskId
- */
 export async function canAccessTask(db, viewerMemberId, viewerRole, taskId) {
   const task = await getTaskPg(taskId);
   if (!task) return { allowed: false, status: 404, task: null };
@@ -45,7 +39,6 @@ export async function canAccessTask(db, viewerMemberId, viewerRole, taskId) {
   return { allowed: false, status: 404, task: null };
 }
 
-/** Task creators, team leads, and management may sync multi-assignee rows. */
 export async function canSyncTaskAssignments(db, viewerMemberId, viewerRole, task) {
   if (isManagementRole(viewerRole)) return true;
 
@@ -58,13 +51,6 @@ export async function canSyncTaskAssignments(db, viewerMemberId, viewerRole, tas
   return false;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} taskId
- */
 export async function assertTaskAccessible(req, res, origin, db, taskId) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -79,11 +65,6 @@ export async function assertTaskAccessible(req, res, origin, db, taskId) {
   return { viewer, task: result.task };
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- */
 export function assertCanReviewTasks(req, res, origin) {
   const viewer = getAuthContext(req);
   if (!viewer) {

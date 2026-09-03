@@ -10,12 +10,9 @@ import { query } from "../lib/postgres/client.js";
 import { normalizeRoleKey } from "./role-key.js";
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
-/** Project ids viewer can access; null = all (Owner). */
 export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
   if (!viewerMemberId) return [];
   const roleKey = normalizeRole(viewerRole);
@@ -29,20 +26,9 @@ export async function getViewerProjectIds(db, viewerMemberId, viewerRole) {
     return null;
   }
 
-  // Membership rows, projects the viewer created (createProjectPg stamps
-  // created_by without inserting a membership row), and - for a client member
-  // - the projects assigned to their client. See listViewerProjectIdsPg.
   return listViewerProjectIdsPg(viewerMemberId);
 }
 
-/**
- * Whether this viewer may write to a project as its client.
- *
- * A client reads every project linked to them, but writes to none of it
- * unless that project has client_can_manage turned on.
- * @param {{ memberId: string; roleName: string }} viewer
- * @param {string} projectId
- */
 export async function clientMayManageProject(viewer, projectId) {
   if (!viewer?.memberId || !projectId) return false;
   if (normalizeRole(viewer.roleName) !== "client") return false;
@@ -50,13 +36,6 @@ export async function clientMayManageProject(viewer, projectId) {
   return managed.has(projectId);
 }
 
-/**
- * Whether this viewer may run a task-less timer on this project as its
- * client - the tracking equivalent of clientMayManageProject, gated by the
- * independent client_can_track flag instead of client_can_manage.
- * @param {{ memberId: string; roleName: string }} viewer
- * @param {string} projectId
- */
 export async function clientMayTrackProject(viewer, projectId) {
   if (!viewer?.memberId || !projectId) return false;
   if (normalizeRole(viewer.roleName) !== "client") return false;
@@ -72,8 +51,6 @@ const ORG_PROJECT_TASK_ADMIN_ROLES = new Set([
   "supermanger",
 ]);
 
-/** Owner/Super Admin/Admin/Super Manager - same org-admin set task-creation
- * already uses. Also gates client budget figures (financial data). */
 export function isOrgProjectAdminRole(roleName) {
   return ORG_PROJECT_TASK_ADMIN_ROLES.has(normalizeRole(roleName));
 }
@@ -88,12 +65,6 @@ function normalizeProjectRole(role) {
   return value;
 }
 
-/**
- * Org admins or project_members with project_role manager may create tasks.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string; roleName: string }} viewer
- * @param {string} projectId
- */
 export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!viewer?.memberId || !pid) return false;
@@ -108,39 +79,18 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
   );
   if (rows.length === 0) return false;
 
-  // restrict_task_creation defaults true (manager-only, the behavior this
-  // function has always enforced). false is a real, user-facing project
-  // setting ("Off lets any assigned member of this project add tasks to
-  // it." - project-modal.tsx) that this gate never read, so setting it had
-  // no effect: the "+ New task" button would show for a non-manager member
-  // (Dashboard-Web's canCreateTasksInProject already mirrors this branch)
-  // and then 403 the moment they actually pressed it.
   const project = await getProjectPg(pid);
   if (project?.restrict_task_creation === false) return true;
 
   return rows.some((row) => normalizeProjectRole(row.project_role) === "manager");
 }
 
-/**
- * May start a project-scoped (task-less) timer on this project. Calling
- * projects have no task assignment to gate on, so project membership in any
- * role is the equivalent check - plus org admins, who can already start a
- * timer on any task in any project.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string; roleName: string }} viewer
- * @param {string} projectId
- * @returns {Promise<boolean>}
- */
 export async function isProjectMemberForTimer(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!viewer?.memberId || !pid) return false;
 
   const roleKey = normalizeRole(viewer.roleName);
   if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
-  // A client is never a project_members row (their link is client_projects,
-  // a different table) - client_can_track is its own equivalent of
-  // "membership" for this specific check, same pattern clientMayManageProject
-  // already is for the write-access check.
   if (roleKey === "client") return clientMayTrackProject(viewer, pid);
 
   const rows = await query(
@@ -151,20 +101,31 @@ export async function isProjectMemberForTimer(db, viewer, projectId) {
 }
 
 /**
- * Can write project rows (includes projects viewer created but isn't a member of yet).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string; roleName: string }} viewer
- * @param {string} projectId
- * @returns {Promise<boolean>}
+ * Same access rule as isProjectMemberForTimer, as a list instead of a single
+ * (member, project) check - every project id this member could actually
+ * clock in on. Used to scope the Project dropdown in "add manual time for
+ * someone" flows to what the *target* member can track, not what the
+ * manager doing the backfill happens to see - a manager assigned to a
+ * project isn't automatically a trackable member of it themselves (e.g. a
+ * viewer-role assignment), and a member with no project_members row at all
+ * (not currently on the project) can't clock in regardless of role.
+ * @returns {Promise<string[] | null>} null means "every project" (org admin tier).
  */
+export async function listTrackableProjectIdsPg(memberId, roleName) {
+  const id = typeof memberId === "string" ? memberId.trim() : "";
+  if (!id) return [];
+  const roleKey = normalizeRole(roleName);
+  if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return null;
+  if (roleKey === "client") return [...(await listClientTrackableProjectIdsPg(id))];
+
+  const rows = await query("SELECT project_id FROM project_members WHERE member_id = $1", [id]);
+  return rows.map((r) => String(r.project_id)).filter(Boolean);
+}
+
 export async function viewerCanWriteProject(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!pid || !viewer?.memberId) return false;
 
-  // A client now appears in getViewerProjectIds for every project linked to
-  // them, which is a read scope. Writing needs the per-project switch, so the
-  // client leg is decided here before the generic membership check below
-  // would wave it through.
   if (normalizeRole(viewer.roleName) === "client") {
     return clientMayManageProject(viewer, pid);
   }
@@ -178,22 +139,11 @@ export async function viewerCanWriteProject(db, viewer, projectId) {
   return String(project.created_by ?? "").trim() === viewer.memberId;
 }
 
-/**
- * @param {string[] | null} allowedProjectIds
- * @returns {Set<string> | null}
- */
 export function toAllowedProjectSet(allowedProjectIds) {
   if (allowedProjectIds === null) return null;
   return new Set(allowedProjectIds);
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- */
 export async function assertProjectAccessible(req, res, origin, db, projectId) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -208,12 +158,6 @@ export async function assertProjectAccessible(req, res, origin, db, projectId) {
   return false;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @returns {boolean}
- */
 export function assertAuthenticated(req, res, origin) {
   if (getAuthContext(req)) return true;
   sendJson(res, origin, 401, { success: false, error: "Authorization required." });

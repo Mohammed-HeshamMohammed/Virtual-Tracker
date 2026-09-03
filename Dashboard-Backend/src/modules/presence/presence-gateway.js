@@ -4,14 +4,8 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const WS_PATH = "/api/presence/ws";
 
-/** @type {Map<string, Set<import("ws").WebSocket>>} */
 const connectionsByMember = new Map();
 
-/**
- * Push WS message to all connections for a member (e.g. remote sign-out).
- * @param {string} memberId
- * @param {Record<string, unknown>} message
- */
 export function sendToMember(memberId, message) {
   const sockets = connectionsByMember.get(memberId);
   if (!sockets || sockets.size === 0) return;
@@ -25,14 +19,6 @@ export function sendToMember(memberId, message) {
   }
 }
 
-/**
- * Push a frame to every connected socket, regardless of member. Live-sync
- * "something changed" broadcasts only (PLAN-livesyncandagenttimer.md §3) —
- * signals, never row data, so there is deliberately no per-member filtering
- * here. A send failure on one socket must never stop the rest; it will be
- * cleaned up on its own "close" handler.
- * @param {Record<string, unknown>} message
- */
 export function broadcastToAll(message) {
   const payload = JSON.stringify(message);
   for (const sockets of connectionsByMember.values()) {
@@ -46,7 +32,6 @@ export function broadcastToAll(message) {
   }
 }
 
-/** Auth WS gateway for ephemeral presence. */
 export function attachPresenceGateway(httpServer, deps) {
   const wss = new WebSocketServer({ noServer: true });
   const heartbeatStaleMs = deps.heartbeatStaleMs ?? 120_000;
@@ -68,10 +53,8 @@ export function attachPresenceGateway(httpServer, deps) {
   });
 
   wss.on("connection", (ws, _req, url) => {
-    /** @type {string | null} */
     let memberId = null;
     const connectionId = randomUUID();
-    /** @type {ReturnType<typeof setTimeout> | null} */
     let heartbeatTimer = null;
     let closed = false;
 

@@ -7,16 +7,10 @@ const MANAGER_RANK = rolePrivilegeRank("Manager");
 export const BATCH_MEMBER_ACTIONS_DENIED_MESSAGE =
   "Batch member actions require Manager or higher privileges.";
 
-/** Batch actions require Manager+ (per-target checks still apply). */
 export function canUseBatchMemberActions(roleName) {
   return rolePrivilegeRank(roleName) >= MANAGER_RANK;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- * @returns {Promise<string | null>}
- */
 export async function assertMembersRemovable(db, memberIds) {
   for (const id of memberIds) {
     const role = await resolveMemberRoleName(db, id);

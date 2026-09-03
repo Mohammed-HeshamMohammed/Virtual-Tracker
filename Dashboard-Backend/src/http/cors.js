@@ -1,6 +1,5 @@
 import { getEnv } from "../config/env.js";
 
-// Root domain for credentialed session-cookie routes only; other routes use wildcard CORS.
 function getCredentialedRootDomain() {
   try {
     const frontend = getEnv().urls.frontendOrigin || getEnv().urls.appPublicUrl;
@@ -26,11 +25,6 @@ export function isCredentialedOriginAllowed(origin) {
   }
 }
 
-/** Wildcard CORS for Bearer-auth API. Session-cookie routes need `{ credentials: true }`. */
-/**
- * @param {string | undefined} [origin]
- * @param {{ credentials?: boolean }} [opts]
- */
 export function corsHeaders(origin, opts = {}) {
   if (opts.credentials && isCredentialedOriginAllowed(origin)) {
     return {

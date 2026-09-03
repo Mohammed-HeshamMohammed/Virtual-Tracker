@@ -1,6 +1,5 @@
 import { normalizeRoleKey } from "../modules/members/services/relation-sync.js";
 
-/** Role keys each actor may not edit/remove (Owner handled separately). @type {Record<string, Set<string>>} */
 const BLOCKED_TARGET_KEYS_BY_ACTOR = {
   owner: new Set(["owner"]),
   superadmin: new Set(["owner", "superadmin"]),
@@ -10,12 +9,6 @@ const BLOCKED_TARGET_KEYS_BY_ACTOR = {
   manager: new Set(["owner", "admin", "superadmin", "supermanager", "supermanger"]),
 };
 
-/**
- * Can actor mutate a member with targetRoleName? (scope checked elsewhere)
- * @param {string} actorRoleName
- * @param {string} targetRoleName
- * @returns {boolean}
- */
 export function canActorManageTargetRole(actorRoleName, targetRoleName) {
   const actorKey = normalizeRoleKey(actorRoleName);
   const targetKey = normalizeRoleKey(targetRoleName);

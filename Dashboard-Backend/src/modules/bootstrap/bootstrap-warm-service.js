@@ -1,4 +1,3 @@
-// Warm bundle for list caches after login (same visibility rules as member-relationships / project-access).
 
 import { isManagementRole } from "../../http/auth-context.js";
 import { getViewerProjectIds, toAllowedProjectSet } from "../../http/project-access.js";
@@ -12,56 +11,26 @@ import { listTeamsPg, listAllTeamMembersPg } from "../../lib/postgres/teams-post
 
 const LIST_LIMIT = 200;
 
-// projects/project_budgets/project_members/team_projects/project_member_limits
-// are Postgres-backed now (see PROPOSAL-Projects-Migration-to-PostgreSQL.md) -
-// fetchCollectionList below only knows Firestore, so these route through here
-// instead, then get normalizeDoc()'d the same way so downstream field-name
-// lookups (row.project_id ?? row.projectId) keep working either way.
-/**
- * Postgres full-table read - unlike Firestore there's no per-doc read cost, so no
- * arbitrary row ceiling here; these tables are small (projects/tasks/members-of-a-
- * project scale), not per-request-paginated lists.
- * @param {string} table
- */
 async function fetchPgCollectionList(table) {
   const rows = await pgQuery(`SELECT * FROM ${table}`);
   return rows.map((row) => normalizeDoc(row));
 }
 
-/**
- * "members" is the only collection any caller passes, and it resolves through
- * Postgres. The generic Firestore tail that used to follow - chunked
- * db.getAll() over db.collection(collection).doc(id) - had no reachable caller
- * and would have read collections that no longer take writes.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} docIds
- */
 async function fetchMemberDocs(db, docIds) {
   const snaps = await fetchMemberDocsByIds(db, docIds);
   return snaps.map((snap) => normalizeDoc({ id: snap.id, ...snap.data() }));
 }
 
-/**
- * @param {Set<string> | null} allowedProjects
- * @param {string} projectId
- */
 function projectAllowed(allowedProjects, projectId) {
   if (!projectId) return false;
   if (allowedProjects === null) return true;
   return allowedProjects.has(projectId);
 }
 
-/**
- * @param {Record<string, unknown>} row
- */
 function rowProjectId(row) {
   return String(row.project_id ?? row.projectId ?? "").trim();
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- */
 export async function getBootstrapWarmPayload(db, viewer) {
   const roleName = viewer.roleName || "";
   const management = isManagementRole(roleName);

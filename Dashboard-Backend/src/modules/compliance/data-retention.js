@@ -33,13 +33,11 @@ function normalizeSettingsRow(row) {
   };
 }
 
-/** CF-0.5: current retention ceiling for every data type - never absent, the table is seeded on schema creation. */
 export async function getRetentionSettings() {
   const rows = await getRetentionSettingsPg();
   return rows.map(normalizeSettingsRow);
 }
 
-/** @param {string} dataType @param {number} retentionDays @param {{ memberId: string, roleName: string }} actor */
 export async function setRetentionDays(dataType, retentionDays, actor) {
   if (!DATA_TYPES.includes(dataType)) {
     const err = new Error(`Unknown data type: ${dataType}`);
@@ -48,8 +46,6 @@ export async function setRetentionDays(dataType, retentionDays, actor) {
   }
   const days = Math.floor(Number(retentionDays));
   if (!Number.isFinite(days) || days <= 0) {
-    // CF-0.5: "there is deliberately no 'never delete' option" - a
-    // non-positive or non-numeric value would be exactly that.
     const err = new Error("retentionDays must be a positive number of days.");
     err.code = "INVALID_RETENTION_DAYS";
     throw err;
@@ -68,16 +64,6 @@ async function retentionDaysFor(dataType) {
   return settings.find((s) => s.dataType === dataType)?.retentionDays ?? 90;
 }
 
-/**
- * CF-0.5: enforces every data type's ceiling in one pass - the automated
- * equivalent of the old manual archive-screenshots.mjs script, generalised
- * to all four stores and driven by data_retention_settings instead of CLI
- * flags. Screenshots already archived to GCS (screenshot_url set) have their
- * GCS object deleted first, then the row - "removes the data from hot
- * storage and archive" applies to routine expiry, not only explicit erasure.
- * A GCS delete failure is logged and that row is left in place rather than
- * losing the row-to-object link; it will be retried on the next sweep.
- */
 export async function runRetentionSweep() {
   const settings = await getRetentionSettings();
   const days = Object.fromEntries(settings.map((s) => [s.dataType, s.retentionDays]));
@@ -103,15 +89,6 @@ export async function runRetentionSweep() {
   return result;
 }
 
-/**
- * CF-0.5 DSAR: "an employee can request everything collected about them...
- * export endpoint that gathers their screenshots/app-logs/url-logs/sessions
- * into one package." Screenshot rows carry metadata + id, not the raw image
- * bytes - the requester fetches each image via the existing (now
- * access-logged) GET /api/activity/screenshot/:id, so a DSAR export can't
- * itself become a multi-hundred-megabyte JSON blob.
- * @param {string} memberId
- */
 export async function buildDsarExport(memberId) {
   const [screenshots, appLogs, urlLogs, sessions] = await Promise.all([
     getAllScreenshotMetaForMemberPg(memberId),
@@ -129,15 +106,6 @@ export async function buildDsarExport(memberId) {
   };
 }
 
-/**
- * CF-0.5 erasure: "a supported path to delete... an individual's monitoring
- * data on lawful request." Management-only - unlike DSAR export (which an
- * employee can trigger on their own data), erasure is destructive and
- * typically actioned by an admin against a verified request, not one-click
- * self-service. Open sessions are deliberately left untouched - erasing an
- * active timer's row out from under it is a different, dangerous operation.
- * @param {string} memberId @param {{ memberId: string, roleName: string }} actor
- */
 export async function eraseMemberMonitoringData(memberId, actor) {
   if (!isManagementRole(actor?.roleName)) {
     const err = new Error("Only management may erase monitoring data.");
@@ -165,18 +133,10 @@ export async function eraseMemberMonitoringData(memberId, actor) {
   };
 }
 
-/**
- * CF-0.5: "log every access" to a raw screenshot. Called only after the
- * existing resolveActivityFeedScope authorization already succeeded - this
- * function makes no access decision of its own, it just records one that
- * already happened.
- * @param {{ screenshotId: string, screenshotOwner: string, readerMemberId: string }} input
- */
 export async function recordScreenshotAccess(input) {
   await recordScreenshotAccessPg(input);
 }
 
-/** CF-0.5: an employee (or management) can see who has viewed their screenshots. @param {string} screenshotOwner */
 export async function getScreenshotAccessLog(screenshotOwner) {
   const rows = await getScreenshotAccessLogPg(screenshotOwner);
   return rows.map((r) => ({

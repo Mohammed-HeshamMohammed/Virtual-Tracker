@@ -9,12 +9,8 @@ import { query as pgQuery } from "../../lib/postgres/client.js";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
-/** @type {ReturnType<typeof setInterval> | null} */
 let weeklyReportTimer = null;
 
-/**
- * @param {Date | import("firebase-admin/firestore").Timestamp | string | null | undefined} value
- */
 export function parseReportTimestamp(value) {
   if (!value) return null;
   if (value instanceof Date) return Number.isFinite(value.getTime()) ? value : null;
@@ -29,27 +25,16 @@ export function parseReportTimestamp(value) {
   return null;
 }
 
-/**
- * @param {Date | null} lastSentAt
- * @param {Date} [now]
- */
 export function isWeeklyReportDue(lastSentAt, now = new Date()) {
   if (!lastSentAt) return true;
   return now.getTime() - lastSentAt.getTime() >= WEEK_MS;
 }
 
-/**
- * @param {Record<string, unknown>} memberData
- */
 export function isActiveMemberRecipient(memberData) {
   const status = typeof memberData.status === "string" ? memberData.status.trim().toLowerCase() : "active";
   return status !== "inactive" && status !== "removed" && status !== "deleted";
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 async function resolveMemberEmail(db, memberId) {
   if (!memberId) return "";
   const data = (await getMemberByIdPg(memberId)) || {};
@@ -59,12 +44,6 @@ async function resolveMemberEmail(db, memberId) {
   return work || personal;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} teamId
- * @param {Record<string, unknown>} teamData
- * @param {Array<Record<string, unknown>>} teamMemberRows
- */
 export async function collectWeeklyReportRecipientIds(db, teamId, teamData, teamMemberRows) {
   const recipientIds = new Set();
   const createdBy = typeof teamData.created_by === "string" ? teamData.created_by : "";
@@ -89,11 +68,6 @@ export async function collectWeeklyReportRecipientIds(db, teamId, teamData, team
   return [...recipientIds];
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} teamId
- * @param {Record<string, unknown>} teamData
- */
 export async function sendTeamWeeklyReport(db, teamId, teamData) {
   if (teamData.schedule_weekly_report !== true) {
     return { sent: 0, skipped: true, reason: "disabled" };
@@ -134,9 +108,6 @@ export async function sendTeamWeeklyReport(db, teamId, teamData) {
   return { sent, recipients: emails.size };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function processDueTeamWeeklyReports(db) {
   const teams = await pgQuery("SELECT * FROM teams WHERE schedule_weekly_report = true");
   const now = new Date();
@@ -160,9 +131,6 @@ export async function processDueTeamWeeklyReports(db) {
   return { processed, sentTeams, checkedAt: now.toISOString() };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export function scheduleTeamWeeklyReports(db) {
   if (weeklyReportTimer) return;
 

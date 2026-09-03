@@ -6,7 +6,6 @@ export async function getCaptureExclusionsPg() {
   );
 }
 
-/** @param {{ matchType: 'app'|'domain', pattern: string, note?: string, createdBy?: string }} input */
 export async function addCaptureExclusionPg(input) {
   const rows = await query(
     `INSERT INTO capture_exclusions (match_type, pattern, note, created_by)
@@ -18,7 +17,6 @@ export async function addCaptureExclusionPg(input) {
   return rows[0] ?? null;
 }
 
-/** @param {string} id */
 export async function removeCaptureExclusionPg(id) {
   await query(`DELETE FROM capture_exclusions WHERE id = $1`, [id]);
 }
@@ -31,7 +29,6 @@ export async function getCaptureMinimizationSettingsPg() {
   return rows[0] ?? { url_domain_only: false, screenshot_blur_default: false };
 }
 
-/** @param {{ urlDomainOnly?: boolean, screenshotBlurDefault?: boolean, updatedBy?: string }} input */
 export async function setCaptureMinimizationSettingsPg(input) {
   const rows = await query(
     `UPDATE capture_minimization_settings SET

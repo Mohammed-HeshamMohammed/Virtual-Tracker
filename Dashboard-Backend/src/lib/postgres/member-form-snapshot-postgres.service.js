@@ -1,7 +1,3 @@
-// One JSON snapshot of a member's own profile-form submission, keyed by
-// member. Moved off Firestore's members_field_data (type ===
-// "memberFormSnapshot") - that table had a Postgres twin of the same name
-// with nobody reading or writing it, exactly like access_requests.
 import crypto from "node:crypto";
 import { query } from "./client.js";
 
@@ -20,7 +16,6 @@ function toRow(row) {
   };
 }
 
-/** @param {string} [memberId] Omit to list every member's snapshot. */
 export async function listMemberFormSnapshotsPg(memberId) {
   const rows = memberId
     ? await query(
@@ -31,11 +26,6 @@ export async function listMemberFormSnapshotsPg(memberId) {
   return rows.map(toRow);
 }
 
-/**
- * @param {string} memberId
- * @param {Record<string, unknown>} formData
- * @param {string} [modifiedBy]
- */
 export async function upsertMemberFormSnapshotPg(memberId, formData, modifiedBy = "") {
   const rows = await query(
     `INSERT INTO members_field_data (id, member_id, form_key, data, modified_by, created_at, updated_at)
@@ -48,7 +38,6 @@ export async function upsertMemberFormSnapshotPg(memberId, formData, modifiedBy 
   return rows[0]?.id;
 }
 
-/** @param {string} memberId */
 export async function deleteMemberFormSnapshotPg(memberId) {
   await query("DELETE FROM members_field_data WHERE form_key = $1 AND member_id = $2", [FORM_KEY, memberId]);
 }

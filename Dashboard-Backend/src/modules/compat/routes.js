@@ -73,22 +73,11 @@ import {
   fetchWeeklyLimitsForMembers,
 } from "../members/services/member-list-enrichment.js";
 
-/**
- * Wraps a Postgres row in the minimal Firestore-doc shape expected by
- * mapMembersWithProfilePhotos and the rest of the enrichment pipeline.
- * @param {Record<string, unknown> | null | undefined} row
- * @returns {{ id: string; data: () => Record<string, unknown> } | null}
- */
 function pgRowToDocShim(row) {
   if (!row) return null;
   return { id: String(row.id), data: () => row };
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 async function isMemberVisibleToViewer(req, db, memberId) {
   const viewer = getAuthContext(req);
   if (!viewer) return false;
@@ -97,11 +86,6 @@ async function isMemberVisibleToViewer(req, db, memberId) {
   return visibleIds.includes(memberId);
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 async function isMemberManageableByViewer(req, db, memberId) {
   const viewer = getAuthContext(req);
   if (!viewer) return false;
@@ -109,11 +93,6 @@ async function isMemberManageableByViewer(req, db, memberId) {
   return canManageMember(db, viewer.memberId, viewer.roleName, memberId);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {ReturnType<typeof getAuthContext>} viewer
- */
 async function buildRoleChangeMemberResponse(db, memberId, viewer) {
   const row = await getMemberByIdPg(memberId);
   if (!row) throw new Error("Member not found");
@@ -123,12 +102,6 @@ async function buildRoleChangeMemberResponse(db, memberId, viewer) {
   return member;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {ReturnType<typeof getAuthContext>} viewer
- * @param {string} section
- */
 async function buildLightSectionMemberResponse(db, memberId, viewer, section) {
   const row = await getMemberByIdPg(memberId);
   if (!row) throw new Error("Member not found");
@@ -152,7 +125,6 @@ function formatDate(date) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-/** @param {Record<string, unknown>} doc */
 function effectiveTrackingStatusFromDoc(doc) {
   if (doc && (doc.trackingStatus || doc.tracking_status)) {
     return doc.trackingStatus || doc.tracking_status;
@@ -395,10 +367,8 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
     }
 
-    // Send initial snapshot immediately
     await sendMembersFrame();
 
-    // Re-send on any members change event
     const unsubscribe = subscribeChanges((msg) => {
       if (msg.resource === "members") void sendMembersFrame();
     });
@@ -513,9 +483,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
     const auth = getAuthAdmin();
     if (!auth) return sendJson(res, origin, 503, { success: false, error: "Auth not configured" }), true;
     const decoded = await auth.verifyIdToken(token);
-    // Primary lookup: by firebase_uid in Postgres members table (O(1) index)
     let memberRow = await getMemberByFirebaseUidPg(decoded.uid);
-    // Email fallback (same two-step the Firestore path used)
     if (!memberRow && typeof decoded.email === "string" && decoded.email) {
       const rows = await query("SELECT * FROM members WHERE work_email = $1 LIMIT 1", [decoded.email.trim().toLowerCase()]);
       memberRow = rows[0] ?? null;
@@ -532,7 +500,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
     if (!memberRow) return sendJson(res, origin, 404, { success: false, error: "Member not found" }), true;
     const memberDoc = pgRowToDocShim(memberRow);
     await alignMemberRoleTables(db, memberDoc.id, decoded.uid);
-    // Re-fetch after alignment to pick up any role changes
     const refreshedRow = await getMemberByIdPg(memberDoc.id);
     const finalDoc = refreshedRow ? pgRowToDocShim(refreshedRow) : memberDoc;
     const [member] = await mapMembersWithProfilePhotos(db, [finalDoc]);
@@ -574,12 +541,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
 
       if (isPostgresConfigured()) {
-        // Non-management roles (Viewer/Client/Employee) must be scoped to
-        // what they're actually allowed to see - listMembersEnrichedPg's own
-        // super/management branches already narrow correctly, but its
-        // fallback used to return every active member org-wide regardless
-        // of viewer role. null here (Owner/Admin/management) is a no-op:
-        // those branches ignore visibleIds entirely.
         const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
         const enrichedRows = await listMembersEnrichedPg({ viewer, limit: pageLimit ?? 500, visibleIds });
         let members = enrichedRows.map((row) => normalizeDoc(row));
@@ -724,7 +685,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
       updated_at: new Date(),
     };
     await createMemberPg(payload);
-    // publishChange is emitted inside createMemberPg
     const actorId = viewer?.memberId ?? "";
     if (typeof body.role === "string") {
       await syncMemberPrimaryRole(db, payload.id, body.role, actorId, viewer?.roleName ?? "");
@@ -861,9 +821,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         viewer,
         id,
       );
-      // Targeted frame (§4.2): what changed is the affected member's own
-      // permissions, which must never be broadcast - sendToMember only
-      // reaches their own sockets, not everyone's.
       sendToMember(id, { type: "scope-changed", reason: "role", at: Date.now() });
       sendJson(res, origin, 200, { success: true, data: { form: safeForm, member } });
     } catch (error) {
@@ -947,14 +904,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to change role." });
         return true;
       }
-      // Pay/bill rate is Super Manager and above only - narrower than
-      // canManage (requireManagementRole), which also lets a plain Manager
-      // through for every other section. This is a fast-fail mirror of the
-      // real enforcement in updateMemberProfile (member-profile.service.js),
-      // which is what actually protects every write path, including
-      // members/batch-update. Any field in the payload counts, not just
-      // payRate - a Manager could otherwise slip currency/payPeriod/note/
-      // effectiveDate through unblocked.
       if (
         !isOrgProjectAdminRole(viewer?.roleName ?? "") &&
         body.payBill &&
@@ -1007,8 +956,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
 
       const reloadSections = getProfilePatchSections(body);
       const singleSection = reloadSections.length === 1 ? reloadSections[0] : null;
-      // §6.9 - optional, only present when the caller sends back the
-      // per-section *UpdatedAt it loaded the form with.
       const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
       if (
         !hasRoleChange &&
@@ -1128,7 +1075,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
     try {
       await deleteMemberProfileData(db, id);
       await deleteMemberPg(id, viewer?.memberId);
-      // publishChange is emitted inside deleteMemberPg
       sendJson(res, origin, 200, { success: true, data: { id, deleted: true } });
     } catch (error) {
       sendJson(res, origin, 500, { success: false, error: error instanceof Error ? error.message : "Delete failed" });
@@ -1233,7 +1179,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
     [mapped] = await enrichMembersWithPayAndLimits(db, [mapped]);
     const patchViewer = getAuthContext(req);
     mapped = applyMemberFieldPolicy([mapped], patchViewer)[0] ?? mapped;
-    // publishChange is emitted inside updateMemberPg (if updates were written)
     void publishChange("members", id, "updated", actorId);
     sendJson(res, origin, 200, { success: true, data: mapped });
     return true;
@@ -1271,8 +1216,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
     }
-    // role_id/created_by/updated_by are real UUID columns - "" fails the
-    // ?? null mapping below and Postgres rejects "" as an invalid uuid.
     const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" && body.roleId.trim() ? body.roleId : null, pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId || null, created_by_uid: viewer?.uid ?? "", updated_by: null };
     const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
     const colList = INVITE_COLS.join(", ");
@@ -1358,7 +1301,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
     const created = [];
     let emailsSent = 0;
     let emailsFailed = 0;
-    /** @type {string | undefined} */
     let emailChannel;
     for (const row of rows) {
       const email = typeof row?.email === "string" ? row.email.trim().toLowerCase() : "";
@@ -1379,8 +1321,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         status: "pending_signup",
         sent_at: new Date(),
         accepted_at: null,
-        // created_by/updated_by are real UUID columns - "" (not null/undefined)
-        // fails ?? null below and Postgres rejects "" as an invalid uuid.
         created_by: viewer?.memberId || null,
         created_by_uid: viewer?.uid ?? "",
         updated_by: null,
@@ -1550,11 +1490,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: options, options });
         return true;
       }
-      // The Firestore branch that used to follow ran only when
-      // isPostgresLookupReady() was false, reading members_field_data - a
-      // collection that has taken no writes since these options moved to
-      // org_field_options. It could not return a current option, only an
-      // empty list or a stale one, which is worse than failing.
       const options = await listOrgFieldOptionsPg(type);
       sendJson(res, origin, 200, { success: true, data: options, options });
       return true;
@@ -1597,11 +1532,6 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
       const label = typeof body.label === "string" ? body.label : "";
       const position = Number.isInteger(body.position) ? body.position : 0;
-      // validTypes and ORG_FIELD_OPTION_TYPES hold the same eight option types
-      // (memberFormSnapshot aside, handled above), so this rejects only if the
-      // two drift apart later. It used to fall through to a Firestore write
-      // into members_field_data instead - a row nothing reads back, since the
-      // GET above serves org_field_options.
       if (!ORG_FIELD_OPTION_TYPES.has(type)) {
         sendJson(res, origin, 400, { success: false, error: "Invalid type" });
         return true;

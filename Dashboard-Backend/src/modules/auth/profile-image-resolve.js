@@ -1,8 +1,3 @@
-/**
- * Avatar URL from User_profiles: GCS photoURL → embedded base64 → legacy photoURL.
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} doc
- * @returns {string | null}
- */
 export function resolveProfileAvatarUrl(doc) {
   if (!doc || typeof doc !== "object") return null;
 
@@ -20,10 +15,6 @@ export function resolveProfileAvatarUrl(doc) {
   return photoURL || null;
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} doc
- * @returns {boolean}
- */
 export function hasEmbeddedProfileImage(doc) {
   if (!doc || typeof doc !== "object") return false;
   const data = typeof doc.profileImageData === "string" ? doc.profileImageData.trim() : "";
@@ -31,10 +22,6 @@ export function hasEmbeddedProfileImage(doc) {
   return Boolean(data && mime);
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} doc
- * @returns {boolean}
- */
 export function hasRemovableUploadedProfileImage(doc) {
   if (!doc || typeof doc !== "object") return false;
   if (hasEmbeddedProfileImage(doc)) return true;
@@ -43,13 +30,8 @@ export function hasRemovableUploadedProfileImage(doc) {
   return typeof doc.avatarStoragePath === "string" && doc.avatarStoragePath.length > 0;
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} row
- * @returns {Record<string, unknown>}
- */
 export function profileImageFieldsFromDoc(row) {
   if (!row || typeof row !== "object") return {};
-  /** @type {Record<string, unknown>} */
   const out = {};
   if ("photoURL" in row) {
     const v = row.photoURL;

@@ -1,9 +1,5 @@
 import { sendJson } from "./response.js";
 
-/**
- * @param {number} status
- * @param {string} [message]
- */
 export function inferErrorCode(status, message = "") {
   const lower = message.toLowerCase();
   if (status === 401) return "UNAUTHORIZED";
@@ -18,9 +14,8 @@ export function inferErrorCode(status, message = "") {
   return "REQUEST_FAILED";
 }
 
-/** Add errorDetail to legacy `{ success: false, error }` responses. */
 export function enrichErrorPayload(status, payload) {
-  if (!payload || typeof payload !== "object" || /** @type {{ success?: boolean }} */ (payload).success !== false) {
+  if (!payload || typeof payload !== "object" || (payload).success !== false) {
     return payload;
   }
   const body = /** @type {{ error?: string, errorDetail?: { code?: string, message?: string } }} */ (payload);
@@ -35,17 +30,8 @@ export function enrichErrorPayload(status, payload) {
   };
 }
 
-/**
- * Maps a Postgres foreign-key-violation (23503) to a clean 409, in place of the
- * raw driver message. Returns true if it sent a response, false if the caller
- * should handle `err` itself.
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {unknown} err
- * @param {import("node:http").IncomingMessage} [req]
- */
 export function sendPgConstraintError(res, origin, err, req) {
-  if (!err || typeof err !== "object" || /** @type {{code?: string}} */ (err).code !== "23503") {
+  if (!err || typeof err !== "object" || (err).code !== "23503") {
     return false;
   }
   sendApiError(
@@ -59,7 +45,6 @@ export function sendPgConstraintError(res, origin, err, req) {
   return true;
 }
 
-/** Standard error envelope — keeps top-level `error` string for old clients. */
 export function sendApiError(res, origin, status, code, message, req) {
   sendJson(
     res,

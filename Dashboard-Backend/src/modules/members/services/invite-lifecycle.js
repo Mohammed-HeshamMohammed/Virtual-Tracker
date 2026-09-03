@@ -1,27 +1,15 @@
 import { getEnv } from "../../../config/env.js";
 
-/** Default TTL for shareable open invite links (hours). Override with INVITE_SHARE_LINK_TTL_HOURS in Backend/.env. */
 export const SHARE_LINK_DEFAULT_TTL_HOURS = 168;
 
-/**
- * @returns {number}
- */
 export function resolveShareLinkTtlHours() {
   return getEnv().invites.shareLinkTtlHours;
 }
 
-/**
- * @param {number} [ttlHours]
- * @returns {Date}
- */
 export function computeShareLinkExpiresAt(ttlHours = resolveShareLinkTtlHours()) {
   return new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} row
- * @returns {number | null}
- */
 export function resolveInviteExpiryMs(row) {
   if (!row || typeof row !== "object") return null;
   const exp = row.expires_at ?? row.expiresAt;
@@ -34,19 +22,12 @@ export function resolveInviteExpiryMs(row) {
   return null;
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} row
- * @param {number} [nowMs]
- */
 export function isInviteExpired(row, nowMs = Date.now()) {
   const ms = resolveInviteExpiryMs(row);
   if (ms == null) return false;
   return nowMs >= ms;
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown> | null | undefined} row
- */
 export function isInviteConsumed(row) {
   if (!row || typeof row !== "object") return true;
   const status = typeof row.status === "string" ? row.status : "";
@@ -58,7 +39,6 @@ export function isInviteConsumed(row) {
   return false;
 }
 
-/** Hide from Invites tab: consumed invites + open share links. */
 export function shouldHideInviteFromActiveList(row) {
   const status = typeof row.status === "string" ? row.status : "";
   if (status === "completed" || status === "accepted") return true;
@@ -71,10 +51,6 @@ export function shouldHideInviteFromActiveList(row) {
   return inviteKind === "open_link";
 }
 
-/**
- * @param {FirebaseFirestore.DocumentData | Record<string, unknown>} row
- * @returns {{ ok: true } | { ok: false; error: string; httpStatus: number }}
- */
 export function assertInviteAvailableForRegistration(row) {
   const status = typeof row.status === "string" ? row.status : "";
   if (status !== "pending_signup") {
@@ -89,7 +65,6 @@ export function assertInviteAvailableForRegistration(row) {
   return { ok: true };
 }
 
-/** Default fields for single-use share links (TTL from env). */
 export function shareLinkInviteFields(ttlHours = resolveShareLinkTtlHours()) {
   return {
     max_uses: 1,

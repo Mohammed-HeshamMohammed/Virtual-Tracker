@@ -1,20 +1,10 @@
-/**
- * Calls Notify-Backend for templated transactional email delivery.
- * Dashboard-Backend must not send email directly (no SMTP/Resend credentials here).
- */
 import { getEnv } from "../../config/env.js";
 import { notifyRequest } from "./notify-request.js";
 
-/** Whether Dashboard is configured to route outbound email through Notify-Backend. */
 export function isNotifyEmailRoutingConfigured() {
   return Boolean(getEnv().notify.backendUrl?.trim());
 }
 
-/**
- * @param {string} template
- * @param {Record<string, unknown>} data
- * @returns {Promise<{ sent: boolean; channel: string; error?: string }>}
- */
 export async function sendEmailViaNotify(template, data) {
   const key = typeof template === "string" ? template.trim() : "";
   if (!key) return { sent: false, channel: "skipped" };

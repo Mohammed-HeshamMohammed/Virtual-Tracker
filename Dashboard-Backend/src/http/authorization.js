@@ -5,12 +5,6 @@ import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { canActorManageTargetRole } from "./role-manage-policy.js";
 import { isPostgresConfigured, query } from "../lib/postgres/client.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRole
- * @param {string} targetMemberId
- */
 export async function canAccessMember(db, viewerMemberId, viewerRole, targetMemberId) {
   if (!viewerMemberId || !targetMemberId) return false;
   if (viewerMemberId === targetMemberId) return true;
@@ -19,12 +13,6 @@ export async function canAccessMember(db, viewerMemberId, viewerRole, targetMemb
   return visibleIds.includes(targetMemberId);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRole
- * @param {string} targetMemberId
- */
 export async function canManageMember(db, viewerMemberId, viewerRole, targetMemberId) {
   if (!viewerMemberId || !targetMemberId) return false;
   if (viewerMemberId === targetMemberId) return true;
@@ -46,14 +34,6 @@ export async function canManageMember(db, viewerMemberId, viewerRole, targetMemb
   return manageableIds.includes(targetMemberId);
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} targetMemberId
- * @returns {Promise<boolean>}
- */
 export async function assertMemberAccessible(req, res, origin, db, targetMemberId) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -68,12 +48,6 @@ export async function assertMemberAccessible(req, res, origin, db, targetMemberI
   return true;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @returns {boolean}
- */
 export function assertManagementRole(req, res, origin) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -87,7 +61,6 @@ export function assertManagementRole(req, res, origin) {
   return true;
 }
 
-/** Owner / Super Admin only — destructive org ops. */
 export function assertOrgAdminRole(req, res, origin) {
   const viewer = getAuthContext(req);
   if (!viewer) {

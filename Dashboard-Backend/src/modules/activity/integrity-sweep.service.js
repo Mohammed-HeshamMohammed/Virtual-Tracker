@@ -16,16 +16,11 @@ import {
   insertIntegrityFlagPg,
 } from "../../lib/postgres/integrity-postgres.service.js";
 
-// AC-2: "the comparison is a backend job" - paced for the sustained-span
-// timescale these checks look for (tens of minutes), not a tick rate.
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
-// Wide enough to catch a run spanning several SCREENSHOT_MIN/MAX_DELAY_SEC
-// captures, or a CATEGORY_CONFLICT_MIN_SECONDS span, comfortably inside one window.
 const LOOKBACK_MINUTES = 60;
 
 let timer = null;
 
-/** Idempotent - a second call while already scheduled is a no-op, same as the other sweep jobs. */
 export function scheduleIntegritySweep() {
   if (timer) return;
   const run = () => runIntegrityChecks().catch((err) => logSafeWarn("[integrity sweep]", err));
@@ -36,9 +31,6 @@ export function scheduleIntegritySweep() {
 
 export async function runIntegrityChecks() {
   const since = new Date(Date.now() - LOOKBACK_MINUTES * 60 * 1000);
-  // AC-2 and AC-1 both drive off the same recent-screenshot rows, so they're
-  // fetched once here and handed to two independent per-session checks
-  // instead of scanning activity_screenshots twice.
   const screenshotRows = await fetchRecentScreenshotsPg(since);
   await Promise.all([
     runScreenshotStalenessCheck(screenshotRows),
@@ -48,7 +40,6 @@ export async function runIntegrityChecks() {
 }
 
 async function runScreenshotStalenessCheck(rows) {
-  /** @type {Map<string, { memberId: string, shots: { perceptualHash: string, activityLevel: number }[] }>} */
   const bySession = new Map();
   for (const row of rows) {
     const entry = bySession.get(row.session_id) ?? { memberId: row.member_id, shots: [] };
@@ -67,19 +58,12 @@ async function runScreenshotStalenessCheck(rows) {
   }
 }
 
-/**
- * AC-1: the server-side, reviewable/contestable counterpart to the agent's
- * own local synthetic-input warning - see integrity-checks.js's
- * detectSustainedInjection for the "enough captures, high enough ratio"
- * reasoning.
- */
 async function runInjectedInputCheck(rows) {
-  /** @type {Map<string, { memberId: string, totalWithSignal: number, injected: number }>} */
   const bySession = new Map();
   for (const row of rows) {
     const keystrokeCount = Number(row.keystroke_count) || 0;
     const injectedEventCount = Number(row.injected_event_count) || 0;
-    if (keystrokeCount === 0 && injectedEventCount === 0) continue; // no signal from this capture
+    if (keystrokeCount === 0 && injectedEventCount === 0) continue;
     const entry = bySession.get(row.session_id) ?? { memberId: row.member_id, totalWithSignal: 0, injected: 0 };
     entry.totalWithSignal += 1;
     if (injectedEventCount > 0) entry.injected += 1;
@@ -104,8 +88,6 @@ async function runCategoryConflictCheck(since) {
     fetchRecentActivityLevelsBySessionPg(since),
   ]);
 
-  // Resolve category once per distinct app/domain name, not once per row -
-  // the same handful of apps/domains repeat across every session in the window.
   const appCategoryCache = new Map();
   const domainCategoryCache = new Map();
   async function isDistractingApp(name) {
@@ -117,7 +99,6 @@ async function runCategoryConflictCheck(since) {
     return (await domainCategoryCache.get(name)) === "distracting";
   }
 
-  /** @type {Map<string, { memberId: string, seconds: number }>} */
   const distractingBySession = new Map();
   for (const row of appRows) {
     if (!(await isDistractingApp(row.app_name))) continue;

@@ -17,8 +17,6 @@ const NO_SCREENSHOT_MS = 15 * 60 * 1000;
 const LOW_ACTIVITY_THRESHOLD = 30;
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
@@ -30,7 +28,6 @@ async function getDirectParentIds(_db, memberId) {
   return rows.map((r) => r.parent_member_id).filter(Boolean);
 }
 
-/** Leadership on shared projects only (Owner / Super Admin / Admin org roles). */
 async function getProjectLeadershipRecipientIds(db, subjectMemberId) {
   const projectPeers = await getProjectScopedMemberIds(db, subjectMemberId);
   const recipients = new Set();
@@ -42,7 +39,6 @@ async function getProjectLeadershipRecipientIds(db, subjectMemberId) {
   return recipients;
 }
 
-/** Managers + project leadership for activity alerts. */
 export async function resolveActivityAlertRecipients(db, subjectMemberId, subjectLevel = "employee") {
   const recipients = new Set();
 
@@ -99,7 +95,6 @@ export async function dispatchActivityAlert(db, subjectMemberId, alertType, titl
   return { sent: recipients.length };
 }
 
-/** After app-only ingest while session is active — alert if no recent screenshot. */
 export async function maybeAlertMissingScreenshot(db, memberId, sessionId) {
   const session = await getPgSessionById(sessionId);
   if (!session || session.status !== "active") return;

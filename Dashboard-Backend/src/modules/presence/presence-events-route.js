@@ -5,7 +5,6 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { subscribePresenceChanges } from "./presence-pubsub.js";
 
-/** SSE presence deltas for visible members. */
 export async function routePresenceEvents(req, res, url, origin) {
   if (url.pathname !== "/api/presence/events" && url.pathname !== "/api/v1/presence/events") {
     return false;

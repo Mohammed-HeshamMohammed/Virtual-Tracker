@@ -1,14 +1,5 @@
-/**
- * Calls Notify-Backend for libphonenumber-js validation.
- * Dashboard-Backend must not import phone parsing libraries directly.
- */
 import { notifyRequest } from "./notify-request.js";
 
-/**
- * @param {string} phone
- * @param {{ required?: boolean; label?: string; defaultCountry?: string }} [options]
- * @returns {Promise<string>} E.164 phone or empty string when optional and blank
- */
 export async function validatePhoneViaNotify(phone, options = {}) {
   let response;
   let payload;

@@ -61,22 +61,13 @@ export async function ensureOrganizationEntities(db, actor = "system", options =
   return { created: unique };
 }
 
-/** @type {Promise<unknown> | null} */
 let maintenanceInFlight = null;
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 async function isOrganizationMaintenanceComplete(db) {
   const meta = await getSystemMetaDoc(db, ENTITY_BOOTSTRAP_META_KEY);
   return meta?.maintenanceComplete === true;
 }
 
-/**
- * Heavy org migrations off the login path (one run per process).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} [actor]
- */
 export function scheduleOrganizationMaintenance(db, actor = "system") {
   if (maintenanceInFlight) return maintenanceInFlight;
   maintenanceInFlight = runOrganizationMaintenance(db, actor)
@@ -90,11 +81,6 @@ export function scheduleOrganizationMaintenance(db, actor = "system") {
   return maintenanceInFlight;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} actor
- * @returns {Promise<{ created: string[] }>}
- */
 async function runOrganizationMaintenance(db, actor) {
   if (await isOrganizationMaintenanceComplete(db)) {
     return { created: [] };
@@ -141,7 +127,6 @@ async function runOrganizationMaintenance(db, actor) {
   return { created: [...new Set(created)] };
 }
 
-/** Org + member entity bootstrap after login. */
 export async function ensureEntityDiagramForAuthUser(db, userRecord, memberCtx) {
   const actor = userRecord.uid || "auth-auto-init";
   const org = await ensureOrganizationEntities(db, actor, { deferMaintenance: true });

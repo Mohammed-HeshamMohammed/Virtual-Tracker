@@ -16,10 +16,8 @@ import { getMemberByFirebaseUidPg, updateMemberPg } from "../../../lib/postgres/
 const MOBILE_USERS_COLLECTION = "users";
 const MAX_MIGRATE_BATCH = 100;
 const MIGRATABLE_PAGE_SIZE = 1000;
-/** Firestore `in` queries on document id are capped at 30 values per request. */
 const FIRESTORE_IN_CHUNK_SIZE = 30;
 
-/** Mobile-app `users/{uid}.role` (lowercased, spaces/underscores collapsed) → app role label. */
 const MOBILE_ROLE_MAP = {
   agent: "Employee",
   candidate: "Intern",
@@ -32,7 +30,6 @@ function normalizeMobileRoleKey(role) {
   return String(role || "").trim().toLowerCase().replace(/[\s_]+/g, "");
 }
 
-/** @returns {string|undefined} Suggested app role label, or undefined when the mobile role has no mapping. */
 function mapMobileRoleToMemberRole(rawRole) {
   return MOBILE_ROLE_MAP[normalizeMobileRoleKey(rawRole)];
 }
@@ -47,12 +44,6 @@ function chunk(arr, size) {
   return out;
 }
 
-/**
- * Batch-read mobile-app profile docs (`users/{uid}`) for the given uids.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} uids
- * @returns {Promise<Map<string, { avatarUrl: string, role: string, isActive: boolean }>>}
- */
 async function fetchMobileProfiles(db, uids) {
   const profiles = new Map();
   if (uids.length === 0) return profiles;
@@ -75,10 +66,6 @@ async function fetchMobileProfiles(db, uids) {
   return profiles;
 }
 
-/**
- * @param {import("firebase-admin/auth").UserRecord} u
- * @param {{ avatarUrl: string, role: string } | undefined} profile
- */
 function toMigratableRow(u, profile) {
   const row = {
     uid: u.uid,
@@ -93,14 +80,6 @@ function toMigratableRow(u, profile) {
   return row;
 }
 
-/**
- * True if this uid is already a member or already pending - i.e. not a valid
- * Migrate candidate. The third check this used to run, a member_auth_index
- * doc lookup, is gone: the members table's unique firebase_uid index replaced
- * that collection, and nothing has written a doc to it since.
- * @param {import("firebase-admin/firestore").Firestore} _db
- * @param {string} uid
- */
 async function isUidAlreadyLinked(_db, uid) {
   const [member, pendingRows] = await Promise.all([
     getMemberByFirebaseUidPg(uid),
@@ -109,13 +88,6 @@ async function isUidAlreadyLinked(_db, uid) {
   return Boolean(member) || pendingRows.length > 0;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeMemberMigration(req, res, url, origin) {
   const db = getDb();
   if (!db) return false;
@@ -141,7 +113,6 @@ export async function routeMemberMigration(req, res, url, origin) {
           sendJson(res, origin, 200, { success: true, users: [], nextPageToken: null });
           return true;
         }
-        // Eligible only if they actually have a mobile-app profile (proves they signed in there) and aren't deactivated there.
         const profile = (await fetchMobileProfiles(db, [u.uid])).get(u.uid);
         if (!profile || !profile.isActive) {
           sendJson(res, origin, 200, { success: true, users: [], nextPageToken: null });
@@ -157,8 +128,6 @@ export async function routeMemberMigration(req, res, url, origin) {
       const linkedFlags = await Promise.all(candidates.map((u) => isUidAlreadyLinked(db, u.uid)));
       const unlinked = candidates.filter((_, i) => !linkedFlags[i]);
 
-      // Only people with a mobile-app profile doc are real migration candidates — an Auth
-      // account with no `users/{uid}` doc means they never actually signed into the mobile app.
       const profiles = await fetchMobileProfiles(db, unlinked.map((u) => u.uid));
       const users = unlinked
         .filter((u) => {

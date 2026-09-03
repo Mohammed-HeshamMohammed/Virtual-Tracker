@@ -1,11 +1,8 @@
-// In-memory metrics ring buffers for /monitor.
 
-const RING_SIZE = 600; // 10 minutes at 1s resolution
+const RING_SIZE = 600;
 
-/** @type {{ ts: number, method: string, path: string, status: number, ms: number, ip: string, ua: string }[]} */
 const requestLog = [];
 
-/** @type {{ ts: number, event: string, ip: string, detail: string }[]} */
 const securityLog = [];
 
 const counters = {
@@ -17,17 +14,14 @@ const counters = {
   auth_ok: 0,
 };
 
-/** @type {{ ts: number, rps: number, p50: number, p95: number, err_rate: number }[]} */
 const timeSeries = [];
 
-/** @type {number[]} – rolling window of response times (last 1000 requests) */
 const _rtWindow = [];
 
 let _lastTsFlush = Date.now();
 let _rtInWindow = 0;
 let _errInWindow = 0;
 
-/** Record a completed request. */
 export function recordRequest({ method, path, status, ms, ip = "-", ua = "-" }) {
   const ts = Date.now();
 
@@ -46,7 +40,6 @@ export function recordRequest({ method, path, status, ms, ip = "-", ua = "-" }) 
   requestLog.push({ ts, method, path, status, ms, ip, ua: (ua || "-").slice(0, 120) });
   if (requestLog.length > RING_SIZE) requestLog.shift();
 
-  // Flush a time-series sample every second
   if (ts - _lastTsFlush >= 1000) {
     const elapsed = (ts - _lastTsFlush) / 1000;
     const rps = _rtInWindow / elapsed;
@@ -62,23 +55,19 @@ export function recordRequest({ method, path, status, ms, ip = "-", ua = "-" }) 
   }
 }
 
-/** Record a security event (auth failure, suspicious request, etc.). */
 export function recordSecurityEvent({ event, ip = "-", detail = "" }) {
   securityLog.push({ ts: Date.now(), event, ip, detail: detail.slice(0, 200) });
   if (securityLog.length > 500) securityLog.shift();
 }
 
-/** Record a successful auth. */
 export function recordAuthOk() {
   counters.auth_ok++;
 }
 
-/** Snapshot all metrics for the dashboard. */
 export function getMetricsSnapshot() {
   const mem = process.memoryUsage();
   const uptime = process.uptime();
 
-  // Percentiles from full window
   const sorted = [..._rtWindow].sort((a, b) => a - b);
   const p50 = sorted[Math.floor(sorted.length * 0.5)] ?? 0;
   const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? 0;

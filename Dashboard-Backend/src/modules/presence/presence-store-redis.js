@@ -3,7 +3,6 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const RECORD_TTL_SECONDS = 600;
 const ONLINE_SET_KEY = "presence:online";
-/** @type {boolean} */
 let loggedWriteFailure = false;
 
 function recordKey(userId) {
@@ -16,11 +15,7 @@ function logWriteFailureOnce(err) {
   logSafeWarn("[presence/redis] write failed — check REDIS_URL is reachable:", err);
 }
 
-/** Redis presence store. Keys TTL after 10m so crashed processes don't leave ghost "online". */
 export function createRedisPresenceStore() {
-  /**
-   * @param {import("./presence-events.js").PresenceRecord} record
-   */
   async function set(record) {
     if (!record?.userId) return false;
     const redis = getRedisClient();
@@ -39,10 +34,6 @@ export function createRedisPresenceStore() {
     }
   }
 
-  /**
-   * @param {string} userId
-   * @returns {Promise<import("./presence-events.js").PresenceRecord | null>}
-   */
   async function get(userId) {
     if (!userId) return null;
     const redis = getRedisClient();
@@ -55,10 +46,6 @@ export function createRedisPresenceStore() {
     }
   }
 
-  /**
-   * @param {string[]} userIds
-   * @returns {Promise<Map<string, import("./presence-events.js").PresenceRecord | null>>}
-   */
   async function getMany(userIds) {
     const out = new Map();
     if (!userIds.length) return out;
@@ -79,9 +66,6 @@ export function createRedisPresenceStore() {
     return out;
   }
 
-  /**
-   * @param {string} userId
-   */
   async function deleteUser(userId) {
     if (!userId) return;
     const redis = getRedisClient();
@@ -94,9 +78,6 @@ export function createRedisPresenceStore() {
     }
   }
 
-  /**
-   * @returns {Promise<string[]>}
-   */
   async function listOnlineUserIds() {
     const redis = getRedisClient();
     if (!redis) return [];

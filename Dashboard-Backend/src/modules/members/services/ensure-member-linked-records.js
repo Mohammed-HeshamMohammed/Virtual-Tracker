@@ -14,7 +14,6 @@ async function reconcileMemberNamesSafe(db, uid, memberId) {
   }
 }
 
-/** profile_linked_records_at on members (bootstrap marker, not presence). */
 async function hasBootstrapMarker(db, memberId) {
   const memberRow = await getMemberByIdPg(memberId);
   if (!memberRow) return false;
@@ -23,12 +22,6 @@ async function hasBootstrapMarker(db, memberId) {
   return Boolean(legacy?.profile_linked_records_at);
 }
 
-/**
- * Wire up org seeds + member profile rows after login. One Firebase uid → one members row.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").UserRecord} userRecord
- * @returns {Promise<{memberId: string | null, created: string[], skipped?: string}>}
- */
 export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
   const uid = userRecord.uid;
 
@@ -45,9 +38,6 @@ export async function ensureMemberLinkedRecordsForUserRecord(db, userRecord) {
 
   const ensuredMember = await ensureMemberRowForUserRecord(db, userRecord);
 
-  // idx_members_firebase_uid is a real DB-level unique constraint now, so a
-  // duplicate member row per firebase_uid can't exist to dedupe against -
-  // ensuredMember.memberId is always the canonical one.
   let memberId = ensuredMember.memberId;
   let memberData = null;
 

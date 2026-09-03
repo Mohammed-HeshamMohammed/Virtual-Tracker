@@ -4,9 +4,6 @@ import { isInviteConsumed, isInviteExpired } from "./invite-lifecycle.js";
 import { resolveRoleNameById } from "./relation-sync.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
 
-/**
- * @param {string} inviteId
- */
 async function loadInviteForManagement(inviteId) {
   if (!inviteId || typeof inviteId !== "string") {
     return { ok: false, httpStatus: 400, error: "Invalid invite id." };
@@ -21,21 +18,12 @@ async function loadInviteForManagement(inviteId) {
   return { ok: true, row: rows[0] };
 }
 
-/**
- * @param {Record<string, unknown>} row
- * @param {string | undefined} appOrigin
- */
 function buildInviteUrl(row, appOrigin) {
   const token = typeof row.invite_token === "string" ? row.invite_token.trim() : "";
   if (!token) return null;
   return `${resolveAppPublicUrl(appOrigin)}/invite/${token}`;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- * @param {string | undefined} appOrigin
- */
 export async function getInviteManagementLink(db, inviteId, appOrigin) {
   const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;
@@ -55,10 +43,6 @@ export async function getInviteManagementLink(db, inviteId, appOrigin) {
   return { ok: true, inviteUrl };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- */
 export async function renewInviteForManagement(db, inviteId) {
   const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;
@@ -77,11 +61,6 @@ export async function renewInviteForManagement(db, inviteId) {
   return { ok: true, row: rows[0] };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- * @param {{ appOrigin?: string }} [opts]
- */
 export async function resendInviteEmailForManagement(db, inviteId, opts = {}) {
   const loaded = await loadInviteForManagement(inviteId);
   if (!loaded.ok) return loaded;

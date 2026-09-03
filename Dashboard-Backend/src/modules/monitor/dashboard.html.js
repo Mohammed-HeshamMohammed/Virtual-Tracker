@@ -1,4 +1,3 @@
-/** Returns the main monitoring dashboard HTML — Grafana Node Exporter Full style. */
 export function getDashboardHtml() {
   return `<!DOCTYPE html>
 <html lang="en">

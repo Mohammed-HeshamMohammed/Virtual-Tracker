@@ -7,6 +7,7 @@ import {
   clientMayTrackProject,
   getViewerProjectIds,
   isOrgProjectAdminRole,
+  listTrackableProjectIdsPg,
   toAllowedProjectSet,
   viewerCanCreateProjectTasks,
   viewerCanWriteProject,
@@ -62,20 +63,9 @@ import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
 import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
 
-/** Field-type coercion + unknown-field rejection, reusing the same catalog
- * validation the old generic Firestore path used (schema/catalog/projects) -
- * not reinvented, just applied as a gate before the values that were already
- * being read manually below. Throws (message becomes the 400 response) on a
- * bad field name or wrong type. */
 function validateProjectDomainBody(entityKey, body, isUpdate) {
   const entity = schemaByKey.get(entityKey);
   if (!entity) return;
-  // §6.9 optimistic-concurrency token: sent by the client on updates, never
-  // a real column, so the field catalog doesn't (and shouldn't) know about
-  // it - every isUpdate caller needs it whitelisted or it 400s as an
-  // "Unexpected field" before the conditional-write check below ever runs.
-  // sub_project_ids is a management-project link list, not a projects column,
-  // so the field catalog has no entry for it and would reject the whole body.
   const SUB_PROJECT_FIELDS = ["sub_project_ids", "subProjectIds"];
   const options = isUpdate
     ? { extraAllowedFields: ["expected_updated_at", "expectedUpdatedAt", ...SUB_PROJECT_FIELDS] }
@@ -84,19 +74,6 @@ function validateProjectDomainBody(entityKey, body, isUpdate) {
   else buildCreatePayload(entity, body, options);
 }
 
-/**
- * Real gate for the End Date x per-person-budget feasibility check: a
- * scope='per_person' budget's `cost` is hours every member must independently
- * log, throttled by each member's own daily/weekly cap (Members page) - the
- * project can't finish before the slowest-capped member could possibly reach
- * that many hours. No-op (returns true) when there's no end date to check
- * against, or the budget isn't per_person, or nothing constrains it.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ id: string, created_at: string|Date, end_date: string|Date|null }} project
- * @param {string} scope
- * @param {number} hoursPerPerson
- * @returns {Promise<string|null>} null if feasible, else an error message
- */
 async function checkBudgetEndDateFeasible(db, project, scope, hoursPerPerson) {
   if (scope !== "per_person" || !project?.end_date) return null;
   const { minDays } = await computeMinimumProjectDaysPg(db, project.id, Number(hoursPerPerson));
@@ -119,7 +96,6 @@ function memberLabel(data) {
 
 export { PROJECT_TYPES };
 
-/** Throws on an unrecognized value; message becomes the 400 response. */
 function normalizeProjectType(value) {
   if (value === undefined || value === null || value === "") return "normal";
   const type = String(value).trim().toLowerCase();
@@ -147,14 +123,6 @@ function toIso(value) {
   return String(value);
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeProjects(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 
@@ -186,9 +154,6 @@ export async function routeProjects(req, res, url, db, origin) {
         ? toAllowedProjectSet(await getViewerProjectIds(db, viewer.memberId, viewer.roleName))
         : null;
       const taskLimit = Number.parseInt(url.searchParams.get("task_limit") ?? "80", 10);
-      // Client budgets are financial data - Owner/Admin/Super Admin/Super
-      // Manager only. Gated here (not just hidden in the UI) so a Manager
-      // can't just read the response to see figures they shouldn't.
       const includeClientBudgets = Boolean(viewer && isOrgProjectAdminRole(viewer.roleName));
       const data = await getOverviewPanels(db, { taskLimit, allowedProjectIds: allowed, includeClientBudgets });
       sendJson(res, origin, 200, { success: true, data }, req);
@@ -287,11 +252,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // Live remaining-time number for an Hours-based project budget - the
-  // team-wide gate (checkProjectBudgetCap in activity/routes.js) has always
-  // enforced this silently, but never surfaced an actual number for the
-  // desktop agent to show. Cost-based budgets are a dollar unit, not a
-  // countdown - deliberately not handled here, same as a missing budget.
   const projectBudgetStatusMatch = /^\/api\/projects\/([^/]+)\/budget-status$/.exec(pn);
   if (projectBudgetStatusMatch && req.method === "GET") {
     const projectId = projectBudgetStatusMatch[1];
@@ -375,10 +335,6 @@ export async function routeProjects(req, res, url, db, origin) {
       const budget = budgetRows[0] ?? null;
       const limit = limitRows[0] ?? null;
 
-      // Every per-member limit row, not just limitRows[0] - the modal edits
-      // one independent limit per member, so returning a single row made
-      // every member past the first silently unreadable (and unsavable) in
-      // edit mode.
       const memberLimits = limitRows
         .map((row) => ({
           memberId: String(row.member_id || row.memberId || ""),
@@ -390,10 +346,6 @@ export async function routeProjects(req, res, url, db, origin) {
         }))
         .filter((row) => row.memberId);
 
-      // The member's OWN daily/weekly hour cap, shown read-only next to the
-      // project-level field so it's visible that a project limit tightens on
-      // top of it rather than replacing it. Same source the timer allowance
-      // enforces against (see timer-limit.service.js).
       const limitMemberIds = [...new Set([...managerIds, ...userIds, ...viewerIds])];
       const ownLimitEntries = await Promise.all(
         limitMemberIds.map(async (memberId) => [
@@ -434,8 +386,6 @@ export async function routeProjects(req, res, url, db, origin) {
           clientCanManage: Boolean(project.client_can_manage ?? project.clientCanManage ?? false),
           clientCanTrack: Boolean(project.client_can_track ?? project.clientCanTrack ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
-          // Only management projects can have these; an empty array for every
-          // other type keeps the response shape uniform for the client.
           subProjectIds: projectTypeDef(project.type).hasSubProjects
             ? await listSubProjectIdsPg(projectId)
             : [],
@@ -451,7 +401,6 @@ export async function routeProjects(req, res, url, db, origin) {
             ? Boolean(budget.stop_timers_when_reached ?? budget.stopTimersWhenReached ?? true)
             : true,
           budgetId: budget ? String(budget.id) : undefined,
-          /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
           budgetUpdatedAt: budget ? toIso(budget.updated_at) : undefined,
           budgetType: budget ? String(budget.type || "") : "",
           budgetBasedOn: budget ? String(budget.based_on || budget.basedOn || "") : "",
@@ -493,9 +442,6 @@ export async function routeProjects(req, res, url, db, origin) {
             : true,
           memberLimitMembers: limit ? String(limit.cost ?? 0) : "",
           budgetSpent: 0,
-          // Optimistic-concurrency version token (§6.9) - sent back
-          // unchanged on save so a stale-snapshot write can be detected
-          // instead of silently overwriting whatever changed in between.
           updatedAt: toIso(project.updated_at),
         },
       });
@@ -567,20 +513,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // ---------------------------------------------------------------------------
-  // Projects-domain CRUD (Postgres-backed). See
-  // PROPOSAL-Projects-Migration-to-PostgreSQL.md. Mirrors the same
-  // authorization semantics as the old generic Firestore path
-  // (assertProjectWriteAuthorized / assertTeamWriteAuthorized in
-  // schema/routes.js) - different storage engine, not a permissions change.
-  //
-  // NOT dual-write: these write Postgres only. Firestore stops receiving new
-  // project-domain data the moment this ships, which means any consumer still
-  // reading Firestore directly for this domain (there are several - see the
-  // migration doc) goes stale from this point on. That's a known, deliberate
-  // gap in this pass, not an oversight - flagged rather than silently patched
-  // over with a partial dual-write that wouldn't have full validation parity.
-  // ---------------------------------------------------------------------------
 
   async function assertProjectDomainWrite(projectId, memberId) {
     const viewer = getAuthContext(req);
@@ -635,52 +567,59 @@ export async function routeProjects(req, res, url, db, origin) {
     return rows.filter((r) => allowed.has(r[projectIdKey]));
   }
 
-  // ─── /api/projects ────────────────────────────────────────────────────
+  // GET /api/projects/trackable?memberId=X - projects the target member can
+  // actually clock in on (see listTrackableProjectIdsPg), for the Project
+  // dropdown when adding manual time for someone else - that needs the
+  // *target's* trackability, not the viewer's own project visibility (a
+  // manager can see a project without being a trackable member of it).
+  // memberId omitted = the viewer's own trackable projects.
+  if (pn === "/api/projects/trackable" && req.method === "GET") {
+    try {
+      const viewer = getAuthContext(req);
+      if (!viewer) {
+        sendJson(res, origin, 401, { success: false, error: "Authorization required." });
+        return true;
+      }
+      const targetMemberId = (url.searchParams.get("memberId") || "").trim() || viewer.memberId;
+      if (targetMemberId !== viewer.memberId) {
+        if (!isManagementRole(viewer.roleName)) {
+          sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
+          return true;
+        }
+        const allowed = await canAccessMember(db, viewer.memberId, viewer.roleName, targetMemberId);
+        if (!allowed) {
+          sendJson(res, origin, 403, { success: false, error: "Cannot view this member's projects." });
+          return true;
+        }
+      }
+      const targetRoleName = await resolveMemberRoleNameCached(db, targetMemberId);
+      const trackableIds = await listTrackableProjectIdsPg(targetMemberId, targetRoleName);
+      let rows = await listProjectsPg({ limit: 500 });
+      rows = rows.filter((p) => String(p.status ?? "").toLowerCase() !== "archived");
+      if (trackableIds !== null) {
+        const idSet = new Set(trackableIds);
+        rows = rows.filter((p) => idSet.has(String(p.id)));
+      }
+      sendJson(res, origin, 200, { success: true, data: rows.map((p) => ({ id: p.id, name: p.name })) });
+    } catch (e) {
+      logSafeError("[projects/trackable]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to load trackable projects",
+      });
+    }
+    return true;
+  }
+
   if (pn === "/api/projects" && req.method === "GET") {
     try {
       const projectIdFilter = url.searchParams.get("project_id");
       let rows = projectIdFilter ? [await getProjectPg(projectIdFilter)].filter(Boolean) : await listProjectsPg({ limit: 500 });
       rows = await scopedRows(rows, "id");
-      // has_tasks is derived, not stored - it is a property of the type (see
-      // project-types.js). Sending it means the desktop agent decides whether
-      // to show a task picker from one boolean instead of carrying its own
-      // copy of which type names are task-less, which would need an agent
-      // release every time a type is added.
-      //
-      // can_create_tasks is the same idea applied to viewerCanCreateProjectTasks
-      // (org admin, or this member's own project_role = "manager") - the
-      // desktop agent's "+ New task" affordance reads it directly instead of
-      // guessing from role name and risking a 403 on every regular member's
-      // task-based project. ORG_PROJECT_TASK_ADMIN_ROLES short-circuits
-      // before any query, so this only costs a row lookup per project for
-      // members who aren't already an org-wide admin.
       const viewer = getAuthContext(req);
       const withDerived = await Promise.all(
         rows.map(async (row) => {
-          // A client_can_track project reads as task-less for a client
-          // specifically, independent of require_task_to_track's real value
-          // (which still governs everyone else unchanged) - clients are
-          // never assigned tasks, so without this override a project that
-          // requires one would be untrackable for them even with the flag
-          // on. clientMayTrackProject already no-ops (false) for every
-          // non-client role, so the desktop agent's own require_task_to_track
-          // gate just works unchanged, with no client-specific branching
-          // needed on that side at all.
           const clientTrackable = viewer ? await clientMayTrackProject(viewer, row.id) : false;
-          // Owner / Super Admin / Admin hit the same wall from the other
-          // direction: they can already start a timer on any task in any
-          // project (isProjectMemberForTimer short-circuits for them), but
-          // tasks are only ever assigned *to* people, and nobody assigns
-          // tasks to the owner - so on a normal require_task_to_track
-          // project they had no task to select and Start stayed disabled.
-          // Logging fifteen minutes meant inventing a task first. This
-          // removes that friction without widening which projects they may
-          // track, which was already "all of them".
-          //
-          // Deliberately isAdminLevelRole (owner/superadmin/admin) and not
-          // the wider ORG_PROJECT_TASK_ADMIN_ROLES: Super Manager sees every
-          // project for the same reason, but keeping the task requirement
-          // for that tier was an explicit product call.
           const orgAdminTrackable = viewer ? isAdminLevelRole(viewer.roleName) : false;
           return {
             ...row,
@@ -725,9 +664,6 @@ export async function routeProjects(req, res, url, db, origin) {
         clientCanTrack: (body.client_can_track ?? body.clientCanTrack) === true,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
-      // Management projects group other projects; linking also rolls those
-      // projects' managers into this one's member list (see
-      // management-rollup.service.js).
       const subProjectIds = body.sub_project_ids ?? body.subProjectIds;
       if (project && Array.isArray(subProjectIds) && projectTypeDef(project.type).hasSubProjects) {
         await setSubProjectsPg(project.id, subProjectIds, viewer.memberId);
@@ -766,9 +702,6 @@ export async function routeProjects(req, res, url, db, origin) {
         if (!viewer) return true;
         const body = await readJsonBody(req);
         validateProjectDomainBody("projects", body, true);
-        // Type decides whether the project tracks time via tasks at all -
-        // flipping it on a project that already has task history (or calling
-        // sessions) would orphan that data, so it is create-time only.
         if (body.type !== undefined) {
           const existing = await getProjectPg(projectId);
           if (existing && normalizeProjectType(body.type) !== String(existing.type || "normal")) {
@@ -823,8 +756,6 @@ export async function routeProjects(req, res, url, db, origin) {
         }
         const archivedAtRaw = body.archived_at ?? body.archivedAt;
         const archivedByRaw = body.archived_by ?? body.archivedBy;
-        // Optional (§6.9): only a caller that actually sends its last-known
-        // updated_at back gets the conditional-write / 409 behavior.
         const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
         let project;
         if (patch.status === "archived" && (archivedAtRaw || archivedByRaw)) {
@@ -845,8 +776,6 @@ export async function routeProjects(req, res, url, db, origin) {
           sendJson(res, origin, 404, { success: false, error: "Project not found" });
           return true;
         }
-        // Applied after the conditional-write check so a stale-write 409
-        // cannot leave the links updated for a project edit that was rejected.
         const nextSubProjectIds = body.sub_project_ids ?? body.subProjectIds;
         if (Array.isArray(nextSubProjectIds) && projectTypeDef(project.type).hasSubProjects) {
           await setSubProjectsPg(projectId, nextSubProjectIds, viewer.memberId);
@@ -874,7 +803,6 @@ export async function routeProjects(req, res, url, db, origin) {
     }
   }
 
-  // ─── /api/project-members ─────────────────────────────────────────────
   if (pn === "/api/project-members" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
@@ -899,9 +827,6 @@ export async function routeProjects(req, res, url, db, origin) {
       }
       const viewer = await assertProjectDomainWrite(projectId, memberId);
       if (!viewer) return true;
-      // Types can restrict who may be assigned at all (management projects are
-      // manager-and-above only). Enforced here rather than only filtering the
-      // picker, since the picker is not the only way to reach this endpoint.
       const targetProject = await getProjectPg(projectId);
       const roleFilter = projectTypeDef(targetProject?.type).membersRoleFilter;
       if (roleFilter === "manager_and_above") {
@@ -918,8 +843,6 @@ export async function routeProjects(req, res, url, db, origin) {
         role: body.project_role ?? body.projectRole,
         actorId: body.assigned_by ?? body.assignedBy ?? viewer.memberId,
       });
-      // Targeted frame (§4.2): gaining access to a project is the added
-      // member's own scope changing, not something to broadcast.
       sendToMember(memberId, { type: "scope-changed", reason: "project-access", at: Date.now() });
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
@@ -952,15 +875,10 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── /api/project-budgets ──────────────────────────────────────────────
   if (pn === "/api/project-budgets" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
       const rows = projectId ? [await getProjectBudgetPg(projectId)].filter(Boolean) : await scopedRows(await getAllProjectBudgetsPg());
-      // Real spent, not a stored/fabricated value - see computeProjectSpentPg.
-      // Batched (computeProjectSpentForAllPg), not one query per row - this
-      // endpoint returns every project's budget in one call on the projects
-      // list page, so "per row" here used to mean "per project in the org".
       const spentByProject = await computeProjectSpentForAllPg(
         db,
         rows.map((row) => ({
@@ -972,8 +890,6 @@ export async function routeProjects(req, res, url, db, origin) {
           end_date: row.end_date,
         })),
       );
-      // scope='per_person' rows store hours-per-member in `cost`, not a total -
-      // this is the live total, same batching as spent above.
       const targetByProject = await computeProjectBudgetTargetForAllPg(
         db,
         rows.map((row) => ({
@@ -1006,16 +922,10 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: "project_id is required" });
         return true;
       }
-      // Every project requires a real budget (item 6 of the budget fixes plan) -
-      // the client-side validator enforces this too, but the server is the real
-      // gate, since `upsertProjectBudgetPg` otherwise defaults a missing cost to 0.
       if (!(Number(body.cost) > 0)) {
         sendJson(res, origin, 400, { success: false, error: "cost must be greater than 0" });
         return true;
       }
-      // Calling projects have no tasks and no per-task bill/pay-rate anchor -
-      // only Hours based is coherent (item 2 of the budget fixes plan). The
-      // UI already forces this; this is the real gate.
       const project = await getProjectPg(projectId);
       if (project && projectTypeForcesHours(project.type) && String(body.type) !== "Hours based") {
         sendJson(res, origin, 400, {
@@ -1094,8 +1004,6 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: endDateError });
         return true;
       }
-      // Optional (§6.9): only a caller that sends back its last-known updated_at
-      // gets the conditional-write / 409 behavior.
       const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
       const row = await upsertProjectBudgetPg(
         existing.project_id,
@@ -1111,8 +1019,6 @@ export async function routeProjects(req, res, url, db, origin) {
             body.stop_timers_when_reached ?? body.stopTimersWhenReached ?? current?.stop_timers_when_reached,
           stopTimersAtPct: body.stop_timers_at_pct ?? body.stopTimersAtPct ?? current?.stop_timers_at_pct,
           resets: body.resets ?? current?.resets,
-          // "start_date" in body (not ??) - an explicit null means "clear
-          // it", which ?? can't distinguish from "key wasn't sent at all".
           startDate: "start_date" in body ? body.start_date : body.startDate ?? current?.start_date,
           includeNonBillableTime:
             body.include_non_billable_time ?? body.includeNonBillableTime ?? current?.include_non_billable_time,
@@ -1138,10 +1044,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // "Anchor" (3-dot menu action): sets only the current budget's reset-period
-  // start (required) and end (optional), leaving every other budget setting
-  // untouched - a focused alternative to the full budget edit form for the
-  // one field people actually reach for after moving a project's start date.
   const projectAnchorMatch = /^\/api\/projects\/([^/]+)\/budget-anchor$/.exec(pn);
   if (projectAnchorMatch && req.method === "PATCH") {
     try {
@@ -1191,7 +1093,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── /api/project-member-limits ────────────────────────────────────────
   if (pn === "/api/project-member-limits" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
@@ -1263,7 +1164,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── /api/client-projects ──────────────────────────────────────────────
   if (pn === "/api/client-projects" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
@@ -1327,7 +1227,6 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── /api/team-projects ────────────────────────────────────────────────
   if (pn === "/api/team-projects" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");

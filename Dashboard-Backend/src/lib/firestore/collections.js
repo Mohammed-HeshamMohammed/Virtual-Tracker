@@ -1,6 +1,3 @@
-// Firestore collection names. Only User_profiles still stores anything -
-// everything else here is either a name the mobile-app lint script matches
-// against, or the legacy projects name kept for the bootstrap manifest.
 export const COLLECTIONS = Object.freeze({
   members: "members",
   memberRelationships: "member_relationships",
@@ -14,7 +11,6 @@ export const COLLECTIONS = Object.freeze({
   projects: "projects_VirtualTacker",
 });
 
-/** Old mobile-app collections — don't touch from this backend. */
 export const MOBILE_APP_COLLECTIONS = Object.freeze([
   "users",
   "referrals",

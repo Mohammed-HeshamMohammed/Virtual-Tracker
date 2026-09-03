@@ -6,10 +6,6 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByFirebaseUidPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- */
 async function shouldSkipRegistrationWelcome(_db, uid) {
   const pendingRows = await pgQuery("SELECT 1 FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
   if (pendingRows.length) return true;
@@ -20,13 +16,6 @@ async function shouldSkipRegistrationWelcome(_db, uid) {
   return false;
 }
 
-/**
- * One-time welcome email after email verification. Deduped by registrationWelcomeEmailSentAt.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {{ uid?: string; email?: string }} input
- * @returns {Promise<{ sent: boolean; skipped?: string; channel?: string }>}
- */
 export async function maybeSendRegistrationWelcomeEmail(db, auth, input = {}) {
   const uidFromInput = typeof input.uid === "string" ? input.uid.trim() : "";
   const emailFromInput = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";

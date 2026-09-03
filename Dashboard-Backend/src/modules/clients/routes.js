@@ -58,14 +58,6 @@ async function readJsonBody(req) {
   }
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeClients(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 
@@ -259,13 +251,6 @@ export async function routeClients(req, res, url, db, origin) {
     return true;
   }
 
-  // Plain column update, same "own handler" reasoning as the DELETE below.
-  // Phase 9 removed `clients` from the generic entity catalog, but the client
-  // row menu's Archive/Unarchive still PUTs here with a status-only body -
-  // with no handler that fell through every router to the 404 at the end, so
-  // archiving a client silently failed. updateClientPg keys its patch in
-  // camelCase while the client sends snake_case, so map explicitly rather
-  // than forwarding the body and silently dropping half the fields.
   const clientIdUpdateMatch = /^\/api\/clients\/([^/]+)$/.exec(pn);
   if (clientIdUpdateMatch && (req.method === "PUT" || req.method === "PATCH")) {
     if (!assertManagementRole(req, res, origin)) return true;
@@ -318,10 +303,6 @@ export async function routeClients(req, res, url, db, origin) {
     return true;
   }
 
-  // Own DELETE handler, matching how projects/routes.js has its own rather
-  // than falling through to schema/routes.js's generic entity-catalog path -
-  // that generic path required a Firestore-collection catalog entry to reach
-  // it at all, which the Clients migration (Phase 9) removes.
   const clientIdMatch = /^\/api\/clients\/([^/]+)$/.exec(pn);
   if (clientIdMatch && req.method === "DELETE") {
     if (!assertManagementRole(req, res, origin)) return true;
@@ -337,8 +318,6 @@ export async function routeClients(req, res, url, db, origin) {
         sendJson(res, origin, 404, { success: false, error: "Not found" });
         return true;
       }
-      // client_budgets/client_invoicing/client_projects all cascade via
-      // their FKs to clients(id).
       await deleteClientPg(clientId);
       sendJson(res, origin, 200, { success: true, data: { id: clientId, deleted: true } });
     } catch (e) {

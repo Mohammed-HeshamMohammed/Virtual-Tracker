@@ -1,27 +1,15 @@
-/** In-memory rate limiter (per IP + route). Fine for dev / single instance. */
 
 const buckets = new Map();
 
 const WINDOW_MS = 60_000;
 const DEFAULT_LIMIT = 120;
-// One IP/NAT can host several legitimate concurrent sessions (2 browsers, a phone,
-// a housemate) — each sign-in plus periodic session-role sync easily adds up to a
-// handful of requests per session, so 25/min was tight enough to false-positive.
 const AUTH_LIMIT = 60;
 const VALIDATE_PASSWORD_LIMIT = 40;
 const PUBLIC_INVITE_LIMIT = 15;
 const PRESENCE_LIMIT = 30;
-// Shared per-IP across scope+feed+agent/status: several teammates behind one office
-// NAT, or a few browser tabs, all draw from the same bucket, plus the dashboard's
-// own burst refetches (toggling project scope, closing the add-member modal) can
-// spend 5-10 requests in under a second. 60/min was tight enough to false-positive
-// on normal use, not just abuse.
 const ACTIVITY_LIMIT = 240;
 const SEARCH_LIMIT = 40;
 
-/**
- * @param {URL} url
- */
 function limitBucket(url) {
   const path = url.pathname.replace(/^\/api\/v1/, "/api");
   if (path === "/api/auth/presence") return "presence";
@@ -35,9 +23,6 @@ function limitBucket(url) {
   return "api";
 }
 
-/**
- * @param {URL} url
- */
 function limitForBucket(url) {
   const bucket = limitBucket(url);
   if (bucket === "validate-password") return VALIDATE_PASSWORD_LIMIT;
@@ -49,9 +34,6 @@ function limitForBucket(url) {
   return DEFAULT_LIMIT;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- */
 function clientKey(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {
@@ -60,10 +42,6 @@ function clientKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
-/**
- * Local launcher / Next dev server — do not throttle loopback traffic.
- * @param {import("node:http").IncomingMessage} req
- */
 function isLocalClient(req) {
   const addr = clientKey(req);
   return (
@@ -74,10 +52,6 @@ function isLocalClient(req) {
   );
 }
 
-/**
- * @param {string} key
- * @param {number} limit
- */
 function checkMemoryLimit(key, limit) {
   const now = Date.now();
   const entry = buckets.get(key) ?? { count: 0, resetAt: now + WINDOW_MS };
@@ -98,11 +72,6 @@ function checkMemoryLimit(key, limit) {
   return null;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {URL} url
- * @returns {Promise<{ status: 429, retryAfterSec: number } | null>}
- */
 export async function checkRateLimit(req, url) {
   if (isLocalClient(req)) {
     return null;

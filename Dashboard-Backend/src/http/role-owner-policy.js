@@ -9,14 +9,10 @@ export const OWNER_ASSIGN_BLOCKED_MESSAGE =
 export const OWNER_REMOVE_BLOCKED_MESSAGE =
   "The Owner account cannot be removed through the application.";
 
-/**
- * @param {string} roleName
- */
 export function isOwnerRole(roleName) {
   return normalizeRoleKey(roleName) === "owner";
 }
 
-/** Block Owner role changes/assignments via API. */
 export function validateOwnerRoleChange(currentRoleName, nextRoleName) {
   const next = typeof nextRoleName === "string" ? nextRoleName.trim() : "";
   if (!next) return null;

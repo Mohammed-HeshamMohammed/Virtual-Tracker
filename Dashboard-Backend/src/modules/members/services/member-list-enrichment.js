@@ -1,4 +1,3 @@
-/** Batch-load pay rates, limits, and relations for member list rows. */
 
 import { getPayRatesBatchPg } from "../../../lib/postgres/member-data-postgres.service.js";
 import { query as pgQuery } from "../../../lib/postgres/client.js";
@@ -6,10 +5,6 @@ import { fetchWeeklyLimitsForMembers } from "../../../lib/postgres/member-data-s
 
 export { fetchWeeklyLimitsForMembers };
 
-/**
- * @param {number | string | null | undefined} rate
- * @param {string} [payPeriod]
- */
 export function formatMemberPaymentDisplay(rate, payPeriod = "None") {
   const numericRate = typeof rate === "number" ? rate : Number(rate);
   if (!Number.isFinite(numericRate) || numericRate <= 0) return "";
@@ -18,9 +13,6 @@ export function formatMemberPaymentDisplay(rate, payPeriod = "None") {
   return `$${numericRate} (${period})`;
 }
 
-/**
- * @param {number | string | null | undefined} weeklyLimit
- */
 export function formatMemberLimitsDisplay(weeklyLimit) {
   if (weeklyLimit == null || weeklyLimit === "") return "No limit";
   const numeric =
@@ -31,22 +23,11 @@ export function formatMemberLimitsDisplay(weeklyLimit) {
   return `${numeric} hrs/wk`;
 }
 
-/**
- * pay_rates is Postgres-backed (member-data-store.js's PG_MEMBER_SCOPED) -
- * `db` stays unused here only to keep the call signature its callers already
- * pass; every sibling fetch in this file is Postgres too now.
- * @param {import("firebase-admin/firestore").Firestore} _db
- * @param {string[]} memberIds
- */
 export async function fetchPayRatesForMembers(_db, memberIds) {
   const rows = await getPayRatesBatchPg(memberIds);
   return rows.map((row) => ({ data: () => row }));
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- */
 export async function fetchMemberRelationSnaps(db, memberIds) {
   const ids = memberIds.filter((id) => typeof id === "string" && id);
   if (!ids.length) {
@@ -79,11 +60,6 @@ export async function fetchMemberRelationSnaps(db, memberIds) {
   }
 }
 
-/**
- * @param {Array<{ id: string } & Record<string, unknown>>} members
- * @param {import("firebase-admin/firestore").QueryDocumentSnapshot[]} payDocs
- * @param {import("firebase-admin/firestore").QueryDocumentSnapshot[]} limitDocs
- */
 export function enrichMembersWithPayAndLimitsFromDocs(members, payDocs, limitDocs) {
   if (!members.length) return members;
   const memberIdSet = new Set(members.map((m) => m.id));
@@ -120,10 +96,6 @@ export function enrichMembersWithPayAndLimitsFromDocs(members, payDocs, limitDoc
   });
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<{ id: string } & Record<string, unknown>>} members
- */
 export async function enrichMembersWithPayAndLimits(db, members) {
   if (!members.length) return members;
   const memberIds = members.map((m) => m.id);

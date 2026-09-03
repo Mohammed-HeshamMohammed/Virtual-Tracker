@@ -4,23 +4,14 @@ import { createNotification } from "./service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { resolveMemberDisplayName } from "../members/services/member-display-name.js";
 
-/** Members created via Add members (invites or pre-provisioned accounts). */
 const TEAM_ADDED_CREATED_BY = new Set(["invite-preprovision", "self-invite"]);
 
-/**
- * @param {Record<string, unknown>|null|undefined} memberData
- */
 export function isTeamAddedMember(memberData) {
   if (!memberData || typeof memberData !== "object") return false;
   const createdBy = typeof memberData.created_by === "string" ? memberData.created_by.trim() : "";
   return TEAM_ADDED_CREATED_BY.has(createdBy);
 }
 
-/**
- * @param {Record<string, unknown>|null|undefined} memberData
- * @param {Record<string, unknown>|null|undefined} [profile]
- * @param {{ displayName?: string|null }} [userRecord]
- */
 export function formatMemberDisplayName(memberData, profile, userRecord) {
   const dbName = resolveMemberDisplayName(memberData || {});
   if (dbName && dbName !== "Unknown") return dbName;
@@ -42,7 +33,6 @@ export function formatMemberDisplayName(memberData, profile, userRecord) {
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/** First-login notify recipients — ancestors, else created_by_uid lookup. */
 export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData) {
   const recipientIds = new Set();
 
@@ -82,17 +72,6 @@ export async function resolveFirstLoginNotifyRecipients(db, memberId, memberData
   return [...recipientIds];
 }
 
-/**
- * Notify adder + upline on first sign-in. Deduped by members.first_login_notified_at.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{
- *   memberId: string
- *   memberData: Record<string, unknown>
- *   profile?: Record<string, unknown>|null
- *   userRecord?: { displayName?: string|null }
- * }} input
- * @returns {Promise<{ notified: boolean; recipientCount: number }>}
- */
 export async function maybeNotifyTeamMemberFirstLogin(db, input) {
   const { memberId, memberData, profile, userRecord } = input;
 

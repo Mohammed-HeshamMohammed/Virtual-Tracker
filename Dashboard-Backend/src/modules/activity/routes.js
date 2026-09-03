@@ -86,19 +86,10 @@ import {
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
 
-/** Monday=0..Sunday=6, matching time_settings.work_days/makeup_days storage. */
 function todayWeekdayIndex() {
   return (new Date().getDay() + 6) % 7;
 }
 
-/**
- * Working days gate (People > member > Work Time & Limits): a member can
- * only start/resume tracking on a selected work_days weekday, or a
- * double-clicked makeup_days weekday. Shift-scheduled members skip this -
- * their availability comes from shifts, not this weekday toggle.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 async function getMemberTodayWorkStatus(db, memberId) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
     return { workingToday: true, isMakeupDay: false };
@@ -111,23 +102,10 @@ async function getMemberTodayWorkStatus(db, memberId) {
   return { workingToday: isMakeupDay || workDays.includes(today), isMakeupDay };
 }
 
-/**
- * Project budget usage vs its stop-timer threshold - shared by the
- * start/resume hard gate (blocks the request) and the sync tick (reports
- * budgetCapped so the client can stop an already-running session, the same
- * TC-5 shape task daily caps use). Returns null when there's nothing to
- * enforce (no budget row, or stop-on-reach isn't configured).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- */
 async function checkProjectBudgetCap(db, projectId) {
   const budget = await getProjectBudgetPg(projectId);
   if (!budget) return null;
   const spent = await computeProjectSpentPg(db, projectId, budget);
-  // scope='per_person' rows store hours-per-member in `cost`, not the real
-  // cap - computeProjectBudgetTargetPg is the live total (cost x headcount,
-  // x rate for Cost based). Using raw `cost` here would cap at the
-  // per-person figure instead of the real team-wide budget.
   const cap = await computeProjectBudgetTargetPg(db, projectId, budget);
   const usagePct = cap > 0 ? (spent / cap) * 100 : 0;
   const reached =
@@ -148,13 +126,6 @@ function toIso(value) {
   return null;
 }
 
-/**
- * ACT-4: pulls the raw ActivityMeter counters off a screenshot/app event, if
- * the agent sent them (flattened onto the same object by serde on the Rust
- * side - see ActivitySignal in types.rs). A web-sourced event, or an agent
- * older than ACT-4, carries none of this; the Postgres layer defaults every
- * field to 0 in that case, so passing it through unconditionally is safe.
- */
 function readActivitySignal(ev) {
   return {
     keystrokeCount: ev.keystrokeCount,
@@ -165,15 +136,7 @@ function readActivitySignal(ev) {
   };
 }
 
-/**
- * app/domain -> configured category, for the Apps and URLs feeds. Returns
- * "unclassified" for anything with no row, which is what the classify dialog
- * lists as still needing a decision - never "neutral", which is a deliberate
- * choice someone made.
- * @returns {Promise<(matchType: "app" | "domain", pattern: string) => string>}
- */
 async function buildCategoryLookup() {
-  /** @type {Map<string, string>} */
   const byKey = new Map();
   try {
     for (const row of await getAllCategories()) {
@@ -182,8 +145,6 @@ async function buildCategoryLookup() {
       byKey.set(`${row.matchType}:${pattern}`, row.category || "unclassified");
     }
   } catch (err) {
-    // A classification read failing must not take the whole feed down with
-    // it - the feed's own numbers are still correct without labels.
     logSafeWarn("[activity/feed] classification lookup failed", err);
   }
   return (matchType, pattern) => {
@@ -224,27 +185,6 @@ export function titleFromBrowserPageTitle(pageTitle, appName) {
   return title;
 }
 
-/**
- * "717 W Russell St, Philadelphia, PA 19140 | Realtor.com®" -> "Realtor.com".
- *
- * When the address bar can't be read (see URL_CAPTURE_TICK_BUDGET_SEC in the
- * agent) the only signal left is the browser window's own title, and that
- * title is already saved in full - page_title, on every one of these rows.
- * It just never got read for anything beyond a browser-suffix strip: a real
- * site name is routinely sitting right there as the title's own trailing
- * segment (the same " - Site" / " | Site" / " — Site" convention
- * titleFromBrowserPageTitle already strips when Site is the browser's own
- * name), and every one of those rows was being lumped under the generic
- * browser name ("Google Chrome") instead - useless to classify, since
- * classifying "Chrome" would classify every site opened in it.
- *
- * Tries " | " first (the least ambiguous separator for this), then " — ",
- * then " - " (also common mid-title, e.g. "How to fix X - Stack Overflow",
- * so tried last). Returns "" when nothing usable is found - a title with no
- * separator at all genuinely has nothing more specific than "the browser"
- * to go on, and that case is left exactly as it was.
- * @param {string} cleanTitle
- */
 export function siteNameFromWindowTitle(cleanTitle) {
   const separators = [" | ", " — ", " - "];
   for (const sep of separators) {
@@ -268,16 +208,10 @@ export function siteNameFromWindowTitle(cleanTitle) {
 const MANAGER_TRACKING_DISABLED_MESSAGE =
   "Time tracking on this project has been turned off for managers. Contact an admin or owner.";
 
-/** True only for the "Manager" role (not Super Manager/Admin/Owner). */
 function isManagerRoleName(roleName) {
   return String(roleName || "").trim().toLowerCase().replace(/\s+/g, "") === "manager";
 }
 
-/**
- * Authenticated member from req context (auth middleware).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("node:http").IncomingMessage} req
- */
 async function resolveMember(db, req) {
   const viewer = getAuthContext(req);
   if (!viewer) return null;
@@ -295,15 +229,6 @@ async function resolveMember(db, req) {
   return { memberId: viewer.memberId, uid: viewer.uid, name, initials };
 }
 
-/**
- * A desktop-agent session left open by a crash/kill (no clean stop) never gets
- * closed on its own - the agent isn't there anymore to call "stop". Every
- * caller of findOpenSession routes through here, so on the first request
- * after the agent's heartbeat (15s TTL) has lapsed, close it server-side
- * instead of leaving it "active" forever with stale hours. The background
- * sweep (abandoned-session-sweep.service.js) covers the case where nobody
- * hits this endpoint again for that member at all.
- */
 async function findOpenSession(memberId) {
   const open = await findOpenPgSession(memberId);
   if (!open) return null;
@@ -314,35 +239,15 @@ async function findOpenSession(memberId) {
   return open;
 }
 
-/**
- * TC-7: true if `err` is a violation of the activity_sessions_one_open_per_member
- * partial unique index (ensure-lookup-schema.js). findOpenSession() above is
- * only a pre-check - two "start"/"resume" requests that both see no open
- * session and both reach createPgSession race on this index, and the loser
- * gets this. Postgres error 23505 = unique_violation; the constraint name is
- * checked too so an unrelated 23505 (extremely unlikely id collision on
- * gen_random_uuid, but not this index) doesn't get mis-attributed.
- * @param {unknown} err
- */
 export function isOneOpenSessionConflict(err) {
   return (
     err instanceof Object &&
-    /** @type {{ code?: string, constraint?: string }} */ (err).code === "23505" &&
-    /** @type {{ code?: string, constraint?: string }} */ (err).constraint ===
+ (err).code === "23505" &&
+ (err).constraint ===
       "activity_sessions_one_open_per_member"
   );
 }
 
-/**
- * ID-3: task-anchored sessions get the owning project's idle-time settings
- * from `fetch_task_time_tracking` on every task transition (see
- * task-time-tracking.js) - cheap because it's throttled to transitions, not
- * every 5s poll. A calling (task-less) project session has no task
- * transition to hang that fetch off of, so it's attached here instead, on
- * this same GET the agent already polls every SESSION_POLL_SEC. Scoped to
- * task-less sessions only so a task-anchored session's 5s poll doesn't pay
- * for a project lookup it doesn't need.
- */
 async function normalizeSession(id, data) {
   let disableIdleTime;
   let idleTimeSeconds;
@@ -367,13 +272,6 @@ async function normalizeSession(id, data) {
   };
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeActivity(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/activity")) return false;
@@ -397,8 +295,6 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      // The desktop agent polls this same endpoint every 5s without a browser Origin
-      // header — piggyback its own liveness on that instead of a separate heartbeat call.
       if (!origin) void touchAgentHeartbeat(member.memberId);
       const open = await findOpenSession(member.memberId);
       sendJson(res, origin, 200, {
@@ -411,10 +307,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // The viewer's own daily/weekly work-hour limits - previously only ever read
-  // internally by enforcement (timer-limit.service.js); this is the first
-  // self-serve read of them, for a profile view to show "how many hours am I
-  // allowed" without duplicating the People > member > Limits configuration.
   if (pn === "/api/activity/limits" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {
@@ -427,13 +319,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      // timerAllowance is the same computation the calling-project start path
-      // gates on below, so what the agent displays as "remaining today" and
-      // what actually blocks the start button can never disagree.
       const { todayDay } = currentDayRange();
-      // Optional - the agent's main-pane Activity ring wants "this project,
-      // today" rather than the member-wide todayActivity below (that one
-      // stays as-is; it's what a project-less view falls back to).
       const projectId = (url.searchParams.get("projectId") || "").trim();
       const [
         dailyHours,
@@ -456,9 +342,6 @@ export async function routeActivity(req, res, url, origin) {
           ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, { fromDay: todayDay, toDay: todayDay })
           : null,
       ]);
-      // Shift-based members have no daily/weekly cap (loadMemberCapContext
-      // zeroes it out), so nothing caps their assigned demand either -
-      // T5's "report demandSeconds, plannedSeconds = demandSeconds" case.
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
       const assignedToday = applyCapToAssignedTodayDemand(assignedDemand, capLeftToday);
       sendJson(res, origin, 200, {
@@ -471,11 +354,7 @@ export async function routeActivity(req, res, url, origin) {
           assignedToday,
           workingToday: todayWorkStatus.workingToday,
           isMakeupDay: todayWorkStatus.isMakeupDay,
-          // Both halves from activity_sessions, so the agent's activity meter
-          // matches the percentage the dashboard reports for the same day.
           todayActivity,
-          // null unless ?projectId= was given - the main-pane ring's own
-          // "current project, today" figure.
           projectTodayActivity,
         },
       });
@@ -485,9 +364,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // Everything the desktop agent shows beyond the timer itself, resolved
-  // per-role server-side in one round trip - see workspace.service.js for why
-  // this is one endpoint rather than one per section.
   if (pn === "/api/activity/workspace" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {
@@ -512,13 +388,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // The viewer's own recent screenshots, ids + timestamps only. Deliberately
-  // self-scoped with no memberId parameter: this backs the agent's "what is
-  // actually being captured on my machine" panel, which is a transparency
-  // surface, not the managers' activity feed (that is /api/activity/feed,
-  // which carries its own scope resolution). Image bytes are not included -
-  // the agent fetches one at a time from /api/activity/screenshot/:id, which
-  // already returns a data URL and runs its own ownership check.
   if (pn === "/api/activity/my-screenshots" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {
@@ -563,8 +432,6 @@ export async function routeActivity(req, res, url, origin) {
     const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId.trim() : null;
     const bodyProjectId =
       typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : null;
-    // Free-text, member-supplied - capped so a runaway client can't write an
-    // unbounded blob into the row.
     const stopNote =
       typeof body.stopNote === "string" && body.stopNote.trim()
         ? body.stopNote.trim().slice(0, 1000)
@@ -603,23 +470,13 @@ export async function routeActivity(req, res, url, origin) {
       const now = new Date();
       let open = await findOpenSession(member.memberId);
 
-      // Which project this session belongs to. Task-based sessions derive it
-      // from the task; "calling" projects have no task, so the client sends it
-      // and it is the only link between the session and the project it bills.
       let sessionProjectId = bodyProjectId || open?.project_id || null;
 
-      // Daily/weekly/task-total caps were computed but never actually gated
-      // starting a session here — enforceTimerAllowanceOnSync's rejection was
-      // only thrown from the best-effort task-tracking sync below, by which
-      // point the session was already created and marked active. Check first.
       if (action === "start" || action === "resume") {
         const effectiveTaskId = taskId || open?.task_id || null;
         const cumulativeActiveSeconds = Math.max(0, Math.floor(activeSeconds ?? 0));
         const viewer = getAuthContext(req);
 
-        // People > member > Settings > "Able to track time" - a hard gate on
-        // starting/resuming, checked before the task/project allowance below
-        // so it can't be bypassed by any timer type.
         const timeSettings = await getSingleByMemberId(db, "time_settings", member.memberId);
         if (timeSettings?.able_to_track_time === false) {
           sendJson(res, origin, 403, {
@@ -629,9 +486,6 @@ export async function routeActivity(req, res, url, origin) {
           return true;
         }
 
-        // People > member > Work Time & Limits > "Working days" - same gate,
-        // reusing the timeSettings row already fetched above. Skipped for
-        // shift-scheduled members (their availability comes from shifts).
         if (!(await memberUsesShiftsForLimits(db, member.memberId))) {
           const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
           const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
@@ -669,11 +523,6 @@ export async function routeActivity(req, res, url, origin) {
             }
           }
         } else {
-          // Task-less timer. "calling" projects always work this way, and a
-          // normal project can opt in via require_task_to_track = false -
-          // only for their own members, so the project-membership check here
-          // is the equivalent of the task-assignment check a normal timer
-          // gets via canAccessTask below.
           if (!sessionProjectId) {
             sendJson(res, origin, 400, {
               success: false,
@@ -686,20 +535,6 @@ export async function routeActivity(req, res, url, origin) {
             sendJson(res, origin, 404, { success: false, error: "Project not found" });
             return true;
           }
-          // Strict `=== false`: an un-migrated row reads undefined here and
-          // must fall back to requiring a task, not to allowing everything.
-          // The client_can_track leg is independent of require_task_to_track -
-          // a client can be let in task-lessly without changing how the
-          // project's own members track, and clientMayTrackProject already
-          // no-ops (false) for every non-client role, so this never widens
-          // access for anyone else.
-          //
-          // The org-admin leg mirrors the same override GET /api/projects
-          // reports to these roles: Owner/Super Admin/Admin may already time
-          // any task in any project, but are never themselves assigned tasks,
-          // so requiring one made normal projects untrackable for them.
-          // Which projects they may track is unchanged (isProjectMemberForTimer
-          // already returned true) - only the "pick a task first" step goes.
           const allowsTaskLessTimer =
             isTaskLessProjectType(project.type) ||
             project.require_task_to_track === false ||
@@ -728,9 +563,6 @@ export async function routeActivity(req, res, url, origin) {
             });
             return true;
           }
-          // No task estimate to enforce (that is the point of a calling
-          // project) - the member's own daily/weekly hour cap still applies,
-          // plus this project's own per-person budget if it has one.
           const allowance = await computeMemberTimerAllowance(db, member.memberId, {
             currentCumulativeActiveSeconds: cumulativeActiveSeconds,
             projectId: sessionProjectId,
@@ -745,12 +577,6 @@ export async function routeActivity(req, res, url, origin) {
           }
         }
 
-        // Project budget gate (item 4 of the budget fixes plan) - applies to
-        // both branches above alike, since sessionProjectId is resolved by
-        // this point whether it came from the task or (calling projects)
-        // straight from the request body. `stop_timers_when_reached` was
-        // being persisted since the project was created but nothing ever
-        // read it back to actually stop anything - this is that read.
         if (sessionProjectId) {
           const budgetCheck = await checkProjectBudgetCap(db, sessionProjectId);
           if (budgetCheck?.reached) {
@@ -761,8 +587,6 @@ export async function routeActivity(req, res, url, origin) {
             return true;
           }
           if (budgetCheck) {
-            // Notify is best-effort and never blocks the timer - a failed
-            // notification is not a reason to stop someone from working.
             maybeNotifyProjectBudget(db, sessionProjectId, budgetCheck.budget, budgetCheck.spent, budgetCheck.cap).catch(
               () => null,
             );
@@ -860,9 +684,6 @@ export async function routeActivity(req, res, url, origin) {
         }
       } else if (action === "stop") {
         if (open) {
-          // Only "stop" may lower active_seconds - this is the desktop
-          // agent's idle-escalation rewind reversing time credited after the
-          // user actually stopped touching the machine (TC-4).
           await updatePgSession(
             open.id,
             {
@@ -888,10 +709,6 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       const syncTaskId = taskId || open?.task_id || null;
-      // TC-5: surfaced on the wire so a caller can act on the cap being hit
-      // (e.g. stop the timer instead of quietly having its number truncated
-      // while the clock keeps running). Additive - a client that ignores it
-      // sees no behavior change.
       let timerCapped = false;
       if (syncTaskId && activeSeconds !== undefined && idleSeconds !== undefined) {
         const viewer = getAuthContext(req);
@@ -921,11 +738,6 @@ export async function routeActivity(req, res, url, origin) {
         }
       }
 
-      // Same TC-5 shape as timerCapped above, but for the project's own
-      // budget stop-timer threshold (Budget & Limits tab) - that gate was
-      // start/resume-only (see checkProjectBudgetCap's call site above), so
-      // a session already running when the project crossed the threshold
-      // never got stopped. Surfaced here so the sync tick can act on it too.
       let budgetCapped = false;
       if (sessionProjectId) {
         try {
@@ -995,9 +807,6 @@ export async function routeActivity(req, res, url, origin) {
       let count = 0;
       const screenshotWrites = [];
 
-      // CF-0.3: fetched once per batch (up to 50 events), not once per event -
-      // both are cheap, tiny tables, but there is no reason to round-trip
-      // Postgres 50 times for config that cannot change mid-request.
       const [minimizationSettings, exclusions] = await Promise.all([
         getCaptureMinimizationSettings(),
         getCaptureExclusions(),
@@ -1012,8 +821,6 @@ export async function routeActivity(req, res, url, origin) {
           if (source === "agent" && !isDesktopAgentEventIngestEnabled()) continue;
           if (source !== "agent" && !isWebActivityCaptureEnabled()) continue;
           const appName = typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Browser";
-          // CF-0.3: an excluded app produces no screenshot at all - not a
-          // blurred one. Checked before any image processing, not after.
           if (matchesExclusion(exclusions, "app", appName)) continue;
           const imageData =
             typeof ev.imageData === "string"
@@ -1022,8 +829,6 @@ export async function routeActivity(req, res, url, origin) {
                 ? ev.image_data
                 : "";
           if (!imageData) continue;
-          // Leaves headroom under MAX_ACTIVITY_EVENTS_BODY_BYTES for the rest of the
-          // JSON envelope (sessionId, appName, pageTitle, etc).
           if (imageData.length > 2_300_000) {
             logSafeWarn("[activity events] screenshot dropped: oversized", {
               memberId: member.memberId,
@@ -1044,25 +849,16 @@ export async function routeActivity(req, res, url, origin) {
                   withoutEnlargement: true,
                 });
                 if (minimizationSettings.screenshotBlurDefault) {
-                  // CF-0.3 blur-by-default posture. Radius chosen to obscure
-                  // legible text/detail, not merely soften the image.
                   pipeline = pipeline.blur(18);
                 }
                 const webp = await pipeline.webp({ quality: 75 }).toBuffer();
                 const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
-                // AC-2: hashed from the pre-blur, original-resolution buffer, not the
-                // stored (possibly CF-0.3-blurred) webp - blur would flatten every
-                // capture toward the same hash and defeat the staleness comparison
-                // this exists for. A hash failure (corrupt/unusual image data) must
-                // not drop the screenshot itself, so it's caught independently.
                 let perceptualHash = null;
                 try {
                   perceptualHash = await computeDHash(buffer);
                 } catch (hashErr) {
                   logSafeWarn("[activity events] perceptual hash failed", hashErr);
                 }
-                // Stored as bytea in Postgres (image_data) - no per-screenshot GCS upload or
-                // Firestore write. The archive job moves rows out to GCS once they age out.
                 await insertActivityScreenshot({
                   id,
                   memberId: member.memberId,
@@ -1083,8 +879,6 @@ export async function routeActivity(req, res, url, origin) {
                 });
                 count++;
               } catch (err) {
-                // Don't let one bad screenshot (corrupt base64, sharp/libvips failure)
-                // fail the whole batch response — log it so it's actually diagnosable.
                 logSafeWarn("[activity events] screenshot insert failed", err);
               }
             })(),
@@ -1093,8 +887,6 @@ export async function routeActivity(req, res, url, origin) {
         }
         if (type === "app") {
           const appName = typeof ev.appName === "string" ? ev.appName.slice(0, 200) : "Unknown";
-          // CF-0.3: same exclusion the screenshot path checks - an excluded
-          // app is excluded from app/window logging too, not just screenshots.
           if (matchesExclusion(exclusions, "app", appName)) continue;
           const appRow = {
             id,
@@ -1114,13 +906,7 @@ export async function routeActivity(req, res, url, origin) {
         } else if (type === "url") {
           const rawUrlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
           const domain = parseDomain(rawUrlStr);
-          // CF-0.3: a domain on the exclusion list (banking, health, personal
-          // email) is skipped entirely - no URL row, no partial capture.
           if (matchesExclusion(exclusions, "domain", domain)) continue;
-          // CF-0.3 domain-only mode: store "github.com", not the full path +
-          // query string, which can carry personal data (search terms,
-          // account IDs, tokens). The domain column already existed for
-          // reporting; this is what makes it the *only* thing stored too.
           const urlStr = minimizationSettings.urlDomainOnly ? domain || "" : rawUrlStr;
           const urlRow = {
             id,
@@ -1230,19 +1016,12 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      // CF-0.5: "log every access" to raw screenshot data - only reached once
-      // the authorization check above has already succeeded; this makes no
-      // access decision of its own. Fire-and-forget so a logging hiccup
-      // never blocks the read itself.
       void recordScreenshotAccess({
         screenshotId: resolvedId,
         screenshotOwner: ownerId,
         readerMemberId: member.memberId,
       }).catch((err) => logSafeWarn("[activity/screenshot access log]", err));
 
-      // Bytea rows (the common case now) are served straight from Postgres as a data
-      // URL, gated by the auth + ownership checks above instead of a signed link.
-      // Older/archived rows only carry screenshot_url and still use the signed-URL path.
       let imageUrl = "";
       if (imageBytes) {
         imageUrl = `data:image/webp;base64,${Buffer.from(imageBytes).toString("base64")}`;
@@ -1259,9 +1038,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // Backs the Delete action on the Screenshots page, which was a permission-
-  // gated button with no endpoint behind it at all (canManageActivityData's
-  // own comment said "when backed by API" - it wasn't).
   if (pn.startsWith("/api/activity/screenshot/") && req.method === "DELETE") {
     const idToken = readIdToken(req, url);
     const screenshotId = pn.slice("/api/activity/screenshot/".length).split("/")[0];
@@ -1279,9 +1055,6 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      // Deleting monitoring evidence is a management action, not something a
-      // member may do to their own captures - hence a role check on top of
-      // the same visibility scope the read path uses.
       if (!isManagementRole(getAuthContext(req)?.roleName ?? "")) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to delete screenshots." });
         return true;
@@ -1357,9 +1130,6 @@ export async function routeActivity(req, res, url, origin) {
         },
       };
 
-      // Every feed reports the classification an admin actually configured in
-      // activity_categories. One read per feed request, keyed the same way the
-      // table's unique index is (match_type + lowered pattern).
       const categoryLookup = await buildCategoryLookup();
 
       if (feedType === "screenshots") {
@@ -1383,9 +1153,6 @@ export async function routeActivity(req, res, url, origin) {
           const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
           const captured = toIso(d.captured_at);
           const date = captured ? new Date(captured) : new Date();
-          // A session tracking a project directly (no task) used to render as
-          // "Task: No task linked". It has a project, so say which one -
-          // contextLabel tells the client which of the two it is looking at.
           const taskTitle = (typeof d.task_title === "string" && d.task_title.trim()) || "";
           const projectName = (typeof d.project_name === "string" && d.project_name.trim()) || "";
           const contextLabel = taskTitle ? "Task" : projectName ? "Project" : "Task";
@@ -1404,8 +1171,6 @@ export async function routeActivity(req, res, url, origin) {
             time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             activityLevel: d.activity_level ?? 75,
             activeApp: d.app_name || "Browser",
-            // Real configured classification, so the productivity roll-ups on
-            // this page stop keying off a hardcoded list of app names.
             category: categoryLookup("app", d.app_name || ""),
             hasImage: true,
             pageTitle: d.page_title || "",
@@ -1490,11 +1255,6 @@ export async function routeActivity(req, res, url, origin) {
               topApp = app;
             }
           }
-          // Was hardcoded to "100% productive, 0 neutral, 0 unproductive" for
-          // everyone, which made the member table say the same thing no matter
-          // what anyone actually ran. Split by the configured classification;
-          // unclassified time counts as neutral here rather than inventing a
-          // fourth column the UI has no room for.
           const byCategory = r.categorySeconds ?? { productive: 0, neutral: 0, distracting: 0, unclassified: 0 };
           const neutralSeconds = byCategory.neutral + byCategory.unclassified;
           const totalSeconds = r.totalSeconds || 1;
@@ -1518,11 +1278,6 @@ export async function routeActivity(req, res, url, origin) {
         const byUrl = new Map();
         const byMember = new Map();
 
-        // Mirrors ingestAppRow's byMember tally in the "apps" branch above -
-        // the URLs page's "Members with activity" section used to just list
-        // names from scopeMeta with no numbers behind them, unlike Apps'
-        // real per-member breakdown. member_id was already on every row
-        // fetched below; it just wasn't being rolled up.
         const touchMember = (memberIdKey, domain, dur, category) => {
           if (!memberIdKey) return;
           const meta = memberMeta.get(memberIdKey) || { name: "Unknown", initials: "??" };
@@ -1543,13 +1298,6 @@ export async function routeActivity(req, res, url, origin) {
           const urlStr = typeof d.url === "string" ? d.url.trim() : "";
           const domain = typeof d.domain === "string" ? d.domain.trim() : "";
           const isFullUrl = /^https?:\/\//i.test(urlStr);
-          // CF-0.3's domain-only privacy mode stores just the bare domain
-          // ("github.com", no protocol) in this same `url` column, not a
-          // full https://... one - the strict http(s):// check here used to
-          // reject every row a member with that setting on ever produced,
-          // so their table fell back entirely to the window-title rows
-          // below (browser names, not sites) even though real domains were
-          // right there in the `domain` column the whole time.
           if (!urlStr && !domain) return;
           if (!isFullUrl && !domain) return;
           const key = isFullUrl ? urlStr : `domain:${domain}`;
@@ -1557,11 +1305,6 @@ export async function routeActivity(req, res, url, origin) {
           const visitedAt = toIso(d[timeField] ?? d.visited_at ?? d.visitedAt);
           const row = byUrl.get(key) || {
             domain: domain || parseDomain(urlStr),
-            // Domain-only mode has no real path stored to show or link to -
-            // the domain itself is the most specific thing on offer, and the
-            // frontend already only renders the "open externally" link icon
-            // when this looks like a real http(s) URL, so this correctly
-            // disables it rather than linking to a broken bare-domain href.
             url: isFullUrl ? urlStr : domain,
             totalSeconds: 0,
             visits: 0,
@@ -1602,20 +1345,10 @@ export async function routeActivity(req, res, url, origin) {
           }
           const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
           if (!cleanTitle) return;
-          // A site name pulled out of the title text itself is real, saved
-          // data the classify dialog can actually use - promoted to
-          // sourceKind "url" (same as a genuinely captured address-bar URL)
-          // rather than left under the generic browser name, and deduped by
-          // that site name (not by exact page title) so "Realtor.com" across
-          // three different listing pages aggregates into one row instead
-          // of three, matching how a real captured domain already dedupes.
           const siteName = siteNameFromWindowTitle(cleanTitle);
           const key = siteName ? `site:${siteName.toLowerCase()}` : `window:${appName}:${cleanTitle}`;
           const row = byUrl.get(key) || {
             domain: siteName || appName,
-            // Keeps the full page title as the subtitle (e.g. the street
-            // address on a Realtor.com listing), not just the site name
-            // twice - only the bold heading/classification pattern changes.
             url: cleanTitle,
             totalSeconds: 0,
             visits: 0,
@@ -1661,9 +1394,6 @@ export async function routeActivity(req, res, url, origin) {
             sourceKind: r.sourceKind === "window" ? "window" : "url",
           }));
 
-        // Mirrors apps' memberRows shape (topApp -> topDomain here) so the
-        // URLs page's "Members with activity" section can show real numbers
-        // instead of just names pulled from scopeMeta.
         const members = [...byMember.entries()].map(([id, r]) => {
           let topDomain = "—";
           let topDur = 0;
@@ -1818,12 +1548,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // Issues a device credential to an already-authenticated agent.
-  //
-  // The link/exchange response carries one on the happy path, but the browser
-  // can also hand tokens straight to the agent over loopback, which skips the
-  // exchange entirely - and agents linked before device credentials existed
-  // have none at all. Both self-heal by calling this once they have a token.
   if (pn === "/api/activity/agent/device/register" && req.method === "POST") {
     let body;
     try {
@@ -1842,7 +1566,6 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      // Server-generated so the agent never picks its own secret.
       const deviceId = newDeviceId();
       const agentSecret = crypto.randomBytes(32).toString("base64url");
       const device = await registerAgentDevice({
@@ -1865,13 +1588,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // Lets an already-linked machine mint fresh credentials from its own device
-  // secret, so a dead refresh token is recoverable in-app instead of forcing
-  // the user back through a browser link (agent-reconnect-plan.md §4.2a).
-  //
-  // Deliberately re-runs every gate a normal sign-in runs - ban, member
-  // existence, account status. A device credential must never outlive the
-  // access of the account it belongs to.
   if (pn === "/api/activity/agent/reauth" && req.method === "POST") {
     let body;
     try {
@@ -1896,7 +1612,6 @@ export async function routeActivity(req, res, url, origin) {
     try {
       const verified = await verifyAgentDevice(deviceId, agentSecret);
       if (!verified.ok) {
-        // 401 (not 403): the agent should treat this as "re-link required".
         sendJson(res, origin, 401, { success: false, error: "This device is no longer linked." });
         return true;
       }
@@ -1937,8 +1652,6 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      // A custom token is exchanged by the agent for a real id/refresh pair.
-      // Minting it here is what keeps recovery inside the app.
       const customToken = await auth.createCustomToken(firebaseUid);
       sendJson(res, origin, 200, {
         success: true,
@@ -1986,9 +1699,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // ACT-3: scoring calibration the agent polls periodically. Read is open to
-  // any authenticated caller (it's just tuning numbers, not sensitive);
-  // write is management-only.
   if (pn === "/api/activity/scoring-settings" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {
@@ -2075,8 +1785,6 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
-  // AC-4: "an employee can view ... their own flags" - defaults to the caller's
-  // own, same self-or-management gate as getMemberIntegrityFlags enforces.
   if (pn === "/api/activity/integrity/flags" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {

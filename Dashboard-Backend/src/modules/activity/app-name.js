@@ -1,16 +1,3 @@
-// CQ-4: this is the *third* independent copy of this mapping found in this
-// codebase (window.rs's overrides(), display-names.ts's EXE_DISPLAY_NAMES,
-// and this one) - and the most important one, since normalizeAppName() below
-// runs at ingest and determines what actually gets stored in apps.name. Kept
-// in sync with activity_categories' seeded app patterns (CLS-1,
-// ensure-lookup-schema.js) by hand for now: a mismatch here means a
-// correctly-classified pattern silently never matches the stored name (e.g.
-// "explorer.exe" was classified but nothing normalized to it - the stored
-// name was the generic stem-titlecase fallback "Explorer" instead). The real
-// fix is making this function read activity_categories directly instead of
-// a fourth hardcoded copy; deferred because it's a per-ingested-event lookup
-// that would need a cache to avoid a DB round trip per event, same shape as
-// the Rust/frontend caches already built for MAC-3 - worth doing, not free.
 const APP_EXE_DISPLAY_NAMES = {
   "chrome.exe": "Google Chrome",
   "msedge.exe": "Microsoft Edge",

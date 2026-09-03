@@ -1,6 +1,3 @@
-// Time off: policies, requests, and the transaction ledger balances derive
-// from. See the schema comment in ensure-lookup-schema.js for why balance is
-// computed rather than stored.
 
 import { query } from "./client.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
@@ -17,7 +14,6 @@ function toDayString(value) {
   return String(value).slice(0, 10);
 }
 
-// ─── Policies ──────────────────────────────────────────────────────────────
 
 export async function listTimeOffPoliciesPg({ includeInactive = false } = {}) {
   return query(
@@ -69,7 +65,6 @@ export async function updateTimeOffPolicyPg(id, patch) {
   return updated;
 }
 
-// ─── Requests ──────────────────────────────────────────────────────────────
 
 export async function getTimeOffRequestPg(id) {
   if (!id) return null;
@@ -96,9 +91,6 @@ export async function createTimeOffRequestPg(data) {
   return created;
 }
 
-/**
- * @param {{ memberIds?: string[] | null, status?: string | null, fromDay?: string | null, toDay?: string | null, limit?: number }} [filters]
- */
 export async function listTimeOffRequestsPg(filters = {}) {
   const { memberIds = null, status = null, fromDay = null, toDay = null, limit = 500 } = filters;
   return query(
@@ -115,11 +107,6 @@ export async function listTimeOffRequestsPg(filters = {}) {
   );
 }
 
-/**
- * Approve/reject/cancel. Approving writes the matching usage ledger row in the
- * same statement batch; the UNIQUE index on request_id makes a double-approve
- * a no-op rather than a second deduction.
- */
 export async function reviewTimeOffRequestPg(id, { status, reviewerId, reviewNote = "" }) {
   const rows = await query(
     `UPDATE time_off_requests
@@ -147,7 +134,6 @@ export async function reviewTimeOffRequestPg(id, { status, reviewerId, reviewNot
       ],
     );
   } else {
-    // Withdrawing approval must give the days back, not leave a stale debit.
     await query("DELETE FROM time_off_transactions WHERE request_id = $1", [id]);
   }
 
@@ -155,7 +141,6 @@ export async function reviewTimeOffRequestPg(id, { status, reviewerId, reviewNot
   return updated;
 }
 
-// ─── Transactions / balances ───────────────────────────────────────────────
 
 export async function createTimeOffTransactionPg(data) {
   const rows = await query(
@@ -177,10 +162,6 @@ export async function createTimeOffTransactionPg(data) {
   return created;
 }
 
-/**
- * The ledger - backs the Time off transactions report.
- * @param {{ memberIds?: string[] | null, fromDay: string, toDay: string, policyIds?: string[] | null }} params
- */
 export async function getTimeOffTransactionRowsPg({ memberIds = null, fromDay, toDay, policyIds = null }) {
   const rows = await query(
     `SELECT t.id, t.member_id, t.policy_id, t.request_id, t.kind, t.days,
@@ -208,12 +189,6 @@ export async function getTimeOffTransactionRowsPg({ memberIds = null, fromDay, t
   }));
 }
 
-/**
- * Balance per member+policy as of a date, straight from the ledger.
- * `asOf` bounds it so a report can show the balance at period end rather than
- * "now" - accruals dated in the future must not count yet.
- * @param {{ memberIds?: string[] | null, asOf: string }} params
- */
 export async function getTimeOffBalanceRowsPg({ memberIds = null, asOf }) {
   const rows = await query(
     `SELECT m.id AS member_id, p.id AS policy_id, p.name AS policy_name,

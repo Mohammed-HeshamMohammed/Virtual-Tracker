@@ -4,7 +4,6 @@ import { resolveHierarchyStatus } from "./hierarchy-placement.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/** Recompute + write hierarchy_status on members row. */
 export async function syncMemberHierarchyStatus(db, memberId, roleName) {
   const memberData = (await getMemberByIdPg(memberId)) || {};
   const parentId = await getMemberParentId(db, memberId);
@@ -18,17 +17,6 @@ export async function syncMemberHierarchyStatus(db, memberId, roleName) {
   return status;
 }
 
-/**
- * After role change: assign parent if needed, sync hierarchy_status.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} params
- * @param {string} params.memberId
- * @param {string} params.nextRoleName
- * @param {string} params.actorMemberId
- * @param {string} params.actorRoleName
- * @param {{ deferBackground?: boolean; memberData?: Record<string, unknown> | null }} [options]
- * @returns {Promise<{ parentAssigned: boolean; hierarchyStatus: string; error?: string }>}
- */
 export async function applyRoleChangeHierarchyEffects(db, {
   memberId,
   nextRoleName,

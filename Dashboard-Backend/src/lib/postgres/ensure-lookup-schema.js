@@ -4,30 +4,6 @@ import { markPostgresLookupReady, resetPostgresLookupReadyCache } from "./lookup
 import { markPostgresMemberDataReady, resetPostgresMemberDataReadyCache } from "./member-data-availability.js";
 import { isActivityScreenshotsEnabled } from "../../config/activity.js";
 
-/**
- * activity_sessions/activity_screenshots/activity_app_logs/activity_url_logs/
- * time_entries were every one of them declared with a bare UUID member_id/
- * project_id/task_id - no FK at all. Deleting a member or a project never
- * touched any of this: the row just kept its now-meaningless id, and the
- * Work Sessions / Time & Activity / Amounts Owed reports rendered it as
- * "Unknown" or "No project" forever, because there is nothing left to look
- * that id up against.
- *
- * Two statements per column, always in this order:
- *  1. Delete every row already holding a dangling id - this has to run
- *     BEFORE the constraint below, or ADD CONSTRAINT fails outright the
- *     moment it validates existing data against the new FK.
- *  2. Add the FK, ON DELETE CASCADE, idempotently (skipped if a boot has
- *     already added it) - so this can never happen again going forward,
- *     for a delete through any path, not just the app's own delete
- *     handlers.
- * @param {string} table
- * @param {string} column
- * @param {string} parentTable
- * @param {{ nullable?: boolean }} [options] nullable=false skips the
- *   `column IS NOT NULL AND` guard for a NOT NULL column (time_entries.
- *   project_id), where every row already has some value to check.
- */
 function cascadeOnDelete(table, column, parentTable, { nullable = true } = {}) {
   const constraintName = `${table}_${column}_fkey`;
   return [
@@ -64,21 +40,6 @@ $$ LANGUAGE plpgsql`,
   "ALTER TABLE roles ADD COLUMN IF NOT EXISTS hierarchy_level INTEGER NOT NULL DEFAULT 10",
   "ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_management BOOLEAN NOT NULL DEFAULT false",
   "CREATE INDEX IF NOT EXISTS idx_roles_name ON roles (name)",
-  // ─── Member identity (migrated from Firestore) ──────────────────────────
-  // The one collection every other migration deliberately deferred (schema.sql
-  // used to say outright "members stay in Firestore" - see implementation.md
-  // §4.9, "materially bigger scope than this plan"). Moved for real once an
-  // accidental Firestore collection delete took the entire app down through
-  // auth-middleware.js's per-request `members.where("firebase_uid", ...)`
-  // lookup - every authenticated request 404'd with no recovery path, because
-  // nothing in Postgres could resolve a Firebase UID back to a member without
-  // that Firestore doc. This table plus the unique index below replaces both
-  // the Firestore `members` collection AND `member_auth_index` (a native
-  // unique index on firebase_uid does the same O(1) lookup that doc-per-uid
-  // index existed for). Column set pulled from the live field catalog
-  // (src/modules/schema/catalog/members/index.js) plus every field actually
-  // read/written in members/services/*.js that the catalog didn't cover
-  // (presence, ban, and role-change timestamps) - not invented.
   `CREATE TABLE IF NOT EXISTS members (
   id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   firebase_uid              VARCHAR(128) NOT NULL DEFAULT '',
@@ -113,9 +74,6 @@ $$ LANGUAGE plpgsql`,
   date_added                TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at                TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // Replaces both a Firestore uniqueness-by-convention on firebase_uid and
-  // the separate member_auth_index doc-per-uid collection - one real
-  // constraint instead of two things that could drift apart.
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_members_firebase_uid ON members (firebase_uid) WHERE firebase_uid <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_members_status ON members (status)`,
   `CREATE INDEX IF NOT EXISTS idx_members_role ON members (role_id)`,
@@ -131,34 +89,15 @@ BEGIN
   END IF;
 END $$`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS security_stamp UUID DEFAULT gen_random_uuid()",
-  // Mobile-app-account migration provenance (member-migration.routes.js) -
-  // was written as arbitrary Firestore doc fields with no schema; ported
-  // here as real columns rather than dropped, since it's audit-trail data.
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_from_auth BOOLEAN NOT NULL DEFAULT false",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS migrated_by UUID",
-  // Desktop/web capture-agent link flags (activity/routes.js) - same story:
-  // written directly onto the member row in Firestore, no Postgres column.
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS desktop_agent_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS web_capture_linked_at TIMESTAMPTZ",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_source VARCHAR(20)",
-  // Edit-account page's "Time zone" field (profile-settings.js's
-  // syncMemberTimezoneForUid) - written straight to this column with no
-  // schema migration, so every save threw "column timezone does not exist".
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)",
-  // Owner sign-off flag for Admin/Super Admin (privileged-role-governance.js) -
-  // was never migrated as a real column, so it always read as false/null and
-  // every privileged-role promotion (even by the Owner) got auto-banned on
-  // the next governance check.
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted BOOLEAN",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS privileged_role_owner_granted_at TIMESTAMPTZ",
-  // REGEXP_REPLACE(..., '\s+', '', 'g') strips whitespace before comparing -
-  // "Super Admin"/"Super Manager" have a space, so a plain LOWER(name) = 'superadmin'
-  // never matched them and these two roles sat at the hierarchy_level=10/is_management=false
-  // schema defaults forever. Every JS-side role check normalizes the same way
-  // (normalizeRoleKey), which is why this only broke SQL-native checks that read
-  // hierarchy_level/is_management straight from the DB (fn_can_actor_manage_target)
-  // while everything going through JS-side role-string logic looked fine.
   "UPDATE roles SET hierarchy_level = 100, is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') IN ('superadmin', 'owner')",
   "UPDATE roles SET hierarchy_level = 80,  is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') = 'admin'",
   "UPDATE roles SET hierarchy_level = 50,  is_management = true WHERE REGEXP_REPLACE(LOWER(name), '\\s+', '', 'g') IN ('supermanager', 'supermanger', 'manager')",
@@ -318,12 +257,6 @@ $$ LANGUAGE plpgsql SECURITY DEFINER`,
   `CREATE TRIGGER trg_audit_members AFTER INSERT OR UPDATE OR DELETE ON members FOR EACH ROW EXECUTE FUNCTION fn_audit_log_trigger()`,
   `DROP TRIGGER IF EXISTS trg_audit_roles ON roles`,
   `CREATE TRIGGER trg_audit_roles AFTER INSERT OR UPDATE OR DELETE ON roles FOR EACH ROW EXECUTE FUNCTION fn_audit_log_trigger()`,
-  // ─── Teams (migrated from Firestore) ─────────────────────────────────────
-  // Column set from src/modules/schema/catalog/teams/index.js. team_projects
-  // already moved to Postgres earlier; teams/team_members were left in
-  // Firestore ("low-volume, self-contained" - PROPOSAL-Projects-Migration-
-  // to-PostgreSQL.md) until the incident that took the whole members domain
-  // with it forced the rest of this migration too.
   `CREATE TABLE IF NOT EXISTS teams (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name                        VARCHAR(200) NOT NULL,
@@ -346,19 +279,12 @@ $$ LANGUAGE plpgsql SECURITY DEFINER`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_team_members_team ON team_members (team_id)`,
   `CREATE INDEX IF NOT EXISTS idx_team_members_member ON team_members (member_id)`,
-  // team_projects.team_id has carried no FK since it predates this table
-  // (see deleteTeamProjectsForTeamPg's own comment) - add it now that teams
-  // exists, same idempotent DO-block pattern already used for fk_cp_client.
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tp_team') THEN
     ALTER TABLE team_projects ADD CONSTRAINT fk_tp_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE;
   END IF;
 END $$`,
-  // ─── Invites (migrated from Firestore) ───────────────────────────────────
-  // Column set from schema/catalog/members/index.js, widened with the real
-  // fields member-invites.routes.js actually reads/writes that the catalog
-  // didn't cover (phone_number, invite fan-out timestamps).
   `CREATE TABLE IF NOT EXISTS invites (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email             VARCHAR(255) NOT NULL DEFAULT '',
@@ -382,9 +308,6 @@ END $$`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites (invite_token) WHERE invite_token <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_invites_email ON invites (email)`,
   `CREATE INDEX IF NOT EXISTS idx_invites_status ON invites (status)`,
-  // ─── Pre-auth staging (migrated from Firestore) ──────────────────────────
-  // Short-lived rows: created when an admin preprovisions a member before
-  // they ever sign in, consumed by promotePendingMemberCore once they do.
   `CREATE TABLE IF NOT EXISTS pending_auth_members (
   firebase_uid      VARCHAR(128) PRIMARY KEY,
   email             VARCHAR(255) NOT NULL DEFAULT '',
@@ -396,10 +319,6 @@ END $$`,
   created_by_uid    VARCHAR(128) NOT NULL DEFAULT '',
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // ─── Member relationships / hierarchy graph (migrated from Firestore) ───
-  // member_tree_cache (the derived, fast-read version of this graph) was
-  // already Postgres-resident (member-data-postgres.service.js) - this is
-  // the underlying edge list it's computed from, which was not.
   `CREATE TABLE IF NOT EXISTS member_relationships (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_member_id      UUID NOT NULL,
@@ -412,12 +331,6 @@ END $$`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_member_rel_parent ON member_relationships (parent_member_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS idx_member_rel_child ON member_relationships (child_member_id)`,
-  // Shape reconciled with the feature that actually runs (transfer-request
-  // .service.js). The original columns described a parent-reassignment
-  // request; the live flow is an emailed token invitation - requester,
-  // target email, token, expiry. Same table name, different design, which is
-  // exactly why a name-based audit read this as "already migrated" while
-  // every create/accept/decline still wrote Firestore.
   `CREATE TABLE IF NOT EXISTS member_transfer_requests (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   requester_member_id   UUID NOT NULL,
@@ -430,9 +343,6 @@ END $$`,
   completed_at          TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // Existing databases carry the old shape. No rows were ever written to it
-  // (nothing in the codebase referenced these columns), so the legacy ones
-  // are dropped rather than left NOT NULL and blocking every insert.
   `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS requester_member_id UUID`,
   `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_member_id UUID`,
   `ALTER TABLE member_transfer_requests ADD COLUMN IF NOT EXISTS target_email VARCHAR(255) NOT NULL DEFAULT ''`,
@@ -446,15 +356,9 @@ END $$`,
   `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS requested_by`,
   `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_by`,
   `ALTER TABLE member_transfer_requests DROP COLUMN IF EXISTS resolved_at`,
-  // Token is cleared on accept/decline, so the uniqueness only has to hold
-  // for live invitations - a partial index, not a column constraint.
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_member_transfer_token ON member_transfer_requests (token) WHERE token IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_member_transfer_target ON member_transfer_requests (target_member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_member_transfer_status ON member_transfer_requests (status)`,
-  // Account-deactivation workflow (auth/account-deactivation.js). Never had a
-  // Postgres table at all - submit/list-pending/approve-reject all ran against
-  // Firestore, and this page-level audit missed it because the collection name
-  // matched nothing in the catalog.
   `CREATE TABLE IF NOT EXISTS deactivation_requests (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id       UUID NOT NULL,
@@ -472,7 +376,6 @@ END $$`,
   `CREATE INDEX IF NOT EXISTS idx_deactivation_status ON deactivation_requests (status)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_deactivation_pending_member
      ON deactivation_requests (member_id) WHERE status = 'pending'`,
-  // ─── Miscellaneous member-adjacent (migrated from Firestore) ────────────
   `CREATE TABLE IF NOT EXISTS members_field_data (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id     UUID,
@@ -482,13 +385,6 @@ END $$`,
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_members_field_data_member ON members_field_data (member_id) WHERE member_id IS NOT NULL`,
-  // Table existed with no reader or writer at all until now - the one live
-  // consumer (member form snapshots, one JSON blob per member) still wrote
-  // straight to Firestore's members_field_data collection instead. A real
-  // uniqueness guarantee (not just an index) is what makes the upsert in
-  // member-form-snapshot-postgres.service.js a plain ON CONFLICT instead of
-  // the Firestore version's check-then-write, which raced two concurrent
-  // saves for the same member into two separate rows.
   `CREATE UNIQUE INDEX IF NOT EXISTS uq_members_field_data_member_form
      ON members_field_data (member_id, form_key) WHERE member_id IS NOT NULL`,
   `ALTER TABLE members_field_data ADD COLUMN IF NOT EXISTS modified_by UUID`,
@@ -502,12 +398,6 @@ END $$`,
   status        VARCHAR(20) NOT NULL DEFAULT 'pending',
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // The table shipped before the public "request access" form (POST
-  // /api/auth/access-request) was ever pointed at it - that route wrote
-  // straight to a Firestore access_requests collection unconditionally,
-  // and this table sat unused. Columns below fill the gap now that the
-  // route writes here for real: it collects phone (no message field), and
-  // tags where the request came from.
   `ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS phone VARCHAR(40) NOT NULL DEFAULT ''`,
   `ALTER TABLE access_requests ADD COLUMN IF NOT EXISTS source VARCHAR(60) NOT NULL DEFAULT ''`,
   `CREATE TABLE IF NOT EXISTS lookup_tables (
@@ -570,8 +460,6 @@ END $$`,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // Pre-existing databases created before `source` existed - every row time_entries has ever
-  // held came from the manual-entry form, so backfilling 'manual' is exactly correct, not a guess.
   "ALTER TABLE time_entries ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'manual'",
   "CREATE INDEX IF NOT EXISTS idx_te_member_date    ON time_entries (member_id, date DESC)",
   "CREATE INDEX IF NOT EXISTS idx_te_project_date   ON time_entries (project_id, date DESC)",
@@ -603,10 +491,6 @@ END $$`,
   "CREATE INDEX IF NOT EXISTS idx_ts_status        ON timesheets (status)",
   "CREATE INDEX IF NOT EXISTS idx_ts_member_status ON timesheets (member_id, status)",
   "CREATE INDEX IF NOT EXISTS idx_ts_approved_by   ON timesheets (approved_by) WHERE approved_by IS NOT NULL",
-  // Pre-existing databases created before pay rate / project linkage existed
-  // on a timesheet - the dollar amount (member's real historical rate,
-  // resolved per day) and the per-project hours/amount breakdown, frozen at
-  // submit time same as total_hours/billable_hours already are.
   "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2)",
   "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS currency VARCHAR(10)",
   "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS project_breakdown JSONB",
@@ -618,9 +502,6 @@ END $$`,
   `CREATE TRIGGER trg_timesheets_updated_at
   BEFORE UPDATE ON timesheets
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
-  // Pre-existing databases created before actor-id columns were widened from UUID to
-  // VARCHAR(255) — Firebase Auth uids (28-char alphanumeric) never fit the UUID type.
-  // These ALTERs are no-ops once a column is already VARCHAR.
   "ALTER TABLE roles ALTER COLUMN created_by TYPE VARCHAR(255) USING created_by::text",
   "ALTER TABLE roles ALTER COLUMN updated_by TYPE VARCHAR(255) USING updated_by::text",
   "ALTER TABLE lookup_tables ALTER COLUMN created_by TYPE VARCHAR(255) USING created_by::text",
@@ -628,11 +509,6 @@ END $$`,
   "ALTER TABLE time_entries ALTER COLUMN created_by TYPE VARCHAR(255) USING created_by::text",
   "ALTER TABLE time_entries ALTER COLUMN updated_by TYPE VARCHAR(255) USING updated_by::text",
   "ALTER TABLE timesheets ALTER COLUMN approved_by TYPE VARCHAR(255) USING approved_by::text",
-  // Employee tier relabel: Employee L2/L1/L0 -> Team Lead/Employee/Intern. Renaming
-  // the roles row in place (not inserting new rows) means every members.role_id FK
-  // repoints automatically - no per-member update needed. Must run before the L1
-  // rename below, since a pre-tier legacy bare "Employee" role (rank 30, same as L0)
-  // would otherwise collide with the new name on the UNIQUE roles.name constraint.
   `DO $$
 DECLARE
   v_legacy_id UUID;
@@ -678,15 +554,8 @@ const MEMBER_DATA_DDL = [
   updated_by                      VARCHAR(255),
   updated_at                      TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
-  // Work & Limits tab "Makeup days" redesign: was a date-pair calendar
-  // (member_makeup_days below, now unused); replaced with a recurring
-  // weekday flag (double-click a Working days button) stored alongside
-  // work_days on the same row - same [0-6] indexing, no join needed.
   "ALTER TABLE time_settings ADD COLUMN IF NOT EXISTS makeup_days JSONB NOT NULL DEFAULT '[]'::jsonb",
   "CREATE INDEX IF NOT EXISTS idx_time_settings_member ON time_settings (member_id)",
-  // Superseded by time_settings.makeup_days (weekday flag) above - kept
-  // (not dropped) only because it may hold historical data; no code path
-  // reads or writes it anymore.
   `CREATE TABLE IF NOT EXISTS member_makeup_days (
   id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id     UUID         NOT NULL,
@@ -741,13 +610,6 @@ const MEMBER_DATA_DDL = [
   updated_at                  TIMESTAMPTZ   NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_pay_rates_member ON pay_rates (member_id)",
-  // Append-only audit trail: pay_rates itself is a single upserted row per
-  // member (whatever is current), so every past rate/currency/pay-period was
-  // silently overwritten with nothing to show for it - the Pay/Bill tab's
-  // "history" table only ever displayed that one current row relabeled
-  // "Current". Every accepted pay-rate save now also inserts one row here
-  // (member-profile.service.js), capturing what the rate became and what it
-  // was before, so the tab has real history to show.
   `CREATE TABLE IF NOT EXISTS pay_rate_history (
   id                     UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id              UUID          NOT NULL,
@@ -911,28 +773,17 @@ GROUP BY task_id`,
   captured_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
-  // Already-existing (pre-bytea) tables: widen and add the new column in place.
   `ALTER TABLE activity_screenshots ALTER COLUMN screenshot_url DROP NOT NULL`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS image_data BYTEA`,
-  // ACT-4: the raw counters ActivityMeter::score() itself is built from, sent
-  // alongside activity_level so the server can recompute or re-weight a score
-  // later without an agent release.
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS keystroke_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS distinct_key_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS mouse_distance_px INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS injected_event_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS active_seconds_in_window INTEGER NOT NULL DEFAULT 0`,
-  // AC-2: 64-bit dHash (16 hex chars) of the screenshot's on-screen content,
-  // computed server-side at ingest. Lets the integrity sweep compare
-  // consecutive captures for near-identical content (background-playback
-  // fraud: activity reads high while the screen never actually changes)
-  // without re-decoding stored images.
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS perceptual_hash VARCHAR(16)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC)`,
-  // Shared app-name dimension: one row per distinct app across every member, so
-  // activity_app_logs stores a small app_id instead of repeating the name text.
   `CREATE TABLE IF NOT EXISTS apps (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name       VARCHAR(200) NOT NULL UNIQUE,
@@ -951,10 +802,6 @@ GROUP BY task_id`,
   duration_seconds INTEGER NOT NULL DEFAULT 30 CHECK (duration_seconds >= 0),
   source           VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))
 )`,
-  // ACT-4: same raw-signal columns as activity_screenshots. Merged app-log
-  // rows (see insertActivityAppLog's extend-in-place path) accumulate these
-  // alongside duration_seconds rather than overwriting, so a long-open
-  // app/tab still carries its full session's signal, not just its first tick.
   `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS keystroke_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS distinct_key_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS mouse_distance_px INTEGER NOT NULL DEFAULT 0`,
@@ -962,8 +809,6 @@ GROUP BY task_id`,
   `ALTER TABLE activity_app_logs ADD COLUMN IF NOT EXISTS active_seconds_in_window INTEGER NOT NULL DEFAULT 0`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_member_started ON activity_app_logs (member_id, started_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_app_started ON activity_app_logs (started_at DESC)`,
-  // Used to find the still-open row for the same app+tab in a session, to extend
-  // its duration instead of inserting a brand-new row on every capture tick.
   `CREATE INDEX IF NOT EXISTS idx_act_app_session_open ON activity_app_logs (session_id, app_id, page_title, started_at DESC)`,
   `CREATE TABLE IF NOT EXISTS activity_url_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -980,12 +825,6 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_url_member_visited ON activity_url_logs (member_id, visited_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_url_visited ON activity_url_logs (visited_at DESC)`,
-  // AC-2: output of the integrity sweep job (screenshot staleness / category
-  // conflict correlation) - a durable, per-session record so a manager (and,
-  // per AC-4, the employee themselves) can see and contest what was flagged,
-  // unlike the ephemeral /monitor metrics OBS-2/OBS-3 use. One row per
-  // session+flag_type: the sweep runs every few minutes and must not spam a
-  // duplicate flag for a condition it already recorded.
   `CREATE TABLE IF NOT EXISTS activity_integrity_flags (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id      UUID NOT NULL,
@@ -998,10 +837,6 @@ GROUP BY task_id`,
   contested_note TEXT,
   UNIQUE (session_id, flag_type)
 )`,
-  // AC-1: widened after 'injected_input' joined the sweep alongside AC-2's
-  // original two flag types. Drop-then-recreate under the same (Postgres's
-  // own default-generated) name is idempotent - a no-op once already
-  // widened, safe to run on every boot, matching this file's convention.
   `ALTER TABLE activity_integrity_flags DROP CONSTRAINT IF EXISTS activity_integrity_flags_flag_type_check`,
   `ALTER TABLE activity_integrity_flags ADD CONSTRAINT activity_integrity_flags_flag_type_check CHECK (flag_type IN ('screenshot_staleness', 'category_conflict', 'injected_input'))`,
   `CREATE INDEX IF NOT EXISTS idx_act_integrity_member_detected ON activity_integrity_flags (member_id, detected_at DESC)`,
@@ -1018,26 +853,13 @@ GROUP BY task_id`,
   source         VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent')),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // Pre-existing databases created before `source` existed on this table.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
-  // Calling-project sessions have no task to derive a project from.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS project_id UUID`,
-  // What the member said they worked on, captured when the project has
-  // require_stop_note on. Nullable - most sessions never carry one.
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stop_note TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC)`,
-  // TC-7: guarantee at most one open session per member. Runs every boot -
-  // idempotent by construction, matches zero rows once no duplicates exist -
-  // so it stays safe to leave in this list permanently. MUST run before the
-  // unique index below: that index creation fails outright (aborting this
-  // whole DDL loop, i.e. a boot failure - see ensurePostgresLookupSchema's
-  // single try/catch around the whole list) if any member still has more
-  // than one open row when it runs. Keeps the most-recently-started session
-  // per member and closes the rest, preserving whatever active/idle seconds
-  // they last synced rather than discarding them.
   `UPDATE activity_sessions
      SET status = 'stopped', ended_at = now(), updated_at = now()
      WHERE ended_at IS NULL
@@ -1047,26 +869,8 @@ GROUP BY task_id`,
          WHERE ended_at IS NULL
          ORDER BY member_id, started_at DESC
        )`,
-  // TC-7: the actual guarantee. A concurrent "start"/"resume" that races past
-  // the application-level findOpenSession() check (both requests see no open
-  // session, both attempt to create one) is caught here instead of silently
-  // opening a second session that then goes unsynced/unstoppable - see the
-  // 23505 handling in routes.js around createPgSession.
   `CREATE UNIQUE INDEX IF NOT EXISTS activity_sessions_one_open_per_member
      ON activity_sessions (member_id) WHERE ended_at IS NULL`,
-  // ─── CF-1: monitoring consent/config registry ───────────────────────────
-  // Single-tenant deployment (no organizations/tenant table exists anywhere
-  // in this schema - every other config table here, e.g. time_settings,
-  // limits, employment, is a per-member singleton, not per-org). So this is
-  // one global row per capability for the whole deployment, not the
-  // org_id-scoped table the original design doc sketched for a hypothetical
-  // multi-tenant product. Default-deny per capability (CF-0.1): a capability
-  // with no row, or enabled = false, is never captured - the seeding step in
-  // ensurePostgresLookupSchema (below the DDL loop) sets the initial value to
-  // match whatever the pre-existing env-var gate already had it at, once,
-  // ON CONFLICT DO NOTHING - so shipping this does not silently disable
-  // screenshot capture that's already live. Every change after that goes
-  // through setMonitoringCapability() and is admin-gated + audited.
   `CREATE TABLE IF NOT EXISTS monitoring_capabilities (
   capability            VARCHAR(40) PRIMARY KEY CHECK (capability IN (
                            'screenshots', 'app_tracking', 'url_capture',
@@ -1081,12 +885,6 @@ GROUP BY task_id`,
   enabled_at            TIMESTAMPTZ,
   updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // Append-only by convention: application code (monitoring-policy.js) never
-  // issues UPDATE/DELETE against this table, only INSERT - this is the
-  // "immutable audit record" CF-0.1 requires (who enabled what, when, under
-  // which lawful basis). Note this is an application-layer guarantee, not a
-  // DB-role-enforced one (no REVOKE UPDATE/DELETE on the connection role) -
-  // real tamper-resistance would need that at the infra layer.
   `CREATE TABLE IF NOT EXISTS monitoring_policy_audit (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   capability       VARCHAR(40) NOT NULL,
@@ -1097,11 +895,6 @@ GROUP BY task_id`,
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_monitoring_policy_audit_capability ON monitoring_policy_audit (capability, created_at DESC)`,
-  // Per-member because disclosure/consent is inherently per-person (CF-0.2) -
-  // a new hire needs their own first-run notice moment, unlike the global
-  // capability toggles above. notice_version lets a policy-text change force
-  // re-disclosure: bump it and every member's consented_at is stale again
-  // until they re-acknowledge (enforced in monitoring-policy.js, not here).
   `CREATE TABLE IF NOT EXISTS member_monitoring_consent (
   member_id      UUID PRIMARY KEY,
   disclosed_at   TIMESTAMPTZ,
@@ -1109,12 +902,6 @@ GROUP BY task_id`,
   notice_version VARCHAR(40),
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  // ─── CF-3: data minimization ─────────────────────────────────────────────
-  // Global list (single-tenant, same reasoning as monitoring_capabilities):
-  // an app or URL domain that must never be captured at all - not blurred,
-  // not logged, not screenshotted - enforced at ingest in routes.js, the one
-  // place every capture path (agent and web) already converges. Case-folded
-  // uniqueness so "Chrome" and "chrome" aren't two different exclusions.
   `CREATE TABLE IF NOT EXISTS capture_exclusions (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   match_type   VARCHAR(10) NOT NULL CHECK (match_type IN ('app', 'domain')),
@@ -1124,12 +911,6 @@ GROUP BY task_id`,
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_exclusions_unique ON capture_exclusions (match_type, lower(pattern))`,
-  // Singleton row (id is always 1) - one deployment, one minimization
-  // posture, same "no org concept exists" reasoning as everywhere else in
-  // this phase. url_domain_only strips path/query at ingest (CF-0.3: "store
-  // github.com, not the full path with query params that may carry personal
-  // data"). screenshot_blur_default applies a blur pass in the existing
-  // sharp() pipeline before a screenshot is ever written to disk/DB.
   `CREATE TABLE IF NOT EXISTS capture_minimization_settings (
   id                      SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   url_domain_only         BOOLEAN NOT NULL DEFAULT false,
@@ -1138,16 +919,6 @@ GROUP BY task_id`,
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `INSERT INTO capture_minimization_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
-  // ─── CF-5: retention limits & data-subject rights ───────────────────────
-  // One row per monitoring data type, admin-tunable without a redeploy -
-  // generalises the existing manual archive-screenshots.mjs script (which
-  // only ever covered screenshots/app_logs/url_logs via CLI flags, defaults
-  // explicitly called "illustrative, not a compliance recommendation") into
-  // an enforced ceiling for all four member data stores, sessions included.
-  // Screenshots get the shortest default (highest privacy risk, has images);
-  // sessions get the longest (billing/audit relevance) - but every type has
-  // a finite default. CF-0.5: "Indefinite retention... fails GDPR storage
-  // limitation" - there is deliberately no "never delete" option here.
   `CREATE TABLE IF NOT EXISTS data_retention_settings (
   data_type      VARCHAR(20) PRIMARY KEY CHECK (data_type IN ('screenshots', 'app_logs', 'url_logs', 'sessions')),
   retention_days INT NOT NULL DEFAULT 90 CHECK (retention_days > 0),
@@ -1157,9 +928,6 @@ GROUP BY task_id`,
   `INSERT INTO data_retention_settings (data_type, retention_days) VALUES
      ('screenshots', 90), ('app_logs', 180), ('url_logs', 180), ('sessions', 730)
    ON CONFLICT (data_type) DO NOTHING`,
-  // CF-0.5: "log every access" to raw screenshot data. Append-only, same
-  // convention as monitoring_policy_audit - no update/delete function exists
-  // for this table in the codebase.
   `CREATE TABLE IF NOT EXISTS screenshot_access_log (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   screenshot_id    UUID NOT NULL,
@@ -1168,13 +936,6 @@ GROUP BY task_id`,
   accessed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_screenshot_access_log_owner ON screenshot_access_log (screenshot_owner, accessed_at DESC)`,
-  // ─── ACT-3: server-tunable activity scoring constants ───────────────────
-  // Singleton row, same pattern as capture_minimization_settings (CF-3) -
-  // "ACTIVITY_SATURATION_EVENTS = 120 is a hardcoded guess baked into the
-  // binary... a data-entry role and a designer have very different '100%
-  // looks like' baselines." Defaults match the values the Rust constants
-  // used before this existed, so shipping this is a no-op until an admin
-  // actually tunes it.
   `CREATE TABLE IF NOT EXISTS activity_scoring_settings (
   id                SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   saturation_events INT NOT NULL DEFAULT 120 CHECK (saturation_events > 0),
@@ -1183,39 +944,12 @@ GROUP BY task_id`,
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `INSERT INTO activity_scoring_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
-  // ACT-3: widened beyond pure scoring to every agent constant the plan
-  // names as "server-tunable" (screenshot cadence, idle thresholds) - one
-  // singleton row and one Rust refresh cycle, not a second table with its
-  // own fetch/cache machinery duplicating this one for no benefit. Defaults
-  // match the Rust constants they override exactly, so this is a no-op
-  // until an admin actually tunes something.
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_min_delay_sec INT NOT NULL DEFAULT 90 CHECK (screenshot_min_delay_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_max_delay_sec INT NOT NULL DEFAULT 210 CHECK (screenshot_max_delay_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_threshold_sec INT NOT NULL DEFAULT 60 CHECK (idle_threshold_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_warn_sec INT NOT NULL DEFAULT 300 CHECK (idle_warn_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_alert_sec INT NOT NULL DEFAULT 600 CHECK (idle_alert_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_stop_sec INT NOT NULL DEFAULT 900 CHECK (idle_stop_sec > 0)`,
-  // ─── CLS-1: app/domain classification + unified display-name mapping ────
-  // One row per (match_type, pattern) - single-tenant, same reasoning as
-  // monitoring_capabilities/capture_exclusions (no org concept exists in this
-  // schema, so there is one classification map for the deployment, not a
-  // layered org-overrides-default lookup). is_global_default distinguishes a
-  // shipped seed row from one an admin has touched, for UI/audit purposes
-  // only - functionally there is always exactly one authoritative row per
-  // pattern, an admin edit UPDATEs it in place rather than shadowing it.
-  //
-  // display_name doubles this table as the fix for F5/CQ-4: "window.rs's
-  // BROWSER_EXES/overrides() and the frontend's display-names.ts are two
-  // independent sources of truth that will drift" - confirmed drifted
-  // already (Rust has devenv.exe/powershell.exe/cmd.exe/winword.exe/etc that
-  // the frontend doesn't; the frontend has chrome.exe/msedge.exe/etc mapped
-  // that Rust resolves a different way). One server-delivered table, both
-  // consume it (MAC-3, once wired).
-  //
-  // role_override is JSONB keyed by role name -> category, e.g.
-  // {"designer": "productive"} - "a designer on Behance is productive, a
-  // data-entry clerk on Behance is distracting" without hardcoding a value
-  // judgement per role into application code.
   `CREATE TABLE IF NOT EXISTS activity_categories (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   match_type         VARCHAR(10) NOT NULL CHECK (match_type IN ('app', 'domain')),
@@ -1232,9 +966,6 @@ GROUP BY task_id`,
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_categories_unique ON activity_categories (match_type, lower(pattern))`,
   `CREATE INDEX IF NOT EXISTS idx_activity_categories_category ON activity_categories (category)`,
-  // Global default map. ON CONFLICT DO NOTHING - an admin's prior edit to
-  // any of these (e.g. reclassifying youtube.com as productive for a video-
-  // editing team) is never overwritten by a later boot re-running this list.
   `INSERT INTO activity_categories (match_type, pattern, category, display_name, is_global_default) VALUES
      ('app', 'code.exe', 'productive', 'VS Code', true),
      ('app', 'cursor.exe', 'productive', 'Cursor', true),
@@ -1328,13 +1059,6 @@ GROUP BY task_id`,
   sent_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_act_alert_subject_type ON activity_alert_log (subject_member_id, alert_type, sent_at DESC)`,
-  // ─── Projects domain (migrated from Firestore - see PROPOSAL-Projects-Migration-to-PostgreSQL.md) ───
-  // Column set pulled from the live Firestore field catalog
-  // (src/modules/schema/catalog/{projects,clients,teams}/index.js), not invented.
-  // The FK from time_entries.project_id is deliberately NOT added here - it
-  // would fail on any database still holding orphaned project_id values and
-  // block everything listed after it in this array (this loop stops at the
-  // first failing statement).
   `CREATE TABLE IF NOT EXISTS projects (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name                    VARCHAR(200) NOT NULL,
@@ -1357,50 +1081,17 @@ GROUP BY task_id`,
   archived_by             UUID,
   archived_at             TIMESTAMPTZ
 )`,
-  // Pre-existing databases created before project types existed.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'normal'`,
-  // The CHECK is part of the column definition above, so a database created
-  // before retainer/fixed_price/internal/support existed still carries the
-  // old two-value constraint and would reject them. Constraints have no
-  // "IF NOT EXISTS" for redefinition - drop then re-add, which is idempotent
-  // and keeps the allowed set in one place (project-types.js is the source of
-  // truth; this list must stay in step with it).
   `ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_type_check`,
   `ALTER TABLE projects ADD CONSTRAINT projects_type_check CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support', 'management'))`,
-  // Optional, informational only (item 5 of the budget fixes plan) - not
-  // required, nothing archives on it. Deliberately no start_date: created_at
-  // already answers "when did this project start".
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`,
-  // Pre-existing databases created before per-project idle time existed.
-  // ADD COLUMN ... DEFAULT on Postgres backfills existing rows to the
-  // default for free (metadata-only since PG11) - every pre-existing project
-  // reads 450s/7.5min same as a newly created one, no separate UPDATE needed.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS idle_time_seconds INTEGER NOT NULL DEFAULT 450`,
-  // Per-project escape hatches for two rules that were previously hardcoded
-  // org-wide. Defaults preserve exactly the old behavior, so an existing
-  // project behaves identically until someone opts out on purpose:
-  //   require_task_to_track - normal projects can only start a timer with a
-  //     task selected (Tauri App.tsx gates the Start button on it). false
-  //     lets a normal project track against the project itself, the way a
-  //     calling project already does.
-  //   restrict_task_creation - only project managers and org admins may
-  //     create tasks (canCreateTasksInProject). false opens it to any
-  //     assigned member of this project.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_task_to_track BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_task_creation BOOLEAN NOT NULL DEFAULT true`,
-  // Prompts for a short note when a member stops their timer on this
-  // project. Default false - opt-in, adds friction to every stop.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_stop_note BOOLEAN NOT NULL DEFAULT false`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,
-  // Moved here from just after `invites`/`pending_auth_members` - both
-  // reference projects(id), which does not exist yet at that point in this
-  // array. On a genuinely fresh database (this array runs top-to-bottom,
-  // in order, against an empty schema) that ordering threw
-  // "relation \"projects\" does not exist" and aborted the whole migration.
-  // It only ever worked in practice because every real deployment's
-  // `projects` table predates this file's current statement order.
   `CREATE TABLE IF NOT EXISTS invite_projects (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   invite_id     UUID NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
@@ -1427,17 +1118,7 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_pm_project ON project_members (project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pm_member ON project_members (member_id)`,
-  // 'manual' (somebody picked this person) or 'rolled_up' (they are here
-  // because they manage a linked sub-project of a management project). The
-  // distinction is what lets the roll-up prune its own stale rows without
-  // ever deleting someone a human added by hand. Defaults to 'manual' so
-  // every pre-existing row keeps behaving exactly as before.
   `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS source VARCHAR(16) NOT NULL DEFAULT 'manual'`,
-  // Management projects sit above other projects. Deliberately not a
-  // parent_id column on projects: a sub-project can answer to more than one
-  // management project, and this keeps projects itself free of a self-FK.
-  // ON DELETE CASCADE both ways - deleting either end drops the link, never
-  // the other project.
   `CREATE TABLE IF NOT EXISTS project_subprojects (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_project_id  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1452,15 +1133,6 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_psp_parent ON project_subprojects (parent_project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_psp_child ON project_subprojects (child_project_id)`,
-  // type/based_on/resets etc. exist in the live Firestore doc today but were never
-  // read by overview-service.js - that omission is the root cause of the budget-type
-  // display bug (see proposal doc "Related Bug" section). Carrying them forward here.
-  //
-  // scope: 'per_project' (default) = cost is a flat total, today's only prior
-  // behavior. 'per_person' = cost is hours-per-member; the live total scales
-  // with current headcount (Hours based: cost * member count; Cost based:
-  // cost hours * each member's own rate, summed) instead of a fixed number
-  // typed once.
   `CREATE TABLE IF NOT EXISTS project_budgets (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id                  UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1483,16 +1155,8 @@ GROUP BY task_id`,
   updated_by                  UUID
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_pb_project ON project_budgets (project_id)`,
-  // Pre-existing databases created before the per-person budget scope existed.
   `ALTER TABLE project_budgets ADD COLUMN IF NOT EXISTS scope VARCHAR(20) NOT NULL DEFAULT 'per_project'`,
-  // Pre-existing databases created before the reset-period anchor ("Anchor"
-  // menu action) existed - the period's own end, optional, distinct from
-  // projects.end_date (the project's overall deadline).
   `ALTER TABLE project_budgets ADD COLUMN IF NOT EXISTS end_date DATE`,
-  // Dedupe state for the notify-at-threshold check (item 4 of the budget
-  // fixes plan) - one row per project, tracking which reset period a
-  // notification has already gone out for. Postgres-resident (not Firestore
-  // like client_automation_state) since project_budgets already is.
   `CREATE TABLE IF NOT EXISTS project_budget_notify_state (
   project_id            UUID PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
   notified_period_key   VARCHAR(40),
@@ -1500,11 +1164,6 @@ GROUP BY task_id`,
   last_usage_pct        NUMERIC(6, 2),
   last_sent_at          TIMESTAMPTZ
 )`,
-  // Real shape mirrors project_budgets, NOT a bare daily/weekly integer pair - matches
-  // the live Firestore doc. Note: the only current reader (overview-service.js) treats
-  // `cost` as a max-member headcount, not a budget amount - see proposal doc "Related
-  // Bug" #6. Schema carried forward as-is; the semantic mismatch is a follow-up decision,
-  // not something to silently redesign during a storage migration.
   `CREATE TABLE IF NOT EXISTS project_member_limits (
   id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id              UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -1524,10 +1183,6 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_pml_project ON project_member_limits (project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_pml_member ON project_member_limits (member_id)`,
-  // ─── Clients domain (migrated from Firestore, Phase 7+ of the budget fixes
-  // plan - see project-budget-fixes-plan.md). Column set pulled from the live
-  // Firestore field catalog (schema/catalog/clients/index.js), not invented.
-  // No backfill: existing Firestore rows are not carried over, these start empty.
   `CREATE TABLE IF NOT EXISTS clients (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id       UUID,
@@ -1547,10 +1202,6 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_clients_status ON clients (status)`,
   `CREATE INDEX IF NOT EXISTS idx_clients_member ON clients (member_id)`,
-  // Client budget vocabulary (hourly|fixed|retainer|none, per_person|per_project|
-  // total) is deliberately separate from project_budgets' own (Cost based|Hours
-  // based) - these are two different budget shapes, not one redesigned to match
-  // the other during this migration.
   `CREATE TABLE IF NOT EXISTS client_budgets (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   client_id       UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
@@ -1589,8 +1240,6 @@ GROUP BY task_id`,
   updated_by                    UUID
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_ci_client ON client_invoicing (client_id)`,
-  // Threshold + period-key dedupe state for client budget notifications -
-  // replaces the Firestore client_automation_state collection.
   `CREATE TABLE IF NOT EXISTS client_automation_state (
   client_id       UUID PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
   budget_policy   JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -1610,20 +1259,8 @@ GROUP BY task_id`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_cp_client ON client_projects (client_id)`,
   `CREATE INDEX IF NOT EXISTS idx_cp_project ON client_projects (project_id)`,
-  // A client member reads their linked projects everywhere by default. This
-  // flag is the one thing that also lets them write to a project - create and
-  // edit its tasks - and it is off unless someone turns it on for that
-  // specific project.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_manage BOOLEAN NOT NULL DEFAULT false`,
-  // Same idea as client_can_manage, for tracking instead of managing: lets a
-  // client member run a task-less timer on this project (like a calling
-  // project, or a normal project with require_task_to_track off) alongside
-  // its other members. Independent of client_can_manage - a client can be
-  // allowed to track without being allowed to edit tasks, or vice versa.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_track BOOLEAN NOT NULL DEFAULT false`,
-  // client_projects.client_id had no FK until the clients table existed above -
-  // added here, after clients exists in this array, same idempotent pattern as
-  // fk_tmp_task below.
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cp_client') THEN
@@ -1653,10 +1290,6 @@ END $$`,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ
 )`,
-  // Long-lived per-machine agent credential. Lets a linked desktop agent
-  // re-authenticate in-app after its (borrowed) Firebase refresh token dies,
-  // instead of sending the user back through a browser link. Secret is stored
-  // hashed only - see agent-devices.service.js.
   `CREATE TABLE IF NOT EXISTS agent_devices (
   device_id       UUID PRIMARY KEY,
   member_id       UUID NOT NULL,
@@ -1669,31 +1302,12 @@ END $$`,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_agent_devices_member ON agent_devices (member_id) WHERE revoked_at IS NULL`,
-  // CF-6: "device ownership (company/BYOD) is recorded and auditable."
-  // Added to the existing per-device row rather than a new table - this is
-  // already the one row per linked machine. Defaults to 'unspecified' (not
-  // 'company') so a device that's never been classified doesn't silently
-  // read as company-owned.
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership VARCHAR(20) NOT NULL DEFAULT 'unspecified' CHECK (ownership IN ('company', 'personal', 'unspecified'))`,
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership_set_by UUID`,
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS ownership_set_at TIMESTAMPTZ`,
-  // AC-3: reported once at link/reauth time by the agent itself (CPUID
-  // hypervisor bit, vendor string, VM MAC OUI, driver artifacts on Windows;
-  // sysctl kern.hv_vmm_present on macOS). Deliberately device-level, not
-  // folded into a per-session score - activity_sessions carries no device_id
-  // to correlate against, and the plan is explicit that this signal "has
-  // real false positives" and must stay a reviewable flag, never an
-  // automatic verdict, so it is surfaced next to device ownership for a
-  // manager to weigh in context rather than subtracted from anything.
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_detected BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_signals TEXT`,
   `ALTER TABLE agent_devices ADD COLUMN IF NOT EXISTS vm_detected_at TIMESTAMPTZ`,
-  // ─── Tasks domain (Phase 2 of implementation.md - Firestore -> Postgres) ───
-  // Schema-stand-up only: additive, nothing reads from these tables yet, zero
-  // behavior change. Column set pulled from the live Firestore field catalog
-  // (src/modules/schema/catalog/tasks/index.js), not invented. Must come after
-  // the projects-domain block above in this array - both FKs reference
-  // projects(id), and this loop stops at the first failing statement.
   `CREATE TABLE IF NOT EXISTS tasks (
   id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id                  UUID NOT NULL REFERENCES projects(id),
@@ -1724,10 +1338,6 @@ END $$`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks (status)`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_assigned_status ON tasks (assigned_to, status)`,
   `CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks (project_id, status)`,
-  // Participation counters recomputed by task-assignments.js's recomputeTaskStatus()
-  // whenever an assignment's status changes - Firestore-only ad-hoc fields (never in
-  // the schema catalog, schemaless writes), carried forward here so callers reading
-  // them from a Postgres task row (enrichAssignmentRow etc.) keep working.
   `ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS completed BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS total_assignees INT,
@@ -1735,17 +1345,7 @@ END $$`,
     ADD COLUMN IF NOT EXISTS not_started_assignees INT,
     ADD COLUMN IF NOT EXISTS participation_percent INT,
     ADD COLUMN IF NOT EXISTS all_assignees_started BOOLEAN NOT NULL DEFAULT false`,
-  // When true, timer-limit.service.js's daily-hour cap is enforced against the
-  // active session's continuous elapsed time (clock-in to clock-out) instead
-  // of resetting at the midnight day-bucket boundary - e.g. a 6pm-2am shift
-  // against an 8h/day task counts as one 8h stretch, not two fresh
-  // allowances split by the calendar-day rollover.
   `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS rolling_hour_cap BOOLEAN NOT NULL DEFAULT false`,
-  // When true, the task's estimateAssignmentSeconds total is ONE pool shared
-  // by every assignee combined (remaining = estimate - sum of everyone's
-  // active_seconds), instead of each assignee getting their own full
-  // allotment independently (the default, unchanged behavior). See
-  // resolveWorkedTodayOnTaskSeconds's sibling seam in timer-limit.service.js.
   `ALTER TABLE tasks ADD COLUMN IF NOT EXISTS shared_task_budget BOOLEAN NOT NULL DEFAULT false`,
   `CREATE TABLE IF NOT EXISTS task_assignments (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1764,11 +1364,6 @@ END $$`,
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (task_id, member_id)
 )`,
-  // 4.4: every other table (task_member_progress, activity_sessions,
-  // project_members) already calls this column member_id - task_assignments
-  // was the one outlier still carrying Firestore's user_id naming. Renamed
-  // rather than left inconsistent now that more tables/joins are piling up
-  // on top of this domain. Idempotent: no-op once already renamed.
   `DO $$
 BEGIN
   IF EXISTS (
@@ -1780,14 +1375,6 @@ BEGIN
 END $$`,
   `CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_task_assignments_project ON task_assignments (project_id)`,
-  // ─── Task child entities (migrated from Firestore tasks/{taskId}/*) ─────
-  // The one deliberate holdout task-subcollections.js called out - comments,
-  // subtasks, attachments, and per-member hours still lived as Firestore
-  // subcollections while the parent task record itself had already moved.
-  // task_id REFERENCES tasks(id) ON DELETE CASCADE replaces
-  // deleteTaskWithChildren's manual Firestore batch-delete of these four
-  // subcollections - deleting the Postgres tasks row now does it for free,
-  // the same way task_assignments' own cascade already does.
   `CREATE TABLE IF NOT EXISTS task_comments (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -1817,12 +1404,6 @@ END $$`,
   uploaded_by   UUID
 )`,
   `CREATE INDEX IF NOT EXISTS idx_task_attachments_task ON task_attachments (task_id)`,
-  // user_id (not member_id) is deliberate here, matching the schema
-  // catalog's existing task-hours field name (schema/catalog/tasks/index.js)
-  // rather than the member_id convention task_assignments was just renamed
-  // to above - renaming this too would mean also updating the catalog and
-  // every request body sending user_id, which is a separate cleanup from
-  // moving the store.
   `CREATE TABLE IF NOT EXISTS task_hours (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id       UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -1837,40 +1418,11 @@ END $$`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_task_hours_task ON task_hours (task_id)`,
   `CREATE INDEX IF NOT EXISTS idx_task_hours_user ON task_hours (user_id)`,
-  // task_member_progress already exists (added earlier for the activity-data
-  // migration) - extend it to cover the remaining Firestore time_tracking
-  // fields instead of creating a separate table. New columns are nullable, so
-  // this is safe to run against a table that already has rows: existing rows
-  // simply get NULL, which trivially satisfies the FK on project_id.
   `ALTER TABLE task_member_progress
     ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES projects(id),
     ADD COLUMN IF NOT EXISTS session_id VARCHAR(128),
     ADD COLUMN IF NOT EXISTS review_notes TEXT`,
-  // Distinct from last_started_at above, which - via the upsert's
-  // COALESCE(existing, EXCLUDED) - only ever captures the *first* start this
-  // member ever made on this task and is never cleared, making it a
-  // lifetime marker, not a current-session one. rolling_session_started_at
-  // is set fresh on every real "start", left untouched across "resume"/
-  // "sync" (see upsertTrackingRowPg), and cleared to NULL on "stop" - so it
-  // reliably marks "when did the currently-ongoing clock-in begin", which
-  // rolling_hour_cap tasks need to sum daily_member_task_active_seconds
-  // across the session's day range instead of just today's row.
   `ALTER TABLE task_member_progress ADD COLUMN IF NOT EXISTS rolling_session_started_at TIMESTAMPTZ`,
-  // task_member_progress/timer_sessions.task_id had no FK at all until now -
-  // couldn't reference tasks(id) when these tables were first created (tasks
-  // didn't exist yet). Added here, after tasks
-  // exists in this array, with ON DELETE CASCADE so deleting a task actually
-  // cleans up its progress/session rows instead of orphaning them the way
-  // deleteTaskPg alone would (task_assignments already had this via its own
-  // table-level FK - these two didn't). Idempotent: safe to run on every boot.
-  //
-  // Self-healing: an earlier deploy of this exact migration created
-  // fk_tmp_task WITHOUT "ON DELETE CASCADE" (Postgres defaults to NO ACTION),
-  // and the original "IF NOT EXISTS (name)" guard only ever checked whether
-  // *a* constraint with that name existed - never whether it actually had
-  // cascade behavior - so it silently never got fixed. Every task delete has
-  // been failing with "violates foreign key constraint fk_tmp_task" since.
-  // confdeltype 'c' = CASCADE; anything else means it needs replacing.
   `DO $$
 BEGIN
   IF EXISTS (
@@ -1882,17 +1434,6 @@ BEGIN
     ALTER TABLE task_member_progress ADD CONSTRAINT fk_tmp_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE;
   END IF;
 END $$`,
-  // Same class of bug as fk_tmp_task above, on the project side this time:
-  // tasks.project_id, task_assignments.project_id, and
-  // task_member_progress.project_id were all declared as inline
-  // `REFERENCES projects(id)` with no ON DELETE clause, which Postgres
-  // defaults to NO ACTION - so DELETE FROM projects fails outright for any
-  // project that has ever had a task ("violates foreign key constraint...
-  // on table tasks"), every time. Self-healing on every boot: for each
-  // table, find any FK to projects that isn't already CASCADE, drop it, and
-  // recreate it correctly. Table-scoped by conrelid rather than a specific
-  // constraint name, since these were never given one - Postgres auto-named
-  // them, and the auto-generated name isn't worth depending on.
   `DO $$
 DECLARE
   con_name text;
@@ -1932,36 +1473,12 @@ BEGIN
     ALTER TABLE task_member_progress ADD CONSTRAINT task_member_progress_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
   END IF;
 END $$`,
-  // ─── Phase 4 schema hardening (implementation.md) - cheap/safe items ───
-  // 4.12: these 3 columns already have a UNIQUE constraint, which Postgres backs
-  // with its own index - the separate explicit index below is a second index
-  // maintained on every write for zero query benefit. Free to drop.
   "DROP INDEX IF EXISTS idx_roles_name",
   "DROP INDEX IF EXISTS idx_time_settings_member",
   "DROP INDEX IF EXISTS idx_employment_member",
-  // 4.15: workedTodayOnTaskSeconds filters activity_sessions by task_id
-  // (activity-events-postgres.service.js) but only member_id-based indexes
-  // existed on this table.
   "CREATE INDEX IF NOT EXISTS idx_act_sess_task ON activity_sessions (task_id) WHERE task_id IS NOT NULL",
-  // 4.5: task_status enum was declared but wired to zero columns (grepped the
-  // full backend), and its values don't match real status strings in use
-  // (`to_do`/`completed` vs the real `todo`/`done`/`cancelled`/`archived`) -
-  // a stale, mismatched, unused type is worse than no type. tasks.status
-  // stays a plain VARCHAR, which is what every reader already assumes.
   "DROP TYPE IF EXISTS task_status",
-  // 4.14: has_image is hardcoded to the literal `true` on every insert
-  // (activity-events-postgres.service.js's insertActivityScreenshot) and the
-  // one route that creates a row (activity/routes.js) only ever reaches that
-  // insert when real image data is present (`if (!imageData) continue;`) -
-  // there is no path that has ever produced or could produce `false`. Dead
-  // column, not future-proofing; dropped rather than carried forward.
   "ALTER TABLE activity_screenshots DROP COLUMN IF EXISTS has_image",
-  // 4.1: UUIDv7 is time-sortable (same 128-bit external shape, no API-facing
-  // change) unlike gen_random_uuid()'s fully random insertion order, which
-  // causes btree page splits/index bloat on high-write tables - a real cost
-  // on a 2-vCPU box. Only switches the DEFAULT for future inserts; existing
-  // ids are untouched. No-op when uuidv7() isn't available (pre-PG17 without
-  // the pg_uuidv7 extension) rather than failing the whole boot sequence.
   `DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_proc WHERE proname = 'uuidv7') THEN
@@ -1969,13 +1486,6 @@ BEGIN
     ALTER TABLE task_member_progress ALTER COLUMN id SET DEFAULT uuidv7();
   END IF;
 END $$`,
-  // 4.6: sumPgMemberActiveSeconds summed a session's ENTIRE active_seconds
-  // whenever started_at fell in the requested day/week range - a session
-  // started at 23:50 and still open past midnight got all its seconds
-  // attributed to the day it started, none to the next. These two rollups
-  // are incremented by a delta (this sync's active_seconds minus the
-  // session's previous active_seconds) attributed to the calendar day the
-  // sync actually ran on, sidestepping the midnight-split problem entirely.
   `CREATE TABLE IF NOT EXISTS daily_member_active_seconds (
   member_id      UUID NOT NULL,
   day            DATE NOT NULL,
@@ -1991,29 +1501,8 @@ END $$`,
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (member_id, task_id, day)
 )`,
-  // 4.2/4.3: timer_sessions only had one writer - syncMemberProgressToPostgres,
-  // the pre-Phase-2 dual-write mirror gated behind TASK_MEMBER_PROGRESS_PG_DUAL_WRITE
-  // (defaults false, never turned on in this deployment). Since task_member_progress
-  // has been the real primary store since Phase 2, that whole mirror (and its
-  // GREATEST-ratcheted accumulated_work_time column, never read by anything -
-  // active_seconds is already correctly monotonic from the tracker itself) was
-  // dead weight, not a table worth "collapsing" with activity_sessions - removed
-  // outright instead, along with the mirror functions in
-  // task-member-progress.service.js and the now-unused dual-write flag.
   "DROP TABLE IF EXISTS timer_sessions",
   "ALTER TABLE task_member_progress DROP COLUMN IF EXISTS accumulated_work_time",
-  // 4.8: task_progress_aggregate (the view) and every reader of
-  // tasks.total_active_seconds/total_idle_seconds recompute SUM(active_seconds)
-  // across all members on every read - read cadence (dashboard/task-list
-  // polling) far exceeds write cadence (one sync per SESSION_SYNC_INTERVAL_SEC
-  // = 20s per active tracker). Trigger-maintained totals are cheaper than
-  // recomputing per read, and don't depend on aggregateTaskProgress() always
-  // remembering to call updateTaskPg - the same class of bug this plan
-  // already found once (the pre-fbab994 quit-path gap) and shouldn't
-  // reintroduce at the database layer. Redundant-but-harmless alongside the
-  // existing app-level update in aggregateTaskProgress() - both converge to
-  // the same SUM(), this just guarantees it even if that call site is ever
-  // missed.
   `CREATE OR REPLACE FUNCTION recompute_task_totals() RETURNS TRIGGER AS $$
 BEGIN
   UPDATE tasks SET
@@ -2028,22 +1517,6 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_recompute_task_totals
   AFTER INSERT OR UPDATE OR DELETE ON task_member_progress
   FOR EACH ROW EXECUTE FUNCTION recompute_task_totals()`,
-  // Recurring "Schedule" delivery for reports (currently just time-and-activity) -
-  // one row per saved schedule, a timer-based runner (report-schedule-runner.js)
-  // polls this on the same interval-timer pattern team-weekly-report.service.js
-  // already uses, no job-queue dependency needed for one feature.
-  // ─── Invoicing ──────────────────────────────────────────────────────────
-  // One table covers both directions, distinguished by `kind`:
-  //   'client' - what the org bills a client (money coming in)
-  //   'team'   - what a member/contractor bills the org (money going out)
-  // They share every field that matters (number, dates, totals, status) and
-  // both age the same way, so two near-identical tables would only guarantee
-  // the two halves drift apart.
-  //
-  // Totals are stored rather than summed from line items on read: an issued
-  // invoice is a financial record of what was actually billed, and must not
-  // change retroactively if a line item is later edited. recalcInvoiceTotalsPg
-  // updates them deliberately while a draft is still being edited.
   `CREATE TABLE IF NOT EXISTS invoices (
   id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   kind          VARCHAR(10)   NOT NULL CHECK (kind IN ('client', 'team')),
@@ -2083,9 +1556,6 @@ $$ LANGUAGE plpgsql`,
   created_at    TIMESTAMPTZ   NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_line_items (invoice_id)",
-  // Payments recorded against an invoice. The Payments report is the sum of
-  // these - actual money moved, as opposed to amounts-owed's estimate of what
-  // is still due.
   `CREATE TABLE IF NOT EXISTS invoice_payments (
   id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   invoice_id    UUID          NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
@@ -2103,14 +1573,6 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_invoices_updated_at
   BEFORE UPDATE ON invoices
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
-  // ─── Time off ───────────────────────────────────────────────────────────
-  // A policy is the entitlement (e.g. "Annual leave, 20 days/year"); a request
-  // is someone asking for days against it; transactions are the ledger.
-  //
-  // Balances are deliberately NOT a stored column - they are SUM(transactions)
-  // per member+policy. A stored balance and a ledger disagree the moment any
-  // write is missed, and then there is no way to tell which is right. Accruals
-  // are positive days, approved leave is negative.
   `CREATE TABLE IF NOT EXISTS time_off_policies (
   id                UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   name              VARCHAR(120)  NOT NULL,
@@ -2145,9 +1607,6 @@ $$ LANGUAGE plpgsql`,
   "CREATE INDEX IF NOT EXISTS idx_time_off_req_member ON time_off_requests (member_id)",
   "CREATE INDEX IF NOT EXISTS idx_time_off_req_status ON time_off_requests (status)",
   "CREATE INDEX IF NOT EXISTS idx_time_off_req_dates  ON time_off_requests (start_date, end_date)",
-  // kind: 'accrual' (grant), 'usage' (approved leave), 'adjustment' (manual
-  // correction). request_id links a usage row back to what caused it, and is
-  // UNIQUE so approving the same request twice cannot double-deduct.
   `CREATE TABLE IF NOT EXISTS time_off_transactions (
   id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id     UUID          NOT NULL,
@@ -2172,10 +1631,6 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_time_off_requests_updated_at
   BEFORE UPDATE ON time_off_requests
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
-  // ─── Expenses ───────────────────────────────────────────────────────────
-  // Money a member spent doing the work, as opposed to time they spent on it.
-  // Approval mirrors time_entries' pending/approved/rejected vocabulary so the
-  // two review flows behave the same way.
   `CREATE TABLE IF NOT EXISTS expenses (
   id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id     UUID          NOT NULL,
@@ -2224,10 +1679,6 @@ $$ LANGUAGE plpgsql`,
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_report_schedules_due ON report_schedules (frequency, last_sent_at)`,
-  // Reports a member pinned to the "Customized reports" strip on the reports
-  // hub. The strip used to be a hardcoded empty array with a delete button
-  // wired to useState, so nothing could be saved and a removal came back on
-  // reload. One row per member per report page.
   `CREATE TABLE IF NOT EXISTS saved_reports (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id  UUID NOT NULL,
@@ -2239,12 +1690,6 @@ $$ LANGUAGE plpgsql`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_saved_reports_member ON saved_reports (member_id, created_at DESC)`,
 
-  // See cascadeOnDelete above. Placed last in this array (not next to each
-  // table's own CREATE TABLE) because every table these reference - members,
-  // projects, tasks, and the five tables below - must already exist by the
-  // time these run; members/projects/tasks are scattered across both DDL
-  // arrays and are not all defined yet at the point activity_sessions itself
-  // is created.
   ...cascadeOnDelete("activity_sessions", "member_id", "members", { nullable: false }),
   ...cascadeOnDelete("activity_sessions", "project_id", "projects"),
   ...cascadeOnDelete("activity_sessions", "task_id", "tasks"),
@@ -2259,7 +1704,6 @@ $$ LANGUAGE plpgsql`,
   ...cascadeOnDelete("time_entries", "task_id", "tasks"),
 ];
 
-// CREATE IF NOT EXISTS for roles, lookups, time entries, timesheets, and member-domain tables.
 export async function ensurePostgresLookupSchema() {
   if (!isPostgresConfigured()) {
     return { ok: true, skipped: true };
@@ -2278,14 +1722,6 @@ export async function ensurePostgresLookupSchema() {
       await client.query(statement);
     }
 
-    // CF-1: seed the 'screenshots' capability's initial enabled state from
-    // the pre-existing env-var gate (isActivityScreenshotsEnabled), exactly
-    // once, so shipping the new registry does not silently disable capture
-    // that's already live in production. ON CONFLICT DO NOTHING - any
-    // subsequent admin change via setMonitoringCapability() is permanent and
-    // this never overwrites it on a later boot. Every other capability seeds
-    // as its table default (enabled = false) via ordinary INSERT-if-absent,
-    // matching CF-0.1's true default-deny for anything not already live.
     await client.query(
       `INSERT INTO monitoring_capabilities (capability, enabled)
        VALUES ('screenshots', $1)

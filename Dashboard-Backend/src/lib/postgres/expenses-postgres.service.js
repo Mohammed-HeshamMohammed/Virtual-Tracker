@@ -1,9 +1,3 @@
-// Postgres-backed CRUD for expenses - money a member spent doing the work.
-//
-// Mirrors the shape of the other domain services here: snake_case rows in and
-// out, an explicit writable-column allowlist so an unexpected body field is a
-// no-op rather than a silent partial write, and publishChange on every
-// mutation so open dashboards refresh.
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
@@ -15,7 +9,6 @@ function uuidOrNull(value) {
   return trimmed ? trimmed : null;
 }
 
-/** Every writable column except id/created_at/updated_at. */
 const WRITABLE_COLUMNS = [
   "member_id",
   "project_id",
@@ -37,7 +30,6 @@ const WRITABLE_COLUMNS = [
 
 const UUID_COLUMNS = new Set(["member_id", "project_id", "client_id"]);
 
-/** @param {Record<string, unknown>} data */
 export async function createExpensePg(data) {
   const id = uuidOrNull(data.id) ?? crypto.randomUUID();
   const columns = ["id"];
@@ -60,14 +52,12 @@ export async function createExpensePg(data) {
   return created;
 }
 
-/** @param {string} id */
 export async function getExpensePg(id) {
   if (!id) return null;
   const rows = await query("SELECT * FROM expenses WHERE id = $1 LIMIT 1", [id]);
   return rows[0] ?? null;
 }
 
-/** @param {string} id @param {Record<string, unknown>} patch */
 export async function updateExpensePg(id, patch) {
   const sets = [];
   const params = [id];
@@ -83,22 +73,11 @@ export async function updateExpensePg(id, patch) {
   return updated;
 }
 
-/** @param {string} id @param {string} [actorId] */
 export async function deleteExpensePg(id, actorId) {
   await query("DELETE FROM expenses WHERE id = $1", [id]);
   void publishChange("expenses", String(id), "deleted", actorId ?? undefined);
 }
 
-/**
- * @param {{
- *   memberIds?: string[] | null,
- *   projectIds?: string[] | null,
- *   fromDay?: string | null,
- *   toDay?: string | null,
- *   status?: string | null,
- *   limit?: number,
- * }} [filters]
- */
 export async function listExpensesPg(filters = {}) {
   const {
     memberIds = null,

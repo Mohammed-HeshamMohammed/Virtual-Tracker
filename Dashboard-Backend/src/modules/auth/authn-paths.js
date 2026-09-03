@@ -1,4 +1,3 @@
-/** `/api/auth/*` routes served by Auth-Backend (not this service). */
 
 const AUTHN_EXACT = new Set([
   "/api/auth/firebase-config",
@@ -9,9 +8,6 @@ const AUTHN_EXACT = new Set([
   "/api/auth/resolve-sign-in-methods",
 ]);
 
-/**
- * @param {string} pathname
- */
 export function isAuthnApiPath(pathname) {
   const path = pathname.replace(/^\/api\/v1\//, "/api/").split("?")[0] ?? pathname;
   return AUTHN_EXACT.has(path);

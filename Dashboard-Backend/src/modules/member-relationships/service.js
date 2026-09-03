@@ -20,22 +20,7 @@ import {
 
 export { filterTeamScopeEdges } from "./relationship-integrity.js";
 
-/**
- * @typedef {Object} MemberRelationship
- * @property {string} id
- * @property {string} parent_member_id
- * @property {string} child_member_id
- * @property {string} relationship_type
- * @property {Date} created_at
- * @property {string} created_by
- */
 
-/**
- * @typedef {Object} TreeNode
- * @property {string} member_id
- * @property {number} level
- * @property {string} relationship_type
- */
 
 let allRelationshipsCache = null;
 let lastLoadTime = 0;
@@ -48,11 +33,6 @@ async function loadRelationshipsFromDb(_db) {
   return pgQuery("SELECT * FROM member_relationships LIMIT 2000");
 }
 
-/**
- * Drop bad hierarchy edges; only writes when something needs fixing.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ dryRun?: boolean, maxDeletes?: number }} [options]
- */
 export async function repairMemberRelationshipIntegrity(db, options = {}) {
   const dryRun = options.dryRun === true;
   const maxDeletes = typeof options.maxDeletes === "number" ? options.maxDeletes : INTEGRITY_REPAIR_MAX_DELETES;
@@ -138,17 +118,9 @@ async function getAllRelationships(db) {
   return rels;
 }
 
-/**
- * Subgraph fetch for validating a new parent→child edge.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} parentMemberId
- * @param {string} childMemberId
- */
 async function loadValidationEdgesForNewRelationship(_db, parentMemberId, childMemberId) {
-  /** @type {Map<string, { id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} */
   const edges = new Map();
 
-  /** @param {{ id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }} row */
   const addRow = (row) => {
     edges.set(row.id, {
       id: row.id,
@@ -165,14 +137,11 @@ async function loadValidationEdgesForNewRelationship(_db, parentMemberId, childM
   for (const row of asChildRows) addRow(row);
   for (const row of asParentRows) addRow(row);
 
-  /** @type {string[]} */
   let frontier = asParentRows
     .map((row) => row.child_member_id)
     .filter((id) => typeof id === "string" && id);
   const seen = new Set([childMemberId, ...frontier]);
 
-  // Postgres has no 10-item "in" cap the way the old Firestore query did, so
-  // each BFS level is one query instead of chunks of 10.
   while (frontier.length > 0) {
     const batch = frontier;
     frontier = [];
@@ -180,7 +149,6 @@ async function loadValidationEdgesForNewRelationship(_db, parentMemberId, childM
       "SELECT * FROM member_relationships WHERE parent_member_id = ANY($1::uuid[])",
       [batch],
     );
-    /** @type {string[]} */
     const next = [];
     for (const row of rows) {
       if (!edges.has(row.id)) addRow(row);
@@ -196,12 +164,6 @@ async function loadValidationEdgesForNewRelationship(_db, parentMemberId, childM
   return [...edges.values()];
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} parentMemberId
- * @param {string} childMemberId
- * @param {{ useFullGraph?: boolean }} [options]
- */
 async function loadEdgesForRelationshipValidation(db, parentMemberId, childMemberId, options = {}) {
   if (options.useFullGraph) {
     return getAllRelationships(db);
@@ -209,16 +171,6 @@ async function loadEdgesForRelationshipValidation(db, parentMemberId, childMembe
   return loadValidationEdgesForNewRelationship(db, parentMemberId, childMemberId);
 }
 
-/**
- * Record who added whom.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} params
- * @param {string} params.parentMemberId - The member who did the adding
- * @param {string} params.childMemberId - The member who was added
- * @param {string} params.relationshipType - "invite", "preprovision", "self_signup", "admin_create"
- * @param {string} params.createdBy - Who recorded this
- * @returns {Promise<MemberRelationship>}
- */
 export async function recordMemberRelationship(db, {
   parentMemberId,
   childMemberId,
@@ -263,7 +215,6 @@ export async function recordMemberRelationship(db, {
     throw new RelationshipIntegrityError(validation.code, validation.message);
   }
 
-  // Check if relationship already exists
   const existingRows = await pgQuery(
     "SELECT * FROM member_relationships WHERE parent_member_id = $1 AND child_member_id = $2 LIMIT 1",
     [parentMemberId, childMemberId],
@@ -271,7 +222,6 @@ export async function recordMemberRelationship(db, {
 
   if (existingRows.length) {
     const existingData = existingRows[0];
-    // Update projects if provided and different
     if (projects.length > 0) {
       const mergedProjects = [...new Set([...(existingData.projects || []), ...projects])];
       if (mergedProjects.length !== (existingData.projects || []).length) {
@@ -279,7 +229,7 @@ export async function recordMemberRelationship(db, {
           JSON.stringify(mergedProjects),
           existingData.id,
         ]);
-        allRelationshipsCache = null; // Clear cache on update
+        allRelationshipsCache = null;
         return { ...existingData, projects: mergedProjects };
       }
     }
@@ -297,10 +247,6 @@ export async function recordMemberRelationship(db, {
     created_by: createdBy,
   };
 
-  // ON CONFLICT DO NOTHING: the table has a real UNIQUE(parent_member_id,
-  // child_member_id) constraint (no Firestore equivalent existed), so a
-  // concurrent duplicate insert must degrade to the existing-edge path
-  // instead of throwing.
   const insertedRows = await pgQuery(
     `INSERT INTO member_relationships (id, parent_member_id, child_member_id, relationship_type, projects, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
@@ -315,7 +261,7 @@ export async function recordMemberRelationship(db, {
     );
     return rows[0];
   }
-  allRelationshipsCache = null; // Clear cache on insert
+  allRelationshipsCache = null;
 
   const refreshTreeCache = async () => {
     await invalidateTreeCache(db, parentMemberId);
@@ -328,8 +274,6 @@ export async function recordMemberRelationship(db, {
     }
   };
   if (deferTreeCache) {
-    // invalidateTreeCache sits outside refreshTreeCache's inner try, so this
-    // needs its own catch.
     void refreshTreeCache().catch((err) => {
       logSafeWarn("[member-relationships] deferred tree cache refresh:", err);
     });
@@ -338,21 +282,12 @@ export async function recordMemberRelationship(db, {
     await invalidateTreeCache(db, childMemberId);
   }
 
-  // §6.3 - a manager/hierarchy change is scoped to the two members whose
-  // tree position moved, not broadcast: it can reveal org structure to
-  // members outside it.
   sendToMember(childMemberId, { type: "scope-changed", reason: "hierarchy", at: Date.now() });
   sendToMember(parentMemberId, { type: "scope-changed", reason: "hierarchy", at: Date.now() });
 
   return relationship;
 }
 
-/**
- * Remove this member's parent edge only (keep edges where they're the parent).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<number>} edges removed
- */
 export async function removeMemberParentEdge(db, memberId) {
   const rows = await pgQuery(
     `DELETE FROM member_relationships
@@ -379,7 +314,6 @@ export async function removeMemberParentEdge(db, memberId) {
   return rows.length;
 }
 
-/** Strip all hierarchy edges for a member (Client conversion, org exit). */
 export async function removeMemberHierarchyRelationships(db, memberId) {
   const rows = await pgQuery(
     `DELETE FROM member_relationships
@@ -409,16 +343,8 @@ export async function removeMemberHierarchyRelationships(db, memberId) {
   return rows.length;
 }
 
-/**
- * Avatar URLs for tree nodes (batched getAll per uid).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/firestore").QuerySnapshot | Array<Record<string, unknown>> | { docs?: Array<unknown> }} membersInput
- * @returns {Promise<Map<string, string>>}
- */
 export async function resolveAvatarUrlsForMembers(db, membersInput) {
-  /** @type {Map<string, string>} */
   const avatarByMemberId = new Map();
-  /** @type {Map<string, string>} */
   const uidByMemberId = new Map();
 
   const items = Array.isArray(membersInput)
@@ -443,7 +369,6 @@ export async function resolveAvatarUrlsForMembers(db, membersInput) {
   const refs = uids.map((uid) => db.collection(USER_PROFILES_COLLECTION).doc(uid));
   const profileSnaps = await db.getAll(...refs);
 
-  /** @type {Map<string, string>} */
   const avatarByUid = new Map();
   for (const snap of profileSnaps) {
     if (!snap.exists) continue;
@@ -459,7 +384,6 @@ export async function resolveAvatarUrlsForMembers(db, membersInput) {
   return avatarByMemberId;
 }
 
-/** Direct parent id, or null. */
 export async function getMemberParentId(db, memberId) {
   const rels = await getAllRelationships(db);
   for (const rel of rels) {
@@ -470,12 +394,6 @@ export async function getMemberParentId(db, memberId) {
   return null;
 }
 
-/**
- * All ancestors (walk up).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<TreeNode[]>}
- */
 export async function getMemberAncestors(db, memberId) {
   const cache = await getCachedTreeData(db, memberId);
   if (cache?.ancestors) {
@@ -494,7 +412,7 @@ export async function getMemberAncestors(db, memberId) {
   const ancestors = [];
   let currentId = memberId;
   let level = 0;
-  const visited = new Set(); // Prevent infinite loops
+  const visited = new Set();
 
   while (currentId && !visited.has(currentId)) {
     visited.add(currentId);
@@ -510,16 +428,9 @@ export async function getMemberAncestors(db, memberId) {
     });
   }
 
-  return ancestors.reverse(); // Root first
+  return ancestors.reverse();
 }
 
-/**
- * All descendants (walk down).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {number} maxDepth - Maximum depth to traverse (default: 10)
- * @returns {Promise<TreeNode[]>}
- */
 export async function getMemberDescendants(db, memberId, maxDepth = 10) {
   const cache = await getCachedTreeData(db, memberId);
   if (cache?.descendants) {
@@ -561,12 +472,6 @@ export async function getMemberDescendants(db, memberId, maxDepth = 10) {
   return descendants;
 }
 
-/**
- * Path from tree root to member.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string[]>} - Array of member IDs from root to this member
- */
 export async function getMemberTreePath(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   const path = ancestors.map(a => a.member_id);
@@ -574,35 +479,16 @@ export async function getMemberTreePath(db, memberId) {
   return path;
 }
 
-/**
- * True if A is an ancestor of B.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} potentialAncestorId
- * @param {string} memberId
- * @returns {Promise<boolean>}
- */
 export async function isAncestorOf(db, potentialAncestorId, memberId) {
   const path = await getMemberTreePath(db, memberId);
   return path.includes(potentialAncestorId);
 }
 
-/**
- * Top-most ancestor (tree root).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string|null>} - Root member ID or null
- */
 export async function getMemberRoot(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   return ancestors.length > 0 ? ancestors[0].member_id : memberId;
 }
 
-/**
- * Everyone in the same connected tree component.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<{root_id: string, members: string[]}>}
- */
 export async function getConnectedMembers(db, memberId) {
   const rootId = await getMemberRoot(db, memberId);
   const descendants = await getMemberDescendants(db, rootId);
@@ -614,18 +500,8 @@ export async function getConnectedMembers(db, memberId) {
   };
 }
 
-/**
- * Project co-members (for client visibility).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<string[]>} - Array of member IDs who share at least one project
- */
 export async function getMembersBySharedProjects(db, memberId) {
   if (!memberId) return [];
-  // "Shared project" used to mean a shared project_members row, which a client
-  // never has - they are attached through clients.member_id -> client_projects.
-  // So the People page showed a client nobody but themselves, even on projects
-  // with a full team on them.
   const rows = await pgQuery(
     `WITH mine AS (
        SELECT project_id FROM project_members WHERE member_id = $1
@@ -643,12 +519,6 @@ export async function getMembersBySharedProjects(db, memberId) {
   return rows.map((r) => r.member_id).filter(Boolean);
 }
 
-/**
- * Client-visible members via project links only (not hierarchy).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @returns {Promise<{root_id: string | null, tree_members: string[], project_members: string[], all_visible: string[]}>}
- */
 export async function getVisibleMembersForClient(db, memberId) {
   const projectMembers = await getMembersBySharedProjects(db, memberId);
   const allVisible = [...new Set([memberId, ...projectMembers])];
@@ -661,7 +531,6 @@ export async function getVisibleMembersForClient(db, memberId) {
   };
 }
 
-/** Org Owner member id for this viewer. */
 async function resolveSharedOrgOwnerMemberId(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   for (const ancestor of ancestors) {
@@ -673,14 +542,10 @@ async function resolveSharedOrgOwnerMemberId(db, memberId) {
   return null;
 }
 
-/**
- * @param {string} roleName
- */
 function isUplineOrgAdminRole(roleName) {
   return isOrganizationRootRole(roleName) || isOrganizationAdminRole(roleName);
 }
 
-/** Owner, Admin, Super Admin, Super Manager, Manager — visible read-only across the same org. */
 function isOrgLeadershipRole(roleName) {
   const key = normalizeRoleKey(roleName);
   return (
@@ -692,7 +557,6 @@ function isOrgLeadershipRole(roleName) {
   );
 }
 
-/** Read-only org leadership ids (sibling managers + admin branches). */
 async function getOrgLeadershipReadOnlyMemberIds(db, viewerMemberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, viewerMemberId);
   if (!ownerMemberId) return [];
@@ -712,11 +576,6 @@ async function getOrgLeadershipReadOnlyMemberIds(db, viewerMemberId) {
   return [...ids];
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} ownerMemberId
- */
 async function memberBelongsToOrg(db, memberId, ownerMemberId) {
   if (memberId === ownerMemberId) return true;
   const ancestors = await getMemberAncestors(db, memberId);
@@ -731,7 +590,6 @@ async function memberBelongsToOrg(db, memberId, ownerMemberId) {
   return Boolean(ownerUid && createdByUid === ownerUid);
 }
 
-/** Owner/Admin/Super Admin member + firebase uids for an org. */
 async function collectOrgAdminCreators(db, ownerMemberId) {
   const adminMemberIds = new Set([ownerMemberId]);
   const adminFirebaseUids = new Set();
@@ -755,7 +613,6 @@ async function collectOrgAdminCreators(db, ownerMemberId) {
   return { adminMemberIds, adminFirebaseUids };
 }
 
-/** Members added by Owner/Admin — Managers can manage outside their subtree. */
 async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, viewerMemberId);
   if (!ownerMemberId) return [];
@@ -800,7 +657,6 @@ async function getOrgUplineAddedMemberIds(db, viewerMemberId) {
   return visible;
 }
 
-/** Management subtree: self + everyone they added (tree "team" scope). */
 export async function getTeamSubtreeMemberIds(db, memberId, maxDepth = 100) {
   const ids = new Set([memberId]);
   const descendants = await getMemberDescendants(db, memberId, maxDepth);
@@ -832,13 +688,11 @@ export async function getTeamSubtreeMemberIds(db, memberId, maxDepth = 100) {
   return [...ids];
 }
 
-/** Read-only upline in viewer's branch (Owner/Admin/Super Admin/Super Manager). */
 async function getSubtreeUplineReadOnlyMemberIds(db, memberId) {
   const ancestors = await getMemberAncestors(db, memberId);
   return ancestors.map((ancestor) => ancestor.member_id);
 }
 
-/** Manager/Super Manager: subtree + org members added by Owner/Admin. */
 export async function getManagerVisibleMemberIds(db, memberId) {
   const [subtree, uplineAdded] = await Promise.all([
     getTeamSubtreeMemberIds(db, memberId),
@@ -847,7 +701,6 @@ export async function getManagerVisibleMemberIds(db, memberId) {
   return [...new Set([...subtree, ...uplineAdded])];
 }
 
-/** People page ids for Manager/Super Manager (manageable + read-only upline). */
 export async function getManagerPeoplePageVisibleMemberIds(db, memberId) {
   const [manageable, uplineReadOnly, orgLeadership] = await Promise.all([
     getManagerVisibleMemberIds(db, memberId),
@@ -857,7 +710,6 @@ export async function getManagerPeoplePageVisibleMemberIds(db, memberId) {
   return [...new Set([...manageable, ...uplineReadOnly, ...orgLeadership])];
 }
 
-/** Drop member ids the actor can't mutate by role rank. */
 async function filterManageableMemberIdsByRole(db, actorRoleName, memberIds) {
   const manageable = [];
   for (const id of memberIds) {
@@ -867,7 +719,6 @@ async function filterManageableMemberIdsByRole(db, actorRoleName, memberIds) {
   return manageable;
 }
 
-/** Mutable member ids (edit/remove/batch) — narrower than visible. */
 export async function getManageableMemberIds(db, memberId, roleName) {
   if (!roleName) return [memberId];
   const role = roleName.trim().toLowerCase().replace(/\s+/g, "");
@@ -892,7 +743,6 @@ export async function getManageableMemberIds(db, memberId, roleName) {
   return [memberId];
 }
 
-/** Owner org tree member ids (read-only for employees). */
 async function getOwnerOrgMemberIds(db, ownerMemberId) {
   const ids = new Set([ownerMemberId]);
   const descendants = await getMemberDescendants(db, ownerMemberId, 100);
@@ -900,7 +750,6 @@ async function getOwnerOrgMemberIds(db, ownerMemberId) {
   return [...ids];
 }
 
-/** Drop member ids whose role is Viewer. */
 async function filterOutViewerRole(db, memberIds) {
   const kept = [];
   for (const id of memberIds) {
@@ -910,11 +759,6 @@ async function filterOutViewerRole(db, memberIds) {
   return kept;
 }
 
-/**
- * Employee read-only tree: shared Owner root → full subtree; else manager
- * branch or self. Viewer-role members are dropped here rather than upstream -
- * Employees can see everyone else in that tree, just not portal Viewers.
- */
 export async function getEmployeeHierarchyMemberIds(db, memberId) {
   const ownerMemberId = await resolveSharedOrgOwnerMemberId(db, memberId);
   if (ownerMemberId && (await memberBelongsToOrg(db, memberId, ownerMemberId))) {
@@ -931,19 +775,12 @@ export async function getEmployeeHierarchyMemberIds(db, memberId) {
   return filterOutViewerRole(db, ids);
 }
 
-/**
- * Visible member ids for the signed-in viewer.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @returns {Promise<string[] | null>} - Array of visible member IDs, or null if can see all
- */
 export async function getVisibleMemberIds(db, memberId, roleName) {
   if (!roleName) return [memberId];
   const role = roleName.trim().toLowerCase().replace(/\s+/g, "");
   
   if (["superadmin", "owner", "admin"].includes(role)) {
-    return null; // Can see everyone (Admin matches frontend behavior)
+    return null;
   }
   
   if (role === "supermanager" || role === "supermanger" || role === "manager") {
@@ -959,20 +796,12 @@ export async function getVisibleMemberIds(db, memberId, roleName) {
     return visibility.all_visible;
   }
   
-  // Viewer and unknown roles: self only
   return [memberId];
 }
 
-/**
- * Nested tree for UI display.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} rootMemberId
- * @returns {Promise<Object>} - Tree structure
- */
 export async function buildMemberTree(db, rootMemberId) {
   const descendants = await getMemberDescendants(db, rootMemberId);
 
-  // Build adjacency list
   const children = new Map();
   children.set(rootMemberId, []);
 
@@ -982,7 +811,6 @@ export async function buildMemberTree(db, rootMemberId) {
     }
   }
 
-  // Populate parent-child relationships in memory
   const rels = await getAllRelationships(db);
   for (const rel of rels) {
     if (children.has(rel.parent_member_id)) {
@@ -993,7 +821,6 @@ export async function buildMemberTree(db, rootMemberId) {
     }
   }
 
-  // Build nested tree
   function buildNode(memberId) {
     const nodeChildren = children.get(memberId) || [];
     return {
@@ -1008,7 +835,6 @@ export async function buildMemberTree(db, rootMemberId) {
   return buildNode(rootMemberId);
 }
 
-// Cache management
 
 async function getCachedTreeData(db, memberId) {
   return getMemberTreeCache(db, memberId);
@@ -1018,11 +844,6 @@ async function invalidateTreeCache(db, memberId) {
   await deleteMemberTreeCache(db, memberId);
 }
 
-/**
- * Refresh member_tree_cache after edge changes.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function updateTreeCache(db, memberId) {
   const [ancestors, descendants] = await Promise.all([
     getMemberAncestors(db, memberId),
@@ -1042,7 +863,6 @@ export async function updateTreeCache(db, memberId) {
   });
 }
 
-/** Clears in-memory relationship cache (unit tests only). */
 export function resetMemberRelationshipsCacheForTests() {
   allRelationshipsCache = null;
   lastLoadTime = 0;

@@ -1,12 +1,5 @@
-// Client budget tab rules (save + spend-vs-cap checks).
 
-/** @typedef {"hourly"|"fixed"|"retainer"|"none"} BudgetType */
-/** @typedef {"per_person"|"per_project"|"total"} BudgetBasedOn */
-/** @typedef {"monthly"|"quarterly"|"yearly"|"never"} BudgetResets */
 
-/**
- * @param {Record<string, unknown>|null|undefined} budget
- */
 export function normalizeBudget(budget) {
   if (!budget || String(budget.type ?? "none").toLowerCase() === "none") {
     return null;
@@ -20,10 +13,6 @@ export function normalizeBudget(budget) {
   };
 }
 
-/**
- * Budget policy snapshot stored on client_automation_state for future triggers.
- * @param {ReturnType<typeof normalizeBudget>} budget
- */
 export function buildBudgetPolicy(budget) {
   if (!budget) {
     return {
@@ -66,10 +55,6 @@ export function buildBudgetPolicy(budget) {
   };
 }
 
-/**
- * @param {ReturnType<typeof normalizeBudget>} budget
- * @param {{ projectCount?: number; memberCount?: number }} scope
- */
 export function computeBudgetCap(budget, scope = {}) {
   if (!budget) return 0;
   const cost = budget.cost;
@@ -82,7 +67,6 @@ export function computeBudgetCap(budget, scope = {}) {
   return cost;
 }
 
-/** One client's budget slice when assigned to a single project (stacking). */
 export function computeClientContributionForProject(budget, scope = {}) {
   if (!budget) return 0;
   if (budget.basedOn === "per_person") {
@@ -91,18 +75,12 @@ export function computeClientContributionForProject(budget, scope = {}) {
   return budget.cost;
 }
 
-/** Evenly split project spend across N linked clients. */
 export function splitProjectSpendAmongClients(projectSpend, clientCount) {
   const count = Math.max(1, Number(clientCount) || 1);
   const total = Math.max(0, Number(projectSpend) || 0);
   return total / count;
 }
 
-/**
- * Current budget period [start, end) from resets.
- * @param {ReturnType<typeof normalizeBudget>} budget
- * @param {Date} [asOf]
- */
 export function getBudgetPeriodWindow(budget, asOf = new Date()) {
   if (!budget || budget.resets === "never") {
     return { start: asOf, end: null, label: "all_time" };
@@ -137,7 +115,6 @@ export function getBudgetPeriodWindow(budget, asOf = new Date()) {
   return { start: new Date(y, m, 1), end: null, label: budget.resets };
 }
 
-/** Stable key for deduplicating budget notifications within a reset period. */
 export function getBudgetPeriodKey(budget, asOf = new Date()) {
   const period = getBudgetPeriodWindow(budget, asOf);
   if (period.label === "all_time") return "all_time";
@@ -146,11 +123,6 @@ export function getBudgetPeriodKey(budget, asOf = new Date()) {
   return `${period.label}:${d.getFullYear()}-${month}`;
 }
 
-/**
- * Evaluate budget usage vs policy (for timers, timesheets, project dashboards).
- * @param {ReturnType<typeof normalizeBudget>} budget
- * @param {{ spentAmount?: number; projectCount?: number; memberCount?: number; asOf?: Date }} context
- */
 export function evaluateBudgetUsage(budget, context = {}) {
   if (!budget) {
     return {

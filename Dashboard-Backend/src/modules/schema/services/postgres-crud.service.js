@@ -118,7 +118,6 @@ export const POSTGRES_ENTITY_KEYS = new Set([
   ...MEMBER_DATA_POSTGRES_ENTITY_KEYS,
 ]);
 
-/** Route entity CRUD to Postgres when configured and schema is ready. */
 export async function shouldRouteEntityToPostgres(entityKey) {
   if (!POSTGRES_ENTITY_KEYS.has(entityKey)) return false;
   if (isMemberDataPostgresEntityKey(entityKey)) return isPostgresMemberDataReady();
@@ -163,12 +162,6 @@ const TIMESHEET_COLUMNS = [
   "updated_at",
 ];
 
-/** One config per task child entity - simple enough (a handful of columns,
- * no cross-table business logic like timesheets' hours computation) that one
- * generic column-driven implementation covers all four, instead of four
- * near-identical hand-written branches the way every other entity above does
- * it. task_id is intentionally excluded from `columns` for UPDATE - it's
- * set once at creation and never reassigned. */
 const TASK_CHILD_TABLES = {
   "task-comments": { table: "task_comments", columns: ["id", "task_id", "body", "created_at", "created_by", "updated_by"] },
   "task-subtasks": { table: "task_subtasks", columns: ["id", "task_id", "title", "completed", "order_index", "created_at", "created_by", "updated_by"] },
@@ -197,9 +190,6 @@ async function getTaskChildRowPg(entityKey, id) {
 
 async function createTaskChildRowPg(entityKey, payload) {
   const { table, columns } = TASK_CHILD_TABLES[entityKey];
-  // Only columns actually present in payload are inserted, so an omitted
-  // field (e.g. "completed" on a new subtask) falls through to the table's
-  // own DEFAULT instead of this call having to know or repeat it.
   const cols = columns.filter((c) => payload[c] !== undefined);
   const rows = await query(
     `INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(", ")})
@@ -226,10 +216,6 @@ async function deleteTaskChildRowPg(entityKey, id) {
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }
 
-/**
- * @param {Record<string, unknown>} row
- * @returns {Record<string, unknown>}
- */
 function normalizePgRow(row) {
   const out = { ...row };
   for (const [key, value] of Object.entries(out)) {
@@ -248,11 +234,6 @@ function normalizePgRow(row) {
   return out;
 }
 
-/**
- * @param {string} entityKey
- * @param {URL} url
- * @returns {Promise<Record<string, unknown>[]>}
- */
 export async function listPostgresRows(entityKey, url) {
   if (isTaskChildPostgresEntityKey(entityKey)) {
     return listTaskChildRowsPg(entityKey, url);
@@ -409,10 +390,6 @@ export async function listPostgresRows(entityKey, url) {
   return rows.map(normalizePgRow);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function getPostgresRow(entityKey, id) {
   if (isTaskChildPostgresEntityKey(entityKey)) {
     return getTaskChildRowPg(entityKey, id);
@@ -491,10 +468,6 @@ export async function getPostgresRow(entityKey, id) {
   return rows[0] ? normalizePgRow(rows[0]) : null;
 }
 
-/**
- * @param {string} entityKey
- * @param {Record<string, unknown>} payload
- */
 export async function createPostgresRow(entityKey, payload) {
   if (isTaskChildPostgresEntityKey(entityKey)) {
     return createTaskChildRowPg(entityKey, payload);
@@ -589,8 +562,6 @@ export async function createPostgresRow(entityKey, payload) {
     return normalizePgRow(created);
   }
   if (entityKey === "time-entries") {
-    // This is the only writer time_entries has - every row created here comes from the
-    // Manual Time form, not from the agent/timer, so 'manual' is a fact, not a default guess.
     const rows = await query(
       `INSERT INTO time_entries
         (id, member_id, project_id, task_id, date, start_time, end_time, duration, description, billable, status, source, created_by, updated_by)
@@ -657,12 +628,6 @@ export async function createPostgresRow(entityKey, payload) {
   return normalizePgRow(rows[0]);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- * @param {Record<string, unknown>} payload
- * @param {Record<string, unknown>} existing
- */
 export async function updatePostgresRow(entityKey, id, payload, existing, expectedUpdatedAt) {
   if (isTaskChildPostgresEntityKey(entityKey)) {
     return updateTaskChildRowPg(entityKey, id, payload, existing);
@@ -788,10 +753,6 @@ export async function updatePostgresRow(entityKey, id, payload, existing, expect
   return normalizePgRow(rows[0]);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function deletePostgresRow(entityKey, id) {
   if (isTaskChildPostgresEntityKey(entityKey)) {
     return deleteTaskChildRowPg(entityKey, id);
@@ -849,10 +810,6 @@ export async function deletePostgresRow(entityKey, id) {
   void publishChange("timesheets", id, "deleted");
 }
 
-/**
- * @param {string} weekStartKey - ISO date string YYYY-MM-DD
- * @returns {Promise<Record<string, unknown>[]>}
- */
 export async function fetchTimeEntriesSinceDate(weekStartKey) {
   const rows = await query(
     `SELECT member_id, project_id, date, duration, billable
@@ -865,11 +822,6 @@ export async function fetchTimeEntriesSinceDate(weekStartKey) {
   return rows.map(normalizePgRow);
 }
 
-/**
- * @param {string} projectId
- * @param {Date} periodStart
- * @param {Date | null} periodEnd
- */
 export async function sumBillableHoursForProjectInPeriod(projectId, periodStart, periodEnd) {
   const rows = await query(
     `SELECT date, duration, billable

@@ -1,6 +1,3 @@
-/**
- * @param {string} value
- */
 export function isEmailLikeNamePart(value) {
   if (typeof value !== "string") return false;
   const trimmed = value.trim();
@@ -8,11 +5,6 @@ export function isEmailLikeNamePart(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
 }
 
-/**
- * @param {string} value
- * @param {string} fieldLabel
- * @returns {string|null}
- */
 export function validateMemberNamePart(value, fieldLabel) {
   const trimmed = typeof value === "string" ? value.trim() : "";
   if (!trimmed) return null;
@@ -21,19 +13,11 @@ export function validateMemberNamePart(value, fieldLabel) {
   return null;
 }
 
-/**
- * @param {string} value
- * @param {string} fieldLabel
- */
 export function assertValidMemberNamePart(value, fieldLabel) {
   const err = validateMemberNamePart(value, fieldLabel);
   if (err) throw new Error(err);
 }
 
-/**
- * @param {string} value
- * @param {string} [workEmail]
- */
 export function sanitizeMemberNamePart(value, workEmail = "") {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -44,9 +28,6 @@ export function sanitizeMemberNamePart(value, workEmail = "") {
   return trimmed;
 }
 
-/**
- * @param {Record<string, unknown>|null|undefined} data
- */
 export function resolveMemberDisplayName(data) {
   if (!data || typeof data !== "object") return "Unknown";
 
@@ -86,9 +67,6 @@ export function resolveMemberDisplayName(data) {
   return "Unknown";
 }
 
-/**
- * @param {Record<string, unknown>|null|undefined} data
- */
 export function memberDisplayLabel(data) {
   const name = resolveMemberDisplayName(data);
   const initials =

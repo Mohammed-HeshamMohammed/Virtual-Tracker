@@ -1,6 +1,5 @@
 import { hasHierarchyAssignmentRestriction } from "./hierarchy-placement.js";
 
-/** API path prefixes blocked when hierarchy assignment is required. */
 const RESTRICTED_PATH_PREFIXES = [
   "/api/projects",
   "/api/tasks",
@@ -10,7 +9,6 @@ const RESTRICTED_PATH_PREFIXES = [
   "/api/invites",
 ];
 
-/** Paths always allowed even with hierarchy restriction. */
 const ALLOWED_PATH_PREFIXES = [
   "/api/auth",
   "/api/bootstrap",
@@ -22,13 +20,6 @@ const ALLOWED_PATH_PREFIXES = [
   "/api/public/member-transfer-requests",
 ];
 
-/**
- * Block API paths when hierarchy_status requires assignment.
- * @param {Record<string, unknown> | null | undefined} memberData
- * @param {string} pathname
- * @param {string} method
- * @returns {{ blocked: boolean; code?: string; error?: string }}
- */
 export function checkHierarchyAccess(memberData, pathname, method = "GET") {
   if (!hasHierarchyAssignmentRestriction(memberData)) {
     return { blocked: false };

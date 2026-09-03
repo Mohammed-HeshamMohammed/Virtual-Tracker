@@ -11,13 +11,6 @@ const DEACTIVATION_REQUESTS = "deactivation_requests";
 const DEACTIVATION_COLUMNS =
   "id, member_id, firebase_uid, member_email, member_name, role_name, governance, status, source, resolved_by, resolved_at, created_at";
 
-/**
- * The Firestore docs this replaced were camelCase (memberId, memberName, …)
- * and both the approvals UI and notifyAdminsOfDeactivationRequest read them
- * that way, so rows are widened to carry both spellings rather than renaming
- * fields across the callers.
- * @param {Record<string, unknown>} row
- */
 function normalizeDeactivationRow(row) {
   return {
     ...row,
@@ -33,8 +26,6 @@ function normalizeDeactivationRow(row) {
 }
 
 function normalizeRoleName(role) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(role);
 }
 
@@ -42,11 +33,6 @@ export function isViewerRole(roleName) {
   return normalizeRoleName(roleName) === "viewer";
 }
 
-/**
- * `db` is unused - deactivation requests are Postgres rows now.
- * @param {import("firebase-admin/firestore").Firestore} _db
- * @param {string} memberId
- */
 async function findPendingDeactivationRequest(_db, memberId) {
   const rows = await pgQuery(
     `SELECT ${DEACTIVATION_COLUMNS} FROM ${DEACTIVATION_REQUESTS}
@@ -56,11 +42,6 @@ async function findPendingDeactivationRequest(_db, memberId) {
   return rows.length ? normalizeDeactivationRow(rows[0]) : null;
 }
 
-/**
- * Admin / Super Admin / Owner recipients for employee deactivation workflows.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} [excludeMemberId]
- */
 async function resolveAdminLevelRecipientIds(db, excludeMemberId = "") {
   const adminRoleIds = new Set(await resolveRoleIdsWhere(isDeactivationApprovalRole));
   if (adminRoleIds.size === 0) return [];
@@ -76,11 +57,6 @@ async function resolveAdminLevelRecipientIds(db, excludeMemberId = "") {
   return [...recipients];
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberName?: string; memberEmail?: string; roleName?: string }} requestDoc
- * @param {string} requesterMemberId
- */
 async function notifyAdminsOfDeactivationRequest(db, requestDoc, requesterMemberId) {
   const { createNotification } = await import("../notifications/service.js");
   const recipients = await resolveAdminLevelRecipientIds(db, requesterMemberId);
@@ -108,13 +84,6 @@ async function notifyAdminsOfDeactivationRequest(db, requestDoc, requesterMember
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} memberId
- * @param {string} roleName
- * @param {{ email?: string; displayName?: string }} [meta]
- */
 export async function submitAccountDeactivationRequest(db, uid, memberId, roleName, meta = {}) {
   if (isViewerRole(roleName)) {
     throw new Error("Viewer accounts must use direct account deletion instead of a deactivation request.");
@@ -148,10 +117,6 @@ export async function submitAccountDeactivationRequest(db, uid, memberId, roleNa
   return { id: inserted[0].id, alreadyPending: false };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} approverRoleName
- */
 export async function listPendingDeactivationRequests(db, approverRoleName) {
   if (!isDeactivationApprovalRole(approverRoleName)) {
     throw new Error("Only Admin, Super Admin, or Owner roles may review deactivation requests.");
@@ -163,13 +128,6 @@ export async function listPendingDeactivationRequests(db, approverRoleName) {
   return rows.map(normalizeDeactivationRow);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} requestId
- * @param {"approved" | "rejected"} action
- * @param {string} resolverMemberId
- * @param {string} resolverRoleName
- */
 export async function resolveDeactivationRequest(db, requestId, action, resolverMemberId, resolverRoleName) {
   if (!isDeactivationApprovalRole(resolverRoleName)) {
     throw new Error("Only Admin, Super Admin, or Owner roles may approve or reject deactivation requests.");
@@ -178,9 +136,6 @@ export async function resolveDeactivationRequest(db, requestId, action, resolver
     throw new Error("Invalid deactivation resolution action.");
   }
 
-  // One conditional UPDATE instead of read-then-write: two approvers hitting
-  // the same request at once both passed the old "still pending?" check and
-  // both wrote a resolution. Here the second one matches no row.
   const resolved = await pgQuery(
     `UPDATE ${DEACTIVATION_REQUESTS}
         SET status = $2, resolved_at = now(), resolved_by = $3
@@ -197,21 +152,12 @@ export async function resolveDeactivationRequest(db, requestId, action, resolver
   return { id: requestId, status: action, memberId: resolved[0].member_id ?? "" };
 }
 
-/**
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} memberId
- * @param {string} roleName
- */
 export async function deleteViewerSelfAccount(auth, db, uid, memberId, roleName) {
   if (!isViewerRole(roleName)) {
     throw new Error("Only Viewer accounts can be deleted directly. Submit a deactivation request instead.");
   }
 
   const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
-  // Before the member row goes, kill any desktop-agent device credentials tied
-  // to it - they must not outlive the account.
   await revokeAgentDevicesForMember(memberId).catch(() => {});
   await deleteMemberProfileData(db, memberId);
   await deleteMemberPg(memberId, memberId);

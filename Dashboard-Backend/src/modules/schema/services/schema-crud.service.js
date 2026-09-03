@@ -9,13 +9,6 @@ import { query } from "../../../lib/postgres/client.js";
 import { foreignKeyCollectionByField, generateUUID, now, schemaRulesByKey } from "../catalog/index.js";
 
 const LOOKUP_FK_COLLECTIONS = new Set(["roles", "job_titles", "departments", "job_types", "tax_types"]);
-// Every non-lookup FK field, mapped to the Postgres table that owns it.
-// foreignKeyCollectionByField still names Firestore collections (they are the
-// error-message wording and nothing more) - checking those collections would
-// reject every reference created after each domain's cutover, since new rows
-// have not landed in Firestore since. Both maps together cover all 12 FK
-// fields in the catalog, so an unmapped field is a mistake, not a fallback
-// case: it throws below rather than silently skipping validation.
 const POSTGRES_FK_TABLE_BY_FIELD = {
   project_id: "projects",
   task_id: "tasks",
@@ -79,7 +72,6 @@ export function buildUpdatePayload(entity, body, options = {}) {
   return payload;
 }
 
-/** Stamp created_by/updated_by on team writes. */
 export function applyTeamWriteMetadata(entityKey, payload, memberId, isCreate = true) {
   if (!memberId || !payload || typeof payload !== "object") return payload;
   if (entityKey === "teams") {
@@ -105,13 +97,6 @@ export function applyTeamWriteMetadata(entityKey, payload, memberId, isCreate = 
 }
 
 async function assertTeamLinkedToProject(projectId, teamId) {
-  // team_projects moved to Postgres with the rest of the projects domain
-  // (unconditional, no flag - see the projects migration). The Firestore
-  // fallback this used to have only ran when isPostgresConfigured() was
-  // false, which - like every other Postgres-first route in this backend -
-  // is never actually false in any environment this app runs in. Removed
-  // rather than kept "just in case": a branch nothing can reach isn't a
-  // safety net, it's untested code pretending to be one.
   const rows = await query("SELECT 1 FROM team_projects WHERE project_id = $1 AND team_id = $2 LIMIT 1", [
     projectId,
     teamId,
@@ -119,7 +104,6 @@ async function assertTeamLinkedToProject(projectId, teamId) {
   if (!rows.length) throw new Error("team_id must be a team assigned to this project");
 }
 
-/** `_db` is unused - every foreign key resolves against Postgres now. */
 export async function validateForeignKeys(_db, payload, options = {}) {
   for (const [field, value] of Object.entries(payload)) {
     const collection = foreignKeyCollectionByField[field];
@@ -130,11 +114,6 @@ export async function validateForeignKeys(_db, payload, options = {}) {
       continue;
     }
     const pgTable = POSTGRES_FK_TABLE_BY_FIELD[field];
-    // The Firestore per-field fallback that used to sit here checked
-    // db.collection(collection).doc(value) - against collections that no
-    // longer receive writes, so it either rejected valid references or, when
-    // the Postgres readiness checks above returned false, quietly downgraded
-    // real validation to a lookup that always missed.
     if (!pgTable) throw new Error(`${field} has no foreign-key table mapping`);
     const rows = await query(`SELECT 1 FROM ${pgTable} WHERE id = $1 LIMIT 1`, [String(value)]);
     if (!rows.length) throw new Error(`${field} references missing ${collection}`);
@@ -142,7 +121,6 @@ export async function validateForeignKeys(_db, payload, options = {}) {
 
   const projectId = payload.project_id ?? options.projectId;
   const teamId = payload.team_id;
-  // Tasks must reference a team already linked to the project; team-projects creates that link.
   if (teamId && projectId && options.entityKey === "tasks") {
     await assertTeamLinkedToProject(projectId, teamId);
   }

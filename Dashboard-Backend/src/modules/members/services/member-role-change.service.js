@@ -5,12 +5,7 @@ import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { publishChange } from "../../realtime/change-bus.js";
 
-/**
- * @param {Record<string, unknown>} body
- * @returns {string[]}
- */
 export function getProfilePatchSections(body) {
-  /** @type {string[]} */
   const sections = [];
   if (body.info && typeof body.info === "object") sections.push("info");
   if (body.employment && typeof body.employment === "object") sections.push("employment");
@@ -21,40 +16,26 @@ export function getProfilePatchSections(body) {
   return sections;
 }
 
-/**
- * @param {Record<string, unknown>} body
- */
 export function profilePatchNeedsBootstrap(body) {
   return Boolean(body.employment && typeof body.employment === "object");
 }
 
-/**
- * @param {Record<string, unknown>} body
- */
 export function isRoleOnlyProfilePatch(body) {
   const sections = getProfilePatchSections(body);
   return sections.length === 1 && sections[0] === "roles";
 }
 
-/**
- * @param {Record<string, unknown>} body
- * @param {string} section
- */
 export function isSingleSectionProfilePatch(body, section) {
   const sections = getProfilePatchSections(body);
   return sections.length === 1 && sections[0] === section;
 }
 
-/**
- * @param {Record<string, unknown>} body
- */
 export function isLightProfilePatch(body) {
   const sections = getProfilePatchSections(body);
   if (sections.length !== 1) return false;
   return sections[0] === "roles" || sections[0] === "payBill" || sections[0] === "workLimits" || sections[0] === "settings";
 }
 
-/** Role change: sync primary role + hierarchy side effects. */
 export async function applyMemberRoleChange(db, input) {
   const memberId = input.memberId;
   const trimmed = typeof input.roleName === "string" ? input.roleName.trim() : "";
@@ -92,12 +73,6 @@ export async function applyMemberRoleChange(db, input) {
   return { roleId, roleName: trimmed, hierarchyResult };
 }
 
-/**
- * @param {string} step
- * @param {() => Promise<T>} fn
- * @template T
- * @returns {Promise<T>}
- */
 export async function timeRoleChangeStep(step, fn) {
   const start = performance.now();
   try {

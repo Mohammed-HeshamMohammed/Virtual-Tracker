@@ -1,9 +1,3 @@
-// Expenses CRUD.
-//
-// Scope rules mirror time_entries (schema/routes.js assertTimeEntryWriteAuthorized):
-// a member may create and manage their own expenses; management may act on
-// anyone within their access scope. Approving or rejecting is management-only -
-// nobody approves their own spending.
 
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
@@ -25,8 +19,6 @@ import {
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES = new Set(["pending", "approved", "rejected"]);
 
-/** Categories the expense form offers. Stored as free text, validated here so
- *  the report can group on a known set. */
 export const EXPENSE_CATEGORIES = new Set([
   "travel",
   "meals",
@@ -47,14 +39,6 @@ function parseAmount(value) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeExpenses(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/expenses")) return false;
@@ -65,7 +49,6 @@ export async function routeExpenses(req, res, url, db, origin) {
     return true;
   }
 
-  // GET /api/expenses?from&to&status&memberId
   if (pn === "/api/expenses" && req.method === "GET") {
     try {
       const requested = (url.searchParams.get("memberId") || "").trim();
@@ -98,7 +81,6 @@ export async function routeExpenses(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/expenses
   if (pn === "/api/expenses" && req.method === "POST") {
     let body;
     try {
@@ -186,7 +168,6 @@ export async function routeExpenses(req, res, url, db, origin) {
   const idMatch = /^\/api\/expenses\/([^/]+)$/.exec(pn);
   const reviewMatch = /^\/api\/expenses\/([^/]+)\/review$/.exec(pn);
 
-  // PATCH /api/expenses/:id/review { status }
   if (reviewMatch && req.method === "PATCH") {
     if (!requireManagementRole(viewer)) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to review expenses." });
@@ -211,7 +192,6 @@ export async function routeExpenses(req, res, url, db, origin) {
         sendJson(res, origin, 404, { success: false, error: "Expense not found." });
         return true;
       }
-      // Reviewing your own spending is exactly what this gate exists to stop.
       if (String(existing.member_id) === viewer.memberId) {
         sendJson(res, origin, 403, { success: false, error: "You cannot review your own expense." });
         return true;
@@ -234,7 +214,6 @@ export async function routeExpenses(req, res, url, db, origin) {
     return true;
   }
 
-  // DELETE /api/expenses/:id
   if (idMatch && req.method === "DELETE") {
     try {
       const existing = await getExpensePg(idMatch[1]);
@@ -250,8 +229,6 @@ export async function routeExpenses(req, res, url, db, origin) {
           return true;
         }
       } else if (existing.status === "approved") {
-        // Once approved it is part of the financial record; a manager can
-        // still remove it, the person who claimed it cannot.
         sendJson(res, origin, 409, { success: false, error: "Approved expenses cannot be removed." });
         return true;
       }

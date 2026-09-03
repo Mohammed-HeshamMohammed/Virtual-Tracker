@@ -51,10 +51,6 @@ import {
   resendInviteEmailForManagement,
 } from "../services/invite-management.service.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Record<string, unknown>} row
- */
 async function resolveInviteCreatorRoleName(db, row) {
   const createdByMemberId = typeof row.created_by === "string" ? row.created_by.trim() : "";
   if (createdByMemberId) {
@@ -82,10 +78,6 @@ function randomTempPassword() {
   return `${s}!a1`;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} token
- */
 async function findInviteByToken(db, token) {
   if (!token || typeof token !== "string" || token.length < 16) return null;
   const rows = await query("SELECT * FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
@@ -107,11 +99,6 @@ async function findInviteByToken(db, token) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {string} uid
- */
 async function promotePendingMemberCore(db, auth, uid) {
   const pendRows = await query("SELECT * FROM pending_auth_members WHERE firebase_uid = $1 LIMIT 1", [uid]);
   if (!pendRows.length) {
@@ -170,11 +157,9 @@ async function promotePendingMemberCore(db, auth, uid) {
     await syncProjectMembersForMember(db, memberId, projects, typeof p.created_by_uid === "string" ? p.created_by_uid : "");
   }
 
-  // Record relationship: who added this member (organizational roles only — not Clients)
   const createdByUid = typeof p.created_by_uid === "string" ? p.created_by_uid : "";
   if (createdByUid && !isExcludedFromHierarchy(roleName)) {
     try {
-      // Find the member ID of the creator
       const creatorMember = await getMemberByFirebaseUidPg(createdByUid);
       if (creatorMember) {
         const creatorMemberId = String(creatorMember.id);
@@ -208,13 +193,6 @@ async function promotePendingMemberCore(db, auth, uid) {
 
 export { promotePendingMemberCore };
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeMemberInvites(req, res, url, origin) {
   const db = getDb();
   if (!db) return false;
@@ -545,7 +523,6 @@ export async function routeMemberInvites(req, res, url, origin) {
         );
       }
 
-      // Record relationship: who invited this member (organizational roles only — not Clients)
       const inviterUid = typeof row.created_by_uid === "string" ? row.created_by_uid : "";
       if (inviterUid && !isExcludedFromHierarchy(roleName)) {
         try {
@@ -647,8 +624,6 @@ export async function routeMemberInvites(req, res, url, origin) {
       status: "pending_signup",
       sent_at: new Date(),
       accepted_at: null,
-      // created_by/updated_by are real UUID columns - "" and the literal
-      // "open-link" both fail as invalid uuid input, not just missing values.
       created_by: (typeof body.createdBy === "string" && body.createdBy.trim()) || viewer?.memberId || null,
       created_by_uid: typeof body.createdByUid === "string" ? body.createdByUid : viewer?.uid ?? "",
       updated_by: null,

@@ -1,12 +1,8 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { runRetentionSweep } from "./data-retention.js";
 
-// CF-0.5: once a day is plenty for a retention ceiling measured in days -
-// unlike abandoned-session-sweep.service.js (30s, catching a crashed agent
-// quickly matters), there's no correctness reason to run this more often.
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-/** @type {ReturnType<typeof setInterval> | null} */
 let sweepTimer = null;
 
 async function sweepOnce() {
@@ -17,7 +13,6 @@ async function sweepOnce() {
   }
 }
 
-/** Enforces every data type's retention ceiling automatically - CF-0.5's "configurable, enforced max-retention... with automatic deletion." */
 export function scheduleDataRetentionSweep() {
   if (sweepTimer) return;
 

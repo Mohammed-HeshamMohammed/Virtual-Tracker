@@ -1,35 +1,5 @@
-// Raw per-session rows for the Time & Activity report (reports/time-and-activity).
-// No day bucketing here - each activity_sessions row is one continuous session and
-// can span midnight, so attributing it to a calendar day (in the member's own
-// timezone, not the server's) has to happen after the fact, per-session, in
-// build-time-and-activity-rows.js. Returns seconds, not formatted strings -
-// features/reports/utils/time-and-activity/row-aggregate.ts owns that on the frontend.
 import { query } from "./client.js";
 
-/**
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- *   memberIds: null = no member filter (caller has already resolved visibility).
- *   projectIds: null/omitted = no project filter (caller has already narrowed via
- *   filterProjectIdsForViewer - this never widens scope on its own).
- *   fromDay/toDay: 'YYYY-MM-DD', the requested range in whatever local calendar the
- *   caller resolves per member. The query window here is widened by a day on each
- *   side so no session near a local-day edge gets excluded before that resolution
- *   happens - every real-world UTC offset (-12 to +14) fits inside one day of slack.
- * @returns {Promise<Array<{
- *   member_id: string,
- *   task_id: string | null,
- *   project_id: string | null,
- *   task_title: string,
- *   project_name: string,
- *   client_name: string,
- *   team_name: string,
- *   started_at: string,
- *   ended_at: string | null,
- *   updated_at: string,
- *   active_seconds: number,
- *   idle_seconds: number,
- * }>>}
- */
 export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   from.setUTCDate(from.getUTCDate() - 1);
@@ -97,26 +67,6 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
   }));
 }
 
-/**
- * Manual time entries for the same window the session query above covers.
- *
- * These live in a different table for a good reason - a manual entry is an
- * assertion about time that was never observed, so it carries a duration but
- * no active/idle split and no real start timestamp. The report was already
- * built to hold them separately (every row model down to the CSV has carried
- * a "Manual hours" column since it was written), but nothing ever filled it,
- * so time added through "Add time for someone" was stored correctly and then
- * never appeared in the report it was added from.
- *
- * `source = 'manual'` is not cosmetic: the column also permits 'tracked', and
- * a tracked row would mirror an activity_sessions row that this report
- * already counts. Without the filter this would double-count that time.
- *
- * No timezone splitting here, unlike sessions: `date` is a DATE column, so
- * the entry is already attributed to a calendar day by whoever entered it.
- *
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- */
 export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const rows = await query(
     `SELECT

@@ -6,18 +6,6 @@ import {
   sumUrlLogSecondsByDomainPg,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 
-/**
- * CLS-2: "productive/neutral/distracting minutes" instead of, or alongside,
- * the raw activity %. Pure aggregation over activity_app_logs +
- * activity_url_logs joined to CLS-1's classification map - no agent change
- * needed, matches the plan's own framing.
- *
- * Role override is resolved once for the *tracked* member (not the viewer) -
- * "a designer on Behance is productive" is about the person who did the
- * browsing, not whoever is looking at the report.
- *
- * @param {string} memberId @param {{ fromDay: string, toDay: string }} range
- */
 export async function getFocusedTimeSummary(memberId, range) {
   const db = getDb();
   const [categories, roleName, appSeconds, domainSeconds] = await Promise.all([
@@ -36,7 +24,6 @@ export async function getFocusedTimeSummary(memberId, range) {
   const roleKey = String(roleName || "").trim().toLowerCase();
 
   const totals = { productive: 0, neutral: 0, distracting: 0, unclassified: 0 };
-  /** @type {{ pattern: string, matchType: string, category: string, seconds: number }[]} */
   const breakdown = [];
 
   const resolveCategory = (entry) => {

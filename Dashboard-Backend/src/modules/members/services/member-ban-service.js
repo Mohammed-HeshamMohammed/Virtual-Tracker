@@ -24,10 +24,6 @@ const DEVICE_BAN_MESSAGE =
 
 export { findActiveBanByEmail, findActiveBanByMemberId };
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} ip
- */
 export async function assertDeviceNotBanned(db, ip) {
   const banned = await isDevicePermanentlyBanned(db, ip);
   if (!banned) return { ok: true };
@@ -39,10 +35,6 @@ export async function assertDeviceNotBanned(db, ip) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ email?: string; memberId?: string; firebaseUid?: string }} input
- */
 export async function assertMemberNotBanned(db, input) {
   const emailNorm = normalizeMemberEmail(input.email || "");
   if (emailNorm) {
@@ -85,16 +77,6 @@ export { listActiveMemberBans };
 
 import { getMemberByIdPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{
- *   memberId: string;
- *   reason: string;
- *   bannedByMemberId: string;
- *   bannedByName: string;
- *   requestIp?: string;
- * }} input
- */
 export async function banMember(db, input) {
   const memberId = typeof input.memberId === "string" ? input.memberId.trim() : "";
   const reason = typeof input.reason === "string" ? input.reason.trim() : "";
@@ -201,10 +183,6 @@ export async function banMember(db, input) {
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ banId: string; revokedByMemberId: string; revokedByName: string }} input
- */
 export async function revokeMemberBan(db, input) {
   const banId = typeof input.banId === "string" ? input.banId.trim() : "";
   if (!banId) throw Object.assign(new Error("Ban id is required."), { status: 400 });

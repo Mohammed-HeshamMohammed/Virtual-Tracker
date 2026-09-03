@@ -16,9 +16,6 @@ function normalizePathname(pathname) {
   return pathname.replace(/^\/api\/v1\//, "/api/");
 }
 
-/**
- * Owner / Super Admin / Admin — hierarchy management operations.
- */
 function assertHierarchyAdminRole(req, res, origin) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -36,20 +33,12 @@ function assertHierarchyAdminRole(req, res, origin) {
   return true;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeMemberTransferRequests(req, res, url, origin) {
   const db = getDb();
   if (!db) return false;
 
   const pn = normalizePathname(url.pathname);
 
-  // GET /api/public/member-transfer-requests/:token — preview (no auth)
   const publicPreviewMatch = pn.match(/^\/api\/public\/member-transfer-requests\/([^/]+)$/);
   if (publicPreviewMatch && req.method === "GET") {
     try {
@@ -65,7 +54,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/public/member-transfer-requests/:token/accept — requires auth
   const publicAcceptMatch = pn.match(/^\/api\/public\/member-transfer-requests\/([^/]+)\/accept$/);
   if (publicAcceptMatch && req.method === "POST") {
     const viewer = getAuthContext(req);
@@ -90,7 +78,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/public/member-transfer-requests/:token/decline — requires auth
   const publicDeclineMatch = pn.match(/^\/api\/public\/member-transfer-requests\/([^/]+)\/decline$/);
   if (publicDeclineMatch && req.method === "POST") {
     const viewer = getAuthContext(req);
@@ -114,7 +101,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-transfer-requests — create request
   if (pn === "/api/member-transfer-requests" && req.method === "POST") {
     const viewer = getAuthContext(req);
     if (!viewer) {
@@ -148,7 +134,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/audit — hierarchy audit (admin)
   if (pn === "/api/member-relationships/audit" && req.method === "GET") {
     if (!assertHierarchyAdminRole(req, res, origin)) return true;
     try {
@@ -161,7 +146,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-relationships/repair-orphans — fix orphan employees (admin)
   if (pn === "/api/member-relationships/repair-orphans" && req.method === "POST") {
     if (!assertHierarchyAdminRole(req, res, origin)) return true;
     const viewer = getAuthContext(req);
@@ -186,7 +170,6 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-relationships/repair-status — sync hierarchy_status fields (admin)
   if (pn === "/api/member-relationships/repair-status" && req.method === "POST") {
     if (!assertHierarchyAdminRole(req, res, origin)) return true;
     let body = {};

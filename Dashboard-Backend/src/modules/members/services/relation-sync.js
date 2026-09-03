@@ -21,44 +21,23 @@ import { getMemberByIdPg, getMembersByIdsPg, updateMemberPg } from "../../../lib
 
 const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Team Lead", "Employee", "Intern", "Client", "Viewer"];
 
-/**
- * Role name by id (Postgres lookup).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} roleId
- */
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
   await isPostgresLookupReady();
   return await resolveRoleNameByIdPg(roleId);
 }
 
-/**
- * Role id by name (Postgres lookup).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} roleName
- * @returns {Promise<string>}
- */
 export async function resolveRoleIdByName(db, roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
   await isPostgresLookupReady();
   return await resolveRoleIdByNamePg(name);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function ensureDefaultRoles(db) {
   await isPostgresLookupReady();
   await ensureDefaultRolesPg(DEFAULT_ROLES);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @param {string} [assignedBy]
- * @returns {Promise<string>}
- */
 export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy = "", actorRoleName = "") {
   const trimmedName = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "Viewer";
   const currentRoleName = await resolveMemberRoleName(db, memberId);
@@ -87,9 +66,6 @@ export async function syncMemberPrimaryRole(db, memberId, roleName, assignedBy =
   return roleId;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function loadRoleNameById(db) {
   if (!(await isPostgresLookupReady())) return new Map();
   const data = await getLookupData();
@@ -98,17 +74,6 @@ export async function loadRoleNameById(db) {
   );
 }
 
-/**
- * Role ids whose Postgres `roles.name` satisfies `predicate` - the shared
- * "which members have an admin/management/employee-tier role" query. Every
- * call site that needs this used to run its own `db.collection("roles")`
- * Firestore scan; that collection has had nothing writing to it since roles
- * moved to Postgres (see resolveRoleIdByNamePg/ensureDefaultRolesPg), so
- * those reads were silently returning empty/stale results. This hits the
- * same 5-minute-cached `roles` table every other role lookup in the app uses.
- * @param {(roleName: string) => boolean} predicate
- * @returns {Promise<string[]>}
- */
 export async function resolveRoleIdsWhere(predicate) {
   if (!(await isPostgresLookupReady())) return [];
   const { roles } = await getLookupData();
@@ -117,20 +82,11 @@ export async function resolveRoleIdsWhere(predicate) {
     .map((row) => String(row.id));
 }
 
-/**
- * @param {string} roleId
- * @param {Map<string, string>} roleNameById
- */
 function roleNameFromId(roleId, roleNameById) {
   if (!roleId) return "";
   return roleNameById.get(roleId) || "";
 }
 
-/**
- * Higher rank wins when `members.role_id` and `member_roles` disagree (e.g. stale assignments).
- * Prototype-less so a role named "constructor" or "valueOf" misses instead of returning an
- * Object.prototype member — every lookup here is `TABLE[key] ?? <default>`.
- */
 export const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
@@ -144,23 +100,14 @@ export const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   viewer: 10,
 });
 
-// Canonical implementation now lives in http/role-key.js (a leaf module, so
-// every policy module can import it without cycling back through here).
-// Re-exported for the existing call sites that import it from relation-sync.
 export { normalizeRoleKey };
 
-/**
- * @param {string} roleName
- */
 export function rolePrivilegeRank(roleName) {
   const key = normalizeRoleKey(roleName);
   if (!key) return -1;
   return ROLE_PRIVILEGE_RANK[key] ?? 35;
 }
 
-/**
- * @param {string[]} candidates
- */
 export function pickHighestPrivilegeRoleName(candidates) {
   let bestName = "";
   let bestRank = -1;
@@ -177,25 +124,12 @@ export function pickHighestPrivilegeRoleName(candidates) {
   return bestName || "Viewer";
 }
 
-/**
- * Primary role from members + member_roles. On conflict, higher privilege wins.
- * @param {Record<string, unknown>} memberData
- * @param {Array<Record<string, unknown>>} memberRoleRows
- * @param {Map<string, string>} roleNameById
- */
 export function pickCanonicalPrimaryRoleName(memberData, memberRoleRows = [], roleNameById) {
   const memberRoleId = typeof memberData.role_id === "string" ? memberData.role_id : "";
   const memberRoleName = roleNameFromId(memberRoleId, roleNameById);
   return { name: memberRoleName || "Viewer", roleId: memberRoleId };
 }
 
-/**
- * Keep members.role_id and roles table in sync.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} [assignedBy]
- * @returns {Promise<string|null>} canonical role_id
- */
 export async function alignMemberRoleTables(db, memberId, assignedBy = "role-align") {
   if (!memberId) return null;
   const { invalidateMemberRoleCache } = await import("../../../http/role-cache.js");
@@ -219,12 +153,6 @@ export async function alignMemberRoleTables(db, memberId, assignedBy = "role-ali
   return roleId;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- * @param {string[]} projectIds
- * @param {string} [createdBy]
- */
 export async function syncInviteProjects(_db, inviteId, projectIds, createdBy = "") {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
   const existingRows = await pgQuery("SELECT id, project_id FROM invite_projects WHERE invite_id = $1", [inviteId]);
@@ -245,11 +173,6 @@ export async function syncInviteProjects(_db, inviteId, projectIds, createdBy = 
   }
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} pendingUid
- * @param {string[]} projectIds
- */
 export async function syncPendingAuthProjects(_db, pendingUid, projectIds) {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
   const existingRows = await pgQuery(
@@ -273,32 +196,16 @@ export async function syncPendingAuthProjects(_db, pendingUid, projectIds) {
   }
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- * @returns {Promise<string[]>}
- */
 export async function getInviteProjectIds(_db, inviteId) {
   const rows = await pgQuery("SELECT project_id FROM invite_projects WHERE invite_id = $1", [inviteId]);
   return rows.map((r) => r.project_id).filter((id) => typeof id === "string" && id.length > 0);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} pendingUid
- * @returns {Promise<string[]>}
- */
 export async function getPendingAuthProjectIds(_db, pendingUid) {
   const rows = await pgQuery("SELECT project_id FROM pending_auth_projects WHERE firebase_uid = $1", [pendingUid]);
   return rows.map((r) => r.project_id).filter((id) => typeof id === "string" && id.length > 0);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string[]} projectIds
- * @param {string} [assignedBy]
- */
 export async function syncProjectMembersForMember(db, memberId, projectIds, assignedBy = "") {
   const ids = [...new Set(projectIds.filter((id) => typeof id === "string" && id.length > 0))];
   const existingIds = new Set(await listProjectIdsForMemberPg(memberId));
@@ -311,26 +218,14 @@ export async function syncProjectMembersForMember(db, memberId, projectIds, assi
   }
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} inviteId
- */
 export async function deleteInviteProjects(_db, inviteId) {
   await pgQuery("DELETE FROM invite_projects WHERE invite_id = $1", [inviteId]);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} pendingUid
- */
 export async function deletePendingAuthProjects(_db, pendingUid) {
   await pgQuery("DELETE FROM pending_auth_projects WHERE firebase_uid = $1", [pendingUid]);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function cascadeDeleteMemberRelations(db, memberId) {
   if (!memberId) return;
   await Promise.all([
@@ -339,10 +234,6 @@ export async function cascadeDeleteMemberRelations(db, memberId) {
   ]);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<{ id: string, role?: string }>} members
- */
 export async function enrichMembersWithRoleNames(db, members) {
   if (!members.length) return members;
   const roleNameById = new Map();
@@ -368,10 +259,6 @@ export async function enrichMembersWithRoleNames(db, members) {
   });
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<{ id: string }>} invites
- */
 export async function enrichInvitesWithProjectCounts(_db, invites) {
   if (!invites.length) return invites;
   const inviteIdSet = new Set(invites.map((row) => row.id).filter((id) => !String(id).startsWith("pa_")));
@@ -437,11 +324,6 @@ function memberProfileFromDoc(data) {
   return { name, initials, email, avatarColor };
 }
 
-/**
- * Display fields for task/team assignment UIs.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<Record<string, unknown>>} rows
- */
 export async function enrichTeamMembersWithProfiles(db, rows) {
   if (!rows.length) return rows;
 
@@ -500,11 +382,6 @@ export async function enrichTeamMembersWithProfiles(db, rows) {
   });
 }
 
-/**
- * Project names on team-project relation rows.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Array<Record<string, unknown>>} rows
- */
 export async function enrichTeamProjectsWithNames(db, rows) {
   if (!rows.length) return rows;
 

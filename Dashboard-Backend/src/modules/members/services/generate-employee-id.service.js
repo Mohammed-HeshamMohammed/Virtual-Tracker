@@ -12,9 +12,6 @@ import { listMembersPg } from "../../../lib/postgres/members-postgres.service.js
 const MIN_EMPLOYEE_ID_LENGTH = 2;
 const MAX_EMPLOYEE_ID_LENGTH = 48;
 
-/**
- * @param {unknown} value
- */
 function timestampMs(value) {
   if (!value) return 0;
   if (typeof value === "object" && value !== null && typeof value.toDate === "function") {
@@ -24,27 +21,16 @@ function timestampMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-/**
- * @param {unknown} raw
- */
 function sanitizeEmployeeId(raw) {
   return String(raw || "")
     .replace(/[^a-zA-Z0-9]/g, "")
     .slice(0, MAX_EMPLOYEE_ID_LENGTH);
 }
 
-/**
- * @param {unknown} raw
- */
 function normalizeForCompare(raw) {
   return sanitizeEmployeeId(raw).toLowerCase();
 }
 
-/**
- * @param {string | undefined} firstName
- * @param {string | undefined} fullName
- * @param {string | undefined} email
- */
 function slugFromFirstName(firstName, fullName, email) {
   let slug = (typeof firstName === "string" ? firstName : "").trim().replace(/[^a-zA-Z0-9]/g, "");
   if (!slug && typeof fullName === "string") {
@@ -58,9 +44,6 @@ function slugFromFirstName(firstName, fullName, email) {
   return slug.charAt(0).toUpperCase() + slug.slice(1).toLowerCase();
 }
 
-/**
- * @param {string} roleName
- */
 function rolePresenceCode(roleName) {
   const key = normalizeRoleKey(roleName);
   if (isOrganizationRootRole(roleName)) return "O";
@@ -70,32 +53,12 @@ function rolePresenceCode(roleName) {
   return "X";
 }
 
-/**
- * @param {string} memberId
- * @param {number} attempt
- */
 function pseudoRandomMiddle(memberId, attempt) {
   const hash = crypto.createHash("sha256").update(`${memberId}:${attempt}`).digest("hex");
   return String(parseInt(hash.slice(0, 4), 16) % 90 + 10);
 }
 
-/**
- * @typedef {{
- *   treeSequence: number,
- *   depth: number,
- *   ancestorCount: number,
- *   ancestorRoleCount: number,
- *   siblingIndex: number,
- *   roleCode: string,
- * }} TreeMetrics
- */
 
-/**
- * @param {string} nameSlug
- * @param {TreeMetrics} metrics
- * @param {number} attempt
- * @param {string} memberId
- */
 function buildEmployeeIdCandidate(nameSlug, metrics, attempt, memberId) {
   const seq = String(metrics.treeSequence);
   const middleParts = [
@@ -131,11 +94,6 @@ function buildEmployeeIdCandidate(nameSlug, metrics, attempt, memberId) {
   return sanitizeEmployeeId(`${nameSlug}${picked}${seq}`);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {{ firstName?: string }} [options]
- */
 export async function generateMemberEmployeeId(db, memberId, options = {}) {
   const [memberDocs, relDocs, roleNameById] = await Promise.all([
     listMembersPg({ limit: 5000 }),
@@ -143,11 +101,8 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
     loadRoleNameById(db),
   ]);
 
-  /** @type {Map<string, Record<string, unknown>>} */
   const memberDataById = new Map();
-  /** @type {Map<string, number>} */
   const dateAddedById = new Map();
-  /** @type {Set<string>} */
   const takenIds = new Set();
 
   for (const data of memberDocs) {
@@ -188,9 +143,7 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
     (edge) => !(ownerIds.has(edge.child_member_id) && ownerIds.has(edge.parent_member_id)),
   );
 
-  /** @type {Map<string, string>} */
   const childToParent = new Map();
-  /** @type {Map<string, string[]>} */
   const parentToChildren = new Map();
   const childIds = new Set();
 
@@ -225,9 +178,7 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
     parentToChildren.set(parentId, sortMemberIds(children));
   }
 
-  /** @type {string[]} */
   const validRootMemberIds = [];
-  /** @type {string[]} */
   const orphanMemberIds = [];
 
   for (const [id, data] of memberDataById.entries()) {
@@ -252,14 +203,9 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
   }
 
   const sortedRoots = sortMemberIds(validRootMemberIds);
-  /** @type {Map<string, TreeMetrics>} */
   const metricsByMemberId = new Map();
   let treeSequence = 0;
 
-  /**
-   * @param {string} nodeId
-   * @param {number} depth
-   */
   const walk = (nodeId, depth) => {
     if (!memberDataById.has(nodeId)) return;
     treeSequence += 1;
@@ -309,7 +255,6 @@ export async function generateMemberEmployeeId(db, memberId, options = {}) {
     walk(rootId, 0);
   }
 
-  /** @type {TreeMetrics} */
   let metrics = metricsByMemberId.get(memberId) || {
     treeSequence: 1,
     depth: 0,

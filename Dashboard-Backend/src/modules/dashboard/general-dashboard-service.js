@@ -1,4 +1,3 @@
-// General dashboard aggregates (me vs team scope). One payload to avoid N+1 widget fetches.
 
 import {
   buildMemberMetaMap,
@@ -88,10 +87,6 @@ function buildSparklineFromDays(dayBuckets, days) {
   });
 }
 
-// Exported for its own regression test (activityWeekPercent must derive
-// from the same sessions weeklyActivity does, not a second, independent
-// screenshot-based score) - otherwise a pure function of already-fetched
-// data, called only from getGeneralDashboardPayload below.
 export function buildViewPayload({
   memberIds,
   timeEntries,
@@ -140,16 +135,6 @@ export function buildViewPayload({
   }
 
   for (const session of sessions) {
-    // The real row this ever gets fed in production (dashboard-base-loader.js's
-    // fetchFreshBase) only ever carries member_id (snake_case) - there is no
-    // memberId key at all. Reading session.memberId here always read
-    // undefined, so inMemberScope(undefined, [...]) was always false and
-    // every session was silently dropped for every scoped view ("me", and
-    // "all" for anyone but an unrestricted org admin) - weeklyActivity's
-    // hours (and this loop's workedByDay/membersByDay/projectsByDay) read
-    // zero regardless of how much was actually tracked. str() falls back to
-    // memberId too, so a caller that already passes the camelCase shape
-    // (e.g. this file's own unit tests) keeps working unchanged.
     const sessionMemberId = str(session, "member_id", "memberId");
     if (!inMemberScope(sessionMemberId, memberIds)) continue;
     const startedMs = timestampMs(session.started_at ?? session.startedAt);
@@ -163,8 +148,6 @@ export function buildViewPayload({
       const mset = membersByDay.get(todayKey) ?? new Set();
       mset.add(sessionMemberId);
       membersByDay.set(todayKey, mset);
-      // project_id direct for task-less (calling project) sessions; via the
-      // task for normal ones, which is all sessions predating that column.
       const sessionProjectId =
         session.project_id ?? tasks.find((t) => t.id === session.task_id)?.projectId ?? null;
       if (sessionProjectId) {
@@ -301,7 +284,6 @@ export function buildViewPayload({
 
   const weeklyActivity = weekDays.map((day) => {
     const daySessions = sessions.filter((s) => {
-      // Same member_id/memberId mismatch as the loop above - see its comment.
       if (!inMemberScope(str(s, "member_id", "memberId"), memberIds)) return false;
       const startedMs = timestampMs(s.started_at ?? s.startedAt);
       return startedMs >= day.startMs && startedMs <= day.endMs;
@@ -322,18 +304,6 @@ export function buildViewPayload({
 
   const { chartPath, chartFill } = buildTrendPaths(weeklyActivity.map((d) => d.activeHours));
 
-  // Same active/idle hours weeklyActivity already summed per day, not a
-  // second, unrelated measurement - activityWeekPercent used to average
-  // screenshots' own per-capture activityLevel score instead, which is a
-  // completely different quantity (a moment-by-moment keystroke/mouse
-  // score) than "share of tracked time that was active". The agent's
-  // sidebar draws this percent as a ring with an active/idle-hours legend
-  // directly beneath it (WeeklyActivityCard) built from these same
-  // weeklyActivity hours - the two numbers could disagree by construction
-  // (e.g. read 63% from a handful of active-looking screenshots while the
-  // legend read 0s active / 0s idle from a week with almost no tracked
-  // sessions at all). Deriving both from the same array makes them agree
-  // by construction instead.
   const weekActiveHoursTotal = weeklyActivity.reduce((sum, d) => sum + d.activeHours, 0);
   const weekIdleHoursTotal = weeklyActivity.reduce((sum, d) => sum + d.idleHours, 0);
   const activityWeekPercent =
@@ -381,18 +351,12 @@ function buildTrendPaths(values) {
   return { chartPath: line, chartFill: `${line} V${height} H0 Z` };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- */
 export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
   const isOwner = roleKey === "owner";
   const canAccessAllView = isOwner || ["superadmin", "admin", "supermanager", "manager"].includes(roleKey);
 
-  // Same widening as the Command Center: the org-admin set, not the Owner
-  // alone, sees org-wide data here.
   const seesAllProjects = isOrgProjectAdminRole(roleName);
   const scope = await resolveActivityFeedScope(db, viewerMemberId, {
     memberId: "all",
@@ -405,10 +369,6 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const weekDays = getRollingWeekDays();
   const weekStartKey = weekDays[0].dateKey;
 
-  // Bound to the sparkline's own 6-day window instead of a plain recency LIMIT -
-  // a flat top-N cap silently starved older sparkline days once a single recent
-  // day alone produced more than `limit` rows (skewing activitySparkline/topApps,
-  // not just truncating a list). Date-range-bound reads have no reason to cap low.
   const sparkStartDay = getLastNDays(6)[0].dateKey;
   const base = await loadDashboardBase(db);
   const [screenshotRows, appRows, sessionIndex] = await Promise.all([

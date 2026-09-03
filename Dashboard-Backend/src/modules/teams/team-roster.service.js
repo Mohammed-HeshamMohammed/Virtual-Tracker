@@ -36,10 +36,6 @@ export function validateTeamRoster(memberIds, leadIds) {
   return null;
 }
 
-/**
- * @param {Record<string, unknown>} body
- * @returns {{ memberIds: string[], leadIds: Set<string>, projectIds: string[] }}
- */
 export function parseTeamRosterInput(body) {
   const memberIds = [];
   const leadIds = new Set();
@@ -94,13 +90,6 @@ export function parseTeamRosterInput(body) {
 const MANAGER_TEAM_STAFF_MESSAGE =
   "Managers can only staff teams with members from their management subtree or employees from the organization.";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string} memberId
- * @param {boolean} isLead
- * @param {{ teamId?: string, enforceSubtreeCreate?: boolean, isNewOnTeam?: boolean }} [options]
- */
 async function assertCanAssignTeamRosterMember(db, viewer, memberId, isLead, options = {}) {
   const { teamId = "", enforceSubtreeCreate = false, isNewOnTeam = false } = options;
   const targetRoleName = await resolveMemberRoleName(db, memberId);
@@ -170,11 +159,6 @@ async function assertCanAssignTeamRosterMember(db, viewer, memberId, isLead, opt
   }
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string} projectId
- */
 async function assertCanLinkTeamProject(db, viewer, projectId, teamId = "") {
   const allowedProjects = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
   if (allowedProjects === null || allowedProjects.includes(projectId)) return;
@@ -186,7 +170,6 @@ async function assertCanLinkTeamProject(db, viewer, projectId, teamId = "") {
   throw err;
 }
 
-/** Initial team_members + team_projects on team create. */
 export async function createTeamInitialRoster(db, viewer, teamId, roster) {
   if (!viewer?.memberId || !teamId) return;
 
@@ -224,15 +207,12 @@ export async function createTeamInitialRoster(db, viewer, teamId, roster) {
     });
   }
 
-  // team_projects is Postgres-backed too - project_id existence is checked
-  // directly against Postgres instead of the generic validateForeignKeys.
   for (const projectId of roster.projectIds) {
     if (!(await getProjectPg(projectId))) throw new Error("project_id references missing project");
     await linkTeamProjectPg(teamId, projectId, viewer.memberId);
   }
 }
 
-/** Replace team roster on edit (Owner or team lead). */
 export async function syncTeamRoster(db, viewer, teamId, roster) {
   if (!viewer?.memberId || !teamId) return;
 
@@ -296,8 +276,6 @@ export async function syncTeamRoster(db, viewer, teamId, roster) {
     });
   }
 
-  // team_projects is Postgres-backed too - same reasoning as
-  // createTeamInitialRoster above.
   const existingProjectIds = new Set(existingProjectIdsList);
   for (const projectId of existingProjectIds) {
     if (!desiredProjectIds.has(projectId)) {

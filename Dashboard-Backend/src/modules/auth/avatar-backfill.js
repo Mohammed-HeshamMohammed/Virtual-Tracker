@@ -3,17 +3,6 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { USER_PROFILES_COLLECTION } from "./profile-collection-name.js";
 import { resolveProfileAvatarUrl } from "./profile-image-resolve.js";
 
-/**
- * One-time-per-member catch-up: upsertProfileFromUserRecord (profile-sync.js)
- * keeps members.avatar_url synced from Firestore User_profiles going forward,
- * but only for a member's own next login - it does nothing retroactively for
- * everyone who already had a photo before that sync existed. Run at boot
- * (like ensure-lookup-schema.js) instead of a one-off script so it's covered
- * by the no-manual-migration-step deploy flow; only queries members still
- * missing avatar_url, so once everyone's caught up (via this or a login)
- * it's a cheap empty read on every future boot.
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function backfillMemberAvatarUrls(db) {
   if (!db || !isPostgresConfigured()) return { checked: 0, updated: 0 };
 

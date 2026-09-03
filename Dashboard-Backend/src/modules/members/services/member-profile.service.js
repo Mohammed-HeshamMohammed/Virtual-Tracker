@@ -48,37 +48,17 @@ const LOOKUP_COLLECTIONS = {
   taxType: "tax_types",
 };
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string} name
- */
 async function resolveLookupIdByName(_db, collection, name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
   if (!trimmed) return "";
-  // The Firestore fallback here did not just read - on a miss it created a
-  // job_titles/departments/job_types/tax_types doc, so an unready-Postgres
-  // moment would mint lookup rows in a collection nothing reads back, and
-  // hand the member a lookup id no Postgres row answers to.
   return resolveLookupIdByNamePg(collection, trimmed);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collection
- * @param {string} id
- */
 async function lookupNameById(_db, collection, id) {
   if (!id || typeof id !== "string") return "";
   return lookupNameByIdPg(collection, id);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {number} rate
- * @param {string} [updatedBy]
- */
 export async function upsertMemberWeeklyLimit(db, memberId, weeklyLimit, updatedBy = "") {
   const value = parseLimitValue(weeklyLimit);
   await upsertLimitField(db, memberId, "weekly", value, updatedBy || "system");
@@ -99,11 +79,6 @@ export async function upsertMemberPayRate(db, memberId, rate, updatedBy = "", cu
   });
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} [updatedBy]
- */
 export async function ensureMemberProfileRecords(db, memberId, updatedBy = "") {
   const memberData = (await getMemberByIdPg(memberId)) || {};
   await ensureMemberScopedEntities(db, {
@@ -114,12 +89,6 @@ export async function ensureMemberProfileRecords(db, memberId, updatedBy = "") {
   });
 }
 
-/**
- * Read a single limit type value from the consolidated limits doc.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} limitType  e.g. "weekly" or "daily"
- */
 async function getLimitByType(db, memberId, limitType) {
   const limitsData = await getMemberLimitsDoc(db, memberId);
   if (!limitsData) return null;
@@ -140,8 +109,6 @@ function limitToInput(value) {
   return n > 0 ? String(n) : "";
 }
 
-/** Postgres rows arrive as a Date (already normalized to ISO by
- * normalizeMemberDataRow); Firestore rows arrive as a Timestamp. */
 function toIsoTimestamp(value) {
   if (!value) return "";
   if (typeof value === "string") return value;
@@ -150,9 +117,6 @@ function toIsoTimestamp(value) {
   return "";
 }
 
-/** §6.9 follow-up - workLimits' one composite token packs both backing
- * tables' timestamps (`limits`.updated_at, `time_settings`.updated_at) so the
- * modal only has to thread a single string, same as every other tab. */
 function buildWorkLimitsToken(limitsIso, timeSettingsIso) {
   return `${limitsIso || ""}|${timeSettingsIso || ""}`;
 }
@@ -165,12 +129,6 @@ function splitWorkLimitsToken(token) {
   return { limits: limits || undefined, timeSettings: timeSettings || undefined };
 }
 
-/**
- * Weekly and daily limits can both be set at once - the only thing that
- * must hold is that a daily cap, spread across the selected working days,
- * can't add up to more than the weekly cap (mirrors
- * shared/validation/work-limits.ts's validateWorkLimitsCombo on the client).
- */
 export function validateWorkLimitsMutualExclusion(weeklyLimitRaw, dailyLimitRaw, useShiftsForLimits = false, workDaysCount = 7) {
   if (useShiftsForLimits) return null;
   const weeklyValue = parseLimitValue(weeklyLimitRaw);
@@ -219,8 +177,6 @@ function parsePayRate(raw) {
   return 0;
 }
 
-/** YYYY-MM-DD from a Date, an ISO string, or a plain date string - "" for
- * nothing on file, never "undefined"/"null" as a string. */
 function toDateOnly(value) {
   if (!value) return "";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
@@ -236,12 +192,6 @@ export const MEMBER_PROFILE_SECTIONS = Object.freeze([
   "settings",
 ]);
 
-/**
- * Manage-modal sections only (skips unrequested blocks).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string[] | null | undefined} sectionsInput
- */
 export async function getMemberProfileFormSections(db, memberId, sectionsInput) {
   const allSections = MEMBER_PROFILE_SECTIONS;
   const sections =
@@ -258,10 +208,8 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     await ensureMemberProfileRecords(db, memberId);
   }
 
-  /** @type {Record<string, unknown>} */
   const form = {};
 
-  /** @type {Promise<unknown>[]} */
   const pending = [];
 
   if (want("info")) {
@@ -276,9 +224,6 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.phoneVerified = memberData.phone_verified === true;
     form.employeeId = typeof memberData.employee_id === "string" ? memberData.employee_id : "";
     form.lastIp = typeof memberData.ip_address === "string" ? memberData.ip_address.trim() : "";
-    // §6.9 follow-up - info's own stamp on the shared `members` doc, bumped
-    // only when an info save lands (see updateMemberProfile). Not the doc's
-    // general `updated_at`, which every section's save also bumps.
     form.infoUpdatedAt = toIsoTimestamp(memberData.info_updated_at);
     const firebaseUid = typeof memberData.firebase_uid === "string" ? memberData.firebase_uid.trim() : "";
     if (!form.lastIp && firebaseUid) {
@@ -298,15 +243,10 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     }
   }
 
-  /** @type {Record<string, unknown>} */
   let employment = {};
-  /** @type {Record<string, unknown>} */
   let payRateRow = {};
-  /** @type {Record<string, unknown>[]} */
   let payRateHistoryRows = [];
-  /** @type {Record<string, unknown>} */
   let timeSettings = {};
-  /** @type {Record<string, unknown>} */
   let limitsRow = {};
 
   if (want("employment")) {
@@ -350,8 +290,6 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
       loadRoleNameById(db).then((roleNameById) => {
         const { name: roleName } = pickCanonicalPrimaryRoleName(memberData, [], roleNameById);
         form.role = roleName;
-        // §6.9 follow-up - roles' own stamp on the shared `members` doc,
-        // bumped only when a role change lands (see updateMemberProfile).
         form.rolesUpdatedAt = toIsoTimestamp(memberData.roles_updated_at);
       }),
     );
@@ -383,8 +321,6 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.empEndDate = employment.end_date ? String(employment.end_date).slice(0, 10) : "";
     form.empTermination = typeof employment.termination_reason === "string" ? employment.termination_reason : "";
     form.empComments = typeof employment.employment_comments === "string" ? employment.employment_comments : "";
-    // §6.9 - sent back unchanged on save, only for this section: the
-    // employment table's own updated_at, not the shared members doc.
     form.employmentUpdatedAt = toIsoTimestamp(employment.updated_at);
   }
 
@@ -394,9 +330,6 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.payPeriod = typeof payRateRow.pay_period === "string" ? payRateRow.pay_period : "None";
     form.payNote = typeof payRateRow.note === "string" ? payRateRow.note : "";
     form.payEffectiveDate = payRateRow.effective_date ? String(payRateRow.effective_date).slice(0, 10) : "";
-    // Real audit trail (§ pay_rate_history) - one row per accepted change,
-    // most recent first. The tab used to fabricate a single "Current" row
-    // from whatever pay_rates held; this is what actually happened.
     form.payRateHistory = payRateHistoryRows.map((row) => ({
       id: String(row.id ?? ""),
       rate: parsePayRate(row.rate ?? 0),
@@ -422,8 +355,6 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     form.makeupDays = Array.isArray(timeSettings.makeup_days)
       ? timeSettings.makeup_days.filter((d) => Number.isInteger(d))
       : [];
-    // §6.9 follow-up - one composite token covering both backing tables;
-    // see updateWorkLimitsConditionalPg for why a single timestamp can't.
     form.workLimitsUpdatedAt = buildWorkLimitsToken(
       toIsoTimestamp(limitsRow.updated_at),
       toIsoTimestamp(timeSettings.updated_at),
@@ -440,35 +371,16 @@ export async function getMemberProfileFormSections(db, memberId, sectionsInput) 
     const privileges =
       memberData.privileges && typeof memberData.privileges === "object" ? memberData.privileges : {};
     form.manageEmployeeTeams = privileges.manage_employee_teams === true;
-    // §6.9 - time_settings' own updated_at. Note this section's save can
-    // also carry workLimits fields (batch-update route only); the token
-    // captured here is meaningful for a settings-tab-only save.
     form.settingsUpdatedAt = toIsoTimestamp(timeSettings.updated_at);
   }
 
   return form;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function getMemberProfileForm(db, memberId) {
   return getMemberProfileFormSections(db, memberId, null);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {Record<string, unknown>} body
- * @param {string} [updatedBy]
- * @param {{ actorIsManager?: boolean, actorUid?: string, skipRoleSync?: boolean, reloadSections?: string[] | null, expectedUpdatedAt?: string }} [options]
- *   `expectedUpdatedAt` (§6.9) only applies to a single-section save - all
- *   six profile sections (info, employment, roles, payBill, workLimits,
- *   settings) now support it; see the notes above each section's write for
- *   what it's checked against. Throws with `.staleWrite = true` on a
- *   conflict; callers map that to a 409.
- */
 export async function updateMemberProfile(db, memberId, body, updatedBy = "", options = {}) {
   const memberData = await getMemberByIdPg(memberId);
   if (!memberData) throw new Error("Member not found");
@@ -522,14 +434,11 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       }
     }
     if (typeof info.employeeId === "string") memberUpdates.employee_id = info.employeeId.trim();
-    // §6.9 follow-up - info's own stamp, separate from the doc's general
-    // `updated_at` which every section bumps (see the guard below).
     memberUpdates.info_updated_at = now;
   }
 
   const roleName = hasRoles && typeof rolesIn.role === "string" ? rolesIn.role.trim() : "";
   if (hasRoles) {
-    // §6.9 follow-up - roles' own stamp, same reasoning as info's above.
     memberUpdates.roles_updated_at = now;
   }
 
@@ -603,11 +512,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       resolveLookupIdByName(db, LOOKUP_COLLECTIONS.taxType, employmentIn.empTaxType),
     ]);
 
-    // §6.9 - conditional only when the caller sent back employment's own
-    // updated_at (options.expectedUpdatedAt is per-section: it's only
-    // meaningful for whichever single section the modal's active tab is
-    // saving). Not checked against the shared `members` doc - every section
-    // bumps that one, which would make this conflict on unrelated tab saves.
     const employmentResult = await upsertSingleByMemberIdConditional(
       db,
       "employment",
@@ -647,14 +551,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   }
 
   if (hasPayBill) {
-    // Only Super Manager and above may change compensation - narrower than
-    // isManagementRole (which also lets a plain Manager through). Resolved
-    // fresh against the DB rather than trusting a caller-supplied role, same
-    // reasoning as the manageEmployeeTeams check above. This is the one path
-    // every payBill write actually funnels through (both the single-member
-    // profile PATCH and members/batch-update call updateMemberProfile
-    // directly), so it's the real enforcement point, not just a mirror of
-    // the route's own check.
     const actorRoleName = actor && actor !== "system" ? await resolveMemberRoleName(db, actor) : "";
     if (!isOrgProjectAdminRole(actorRoleName)) {
       throw new Error("Only Super Manager and above can edit pay rates.");
@@ -695,10 +591,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       throw err;
     }
 
-    // One audit row per accepted change - skipped for a re-save that landed
-    // on the exact same rate/currency/period/note/date (switching tabs and
-    // saving again shouldn't manufacture a fake "change"), always written
-    // the first time a member gets a rate at all.
     const existingEffectiveDate = toDateOnly(existingPayRate?.effective_date);
     const newEffectiveDate = toDateOnly(effectiveDate);
     const ratesDiffer =
@@ -762,9 +654,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
         updated_by: actor,
         updated_at: now,
       },
-      // Not checked when this save also carries workLimits fields (a
-      // combined section save only the batch-update route can produce) -
-      // this token is captured for the settings tab specifically.
       hasWorkLimits ? undefined : options.expectedUpdatedAt,
     );
     if (settingsResult && typeof settingsResult === "object" && "conflict" in settingsResult) {
@@ -788,10 +677,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
     const weeklyValue = parseLimitValue(workLimits.weeklyLimit);
     const dailyValue = parseLimitValue(workLimits.dailyLimit);
 
-    // §6.9 follow-up - the workLimits tab spans two tables (limits +
-    // time_settings); write both atomically in one DB transaction so a
-    // stale token on either side rolls back the whole save instead of
-    // leaving the tab half-applied.
     const { limits: expectedLimits, timeSettings: expectedTimeSettings } = splitWorkLimitsToken(
       options.expectedUpdatedAt,
     );
@@ -817,10 +702,6 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   }
 
   if (hasWorkLimits && hasSettings) {
-    // Combined settings+workLimits save (batch-update route only, not
-    // produced by the tab UI) - time_settings' workLimits columns were
-    // already written above inside the hasSettings branch; only limits
-    // still needs writing, unconditionally, same as before this fix.
     assertShiftAllowanceAllowed(workLimits.useShiftsForLimits);
 
     const combinedWorkDaysCount = Array.isArray(workLimits.workDays)
@@ -857,21 +738,12 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
   return getMemberProfileForm(db, memberId);
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function deleteMemberProfileData(db, memberId) {
   for (const collection of ["employment", "time_settings", "pay_rates"]) {
     await deleteMemberScopedRows(db, collection, memberId);
   }
   await deletePayRateHistoryByMemberIdPg(memberId);
   await deleteMemberOnboardingByMemberIdPg(memberId);
-  // Same defect the memberFormSnapshot cleanup had: these two ran as Firestore
-  // queries against collections that stopped receiving writes when teams and
-  // projects moved to Postgres, so they matched nothing and every deleted
-  // member left their roster rows behind. Neither table has an FK on
-  // member_id (only team_id/project_id cascade), so nothing else removes them.
   for (const table of ["team_members", "project_members"]) {
     await pgQuery(`DELETE FROM ${table} WHERE member_id = $1`, [memberId]);
   }
@@ -879,11 +751,6 @@ export async function deleteMemberProfileData(db, memberId) {
   await deleteMemberFormSnapshotPg(memberId);
 }
 
-/**
- * @param {string} memberId
- * @param {Record<string, unknown>} formData
- * @param {string} [modifiedBy]
- */
 export async function upsertMemberFormSnapshot(memberId, formData, modifiedBy = "") {
   return upsertMemberFormSnapshotPg(memberId, formData, modifiedBy);
 }

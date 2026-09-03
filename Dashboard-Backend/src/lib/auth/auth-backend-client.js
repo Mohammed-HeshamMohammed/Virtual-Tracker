@@ -1,14 +1,5 @@
-/**
- * Calls Auth-Backend for password policy validation.
- * Dashboard-Backend must not duplicate password-policy logic.
- */
 import { getEnv } from "../../config/env.js";
 
-/**
- * @param {string} password
- * @param {{ confirmPassword?: string; requireConfirm?: boolean }} [options]
- * @returns {Promise<{ valid: boolean; error: string | null }>}
- */
 export async function validatePasswordViaAuthBackend(password, options = {}) {
   const env = getEnv();
   const baseUrl = env.auth.backendUrl.replace(/\/+$/, "");
