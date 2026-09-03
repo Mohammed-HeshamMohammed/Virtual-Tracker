@@ -1,14 +1,19 @@
 "use client"
 
+import { Avatar } from "@/shared/ui/avatar"
 import { memberAvatarColor } from "@/features/members/utils/build-tree"
 
-export function ReportMemberAvatar({ initials }: { initials: string }) {
+/** Thin report-specific wrapper around the shared Avatar - same size this
+ *  component always rendered (h-7 w-7), now showing a real profile photo
+ *  when one is available instead of only ever falling back to colored
+ *  initials. */
+export function ReportMemberAvatar({ initials, imageUrl }: { initials: string; imageUrl?: string | null }) {
   return (
-    <div
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white"
-      style={{ backgroundColor: memberAvatarColor(initials, false) }}
-    >
-      {initials}
-    </div>
+    <Avatar
+      initials={initials}
+      color={memberAvatarColor(initials, false)}
+      imageUrl={imageUrl ?? undefined}
+      size="sm"
+    />
   )
 }

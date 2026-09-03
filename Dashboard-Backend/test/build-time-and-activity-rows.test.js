@@ -282,3 +282,21 @@ test("two manual entries on different projects stay separate entries", () => {
   const byProject = Object.fromEntries(entries.map((e) => [e.projectId, e.manualSeconds]));
   assert.deepEqual(byProject, { p1: 1800, p2: 900 });
 });
+
+// The Time & Activity table's member avatars used to only ever show
+// initials - days[].members[].avatarUrl (from buildMemberMetaMap, which
+// every report's memberNameMap ultimately comes from) is what lets them
+// render a real photo instead.
+
+test("a member with a real avatarUrl in the name map carries it onto their day row", () => {
+  const namesWithPhoto = new Map([
+    ["m1", { name: "Ada Lovelace", avatarUrl: "https://cdn.example.com/ada.jpg" }],
+  ]);
+  const { days } = buildTimeAndActivityReportPayload([session()], namesWithPhoto, memberTimezones, "2026-08-25", "2026-08-25");
+  assert.equal(days[0].members[0].avatarUrl, "https://cdn.example.com/ada.jpg");
+});
+
+test("a member with no avatarUrl on the name map gets null, not undefined - the frontend falls back to initials on either, but null is what a real 'no photo' member gets from memberMetaFromRow", () => {
+  const { days } = buildTimeAndActivityReportPayload([session()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25");
+  assert.equal(days[0].members[0].avatarUrl, null);
+});

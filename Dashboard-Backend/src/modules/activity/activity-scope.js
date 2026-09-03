@@ -35,7 +35,7 @@ export async function getProjectScopedMemberIds(db, viewerMemberId) {
 }
 
 function memberMetaFromRow(row) {
-  if (!row) return { name: "Unknown", initials: "??" };
+  if (!row) return { name: "Unknown", initials: "??", avatarUrl: null };
   const first =
     (typeof row.first_name === "string" && row.first_name) ||
     (typeof row.firstName === "string" && row.firstName) ||
@@ -52,7 +52,13 @@ function memberMetaFromRow(row) {
       .join("")
       .slice(0, 2)
       .toUpperCase() || "??";
-  return { name, initials };
+  // row comes from `SELECT *` (getMembersByIdsPg/listMembersPg), so
+  // avatar_url is already on it - every report that reads this map (every
+  // one of them routes member names through buildMemberMetaMap) can now
+  // carry a real profile photo alongside the name it already had, instead
+  // of only ever rendering initials.
+  const avatarUrl = (typeof row.avatar_url === "string" && row.avatar_url.trim()) || null;
+  return { name, initials, avatarUrl };
 }
 
 export async function buildMemberMetaMap(db, allowedIds) {

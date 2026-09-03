@@ -31,6 +31,10 @@ export interface TimeActivityMemberSubRow {
   memberId: string
   name: string
   avatar: string
+  /** Real profile photo, when this member has one - absent (undefined) for
+   *  a grouped-mode sub-row, which aggregates from entries that don't carry
+   *  it; falls back to the initials avatar either way. */
+  avatarUrl?: string | null
   regularHours: string
   totalHours: string
   breakTime: string

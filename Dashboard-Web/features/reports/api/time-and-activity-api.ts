@@ -7,6 +7,7 @@ import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 interface RawMemberDay {
   memberId: string
   name: string
+  avatarUrl?: string | null
   activeSeconds: number
   idleSeconds: number
   manualSeconds?: number
@@ -68,6 +69,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
     memberId: member.memberId,
     name: member.name,
     avatar: initialsFor(member.name),
+    avatarUrl: member.avatarUrl,
     regularHours,
     totalHours,
     breakTime: "00:00:00",

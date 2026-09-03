@@ -159,6 +159,7 @@ export function buildTimeAndActivityReportPayload(
       members: [...byMember.entries()].map(([memberId, entry]) => ({
         memberId,
         name: memberNameMap.get(memberId)?.name ?? "Unknown",
+        avatarUrl: memberNameMap.get(memberId)?.avatarUrl ?? null,
         activeSeconds: entry.activeSeconds,
         idleSeconds: entry.idleSeconds,
         manualSeconds: entry.manualSeconds ?? 0,

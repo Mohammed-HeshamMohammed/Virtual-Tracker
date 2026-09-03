@@ -507,7 +507,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                             >
                               <td className="px-5 py-3">
                                 <div className="flex items-center gap-2.5 pl-6">
-                                  <ReportMemberAvatar initials={member.avatar} />
+                                  <ReportMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} />
                                   <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
                                 </div>
                               </td>

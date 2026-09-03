@@ -598,6 +598,7 @@ export async function routeReports(req, res, url, origin) {
       const rows = sessions.map((s) => ({
         ...s,
         memberName: nameMap.get(s.memberId)?.name ?? "Unknown",
+        memberAvatarUrl: nameMap.get(s.memberId)?.avatarUrl ?? null,
       }));
       sendJson(res, origin, 200, { success: true, data: { sessions: rows } });
     } catch (e) {
