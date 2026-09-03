@@ -64,7 +64,6 @@ export function ActivityURLsContent() {
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, showBlocked, resetPageFilters, summarySlotEl } = useActivityShell()
-  const periodLabel = day.dayMode === "all" ? "all days" : day.selectedDayLabel
   const { setSelectedMemberId } = useActivityFeedContext()
   const { data: feed, loading, reload } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
   const membersSource = feed?.members ?? []
@@ -100,6 +99,13 @@ export function ActivityURLsContent() {
   const tableRef = useRef<HTMLDivElement>(null)
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(filteredURLs, ACTIVITY_TABLE_ROWS_PER_PAGE)
+  const {
+    currentPage: memberPage,
+    setCurrentPage: setMemberPage,
+    totalPages: memberTotalPages,
+    visibleRows: visibleMembers,
+    rowsPerPage: memberRowsPerPage,
+  } = usePaginatedTable(membersSource, ACTIVITY_TABLE_ROWS_PER_PAGE)
   const showDayEmpty = !loading && !hasData
   const showSearchEmpty = !loading && hasData && filteredURLs.length === 0
   const showMainContent = !loading && hasData && !showSearchEmpty
@@ -240,60 +246,61 @@ export function ActivityURLsContent() {
 
       {summarySlotEl && urlCount > 0
         ? createPortal(
-            <ActivitySection title="Summary" description="Across every tracked day, not just the one shown below">
-              <motion.div
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x lg:grid-cols-4"
-              >
-                <div className="flex items-center gap-3 p-5">
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                {
+                  key: "productive",
+                  label: "Productive",
+                  value: `${productiveCount}`,
+                  icon: <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />,
+                  iconBg: "bg-emerald-100 dark:bg-emerald-950/80",
+                },
+                {
+                  key: "neutral",
+                  label: "Neutral",
+                  value: `${neutralCount}`,
+                  icon: <Globe className="w-5 h-5 text-slate-600 dark:text-slate-300" />,
+                  iconBg: "bg-slate-100 dark:bg-slate-800",
+                },
+                {
+                  key: "blocked",
+                  label: "Blocked",
+                  value: `${blockedCount}`,
+                  icon: <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />,
+                  iconBg: "bg-red-100 dark:bg-red-950/80",
+                },
+                {
+                  key: "sites",
+                  label: "Sites / Visits",
+                  value: `${urlCount} / ${totalVisits}`,
+                  icon: <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />,
+                  iconBg: "bg-blue-100 dark:bg-blue-950/80",
+                },
+              ].map((card, i) => (
+                <motion.div
+                  key={card.key}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04 }}
+                  className="flex items-center gap-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm p-5"
+                >
+                  <div className={cn("w-10 h-10 shrink-0 rounded-lg flex items-center justify-center", card.iconBg)}>
+                    {card.icon}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Productive</p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{productiveCount}</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">{card.label}</p>
+                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{card.value}</p>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 p-5">
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                    <Globe className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Neutral</p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{neutralCount}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-5">
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-red-100 dark:bg-red-950/80 flex items-center justify-center">
-                    <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Blocked</p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{blockedCount}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-5">
-                  <div className="w-10 h-10 shrink-0 rounded-lg bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center">
-                    <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Sites / Visits</p>
-                    <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{urlCount} / {totalVisits}</p>
-                  </div>
-                </div>
-              </motion.div>
-            </ActivitySection>,
+                </motion.div>
+              ))}
+            </div>,
             summarySlotEl,
           )
         : null}
 
       {!loading && showMainContent ? (
         <div className="space-y-8">
-          <ActivitySection
-            title="Website records"
-            description={`${filteredURLs.length} site${filteredURLs.length !== 1 ? "s" : ""} for ${periodLabel}`}
-          >
+          <div className="space-y-4">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -400,7 +407,7 @@ export function ActivityURLsContent() {
                 />
               ) : null}
             </motion.div>
-          </ActivitySection>
+          </div>
 
           {membersSource.length > 0 ? (
             <ActivitySection title="Usage by member" description="Click a member to filter the table above by them">
@@ -410,7 +417,7 @@ export function ActivityURLsContent() {
                 className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
               >
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {membersSource.map((member, index) => (
+                  {visibleMembers.map((member, index) => (
                     <motion.button
                       key={member.memberId || `${member.member}-${index}`}
                       type="button"
@@ -446,6 +453,15 @@ export function ActivityURLsContent() {
                     </motion.button>
                   ))}
                 </div>
+                {membersSource.length > 0 ? (
+                  <TablePagination
+                    currentPage={memberPage}
+                    totalPages={memberTotalPages}
+                    totalItems={membersSource.length}
+                    rowsPerPage={memberRowsPerPage}
+                    onPageChange={setMemberPage}
+                  />
+                ) : null}
               </motion.div>
             </ActivitySection>
           ) : null}
