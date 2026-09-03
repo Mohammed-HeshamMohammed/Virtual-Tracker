@@ -11,7 +11,13 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { getMembers } from "@/features/members/api/member-api"
-import { getProjectMembers, getProjects, getTrackableProjects } from "@/features/projects/api/project-api"
+import {
+  getProjectMembers,
+  getProjects,
+  getTrackableProjects,
+  type TrackableProject,
+} from "@/features/projects/api/project-api"
+import { projectTypeDef } from "@/features/projects/config/project-types"
 import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
@@ -49,7 +55,7 @@ export function AddManualEntryDialog({
   const { isDark } = useTheme()
 
   const [members, setMembers] = useState<{ id: string; name: string }[]>([])
-  const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
+  const [projects, setProjects] = useState<{ id: string; name: string; type: string }[]>([])
   const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
   const [projectMemberIds, setProjectMemberIds] = useState<Set<string> | null>(null)
   // Projects the viewer themself can clock in on - used only to decide
@@ -57,6 +63,7 @@ export function AddManualEntryDialog({
   // currently selected (a viewer can see/manage a project without being a
   // trackable member of it, e.g. a manager not personally assigned to it).
   const [viewerTrackableProjectIds, setViewerTrackableProjectIds] = useState<Set<string>>(new Set())
+  const [targetProjectRules, setTargetProjectRules] = useState<Map<string, TrackableProject>>(new Map())
   const [loadingOptions, setLoadingOptions] = useState(false)
   const [loadingProjectMembers, setLoadingProjectMembers] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(false)
@@ -90,7 +97,7 @@ export function AddManualEntryDialog({
     setLoadingOptions(true)
     Promise.all([
       getMembers({ fields: ["id", "name"], singlePage: true, limit: 500 }),
-      getProjects({ fields: ["id", "name", "status"] }),
+      getProjects({ fields: ["id", "name", "type", "status"] }),
       getTrackableProjects().catch(() => []),
     ])
       .then(([memberRows, projectRows, trackableRows]) => {
@@ -103,7 +110,7 @@ export function AddManualEntryDialog({
         setProjects(
           projectRows
             .filter((p) => String(p.status ?? "").toLowerCase() !== "archived")
-            .map((p) => ({ id: String(p.id), name: String(p.name ?? "Untitled project") }))
+            .map((p) => ({ id: String(p.id), name: String(p.name ?? "Untitled project"), type: String(p.type ?? "") }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         )
         setViewerTrackableProjectIds(new Set(trackableRows.map((p) => p.id)))
@@ -119,15 +126,19 @@ export function AddManualEntryDialog({
     }
   }, [open])
 
+  // Scoped to the member the time is for, not the whole project's board -
+  // the server refuses a to-do that isn't theirs (see taskIsAssignedToMember),
+  // so anyone else's would only be a dead end. Waits for a member to be
+  // picked, since until then there is no-one to scope to.
   useEffect(() => {
     setTaskId("")
-    if (!projectId) {
+    if (!projectId || !selectedMemberId) {
       setTasks([])
       return
     }
     let cancelled = false
     setLoadingTasks(true)
-    getTasks({ projectId })
+    getTasks({ projectId, assignedTo: selectedMemberId })
       .then((rows) => {
         if (!cancelled) setTasks(rows.map((t) => ({ id: t.id, title: t.title || "Untitled task" })))
       })
@@ -140,7 +151,29 @@ export function AddManualEntryDialog({
     return () => {
       cancelled = true
     }
-  }, [projectId])
+  }, [projectId, selectedMemberId])
+
+  // Whether this project needs a to-do naming *for this member* - the same
+  // server-resolved rule the Manual time form uses, looked up rather than
+  // re-derived, since the escapes depend on their role (org admin tier, a
+  // client on a client_can_track project) not just the project's settings.
+  useEffect(() => {
+    if (!selectedMemberId) {
+      setTargetProjectRules(new Map())
+      return
+    }
+    let cancelled = false
+    getTrackableProjects(selectedMemberId)
+      .then((rows) => {
+        if (!cancelled) setTargetProjectRules(new Map(rows.map((p) => [p.id, p])))
+      })
+      .catch(() => {
+        if (!cancelled) setTargetProjectRules(new Map())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedMemberId])
 
   useEffect(() => {
     if (!projectId) {
@@ -166,6 +199,14 @@ export function AddManualEntryDialog({
       cancelled = true
     }
   }, [projectId])
+
+  // hasTasks comes off the project type either way; taskRequired only the
+  // server can answer, so before a member is chosen (no rule fetched yet)
+  // it stays false and the field reads as optional.
+  const selectedProject = useMemo(() => projects.find((p) => p.id === projectId) ?? null, [projects, projectId])
+  const selectedProjectRule = projectId ? (targetProjectRules.get(projectId) ?? null) : null
+  const projectHasTasks = selectedProject ? projectTypeDef(selectedProject.type).hasTasks : false
+  const taskRequired = Boolean(selectedProjectRule?.taskRequired)
 
   const projectMembers = useMemo(
     () => (projectMemberIds ? members.filter((m) => projectMemberIds.has(m.id)) : []),
@@ -197,6 +238,10 @@ export function AddManualEntryDialog({
     }
     if (!projectId) {
       setError("Pick a project for this time.")
+      return
+    }
+    if (taskRequired && !taskId) {
+      setError("This project tracks time against to-dos - pick the one this time was for.")
       return
     }
     if (durationSeconds <= 0) {
@@ -307,20 +352,34 @@ export function AddManualEntryDialog({
                 <p className="mt-1 text-xs text-slate-400">= {formatSeconds(durationSeconds)}</p>
               ) : null}
             </div>
-            <div>
-              <span className={labelCls}>
-                To-do <span className="font-normal text-slate-400">(optional)</span>
-              </span>
-              <ReportSimpleDropdown
-                value={taskId}
-                onChange={setTaskId}
-                options={tasks.map((t) => ({ value: t.id, label: t.title }))}
-                placeholder={!projectId ? "Pick a project first" : loadingTasks ? "Loading to-dos…" : "Whole project (no to-do)"}
-                disabled={!projectId || loadingTasks}
-                width="w-full"
-                accentBar={false}
-              />
-            </div>
+            {projectHasTasks ? (
+              <div>
+                <span className={labelCls}>
+                  To-do {taskRequired ? null : <span className="font-normal text-slate-400">(optional)</span>}
+                </span>
+                <ReportSimpleDropdown
+                  value={taskId}
+                  onChange={setTaskId}
+                  options={tasks.map((t) => ({ value: t.id, label: t.title }))}
+                  placeholder={
+                    !projectId
+                      ? "Pick a project first"
+                      : !selectedMemberId
+                        ? "Pick a member first"
+                        : loadingTasks
+                          ? "Loading to-dos…"
+                          : tasks.length === 0
+                            ? "No to-dos assigned to them here"
+                            : taskRequired
+                              ? "Select a to-do"
+                              : "Whole project (no to-do)"
+                  }
+                  disabled={!projectId || !selectedMemberId || loadingTasks}
+                  width="w-full"
+                  accentBar={false}
+                />
+              </div>
+            ) : null}
           </div>
 
           <div>

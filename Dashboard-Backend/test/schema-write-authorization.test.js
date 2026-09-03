@@ -14,8 +14,20 @@ import assert from "node:assert/strict";
 
 const AUTH_CONTEXT = Symbol.for("virtual-tracker.auth-context");
 
-/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null, memberOnProject: boolean }} */
-const stub = { writes: [], viewer: null, rows: {}, clientManagesProjectId: null, clientTracksProjectId: null, memberOnProject: true };
+/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null, memberOnProject: boolean, project: any, task: any, taskAssigned: boolean }} */
+const stub = {
+  writes: [],
+  viewer: null,
+  rows: {},
+  clientManagesProjectId: null,
+  clientTracksProjectId: null,
+  memberOnProject: true,
+  // A task-less project type by default, so the cases that predate the
+  // task rule (which only ever set a project) stay unaffected by it.
+  project: { id: "p1", type: "calling", require_task_to_track: true },
+  task: null,
+  taskAssigned: true,
+};
 
 mock.module("../src/http/auth-context.js", {
   namedExports: {
@@ -166,10 +178,79 @@ mock.module("../src/http/read-json-body.js", {
   },
 });
 mock.module("../src/lib/postgres/tasks-postgres.service.js", {
-  namedExports: { getTaskPg: async () => null, getTasksByIdsPg: async () => [], updateTaskPg: async () => null,
+  namedExports: { getTaskPg: async () => stub.task, getTasksByIdsPg: async () => [], updateTaskPg: async () => null,
     createTaskPg: async () => null,
     deleteTaskPg: async () => null,
     listTasksPg: async () => [],
+  },
+});
+// Reached by assertTimeEntryCountable, which mirrors the live timer's
+// task rule onto hand-entered time (project type / require_task_to_track /
+// who the to-do is assigned to).
+mock.module("../src/lib/postgres/projects-postgres.service.js", {
+  namedExports: {
+    getProjectPg: async () => stub.project,
+    listViewerProjectIdsPg: async () => [],
+    listProjectMembersPg: async () => [],
+    listClientManagedProjectIdsPg: async () => new Set(),
+    listClientTrackableProjectIdsPg: async () => new Set(),
+    listProjectsPg: async () => [],
+    addProjectMemberPg: async () => null,
+    archiveProjectPg: async () => null,
+    computeProjectBudgetTargetForAllPg: async () => null,
+    computeProjectBudgetTargetPg: async () => null,
+    computeProjectSpentCostPg: async () => null,
+    computeProjectSpentForAllPg: async () => null,
+    computeProjectSpentPg: async () => null,
+    countMembersByProjectPg: async () => null,
+    createProjectPg: async () => null,
+    deleteProjectMemberLimitPg: async () => null,
+    deleteProjectPg: async () => null,
+    deleteTeamProjectsForTeamPg: async () => null,
+    getAllProjectBudgetsPg: async () => null,
+    getAllProjectMemberLimitsPg: async () => null,
+    getDailyActivityTotalsPg: async () => null,
+    getMemberActivitySecondsPg: async () => null,
+    getMemberDailyActivityTotalsPg: async () => null,
+    getMemberProjectActivityMetricsPg: async () => null,
+    getMemberWeeklyCapacityPg: async () => null,
+    getProjectActivityMetricsPg: async () => null,
+    getProjectBudgetPg: async () => null,
+    getProjectMemberLimitPg: async () => null,
+    getProjectTrackedSecondsPg: async () => null,
+    linkClientProjectPg: async () => null,
+    linkTeamProjectPg: async () => null,
+    listClientIdsForProjectPg: async () => null,
+    listMemberIdsForProjectsPg: async () => null,
+    listProjectIdsForClientPg: async () => null,
+    listProjectIdsForMemberPg: async () => null,
+    listProjectIdsForTeamPg: async () => null,
+    listProjectMemberLimitsPg: async () => null,
+    listTeamIdsForProjectPg: async () => null,
+    removeProjectMemberPg: async () => null,
+    resolveMemberHourlyRatePg: async () => null,
+    toDayStrOrNull: async () => null,
+    unlinkClientProjectPg: async () => null,
+    unlinkTeamProjectPg: async () => null,
+    updateProjectPg: async () => null,
+    upsertProjectBudgetPg: async () => null,
+    upsertProjectMemberLimitPg: async () => null,
+  },
+});
+mock.module("../src/lib/postgres/task-assignments-postgres.service.js", {
+  namedExports: {
+    hasAssignmentPg: async () => stub.taskAssigned,
+    findAssignmentPg: async () => null,
+    getTaskAssignmentsPg: async () => [],
+    getTaskIdsAssignedToMembersPg: async () => new Set(),
+    getAssignmentsForTasksPg: async () => [],
+    getInReviewAssignmentsForTaskPg: async () => [],
+    upsertAssignmentPg: async () => null,
+    updateAssignmentPg: async () => null,
+    deleteAssignmentPg: async () => null,
+    getAssignmentByIdPg: async () => null,
+    listAllAssignmentsPg: async () => [],
+    sumActiveAssignmentSecondsPg: async () => 0,
   },
 });
 mock.module("../src/lib/firestore/task-subcollections.js", {
@@ -224,6 +305,9 @@ function reset(viewer) {
   stub.clientManagesProjectId = null;
   stub.clientTracksProjectId = null;
   stub.memberOnProject = true;
+  stub.project = { id: "p1", type: "calling", require_task_to_track: true };
+  stub.task = null;
+  stub.taskAssigned = true;
   lastResponse = null;
 }
 
@@ -461,4 +545,125 @@ test("a management role can also reject a pending entry - not forced to approved
   const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { status: "rejected" });
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(lastResponse.payload.data.status, "rejected");
+});
+
+// Hand-entered time has to clear the same bar the live timer sets before it
+// will start a session (allowsTaskLessTimer + who the to-do belongs to).
+// Manual entry used to skip all of it, so it could create exactly what the
+// timer refuses. Enforced only once the entry counts - see
+// assertTimeEntryCountable on why a pending request is deliberately let
+// through.
+
+test("a task-tracking project rejects an approved entry with no to-do named", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, [], "no write may reach the database");
+});
+
+test("the same project with require_task_to_track off takes it - the per-project opt-out still wins", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: false };
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:time-entries"), true, "expected the write to go through");
+});
+
+test("a type that has no tasks at all never asks for one", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "support", require_task_to_track: true };
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:time-entries"), true, "expected the write to go through");
+});
+
+test("a to-do from a different project is rejected", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  stub.task = { id: "t1", project_id: "p2", assigned_to: "m1" };
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    task_id: "t1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, []);
+});
+
+test("a to-do on the right project but assigned to someone else is rejected", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  stub.task = { id: "t1", project_id: "p1", assigned_to: "someone-else" };
+  stub.taskAssigned = false;
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    task_id: "t1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, []);
+});
+
+test("a to-do assigned through task_assignments (not the legacy column) is accepted", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  stub.task = { id: "t1", project_id: "p1", assigned_to: null };
+  stub.taskAssigned = true;
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    task_id: "t1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:time-entries"), true, "expected the write to go through");
+});
+
+test("an employee's own request against a task-tracking project is still recorded - it lands pending, and pending isn't held to the rule", async () => {
+  reset(EMPLOYEE);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  stub.memberOnProject = false;
+  const { req, res, url } = makeReqRes("POST", "/api/time-entries", {
+    member_id: "m1",
+    project_id: "p1",
+    date: "2026-09-02",
+    duration: 3600,
+  });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:time-entries"), true, "the request itself must still be recordable");
+  assert.equal(lastResponse.payload.data.status, "pending");
+});
+
+test("approving that request is where the rule bites - the reviewer has to fix the project or to-do first", async () => {
+  reset(ADMIN);
+  stub.project = { id: "p1", type: "normal", require_task_to_track: true };
+  stub.rows["time-entries:e1"] = { id: "e1", member_id: "m1", project_id: "p1", status: "pending" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/time-entries/e1", { status: "approved" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 400, "expected 400, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, [], "nothing counts until it genuinely passes");
 });
