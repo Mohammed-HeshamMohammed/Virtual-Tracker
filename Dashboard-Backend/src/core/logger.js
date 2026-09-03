@@ -1,4 +1,3 @@
-// Simple request/response logger
 import { getEnv } from "../config/env.js";
 import { sanitizePathForLog } from "../http/sanitize-log.js";
 import { formatErrorForLog, logSafeError } from "../http/sanitize-error.js";
@@ -26,7 +25,6 @@ export function logResponse(req, res, url) {
   const color = status >= 500 ? "\x1b[31m" : status >= 400 ? "\x1b[33m" : status >= 300 ? "\x1b[36m" : "\x1b[32m";
   const reset = "\x1b[0m";
   console.log(`[${timestamp}] ← ${color}${status}${reset} ${req.method} ${path} (${duration}ms)`);
-  // Skip recording monitor API paths to avoid polluting metrics
   if (!path.startsWith("/monitor")) {
     recordRequest({
       method: req.method || "GET",
@@ -78,7 +76,6 @@ export function logStartup({ version, port, nodeEnv, routes }) {
     "",
   ];
 
-  // Single write so npm/other stderr cannot interleave between banner lines.
   console.log(lines.join("\n"));
 }
 

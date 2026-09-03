@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/js-combine-iterations */
 import { getProjects, getProjectMembers, getTasks } from "@/infrastructure/api"
 import { getMembers } from "@/features/members/api/member-api"
 import { readCache } from "@/shared/tables/hooks/list-cache-registry"
@@ -128,7 +127,6 @@ export async function fetchTasksList(): Promise<Task[]> {
   return (rows ?? []).map((r) => mapApiTask(r as unknown as Record<string, unknown>))
 }
 
-/** Build tasks-page project list from bootstrap cache (avoids duplicate API round-trips). */
 export function buildProjectsListForTasks(
   projectRows: Array<{ id: string; name?: string; status?: string }>,
   memberIdsByProject: Map<string, string[]>,
@@ -179,7 +177,6 @@ export async function fetchProjectsList(): Promise<any[]> {
   ])
   const memberById = new Map(allMembers.map((m) => [m.id, m]))
 
-// eslint-disable-next-line react-doctor/js-combine-iterations
   return (rows ?? [])
     .filter((row) => row.status !== "archived")
     .map((row, i) => {

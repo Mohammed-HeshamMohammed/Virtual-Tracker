@@ -1,10 +1,3 @@
-// Named date-range presets for scheduled reports. Kept as the exact labels the
-// frontend's schedule dialog already offers (SCHEDULE_REPORT_DATE_RANGE_OPTIONS)
-// so no separate label->slug mapping layer is needed on either side.
-//
-// All of this resolves against the target member's own local calendar day, not
-// server UTC - same reasoning as build-time-and-activity-rows.js. "Today" for a
-// schedule targeting someone in Tokyo should be their Tokyo today.
 import { localDayFor } from "./timezone-utils.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -17,17 +10,7 @@ function addDays(d, days) {
   return new Date(d.getTime() + days * DAY_MS);
 }
 
-/**
- * @param {string} label one of SCHEDULE_REPORT_DATE_RANGE_OPTIONS
- * @param {string} timeZone IANA zone id
- * @param {Date} [now]
- * @returns {{ from: string, to: string }}
- */
 export function resolveDateRangeKind(label, timeZone, now = new Date()) {
-  // Anchor "today" on the member's local calendar date. This Date is then used
-  // purely as a calendar-math scratchpad (add/subtract days, find month/quarter
-  // starts) - it's never converted back into a real instant, so treating it as
-  // UTC midnight of that calendar date is safe.
   const today = new Date(`${localDayFor(now, timeZone)}T00:00:00.000Z`);
 
   switch (label) {
@@ -88,14 +71,6 @@ const FREQUENCY_MS = {
   Monthly: 30 * DAY_MS,
 };
 
-/**
- * Due when today's delivery time has passed in the member's own timezone AND
- * enough time has elapsed since the last send for this schedule's frequency
- * (1 hour of slack for check-interval granularity).
- * @param {{ delivery_time: string, last_sent_at: string | Date | null, frequency: string }} schedule
- * @param {string} timeZone IANA zone id
- * @param {Date} [now]
- */
 export function isReportScheduleDue(schedule, timeZone, now = new Date()) {
   const nowHHMM = new Intl.DateTimeFormat("en-GB", {
     timeZone,
@@ -113,7 +88,6 @@ export function isReportScheduleDue(schedule, timeZone, now = new Date()) {
   return now.getTime() - lastSent.getTime() >= intervalMs - 60 * 60 * 1000;
 }
 
-/** Parses a "8:30 am" / "12:00 pm" label into a Postgres TIME literal "08:30:00". */
 export function parseDeliveryTimeLabel(label) {
   const m = /^(\d{1,2}):(\d{2})\s*(am|pm)$/i.exec(String(label ?? "").trim());
   if (!m) return null;

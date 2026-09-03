@@ -57,13 +57,11 @@ export function BlogPostView({ slug }: { slug: string }) {
   return (
     <PageShell>
       <main className="relative bg-slate-50/50 text-slate-900 pb-24 pt-28 md:pt-36">
-        {/* Ambient background glows */}
         <div className="pointer-events-none absolute inset-0 select-none overflow-hidden">
           <div className="absolute top-0 right-1/4 w-[400px] h-[400px] rounded-full bg-violet-200/20 blur-3xl" />
         </div>
 
         <div className="mx-auto max-w-3xl px-6 lg:px-8">
-          {/* Back button */}
           <Link
             href="/blog"
             className="group inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-violet-700 transition-colors mb-8"
@@ -74,7 +72,6 @@ export function BlogPostView({ slug }: { slug: string }) {
             Back to blog
           </Link>
 
-          {/* Article Container */}
           <article className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm space-y-8">
             <div className="space-y-3 border-b border-slate-100 pb-6">
               <span className="inline-flex rounded-full bg-violet-50 border border-violet-100 px-2.5 py-0.5 text-[10px] font-bold text-violet-700 uppercase tracking-wide">

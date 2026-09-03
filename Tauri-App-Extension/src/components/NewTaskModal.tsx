@@ -26,14 +26,6 @@ type NewTaskModalProps = {
   onCreate: () => void;
 };
 
-// "+ New task" from a ProjectsList row (see side-task-row-add) - same
-// position:fixed dialog shape as StopNoteModal, sharing its .modal-* CSS.
-// Title is required; everything else is optional, same as skipping it on
-// the web wizard leaves it. Fields match task-wizard-modal.tsx's own set
-// minus team/assignee-picker/duration-days/overtime/rolling-cap - those are
-// scheduling/budget internals suited to the full wizard's screen, not a
-// tray-window quick-add; description, priority and due date are the ones
-// an actual task normally carries.
 export function NewTaskModal({
   open,
   projectName,

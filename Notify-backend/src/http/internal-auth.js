@@ -1,17 +1,9 @@
-// Bearer INTERNAL_SERVICE_SECRET on all routes. Dev skips check when secret unset.
 import { getEnv } from "../config/env.js";
 import { sendJson } from "./response.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @returns {boolean} true if authorized
- */
 export function requireInternalAuth(req, res, origin) {
   const { secret } = resolveSecret();
 
-  // Skip guard in dev when no secret is configured — warn once.
   if (!secret) {
     if (!requireInternalAuth._warnedOnce) {
       requireInternalAuth._warnedOnce = true;

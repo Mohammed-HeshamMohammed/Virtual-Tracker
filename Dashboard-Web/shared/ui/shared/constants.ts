@@ -1,8 +1,5 @@
 import { Sun, Moon, Monitor, User, LogOut, RefreshCw } from "lucide-react"
 
-// ==========================================
-// 1. People / Projects Theme Constants
-// ==========================================
 
 export const PEOPLE_THEME_DARK = {
   pageBg:           "bg-[#0c1324]",
@@ -130,9 +127,6 @@ export const PEOPLE_THEME_LIGHT = {
 
 export type PeopleThemeColors = typeof PEOPLE_THEME_DARK | typeof PEOPLE_THEME_LIGHT
 
-// ==========================================
-// 2. Sidebar Constants & Theme
-// ==========================================
 
 export const THEME_OPTIONS = [
   { label: "Light",  value: "light",  icon: Sun     },
@@ -221,9 +215,6 @@ export const SIDEBAR_THEME_LIGHT = {
 
 export type ThemeColors = typeof SIDEBAR_THEME_DARK | typeof SIDEBAR_THEME_LIGHT
 
-// ==========================================
-// 3. Topbar Theme Constants
-// ==========================================
 
 export const TOPBAR_THEME_DARK = {
   header:        "bg-[#151b2d]",

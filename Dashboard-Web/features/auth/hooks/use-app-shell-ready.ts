@@ -9,7 +9,6 @@ type UseAppShellReadyArgs = {
   memberRole: string
 }
 
-/** Role-correct landing route before shell paints. */
 export function useAppShellReady({ sessionReady, isLoggedIn, memberRole }: UseAppShellReadyArgs) {
   const [activeItem, setActiveItem] = useState("command-center")
   const [shellReady, setShellReady] = useState(false)

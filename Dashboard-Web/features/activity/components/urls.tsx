@@ -53,8 +53,6 @@ interface MemberUrlUsage {
 
 type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
 
-// Shared with the Apps page and the classify dialog - see
-// activity-categories.ts for why these stopped being local.
 const getCategoryColor = activityCategoryColor
 const getCategoryBadge = activityCategoryBadgeClass
 
@@ -90,8 +88,6 @@ export function ActivityURLsContent() {
             url.category.toLowerCase().includes(searchLower),
         )
       : blockedFiltered
-    // Most-visited first is the only ordering now - the By name sort control
-    // it used to back was removed from the toolbar.
     return [...searched].sort((a, b) => b.visits - a.visits)
   }, [blockedFiltered, searchLower])
   const hasData = urlsSource.length > 0
@@ -113,7 +109,6 @@ export function ActivityURLsContent() {
     const ExcelJS = await import("exceljs")
     const workbook = new ExcelJS.Workbook()
     
-    // URLs sheet
     const urlsSheet = workbook.addWorksheet("URLs")
     urlsSheet.columns = [
       { header: "Domain", key: "domain", width: 25 },
@@ -137,13 +132,11 @@ export function ActivityURLsContent() {
     
     urlRows.forEach(row => urlsSheet.addRow(row))
     
-    // Add metadata to URLs sheet
     urlsSheet.addRow({})
     urlsSheet.addRow(["Period", day.selectedDayLabel])
     urlsSheet.addRow(["Category Filter", selectedCategory])
     urlsSheet.addRow(["Exported At", new Date().toLocaleString()])
     
-    // Members sheet
     const membersSheet = workbook.addWorksheet("Members")
     membersSheet.columns = [
       { header: "Member", key: "member", width: 20 },
@@ -175,12 +168,6 @@ export function ActivityURLsContent() {
     URL.revokeObjectURL(url)
   }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, membersSource, selectedCategory])
 
-  // Real sites only. A row whose sourceKind is "window" came from a browser
-  // window title the agent could not resolve to a URL, so its `domain` is the
-  // browser itself ("Google Chrome", "Firefox") - classifying that would
-  // write a domain rule matching the browser and label every site opened in
-  // it. Memoized so the dialog's saved-label fetch isn't retriggered by a new
-  // array identity on every render.
   const classifyItems = useMemo(
     () =>
       urlsSource
@@ -329,9 +316,6 @@ export function ActivityURLsContent() {
                                   <ExternalLink className="h-4 w-4 text-slate-300 dark:text-slate-700" />
                                 </button>
                               )}
-                              {/* URL blocking has no backing table or endpoint yet, so the
-                                  button is not rendered - it previously looked actionable
-                                  (permission-gated, hover state) and did nothing on click. */}
                             </div>
                           </td>
                         ) : null}

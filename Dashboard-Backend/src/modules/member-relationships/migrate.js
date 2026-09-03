@@ -5,7 +5,6 @@ import { clearAllMemberTreeCachePg } from "../../lib/postgres/member-data-postgr
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { recordMemberRelationship, updateTreeCache } from "./service.js";
 
-/** Seed member_relationships from existing members if the table is empty. */
 export async function initializeMemberRelationships() {
   const db = getDb();
   if (!db) {
@@ -13,16 +12,11 @@ export async function initializeMemberRelationships() {
     return { success: false, reason: "db_not_available" };
   }
 
-  // Check if there are any existing relationships - if yes, skip. (Was a
-  // Firestore emptiness check; member_relationships is Postgres-resident
-  // now, so this must check there instead or it would stay falsely "empty"
-  // forever and re-run its heuristic seeder on every deploy.)
   const existingRel = await pgQuery("SELECT 1 FROM member_relationships LIMIT 1");
   if (existingRel.length) {
     return { success: true, alreadyCompleted: true, reason: "relationships_already_exist" };
   }
 
-  // Check if there are members to migrate
   const members = await listMembersPg({ limit: 500 });
   if (!members.length) {
     return { success: true, membersProcessed: 0, reason: "no_members" };
@@ -36,36 +30,30 @@ export async function initializeMemberRelationships() {
     errors: [],
   };
 
-  // Find potential root members (oldest members or admin/owner roles)
   const sortedByDate = [...members].sort((a, b) => {
     const aDate = a.date_added?.toDate?.() || new Date(a.date_added || 0);
     const bDate = b.date_added?.toDate?.() || new Date(b.date_added || 0);
     return aDate - bDate;
   });
 
-  // First member(s) become root nodes
   const oldestMember = sortedByDate[0];
   if (oldestMember) {
     results.rootMembers.push(oldestMember.id);
     console.log(`[member-relationships-migration] Root member identified: ${oldestMember.id}`);
   }
 
-  // Process each member to create relationships
   for (const member of members) {
     try {
       results.processed++;
 
-      // Skip if this is a root member
       if (results.rootMembers.includes(member.id)) {
         console.log(`[member-relationships-migration] Skipping root member: ${member.id}`);
         continue;
       }
 
-      // Determine parent based on created_by_uid or created_by
       let parentId = null;
       let relationshipType = "admin_create";
 
-      // Check if created_by_uid exists and matches another member
       if (member.created_by_uid) {
         const parentByUid = members.find(m => m.firebase_uid === member.created_by_uid);
         if (parentByUid) {
@@ -76,7 +64,6 @@ export async function initializeMemberRelationships() {
         }
       }
 
-      // If no parent found by UID, use oldest member as default parent
       if (!parentId && oldestMember && oldestMember.id !== member.id) {
         parentId = oldestMember.id;
         relationshipType = "admin_create";
@@ -101,7 +88,6 @@ export async function initializeMemberRelationships() {
     }
   }
 
-  // Build tree cache for all members
   console.log("[member-relationships-migration] Building tree cache...");
   for (const member of members) {
     try {
@@ -122,19 +108,13 @@ export async function initializeMemberRelationships() {
   };
 }
 
-/**
- * Force re-initialization (admin use only)
- */
 export async function forceReinitializeRelationships() {
   const db = getDb();
   if (!db) return { success: false, reason: "db_not_available" };
 
-  // Clear existing relationships
   await pgQuery("DELETE FROM member_relationships");
 
-  // Clear tree cache (PostgreSQL)
   await clearAllMemberTreeCachePg();
 
-  // Re-run migration
   return initializeMemberRelationships();
 }

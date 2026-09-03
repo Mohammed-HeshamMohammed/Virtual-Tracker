@@ -4,12 +4,10 @@ import { useMemo } from "react"
 import { useTheme } from "@/shared/providers/app"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 
-/** Shared layout for two-column form rows in the client modal */
 export const FORM_GRID = "grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-4 items-start"
 export const FORM_STACK = "flex flex-col gap-4"
 export const FORM_FIELD = "flex min-w-0 flex-col gap-1.5"
 
-/** Scrollable region with scrollbars hidden (wheel/touch scrolling still works). */
 export const FORM_SCROLL_HIDDEN =
   "overflow-y-auto scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
 

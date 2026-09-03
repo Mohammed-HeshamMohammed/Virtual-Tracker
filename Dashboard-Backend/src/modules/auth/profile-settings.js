@@ -6,11 +6,6 @@ import { assertValidPhone } from "../../http/validate-body.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} email
- */
 async function syncMemberEmailForUid(db, uid, email) {
   if (!uid) return;
   await pgQuery(
@@ -19,12 +14,6 @@ async function syncMemberEmailForUid(db, uid, email) {
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} firstName
- * @param {string} lastName
- */
 export async function syncMemberNamesForUid(db, uid, firstName, lastName) {
   if (!uid) return;
   const trimmedFirst = sanitizeMemberNamePart(typeof firstName === "string" ? firstName : "", "");
@@ -39,11 +28,6 @@ export async function syncMemberNamesForUid(db, uid, firstName, lastName) {
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} phone
- */
 export async function syncMemberPhoneForUid(db, uid, phone, options = {}) {
   if (!uid) return;
   const p = typeof phone === "string" ? phone.trim() : "";
@@ -62,11 +46,6 @@ export async function syncMemberPhoneForUid(db, uid, phone, options = {}) {
   }
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} timezone IANA zone id, e.g. "America/Los_Angeles"
- */
 export async function syncMemberTimezoneForUid(db, uid, timezone) {
   if (!uid) return;
   await pgQuery(
@@ -75,12 +54,6 @@ export async function syncMemberTimezoneForUid(db, uid, timezone) {
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} uid
- * @param {string} phone
- * @param {{ phoneVerified?: boolean }} [options]
- */
 export async function syncUserProfilePhoneForUid(db, uid, phone, options = {}) {
   if (!uid) return;
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(uid);
@@ -94,7 +67,6 @@ export async function syncUserProfilePhoneForUid(db, uid, phone, options = {}) {
   );
 }
 
-/** Prefer profile first/last over members row when they differ. */
 export async function reconcileMemberNamesFromProfile(db, uid, memberId) {
   const profileSnap = await db.collection(USER_PROFILES_COLLECTION).doc(uid).get();
   if (!profileSnap.exists) return;
@@ -122,10 +94,8 @@ export async function reconcileMemberNamesFromProfile(db, uid, memberId) {
   });
 }
 
-/** Merge profile settings + optional Auth displayName update. */
 export async function patchProfileSettings(auth, db, uid, body) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(uid);
-  /** @type {Record<string, unknown>} */
   const patch = {};
 
   if ("firstName" in body) {

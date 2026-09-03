@@ -1,7 +1,3 @@
-/**
- * @param {import("node:http").IncomingMessage} req
- * @returns {string}
- */
 export function readBearerToken(req) {
   const authHeader = req.headers?.authorization;
   if (typeof authHeader !== "string") return "";
@@ -9,13 +5,6 @@ export function readBearerToken(req) {
   return match?.[1] || "";
 }
 
-/**
- * Bearer from Authorization header; else query/body token (legacy clients).
- * @param {import("node:http").IncomingMessage} req
- * @param {URL} [url]
- * @param {{ idToken?: unknown }} [body]
- * @returns {string}
- */
 export function readIdToken(req, url, body) {
   const bearer = readBearerToken(req);
   if (bearer) return bearer;

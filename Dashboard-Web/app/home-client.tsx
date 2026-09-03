@@ -19,7 +19,6 @@ import { TransferAcceptForm } from "@/features/members"
 import { DASHBOARD_PATH } from "@/features/auth"
 import { PasswordPolicyProvider } from "@/features/auth"
 
-/** Drop legacy auth query params so the address bar stays at `/`. */
 function useStripLegacyAuthParams() {
   const router = useRouter()
   const searchParams = useSearchParams()

@@ -12,7 +12,6 @@ type TodayPanelProps = {
   dayOverPercent: number;
 };
 
-/** The day as one gauge: worked, the cap it runs into, and when that lands. */
 export function TodayPanel({
   dayHint,
   memberLimits,
@@ -73,7 +72,6 @@ export function TodayPanel({
                 style={{ left: `${dayUsedPercent}%`, right: "auto", width: `${dayOverPercent}%` }}
               />
             ) : null}
-            {/* One tick per hour of the cap, so the bar reads as a gauge. */}
             {memberLimits && memberLimits.dailyHours > 0 && memberLimits.dailyHours <= 16 ? (
               <div className="capacity-ticks">
                 {Array.from({ length: Math.round(memberLimits.dailyHours) }, (_, i) => (

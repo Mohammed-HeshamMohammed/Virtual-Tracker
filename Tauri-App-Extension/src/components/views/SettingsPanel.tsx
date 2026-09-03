@@ -16,9 +16,6 @@ const THEMES: { id: ThemePreference; label: string }[] = [
 export function SettingsPanel({ onBack }: { onBack: () => void }) {
   const [settings, setSettings] = useState<AppSettingsView | null>(null);
   const [saving, setSaving] = useState(false);
-  // Which row just saved, so the confirmation lands on the control the user
-  // actually touched. Toggling used to only disable the input while the write
-  // was in flight, which made a slow save and a failed one look identical.
   const [savedKey, setSavedKey] = useState<keyof UserPreferences | null>(null);
 
   const load = useCallback(async () => {
@@ -107,8 +104,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                   aria-pressed={prefs?.theme === t.id}
                   disabled={saving || !prefs}
                   onClick={() => {
-                    // Painted immediately, then persisted - waiting on the
-                    // round trip makes the picker feel broken.
                     applyTheme(t.id);
                     void save("theme", t.id);
                   }}
@@ -127,8 +122,6 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
           <Toggle field="autoSignIn" title="Auto sign-in" sub="Open the browser link when signed out" />
         </section>
 
-        {/* Closing behaviour governs the window, not startup - it sat under
-            the Startup heading with the three above it. */}
         <section className="settings-card">
           <h3 className="settings-section-label">Window</h3>
           <Toggle

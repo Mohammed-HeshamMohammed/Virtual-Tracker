@@ -5,10 +5,8 @@ import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { hasRemovableUploadedProfileImage } from "./profile-image-resolve.js";
 import { getPublicUrl, uploadToGCS } from "../../lib/gcs/upload.js";
 
-/** Maximum decoded image bytes accepted before WebP conversion (500 KB). */
 export const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 
-/** @type {Map<string, string>} */
 const ALLOWED_TYPES = new Map([
   ["image/jpeg", "jpg"],
   ["image/jpg", "jpg"],
@@ -16,18 +14,12 @@ const ALLOWED_TYPES = new Map([
   ["image/webp", "webp"],
 ]);
 
-/**
- * Normalizes client base64 (strips data URL prefix).
- * @param {string} raw
- * @returns {string}
- */
 export function stripBase64DataUrl(raw) {
   const s = typeof raw === "string" ? raw.trim() : "";
   const m = /^data:image\/[a-z0-9.+-]+;base64,(.+)$/i.exec(s);
   return m ? m[1] : s;
 }
 
-/** Upload WebP avatar to GCS + set User_profiles.photoURL. */
 export async function setProfileAvatarFromUpload(auth, db, uid, buffer, contentType) {
   const normalizedType = String(contentType).toLowerCase();
   const ext = ALLOWED_TYPES.get(normalizedType);
@@ -74,7 +66,6 @@ export async function setProfileAvatarFromUpload(auth, db, uid, buffer, contentT
   return upsertProfileFromUserRecord(db, userRecord);
 }
 
-/** Remove uploaded avatar (GCS or embedded); OAuth provider photos stay. */
 export async function clearProfileAvatar(auth, db, uid) {
   const profileRef = db.collection(USER_PROFILES_COLLECTION).doc(uid);
   const prevSnap = await profileRef.get();

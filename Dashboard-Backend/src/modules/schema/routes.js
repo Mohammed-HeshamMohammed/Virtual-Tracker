@@ -1,4 +1,3 @@
-// Generic schema CRUD routes (/api/v1/:entity) with access gates per entity type.
 import { getAuthContext, isManagementRole, requireManagementRole } from "../../http/auth-context.js";
 import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
@@ -39,11 +38,6 @@ import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js"
 import { parseTaskChildPath, resolveTaskParentIdFromQuery } from "./collection-ref.js";
 import { assertManualTimeEntryWithinLimits } from "../tasks/manual-time-entry-limits.js";
 
-// Roster/link arrays the team wizard posts alongside the `teams` row itself.
-// They are not `teams` columns, so without allowlisting them here
-// rejectUnknownEntityFields 400s the whole create/edit ("Unexpected field:
-// member_ids"). They are consumed by team-roster.service.js, which writes
-// team_members / team_projects after the team row lands.
 const TEAM_ROSTER_INPUT_FIELDS = [
   "member_ids",
   "memberIds",
@@ -54,7 +48,6 @@ const TEAM_ROSTER_INPUT_FIELDS = [
   "members",
 ];
 
-/** True when a teams PATCH body carries roster/link work, not just columns. */
 function hasTeamRosterInput(body) {
   return TEAM_ROSTER_INPUT_FIELDS.some((field) => Array.isArray(body?.[field]));
 }
@@ -96,7 +89,6 @@ const TIME_ENTRY_WRITE_KEY = "time-entries";
 
 const TEAM_WRITE_KEYS = new Set(["teams", "team-members", "team-projects"]);
 
-/** Management gate applies to MANAGEMENT_WRITE_KEYS except team entities (handled by assertTeamWriteAuthorized). */
 function requiresManagementWriteGate(entityKey) {
   return MANAGEMENT_WRITE_KEYS.has(entityKey) && !TEAM_WRITE_KEYS.has(entityKey);
 }
@@ -116,15 +108,6 @@ const TASK_CHILD_WRITE_KEYS = new Set([
   "task-hours",
 ]);
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} entityKey
- * @param {Record<string, unknown>} body
- * @param {Record<string, unknown> | undefined} existingData
- */
 async function assertTaskChildWritable(req, res, origin, db, entityKey, body, existingData) {
   if (!TASK_CHILD_WRITE_KEYS.has(entityKey)) return true;
   const taskId =
@@ -146,16 +129,6 @@ async function assertTaskChildWritable(req, res, origin, db, entityKey, body, ex
   return true;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} entityKey
- * @param {Record<string, unknown>} body
- * @param {Record<string, unknown> | undefined} existingData
- * @param {{ method?: string, resourceId?: string }} [options]
- */
 async function assertTeamWriteAuthorized(
   req,
   res,
@@ -282,16 +255,6 @@ async function assertTeamWriteAuthorized(
   return true;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} entityKey
- * @param {Record<string, unknown>} body
- * @param {Record<string, unknown> | undefined} existingData
- * @param {string | undefined} resourceId
- */
 async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, body, existingData, resourceId) {
   if (!PROJECT_WRITE_KEYS.has(entityKey)) return true;
   const viewer = getAuthContext(req);
@@ -305,16 +268,11 @@ async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, bod
       (typeof existingData?.project_id === "string" && existingData.project_id) ||
       "";
   }
-  // A client is not management, but a project with client_can_manage on is
-  // theirs to run. Everyone else still needs a management role.
   const clientManages = projectId ? await clientMayManageProject(viewer, projectId) : false;
   if (!clientManages && !requireManagementRole(viewer)) {
     sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
     return false;
   }
-  // Neither switch is the client's to flip - a client_can_manage client could
-  // otherwise send client_can_track: true in the same PATCH that edits a task
-  // and grant themselves tracking access nobody on the org side approved.
   if (
     clientManages &&
     entityKey === "projects" &&
@@ -351,14 +309,6 @@ async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, bod
   return true;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Record<string, unknown>} body
- * @param {Record<string, unknown> | undefined} existingData
- */
 async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existingData) {
   const viewer = getAuthContext(req);
   if (!viewer) {
@@ -382,18 +332,6 @@ async function assertTimeEntryWriteAuthorized(req, res, origin, db, body, existi
   return true;
 }
 
-/**
- * A time entry's member must actually belong to its project - the client
- * already scopes the "Add time for someone" dropdown to the project's own
- * members, but nothing on the server enforced it, so a stale/bypassed
- * client could log time for a member with no real tie to the project.
- * Reuses the exact rule the live task-less timer already applies
- * (isProjectMemberForTimer): org-admin-tier roles and a client with
- * client_can_track need no project_members row, anyone else does.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} projectId
- */
 async function assertMemberOnProjectForTimeEntry(db, memberId, projectId) {
   if (!memberId || !projectId) return;
   const targetRoleName = await resolveMemberRoleName(db, memberId);
@@ -403,51 +341,12 @@ async function assertMemberOnProjectForTimeEntry(db, memberId, projectId) {
   }
 }
 
-/**
- * Whether this viewer's manual time entries land pre-approved (Manager and
- * above, or a client on a project they're allowed to clock in on) or as a
- * request awaiting review (everyone else - Employee, Intern, Team Lead).
- * Mirrors the workspace endpoint's canLogManualTime split at the org-role
- * boundary, with the client carve-out layered on top for the one project
- * they were actually granted clock-in rights on.
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string} projectId
- */
 async function timeEntryAutoApproves(viewer, projectId) {
   if (isManagementRole(viewer.roleName)) return true;
   if (!projectId) return false;
   return clientMayTrackProject(viewer, projectId);
 }
 
-/**
- * Manual time is a self-reported claim about work nobody observed - whether
- * it lands approved or pending can only be decided by who is actually
- * making the claim, never by what the request body says. Without this, a
- * client-supplied `status: "approved"` on create (or a PATCH to `status`
- * from the entry's own creator, who assertTimeEntryWriteAuthorized already
- * lets touch their own row) would let anyone self-approve their own
- * request outright.
- *
- * Mutates `payload.status`:
- *  - create (`existingStatus` undefined): always server-decided from who is
- *    creating it - the client's own `status`, if it sent one at all, is
- *    discarded entirely. Nobody chooses to create their own entry pending
- *    when they could just send "approved" instead; this is the fact that
- *    matters, not a preference.
- *  - update, not touching status: left alone completely - editing your own
- *    still-pending entry's hours or description is unaffected either way.
- *  - update, touching status (an approve/reject action): honored only from
- *    someone entitled to approve entries on this project (the same test as
- *    create's auto-approve) - anyone else's attempt to change it is
- *    reverted to whatever it already was, including the entry's own
- *    creator trying to flip their own pending request to approved by hand.
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {Record<string, unknown>} payload
- * @param {string} projectId Resolved by the caller as payload.project_id ??
- *   existing.project_id - an update that doesn't touch the project must
- *   still check against the entry's real, existing one, not an absent field.
- * @param {string} [existingStatus]
- */
 async function resolveTimeEntryStatus(viewer, payload, projectId, existingStatus) {
   const isCreate = existingStatus === undefined;
   if (!isCreate && !("status" in payload)) return;
@@ -458,27 +357,9 @@ async function resolveTimeEntryStatus(viewer, payload, projectId, existingStatus
     payload.status = canApprove ? "approved" : "pending";
     return;
   }
-  // An approver's update is honored as requested (they may approve or
-  // reject, freely) - only a non-approver's attempt is overwritten.
   if (!canApprove) payload.status = existingStatus;
 }
 
-/**
- * Every write gate the generic Firestore fallback used to apply, in the same
- * order it applied them.
- *
- * These were only ever wired into that fallback path. As each entity moved to
- * Postgres it started short-circuiting into the Postgres branch above, which
- * checked none of them - so the gates silently stopped running, one entity at
- * a time, as a side effect of migrations rather than any deliberate decision.
- * The result was that an authenticated non-management user could POST
- * /api/teams, PATCH /api/employment/:id, or write task comments on a task they
- * cannot see, because nothing between authentication and the SQL write ever
- * asked. Applied here so the gates follow the entity, not the storage engine.
- *
- * @param {{ method?: string, resourceId?: string }} [options]
- * @returns {Promise<boolean>} false when a response has already been sent.
- */
 async function assertGenericWriteAuthorized(
   req,
   res,
@@ -490,8 +371,6 @@ async function assertGenericWriteAuthorized(
   options = {},
 ) {
   if (requiresManagementWriteGate(entityKey) && !requireManagementRole(getAuthContext(req))) {
-    // A client managing this project passes here and is then checked against
-    // that project specifically by the project/task gates below.
     const viewer = getAuthContext(req);
     const projectId =
       (typeof body?.project_id === "string" && body.project_id) ||
@@ -513,13 +392,6 @@ async function assertGenericWriteAuthorized(
   return true;
 }
 
-/**
- * "Only project managers can create tasks for this project" - same check the
- * Firestore fallback ran on task creation. POST /api/tasks is not handled by
- * routeTasks (it only serves GET), so without this the generic Postgres path
- * was the one creating tasks, with no project-scope check at all.
- * @returns {Promise<boolean>} false when a response has already been sent.
- */
 async function assertTaskCreateAuthorized(req, res, origin, db, entityKey, payload, body) {
   if (entityKey !== "tasks") return true;
   const viewer = getAuthContext(req);
@@ -569,10 +441,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         ? await getViewerProjectIds(db, viewer.memberId, viewer.roleName)
         : [];
       const allowedSet = toAllowedProjectSet(allowedProjects);
-      // Two passes: a permission failure used to return 403 *after* earlier
-      // rows in the same batch were already written, leaving duplicate or
-      // gapped order_index values with no rollback and no signal to the
-      // caller. Nothing is written until every row has passed.
       const validated = [];
       for (const row of updates.slice(0, 200)) {
         const id = typeof row?.id === "string" ? row.id : "";
@@ -641,10 +509,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       }
       if (req.method === "POST" && !parsed.id) {
         const body = await readJsonBody(req);
-        // task_id has to be injected before the gates, not after: the client
-        // reaches task children via /api/tasks/:taskId/comments rather than
-        // putting task_id in the body, and assertTaskChildWritable resolves
-        // the task to check access from exactly that field.
         if (isTaskChildEntityKey(parsed.key) && taskParentId && !body.task_id) {
           body.task_id = taskParentId;
         }
@@ -662,8 +526,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         if (isTaskChildEntityKey(parsed.key) && taskParentId && !payload.task_id) {
           payload.task_id = taskParentId;
         }
-        // Validate the roster before inserting the team row, so an invalid
-        // roster 400s instead of leaving an empty team behind.
         let teamRoster = null;
         if (parsed.key === "teams") {
           teamRoster = parseTeamRosterInput(body);
@@ -678,10 +540,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         });
         await validateForeignKeys(db, payload, { entityKey: parsed.key });
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-          // A manual entry is real worked time typed in by hand, not exempt
-          // from the same daily/weekly and per-project-member caps a live
-          // timer is already stopped at (timer-limit.service.js) - it just
-          // used to be created with zero awareness of either.
           await assertMemberOnProjectForTimeEntry(db, payload.member_id, payload.project_id);
           await assertManualTimeEntryWithinLimits(db, {
             memberId: payload.member_id,
@@ -689,16 +547,10 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             date: payload.date,
             durationSeconds: Number(payload.duration) || 0,
           });
-          // Last write to `payload` before the INSERT, deliberately - see
-          // resolveTimeEntryStatus's own doc comment for why this can never
-          // be decided from the request body.
           await resolveTimeEntryStatus(getAuthContext(req), payload, String(payload.project_id ?? ""));
         }
         const created = await createPostgresRow(parsed.key, payload);
         if (teamRoster && created?.id) {
-          // Roster writes enforce their own per-member/per-project permission
-          // checks and can throw - drop the just-created team rather than
-          // leaving a memberless orphan the wizard can't reach again.
           try {
             await createTeamInitialRoster(db, getAuthContext(req), String(created.id), teamRoster);
           } catch (rosterErr) {
@@ -728,10 +580,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         }
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        // §6.9 optimistic-concurrency token - client-only, never a real
-        // column, so it must be allowlisted here or every entity's PATCH
-        // 400s as an "Unexpected field" before the conditional-write check
-        // (expectedUpdatedAt, read right below) ever runs.
         const payload = buildUpdatePayload(entity, body, {
           extraAllowedFields: [
             "expected_updated_at",
@@ -739,9 +587,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             ...(parsed.key === "teams" ? TEAM_ROSTER_INPUT_FIELDS : []),
           ],
         });
-        // A roster-only edit (membership/leads/projects changed, team name
-        // untouched) yields an empty column payload - that is a valid edit
-        // here, so only reject when there is no roster work either.
         const teamRosterPatch =
           parsed.key === "teams" && hasTeamRosterInput(body) ? parseTeamRosterInput(body) : null;
         if (teamRosterPatch) {
@@ -755,15 +600,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           actorRoleName: getAuthContext(req)?.roleName ?? "",
         });
         if (parsed.key === TIME_ENTRY_WRITE_KEY && payload.project_id !== undefined) {
-          // Re-pointing an entry at a different project - the member has to
-          // actually belong to that one too, same rule create-time enforces.
           await assertMemberOnProjectForTimeEntry(db, existing.member_id, payload.project_id);
         }
         if (parsed.key === TIME_ENTRY_WRITE_KEY && (payload.duration !== undefined || payload.date !== undefined || payload.project_id !== undefined)) {
-          // Re-check against the merged row (existing + this edit's
-          // overrides), excluding this entry's own current duration from
-          // what's already "spent" - otherwise every edit would count the
-          // row against itself and false-positive on its own unchanged time.
           await assertManualTimeEntryWithinLimits(db, {
             memberId: existing.member_id,
             projectId: payload.project_id ?? existing.project_id,
@@ -773,10 +612,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
           });
         }
         if (parsed.key === TIME_ENTRY_WRITE_KEY) {
-          // Last write to `payload` before the UPDATE - see
-          // resolveTimeEntryStatus's own doc comment. A status-only PATCH
-          // (the approve/reject action) still needs the entry's real
-          // project, which a status-only body never carries itself.
           await resolveTimeEntryStatus(
             getAuthContext(req),
             payload,
@@ -784,8 +619,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
             String(existing.status ?? "pending"),
           );
         }
-        // §6.9 - optional; only forwarded to the "tasks" branch of
-        // updatePostgresRow today (see that function's comment for scope).
         const expectedUpdatedAt = body.expected_updated_at ?? body.expectedUpdatedAt ?? undefined;
         if (teamRosterPatch) {
           await syncTeamRoster(db, getAuthContext(req), String(parsed.id), teamRosterPatch);
@@ -811,8 +644,6 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         return true;
       }
       if (req.method === "DELETE" && parsed.id) {
-        // "tasks" is deliberately not in MANAGEMENT_WRITE_KEYS (project
-        // managers may create them), so deletion needs its own gate.
         if (parsed.key === "tasks" && !requireManagementRole(getAuthContext(req))) {
           return sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." }), true;
         }
@@ -829,21 +660,12 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
         }
         const visible = await assertRowVisible(req, db, parsed.key, existing);
         if (!visible) return sendJson(res, origin, 404, { success: false, error: "Not found" }), true;
-        // No child cleanup here on purpose: task_assignments, comments,
-        // subtasks, attachments and hours are all Postgres tables with
-        // task_id ON DELETE CASCADE, so deleting the tasks row below takes
-        // them with it. The Firestore tasks-doc delete that used to run first
-        // is gone with the last of that mirror - nothing has written a task
-        // doc there since the domain moved.
         await deletePostgresRow(parsed.key, parsed.id);
         sendJson(res, origin, 200, { success: true, data: { id: parsed.id, deleted: true } });
         return true;
       }
     }
 
-    // The task-child guard stays: reaching here with no resolvable parent
-    // task means the client used the flat /api/task-comments form without a
-    // task_id, which the Postgres branch above cannot answer either.
     if (isTaskChildEntityKey(parsed.key) && !taskParentId) {
       sendJson(res, origin, 400, {
         success: false,
@@ -852,27 +674,9 @@ export async function routeSchemaCrud(req, res, url, db, origin) {
       return true;
     }
 
-    // Everything below this point used to be a generic Firestore CRUD
-    // implementation - list/get/create/update/delete against
-    // db.collection(entity.collection) - serving whichever entities had not
-    // been migrated yet. All 32 catalog entities now resolve before it: 29
-    // route to Postgres above, invite-projects is managed entirely through
-    // relation-sync.js with no caller for the flat path, and
-    // member-relationships and member-transfer-requests are each fully
-    // handled by their own dedicated routers mounted earlier in
-    // handle-request.js. Nothing could reach it, so it is gone rather than
-    // left as an unreachable second implementation of every write path -
-    // which is exactly how the authorization gates above came to be skipped
-    // in the first place: they lived only here, and each migration quietly
-    // routed around them.
     sendJson(res, origin, 405, { success: false, error: "Method not allowed" });
     return true;
   } catch (error) {
-    // This catch-all previously swallowed everything silently - a genuine
-    // server-side failure (DB error, bad constraint, etc.) looked identical
-    // to a client mistake, both here and in the server's own logs (there
-    // were none). Logged now so a real failure is diagnosable instead of
-    // only ever showing up as an opaque 400 in the browser.
     logSafeError(`[schema-crud ${req.method} ${url.pathname}]`, error);
     if (sendPgConstraintError(res, origin, error, req)) return true;
     sendJson(res, origin, 400, { success: false, error: error.message || "Invalid request" });

@@ -1,19 +1,3 @@
-// Shared "report paper" PDF builder used by every report page's Export menu.
-//
-// This replaces window.print() (a screenshot of the live dashboard UI - see
-// the fix in app/globals.css for why that came out blank half the time, and
-// even working, it was never anything but a printout of the app chrome) with
-// a real generated document: letterhead, an optional KPI summary strip,
-// vector-drawn charts (bar / line / progress), and a paginated table with a
-// repeating header and page numbers. Built on jsPDF + jspdf-autotable - both
-// pure JS, no native/canvas dependency, so nothing here can break a
-// server-side render or a Docker build the way a canvas-based chart renderer
-// could.
-//
-// Every report component owns its own already-computed rows/columns (the
-// same data its on-screen table and CSV export already use) and its own
-// aggregates for the KPI strip - this module only knows how to lay a
-// well-defined ReportPdfSpec out on paper, not how to compute one.
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 
@@ -23,7 +7,6 @@ export interface ReportPdfColumn {
   header: string
   key: string
   align?: ReportPdfAlign
-  /** Relative column width weight (autoTable's columnStyles). Omit to let it size itself. */
   width?: number
 }
 
@@ -37,7 +20,6 @@ export interface ReportPdfBarChart {
   title: string
   data: { label: string; value: number }[]
   valueFormatter?: (value: number) => string
-  /** RGB, defaults to report blue. */
   color?: [number, number, number]
 }
 
@@ -59,30 +41,26 @@ export type ReportPdfChart = ReportPdfBarChart | ReportPdfLineChart | ReportPdfP
 
 export interface ReportPdfSpec {
   title: string
-  /** Shown under the title, e.g. the catalog description or a report-specific line. */
   subtitle?: string
   orgLabel: string
   timezoneLabel?: string
   rangeLabel?: string
-  /** "ME" / "ALL" style scope tag, shown next to the range. */
   scopeLabel?: string
   summary?: ReportPdfSummaryItem[]
   charts?: ReportPdfChart[]
   table: {
     columns: ReportPdfColumn[]
     rows: Record<string, string | number>[]
-    /** Shown instead of an empty table when rows.length === 0. */
     emptyMessage?: string
   }
-  /** File saves as `${filename}-YYYY-MM-DD.pdf`. */
   filename: string
 }
 
 const PAGE_MARGIN = 40
-const INK = { r: 30, g: 41, b: 59 } // slate-800, body text
-const MUTED = { r: 100, g: 116, b: 139 } // slate-500
-const RULE = { r: 226, g: 232, b: 240 } // slate-200
-const BRAND: [number, number, number] = [37, 99, 235] // blue-600, matches the on-screen report accent
+const INK = { r: 30, g: 41, b: 59 }
+const MUTED = { r: 100, g: 116, b: 139 }
+const RULE = { r: 226, g: 232, b: 240 }
+const BRAND: [number, number, number] = [37, 99, 235]
 
 function setInk(doc: jsPDF) {
   doc.setTextColor(INK.r, INK.g, INK.b)
@@ -91,18 +69,16 @@ function setMuted(doc: jsPDF) {
   doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
 }
 
-/** Page width minus margins. */
 function contentWidth(doc: jsPDF): number {
   return doc.internal.pageSize.getWidth() - PAGE_MARGIN * 2
 }
 
 function pctColor(pct: number): [number, number, number] {
-  if (pct >= 100) return [220, 38, 38] // red-600
-  if (pct >= 80) return [217, 119, 6] // amber-600
-  return [22, 163, 74] // emerald-600
+  if (pct >= 100) return [220, 38, 38]
+  if (pct >= 80) return [217, 119, 6]
+  return [22, 163, 74]
 }
 
-/** Letterhead: title, subtitle, org/timezone/range/scope line, rule. Returns the y cursor beneath it. */
 function drawLetterhead(doc: jsPDF, spec: ReportPdfSpec): number {
   const left = PAGE_MARGIN
   let y = PAGE_MARGIN
@@ -143,7 +119,6 @@ function drawLetterhead(doc: jsPDF, spec: ReportPdfSpec): number {
   return y + 20
 }
 
-/** KPI strip: evenly-spaced label/value cells, one row, boxed like the on-screen totals cards. */
 function drawSummary(doc: jsPDF, items: ReportPdfSummaryItem[], y: number): number {
   const left = PAGE_MARGIN
   const w = contentWidth(doc)
@@ -172,7 +147,6 @@ function drawSummary(doc: jsPDF, items: ReportPdfSummaryItem[], y: number): numb
 
 const CHART_HEIGHT = 140
 
-/** Vertical bar chart: gridlines, bars, value labels above, rotated category labels below. */
 function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
   const left = PAGE_MARGIN
   const w = contentWidth(doc)
@@ -188,12 +162,11 @@ function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
   setInk(doc)
   doc.text(chart.title, left, y + 6)
 
-  const data = chart.data.slice(0, 12) // more than a dozen bars stops reading as a chart on one page
+  const data = chart.data.slice(0, 12)
   const max = Math.max(1, ...data.map((d) => d.value))
   const fmt = chart.valueFormatter ?? ((v: number) => String(Math.round(v)))
   const [r, g, b] = chart.color ?? BRAND
 
-  // gridlines at 0/25/50/75/100%
   doc.setDrawColor(241, 245, 249)
   doc.setLineWidth(0.5)
   for (let i = 0; i <= 4; i++) {
@@ -224,7 +197,6 @@ function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
   return axisY + 26
 }
 
-/** Line/trend chart: gridlines, polyline, point markers, x labels. */
 function drawLineChart(doc: jsPDF, chart: ReportPdfLineChart, y: number): number {
   const left = PAGE_MARGIN
   const w = contentWidth(doc)
@@ -273,7 +245,6 @@ function drawLineChart(doc: jsPDF, chart: ReportPdfLineChart, y: number): number
     if (i % labelStep !== 0 && i !== n - 1) return
     doc.text(p.label, xAt(i), axisY + 12, { align: "center" })
   })
-  // Value at the last point, so the chart reads without hovering (paper has no hover).
   if (n > 0) {
     setInk(doc)
     doc.text(fmt(points[n - 1].value), xAt(n - 1), yAt(points[n - 1].value) - 6, { align: "center" })
@@ -282,7 +253,6 @@ function drawLineChart(doc: jsPDF, chart: ReportPdfLineChart, y: number): number
   return axisY + 26
 }
 
-/** Horizontal progress bars, one per row - budgets/limits usage at a glance. */
 function drawProgressRows(doc: jsPDF, chart: ReportPdfProgressChart, y: number): number {
   const left = PAGE_MARGIN
   const w = contentWidth(doc)
@@ -297,7 +267,7 @@ function drawProgressRows(doc: jsPDF, chart: ReportPdfProgressChart, y: number):
   doc.text(chart.title, left, y + 6)
 
   let cy = y + 20
-  const rows = chart.rows.slice(0, 14) // caps a very long list to one readable block; the table below has the rest
+  const rows = chart.rows.slice(0, 14)
   for (const row of rows) {
     const pct = Math.max(0, Math.min(100, row.pct))
     doc.setFont("helvetica", "normal")
@@ -334,21 +304,15 @@ function drawChart(doc: jsPDF, chart: ReportPdfChart, y: number): number {
   return drawProgressRows(doc, chart, y)
 }
 
-/** Vertical space a chart needs, so the caller can page-break before drawing rather than mid-chart. */
 function chartHeightEstimate(chart: ReportPdfChart): number {
   if (chart.type === "progress") return 26 + Math.min(14, chart.rows.length) * 26 + 20
   return CHART_HEIGHT + 46
 }
 
-/**
- * Builds the full document and triggers a browser download. No return value -
- * this is a terminal action, same shape as the existing CSV downloadX()
- * helpers each report already has.
- */
 export function downloadReportPdf(spec: ReportPdfSpec): void {
   const doc = new jsPDF({ unit: "pt", format: "a4" })
   const pageH = doc.internal.pageSize.getHeight()
-  const bottomLimit = pageH - PAGE_MARGIN - 16 // leaves room for the footer
+  const bottomLimit = pageH - PAGE_MARGIN - 16
 
   let y = drawLetterhead(doc, spec)
 
@@ -396,7 +360,6 @@ export function downloadReportPdf(spec: ReportPdfSpec): void {
     })
   }
 
-  // Footer on every page, added last so it can report the final page count.
   const pageCount = doc.getNumberOfPages()
   const generatedOn = new Date().toLocaleString()
   for (let i = 1; i <= pageCount; i++) {

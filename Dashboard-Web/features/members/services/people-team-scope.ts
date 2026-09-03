@@ -29,7 +29,6 @@ export function readSharedTeamScopeMemberIds(memberId: string): Set<string> | nu
   return memberIdsFromTeamGraph(graph, memberId)
 }
 
-/** Shared team-tree fetch used by Members, Teams, and the member tree page. */
 export async function fetchSharedTeamTreeGraph(forceRefetch = false): Promise<MemberTreeGraph> {
   if (forceRefetch) {
     invalidateCache(TEAM_TREE_CACHE_KEY)

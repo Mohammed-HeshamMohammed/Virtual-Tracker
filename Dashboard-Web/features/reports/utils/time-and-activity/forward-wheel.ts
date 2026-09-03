@@ -1,4 +1,3 @@
-/** Full-screen scrim sits above the document and receives wheel events; forward them so the page scrolls. */
 export function attachForwardWheelToDocument(el: HTMLElement): () => void {
   function onWheel(e: WheelEvent): void {
     e.preventDefault()

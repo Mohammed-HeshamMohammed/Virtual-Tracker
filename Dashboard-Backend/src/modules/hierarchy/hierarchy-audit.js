@@ -8,16 +8,7 @@ import {
   resolveHierarchyStatus,
 } from "./hierarchy-placement.js";
 
-/**
- * @typedef {Object} HierarchyViolation
- * @property {string} member_id
- * @property {string} role_name
- * @property {string | null} parent_member_id
- * @property {string} violation_type
- * @property {string} recommended_action
- */
 
-/** Read-only hierarchy violation scan (no writes). */
 export async function auditHierarchyViolations(db, options = {}) {
   const [membersDocs, relsDocs] = await Promise.all([
     listMembersPg({ limit: 5000 }),
@@ -31,9 +22,7 @@ export async function auditHierarchyViolations(db, options = {}) {
     }
   }
 
-  /** @type {HierarchyViolation[]} */
   const violations = [];
-  /** @type {Array<{ member_id: string; role_name: string; hierarchy_status: string; parent_member_id: string | null }>} */
   const summary = [];
 
   for (const data of membersDocs) {

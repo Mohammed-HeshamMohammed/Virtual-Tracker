@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { Fragment, useState as useComponentState } from "react"
@@ -58,10 +56,6 @@ import {
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 
-/** 'YYYY-MM-DD' -> local midnight Date. Bare "YYYY-MM-DD" parses as UTC
- *  midnight in JS, which reads back as the previous day in any negative
- *  UTC-offset timezone - the same class of off-by-one this codebase already
- *  avoids elsewhere (see audit-log-report.tsx's formatDay). */
 function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
 }
@@ -72,8 +66,6 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
-  // Keyed "memberId::date" so a spinner only shows on the row actually being
-  // deleted - a plain boolean would spin every row's button at once.
   const [deletingKey, setDeletingKey] = useComponentState<string | null>(null)
   const [deleteError, setDeleteError] = useComponentState<string | null>(null)
   const {
@@ -123,38 +115,17 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     justSaved,
   } = useTimeAndActivityReport({ days, memberRows, entries, range })
 
-  // Only "Date per day" carries a real per-row date - every other groupBy
-  // repurposes that field as a group key (member/project/client/team name),
-  // so the delete action (and its column) is hidden outside that mode
-  // rather than risking a wrong day getting deleted.
   const canDeleteDay = canAddForOthers && groupBy === "date_per_day"
 
-  // Same width-aware auto-hide the Members/Projects tables already use -
-  // visibleMetricColumns is already narrowed by the column picker's manual
-  // toggles; this narrows it further by whatever the card's real measured
-  // width can actually fit, instead of the table spilling into a wide
-  // horizontal scrollbar with columns the viewport had room to show.
   const { containerRef: tableWidthRef, visibleColumns: fittedMetricColumns } = useReportColumnAutoHide(
     visibleMetricColumns,
     {
       minWidths: TIME_ACTIVITY_TABLE_COL_MIN_WIDTH,
       hidePriority: TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
-      // +72 reserves the trailing delete-action column (w-10 + px-4 padding)
-      // when it's actually rendered - otherwise the auto-hide math thinks
-      // that space is free for one more metric column, which just pushes
-      // the table into the same horizontal-scrollbar overflow this hook
-      // exists to avoid.
       fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH + (canDeleteDay ? 72 : 0),
     },
   )
 
-  // Permanently deletes this member's whole tracked record for this one day
-  // (sessions, manual entries, screenshots, app usage, URL visits - see
-  // deleteMemberDayActivityWithChildrenPg). Only meaningful in "Date per
-  // day" mode: every other groupBy repurposes a row's `date` field as a
-  // group key (member/project/client/team name), not a real calendar date,
-  // so the delete action is hidden outside that mode rather than risking a
-  // wrong day getting deleted.
   function confirmDeleteDay(memberId: string, date: string, memberName: string, dateLabel: string) {
     const ok = window.confirm(
       `Delete ${memberName}'s tracked activity for ${dateLabel}? ` +
@@ -291,10 +262,6 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
               {showDatePicker && (
                 <ReportDateRangePicker
                   key="date-range"
-                  // Was omitted entirely, so every open of this picker reseeded
-                  // the calendar to a fixed hardcoded date (see date-range-picker.tsx)
-                  // instead of the range actually loaded - it looked like the
-                  // report had forgotten what was selected.
                   initialStart={range ? parseDayParam(range.from) : undefined}
                   initialEnd={range ? parseDayParam(range.to) : undefined}
                   onApply={(lbl) => {

@@ -1,8 +1,3 @@
-// Query functions backing the report types that already have real tables
-// (activity_sessions, daily_member_active_seconds, pay_rates, audit_logs,
-// limits, timesheets) but had no reporting endpoint yet. Mirrors the
-// conventions in time-and-activity-report-postgres.service.js: seconds/raw
-// values out, formatting stays on the frontend.
 import { query } from "./client.js";
 
 function toDayString(value) {
@@ -10,27 +5,6 @@ function toDayString(value) {
   return typeof value === "string" ? value.slice(0, 10) : "";
 }
 
-/**
- * Per-member per-day tracked seconds + the rate actually in effect on that
- * day - backs Amounts Owed, Daily Totals, and Payments (all the same "hours
- * x rate" shape, grouped differently on the frontend).
- *
- * The LEFT JOIN LATERAL against pay_rate_history picks that day's real rate
- * (the most recent point with effective_date <= the day), falling back to
- * the member's current pay_rates row via COALESCE only when no history
- * point qualifies - a day before their earliest recorded change, or a
- * member whose rate has never changed since pay_rate_history existed. Below
- * this, a raise or cut applied today no longer silently rewrites what a
- * past day was already reported as worth.
- *
- * `projectIds` narrows to time tracked against tasks in those projects. That
- * has to come from the per-task rollup rather than daily_member_active_seconds,
- * which carries no project dimension at all - so a project-filtered total
- * counts task-attributed time only, and excludes time tracked with no task.
- * Unfiltered (the default) still reads the plain daily rollup, which includes
- * everything.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- */
 export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const hasProjectFilter = Array.isArray(projectIds) && projectIds.length > 0;
   const rows = hasProjectFilter
@@ -81,10 +55,6 @@ export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, pr
   }));
 }
 
-/**
- * Raw per-session rows (start/stop granularity) - backs Work Sessions.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
- */
 export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
@@ -119,12 +89,6 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
   }));
 }
 
-/**
- * Real change history - backs the Audit Log report. Every insert/update/delete
- * on members/roles/etc already lands here via fn_audit_log_trigger(); this is
- * the first reader of it for a report (see ensure-lookup-schema.js trg_audit_*).
- * @param {{ fromDay: string, toDay: string, limit?: number }} params
- */
 export async function getAuditLogRowsPg({ fromDay, toDay, limit = 500 }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
@@ -153,12 +117,6 @@ export async function getAuditLogRowsPg({ fromDay, toDay, limit = 500 }) {
   }));
 }
 
-/**
- * Per-member weekly/daily limit vs. seconds actually tracked in [fromDay,
- * toDay] - backs both Weekly Limits and Daily Limits (caller passes the week
- * or day window; `limits` carries both thresholds on the same row).
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
- */
 export async function getLimitsUsageRowsPg({ memberIds, fromDay, toDay }) {
   const rows = await query(
     `SELECT l.member_id, l.weekly, l.daily,
@@ -178,21 +136,6 @@ export async function getLimitsUsageRowsPg({ memberIds, fromDay, toDay }) {
   }));
 }
 
-/**
- * Per-day-per-project tracked seconds for one member's pay period, each day's
- * real historical rate/currency already resolved (same LEFT JOIN LATERAL
- * against pay_rate_history as getMemberDailyAmountRowsPg above) - backs the
- * Timesheets page's own dollar amount and per-project breakdown.
- *
- * Not reused from getMemberDailyAmountRowsPg directly: that one reads
- * daily_member_active_seconds, a live-timer-only rollup with no project_id
- * column and no manual time_entries in it at all. A timesheet has to count
- * manual entries too (same as computeTimesheetHours always has), and the
- * whole point here is a project breakdown - so this queries time_entries +
- * activity_sessions directly, unioned the same way computeTimesheetHours
- * already does for hours, with the per-day rate join layered on top.
- * @param {{ memberId: string, fromDay: string, toDay: string }} params
- */
 export async function getTimesheetPeriodAmountRowsPg({ memberId, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -236,10 +179,6 @@ export async function getTimesheetPeriodAmountRowsPg({ memberId, fromDay, toDay 
   }));
 }
 
-/**
- * Real submitted/approved/rejected timesheet rows - backs Timesheet Approvals.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
- */
 export async function getTimesheetApprovalRowsPg({ memberIds, fromDay, toDay }) {
   const rows = await query(
     `SELECT t.id, t.member_id, t.period_start, t.period_end, t.status,
@@ -265,15 +204,6 @@ export async function getTimesheetApprovalRowsPg({ memberIds, fromDay, toDay }) 
   }));
 }
 
-/**
- * Per-member total seconds by app, over [fromDay, toDay] - backs the "Apps"
- * side of the Apps & URLs report. Grouped server-side (activity_app_logs can
- * run to thousands of 30s-granularity rows per member per day).
- * `projectIds` narrows to logs tied to a task in one of those projects (the
- * same task_id -> tasks.project_id join getManualTimeEditRowsPg uses) - a log
- * with no task_id is excluded when a project filter is active.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- */
 export async function getAppUsageRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
@@ -299,12 +229,6 @@ export async function getAppUsageRowsPg({ memberIds, fromDay, toDay, projectIds 
   }));
 }
 
-/**
- * Per-member total seconds by domain, over [fromDay, toDay] - the "URLs" side
- * of the Apps & URLs report. `projectIds` narrows the same way getAppUsageRowsPg
- * does, via the log's task_id -> tasks.project_id.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- */
 export async function getUrlUsageRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
   const to = new Date(`${toDay}T00:00:00.000Z`);
@@ -330,15 +254,6 @@ export async function getUrlUsageRowsPg({ memberIds, fromDay, toDay, projectIds 
   }));
 }
 
-/**
- * Manual time entries in a period - backs the Manual Time Edits report.
- *
- * `source` defaults to 'manual' on time_entries, and the tracker writes
- * 'tracked' rows, so this is exactly the set a person typed in by hand rather
- * than had recorded for them. created_by/updated_by are VARCHAR (they hold a
- * member id for in-app writes), resolved to names by the caller.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, projectIds?: string[] | null }} params
- */
 export async function getManualTimeEditRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const rows = await query(
     `SELECT te.id, te.member_id, te.project_id, te.task_id, te.date,
@@ -377,17 +292,6 @@ export async function getManualTimeEditRowsPg({ memberIds, fromDay, toDay, proje
   }));
 }
 
-/**
- * Work breaks, derived from the gaps between a member's consecutive tracked
- * sessions on the same local day.
- *
- * There is no breaks table and nothing records "went on break" - but a gap
- * between the end of one session and the start of the next IS the break, so
- * it is derived rather than invented. Gaps shorter than minGapMinutes are
- * noise (a stop/start while switching task), and a gap that crosses into the
- * next day is the end of the working day, not a break, so it is excluded.
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string, minGapMinutes?: number }} params
- */
 export async function getWorkBreakRowsPg({ memberIds, fromDay, toDay, minGapMinutes = 5 }) {
   const rows = await query(
     `WITH tz AS (
@@ -431,24 +335,6 @@ export async function getWorkBreakRowsPg({ memberIds, fromDay, toDay, minGapMinu
   }));
 }
 
-/**
- * Shift attendance: did people work on the days they were scheduled to?
- *
- * There is no shift table and no configured shift clock times anywhere in this
- * schema, so "late" and "abandoned" are not derivable and are deliberately not
- * invented. What IS configured is time_settings.work_days - a per-member array
- * of weekday indices where 0 = Monday (its default [0,1,2,3,4] is Mon-Fri, and
- * the settings UI labels it that way). Postgres ISODOW is 1=Monday, hence the
- * -1 below.
- *
- * Attendance is that schedule crossed with whether the member actually tracked
- * anything that day, bucketed in their own timezone so a late-evening session
- * counts towards the day they worked it:
- *   worked      - scheduled, and tracked time
- *   missed      - scheduled, tracked nothing
- *   unscheduled - not scheduled, but tracked time anyway
- * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
- */
 export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay }) {
   const rows = await query(
     `WITH days AS (

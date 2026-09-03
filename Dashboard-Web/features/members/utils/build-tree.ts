@@ -7,7 +7,6 @@ export type MemberTreeBranch = {
   depth: number
 }
 
-/** Owner cannot report to another Owner — nested Owner becomes a separate root with their branch. */
 export function stripOwnerUnderOwnerEdges(
   edges: MemberTreeEdge[],
   nodes: MemberTreeNode[],
@@ -21,7 +20,6 @@ export function stripOwnerUnderOwnerEdges(
   })
 }
 
-/** Drops self-loops, edges pointing at the root, and upward/back-edges in a team subtree. */
 export function sanitizeTreeEdges(
   edges: MemberTreeEdge[],
   rootMemberId?: string | null,
@@ -161,7 +159,6 @@ export type MemberTreeIndex = {
   rootIds: string[]
 }
 
-/** Flat index for navigating parent / child connections in the profile view. */
 export function buildMemberTreeIndex(
   nodes: MemberTreeNode[],
   edges: MemberTreeEdge[],
@@ -227,7 +224,6 @@ function branchToTreeChartNode(branch: MemberTreeBranch, currentMemberId?: strin
   }
 }
 
-/** Converts member tree branches into a single hierarchy for the visx chart. */
 export function memberBranchesToTreeChartData(
   branches: MemberTreeBranch[],
   currentMemberId?: string,

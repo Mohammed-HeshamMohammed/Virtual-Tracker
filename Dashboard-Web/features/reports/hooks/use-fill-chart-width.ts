@@ -1,14 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 
-/**
- * Fills a chart's real available width instead of a hardcoded viewBox
- * guess: on a wide card, `slotW` (each day's column) grows to use the
- * leftover space; adding days shrinks `slotW` back down, but never past
- * `minSlot`. Once minSlot is hit, `vbW` (the SVG's own pixel width)
- * exceeds the container's, and the caller's `overflow-x-auto` wrapper
- * scrolls on its own - no extra scroll logic needed here, just an honest
- * measured width instead of a made-up one.
- */
 export function useFillChartWidth({
   pointCount,
   minSlot,
@@ -32,9 +23,6 @@ export function useFillChartWidth({
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(el)
-    // Belt-and-suspenders alongside ResizeObserver, matching this codebase's
-    // own useDistributedRowHeight - a window-level resize (sidebar toggle,
-    // browser zoom) that doesn't itself resize this element's box.
     window.addEventListener("resize", measure)
     return () => {
       observer.disconnect()
@@ -44,12 +32,6 @@ export function useFillChartWidth({
   }, [])
 
   const n = Math.max(pointCount, 1)
-  // Floored, not exact - (containerW - padL - padR) / n very rarely lands on
-  // a whole pixel, and n * slotW re-summing the fractional remainder back up
-  // could land vbW a hair over containerW. That sub-pixel overflow was
-  // enough for overflow-x-auto to render a scrollbar with nothing real to
-  // scroll to - flooring guarantees vbW <= containerW whenever slotW isn't
-  // already pinned at the minSlot floor.
   const slotW = Math.max(minSlot, Math.floor((containerW - padL - padR) / n))
   const vbW = padL + n * slotW + padR
 

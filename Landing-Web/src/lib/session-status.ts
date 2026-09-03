@@ -8,7 +8,6 @@ export type SessionStatus = {
 
 const SIGNED_OUT: SessionStatus = { signedIn: false, displayName: null, avatarUrl: null }
 
-/** Session status via Landing-Backend proxy — never throws. */
 export async function fetchSessionStatus(): Promise<SessionStatus> {
   if (!LANDING_API_URL) return SIGNED_OUT
   try {
@@ -29,7 +28,6 @@ export async function fetchSessionStatus(): Promise<SessionStatus> {
   }
 }
 
-/** Clear shared session cookie via Landing-Backend (signs out dashboard too). */
 export async function logoutSharedSession(): Promise<void> {
   if (!LANDING_API_URL) return
   try {

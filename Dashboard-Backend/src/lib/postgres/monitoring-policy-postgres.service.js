@@ -10,12 +10,10 @@ const CAPABILITY_COLUMNS = [
   "updated_at",
 ];
 
-/** Every known capability row, including ones never explicitly enabled. */
 export async function getAllMonitoringCapabilitiesPg() {
   return query(`SELECT ${CAPABILITY_COLUMNS.join(", ")} FROM monitoring_capabilities ORDER BY capability`);
 }
 
-/** @param {string} capability */
 export async function getMonitoringCapabilityPg(capability) {
   const rows = await query(
     `SELECT ${CAPABILITY_COLUMNS.join(", ")} FROM monitoring_capabilities WHERE capability = $1 LIMIT 1`,
@@ -24,13 +22,6 @@ export async function getMonitoringCapabilityPg(capability) {
   return rows[0] ?? null;
 }
 
-/**
- * Upsert a capability's config. Callers (monitoring-policy.js) are
- * responsible for writing the paired audit row - this function only ever
- * touches monitoring_capabilities, never monitoring_policy_audit, so the two
- * writes stay visibly separate in every call site.
- * @param {{ capability: string, enabled: boolean, jurisdictionProfile?: string, lawfulBasis?: string|null, enabledBy?: string|null }} input
- */
 export async function setMonitoringCapabilityPg(input) {
   const rows = await query(
     `INSERT INTO monitoring_capabilities (capability, enabled, jurisdiction_profile, lawful_basis, enabled_by, enabled_at, updated_at)
@@ -54,11 +45,6 @@ export async function setMonitoringCapabilityPg(input) {
   return rows[0] ?? null;
 }
 
-/**
- * Append-only. No update/delete function exists for this table on purpose -
- * see the comment on the table itself in ensure-lookup-schema.js.
- * @param {{ capability: string, previousEnabled: boolean|null, newEnabled: boolean, lawfulBasis?: string|null, actorMemberId?: string|null }} input
- */
 export async function insertMonitoringPolicyAuditPg(input) {
   await query(
     `INSERT INTO monitoring_policy_audit (capability, previous_enabled, new_enabled, lawful_basis, actor_member_id)
@@ -73,7 +59,6 @@ export async function insertMonitoringPolicyAuditPg(input) {
   );
 }
 
-/** @param {string} capability @param {number} [limit] */
 export async function getMonitoringPolicyAuditPg(capability, limit = 200) {
   return query(
     `SELECT id, capability, previous_enabled, new_enabled, lawful_basis, actor_member_id, created_at
@@ -82,7 +67,6 @@ export async function getMonitoringPolicyAuditPg(capability, limit = 200) {
   );
 }
 
-/** @param {string} memberId */
 export async function getMemberMonitoringConsentPg(memberId) {
   const rows = await query(
     `SELECT member_id, disclosed_at, consented_at, notice_version, updated_at
@@ -92,7 +76,6 @@ export async function getMemberMonitoringConsentPg(memberId) {
   return rows[0] ?? null;
 }
 
-/** @param {string} memberId @param {string} noticeVersion */
 export async function recordMemberDisclosurePg(memberId, noticeVersion) {
   const rows = await query(
     `INSERT INTO member_monitoring_consent (member_id, disclosed_at, notice_version, updated_at)
@@ -107,7 +90,6 @@ export async function recordMemberDisclosurePg(memberId, noticeVersion) {
   return rows[0] ?? null;
 }
 
-/** @param {string} memberId @param {string} noticeVersion */
 export async function recordMemberConsentPg(memberId, noticeVersion) {
   const rows = await query(
     `INSERT INTO member_monitoring_consent (member_id, disclosed_at, consented_at, notice_version, updated_at)

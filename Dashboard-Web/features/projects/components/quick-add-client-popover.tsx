@@ -26,9 +26,6 @@ import { SegmentedControl } from "@/features/clients/components/modals/client-mo
 
 type QuickAddTab = "new" | "mobile"
 
-/** Small anchored picker for adding a client without leaving the Add Project modal.
- * Reuses the same API calls the Clients page and Members > Migrate tab already use —
- * no new endpoints. See CLIENT_QUICK_ADD_PLAN.md for the full design. */
 export function QuickAddClientPopover({ onAdded }: { onAdded: (clientId: string) => void }) {
   const theme = useClientFormTheme()
   const { memberRole, user } = useAuth()

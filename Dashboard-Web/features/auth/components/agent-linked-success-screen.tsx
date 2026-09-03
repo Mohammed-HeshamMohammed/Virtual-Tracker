@@ -7,11 +7,6 @@ import { getDashboardStatusStyles } from "@/shared/ui/errors/dashboard-status-th
 import { DashboardStatusShell } from "@/shared/ui/errors/dashboard-status-shell"
 import { useAgentConnectAndAutoClose } from "@/features/auth/services/use-agent-connect"
 
-/** Dedicated full-page takeover for "the desktop agent just linked" - not a
- * banner squeezed into the login card. Fires the virtualtracker:// deep link
- * on mount and auto-closes this tab once the OS actually hands off to the
- * agent; if that doesn't happen within a couple seconds, reveals a manual
- * "Connect" button instead of leaving the user stuck on a blank success page. */
 export function AgentLinkedSuccessScreen({ onGoToDashboard }: { onGoToDashboard: () => void }) {
   const { isDark } = useTheme()
   const t = getDashboardStatusStyles(isDark)

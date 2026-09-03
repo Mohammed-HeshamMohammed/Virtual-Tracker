@@ -17,7 +17,6 @@ export function validateTeamRoster(memberIds: string[], leadIds: string[]): stri
   return null
 }
 
-/** Reject clients (and other ineligible roles) before save — mirrors backend team policy. */
 export function validateTeamMemberRoles(
   memberIds: string[],
   membersById: Map<string, { role?: string; role_name?: string }>,

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
 "use client"
 
 import { useState } from "react"

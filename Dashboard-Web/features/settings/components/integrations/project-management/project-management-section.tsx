@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import type { ReactNode } from "react"
@@ -26,7 +25,6 @@ function LogoDot({ className, children }: { className: string; children: ReactNo
   )
 }
 
-/** First grid (Asana, Breeze, ClickUp, …) from the Project management screenshot */
 const PM_INTEGRATIONS_ROW_A: PmIntegrationItem[] = [
   { id: "asana", name: "Asana", logo: <LogoDot className="bg-[#F06A6A]">A</LogoDot> },
   { id: "breeze", name: "Breeze", logo: <LogoDot className="bg-gradient-to-br from-pink-400 to-blue-500">B</LogoDot> },
@@ -38,7 +36,6 @@ const PM_INTEGRATIONS_ROW_A: PmIntegrationItem[] = [
   { id: "mavenlink", name: "Mavenlink", logo: <LogoDot className="bg-[#0066cc]">M</LogoDot> },
 ]
 
-/** Extended grid (Monday, Paymo, …, GitLab) from the second Project management screenshot */
 const PM_INTEGRATIONS_ROW_B: PmIntegrationItem[] = [
   { id: "monday", name: "Monday", logo: <LogoDot className="bg-[#ff3d57]">M</LogoDot> },
   { id: "paymo", name: "Paymo", logo: <LogoDot className="bg-black">P</LogoDot> },

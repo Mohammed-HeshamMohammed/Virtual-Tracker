@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 
 "use client"
 
@@ -79,8 +78,6 @@ export function TaskRowMenu({
   onSubmitHours: () => void
   onReview: () => void
   onStartTask?: () => void
-  /** Self-service "I'm blocked, waiting on X" - blocks only the current
-   * user's own assignment, not the whole task (that's Change status below). */
   onBlockTask?: () => void
   isDark: boolean
   canMarkCompleted?: boolean
@@ -511,10 +508,6 @@ function DroppableListGroup({
                     0,
                     (task.totalAssignees ?? assigneeIds.length ?? (assignee ? 1 : 0)) - 1,
                   )
-                  // Fallback for the same reason PriorityDot has one: tasks.priority is
-            // nullable, and PRIORITY_CONFIG has no undefined-safe entry - an
-            // unset priority (any caller that skips it, or a pre-default-fix row)
-            // must not crash this card's render.
             const pCfg = PRIORITY_CONFIG[task.priority as Priority] ?? PRIORITY_CONFIG.medium
                   const teamName = task.teamId ? teamNamesById[task.teamId] : undefined
                   return (
@@ -591,8 +584,6 @@ export function ListView({
   selectedTaskId: string | null
   onSelectTask: (id: string | null) => void
   onTaskPreview: (task: Task, event: MouseEvent) => void
-  /** Batch-selection checkboxes - separate from selectedTaskId, which is the
-   * single "focused" row used by the toolbar's Edit/Duplicate buttons. */
   selectedTaskIds?: Set<string>
   onToggleTaskSelected?: (id: string) => void
   onDelete: (id: string) => void
@@ -606,8 +597,6 @@ export function ListView({
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
   onStartTask?: (task: Task) => void
-  /** Self-service "I'm blocked, waiting on X" - blocks only the current
-   * user's own assignment on this task, not the whole task. */
   onBlockTask?: (task: Task) => void
   showParticipation?: boolean
   canMarkCompleted?: boolean

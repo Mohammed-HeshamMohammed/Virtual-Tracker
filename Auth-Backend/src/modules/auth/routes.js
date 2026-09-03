@@ -8,11 +8,9 @@ import { normalizePasswordInput } from "../../http/password-request-guard.js";
 import { routeGoogleOAuth } from "./google-oauth.js";
 import { getEnv } from "../../config/env.js";
 
-/** Cache-Control overrides for public auth config endpoints. */
 const CACHE_FIREBASE_CONFIG = "public, max-age=3600";
 const CACHE_PASSWORD_POLICY = "public, max-age=0, stale-while-revalidate=3600";
 
-/** `/api/auth/*` routes handled here. @returns {Promise<boolean>} */
 export async function routeAuth(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
@@ -87,12 +85,6 @@ export async function routeAuth(req, res, url, origin) {
       });
       return true;
     }
-    // web.apiKey is the referrer-restricted "Browser key" - fine for
-    // Dashboard-Web (sends a real Referer), but Google 403s it for anyone
-    // calling Identity Toolkit/Secure Token directly (no browser, no
-    // Referer) - which is exactly what the desktop agent does for its own
-    // token refresh and reauth. serverApiKey is additive: browser callers
-    // keep using apiKey unchanged, the agent picks serverApiKey when present.
     const serverApiKey = getEnv().googleOAuth.serverApiKey || web.apiKey;
     sendJson(res, origin, 200, { success: true, config: { ...web, serverApiKey } }, req, {
       "Cache-Control": CACHE_FIREBASE_CONFIG,
@@ -166,7 +158,7 @@ export async function routeAuth(req, res, url, origin) {
       }));
       sendJson(res, origin, 200, { success: true, methods, identities });
     } catch (e) {
-      const code = e && typeof e === "object" && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
+      const code = e && typeof e === "object" && "code" in e ? String(e.code) : "";
       if (code === "auth/user-not-found") {
         sendJson(res, origin, 200, { success: true, methods: [], identities: [] });
         return true;

@@ -1,4 +1,3 @@
-// Simple request/response logger
 import { getEnv } from "../config/env.js";
 import { sanitizePathForLog } from "../http/sanitize-log.js";
 import { formatErrorForLog, logSafeError } from "../http/sanitize-error.js";

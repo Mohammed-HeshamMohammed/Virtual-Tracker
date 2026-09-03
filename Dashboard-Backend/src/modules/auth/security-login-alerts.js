@@ -7,9 +7,6 @@ import {
 } from "./security-notification-emails.js";
 import { updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {string} ip
- */
 export function normalizeIp(ip) {
   const value = typeof ip === "string" ? ip.trim() : "";
   if (!value) return "";
@@ -17,9 +14,6 @@ export function normalizeIp(ip) {
   return value;
 }
 
-/**
- * @param {string} userAgent
- */
 export function summarizeUserAgent(userAgent) {
   const ua = typeof userAgent === "string" ? userAgent : "";
   if (!ua) return "Unknown device";
@@ -40,17 +34,6 @@ export function summarizeUserAgent(userAgent) {
   return `${browser} on ${os}`;
 }
 
-/**
- * Security email on new sign-in from different IP/device. Deduped per Firebase lastSignInTime.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{
- *   uid: string;
- *   userRecord: import("firebase-admin/auth").UserRecord;
- *   profile?: Record<string, unknown> | null;
- *   requestIp?: string;
- *   userAgent?: string;
- * }} input
- */
 export async function maybeNotifyNewSignIn(db, input) {
   const uid = input.uid;
   const userRecord = input.userRecord;
@@ -108,7 +91,6 @@ export async function maybeNotifyNewSignIn(db, input) {
   }
 }
 
-/** Save last sign-in IP on members row (Info tab). */
 export async function syncMemberLastLoginIp(db, memberId, requestIp) {
   const memberKey = typeof memberId === "string" ? memberId.trim() : "";
   const ip = normalizeIp(requestIp);
@@ -116,12 +98,6 @@ export async function syncMemberLastLoginIp(db, memberId, requestIp) {
   await updateMemberPg(memberKey, { ip_address: ip });
 }
 
-/**
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {string} uid
- * @param {"changed" | "reset"} reason
- * @param {Record<string, unknown> | null | undefined} [profile]
- */
 export async function notifyPasswordUpdated(auth, uid, reason, profile) {
   try {
     const userRecord = await auth.getUser(uid);
@@ -138,11 +114,6 @@ export async function notifyPasswordUpdated(auth, uid, reason, profile) {
   }
 }
 
-/**
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {string} email
- * @param {"changed" | "reset"} reason
- */
 export async function notifyPasswordUpdatedByEmail(auth, email, reason) {
   const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
   if (!normalized) return;

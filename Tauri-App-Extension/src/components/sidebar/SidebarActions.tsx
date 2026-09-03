@@ -39,7 +39,6 @@ export function SidebarActions({
           Resume tracking
         </button>
       ) : tracking ? (
-        // Pause and Stop are a pair, not two slabs in a stack.
         <div className="action-pair">
           <button className="btn btn-secondary" type="button" disabled={busy} onClick={onPause}>
             Pause
@@ -65,8 +64,6 @@ export function SidebarActions({
         <Icon name="external" />
       </button>
 
-      {/* Recovery, not a peer of Start. "Re-link account" was internal
-          jargon for signing in again on this PC. */}
       <button className="btn-quiet" type="button" onClick={onSignInAgain}>
         Sign in again
       </button>

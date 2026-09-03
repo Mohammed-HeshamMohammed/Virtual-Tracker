@@ -95,7 +95,6 @@ function SessionSpinner({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Session bootstrap / reconnect screen — styled like the signed-in dashboard shell. */
 export function AuthSessionLoader({
   message = "Checking your session...",
   error,

@@ -1,4 +1,3 @@
-/** Guards AuthProvider from treating ephemeral Firebase phone-verify sessions as app sign-in. */
 let activeSessions = 0
 
 export function beginPhoneVerificationSession(): void {

@@ -12,7 +12,7 @@ if (!existsSync(serverJs)) {
 
 const port = (process.env.PORT ?? "3000").trim() || "3000";
 const nodeVersion = process.version;
-const version = "0.1.0"; // fallback
+const version = "0.1.0";
 
 const box = `
 ╔══════════════════════════════════════════════════════╗

@@ -21,13 +21,10 @@ const PHONE_VERIFY_CHANNEL_KEY = "vt_phone_verify_channel"
 
 type PhoneVerifyChannel = "console" | "firebase"
 
-/** inline = Verify button (register/invite). onSave = confirm OTP when parent Save runs (profile/manage myself). */
 export type PhoneVerifyConfirmationMode = "inline" | "onSave"
 
 export type PhoneVerifyControlHandle = {
-  /** Confirms a pending OTP and returns a verification token, or null when phone is already verified / empty. */
   confirmPendingVerification: () => Promise<string | null>
-  /** True when the phone field still needs verification before save. */
   requiresVerification: () => boolean
 }
 

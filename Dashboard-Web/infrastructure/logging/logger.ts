@@ -15,7 +15,6 @@ function sanitizeMessage(value: unknown): string {
   }
 }
 
-/** Client-side safe logging — never emit tokens, passwords, or secrets to the console. */
 export function logSafeError(context: string, detail?: unknown): void {
   if (detail === undefined) {
     console.error(context)

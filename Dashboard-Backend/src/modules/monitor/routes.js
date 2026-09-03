@@ -1,4 +1,3 @@
-// /monitor admin dashboard — login, session, metrics. MONITOR_USERNAME / MONITOR_PASSWORD in env.
 
 import crypto from "node:crypto";
 import { getEnv } from "../../config/env.js";
@@ -15,17 +14,14 @@ import { getMetricsSnapshot, recordSecurityEvent } from "../../core/metrics.js";
 import { getLoginHtml } from "./login.html.js";
 import { getDashboardHtml } from "./dashboard.html.js";
 
-// ── Brute-force protection ─────────────────────────────────────────────────────
-/** @type {Map<string, { count: number, lockedUntil: number }>} */
 const failAttempts = new Map();
 const MAX_ATTEMPTS  = 5;
-const LOCKOUT_MS    = 15 * 60 * 1000; // 15 minutes
+const LOCKOUT_MS    = 15 * 60 * 1000;
 
 function isLockedOut(ip) {
   const entry = failAttempts.get(ip);
   if (!entry) return false;
   if (entry.lockedUntil > Date.now()) return true;
-  // Expired lockout — reset
   failAttempts.delete(ip);
   return false;
 }
@@ -44,7 +40,6 @@ function clearFailedAttempts(ip) {
   failAttempts.delete(ip);
 }
 
-// ── Credential resolution ──────────────────────────────────────────────────────
 function getCredentials() {
   const { monitor } = getEnv();
   return { username: monitor.username, password: monitor.password };
@@ -54,9 +49,7 @@ function isConfigured() {
   return getCredentials().password.length >= 8;
 }
 
-/** Constant-time string comparison to prevent timing attacks. */
 function safeCompare(a, b) {
-  // Pad both to the same length so timingSafeEqual doesn't throw
   const la = Buffer.byteLength(a, "utf8");
   const lb = Buffer.byteLength(b, "utf8");
   const len = Math.max(la, lb, 1);
@@ -65,7 +58,6 @@ function safeCompare(a, b) {
   return crypto.timingSafeEqual(ba, bb) && la === lb;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
 function redirect(res, location, extraHeaders = {}) {
   res.writeHead(302, { Location: location, ...extraHeaders });
   res.end();
@@ -89,22 +81,13 @@ function getIp(req) {
   );
 }
 
-// ── Main Route Handler ─────────────────────────────────────────────────────────
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @returns {Promise<boolean>} true if handled
- */
 export async function routeMonitor(req, res, url) {
   const path = url.pathname;
 
-  // Only handle /monitor paths
   if (!path.startsWith("/monitor") && path !== "/monitor") return false;
 
   const ip = getIp(req);
 
-  // ── GET /monitor → redirect ────────────────────────────────────────────────
   if (path === "/monitor" || path === "/monitor/") {
     const token = readSessionToken(req);
     if (token && validateSession(token)) {
@@ -115,7 +98,6 @@ export async function routeMonitor(req, res, url) {
     return true;
   }
 
-  // ── GET /monitor/login ─────────────────────────────────────────────────────
   if (path === "/monitor/login" && req.method === "GET") {
     const token = readSessionToken(req);
     if (token && validateSession(token)) {
@@ -126,7 +108,6 @@ export async function routeMonitor(req, res, url) {
     return true;
   }
 
-  // ── POST /monitor/login ────────────────────────────────────────────────────
   if (path === "/monitor/login" && req.method === "POST") {
     if (isLockedOut(ip)) {
       recordSecurityEvent({ event: "monitor_locked_attempt", ip, detail: "Request during lockout period" });
@@ -148,7 +129,6 @@ export async function routeMonitor(req, res, url) {
       if (ct.includes("application/json")) {
         body = JSON.parse(raw || "{}");
       } else {
-        // x-www-form-urlencoded (HTML form default)
         const params = new URLSearchParams(raw);
         body = { username: params.get("username") || "", password: params.get("password") || "" };
       }
@@ -175,7 +155,6 @@ export async function routeMonitor(req, res, url) {
       return true;
     }
 
-    // Valid credentials
     clearFailedAttempts(ip);
     const token = createSession(ip);
     recordSecurityEvent({ event: "monitor_login_ok", ip, detail: `user: ${givenUser}` });
@@ -183,7 +162,6 @@ export async function routeMonitor(req, res, url) {
     return true;
   }
 
-  // ── GET /monitor/logout ────────────────────────────────────────────────────
   if (path === "/monitor/logout") {
     const token = readSessionToken(req);
     if (token) destroySession(token);
@@ -191,7 +169,6 @@ export async function routeMonitor(req, res, url) {
     return true;
   }
 
-  // ── AUTH GUARD for remaining routes ───────────────────────────────────────
   const token = readSessionToken(req);
   if (!token || !validateSession(token)) {
     const isApi = path.startsWith("/monitor/api");
@@ -203,26 +180,22 @@ export async function routeMonitor(req, res, url) {
     return true;
   }
 
-  // ── GET /monitor/dashboard ────────────────────────────────────────────────
   if (path === "/monitor/dashboard" && req.method === "GET") {
     html(res, getDashboardHtml());
     return true;
   }
 
-  // ── GET /monitor/api/metrics ──────────────────────────────────────────────
   if (path === "/monitor/api/metrics" && req.method === "GET") {
     const snap = getMetricsSnapshot();
     json(res, { ...snap, activeSessions: activeSessionCount() });
     return true;
   }
 
-  // ── GET /monitor/api/ping ─────────────────────────────────────────────────
   if (path === "/monitor/api/ping" && req.method === "GET") {
     json(res, { ok: true });
     return true;
   }
 
-  // ── Unhandled /monitor/* ──────────────────────────────────────────────────
   html(res, "<h1>Not found</h1>", 404);
   return true;
 }

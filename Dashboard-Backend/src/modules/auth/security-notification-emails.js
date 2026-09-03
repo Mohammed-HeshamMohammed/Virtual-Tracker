@@ -1,8 +1,5 @@
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 
-/**
- * @param {{ to: string; recipientName?: string; reason: "changed" | "reset" }} input
- */
 export async function sendPasswordUpdatedEmail(input) {
   const email = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!email) return { sent: false, channel: "skipped" };
@@ -13,9 +10,6 @@ export async function sendPasswordUpdatedEmail(input) {
   });
 }
 
-/**
- * @param {{ to: string; recipientName?: string; ip: string; deviceSummary: string; signedInAt?: string }} input
- */
 export async function sendNewSignInAlertEmail(input) {
   const email = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!email) return { sent: false, channel: "skipped" };
@@ -28,10 +22,6 @@ export async function sendNewSignInAlertEmail(input) {
   });
 }
 
-/**
- * @param {Record<string, unknown> | null | undefined} profile
- * @param {{ displayName?: string | null; email?: string | null }} [userRecord]
- */
 export function resolveSecurityEmailRecipient(profile, userRecord) {
   const email =
     (typeof userRecord?.email === "string" ? userRecord.email : "") ||

@@ -9,11 +9,6 @@ import { query as pgQuery } from "../../lib/postgres/client.js";
 const visibilityCache = new Map();
 const CACHE_TTL_MS = 5000;
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- */
 async function getCachedVisibleMemberIds(db, memberId, roleName) {
   const cached = visibilityCache.get(memberId);
   const now = Date.now();
@@ -25,7 +20,6 @@ async function getCachedVisibleMemberIds(db, memberId, roleName) {
   return data;
 }
 
-/** Filter schema rows by viewer visibility (no auth → empty). */
 export async function applyVisibilityFilter(req, db, collectionKey, rows) {
   if (!rows || rows.length === 0) return rows;
 
@@ -219,12 +213,6 @@ export async function applyVisibilityFilter(req, db, collectionKey, rows) {
   }
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} collectionKey
- * @param {Record<string, unknown>} row
- */
 export async function assertRowVisible(req, db, collectionKey, row) {
   const [visible] = await applyVisibilityFilter(req, db, collectionKey, [row]);
   return Boolean(visible);

@@ -1,18 +1,3 @@
-// The submit half of the timesheet flow.
-//
-// Approve/reject already existed (generic schema CRUD, management-gated) and
-// the Approvals page's pending queue reads timesheets with status 'submitted' -
-// but nothing anywhere ever created a timesheets row, so that queue could never
-// show anything. This is the missing writer: a member submits their own pay
-// period, hours are computed server-side from the time they actually worked,
-// and the row lands as 'submitted' for a manager to action.
-//
-// Hours are never taken from the client. computeTimesheetSummary reads
-// time_entries + activity_sessions directly, so a member cannot submit a
-// timesheet claiming hours they did not track - and, same guarantee, cannot
-// claim a pay rate or project breakdown of their own choosing either; both
-// are resolved server-side from pay_rates/pay_rate_history and the tracked
-// rows themselves.
 
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canManageMember } from "../../http/authorization.js";
@@ -27,10 +12,8 @@ import { publishChange } from "../realtime/change-bus.js";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-// Mirrors PAY_PERIOD_OPTIONS on the Approvals setup modal.
 const PAY_PERIODS = new Set(["weekly", "none", "twice-per-month", "bi-weekly", "monthly"]);
 
-/** @param {unknown} value */
 function parseDay(value) {
   const day = typeof value === "string" ? value.trim() : "";
   if (!DAY_RE.test(day)) return "";
@@ -38,32 +21,14 @@ function parseDay(value) {
   return Number.isNaN(parsed.getTime()) ? "" : day;
 }
 
-/** A member with no pay_rates row yet (never configured) resolves like
- *  "None" does - no cadence on file, resolvePayPeriodBounds's own weekly
- *  fallback applies. */
 async function getMemberPayPeriod(memberId) {
   const rows = await query("SELECT pay_period FROM pay_rates WHERE member_id = $1 LIMIT 1", [memberId]);
   return rows[0]?.pay_period ?? "None";
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeTimesheets(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 
-  // GET /api/timesheets/period-summary[?from&to][&memberId]
-  // What the member is about to submit, computed from real tracked time, so
-  // the UI can show the hours (and now the real dollar amount + per-project
-  // breakdown) before they commit to them. from/to are optional - omitted,
-  // the member's own configured pay_rates.pay_period resolves the current
-  // period, instead of the frontend hardcoding a Monday-Sunday week
-  // regardless of what pay cadence they're actually set up on.
   if (pn === "/api/timesheets/period-summary" && req.method === "GET") {
     const viewer = getAuthContext(req);
     if (!viewer) {
@@ -125,7 +90,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/timesheets/submit { periodStart, periodEnd }
   if (pn === "/api/timesheets/submit" && req.method === "POST") {
     const viewer = getAuthContext(req);
     if (!viewer) {
@@ -152,8 +116,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
       return true;
     }
 
-    // A member submits their own timesheet - deliberately not on anyone
-    // else's behalf, since submitting is an attestation about your own hours.
     const memberId = viewer.memberId;
     if (!memberId) {
       sendJson(res, origin, 400, { success: false, error: "No member profile for this account." });
@@ -177,10 +139,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
         return true;
       }
 
-      // Rates can genuinely change between a rejection and a resubmit (a
-      // correction is often exactly why it was rejected), so this is
-      // recomputed fresh on every submit rather than reusing whatever an
-      // earlier attempt for this same period already stored.
       const summary = await computeTimesheetSummary(memberId, periodStart, periodEnd);
       if (summary.total_hours <= 0) {
         sendJson(res, origin, 400, {
@@ -190,8 +148,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
         return true;
       }
 
-      // uq_timesheet_member_period makes this a real upsert, so a re-submit
-      // after a rejection updates that row rather than colliding with it.
       const rows = await query(
         `INSERT INTO timesheets
            (member_id, period_start, period_end, status, total_hours, billable_hours, amount, currency,
@@ -232,10 +188,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
     return true;
   }
 
-  // POST /api/timesheets/approval-setup { memberIds, payPeriod, autoSetup }
-  // The Approvals page's "Set it up" modal. It used to console.log its result
-  // and drop it, so enabling approvals for a member never persisted anything.
-  // Both settings already have real columns on pay_rates.
   if (pn === "/api/timesheets/approval-setup" && req.method === "POST") {
     const viewer = getAuthContext(req);
     if (!viewer) {
@@ -271,8 +223,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
     const requireApproval = body.autoSetup !== false;
 
     try {
-      // Every target is scope-checked - a manager can only configure members
-      // they may already manage.
       for (const memberId of memberIds) {
         const allowed = await canManageMember(db, viewer.memberId, viewer.roleName, memberId);
         if (!allowed) {
@@ -281,8 +231,6 @@ export async function routeTimesheets(req, res, url, db, origin) {
         }
       }
 
-      // pay_rates.member_id is UNIQUE, so this upserts the settings onto an
-      // existing rate row rather than creating a competing one.
       const updated = [];
       for (const memberId of memberIds) {
         const rows = await query(

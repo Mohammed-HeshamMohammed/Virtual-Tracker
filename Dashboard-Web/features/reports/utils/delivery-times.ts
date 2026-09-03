@@ -1,4 +1,3 @@
-/** 48 slots: full day, 30-minute steps, 12-hour labels with lowercase am/pm. */
 export function buildDeliveryTimeOptions(): string[] {
   const out: string[] = []
   for (let h = 0; h < 24; h += 1) {

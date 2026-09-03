@@ -1,12 +1,3 @@
-// Notify project members/managers when project budget spend crosses the
-// notify threshold. Mirrors clients/services/client-budget-notify.js's
-// threshold + period-key dedupe shape, adapted to project_budgets' own field
-// names, units (hours vs cost), and reset vocabulary ('Never'|'Weekly'|
-// 'Monthly', not the client-budget 'monthly'|'quarterly'|'yearly'|'never').
-//
-// Unlike client budgets (still Firestore, see client_automation_state),
-// project_budgets already lives in Postgres, so the dedupe state does too -
-// see project_budget_notify_state in ensure-lookup-schema.js.
 
 import { query } from "../../../lib/postgres/client.js";
 import { createNotification } from "../../notifications/service.js";
@@ -18,8 +9,6 @@ const NOTIFY_TYPE = "project_budget_threshold";
 const MANAGEMENT_ROLES = new Set(["owner", "superadmin", "admin", "supermanager", "supermanger", "manager"]);
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
@@ -62,12 +51,6 @@ async function markNotified(projectId, periodKey, notifyAtPct, usagePct) {
   );
 }
 
-/**
- * "Org management" -> project's own managers/admins; "All members" -> every
- * member on the project. Matches the two options the BUDGET tab's "Who to
- * notify" select actually offers (project-modal.tsx).
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 async function resolveRecipients(db, projectId, whoToNotify) {
   const memberRows = await listProjectMembersPg(projectId);
   const wantsAllMembers = String(whoToNotify || "").toLowerCase() === "all members";
@@ -85,19 +68,6 @@ async function resolveRecipients(db, projectId, whoToNotify) {
   return [...recipients];
 }
 
-/**
- * Called from the timer start/resume path (activity/routes.js) right after
- * computing spend AND the live cap for the stop-timer gate - same two reads,
- * shared here instead of recomputed. Never throws into the caller; timer
- * start/stop must not fail because a notification failed to send.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- * @param {Record<string, unknown>} budget project_budgets row
- * @param {number} spent
- * @param {number} cap live budget total - for scope='per_person' this is
- *   NOT `budget.cost` (that's hours-per-member), it's the caller's already-
- *   computed computeProjectBudgetTargetPg result.
- */
 export async function maybeNotifyProjectBudget(db, projectId, budget, spent, cap) {
   if (!budget?.notify_project_members) return { skipped: "notify_disabled" };
   const notifyAtPct = Number(budget.notify_at_pct);

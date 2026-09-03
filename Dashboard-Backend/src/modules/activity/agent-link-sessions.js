@@ -59,10 +59,6 @@ export async function getAgentLinkSession(linkToken) {
   return session;
 }
 
-/**
- * @param {string} linkToken
- * @param {{ memberId: string, idToken: string, refreshToken?: string }} payload
- */
 export async function completeAgentLinkSession(linkToken, payload) {
   const session = await getAgentLinkSession(linkToken);
   if (!session) return { ok: false, error: "Link session expired or not found" };
@@ -79,10 +75,6 @@ export async function completeAgentLinkSession(linkToken, payload) {
   return { ok: true };
 }
 
-/**
- * @param {string} linkToken
- * @param {string} agentSecret
- */
 export async function exchangeAgentLinkSession(linkToken, agentSecret) {
   const session = await getAgentLinkSession(linkToken);
   if (!session) return { ok: false, error: "Link session expired or not found" };
@@ -107,10 +99,6 @@ export async function exchangeAgentLinkSession(linkToken, agentSecret) {
     return { ok: false, error: "Missing linked credentials" };
   }
 
-  // Promote the (already agent-only) link secret into a long-lived device
-  // credential, so this machine can re-authenticate on its own later instead
-  // of needing another browser link. Best-effort: linking must still succeed
-  // if this fails, the agent just loses in-app recovery until it re-links.
   let deviceId = "";
   try {
     const device = await registerAgentDevice({
@@ -130,8 +118,6 @@ export async function exchangeAgentLinkSession(linkToken, agentSecret) {
     memberId: session.memberId,
     agentSource: session.agentSource,
     deviceId,
-    // Echoed back so the agent can persist it as its device credential; it is
-    // the same value the agent already generated-and-held since link/init.
     agentSecret: session.agentSecret,
   };
   await deleteSession(linkToken);

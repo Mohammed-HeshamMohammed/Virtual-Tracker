@@ -1,9 +1,6 @@
 import React from "react"
 import { Circle, Clock, AlertCircle, Ban, CheckCircle2 } from "lucide-react"
 
-// ============================================================================
-// Clients Configuration
-// ============================================================================
 
 export type BudgetType = "hourly" | "fixed" | "retainer" | "none"
 export type BudgetBase = "per_person" | "per_project" | "total"
@@ -73,9 +70,6 @@ export const DEFAULT_ENABLED_CLIENT_COLS = new Set<string>(DEFAULT_CLIENT_COL_OR
 export const CLIENT_COL_AUTO_HIDE_PRIORITY = ["projects", "auto_invoicing", "budget"] as const
 export const CLIENT_COL_MIN_WIDTH: Record<string, number> = { budget: 120, auto_invoicing: 140, projects: 160 }
 
-// ============================================================================
-// Projects Configuration
-// ============================================================================
 
 export const ALL_PROJECT_COLS = [
   { key: "teams", label: "Teams" },
@@ -127,9 +121,6 @@ export const PROJECTS_TABLE_ROW_CAP_BY_BREAKPOINT = [
 
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
 
-// ============================================================================
-// Tasks Configuration
-// ============================================================================
 
 export type ViewMode = "list" | "board" | "timeline"
 export type Priority = "low" | "medium" | "high" | "urgent"
@@ -179,7 +170,6 @@ export interface Task {
   notStartedAssignees?: number | null
   participationPercent?: number | null
   allAssigneesStarted?: boolean
-  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
   updatedAt?: string
 }
 

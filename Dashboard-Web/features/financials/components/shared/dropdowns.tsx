@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState } from "react"
@@ -81,7 +80,7 @@ export function FilterDropdown({
                       className={cn(
                         "w-full text-left px-4 py-2.5 text-sm transition-colors flex items-center justify-between",
                         opt === value ? "bg-blue-50 text-blue-600 font-medium" : "text-slate-700 hover:bg-slate-50",
-                        i === 0 && !hasSearch && "bg-slate-50 text-slate-700" // specifically for "All X" mostly
+                        i === 0 && !hasSearch && "bg-slate-50 text-slate-700"
                       )} type="button"
                     >
                       <span className="truncate">{renderOption ? renderOption(opt) : opt}</span>

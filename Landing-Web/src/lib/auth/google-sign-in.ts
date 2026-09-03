@@ -5,7 +5,6 @@ function isPopupBlocked(err: unknown): boolean {
   return code === "auth/popup-blocked"
 }
 
-/** Popup first (avoids fragile full-page redirect handshakes), redirect fallback when blocked. */
 export async function signInWithGoogleAccount(auth: Auth): Promise<void> {
   const provider = new GoogleAuthProvider()
   provider.setCustomParameters({ prompt: "select_account" })

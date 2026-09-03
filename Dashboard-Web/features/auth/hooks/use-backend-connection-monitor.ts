@@ -5,7 +5,6 @@ import { checkAllBackendsReady } from "@/features/auth/services/backend-availabi
 
 const PROBE_INTERVAL_MS = 20_000
 
-/** Periodically probes API readiness while the dashboard session is active. */
 export function useBackendConnectionMonitor(enabled: boolean): void {
   useEffect(() => {
     if (!enabled) return

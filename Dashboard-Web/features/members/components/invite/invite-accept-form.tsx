@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
 "use client"
 
 import { useEffect, useState as useComponentState } from "react"

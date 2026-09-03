@@ -13,8 +13,6 @@ type TaskProgressPanelProps = {
   taskBudgetRemainingLabel: string;
 };
 
-// Task estimate, budget and progress are what performance is measured
-// from - a task-less session has none of it, hence the early null.
 export function TaskProgressPanel({
   taskLessSession,
   taskTracking,
@@ -34,7 +32,6 @@ export function TaskProgressPanel({
         {taskTracking?.sharedBudget ? <span className="stat-panel-hint">shared across the team</span> : null}
       </div>
 
-      {/* No task title here - it is already the page heading. */}
       <div className="task-budget-row" style={{ marginTop: 9 }}>
         <span className="task-budget-number">{fmtHours(taskTracking?.activeSeconds)}</span>
         <span className="task-budget-of">

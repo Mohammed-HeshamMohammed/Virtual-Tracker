@@ -37,9 +37,7 @@ export interface ActivityFeedQuery {
   type: "screenshots" | "apps" | "urls"
   memberId: string
   projectScopeOnly: boolean
-  /** Local calendar day YYYY-MM-DD, or "all" for all days */
   day?: string
-  /** Default newest */
   sort?: "newest" | "duration"
 }
 
@@ -185,7 +183,6 @@ export async function fetchActivityScreenshotImage(screenshotId: string): Promis
   }
 }
 
-/** Management-only; the backend re-checks the role and the viewer's scope. */
 export async function deleteActivityScreenshot(screenshotId: string): Promise<void> {
   if (!screenshotId) throw new Error("Screenshot id is required")
   const res = await apiFetch(apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}`), {

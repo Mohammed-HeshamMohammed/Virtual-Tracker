@@ -33,7 +33,6 @@ export default function FeaturesPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-16">
-          {/* Category Filters */}
           <div className="flex flex-wrap justify-center gap-2">
             {categories.map((cat) => (
               <button
@@ -50,10 +49,8 @@ export default function FeaturesPage() {
             ))}
           </div>
 
-          {/* Features Grid */}
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {filteredFeatures.map((group) => {
-              // Custom icons depending on group name
               let iconPath = "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
               let iconColor = "text-violet-600 bg-violet-50 border-violet-100"
               if (group.title.toLowerCase().includes("activity")) {
@@ -92,7 +89,6 @@ export default function FeaturesPage() {
             })}
           </div>
 
-          {/* Roadmap visual board */}
           <section className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm">
             <h3 className="text-xl font-extrabold text-slate-900 mb-2">Development & Roadmap Status</h3>
             <p className="text-xs text-slate-500 font-light max-w-xl mb-8">

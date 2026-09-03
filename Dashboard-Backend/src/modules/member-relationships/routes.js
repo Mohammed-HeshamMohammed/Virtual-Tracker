@@ -37,8 +37,6 @@ import { query } from "../../lib/postgres/client.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
 
 function normalizeRole(value) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(value);
 }
 
@@ -76,20 +74,12 @@ async function requireTeamTreeRole(req, res, origin) {
   return viewer;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeMemberRelationships(req, res, url, origin) {
   const db = getDb();
   if (!db) return false;
 
   const pn = url.pathname;
 
-  // GET /api/member-relationships/scoped-members — role-aware hierarchy visibility for signed-in viewer
   if (
     (pn === "/api/member-relationships/scoped-members" || pn === "/api/v1/member-relationships/scoped-members") &&
     req.method === "GET"
@@ -122,7 +112,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/team-staffable-members — picker rows for team create/edit
   if (
     (pn === "/api/member-relationships/team-staffable-members" ||
       pn === "/api/v1/member-relationships/team-staffable-members") &&
@@ -157,7 +146,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/visual-tree (org: Owner/SuperAdmin/Admin; team: managers+)
   if ((pn === "/api/member-relationships/visual-tree" || pn === "/api/v1/member-relationships/visual-tree") && req.method === "GET") {
     const rawScope = (url.searchParams.get("scope") || "").trim();
     const isTeamScope = rawScope === "team" || rawScope.startsWith("team:") || rawScope.startsWith("team_");
@@ -193,9 +181,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
         const id = String(d.id);
         const first = typeof d.first_name === "string" ? d.first_name : "";
         const last = typeof d.last_name === "string" ? d.last_name : "";
-        // Name falls back to the email only for viewers allowed to see it -
-        // otherwise a member with no first/last name would leak their address
-        // through the name slot, around the email gate below.
         const emailVisible = canViewEmail(authz, id);
         const name =
           `${first} ${last}`.trim() ||
@@ -204,10 +189,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
         return {
           id,
           name,
-          // Emails are Owner/Super Admin only (field-policy.js canViewEmail),
-          // self always excepted - this endpoint builds nodes by hand instead
-          // of going through applyMemberFieldPolicy, so the gate has to be
-          // applied here too or the tree leaks what the members table hides.
           email: emailVisible && typeof d.work_email === "string" ? d.work_email : "",
           role: roleNameById.get(roleId) || "User",
           hierarchy_status: typeof d.hierarchy_status === "string" ? d.hierarchy_status : "",
@@ -302,7 +283,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/ancestors
   const ancestorsMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/ancestors$/);
   if (ancestorsMatch && req.method === "GET") {
     const memberId = ancestorsMatch[1];
@@ -317,7 +297,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/descendants
   const descendantsMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/descendants$/);
   if (descendantsMatch && req.method === "GET") {
     const memberId = descendantsMatch[1];
@@ -333,7 +312,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/tree-path
   const pathMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/tree-path$/);
   if (pathMatch && req.method === "GET") {
     const memberId = pathMatch[1];
@@ -348,7 +326,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/root
   const rootMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/root$/);
   if (rootMatch && req.method === "GET") {
     const memberId = rootMatch[1];
@@ -363,7 +340,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/team-subtree - Self + descendants (manager team scope)
   const teamSubtreeMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/team-subtree$/);
   if (teamSubtreeMatch && req.method === "GET") {
     const memberId = teamSubtreeMatch[1];
@@ -378,7 +354,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/connected
   const connectedMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/connected$/);
   if (connectedMatch && req.method === "GET") {
     const memberId = connectedMatch[1];
@@ -393,7 +368,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/shared-projects - Get members who share projects
   const sharedProjectsMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/shared-projects$/);
   if (sharedProjectsMatch && req.method === "GET") {
     const memberId = sharedProjectsMatch[1];
@@ -408,7 +382,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/visible - Get all visible members (tree + projects)
   const visibleMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/visible$/);
   if (visibleMatch && req.method === "GET") {
     const memberId = visibleMatch[1];
@@ -423,7 +396,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/tree
   const treeMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/tree$/);
   if (treeMatch && req.method === "GET") {
     const memberId = treeMatch[1];
@@ -438,7 +410,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/check-ancestor?ancestor=:id&descendant=:id
   if ((pn === "/api/member-relationships/check-ancestor" || pn === "/api/v1/member-relationships/check-ancestor") && req.method === "GET") {
     const ancestorId = url.searchParams.get("ancestor");
     const descendantId = url.searchParams.get("descendant");
@@ -458,7 +429,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-relationships - Manually create a relationship
   if ((pn === "/api/member-relationships" || pn === "/api/v1/member-relationships") && req.method === "POST") {
     if (!assertManagementRole(req, res, origin)) return true;
     let body;
@@ -502,7 +472,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/parent
   const parentMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/parent$/);
   if (parentMatch && req.method === "GET") {
     const memberId = parentMatch[1];
@@ -518,13 +487,12 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/:memberId/children
   const childrenMatch = pn.match(/^\/api(?:\/v1)?\/member-relationships\/([^/]+)\/children$/);
   if (childrenMatch && req.method === "GET") {
     const memberId = childrenMatch[1];
     if (!(await assertMemberAccessible(req, res, origin, db, memberId))) return true;
     try {
-      const descendants = await getMemberDescendants(db, memberId, 1); // Only direct children
+      const descendants = await getMemberDescendants(db, memberId, 1);
       sendJson(res, origin, 200, { success: true, data: descendants });
     } catch (e) {
       logSafeError("[member-relationships/children]", e);
@@ -533,7 +501,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-relationships/initialize - Auto-create relationships from existing members
   if ((pn === "/api/member-relationships/initialize" || pn === "/api/v1/member-relationships/initialize") && req.method === "POST") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
@@ -546,7 +513,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/member-relationships/reinitialize - Force re-initialization (admin only)
   if ((pn === "/api/member-relationships/reinitialize" || pn === "/api/v1/member-relationships/reinitialize") && req.method === "POST") {
     if (!assertOrgAdminRole(req, res, origin)) return true;
     try {
@@ -559,7 +525,6 @@ export async function routeMemberRelationships(req, res, url, origin) {
     return true;
   }
 
-  // GET /api/member-relationships/status - Check migration status
   if ((pn === "/api/member-relationships/status" || pn === "/api/v1/member-relationships/status") && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {

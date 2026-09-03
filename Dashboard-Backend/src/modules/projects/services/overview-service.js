@@ -1,4 +1,3 @@
-// Project overview aggregates — minimal fields, server-side joins.
 
 import { query as pgQuery } from "../../../lib/postgres/client.js";
 import { isTaskLessProjectType } from "../project-types.js";
@@ -26,19 +25,11 @@ function num(row, ...keys) {
   for (const key of keys) {
     const v = row[key];
     if (typeof v === "number" && Number.isFinite(v)) return v;
-    // node-postgres returns NUMERIC columns (budget cost, member_limit_cost)
-    // as strings, not JS numbers - no setTypeParser is registered anywhere in
-    // this backend. Without this, every numeric-string field here silently
-    // read back as 0.
     if (typeof v === "string" && v.trim() && Number.isFinite(Number(v))) return Number(v);
   }
   return 0;
 }
 
-/** "no_tasks" is neutral, not a health verdict - a fresh project with zero
- * tasks has no evidence either way, so it shouldn't inflate the "on track"
- * count. Frontend HEALTH_CONFIG has no entry for it and falls back to a
- * plain "—" (see project-health-grid.tsx). */
 function calculateHealth(status, tasksTotal, tasksDone) {
   if (status === "archived") return "stalled";
   if (!tasksTotal) return "no_tasks";
@@ -48,15 +39,6 @@ function calculateHealth(status, tasksTotal, tasksDone) {
   return "stalled";
 }
 
-/** Budget usage as the health/progress signal, used whenever a project has
- * a budget - task checkboxes and dollars/hours actually spent are two
- * different things (a task can have real logged time against it long
- * before anyone flips it to "done"), so task-completion could read 0%
- * while the budget bar next to it was genuinely moving, which looked like
- * a contradiction (or like tracking wasn't working at all). Same 100%/85%
- * thresholds BudgetBar already uses (red/amber/green), just inverted from
- * calculateHealth's sense - high *usage* is the risk here, not low
- * completion. */
 function calculateBudgetHealth(status, spent, budgetTotal) {
   if (status === "archived") return "stalled";
   if (!(budgetTotal > 0)) return "no_tasks";
@@ -66,9 +48,6 @@ function calculateBudgetHealth(status, spent, budgetTotal) {
   return "on_track";
 }
 
-// Single indexed query: replaces 5 parallel Firestore-style capped reads
-// (200/200/2000/200/500) + in-app Map joins with one Postgres aggregate.
-// No arbitrary row ceiling - GROUP BY has no cap by construction.
 const OVERVIEW_CORE_SQL = `
 WITH task_counts AS (
   SELECT project_id,
@@ -106,18 +85,9 @@ LEFT JOIN member_limit_agg mla ON mla.project_id = p.id
 WHERE ($1::uuid[] IS NULL OR p.id = ANY($1::uuid[]))
 ORDER BY p.created_at`;
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ allowedProjectIds?: Set<string> | null }} [options]
- */
 export async function getOverviewCore(db, options = {}) {
   const allowed = options.allowedProjectIds ?? null;
   const allowedArray = allowed !== null ? [...allowed] : null;
-  // Summary totals are scoped by `allowed`, same as the per-project rows -
-  // they used to be computed org-wide, which meant a restricted viewer saw
-  // "Active Projects: 15" above a table listing only the 2 they can see.
-  // teamMembers is a separate DISTINCT count (not summed from per-project
-  // member_count) because the same person on 2 projects must count once.
   const [projectRows, [teamMembersRow]] = await Promise.all([
     pgQuery(OVERVIEW_CORE_SQL, [allowedArray]),
     pgQuery(
@@ -130,9 +100,6 @@ export async function getOverviewCore(db, options = {}) {
     ),
   ]);
 
-  // One batched spend computation for every project with a budget, instead
-  // of one query (and for cost-based budgets, one Firestore read per member)
-  // per project inside the loop below.
   const budgetRowsForSpend = projectRows
     .filter((row) => num(row, "budget_total") > 0)
     .map((row) => ({
@@ -145,9 +112,6 @@ export async function getOverviewCore(db, options = {}) {
     }));
   const spentByProject = await computeProjectSpentForAllPg(db, budgetRowsForSpend);
 
-  // scope='per_person' rows store hours-per-member in `cost`, not a total -
-  // the real total scales with current headcount (and, for cost-based, each
-  // member's own rate). Batched the same way as spend above, not per-project.
   const budgetRowsForTarget = projectRows
     .filter((row) => num(row, "budget_total") > 0 && row.budget_scope === "per_person")
     .map((row) => ({
@@ -177,11 +141,6 @@ export async function getOverviewCore(db, options = {}) {
 
     const rawBudgetTotal = num(row, "budget_total");
     const hasBudget = rawBudgetTotal > 0;
-    // A per-person budget with 0 current members computes a $0 target - that
-    // reads as "no budget configured" (the `b: null` gate below), which is
-    // wrong: a real per-person rate exists, it just hasn't been multiplied
-    // by anyone yet. Fall back to the configured rate itself rather than
-    // hiding the budget entirely.
     const budgetTotal =
       hasBudget && row.budget_scope === "per_person"
         ? targetByProject.get(id) || rawBudgetTotal
@@ -189,13 +148,6 @@ export async function getOverviewCore(db, options = {}) {
     const spent = hasBudget ? spentByProject.get(id) ?? 0 : 0;
     const budgetType = hasBudget && String(row.budget_type) === "Hours based" ? "hours" : "cost";
 
-    // Whenever a budget exists, health and the "Progress" column both use
-    // budget usage rather than task completion - money/hours actually spent
-    // is the more reliable "is real work happening" signal, and it keeps
-    // Progress from ever contradicting the Budget bar right next to it.
-    // Task completion is the fallback only for projects with no budget at
-    // all to measure against (calling projects almost always have one; a
-    // budgetless normal project falls back to its real task ratio).
     const health = hasBudget
       ? calculateBudgetHealth(status, spent, budgetTotal)
       : calculateHealth(status, total, done);
@@ -207,11 +159,6 @@ export async function getOverviewCore(db, options = {}) {
     if (isActive) {
       activeProjects += 1;
       if (health === "on_track") onTrack += 1;
-      // Task-less project types (calling, support) have no real task rows by
-      // design - the project itself is the unit of work, see
-      // calling-project-task-cleanup.js. Count each as one virtual task, done
-      // once its budget is fully spent, so "Tasks Completed" isn't blind to
-      // them the way a straight sum of real `tasks` rows would be.
       const taskLess = isTaskLessProjectType(str(row, "type"));
       const virtualTotal = taskLess ? 1 : total;
       const virtualDone = taskLess ? (hasBudget && spent / budgetTotal >= 1 ? 1 : 0) : done;
@@ -228,9 +175,6 @@ export async function getOverviewCore(db, options = {}) {
       h: health,
       p: progress,
       b: budgetTotal > 0 ? { sp: spent, tot: budgetTotal, ty: budgetType } : null,
-      // Real member count, including 0 - a "1" fallback here used to make
-      // an empty project look staffed both in this row and in the summary
-      // Team Members total below.
       m: members,
       ml: memberLimit,
       c: colorIndex % 10,
@@ -252,11 +196,6 @@ export async function getOverviewCore(db, options = {}) {
   };
 }
 
-/**
- * Deferred panels: tasks breakdown, per-project activity, client budgets.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ taskLimit?: number, allowedProjectIds?: Set<string> | null, includeClientBudgets?: boolean }} [options]
- */
 export async function getOverviewPanels(db, options = {}) {
   const taskLimit = Math.min(Math.max(options.taskLimit ?? 80, 1), 200);
   const allowed = options.allowedProjectIds ?? null;
@@ -264,25 +203,12 @@ export async function getOverviewPanels(db, options = {}) {
   const includeClientBudgets = options.includeClientBudgets === true;
 
   const [taskRows, projectRows, clientRows, clientProjectRows, memberRows] = await Promise.all([
-    // Scoped + ordered at the SQL level so LIMIT caps the *visible* set, not
-    // an arbitrary org-wide slice that a restricted viewer's rows might not
-    // even land in (see allowed filter below - this used to run in JS after
-    // the LIMIT had already thrown rows away).
     pgQuery(
       `SELECT id, project_id, status, title, priority, assigned_to FROM tasks
        WHERE ($2::uuid[] IS NULL OR project_id = ANY($2::uuid[]))
        ORDER BY created_at DESC LIMIT $1`,
       [taskLimit, allowedArray],
     ),
-    // Same ordering as OVERVIEW_CORE_SQL's project list, so colorIndex here
-    // lines up with getOverviewCore's - otherwise the same project can get
-    // two different colors across panels (and it could change per request,
-    // since an unordered query has no stable row order). Budget columns are
-    // pulled here too so "Tasks per Project" can show the same budget-usage
-    // bar the main table's Progress column does (see projectBudgetById
-    // below) - without this it fell back to a task-status stacked bar,
-    // which for a budgeted project reads 0%/empty until a task is literally
-    // checked "done", contradicting the Progress column right above it.
     pgQuery(
       `SELECT p.id, p.name, pb.cost AS budget_total, pb.type AS budget_type,
               pb.based_on, pb.scope AS budget_scope, pb.include_non_billable_time, pb.start_date, pb.end_date
@@ -312,9 +238,6 @@ export async function getOverviewPanels(db, options = {}) {
     memberNameById.set(row.id, full);
   }
 
-  // Same spent/target computation getOverviewCore does for the main table's
-  // Progress column - kept here too so "Tasks per Project" can show the
-  // identical budget-usage ratio instead of a task-status bar.
   const budgetedProjectRows = projectRows.filter((row) => num(row, "budget_total") > 0);
   const [spentByProject, targetByProject] = await Promise.all([
     computeProjectSpentForAllPg(
@@ -391,11 +314,6 @@ export async function getOverviewPanels(db, options = {}) {
       b: projectBudgetById.get(pid) ?? null,
     });
   }
-  // Calling projects (and any other type) with a budget but zero task rows
-  // never show up above - that's the whole reason this panel used to omit
-  // them entirely. Append them with all-zero task counts so the
-  // budget-usage bar (same one the main table's Progress column renders)
-  // has somewhere to show.
   for (const row of projectRows) {
     const pid = row.id;
     if (projectsWithActivity.has(pid)) continue;
@@ -425,14 +343,6 @@ export async function getOverviewPanels(db, options = {}) {
     projectsByClient.get(cid).push(pid);
   }
 
-  // A client's budget total/used is the SUM of its linked projects' own
-  // budgets, not the separate `client_budgets` table (which used to be a
-  // disconnected, independently-configured number with no relationship to
-  // what those projects were actually budgeted or spending). Real spend is
-  // computed the same way project-level budgets are
-  // (computeProjectSpentForAllPg); real total mirrors getOverviewCore's own
-  // per_person scaling so a per-person project budget contributes its true
-  // scaled amount, not the raw per-member rate.
   const clientLinkedProjectIds = [...new Set(clientProjectRows.map((r) => r.project_id).filter(Boolean))];
   const clientProjectBudgetRows = clientLinkedProjectIds.length
     ? await pgQuery(

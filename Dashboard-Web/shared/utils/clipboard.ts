@@ -1,4 +1,3 @@
-/** Copy to clipboard; returns false if blocked (no throw). */
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   const value = text.trim()
   if (!value || typeof document === "undefined") return false

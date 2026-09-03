@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState, type ReactNode } from "react"
@@ -58,7 +57,6 @@ export function IconTooltip({
 }: {
   text: string
   children: ReactNode
-  /** @deprecated Dashboard tooltips use a single theme in light and dark mode. */
   isDark?: boolean
   className?: string
   placement?: TooltipPlacement

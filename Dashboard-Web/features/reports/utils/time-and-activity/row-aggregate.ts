@@ -16,7 +16,6 @@ export function formatSecondsAsHMS(totalSec: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
 }
 
-/** Format decimal hours (e.g. 5.25) as HH:MM:SS clock string. */
 export function formatDecimalHoursClock(total: number): string {
   const h = Math.floor(total)
   const rem = (total - h) * 3600

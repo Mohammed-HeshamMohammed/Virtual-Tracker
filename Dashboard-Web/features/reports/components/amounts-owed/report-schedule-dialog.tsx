@@ -39,11 +39,8 @@ export function ReportScheduleDialog({
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
-  /** When false, copy matches “no filters applied” helper text. */
   hasFiltersApplied?: boolean
-  /** Opens the report filters panel (e.g. close this dialog and open filters). */
   onRequestOpenFilters?: () => void
-  /** When provided, called on Save instead of just closing the dialog (real persistence). */
   onSave?: (input: ReportScheduleInput) => Promise<void> | void
 }) {
   const deliveryTimeOptions = useMemo(() => buildDeliveryTimeOptions(), [])

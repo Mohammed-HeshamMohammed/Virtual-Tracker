@@ -25,7 +25,6 @@ function SectionSkeleton({ titleWidth, children }: { titleWidth: string; childre
   )
 }
 
-/** Default tab skeleton — mirrors Info tab field layout. */
 function InfoTabSkeleton() {
   return (
     <>
@@ -69,7 +68,6 @@ interface MemberManageModalSkeletonProps {
   activeTab?: MemberManageTab
 }
 
-/** Placeholder while member profile loads inside the manage-member modal. */
 export function MemberManageModalSkeleton({ activeTab = "info" }: MemberManageModalSkeletonProps) {
   return (
     <div

@@ -26,7 +26,6 @@ const MEMBERS_META_KEY = "people-members:__members_meta__"
 const STALE_MS = 300_000
 const MEMBER_PROFILE_RACE_RETRY_DELAY_MS = 250
 
-/** Retry once on 404 while own member row is still committing after sign-in. */
 function isMemberProfileNotFoundRace(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error ?? "")
   return /member profile not found/i.test(msg)
@@ -52,7 +51,6 @@ type UseMembersListDataOptions = {
   enabledCols: Set<string>
   memberFilters: MemberListFilters
   sortCol: string | null
-  /** When false, skips automatic fetch until session is authorized. */
   enabled?: boolean
 }
 
@@ -163,8 +161,6 @@ export function useMembersListData({
       } catch (err) {
         if (generation !== fetchGenRef.current) return
         logSafeWarn("[useMembersListData] Failed to fetch members", err)
-        // Never cache the failure — keep serving last-known-good data, and let the
-        // page distinguish "fetch failed" from "there really are zero members".
         setError(toErrorMessage(err))
         setLoadingCols(new Set())
       } finally {
@@ -189,9 +185,6 @@ export function useMembersListData({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, fieldSignature])
 
-  // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 6): this hook
-  // predates useCachedList's presencePingEvent option and has its own
-  // fetch/cache logic, so the listener is wired directly here instead.
   useEffect(() => {
     if (!enabled) return
     const handler = () => void refetch({ forceRefetch: true })

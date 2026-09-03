@@ -81,9 +81,6 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
       n.has(key) ? n.delete(key) : n.add(key)
       return n
     })
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 

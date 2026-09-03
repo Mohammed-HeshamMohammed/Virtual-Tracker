@@ -11,20 +11,6 @@ import {
   type BatchMemberLimitResult,
 } from "@/features/projects/api/project-details-api"
 
-/**
- * The Projects page's batch counterpart to the per-project Members Limits
- * tab: one amount, applied to a set of members across every selected
- * project at once, instead of opening each project's own edit form one at a
- * time.
- *
- * Each project keeps its own denomination - hours vs cost, and which rate a
- * cost limit is measured against - by deriving it from that project's own
- * budget, exactly as the per-project editor does (see
- * applyMemberLimitToProjects / member-limit-rules.ts). A project with no
- * budget at all is skipped rather than silently given a cost-based cap with
- * no real budget behind it, and every project's outcome is shown after
- * submitting so a skip or a failure is never silent.
- */
 export function BatchMemberLimitsModal({
   open,
   projects,
@@ -34,14 +20,10 @@ export function BatchMemberLimitsModal({
   onApplied,
 }: {
   open: boolean
-  /** The currently selected projects, for the count shown and for naming
-   *  each row in the results list. */
   projects: { id: string; name: string }[]
   actorMemberId?: string
   isDark?: boolean
   onClose: () => void
-  /** Called once at least one project was actually updated, so the page can
-   *  refetch and show the new limit in the table. */
   onApplied?: () => void
 }) {
   const [memberOptions, setMemberOptions] = useState<{ label: string; value: string; meta?: React.ReactNode }[]>([])

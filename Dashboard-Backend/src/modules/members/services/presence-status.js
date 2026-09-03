@@ -1,8 +1,4 @@
-// Shape presence for API responses. Live status comes from the runtime store; DB keeps last_seen_at only.
 
-/**
- * @param {unknown} value
- */
 export function timestampMs(value) {
   if (!value) return 0;
   if (typeof value === "object" && value !== null && "toDate" in value && typeof value.toDate === "function") {
@@ -14,11 +10,10 @@ export function timestampMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-/** Legacy fields still read from member rows */
 export function extractPresenceFields(memberData) {
   const nested =
     memberData.presence && typeof memberData.presence === "object" && !Array.isArray(memberData.presence)
-      ? /** @type {Record<string, unknown>} */ (memberData.presence)
+      ? (memberData.presence)
       : {};
 
   const last_seen_at = memberData.last_seen_at ?? nested.last_seen_at ?? null;
@@ -31,18 +26,7 @@ export function extractPresenceFields(memberData) {
   };
 }
 
-/**
- * @typedef {"online"|"idle"|"offline"} PresenceStatus
- */
 
-/**
- * @param {{
- *   status?: PresenceStatus;
- *   lastSeenAt?: number | null;
- *   lastActivityAt?: number | null;
- * } | null | undefined} runtime
- * @param {Record<string, unknown>} [memberData]
- */
 export function resolveEffectivePresence(runtime, memberData = {}) {
   if (runtime?.status === "online" || runtime?.status === "idle" || runtime?.status === "offline") {
     const lastSeenAt =
@@ -68,10 +52,6 @@ export function resolveEffectivePresence(runtime, memberData = {}) {
   };
 }
 
-/**
- * @param {Record<string, unknown>} memberData
- * @param {{ status?: PresenceStatus; lastSeenAt?: number | null; lastActivityAt?: number | null } | null} [runtime]
- */
 export function flattenPresenceForApi(memberData, runtime = null) {
   const fields = extractPresenceFields(memberData);
   const effective = resolveEffectivePresence(runtime, memberData);

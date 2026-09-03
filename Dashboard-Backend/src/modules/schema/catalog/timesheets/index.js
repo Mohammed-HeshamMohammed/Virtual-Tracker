@@ -1,6 +1,3 @@
-/**
- * Timesheets domain — served via generic schema CRUD at /api/time-entries and /api/timesheets.
- */
 export const timesheetSchemas = [
   {
     key: "time-entries",

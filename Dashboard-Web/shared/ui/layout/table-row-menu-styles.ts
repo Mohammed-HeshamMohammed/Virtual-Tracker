@@ -1,6 +1,5 @@
 import { cn } from "@/shared/utils/utils"
 
-/** Shared popover panel for table row action menus (members, teams, projects, clients, tasks). */
 export function tableRowMenuContentClass(isDark: boolean, widthClass = "w-40"): string {
   return cn(
     "rounded-xl border p-1 shadow-lg",
@@ -9,7 +8,6 @@ export function tableRowMenuContentClass(isDark: boolean, widthClass = "w-40"): 
   )
 }
 
-/** Base layout for each menu row — rounded highlight on hover/focus. */
 export const TABLE_ROW_MENU_ITEM_BASE =
   "flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-xs outline-none transition-colors"
 

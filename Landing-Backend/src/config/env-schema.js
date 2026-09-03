@@ -1,6 +1,3 @@
-/**
- * Zod schemas for env validation. Don't log parsed values (secrets).
- */
 
 import { z } from "zod";
 
@@ -61,7 +58,6 @@ const envSourceSchema = z
         });
       }
 
-      // Production requires Notify-Backend for contact form delivery.
       if (!(data.NOTIFY_BACKEND_URL || "").trim()) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -79,19 +75,12 @@ const envSourceSchema = z
     }
   });
 
-/**
- * @param {Record<string, string | undefined>} source
- * @returns {string[]}
- */
 export function collectEnvValidationErrors(source = process.env) {
   const result = envSourceSchema.safeParse(source);
   if (result.success) return [];
   return formatZodIssues(result.error);
 }
 
-/**
- * @param {Record<string, string | undefined>} source
- */
 export function validateEnvSource(source = process.env) {
   const errors = collectEnvValidationErrors(source);
   if (errors.length > 0) {
@@ -99,10 +88,6 @@ export function validateEnvSource(source = process.env) {
   }
 }
 
-/**
- * @param {import("zod").ZodError} error
- * @returns {string[]}
- */
 function formatZodIssues(error) {
   return error.issues.map((issue) => {
     const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";

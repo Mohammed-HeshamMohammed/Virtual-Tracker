@@ -42,7 +42,6 @@ export default function WorkTimeLimits() {
 
   return (
     <div className="space-y-8">
-      {/* top section: days on left, hours+actions on right */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
         <div className="space-y-3">
           <SectionLabel label="Weekly Work Days" isDark={isDark} />
@@ -67,7 +66,6 @@ export default function WorkTimeLimits() {
               </button>
             ))}
           </div>
-          {/* Disable time tracking card under Weekly Work Days */}
           <div className={cn("flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 mt-3",
             isDark ? "border-white/10 bg-white/5" : "border-slate-100 bg-slate-50/60")}>
             <div className="min-w-0">
@@ -79,7 +77,6 @@ export default function WorkTimeLimits() {
         </div>
 
         <div className="space-y-5">
-          {/* save/cancel at top-right of right column */}
           <div className="flex items-center gap-2 justify-end">
             <button onClick={handleCancel} className={cn("px-4 py-1.5 text-sm font-medium transition-colors", isDark ? "text-white/50 hover:text-white/80" : "text-slate-500 hover:text-slate-700")} type="button">Cancel</button>
             <button className="px-4 py-1.5 text-sm font-semibold bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors" type="button">Save</button>

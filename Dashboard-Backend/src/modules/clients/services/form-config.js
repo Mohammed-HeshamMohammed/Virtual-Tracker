@@ -1,4 +1,3 @@
-/** Add-client form layout served to the Desktop client (matches frontend tabs). */
 export const CLIENT_FORM_TABS = [
   { key: "general", label: "GENERAL" },
   { key: "contact", label: "CONTACT INFO" },

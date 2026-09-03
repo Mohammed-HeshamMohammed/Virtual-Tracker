@@ -1,9 +1,5 @@
-// SMTP settings from env.
 import { getEnv } from "../../config/env.js";
 
-/**
- * @returns {{ configured: boolean; from: string }}
- */
 export function getEmailDeliveryConfig() {
   const { email } = getEnv();
 
@@ -29,7 +25,6 @@ export function logEmailDeliveryStatus() {
   );
 }
 
-/** Logs SMTP status and verifies login at startup. */
 export async function logEmailDeliveryStatusAsync() {
   logEmailDeliveryStatus();
   const config = getEmailDeliveryConfig();

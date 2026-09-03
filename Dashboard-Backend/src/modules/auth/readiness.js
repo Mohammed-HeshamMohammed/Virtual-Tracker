@@ -4,11 +4,6 @@ import { isPostgresConfigured, probePostgresReadiness } from "../../lib/postgres
 const READINESS_COLLECTION = "_meta";
 const READINESS_DOC_ID = "readiness";
 
-/**
- * Quick Firestore + Postgres ping for login/bootstrap. Missing doc still means DB is up.
- * @param {import("firebase-admin/firestore").Firestore | null | undefined} db
- * @returns {Promise<{ ok: true } | { ok: false, status: number, code: string, error: string }>}
- */
 export async function probeBackendReadiness(db) {
   if (!db) {
     return {

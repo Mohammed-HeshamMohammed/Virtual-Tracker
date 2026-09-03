@@ -1,11 +1,5 @@
 import type { TaskDetail } from "../../types";
 
-/** Priority is a level, so it gets a tone that matches the level rather than
- *  one flat badge. Deliberately not `neutral` for the high end: in the dark
- *  theme .badge.neutral resolves to --c-primary, which is the same green as
- *  --c-good, so a neutral "HIGH" read as reassuring - the opposite of what it
- *  means. Only `urgent` is red; `high` is amber; everything calmer stays
- *  neutral, where green reads correctly as "nothing to worry about". */
 function priorityTone(priority: string): string {
   const key = priority.trim().toLowerCase();
   if (key === "urgent" || key === "critical") return "bad";
@@ -13,11 +7,6 @@ function priorityTone(priority: string): string {
   return "neutral";
 }
 
-// The open task's own detail. The agent could name the task you were
-// tracking but never say what it actually asked for, so "what am I meant to
-// be doing" meant opening the web app mid-session. Renders nothing at all
-// when there is no task in play (a calling/task-less session) or when the
-// task carries no detail worth a panel.
 export function TaskDetailPanel({ detail }: { detail: TaskDetail | null }) {
   if (!detail) return null;
   const done = detail.subtasks.filter((s) => s.completed).length;

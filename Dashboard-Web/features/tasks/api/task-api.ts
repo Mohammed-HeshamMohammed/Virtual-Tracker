@@ -7,7 +7,6 @@ type Envelope<T> = { success?: boolean; error?: string; data?: T; task?: T; task
 export type TaskStatus = "todo" | "in_progress" | "in_review" | "blocked" | "done"
 export type TaskPriority = "low" | "medium" | "high" | "urgent"
 
-// Helper functions
 function asString(value: unknown, fallback = ""): string {
   return String(value ?? fallback)
 }
@@ -106,7 +105,6 @@ function normalizeTask(input: any): Task {
   }
 }
 
-// Types
 export interface TaskSubtask {
   id: string
   taskId: string
@@ -128,17 +126,10 @@ export interface Task {
   priority: TaskPriority
   orderIndex: number
   durationHoursPerDay: number | null
-  /** Mon–Fri count between start and due date. */
   workingDays?: number | null
   durationDays: number | null
   overtimeHoursPerDay: number | null
-  /** When true, timer-limit.service.js's daily-hour cap for this task sums
-   * the currently-open session's continuous elapsed time (clock-in to
-   * clock-out) instead of resetting at the midnight day-bucket boundary. */
   rollingHourCap: boolean
-  /** When true, this task's total-hours estimate is one pool shared by every
-   * assignee combined, instead of each assignee getting their own full
-   * allotment independently. */
   sharedTaskBudget: boolean
   assignedTo: string | null
   assigneeIds?: string[]
@@ -149,7 +140,6 @@ export interface Task {
   createdAt: string
   createdBy: string
   updatedBy: string
-  /** Optimistic-concurrency token (§6.9) - sent back unchanged on save. */
   updatedAt?: string
   comments?: TaskComment[]
   attachments?: TaskAttachment[]
@@ -185,7 +175,6 @@ export interface CreateTaskInput {
   priority?: TaskPriority
   orderIndex?: number
   durationHoursPerDay?: number | null
-  /** Mon–Fri count between start and due date (derived when saving). */
   workingDays?: number | null
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
@@ -205,7 +194,6 @@ export interface UpdateTaskInput {
   orderIndex?: number
   teamId?: string | null
   durationHoursPerDay?: number | null
-  /** Mon–Fri count between start and due date (derived when saving). */
   workingDays?: number | null
   durationDays?: number | null
   overtimeHoursPerDay?: number | null
@@ -218,9 +206,6 @@ export interface UpdateTaskInput {
   reviewState?: string | null
   reviewedBy?: string | null
   reviewedAt?: string | null
-  /** Optimistic-concurrency token (§6.9) - the updatedAt the form loaded
-   * the task with. Optional: omitting it keeps the old blind-write
-   * behavior. */
   expectedUpdatedAt?: string
 }
 
@@ -259,7 +244,6 @@ function normalizeTaskHours(input: Record<string, unknown>): TaskHours {
   }
 }
 
-// API Functions
 
 async function enrichTasksWithAssigneeFields(tasks: Task[]): Promise<Task[]> {
   if (!tasks.length) return tasks
@@ -410,9 +394,6 @@ export async function updateTask(id: string, input: UpdateTaskInput, options?: R
     const { res, json } = await fetchJsonWithRetry<Envelope<Task>>(apiPath(`/api/tasks/${id}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }, { ...options })
 
     if (!res.ok) {
-      // §6.9 - same convention updateProject uses: attach .status so the
-      // caller can branch on a stale-write conflict instead of treating it
-      // like any other failed save.
       const err = extractApiError(res.status, "Failed to update task", json) as Error & {
         status?: number
         conflictData?: unknown
@@ -463,7 +444,6 @@ async function reorderTasks(updates: ReorderTaskUpdate[], options?: RequestOptio
   return Array.isArray(data) ? data.map(normalizeTask) : []
 }
 
-// Subtask Functions
 async function createSubtask(taskId: string, title: string, options?: RequestOptions): Promise<TaskSubtask> {
   const payload = {
     task_id: taskId,
@@ -508,7 +488,6 @@ async function deleteSubtask(id: string, options?: RequestOptions): Promise<void
   if (json && !json.success && json.error) throw new Error(json.error)
 }
 
-// Task Comments
 async function getTaskComments(taskId?: string): Promise<TaskComment[]> {
   const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""
   const res = await apiFetch(apiPath(`/api/task-comments${query}`))
@@ -547,7 +526,6 @@ async function deleteTaskComment(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete comment: ${res.status}`)
 }
 
-// Task Attachments
 async function getTaskAttachments(taskId?: string): Promise<TaskAttachment[]> {
   const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : ""
   const res = await apiFetch(apiPath(`/api/task-attachments${query}`))
@@ -574,7 +552,6 @@ async function deleteTaskAttachment(id: string): Promise<void> {
   if (!res.ok) throw new Error(`Failed to delete attachment: ${res.status}`)
 }
 
-// Task Hours Functions
 export async function getTaskHours(taskId: string, options?: RequestOptions): Promise<TaskHours[]> {
   const { res, json } = await fetchJsonWithRetry<Envelope<Record<string, unknown>[]>>(apiPath(`/api/tasks/${taskId}/hours`), {}, { ...options })
 

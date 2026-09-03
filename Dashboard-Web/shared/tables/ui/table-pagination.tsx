@@ -5,12 +5,6 @@ import { cn } from "@/shared/utils/utils"
 
 const ELLIPSIS = "…"
 
-/** Page numbers to render, collapsing a long run into "1 … 27 28 29 … 68"
- * instead of one button per page. Below the threshold every page fits on
- * one line anyway, so there's nothing to collapse - a table with a fixed,
- * small page size (8-per-page screenshots grids, "All days" selected,
- * hundreds of rows) can otherwise reach 60+ pages and render 60+ buttons
- * with nothing to stop the row from spilling past the viewport. */
 function paginationItems(currentPage: number, totalPages: number): (number | typeof ELLIPSIS)[] {
   if (totalPages <= 7) {
     return Array.from({ length: totalPages }, (_, i) => i + 1)
@@ -76,10 +70,6 @@ export function TablePagination({
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
-        {/* overflow-x-auto is a safety net, not the fix - paginationItems
-            collapsing to ~7 buttons is what actually keeps this on one line;
-            this just stops a still-unexpectedly-long row from pushing the
-            page's own layout sideways instead of scrolling in place. */}
         <div className="flex items-center gap-1 overflow-x-auto">
           {paginationItems(currentPage, totalPages).map((item, index) =>
             item === ELLIPSIS ? (

@@ -1,4 +1,3 @@
-/** Shared motion presets for the View & Edit review center. */
 
 export const pageTitleEnter = {
   initial: { opacity: 0, y: -12 },

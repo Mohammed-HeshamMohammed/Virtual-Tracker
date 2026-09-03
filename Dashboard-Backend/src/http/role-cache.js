@@ -2,7 +2,6 @@ import { resolveMemberRoleName } from "../modules/activity/activity-scope.js";
 import { subscribeChanges } from "../modules/realtime/change-bus.js";
 
 const TTL_MS = 15 * 1000;
-/** @type {Map<string, { roleName: string, expiresAt: number }>} */
 const cache = new Map();
 
 subscribeChanges((msg) => {
@@ -13,7 +12,6 @@ subscribeChanges((msg) => {
   }
 });
 
-/** Role name with 15s in-process cache (invalidated instantly on change-bus updates). */
 export async function resolveMemberRoleNameCached(db, memberId) {
   if (!memberId) return "Viewer";
   const now = Date.now();
@@ -25,7 +23,6 @@ export async function resolveMemberRoleNameCached(db, memberId) {
   return roleName;
 }
 
-/** @param {string} memberId */
 export function invalidateMemberRoleCache(memberId) {
   if (memberId) cache.delete(memberId);
 }

@@ -8,7 +8,6 @@ export type ContactInquiry = {
   message: string
 }
 
-/** Submits a landing-page contact inquiry to Landing-Backend. Throws on failure. */
 export async function submitContactInquiry(input: ContactInquiry): Promise<void> {
   if (!LANDING_API_URL) {
     throw new Error("The contact form is not available right now.")

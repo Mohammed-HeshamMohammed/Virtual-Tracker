@@ -1,15 +1,7 @@
-// POST /api/notify/phone/validate — libphonenumber-js, internal only.
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { validatePhoneNumber } from "./phone-validation.service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routePhone(req, res, url, origin) {
   if (!url.pathname.startsWith("/api/notify/phone")) return false;
 

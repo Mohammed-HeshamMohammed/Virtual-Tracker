@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState } from "react"
@@ -21,7 +20,6 @@ export function ReportSimpleDropdown({
   width?: string
   accentBar?: boolean
   disabled?: boolean
-  /** Shown when `value` matches no option (e.g. "" before anything is picked) - falls back to the raw value otherwise. */
   placeholder?: string
 }) {
   const [open, setOpen] = useState(false)

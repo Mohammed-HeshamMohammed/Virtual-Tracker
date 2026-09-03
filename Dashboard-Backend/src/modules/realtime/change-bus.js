@@ -1,14 +1,7 @@
-// Live-sync change bus (PLAN-livesyncandagenttimer.md §3, Option A). A
-// near-copy of presence-pubsub.js's Redis-with-local-echo-de-dup pattern,
-// minus the RTDB fallback that module has - that fallback exists there for
-// presence *persistence*, which has no equivalent need here. Frames carry
-// no row data (§4.1) - only enough to tell a client which cache key to
-// refetch through the endpoint it is already authorized to call.
 import { EventEmitter } from "node:events";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { isRedisConfigured, getRedisClient, getRedisSubscriberClient } from "../../lib/redis/client.js";
 
-/** @typedef {{ resource: string; id: string; action: "created" | "updated" | "deleted"; actor?: string; at: number }} ChangeMessage */
 
 const REDIS_CHANNEL = "data:changes";
 
@@ -18,22 +11,9 @@ localBus.setMaxListeners(100);
 let redisSubscribed = false;
 const localChanges = new Set();
 
-// ponytail: single global throttle window; make it per-member if activity
-// fan-out gets noisy. Case 56 - an agent uploading screenshots continuously
-// must not turn into a broadcast per upload; every list-page refetch this
-// would trigger is wasted since nothing on those pages reads activity data.
 const ACTIVITY_THROTTLE_MS = 10_000;
 let lastActivityPublishAt = 0;
 
-/**
- * Fire-and-forget on purpose: a failed broadcast must never fail the
- * caller's write. Call from the shared write helpers (§6.1), not from
- * individual route handlers, so a new route cannot forget it.
- * @param {string} resource
- * @param {string} id
- * @param {"created" | "updated" | "deleted"} action
- * @param {string} [actorMemberId]
- */
 export async function publishChange(resource, id, action, actorMemberId) {
   if (resource === "activity") {
     const now = Date.now();
@@ -41,7 +21,6 @@ export async function publishChange(resource, id, action, actorMemberId) {
     lastActivityPublishAt = now;
   }
 
-  /** @type {ChangeMessage} */
   const message = { resource, id, action, actor: actorMemberId, at: Date.now() };
 
   const key = `${resource}:${id}:${action}:${message.at}`;
@@ -60,10 +39,6 @@ export async function publishChange(resource, id, action, actorMemberId) {
   }
 }
 
-/**
- * @param {(message: ChangeMessage) => void} handler
- * @returns {() => void}
- */
 export function subscribeChanges(handler) {
   localBus.on("change", handler);
   if (isRedisConfigured()) ensureRedisSubscriber();
@@ -99,7 +74,6 @@ function ensureRedisSubscriber() {
   }
 }
 
-/** Tear down subscriber state (tests). */
 export function resetChangeBusForTests() {
   redisSubscribed = false;
   localChanges.clear();

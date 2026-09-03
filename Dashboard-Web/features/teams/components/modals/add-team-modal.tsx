@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/exhaustive-deps, react-doctor/no-initialize-state */
 "use client"
 
 import { useState as useComponentState, useEffect, useMemo, useRef } from "react"
@@ -45,8 +44,6 @@ function staffableSummaryToMember(row: {
   avatar_color?: string
   avatar_url?: string
 }): Member {
-  // display_name first: it is where a full name lives for members created
-  // through an invite, whose first_name/last_name are empty.
   const name =
     (row.display_name ?? "").trim() ||
     [row.first_name, row.last_name].filter(Boolean).join(" ").trim() ||
@@ -127,19 +124,12 @@ interface AddTeamModalProps {
   onSave: (team: TeamWizardSavePayload) => Promise<void>
   initial?: TeamWizardInitial | null
   mode?: "create" | "edit"
-  /** When set, only these member ids can be assigned (manager hierarchy scope). */
   allowedMemberIds?: Set<string> | null
-  /** Manager picker — subtree + org-wide employees from backend. */
   useTeamStaffablePicker?: boolean
-  /** Current team roster — always shown in edit picker even outside hierarchy scope. */
   rosterMembers?: TeamMember[]
-  /** Current team projects — always shown in edit picker even outside project scope. */
   rosterProjects?: Array<{ id: string; name: string }>
-  /** When editing, fetch fresh roster for this team id. */
   teamId?: string
-  /** Actor role — limits which members can be assigned (rank ceiling). */
   actorRole?: string
-  /** When set, project picker is limited to projects with members in this tree scope. */
   teamScopeMemberIds?: Set<string> | null
 }
 
@@ -240,8 +230,6 @@ export function AddTeamModal({
   teamScopeMemberIds = null,
 }: AddTeamModalProps) {
   const isEdit = mode === "edit"
-  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
-  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
   const [isClosing, setIsClosing] = useComponentState(false)
   const handleClose = () => {
     setIsClosing(true)
@@ -358,7 +346,6 @@ export function AddTeamModal({
             return {
               id: row.member_id,
               name,
-              // `avatar` is the initials text slot; the photo URL goes to avatarUrl.
               avatar:
                 name
                   .split(/\s+/)
@@ -584,7 +571,6 @@ export function AddTeamModal({
         className="bg-white dark:bg-slate-900 rounded-2xl w-full max-w-[600px] shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="flex items-center justify-between gap-3 px-7 pt-6 pb-2 shrink-0">
           <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">{isEdit ? "Edit team" : "New team"}</h2>
           <div className="flex items-center gap-2">
@@ -595,12 +581,10 @@ export function AddTeamModal({
           </div>
         </div>
 
-        {/* Stepper */}
         <div className="px-7 pt-4 pb-0 shrink-0">
           <Stepper step={step} />
         </div>
 
-        {/* Body */}
         <div className="px-7 pb-4">
           <AnimatePresence mode="wait">
             {step === 1 && (
@@ -708,7 +692,6 @@ export function AddTeamModal({
           </AnimatePresence>
         </div>
 
-        {/* Schedule report toggle */}
         <div className="px-7 pb-4">
           <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/60 dark:bg-slate-800/50 px-4 py-3">
             <div className="flex items-center gap-2">
@@ -746,7 +729,6 @@ export function AddTeamModal({
           <p className="px-7 pb-2 text-sm text-red-500 dark:text-red-400">{saveError}</p>
         ) : null}
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-7 py-4 border-t border-slate-100 dark:border-slate-800 shrink-0 bg-white dark:bg-slate-900 rounded-b-2xl">
           <button
             onClick={handleClose}

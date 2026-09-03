@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"

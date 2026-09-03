@@ -84,18 +84,10 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
       n.has(key) ? n.delete(key) : n.add(key)
       return n
     })
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
-  // Server allows self (any status) or Manager+ (with scope) to delete a
-  // time entry - matches assertTimeEntryWriteAuthorized. Approved entries
-  // stay off-limits here too, same as the personal "Your manual entries"
-  // list (ManualTimeContent.tsx) already restricts, so this report can't
-  // remove something the personal page won't.
   const isManager = isManagementRole(memberRole ?? "")
   function canDeleteRow(r: ManualTimeEditRow): boolean {
     if (r.status === "approved") return false

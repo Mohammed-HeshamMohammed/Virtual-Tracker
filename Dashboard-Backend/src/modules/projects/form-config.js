@@ -1,4 +1,3 @@
-/** Add-project form layout served to the Desktop client. */
 export const PROJECT_FORM_TABS = [
   { key: "general", label: "GENERAL" },
   { key: "members-teams", label: "MEMBERS & TEAMS" },

@@ -6,10 +6,6 @@ import { errorCodeOf, formatAuthError } from "@/lib/auth/format-auth-error"
 export const PASSWORD_RESET_SUCCESS_MESSAGE =
   "If an account exists for this email address, a password reset link has been sent."
 
-/**
- * Sends Firebase Authentication's built-in password reset email.
- * Does not reveal whether the email is registered (enumeration-safe).
- */
 export async function sendFirebasePasswordResetEmail(email: string): Promise<void> {
   const trimmed = email.trim()
   const auth = getFirebaseAuthClient()

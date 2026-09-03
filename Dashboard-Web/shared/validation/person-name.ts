@@ -6,7 +6,6 @@ export function isEmailLikeNamePart(value: string): boolean {
   return EMAIL_REGEX.test(trimmed)
 }
 
-/** Strips `@` and anything after it so emails cannot be entered in name fields. */
 export function sanitizePersonNameInput(value: string): string {
   const atIdx = value.indexOf("@")
   if (atIdx === -1) return value

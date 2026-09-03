@@ -24,10 +24,6 @@ const TRANSFER_COLUMNS =
   "id, requester_member_id, target_member_id, target_email, token, status, expires_at, responded_at, completed_at, created_at";
 const TRANSFER_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} email
- */
 async function findMemberByEmail(db, email) {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
@@ -41,9 +37,6 @@ async function findMemberByEmail(db, email) {
   return { id: m.id, data: m };
 }
 
-/**
- * @param {Record<string, unknown>} row
- */
 function isTransferExpired(row) {
   if (row.status === "expired") return true;
   const expiresAt = row.expires_at;
@@ -52,11 +45,6 @@ function isTransferExpired(row) {
   return Number.isFinite(ms) && ms < Date.now();
 }
 
-/**
- * `db` is unused - transfer requests are Postgres rows now.
- * @param {import("firebase-admin/firestore").Firestore} _db
- * @param {string} token
- */
 async function findTransferByToken(_db, token) {
   if (!token || typeof token !== "string" || token.length < 32) return null;
   const rows = await pgQuery(`SELECT ${TRANSFER_COLUMNS} FROM ${TABLE} WHERE token = $1 LIMIT 1`, [token]);
@@ -65,12 +53,6 @@ async function findTransferByToken(_db, token) {
   return { id: data.id, data, update: (patch) => updateTransferRow(data.id, patch) };
 }
 
-/**
- * Partial update by id, mirroring the `ref.update({...})` the Firestore
- * version used - same call shape at every site, one statement here.
- * @param {string} id
- * @param {Record<string, unknown>} patch
- */
 async function updateTransferRow(id, patch) {
   const entries = Object.entries(patch);
   if (!entries.length) return;
@@ -81,10 +63,6 @@ async function updateTransferRow(id, patch) {
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} requesterMemberId
- */
 async function getRequesterDisplayName(db, requesterMemberId) {
   const d = (await getMemberByIdPg(requesterMemberId)) || {};
   const first = typeof d.first_name === "string" ? d.first_name.trim() : "";
@@ -93,13 +71,6 @@ async function getRequesterDisplayName(db, requesterMemberId) {
   return name || "A team manager";
 }
 
-/**
- * Notify Owner/Admin/Super Admin about hierarchy issues.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} title
- * @param {string} message
- * @param {string} [link]
- */
 export async function notifyAdminRoles(db, title, message, link = "") {
   const adminRoles = ["Owner", "Super Admin", "Admin"];
   const roleIds = await resolveRoleIdsWhere((name) => adminRoles.includes(name));
@@ -125,15 +96,6 @@ export async function notifyAdminRoles(db, title, message, link = "") {
   }
 }
 
-/**
- * Create transfer request + send invite email.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} params
- * @param {string} params.requesterMemberId
- * @param {string} params.requesterRoleName
- * @param {string} params.targetEmail
- * @param {string} [params.appOrigin]
- */
 export async function createMemberTransferRequest(db, {
   requesterMemberId,
   requesterRoleName,
@@ -239,14 +201,6 @@ export async function createMemberTransferRequest(db, {
   };
 }
 
-/**
- * Accept transfer by token (email must match server-side).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} params
- * @param {string} params.token
- * @param {string} params.acceptorMemberId
- * @param {string} params.acceptorEmail
- */
 export async function acceptMemberTransferRequest(db, { token, acceptorMemberId, acceptorEmail }) {
   const found = await findTransferByToken(db, token);
   if (!found) {
@@ -334,13 +288,6 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
   return { ok: true, requester_member_id: requesterId, target_member_id: acceptorMemberId };
 }
 
-/**
- * Decline transfer by token.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {Object} params
- * @param {string} params.token
- * @param {string} params.declinerMemberId
- */
 export async function declineMemberTransferRequest(db, { token, declinerMemberId }) {
   const found = await findTransferByToken(db, token);
   if (!found) {
@@ -369,11 +316,6 @@ export async function declineMemberTransferRequest(db, { token, declinerMemberId
   return { ok: true };
 }
 
-/**
- * Public transfer preview by token (no auth).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} token
- */
 export async function getTransferRequestPreview(db, token) {
   const found = await findTransferByToken(db, token);
   if (!found) {
@@ -398,9 +340,6 @@ export async function getTransferRequestPreview(db, token) {
   };
 }
 
-/**
- * @param {string} email
- */
 function maskEmail(email) {
   if (typeof email !== "string" || !email.includes("@")) return "***";
   const [local, domain] = email.split("@");

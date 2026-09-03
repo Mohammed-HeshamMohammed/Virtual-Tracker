@@ -1,4 +1,3 @@
-// Template builders for POST /api/notify/email.
 import { escapeHtml, sendTransactionalEmail } from "./transactional-email.js";
 import {
   buildAuthBrandedEmailHtml,
@@ -46,9 +45,7 @@ function greeting(name, fallback = "there") {
   return trimmed || fallback;
 }
 
-// ── Verification email ────────────────────────────────────────────────────────
 
-/** @param {{ email: string; verificationLink: string; appPublicUrl?: string }} input */
 export function buildEmailVerificationEmail(input) {
   const appPublicUrl = typeof input.appPublicUrl === "string" ? input.appPublicUrl.trim() : "";
   const verificationLink = appPublicUrl
@@ -95,7 +92,6 @@ export function buildEmailVerificationEmail(input) {
   return { subject, text, html, verificationLink };
 }
 
-/** @param {{ email: string; verificationLink: string; appPublicUrl?: string }} input */
 export async function sendEmailVerificationEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const verificationLink = typeof input.verificationLink === "string" ? input.verificationLink.trim() : "";
@@ -105,9 +101,7 @@ export async function sendEmailVerificationEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[verification-email]" });
 }
 
-// ── Security notification emails ──────────────────────────────────────────────
 
-/** @param {{ recipientName?: string; reason: "changed" | "reset" }} input */
 export function buildPasswordUpdatedEmail(input) {
   const name = greeting(input.recipientName);
   const isReset = input.reason === "reset";
@@ -152,7 +146,6 @@ export function buildPasswordUpdatedEmail(input) {
   return { subject, text, html };
 }
 
-/** @param {{ recipientName?: string; ip: string; deviceSummary: string; signedInAt?: string }} input */
 export function buildNewSignInAlertEmail(input) {
   const name = greeting(input.recipientName);
   const ip = input.ip?.trim() || "Unknown";
@@ -209,7 +202,6 @@ export function buildNewSignInAlertEmail(input) {
   return { subject, text, html };
 }
 
-/** @param {{ to: string; recipientName?: string; reason: "changed" | "reset" }} input */
 export async function sendPasswordUpdatedEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!to) return { sent: false, channel: "skipped" };
@@ -217,7 +209,6 @@ export async function sendPasswordUpdatedEmail(input) {
   return sendTransactionalEmail({ to, subject, text, html, logPrefix: "[password-updated-email]" });
 }
 
-/** @param {{ to: string; recipientName?: string; ip: string; deviceSummary: string; signedInAt?: string }} input */
 export async function sendNewSignInAlertEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!to) return { sent: false, channel: "skipped" };
@@ -225,10 +216,6 @@ export async function sendNewSignInAlertEmail(input) {
   return sendTransactionalEmail({ to, subject, text, html, logPrefix: "[new-sign-in-email]" });
 }
 
-/**
- * @param {Record<string, unknown> | null | undefined} profile
- * @param {{ displayName?: string | null; email?: string | null }} [userRecord]
- */
 export function resolveSecurityEmailRecipient(profile, userRecord) {
   const email =
     (typeof userRecord?.email === "string" ? userRecord.email : "") ||
@@ -244,9 +231,7 @@ export function resolveSecurityEmailRecipient(profile, userRecord) {
   return { to: email.trim().toLowerCase(), recipientName };
 }
 
-// ── Member invite ─────────────────────────────────────────────────────────────
 
-/** @param {{ email: string; inviteUrl: string; roleName?: string }} input */
 export async function sendMemberInviteEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const inviteUrl = typeof input.inviteUrl === "string" ? input.inviteUrl.trim() : "";
@@ -301,9 +286,7 @@ export async function sendMemberInviteEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[invite-email]" });
 }
 
-// ── Pre-provision welcome ─────────────────────────────────────────────────────
 
-/** @param {{ email: string; displayName?: string; temporaryPassword: string; signInUrl: string }} input */
 export async function sendPreprovisionWelcomeEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const temporaryPassword = typeof input.temporaryPassword === "string" ? input.temporaryPassword : "";
@@ -359,9 +342,7 @@ export async function sendPreprovisionWelcomeEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[preprovision-email]" });
 }
 
-// ── Registration welcome ──────────────────────────────────────────────────────
 
-/** @param {{ email: string; displayName?: string; signInUrl: string }} input */
 export async function sendRegistrationWelcomeEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const signInUrl = typeof input.signInUrl === "string" ? input.signInUrl.trim() : "";
@@ -404,9 +385,7 @@ export async function sendRegistrationWelcomeEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[registration-welcome-email]" });
 }
 
-// ── Team transfer invite ──────────────────────────────────────────────────────
 
-/** @param {{ email: string; transferUrl: string; requesterName?: string }} input */
 export async function sendMemberTransferEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const transferUrl = typeof input.transferUrl === "string" ? input.transferUrl.trim() : "";
@@ -457,9 +436,7 @@ export async function sendMemberTransferEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[transfer-email]" });
 }
 
-// ── Member ban notification ───────────────────────────────────────────────────
 
-/** @param {{ email: string; memberName?: string; reason: string }} input */
 export async function sendMemberBanEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const reason = typeof input.reason === "string" ? input.reason.trim() : "";
@@ -505,9 +482,7 @@ export async function sendMemberBanEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[ban-email]" });
 }
 
-// ── Team onboarding reminder ───────────────────────────────────────────────────
 
-/** @param {{ email: string; displayName?: string; step: "download_app" | "track_time"; appUrl?: string }} input */
 export async function sendOnboardingReminderEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   if (!email) return { sent: false, channel: "skipped" };
@@ -540,9 +515,7 @@ export async function sendOnboardingReminderEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[onboarding-reminder-email]" });
 }
 
-// ── Landing page contact inquiry ──────────────────────────────────────────────
 
-/** @param {{ to: string; name: string; fromEmail: string; topic?: string; teamSize?: string; message: string }} input */
 export async function sendContactInquiryEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   const name = typeof input.name === "string" ? input.name.trim() : "";
@@ -594,9 +567,7 @@ export async function sendContactInquiryEmail(input) {
   return sendTransactionalEmail({ to, subject, text, html, logPrefix: "[contact-inquiry-email]" });
 }
 
-// ── Team weekly report ────────────────────────────────────────────────────────
 
-/** @param {{ email: string; teamName: string; memberCount: number; appUrl: string }} input */
 export async function sendTeamWeeklyReportEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const teamName = typeof input.teamName === "string" ? input.teamName.trim() : "Team";
@@ -641,17 +612,7 @@ export async function sendTeamWeeklyReportEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[team-weekly-report]" });
 }
 
-// ── Report delivery (Send / Schedule on a report page) ─────────────────────────
 
-/**
- * @param {{
- *   email: string,
- *   subject?: string,
- *   message?: string,
- *   reportName?: string,
- *   attachment?: { filename: string, contentBase64: string, contentType: string },
- * }} input
- */
 export async function sendReportDeliveryEmail(input) {
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   if (!email) return { sent: false, channel: "skipped" };

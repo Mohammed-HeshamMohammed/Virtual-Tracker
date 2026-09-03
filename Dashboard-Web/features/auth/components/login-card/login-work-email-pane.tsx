@@ -12,7 +12,6 @@ import {
   AuthStaggerItem,
 } from "@/features/auth/components/auth-motion"
 
-/** Flip to `true` when passwordless work-email sign-in is ready for production. */
 const WORK_EMAIL_LOGIN_ENABLED = false
 
 interface LoginWorkEmailPaneProps {

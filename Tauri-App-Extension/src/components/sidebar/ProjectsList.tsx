@@ -1,9 +1,6 @@
 import { useState } from "react";
 import type { ProjectInfo } from "../../types";
 
-// Below this, a search box is more clutter than it's worth - everything
-// already fits inside .side-tasklist-body's own scroll area (143px, roughly
-// 3-4 rows) without needing to find anything.
 const SEARCH_THRESHOLD = 6;
 
 type ProjectsListProps = {
@@ -15,15 +12,9 @@ type ProjectsListProps = {
   openTaskCountByProject: Map<string, number>;
   projectProgressById: Map<string, number>;
   onSelectProject: (project: ProjectInfo) => void;
-  // Undefined hides the row action entirely (used by the smoke tests below,
-  // which don't exercise task creation) - present in the real app.
   onCreateTask?: (project: ProjectInfo) => void;
 };
 
-// Every project the member can track against, as a quick-switch list rather
-// than only the dropdown below - useful the moment there's more than one,
-// and each row's open-task count is something the dropdown itself has no
-// room to show.
 export function ProjectsList({
   signedIn,
   projects,
@@ -64,8 +55,6 @@ export function ProjectsList({
         {visible.map((project) => {
           const openCount = openTaskCountByProject.get(project.id) ?? 0;
           const progress = projectProgressById.get(project.id);
-          // can_create_tasks only ever means something on a task-based
-          // project - a calling project has no task list to add to.
           const canAddTask = Boolean(onCreateTask) && project.hasTasks && project.canCreateTasks;
           const rowDisabled = busy || sessionOpen || project.budgetExhausted;
           return (
@@ -109,8 +98,6 @@ export function ProjectsList({
                   aria-label={`New task in ${project.name}`}
                   disabled={busy}
                   onClick={(e) => {
-                    // The row button underneath would otherwise also pick up
-                    // this click and select the project mid-dialog.
                     e.stopPropagation();
                     onCreateTask?.(project);
                   }}

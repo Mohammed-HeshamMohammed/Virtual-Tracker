@@ -13,7 +13,6 @@ export function ActivityDayEmptyState({
   icon: LucideIcon
   title: string
   description?: string
-  /** One click instead of "go find the day picker yourself" - omit to hide the button. */
   onShowAllDays?: () => void
 }) {
   return (
@@ -41,8 +40,6 @@ export function ActivitySearchEmptyState({
   onClear,
 }: {
   entityLabel: string
-  /** Resets search + every page filter in one click - omit to fall back to
-   *  the old "go do it yourself above" text. */
   onClear?: () => void
 }) {
   return (

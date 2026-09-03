@@ -2,10 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type { MonitoringNoticeView } from "../../types";
 import { TitleBar } from "../common/TitleBar";
 
-// CF-2: full-screen, non-dismissible by design - no back button, no close-X,
-// no click-outside-to-dismiss. The only way past it is the Accept action,
-// which is exactly what "cannot be hidden or disabled by any setting or
-// flag" means for the one screen whose entire job is to require attention.
 export function MonitoringNoticePanel({
   notice,
   busy,

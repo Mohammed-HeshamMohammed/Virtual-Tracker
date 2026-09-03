@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState } from "react"
@@ -9,7 +8,6 @@ import { cn } from "@/shared/utils/utils"
 import { SimpleDropdown } from "@/features/settings/components/policy/components/shared"
 import { AssignMembersThroughStep } from "@/features/settings/components/policy/components/assign-members-through"
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type AccrualSchedule = "None" | "Annual" | "Monthly" | "Hours worked" | "Policy joined date"
 type PaidStatus = "Paid" | "Unpaid"
@@ -58,7 +56,6 @@ const DEFAULT_FORM: PolicyForm = {
   paidStatus: "Paid",
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
 
 import { Tooltip } from "@/shared/ui/simple-tooltip"
 
@@ -87,7 +84,6 @@ function SectionLabel({ children }: { children: ReactNode }) {
   return <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">{children}</p>
 }
 
-// ─── Stepper ──────────────────────────────────────────────────────────────────
 
 function Stepper({ step }: { step: 1 | 2 }) {
   return (
@@ -134,7 +130,6 @@ function Stepper({ step }: { step: 1 | 2 }) {
   )
 }
 
-// ─── Step 1 ───────────────────────────────────────────────────────────────────
 
 function StepSetupPolicy({ form, setForm, onNext, onClose }: {
   form: PolicyForm
@@ -380,7 +375,6 @@ function StepSetupPolicy({ form, setForm, onNext, onClose }: {
   )
 }
 
-// ─── Add Policy Modal ─────────────────────────────────────────────────────────
 
 function AddPolicyModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<1 | 2>(1)

@@ -1,4 +1,3 @@
-// Firestore/gRPC quota exhaustion heuristics.
 
 export function isFirestoreQuotaError(err) {
   const msg = err instanceof Error ? err.message : String(err ?? "")
@@ -11,7 +10,6 @@ export function isFirestoreQuotaError(err) {
   )
 }
 
-/** @returns {{ status: number, body: object } | null} */
 export function quotaErrorHttpResponse(err) {
   if (!isFirestoreQuotaError(err)) return null
   const message = err instanceof Error ? err.message : String(err ?? "Firebase quota exceeded")

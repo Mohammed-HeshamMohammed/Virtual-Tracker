@@ -12,14 +12,7 @@ import {
 } from "./hierarchy-placement.js";
 import { syncMemberHierarchyStatus } from "./hierarchy-sync.js";
 
-/**
- * @typedef {"assign_to_owner" | "downgrade_to_viewer"} OrphanRepairStrategy
- */
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @returns {Promise<string | null>}
- */
 export async function resolveOrganizationRootMemberId(db) {
   const membersDocs = await listMembersPg({ limit: 5000 });
   let fallbackId = null;
@@ -42,7 +35,6 @@ export async function resolveOrganizationRootMemberId(db) {
   return fallbackId;
 }
 
-/** Members with invalid hierarchy placement (orphan employees, etc.). */
 export async function findOrphanHierarchyViolations(db) {
   const [membersDocs, relsDocs] = await Promise.all([
     listMembersPg({ limit: 5000 }),
@@ -56,7 +48,6 @@ export async function findOrphanHierarchyViolations(db) {
     }
   }
 
-  /** @type {Array<{ member_id: string; role_name: string; parent_member_id: string | null; violation_type: string }>} */
   const violations = [];
 
   for (const data of membersDocs) {
@@ -84,7 +75,6 @@ export async function findOrphanHierarchyViolations(db) {
   return violations;
 }
 
-/** Fix orphan members — assign to org root or downgrade to Viewer. */
 export async function repairOrphanHierarchyMembers(db, options = {}) {
   const strategy = options.strategy === "downgrade_to_viewer" ? "downgrade_to_viewer" : "assign_to_owner";
   const dryRun = options.dryRun !== false;
@@ -96,7 +86,6 @@ export async function repairOrphanHierarchyMembers(db, options = {}) {
   }
 
   const orgRootId = strategy === "assign_to_owner" ? await resolveOrganizationRootMemberId(db) : null;
-  /** @type {Array<Record<string, unknown>>} */
   const actions = [];
 
   for (const violation of violations) {
@@ -191,7 +180,6 @@ let lastOrphanRepairAt = 0;
 let lastOwnerSeparationRepairAt = 0;
 const ORPHAN_REPAIR_COOLDOWN_MS = 5 * 60 * 1000;
 
-/** Auto-fix orphans on tree load (5m cooldown). */
 export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
   const now = Date.now();
   if (now - lastOrphanRepairAt < ORPHAN_REPAIR_COOLDOWN_MS) {
@@ -211,7 +199,6 @@ export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
   });
 }
 
-/** Drop hierarchy edges for Client/external roles. */
 export async function cleanupExternalEntityHierarchyEdges(db) {
   const { removeMemberHierarchyRelationships } = await import("../member-relationships/service.js");
   const membersDocs = await listMembersPg({ limit: 5000 });
@@ -232,7 +219,6 @@ export async function cleanupExternalEntityHierarchyEdges(db) {
   return { removed_edges: removedEdges, members_cleaned: membersCleaned };
 }
 
-/** Split nested Owners — remove Owner→Owner edge only; subtree stays under nested Owner. */
 export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
   const dryRun = options.dryRun === true;
   const edges = await pgQuery("SELECT * FROM member_relationships");
@@ -263,7 +249,6 @@ export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
     };
   }
 
-  /** @type {string[]} */
   const separatedOwners = [];
   for (const item of toRemove) {
     const childOwnerId = item.edge.child_member_id;
@@ -283,7 +268,6 @@ export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
   };
 }
 
-/** Auto-split Owner-under-Owner on tree load (5m cooldown). */
 export async function maybeSeparateOwnersOnTreeLoad(db) {
   const now = Date.now();
   if (now - lastOwnerSeparationRepairAt < ORPHAN_REPAIR_COOLDOWN_MS) {

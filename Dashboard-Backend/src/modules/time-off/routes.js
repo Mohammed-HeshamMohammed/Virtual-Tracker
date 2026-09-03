@@ -1,8 +1,3 @@
-// Time off: policies (management), requests (self-service + review), and
-// manual ledger adjustments (management).
-//
-// Balance is never written directly - every change is a transaction row, so
-// the number a report shows can always be explained by the ledger behind it.
 
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canManageMember } from "../../http/authorization.js";
@@ -33,8 +28,6 @@ function parseDay(value) {
   return DAY_RE.test(day) ? day : "";
 }
 
-/** Whole days between two dates, inclusive. Weekend/holiday handling is a
- *  policy question this deployment has no calendar for, so a day is a day. */
 function inclusiveDays(startDay, endDay) {
   const start = new Date(`${startDay}T00:00:00.000Z`).getTime();
   const end = new Date(`${endDay}T00:00:00.000Z`).getTime();
@@ -42,14 +35,6 @@ function inclusiveDays(startDay, endDay) {
   return Math.round((end - start) / 86400000) + 1;
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeTimeOff(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/time-off")) return false;
@@ -60,7 +45,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── Policies ────────────────────────────────────────────────────────────
   if (pn === "/api/time-off/policies" && req.method === "GET") {
     try {
       const includeInactive = url.searchParams.get("includeInactive") === "true" && requireManagementRole(viewer);
@@ -150,7 +134,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── Requests ────────────────────────────────────────────────────────────
   if (pn === "/api/time-off/requests" && req.method === "GET") {
     try {
       const requested = (url.searchParams.get("memberId") || "").trim();
@@ -186,9 +169,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
   }
 
   if (pn === "/api/time-off/requests" && req.method === "POST") {
-    // Time off is staff leave. A client has no policy, no balance and nobody
-    // to approve them, so a request from one only ever produces a row nobody
-    // can action. The UI hides the page from them; this refuses it outright.
     if (normalizeRoleKey(viewer.roleName) === "client") {
       sendJson(res, origin, 403, { success: false, error: "Clients do not request time off." });
       return true;
@@ -232,9 +212,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
         days,
         note: body.note,
       });
-      // A policy that needs no approval is granted on submission, so the
-      // ledger reflects it immediately rather than waiting for a review that
-      // is never going to happen.
       if (policy.requires_approval === false && created) {
         await reviewTimeOffRequestPg(String(created.id), {
           status: "approved",
@@ -273,8 +250,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
         return true;
       }
       const owner = String(existing.member_id);
-      // Cancelling your own pending request is self-service; approving or
-      // rejecting is always someone else's call.
       const isSelfCancel = status === "cancelled" && owner === viewer.memberId;
       if (!isSelfCancel) {
         if (owner === viewer.memberId) {
@@ -299,7 +274,6 @@ export async function routeTimeOff(req, res, url, db, origin) {
     return true;
   }
 
-  // ─── Manual ledger adjustment (accrual / correction) ─────────────────────
   if (pn === "/api/time-off/transactions" && req.method === "POST") {
     if (!requireManagementRole(viewer)) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions to adjust time off balances." });

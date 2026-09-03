@@ -13,12 +13,6 @@ function formatPeriodLabel(start: string, end: string): string {
   return `${s.toLocaleDateString("en-US", opts)} – ${e.toLocaleDateString("en-US", opts)}`
 }
 
-/**
- * Management's review queue for submitted timesheet *periods* - distinct
- * from PendingManualTimeQueue, which reviews individual manual time
- * entries. Extracted out of the old combined Approvals page's "Timesheets"
- * tab unchanged; it now backs the standalone Timesheets page instead.
- */
 export function PendingApprovalsQueue({
   members,
 }: {

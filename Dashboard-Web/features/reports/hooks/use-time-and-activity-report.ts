@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/no-initialize-state, react-doctor/no-derived-state */
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
@@ -55,7 +54,6 @@ function loadSavedView(): SavedView | null {
 }
 
 export type UseTimeAndActivityReportParams = TimeActivityReportData & {
-  /** 'YYYY-MM-DD' bounds of what was actually requested - see dateLabel below. */
   range?: { from: string; to: string }
 }
 
@@ -150,14 +148,6 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
 
   const [dateLabel, setDateLabel] = useState("")
 
-  // Derived from the range actually requested, not from `days` - `days` only
-  // carries dates with at least one tracked session anywhere in the org
-  // (build-time-and-activity-rows.js never emits an empty day), so a 7-day
-  // selection with a quiet day in the middle used to silently redraw the
-  // label around whichever days happened to have data, e.g. "Tue - Fri"
-  // for a picked "Mon - Sun" - the label lied about what was actually loaded.
-  // Falls back to the old days-derived label only when no range is known
-  // yet (defensive; the one real caller always supplies one).
   useEffect(() => {
     if (range) {
       setDateLabel(formatRangeLabel(new Date(`${range.from}T00:00:00`), new Date(`${range.to}T00:00:00`)))
@@ -208,13 +198,6 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     return filtered.map((d) => buildDisplayDay(d, memberFilter, memberRows, projectFilter, trackedTimeFilter))
   }, [memberFilter, projectFilter, trackedTimeFilter, days, memberRows])
 
-  // Every mode besides the default "Date per day" re-aggregates from
-  // `entries` (day+member+project granularity) instead of the day/member
-  // rows above, which can't be regrouped by project/client/team - see
-  // group-aggregate.ts's own doc comment on why. Falls back to the
-  // existing day-based rows (and getFilteredSubRows below) when `entries`
-  // is empty (an older cached view, or a demo/builder caller) so grouping
-  // degrades to "nothing to show" rather than throwing.
   const groupedResult = useMemo(() => {
     if (groupBy === "date_per_day") return null
     const filtered = filterEntries(entries, memberFilter, projectFilter, trackedTimeFilter)
@@ -236,13 +219,6 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     const h = Math.floor(secs / 3600)
     const m = Math.floor((secs % 3600) / 60)
     const s = secs % 60
-    // Was hardcoded to "$0.00" unconditionally - every row already carries a
-    // real totalSpent the table renders correctly per-day, it just never got
-    // summed into this card. Summed off each row's own totalSpent string
-    // (sumMoneyStrings), not getMetricNumeric's raw-number parse - a row can
-    // itself already be a "$300.00 + EGP 200.00" mixed-currency total (see
-    // toDayRow), and summing raw numbers across rows paid in different
-    // currencies would add amounts that aren't the same unit.
     const spent = sumMoneyStrings(activeRows.map((d) => d.totalSpent))
     return {
       time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,

@@ -3,32 +3,18 @@ import { query } from "./client.js";
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-/**
- * @param {string | null | undefined} value
- * @returns {string | null}
- */
 export function parseProgressUuid(value) {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return UUID_RE.test(trimmed) ? trimmed.toLowerCase() : null;
 }
 
-/**
- * @param {number} activeSeconds
- * @param {number | null | undefined} plannedSeconds
- * @returns {number}
- */
 export function computeProgressPercentage(activeSeconds, plannedSeconds) {
   const active = Math.max(0, Math.floor(activeSeconds ?? 0));
   if (!plannedSeconds || plannedSeconds <= 0) return 0;
   return Math.min(100, Math.round((active / plannedSeconds) * 100));
 }
 
-// ---------------------------------------------------------------------------
-// Primary read/write path (Phase 2 of implementation.md - task_member_progress
-// is the real store for task time tracking, not a mirror). task-time-tracking.js
-// and task-assignments.js call these directly.
-// ---------------------------------------------------------------------------
 
 const TRACKING_COLUMNS = [
   "id",
@@ -56,7 +42,6 @@ function normalizeTrackingRow(row) {
   return out;
 }
 
-/** @param {string} taskId @param {string} memberId */
 export async function getTrackingRowPg(taskId, memberId) {
   const rows = await query(
     `SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress WHERE task_id = $1 AND member_id = $2 LIMIT 1`,
@@ -65,45 +50,21 @@ export async function getTrackingRowPg(taskId, memberId) {
   return rows[0] ? normalizeTrackingRow(rows[0]) : null;
 }
 
-/** @param {string} taskId */
 export async function getTaskTrackingRowsPg(taskId) {
   const rows = await query(`SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress WHERE task_id = $1`, [taskId]);
   return rows.map(normalizeTrackingRow);
 }
 
-/** Full scan for the review-queue sweep - replaces collectionGroup("time_tracking")
- * with a real .limit(500) cap that silently dropped rows past it (implementation.md
- * Phase 3, Action Item 4 territory, same bug class as task_assignments had). */
 export async function getAllTrackingRowsPg(limit = 5000) {
   const rows = await query(`SELECT ${TRACKING_COLUMNS.join(", ")} FROM task_member_progress ORDER BY updated_at DESC LIMIT $1`, [limit]);
   return rows.map(normalizeTrackingRow);
 }
 
-/**
- * Upsert by (task_id, member_id) - the live counter write syncTaskTimeTracking
- * makes on every start/idle/resume/stop/sync action.
- *
- * TC-4: active_seconds is clamped to never regress (GREATEST against the
- * existing row) unless `allowDecrease` is set - the one legitimate case is
- * the desktop agent's idle-escalation rewind, posted as action "stop", which
- * *must* be able to lower it (that rewind is the anti-fraud mechanism).
- * idle_seconds is always clamped up; nothing in the product legitimately
- * lowers it. Without this, two devices racing on the same task (each holding
- * its own stale baseline) or a slow request landing after a later one
- * silently destroys recorded time.
- *
- * @param {{ allowDecrease?: boolean }} [options]
- */
 export async function upsertTrackingRowPg(payload, options = {}) {
   const allowDecrease = options.allowDecrease === true;
   const activeSet = allowDecrease
     ? "EXCLUDED.active_seconds"
     : "GREATEST(task_member_progress.active_seconds, EXCLUDED.active_seconds)";
-  // rolling_session_started_at, unlike last_started_at below, must actually
-  // reset per session for rolling_hour_cap's day-range enforcement to mean
-  // anything: fresh timestamp on a real "start", left alone across
-  // "resume"/"sync" (same INSERT-time value carried through on conflict),
-  // cleared to NULL on "stop" so the next "start" begins a clean window.
   const rows = await query(
     `INSERT INTO task_member_progress (
        task_id, member_id, project_id, active_seconds, idle_seconds, progress_percentage,
@@ -143,9 +104,6 @@ export async function upsertTrackingRowPg(payload, options = {}) {
   return normalizeTrackingRow(rows[0]);
 }
 
-/** Just the review_notes + progress_percentage fields - what
- * aggregateTaskProgress and reviewAssignment need to patch without
- * re-sending the full counter state. */
 export async function updateTrackingFieldsPg(taskId, memberId, patch) {
   const columns = { progress_percentage: "progress_percentage", review_notes: "review_notes" };
   const sets = [];

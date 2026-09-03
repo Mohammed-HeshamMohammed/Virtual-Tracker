@@ -1,10 +1,3 @@
-// Postgres-backed CRUD + queries for the projects domain (projects,
-// project_members, project_budgets, project_member_limits, client_projects,
-// team_projects). See PROPOSAL-Projects-Migration-to-PostgreSQL.md.
-//
-// Wired into every real read/write path (routes, dashboard loader, overview,
-// activity-scope, task-assignments, team-roster, client-service, bootstrap).
-// Schema is applied at boot by lib/postgres/ensure-lookup-schema.js.
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
@@ -24,22 +17,12 @@ function dateOrNull(value) {
   return value;
 }
 
-/** A budget row's start_date read back as 'YYYY-MM-DD' - pg returns DATE
- *  columns as JS Date objects, but every fromDate/toDate comparison in this
- *  file is written against a plain date string. */
 export function toDayStrOrNull(value) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
 }
 
-// ---------------------------------------------------------------------------
-// projects
-// ---------------------------------------------------------------------------
 
-/** @param {{ name: string, status?: string, billable?: boolean, disableActivity?: boolean,
- *   allowProjectTracking?: boolean, disableIdleTime?: boolean, idleTimeSeconds?: number, clientId?: string|null,
- *   managersNotes?: string, usersNotes?: string, viewersNotes?: string,
- *   type?: "normal"|"calling", endDate?: string|null, createdBy?: string }} data */
 export async function createProjectPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
@@ -58,8 +41,6 @@ export async function createProjectPg(data) {
       data.disableActivity ?? false,
       data.allowProjectTracking ?? true,
       data.disableIdleTime ?? false,
-      // 450s = 7.5 minutes, the product default a new project gets when the
-      // creator doesn't touch the idle-time field (ID-1/ID-2 of the plan).
       Number.isFinite(data.idleTimeSeconds) ? Math.max(0, Math.floor(data.idleTimeSeconds)) : 450,
       uuidOrNull(data.clientId),
       data.managersNotes ?? null,
@@ -70,11 +51,7 @@ export async function createProjectPg(data) {
       data.requireTaskToTrack ?? true,
       data.restrictTaskCreation ?? true,
       data.requireStopNote ?? false,
-      // Off unless the creator turned it on - a client reads their projects
-      // either way, this is the only thing that lets them write to one.
       data.clientCanManage === true,
-      // Same default-off reasoning, independent switch - lets a client track
-      // time on the project without also granting task-editing rights.
       data.clientCanTrack === true,
       uuidOrNull(data.createdBy),
     ],
@@ -89,13 +66,6 @@ export async function getProjectPg(id) {
   return rows[0] ?? null;
 }
 
-/**
- * @param {string} id @param {Record<string, unknown>} patch
- * @param {string} [expectedUpdatedAt] Optimistic-concurrency token (§6.9).
- *   Optional so existing callers (and the Tauri agent) keep working
- *   unchanged - only a caller that actually sends one back gets the
- *   conditional-write behavior.
- */
 export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   const columns = {
     name: "name",
@@ -136,18 +106,11 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   }
   if (sets.length === 0) return getProjectPg(id);
   sets.push("updated_at = now()");
-  // Postgres's now() has microsecond precision; expectedUpdatedAt round-tripped
-  // through JS Date.toISOString() only has millisecond precision - compare both
-  // sides truncated to milliseconds or this always mismatches (false 409 on
-  // every save, not just real conflicts).
   const where = expectedUpdatedAt
     ? `WHERE id = $1 AND date_trunc('milliseconds', updated_at) = $${params.push(expectedUpdatedAt)}::timestamptz`
     : "WHERE id = $1";
   const rows = await query(`UPDATE projects SET ${sets.join(", ")} ${where} RETURNING *`, params);
   if (rows.length === 0 && expectedUpdatedAt) {
-    // Someone wrote first - zero rows means the WHERE's updated_at check
-    // failed to match, not that the project doesn't exist (id alone would
-    // have matched). Caller maps this to a 409 with the current row.
     return { conflict: true, current: await getProjectPg(id) };
   }
   const project = rows[0] ?? null;
@@ -155,9 +118,6 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   return project;
 }
 
-/** Soft-archive, matching the existing status-flag pattern rather than
- * deleting the row. expectedUpdatedAt optional, same conditional-write
- * contract as updateProjectPg (§6.9 case 28: archive racing a rename). */
 export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
   const params = [id, uuidOrNull(actorId)];
   const where = expectedUpdatedAt
@@ -171,28 +131,10 @@ export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
     return { conflict: true, current: await getProjectPg(id) };
   }
   const project = rows[0] ?? null;
-  // Archiving doesn't remove the row - an open edit form should offer to
-  // reload, not force-close like a real delete does (§4.1's action field).
   if (project) void publishChange("projects", id, "updated", uuidOrNull(actorId) ?? undefined);
   return project;
 }
 
-/**
- * Deleting the project row alone cascades activity_sessions, tasks (and
- * through tasks, any activity_screenshots/app_logs/url_logs that carry a
- * task_id - see ensure-lookup-schema.js's cascadeOnDelete), project_members,
- * project_budgets, etc.
- *
- * What that cascade chain cannot reach: a calling/support project's sessions
- * have no task at all, so their screenshots/app-logs/url-logs are linked
- * only by session_id - a VARCHAR matched against activity_sessions.id by
- * cast, not a real FK (the column predates the id's UUID type and cannot
- * take a foreign key against it without a wider migration). Deleting those
- * explicitly, by session_id, before the project (and its sessions) are gone,
- * is the only way this project's screenshots/logs don't survive it as
- * orphaned rows - which is exactly the "No project" bug this closes.
- * @param {string} id @param {string} [actorId]
- */
 export async function deleteProjectPg(id, actorId) {
   const sessions = await query("SELECT id FROM activity_sessions WHERE project_id = $1", [id]);
   const sessionIds = sessions.map((row) => String(row.id));
@@ -207,7 +149,6 @@ export async function deleteProjectPg(id, actorId) {
   void publishChange("projects", id, "deleted", uuidOrNull(actorId) ?? undefined);
 }
 
-/** @param {{ status?: string, limit?: number }} [options] */
 export async function listProjectsPg(options = {}) {
   const limit = Math.min(Math.max(options.limit ?? 300, 1), 1000);
   if (options.status) {
@@ -219,9 +160,6 @@ export async function listProjectsPg(options = {}) {
   return query("SELECT * FROM projects ORDER BY updated_at DESC LIMIT $1", [limit]);
 }
 
-// ---------------------------------------------------------------------------
-// project_members
-// ---------------------------------------------------------------------------
 
 export async function addProjectMemberPg(projectId, memberId, options = {}) {
   const id = crypto.randomUUID();
@@ -234,9 +172,6 @@ export async function addProjectMemberPg(projectId, memberId, options = {}) {
   );
   const row = rows[0] ?? null;
   if (row) void publishChange("project-members", projectId, "updated", uuidOrNull(options.actorId) ?? undefined);
-  // Continuous roll-up: if this project sits under any management project,
-  // that project's member list is derived from this one and must follow.
-  // Deliberately not awaited - see syncManagementParentsOfProject's contract.
   void syncManagementParentsOfProject(projectId, uuidOrNull(options.actorId));
   return row;
 }
@@ -251,24 +186,11 @@ export async function listProjectMembersPg(projectId) {
   return query("SELECT * FROM project_members WHERE project_id = $1", [projectId]);
 }
 
-/** Every project a member belongs to - mirrors getProjectScopedMemberIds's Firestore query. */
 export async function listProjectIdsForMemberPg(memberId) {
   const rows = await query("SELECT project_id FROM project_members WHERE member_id = $1 LIMIT 200", [memberId]);
   return rows.map((r) => r.project_id);
 }
 
-/**
- * Every project a viewer is attached to, in all three ways the schema records
- * an attachment: a project_members row, having created the project, or being
- * the member behind a client the project is assigned to.
- *
- * The client leg is what was missing. A client member has no project_members
- * row - they are linked through clients.member_id -> client_projects - so
- * every scoped surface (Projects, Tasks, Reports, Activity, the dashboard)
- * resolved an empty list for them and showed nothing at all.
- * @param {string} memberId
- * @returns {Promise<string[]>}
- */
 export async function listViewerProjectIdsPg(memberId) {
   if (!memberId) return [];
   const rows = await query(
@@ -286,12 +208,6 @@ export async function listViewerProjectIdsPg(memberId) {
   return rows.map((r) => String(r.project_id)).filter(Boolean);
 }
 
-/**
- * Projects a client member may write to: linked to one of their client rows
- * AND flagged client_can_manage. Empty for everyone else.
- * @param {string} memberId
- * @returns {Promise<Set<string>>}
- */
 export async function listClientManagedProjectIdsPg(memberId) {
   if (!memberId) return new Set();
   const rows = await query(
@@ -305,14 +221,6 @@ export async function listClientManagedProjectIdsPg(memberId) {
   return new Set(rows.map((r) => String(r.project_id)));
 }
 
-/**
- * Projects a client member may run a task-less timer on: linked to one of
- * their client rows AND flagged client_can_track. Same shape as
- * listClientManagedProjectIdsPg, independent flag - see that function's own
- * doc comment for why the two aren't combined.
- * @param {string} memberId
- * @returns {Promise<Set<string>>}
- */
 export async function listClientTrackableProjectIdsPg(memberId) {
   if (!memberId) return new Set();
   const rows = await query(
@@ -326,7 +234,6 @@ export async function listClientTrackableProjectIdsPg(memberId) {
   return new Set(rows.map((r) => String(r.project_id)));
 }
 
-/** Every member on a set of projects - the reverse lookup activity-scope.js needs. */
 export async function listMemberIdsForProjectsPg(projectIds) {
   if (!projectIds.length) return [];
   const rows = await query("SELECT DISTINCT member_id FROM project_members WHERE project_id = ANY($1::uuid[])", [
@@ -340,9 +247,6 @@ export async function countMembersByProjectPg() {
   return new Map(rows.map((r) => [r.project_id, r.count]));
 }
 
-// ---------------------------------------------------------------------------
-// project_budgets
-// ---------------------------------------------------------------------------
 
 export async function getProjectBudgetPg(projectId) {
   const rows = await query("SELECT * FROM project_budgets WHERE project_id = $1 LIMIT 1", [projectId]);
@@ -353,12 +257,6 @@ export async function getAllProjectBudgetsPg() {
   return query("SELECT * FROM project_budgets");
 }
 
-/**
- * Create-or-replace, matching the one-row-per-project shape the Firestore doc had.
- * @param {string} projectId @param {object} data @param {string} [actorId]
- * @param {string} [expectedUpdatedAt] §6.9 - only checked when a budget row already
- *   exists; a first-time create has nothing to conflict with.
- */
 export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUpdatedAt) {
   const existing = await getProjectBudgetPg(projectId);
 
@@ -436,9 +334,6 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
   return budget;
 }
 
-// ---------------------------------------------------------------------------
-// project_member_limits
-// ---------------------------------------------------------------------------
 
 export async function getProjectMemberLimitPg(projectId, memberId) {
   const rows = await query(
@@ -456,18 +351,6 @@ export async function getAllProjectMemberLimitsPg() {
   return query("SELECT * FROM project_member_limits");
 }
 
-/**
- * The hourly rate in dollars that applies to one member on one project - the
- * single-member counterpart to the batched resolution inside
- * computeProjectBudgetTargetForAllPg, following the same two rules:
- *   based_on "Pay rate": that member's own pay_rates.rate.
- *   based_on anything else (default "Bill rate"): the project's first linked
- *     client's hourly rate (client_budgets.cost), shared by every member.
- * Returns 0 when no rate is configured. Callers must read that as "cannot
- * convert an amount into time", NOT as a zero-dollar rate - dividing by it
- * would otherwise produce an infinite (or zero) cap.
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function resolveMemberHourlyRatePg(db, projectId, memberId, basedOn) {
   if (String(basedOn || "").toLowerCase().includes("pay")) {
     const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
@@ -516,9 +399,6 @@ export async function upsertProjectMemberLimitPg(projectId, memberId, data, acto
   return rows[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// client_projects / team_projects (junctions)
-// ---------------------------------------------------------------------------
 
 export async function linkClientProjectPg(clientId, projectId, actorId) {
   const id = crypto.randomUUID();
@@ -558,7 +438,6 @@ export async function unlinkTeamProjectPg(teamId, projectId) {
   await query("DELETE FROM team_projects WHERE team_id = $1 AND project_id = $2", [teamId, projectId]);
 }
 
-/** Team itself lives in Firestore, so there's no FK to cascade this on delete. */
 export async function deleteTeamProjectsForTeamPg(teamId) {
   await query("DELETE FROM team_projects WHERE team_id = $1", [teamId]);
 }
@@ -573,37 +452,8 @@ export async function listProjectIdsForTeamPg(teamId) {
   return rows.map((r) => r.project_id);
 }
 
-// ---------------------------------------------------------------------------
-// real "spent" tracking (see proposal doc "Related Bug" #3 - today this is
-// fabricated everywhere it's shown; this is the first real implementation)
-// ---------------------------------------------------------------------------
 
-/**
- * Tracked seconds for a project within a date range, from BOTH real time
- * sources: live timer sessions (activity_sessions) and manually filed
- * timesheet rows (time_entries). These are two different sources of truth,
- * not two representations of the same fact, so UNION ALL rather than a join -
- * a normal-project task timer and a calling-project task-less timer both land
- * in activity_sessions (project_id is populated for both, see the ALTER TABLE
- * comment on that column), while manual entries only ever land in
- * time_entries. Before this, only time_entries was read here, so project
- * spend never moved even while timers ran (see proposal doc "Related Bug" #1).
- *
- * Legacy caveat, accepted rather than backfilled: activity_sessions rows
- * written before its project_id column existed are NULL there and are not
- * counted here. No backfill in this codebase - test environment, existing
- * rows are disposable.
- *
- * activity_sessions has no billable flag - sessions are always treated as
- * billable (matches how the timer is used); includeNonBillable only filters
- * the time_entries leg.
- * @param {string} projectId
- * @param {{ fromDate?: string|null, toDate?: string|null, includeNonBillable?: boolean }} [options]
- */
 export async function getProjectTrackedSecondsPg(projectId, options = {}) {
-  // One shared params array - every placeholder below is numbered against
-  // this array's final length, not against each subquery in isolation, since
-  // both WHERE clauses land in the same query string.
   const params = [projectId, projectId];
   let sessionWhere = "project_id = $1";
   let entryWhere = "project_id = $2 AND status != 'rejected'";
@@ -623,9 +473,6 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   if (options.includeNonBillable === false) {
     entryWhere += " AND billable = true";
   }
-  // Per-person project budgets need "just this member's own tracked time",
-  // not the project-wide total every other caller of this function wants -
-  // both subqueries carry member_id, so this is additive, not a rewrite.
   if (options.memberId) {
     params.push(options.memberId);
     sessionWhere += ` AND member_id = $${params.length}`;
@@ -645,27 +492,6 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   return Math.max(0, Math.floor(Number(rows[0]?.total_seconds ?? 0)));
 }
 
-/**
- * Cost-based "spent" (dollar amount), computed from real tracked time x a
- * real rate - not a guess, and not a stored column (rates change; this always
- * reflects the current rate at read time, same as the rest of this file's
- * philosophy of computing from source data rather than caching a number that
- * can drift).
- *
- * based_on "Pay rate": each logging member's own hourly pay rate (pay_rates,
- *   Firestore - not migrated, see project-budgets schema comment) applied to
- *   the hours *that member* logged.
- * based_on anything else (default "Bill rate"): the project's first linked
- *   client's rate (client_budgets.cost when the client budget is hourly)
- *   applied to all tracked hours on the project.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- * @param {{ basedOn?: string, includeNonBillable?: boolean, fromDate?: string, toDate?: string }} [options]
- *   fromDate/toDate ('YYYY-MM-DD') bound the budget's own reset period, if it
- *   has one - fromDate is start_date, toDate is the optional Anchor end_date.
- *   Either absent sums that side unbounded, same as always.
- */
 export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   const basedOn = String(options.basedOn || "").toLowerCase();
   const billableClause = options.includeNonBillable === false ? "AND billable = true" : "";
@@ -684,11 +510,6 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   }
 
   if (basedOn.includes("pay")) {
-    // Same two-source union as getProjectTrackedSecondsPg, but grouped by
-    // member instead of summed flat - each member's own pay rate applies only
-    // to the hours *that member* logged. activity_sessions has member_id too,
-    // so calling-project timers (which have no time_entries row at all) are
-    // covered here as well.
     const rows = await query(
       `SELECT member_id, SUM(secs) AS secs FROM (
          SELECT member_id, active_seconds AS secs FROM activity_sessions
@@ -726,15 +547,6 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   return Math.round(hours * rate * 100) / 100;
 }
 
-/**
- * Real "spent" for a project's budget, in whatever unit the budget is
- * denominated in (hours for an Hours-based budget, dollars for Cost-based) -
- * the single entry point overview/table code should call instead of either
- * fabricating a number or hand-picking which helper above to use.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- * @param {{ type?: string, based_on?: string, include_non_billable_time?: boolean, start_date?: unknown, end_date?: unknown } | null} budgetRow
- */
 export async function computeProjectSpentPg(db, projectId, budgetRow) {
   if (!budgetRow) return 0;
   const includeNonBillable = budgetRow.include_non_billable_time !== false;
@@ -752,22 +564,6 @@ export async function computeProjectSpentPg(db, projectId, budgetRow) {
   });
 }
 
-/**
- * Batched replacement for calling computeProjectSpentPg in a loop (the N+1
- * overview-service.js and the /api/project-budgets GET route both had - one
- * query per project, plus one Firestore read per member per project for
- * cost-based/pay-rate budgets). This does one grouped SQL pass for every
- * Hours-based project, one grouped SQL pass for every Cost-based project's
- * tracked seconds, and fetches each *distinct* member/client rate exactly
- * once via Promise.all, no matter how many projects reference it.
- *
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ id: string, type?: string, based_on?: string, include_non_billable_time?: boolean, start_date?: unknown, end_date?: unknown }[]} budgetRows
- *   One row per project that has a budget (skip projects with none - they're 0 spend, not worth a query).
- *   start_date/end_date, if the budget has them, bound what counts toward
- *   this period - the Anchor menu action is what sets end_date.
- * @returns {Promise<Map<string, number>>} project_id -> spent, in the budget's own unit (hours or cost)
- */
 export async function computeProjectSpentForAllPg(db, budgetRows) {
   const result = new Map();
   if (!budgetRows.length) return result;
@@ -777,9 +573,6 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
   const payRateCostRows = costRows.filter((r) => String(r.based_on || "").toLowerCase().includes("pay"));
   const billRateCostRows = costRows.filter((r) => !String(r.based_on || "").toLowerCase().includes("pay"));
 
-  // One grouped query for every Hours-based project's seconds. Per-project
-  // includeNonBillable flags (and start_date bounds) ride along as a joined
-  // VALUES list rather than branching into one query per distinct value.
   async function trackedSecondsByProject(rows) {
     if (!rows.length) return new Map();
     const ids = rows.map((r) => r.id);
@@ -816,9 +609,6 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
     result.set(row.id, Math.round(((hoursSeconds.get(row.id) ?? 0) / 3600) * 100) / 100);
   }
 
-  // Cost-based / pay rate: seconds grouped by (project, member), then one
-  // Firestore read per *distinct* member across every project, in parallel -
-  // not one read per member per project.
   if (payRateCostRows.length) {
     const ids = payRateCostRows.map((r) => r.id);
     const includeFlags = payRateCostRows.map((r) => r.include_non_billable_time !== false);
@@ -866,12 +656,6 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
     }
   }
 
-  // Cost-based / bill rate (default): each project's own rate comes from its
-  // first linked client's hourly budget cost - one query for the client
-  // links, one query for every distinct client's rate, not one Firestore
-  // read per project (client_budgets is Postgres-resident since Phase 8 of
-  // the Clients migration, so this is a single SQL round-trip, not a batch
-  // of individual reads).
   if (billRateCostRows.length) {
     const ids = billRateCostRows.map((r) => r.id);
     const clientLinkRows = await query(
@@ -904,22 +688,7 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// per_person budget target - "cost" on a scope='per_person' row is hours-per-
-// member, not a total (see ensure-lookup-schema.js's project_budgets comment
-// and project-budget-capacity.js). scope='per_project' rows need no
-// computation here at all - their `cost` already is the total, unchanged.
-// ---------------------------------------------------------------------------
 
-/**
- * Batched live total for every scope='per_person' row in `budgetRows` -
- * mirrors computeProjectSpentForAllPg's shape/batching, but sums against
- * EVERY current project member (not just the ones who have logged time,
- * since the point of a per-person target is "what if everyone hits it").
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ id: string, type?: string, based_on?: string, scope?: string, cost?: number }[]} budgetRows
- * @returns {Promise<Map<string, number>>} project_id -> live total, in the budget's own unit (hours or cost)
- */
 export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
   const result = new Map();
   const perPersonRows = budgetRows.filter((r) => r.scope === "per_person" && Number(r.cost) > 0);
@@ -946,9 +715,6 @@ export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
   const payRateRows = costRows.filter((r) => String(r.based_on || "").toLowerCase().includes("pay"));
   const billRateRows = costRows.filter((r) => !String(r.based_on || "").toLowerCase().includes("pay"));
 
-  // Pay rate: each member's own rate x the shared per-person hours target,
-  // summed across every current member - one Firestore read per distinct
-  // member across every project, not one per member per project.
   if (payRateRows.length) {
     const distinctMemberIds = [...new Set(payRateRows.flatMap((r) => membersByProject.get(r.id) ?? []))];
     const rateEntries = await Promise.all(
@@ -968,8 +734,6 @@ export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
     }
   }
 
-  // Bill rate: one project-wide rate (first linked client's hourly cost) x
-  // per-person hours x current headcount.
   if (billRateRows.length) {
     const ids2 = billRateRows.map((r) => r.id);
     const clientLinkRows = await query(
@@ -993,13 +757,6 @@ export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
   return result;
 }
 
-/**
- * Single-project convenience wrapper around computeProjectBudgetTargetForAllPg
- * - for scope='per_project' rows this is just `cost`, unchanged.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} projectId
- * @param {{ type?: string, based_on?: string, scope?: string, cost?: number } | null} budgetRow
- */
 export async function computeProjectBudgetTargetPg(db, projectId, budgetRow) {
   if (!budgetRow) return 0;
   if (budgetRow.scope !== "per_person") return Number(budgetRow.cost ?? 0);
@@ -1009,16 +766,6 @@ export async function computeProjectBudgetTargetPg(db, projectId, budgetRow) {
   return map.get(projectId) ?? 0;
 }
 
-/**
- * Real tracked-time metrics per project for a date window, for the Command
- * Center. Unions the two places worked time lands (agent/web sessions and
- * manual time entries), the same way computeProjectSpentForAllPg does.
- *
- * Idle seconds only exist on sessions - a manual entry is time someone
- * asserts they worked, so all of it counts as active.
- * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
- * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number, memberIds: Set<string> }>>}
- */
 export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -1059,13 +806,6 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
   return byProject;
 }
 
-/**
- * Per-day active/idle seconds for a project scope - backs the Command Center's
- * weekly productivity trend, which used to plot counts of task rows touched
- * that day rather than time actually worked.
- * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
- * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} keyed by YYYY-MM-DD
- */
 export async function getDailyActivityTotalsPg({ projectIds = null, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -1101,13 +841,6 @@ export async function getDailyActivityTotalsPg({ projectIds = null, fromDay, toD
   return byDay;
 }
 
-/**
- * Weekly capacity per member, for real utilisation. Prefers the member's
- * configured weekly limit; falls back to their working-days count times an
- * 8-hour day when no limit is set.
- * @param {string[] | null} memberIds
- * @returns {Promise<Map<string, number>>} memberId -> capacity seconds per week
- */
 export async function getMemberWeeklyCapacityPg(memberIds = null) {
   const rows = await query(
     `SELECT m.id,
@@ -1132,17 +865,6 @@ export async function getMemberWeeklyCapacityPg(memberIds = null) {
   return byMember;
 }
 
-/**
- * Active seconds per member per project for a date window.
- *
- * The Command Center's utilisation gauge used to split a project's total
- * evenly across everyone who tracked on it, because the project roll-up only
- * carried the member set and not per-member seconds. This is that missing
- * roll-up, so a member's utilisation is their own hours against their own
- * capacity rather than a team average wearing their name.
- * @param {{ projectIds?: string[] | null, fromDay: string, toDay: string }} params
- * @returns {Promise<Map<string, Map<string, number>>>} projectId -> memberId -> active seconds
- */
 export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -1174,15 +896,6 @@ export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, t
   return byProject;
 }
 
-/**
- * Per-day active/idle seconds for one member - the one-member version of
- * getDailyActivityTotalsPg, so the Command Center's personal view (Intern /
- * Employee) plots that person's own week rather than the whole project's.
- * Without it the trend chart would contradict the "Total Time Worked" card
- * sitting directly above it, which is already personal for those roles.
- * @param {{ projectIds?: string[] | null, memberId: string, fromDay: string, toDay: string }} params
- * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} keyed by YYYY-MM-DD
- */
 export async function getMemberDailyActivityTotalsPg({ projectIds = null, memberId, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -1219,16 +932,6 @@ export async function getMemberDailyActivityTotalsPg({ projectIds = null, member
   return byDay;
 }
 
-/**
- * Active + idle seconds for one member per project, for a date window.
- *
- * getProjectActivityMetricsPg gives that same shape for a whole project;
- * this is the one-member version the Command Center's personal view (Intern
- * / Employee) needs for "Total Time Worked" and "Avg Team Activity" to read
- * as that person's own hours, not the whole project's.
- * @param {{ projectIds?: string[] | null, memberId: string, fromDay: string, toDay: string }} params
- * @returns {Promise<Map<string, { activeSeconds: number, idleSeconds: number }>>} projectId -> totals
- */
 export async function getMemberProjectActivityMetricsPg({ projectIds = null, memberId, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (

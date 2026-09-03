@@ -4,9 +4,6 @@ import {
   setActivityScoringSettingsPg,
 } from "../../lib/postgres/activity-scoring-postgres.service.js";
 
-// ACT-3: every server-tunable agent constant the plan names, one validated
-// field per row. `code` is what tests/callers match on; `pg` is the key
-// setActivityScoringSettingsPg expects.
 const FIELDS = [
   { key: "saturationEvents", pg: "saturationEvents", code: "INVALID_SATURATION_EVENTS" },
   { key: "windowMs", pg: "windowMs", code: "INVALID_WINDOW_MS" },
@@ -33,15 +30,10 @@ function normalize(row) {
   };
 }
 
-/** ACT-3: current agent calibration - what the agent polls periodically. */
 export async function getActivityScoringSettings() {
   return normalize(await getActivityScoringSettingsPg());
 }
 
-/**
- * @param {Partial<Record<'saturationEvents'|'windowMs'|'screenshotMinDelaySec'|'screenshotMaxDelaySec'|'idleThresholdSec'|'idleWarnSec'|'idleAlertSec'|'idleStopSec', number>>} input
- * @param {{ memberId: string, roleName: string }} actor
- */
 export async function setActivityScoringSettings(input, actor) {
   for (const field of FIELDS) {
     const value = input[field.key];
@@ -52,9 +44,6 @@ export async function setActivityScoringSettings(input, actor) {
     }
   }
 
-  // Idle escalation only makes sense warn < alert < stop - validated against
-  // the merged (current + incoming) view so a partial update can't leave the
-  // stored row internally contradictory even though it only touched one field.
   const current = await getActivityScoringSettings();
   const merged = { ...current, ...Object.fromEntries(FIELDS.map((f) => [f.key, input[f.key] ?? current[f.key]])) };
   if (!(merged.idleWarnSec < merged.idleAlertSec && merged.idleAlertSec < merged.idleStopSec)) {

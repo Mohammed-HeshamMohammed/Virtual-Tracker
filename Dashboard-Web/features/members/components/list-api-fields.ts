@@ -1,4 +1,3 @@
-/** Lean field list for People members table — avoids full member profile reads. */
 export const MEMBERS_LIST_API_FIELDS = [
   "id",
   "first_name",
@@ -26,7 +25,6 @@ export const MEMBERS_LIST_API_FIELDS = [
   "ip_address",
 ] as const
 
-/** Lean field list for pending invites table. */
 export const INVITES_LIST_API_FIELDS = [
   "id",
   "email",
@@ -40,7 +38,6 @@ export const INVITES_LIST_API_FIELDS = [
   "created_by",
 ] as const
 
-/** Teams list + enrichment — roster display comes from enriched team-members API. */
 export const TEAMS_LIST_API_FIELDS = ["id", "name", "schedule_weekly_report"] as const
 
 export const TEAM_MEMBERS_LIST_API_FIELDS = [

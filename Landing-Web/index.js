@@ -28,7 +28,6 @@ Landing-Web listening${port ? ` on http://localhost:${port}` : ""}
 
 console.log(box.trim());
 
-// Docker sets HOSTNAME to the container ID — bind 0.0.0.0 unless HOST is set.
 const spawnEnv = {
   ...process.env,
   NODE_ENV: "production",

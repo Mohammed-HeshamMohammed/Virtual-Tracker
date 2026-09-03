@@ -11,7 +11,6 @@ type UserAvatarImageProps = {
   fallbackColor?: string
 }
 
-/** Remote avatar img — no-referrer for OAuth hotlink blocks; native img with onError fallback. */
 export function UserAvatarImage({ src, alt, className, fallbackInitials, fallbackColor }: UserAvatarImageProps) {
   const [hasError, setHasError] = useState(false)
 

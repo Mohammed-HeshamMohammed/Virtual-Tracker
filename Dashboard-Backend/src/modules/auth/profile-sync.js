@@ -7,17 +7,11 @@ import {
 import { isPostgresConfigured } from "../../lib/postgres/client.js";
 import { resolveMemberIdForFirebaseUidPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * User_profiles payload from Auth user record.
- * @param {import('firebase-admin/auth').UserRecord} userRecord
- * @returns {object}
- */
 export function buildProfilePayload(userRecord) {
   const providerData = Array.isArray(userRecord.providerData) ? userRecord.providerData : [];
   const providers = [...new Set(providerData.map((p) => p.providerId).filter(Boolean))];
   const identities = providerData.map((p) => ({
     provider: p.providerId,
-    /** Email, phone, or provider-specific id string shown in Firebase Auth “Identifier” column when applicable */
     identifier: p.email || p.phoneNumber || p.uid || null,
     federatedUid: p.uid || null,
     displayName: p.displayName || null,
@@ -40,7 +34,6 @@ export function buildProfilePayload(userRecord) {
   };
 }
 
-/** Merge User_profiles/{uid}; set createdAt on first write. */
 export async function upsertProfileFromUserRecord(db, userRecord) {
   const ref = db.collection(USER_PROFILES_COLLECTION).doc(userRecord.uid);
   const snap = await ref.get();
@@ -58,9 +51,6 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
   const row = merged.exists ? merged.data() : null;
   const resolvedPhoto = resolveProfileAvatarUrl(row) || userRecord.photoURL || null;
 
-  // Members list/table reads avatar_url from Postgres, not this Firestore
-  // doc - every login/profile flow routes through here, so this is the one
-  // place that keeps it in sync instead of patching each caller.
   if (isPostgresConfigured()) {
     const memberId = await resolveMemberIdForFirebaseUidPg(userRecord.uid);
     if (memberId) await updateMemberPg(memberId, { avatar_url: resolvedPhoto }).catch(() => {});
@@ -83,10 +73,8 @@ export async function upsertProfileFromUserRecord(db, userRecord) {
   };
 }
 
-/** App-specific User_profiles fields (not from Auth). */
 export function profileAppFieldsFromDoc(row) {
   if (!row || typeof row !== "object") return {};
-  /** @type {Record<string, unknown>} */
   const out = {};
   if ("firstName" in row) {
     const v = row.firstName;

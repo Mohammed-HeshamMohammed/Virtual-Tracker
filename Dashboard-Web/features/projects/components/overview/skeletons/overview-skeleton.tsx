@@ -8,7 +8,6 @@ interface OverviewSkeletonProps {
   isDark?: boolean
 }
 
-/** Loading placeholder matching the Project Management Overview layout. */
 export function OverviewSkeleton({ isDark = false }: OverviewSkeletonProps) {
   const bone = isDark ? "bg-[#2e3447]" : "bg-slate-200"
   const border = isDark ? "border-[#3d4a3d]/40" : "border-slate-100"

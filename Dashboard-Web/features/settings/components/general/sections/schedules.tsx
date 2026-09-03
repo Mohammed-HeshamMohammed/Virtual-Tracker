@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/rerender-lazy-state-init */
 "use client"
 
 import { useState, useRef, useEffect } from "react"
@@ -16,7 +15,6 @@ import {
 } from "@/features/settings/components/general/components/primitives"
 import { SCHEDULE_SUBNAV, ALERT_OPTIONS, GRACE_OPTIONS, type ScheduleKey, type AlertOption, type GraceOption } from "@/features/settings/components/shared/constants"
 
-// ── Shared segment control ────────────────────────────────────────────────────
 function SegmentControl<T extends string>({
   options, value, onChange, isDark,
 }: { options: readonly T[]; value: T; onChange: (v: T) => void; isDark: boolean }) {
@@ -36,7 +34,6 @@ function SegmentControl<T extends string>({
   )
 }
 
-// ── Custom dropdown ───────────────────────────────────────────────────────────
 function GraceDropdown({ value, onChange, isDark }: { value: GraceOption; onChange: (v: GraceOption) => void; isDark: boolean }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -81,7 +78,6 @@ function GraceDropdown({ value, onChange, isDark }: { value: GraceOption; onChan
   )
 }
 
-// ── Calendar type panel ───────────────────────────────────────────────────────
 function CalendarTypePanel({ isDark }: { isDark: boolean }) {
   const [value, setValue] = useState<"Private" | "Collaborative">("Private")
   return (
@@ -102,7 +98,6 @@ function CalendarTypePanel({ isDark }: { isDark: boolean }) {
   )
 }
 
-// ── Shift alerts panel ────────────────────────────────────────────────────────
 function ShiftAlertsPanel({ isDark }: { isDark: boolean }) {
   const [global, setGlobal] = useState<AlertOption>("Both")
   const [search, setSearch] = useState("")
@@ -164,7 +159,6 @@ function ShiftAlertsPanel({ isDark }: { isDark: boolean }) {
   )
 }
 
-// ── Grace period panel ────────────────────────────────────────────────────────
 function GracePeriodPanel({ isDark }: { isDark: boolean }) {
   const [global, setGlobal] = useState<GraceOption>("5 min")
   const [search, setSearch] = useState("")
@@ -231,7 +225,6 @@ function GracePeriodPanel({ isDark }: { isDark: boolean }) {
   )
 }
 
-// ── Root ──────────────────────────────────────────────────────────────────────
 export default function SchedulesSettings({ onNavigate }: { onNavigate: (id: string) => void }) {
   const { isDark } = useTheme()
   const [sub, setSub] = useState<ScheduleKey>("calendartype")

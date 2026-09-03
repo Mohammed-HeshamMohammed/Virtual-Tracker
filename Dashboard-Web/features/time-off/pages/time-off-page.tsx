@@ -40,13 +40,6 @@ function todayLocal(): string {
 const inputCls =
   "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400"
 
-/**
- * Request time off, and review the team's requests.
- *
- * This page was a static illustration with two buttons that navigated to
- * Settings. Approving a request writes a usage row to the time-off ledger,
- * which is what the balances and transactions reports read.
- */
 export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void } = {}) {
   const { memberId, memberRole } = useAuth()
   const canReview = isManagementRole(memberRole ?? "")

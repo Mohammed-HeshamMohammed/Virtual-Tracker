@@ -114,11 +114,9 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         if (cancelled || attemptId !== attemptRef.current) return
         if (!result.ok) throw new Error(result.error || "Failed to link agent")
 
-        // Primary path: agent polls backend link/exchange after complete (Chrome 150+ safe).
         await ensureLoopbackAgentAccess()
         await resumeLocalAgentLinkPoll()
 
-        // Fallback: deliver tokens to localhost if the agent is still waiting.
         try {
           const idToken = await currentUser.getIdToken(true)
           await deliverLocalAgentCredentials(trimmedToken, idToken, refreshToken)
@@ -149,8 +147,6 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
 
         await finishAgentLinkSuccess()
         if (cancelled || attemptId !== attemptRef.current) return
-        // Deep-link firing and the auto-close/fallback-reveal logic live in
-        // useAgentConnectAndAutoClose, driven by displayState below.
         setState("success")
       } catch (e) {
         if (cancelled || attemptId !== attemptRef.current) return

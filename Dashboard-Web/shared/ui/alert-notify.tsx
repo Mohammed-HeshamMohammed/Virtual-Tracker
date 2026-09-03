@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import * as React from "react"
@@ -138,7 +137,6 @@ export interface NotifyAlertProps {
   className?: string
 }
 
-/** Opinionated alert for bottom-right notifications */
 export function NotifyAlert({ title, description, tone = "error", onDismiss, className }: NotifyAlertProps) {
   const variant = tone === "error" ? "destructive" : tone === "warning" ? "warning" : "info"
   return (

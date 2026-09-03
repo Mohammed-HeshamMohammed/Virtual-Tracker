@@ -8,13 +8,6 @@ import { notifyRequest } from "../../lib/notify-request.js";
 const CONTACT_TOPICS = new Set(["trial", "cloud", "security", "general"]);
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>} true if handled
- */
 export async function routeContact(req, res, url, origin) {
   if (url.pathname !== "/api/contact" || req.method !== "POST") return false;
 
@@ -58,7 +51,6 @@ export async function routeContact(req, res, url, origin) {
     return true;
   }
 
-  // Contact form goes through Notify-Backend (required).
   try {
     const { response, payload } = await notifyRequest("/api/notify/email", {
       template: "contact-inquiry",

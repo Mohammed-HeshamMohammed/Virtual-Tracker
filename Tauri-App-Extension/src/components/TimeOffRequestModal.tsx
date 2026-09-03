@@ -2,9 +2,6 @@ import type { TimeOffBalance } from "../types";
 
 type TimeOffRequestModalProps = {
   open: boolean;
-  /** The viewer's own policies, straight from the workspace payload - each
-   *  carries the policyId a request is filed against, so this needs no
-   *  separate policy fetch. */
   policies: TimeOffBalance[];
   policyId: string;
   startDate: string;
@@ -20,10 +17,6 @@ type TimeOffRequestModalProps = {
   onSubmit: () => void;
 };
 
-// Requesting leave from the tray, next to the balance the agent already
-// shows. Clients are refused server-side (they have no policy and nobody to
-// approve them), and they never have policies here either, so the control
-// simply never renders for them.
 export function TimeOffRequestModal({
   open,
   policies,
@@ -41,8 +34,6 @@ export function TimeOffRequestModal({
   onSubmit,
 }: TimeOffRequestModalProps) {
   if (!open) return null;
-  // End before start is the one combination the server rejects outright, so
-  // it's worth catching here rather than round-tripping for it.
   const rangeValid = Boolean(startDate) && Boolean(endDate) && endDate >= startDate;
   const canSubmit = !busy && Boolean(policyId) && rangeValid;
 

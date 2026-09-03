@@ -12,9 +12,6 @@ const LOWERCASE_RE = /[a-z]/;
 const NUMBER_RE = /[0-9]/;
 const SPECIAL_RE = /[^A-Za-z0-9]/;
 
-/**
- * @param {string} password
- */
 function hasSequentialPattern(password) {
   if (!PASSWORD_POLICY.sequenceDetectionEnabled) return false;
   const lower = password.toLowerCase();
@@ -32,9 +29,6 @@ function hasSequentialPattern(password) {
   return false;
 }
 
-/**
- * @param {string} password
- */
 function hasRepeatedPattern(password) {
   if (!PASSWORD_POLICY.repeatedPatternDetectionEnabled) return false;
   if (!password) return false;
@@ -45,9 +39,6 @@ function hasRepeatedPattern(password) {
   return false;
 }
 
-/**
- * @param {string} password
- */
 function isCommonPassword(password) {
   if (!PASSWORD_POLICY.blockedPasswordsEnabled) return false;
   const normalized = password.trim().toLowerCase();
@@ -56,25 +47,15 @@ function isCommonPassword(password) {
   return alnum.length > 0 && COMMON_PASSWORD_SET.has(alnum);
 }
 
-/**
- * @param {string} password
- */
 function isExamplePassword(password) {
   if (!PASSWORD_POLICY.examplePasswordBlacklistEnabled) return false;
   return EXAMPLE_PASSWORD_SET.has(password.trim().toLowerCase());
 }
 
-/**
- * @param {string} password
- */
 function isSimplePattern(password) {
   return hasSequentialPattern(password) || hasRepeatedPattern(password);
 }
 
-/**
- * @param {string} password
- * @param {{ confirmPassword?: string }} [options]
- */
 export function analyzePassword(password, options = {}) {
   const confirmPassword = options.confirmPassword;
   const hasConfirm = typeof confirmPassword === "string";
@@ -112,11 +93,6 @@ export function analyzePassword(password, options = {}) {
   };
 }
 
-/**
- * @param {string} password
- * @param {ReturnType<typeof analyzePassword>["requirements"]} requirements
- * @returns {"weak" | "fair" | "good" | "strong" | "very-strong"}
- */
 function calculateStrength(password, requirements) {
   if (!password) return "weak";
 
@@ -157,9 +133,6 @@ function calculateStrength(password, requirements) {
   return "very-strong";
 }
 
-/**
- * @param {"weak" | "fair" | "good" | "strong" | "very-strong"} strength
- */
 export function strengthToLabel(strength) {
   switch (strength) {
     case "weak":
@@ -177,11 +150,6 @@ export function strengthToLabel(strength) {
   }
 }
 
-/**
- * @param {string} password
- * @param {{ confirmPassword?: string, requireConfirm?: boolean }} [options]
- * @returns {string | null}
- */
 export function getFirstPasswordError(password, options = {}) {
   if (!password) return "Password is required.";
 
@@ -223,10 +191,6 @@ export function getFirstPasswordError(password, options = {}) {
   return null;
 }
 
-/**
- * @param {string} password
- * @param {{ confirmPassword?: string, requireConfirm?: boolean }} [options]
- */
 export function validatePassword(password, options = {}) {
   const analysis = analyzePassword(password, options);
   const error = getFirstPasswordError(password, options);

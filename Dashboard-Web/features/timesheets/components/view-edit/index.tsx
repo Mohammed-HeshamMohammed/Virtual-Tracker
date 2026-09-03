@@ -14,8 +14,6 @@ import { sectionHeaderEnter, contentEnter, badgePop } from "@/features/timesheet
 export function TimesheetsViewEdit() {
   const { isDark } = useTheme()
   const { memberRole } = useAuth()
-  // Employee tier reads this queue too, scoped server-side to their own
-  // assignments only - they just never get the approve/reject controls.
   const canReview = canAccessReviewCenter(memberRole) || isEmployeeRole(memberRole)
   const canApproveReject = canReviewAssignments(memberRole)
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading } = usePeopleTeamScope()

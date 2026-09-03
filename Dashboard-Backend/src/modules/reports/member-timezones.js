@@ -2,17 +2,11 @@ import { query as pgQuery } from "../../lib/postgres/client.js";
 
 const VALID_TIMEZONES = new Set(Intl.supportedValuesOf("timeZone"));
 
-/** @param {unknown} value */
 function normalizeTimezone(value) {
   const tz = typeof value === "string" ? value.trim() : "";
   return tz && VALID_TIMEZONES.has(tz) ? tz : "UTC";
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} memberIds
- * @returns {Promise<Map<string, string>>} memberId -> IANA timezone, "UTC" when unset/invalid
- */
 export async function getMemberTimezones(db, memberIds) {
   const tzByMember = new Map();
   if (!memberIds || memberIds.length === 0) return tzByMember;

@@ -50,7 +50,6 @@ function entryDurationSeconds(row) {
 
 
 
-/** Billable hours on a project within budget period. */
 
 export async function sumBillableHoursForProjectInPeriod(db, projectId, period) {
   return sumBillableHoursPg(projectId, period.start, period.end);
@@ -58,15 +57,6 @@ export async function sumBillableHoursForProjectInPeriod(db, projectId, period) 
 
 
 
-/**
-
- * @param {ReturnType<typeof normalizeBudget>} budget
-
- * @param {number} billableHours
-
- * @param {{ projectCount?: number; memberCount?: number }} scope
-
- */
 
 export function resolveClientSpentAmount(budget, billableHours, scope = {}) {
 
@@ -148,7 +138,6 @@ function normalizeProjectBudgetRow(row) {
 
 
 
-/** Project spend in budget period (from project budget row). */
 
 export async function resolveProjectSpendInPeriod(db, projectId, period) {
 
@@ -170,13 +159,6 @@ export async function resolveProjectSpendInPeriod(db, projectId, period) {
 
 
 
-/**
-
- * @param {import("firebase-admin/firestore").Firestore} db
-
- * @param {string} projectId
-
- */
 
 export async function countClientsOnProject(db, projectId) {
 
@@ -188,17 +170,6 @@ export async function countClientsOnProject(db, projectId) {
 
 
 
-/**
-
- * @param {import("firebase-admin/firestore").Firestore} db
-
- * @param {string} clientId
-
- * @param {ReturnType<typeof normalizeBudget>} budget
-
- * @param {{ projectIds?: string[]; memberCount?: number; asOf?: Date }} [options]
-
- */
 
 export async function resolveClientBudgetUsage(db, clientId, budget, options = {}) {
 

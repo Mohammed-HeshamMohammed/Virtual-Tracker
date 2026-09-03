@@ -9,7 +9,6 @@ type ActivityRuntimeBootstrapProps = {
   onComplete: () => void
 }
 
-/** Adopts a session the desktop agent already started — reflects it, never starts one. */
 export function ActivityRuntimeBootstrap({ pending, onComplete }: ActivityRuntimeBootstrapProps) {
   const { restoreSession } = useActivityTracking()
 

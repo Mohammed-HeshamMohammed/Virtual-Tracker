@@ -2,15 +2,8 @@ import admin from "firebase-admin";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
 const RTDB_IO_TIMEOUT_MS = 2_500;
-/** @type {boolean} */
 let loggedWriteFailure = false;
 
-/**
- * @template T
- * @param {Promise<T>} promise
- * @param {number} [ms]
- * @returns {Promise<T>}
- */
 function withIoTimeout(promise, ms = RTDB_IO_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("rtdb io timeout")), ms);
@@ -36,11 +29,7 @@ function logWriteFailureOnce(err) {
   );
 }
 
-/** Firebase RTDB presence store. */
 export function createRtdbPresenceStore() {
-  /**
-   * @param {import("./presence-events.js").PresenceRecord} record
-   */
   async function set(record) {
     if (!record?.userId) return false;
     try {
@@ -67,10 +56,6 @@ export function createRtdbPresenceStore() {
     }
   }
 
-  /**
-   * @param {string} userId
-   * @returns {Promise<import("./presence-events.js").PresenceRecord | null>}
-   */
   async function get(userId) {
     if (!userId) return null;
     try {
@@ -82,10 +67,6 @@ export function createRtdbPresenceStore() {
     }
   }
 
-  /**
-   * @param {string[]} userIds
-   * @returns {Promise<Map<string, import("./presence-events.js").PresenceRecord | null>>}
-   */
   async function getMany(userIds) {
     const out = new Map();
     if (!userIds.length) return out;
@@ -105,9 +86,6 @@ export function createRtdbPresenceStore() {
     return out;
   }
 
-  /**
-   * @param {string} userId
-   */
   async function deleteUser(userId) {
     if (!userId) return;
     try {
@@ -119,9 +97,6 @@ export function createRtdbPresenceStore() {
     }
   }
 
-  /**
-   * @returns {Promise<string[]>}
-   */
   async function listOnlineUserIds() {
     try {
       const db = admin.database();

@@ -1,8 +1,3 @@
-// Postgres-backed CRUD for the clients domain (clients, client_budgets,
-// client_invoicing - client_projects already existed pre-migration). See
-// project-budget-fixes-plan.md Phase 7+ ("Clients domain migration to
-// Postgres"). No dual-write, no backfill - direct cutover from Firestore,
-// same as the Projects migration this mirrors.
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
@@ -14,9 +9,6 @@ function uuidOrNull(value) {
   return trimmed ? trimmed : null;
 }
 
-// ---------------------------------------------------------------------------
-// clients
-// ---------------------------------------------------------------------------
 
 export async function getClientPg(id) {
   const rows = await query("SELECT * FROM clients WHERE id = $1 LIMIT 1", [id]);
@@ -27,9 +19,6 @@ export async function listClientsPg({ limit = 1000 } = {}) {
   return query("SELECT * FROM clients ORDER BY created_at LIMIT $1", [limit]);
 }
 
-/** @param {{ memberId?: string|null, name: string, streetAddress?: string, city?: string,
- *   state?: string, zip?: string, country?: string, phoneNumber?: string,
- *   emailAddresses?: string, status?: string, actorId?: string }} data */
 export async function createClientPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
@@ -58,9 +47,6 @@ export async function createClientPg(data) {
   return client;
 }
 
-/** @param {string} id @param {Record<string, unknown>} patch
- * @param {string} [expectedUpdatedAt] Optimistic-concurrency token (§6.9) -
- *   optional, same conditional-write contract as updateProjectPg. */
 export async function updateClientPg(id, patch, expectedUpdatedAt) {
   const columns = {
     memberId: "member_id",
@@ -84,8 +70,6 @@ export async function updateClientPg(id, patch, expectedUpdatedAt) {
   }
   if (sets.length === 0) return getClientPg(id);
   sets.push("updated_at = now()");
-  // See projects-postgres.service.js's updateProjectPg for why this must be
-  // millisecond-truncated on both sides (now() vs a JS Date round-trip).
   const where = expectedUpdatedAt
     ? `WHERE id = $1 AND date_trunc('milliseconds', updated_at) = $${params.push(expectedUpdatedAt)}::timestamptz`
     : "WHERE id = $1";
@@ -98,15 +82,11 @@ export async function updateClientPg(id, patch, expectedUpdatedAt) {
   return client;
 }
 
-/** Cascades to client_budgets/client_invoicing/client_projects via their FKs. */
 export async function deleteClientPg(id, actorId) {
   await query("DELETE FROM clients WHERE id = $1", [id]);
   void publishChange("clients", id, "deleted", uuidOrNull(actorId) ?? undefined);
 }
 
-// ---------------------------------------------------------------------------
-// client_budgets
-// ---------------------------------------------------------------------------
 
 export async function getClientBudgetPg(clientId) {
   const rows = await query("SELECT * FROM client_budgets WHERE client_id = $1 LIMIT 1", [clientId]);
@@ -121,8 +101,6 @@ export async function deleteClientBudgetPg(clientId) {
   await query("DELETE FROM client_budgets WHERE client_id = $1", [clientId]);
 }
 
-/** Create-or-replace, one row per client (unique index on client_id makes
- * the Firestore-era "resolve existing doc id first" step unnecessary). */
 export async function upsertClientBudgetPg(clientId, budget, actorId) {
   const rows = await query(
     `INSERT INTO client_budgets (
@@ -147,16 +125,12 @@ export async function upsertClientBudgetPg(clientId, budget, actorId) {
   return rows[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// client_invoicing
-// ---------------------------------------------------------------------------
 
 export async function getClientInvoicingPg(clientId) {
   const rows = await query("SELECT * FROM client_invoicing WHERE client_id = $1 LIMIT 1", [clientId]);
   return rows[0] ?? null;
 }
 
-/** Create-or-replace, one row per client (same ON CONFLICT simplification as client_budgets). */
 export async function upsertClientInvoicingPg(clientId, invoicing, actorId) {
   const rows = await query(
     `INSERT INTO client_invoicing (
@@ -201,9 +175,6 @@ export async function upsertClientInvoicingPg(clientId, invoicing, actorId) {
   return rows[0] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// client_automation_state (budget notify threshold + period-key dedupe)
-// ---------------------------------------------------------------------------
 
 export async function getClientAutomationStatePg(clientId) {
   const rows = await query(
@@ -213,9 +184,6 @@ export async function getClientAutomationStatePg(clientId) {
   return rows[0] ?? null;
 }
 
-/** Partial merge, matching the Firestore-era `.set(payload, { merge: true })`
- * semantics this replaces - only the keys present in `patch` are touched,
- * everything else on the existing row is left alone via COALESCE. */
 export async function upsertClientAutomationStatePg(clientId, patch) {
   const rows = await query(
     `INSERT INTO client_automation_state (

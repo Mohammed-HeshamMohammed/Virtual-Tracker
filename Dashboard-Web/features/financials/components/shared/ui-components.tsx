@@ -19,7 +19,6 @@ export function StatusBadge({ status, config }: { status: string; config?: Recor
     const c = config[status]
     return <span className={cn("px-2.5 py-1 rounded-full text-xs font-semibold", c.bg, c.text)}>{c.label || status}</span>
   }
-  // Default fallback styles
   const lowerStatus = status.toLowerCase()
   const defaultBg = lowerStatus === "paid" || lowerStatus === "closed" ? "bg-emerald-50 text-emerald-700" :
                     lowerStatus === "pending" || lowerStatus === "uninvoiced" ? "bg-amber-50 text-amber-700" :

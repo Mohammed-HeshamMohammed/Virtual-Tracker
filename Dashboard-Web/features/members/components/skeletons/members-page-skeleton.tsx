@@ -10,7 +10,6 @@ function skeletonTone(isDark: boolean) {
   return isDark ? "bg-[#2e3447]" : "bg-slate-200"
 }
 
-/** Chunk-route fallback that mirrors MembersPage chrome so the table skeleton does not fill the viewport. */
 export function MembersPageSkeleton({ isDark = false }: { isDark?: boolean }) {
   const tone = skeletonTone(isDark)
   const tableRowCap = useResponsiveRowCap(PEOPLE_TABLE_ROW_CAP_BY_BREAKPOINT)

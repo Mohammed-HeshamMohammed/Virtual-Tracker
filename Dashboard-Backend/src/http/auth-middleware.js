@@ -9,7 +9,6 @@ import { setAuthContext } from "./auth-context.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
 import { getMemberByFirebaseUidPg, getMemberByIdPg, getMemberAuthContextPg } from "../lib/postgres/members-postgres.service.js";
 
-/** Unauthenticated API routes (no Bearer token required). */
 const PUBLIC_API_ROUTES = [
   { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
   { method: "GET", pattern: /^\/api\/auth\/sign-in-client-extras$/ },
@@ -24,23 +23,14 @@ const PUBLIC_API_ROUTES = [
   { method: "GET", pattern: /^\/api\/public\/member-transfer-requests\/[^/]+$/ },
   { method: "POST", pattern: /^\/api\/activity\/agent\/link\/init$/ },
   { method: "POST", pattern: /^\/api\/activity\/agent\/link\/exchange$/ },
-  // Device-credential re-auth. Unauthenticated by necessity - the caller has
-  // no usable token, which is the entire reason it is calling. The device
-  // secret is the credential, and the handler re-runs the member status and
-  // ban checks a normal sign-in would.
   { method: "POST", pattern: /^\/api\/activity\/agent\/reauth$/ },
 ];
 
-/**
- * @param {string} method
- * @param {string} pathname
- */
 export function isPublicApiRoute(method, pathname) {
   const normalized = pathname.replace(/^\/api\/v1/, "/api");
   return PUBLIC_API_ROUTES.some((route) => route.method === method && route.pattern.test(normalized));
 }
 
-/** Allowed while must_change_password is true (first-login flow). */
 const MUST_CHANGE_PASSWORD_ALLOWED = [
   { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
   { method: "POST", pattern: /^\/api\/auth\/complete-first-login$/ },
@@ -50,10 +40,6 @@ const MUST_CHANGE_PASSWORD_ALLOWED = [
   { method: "GET", pattern: /^\/api\/auth\/readiness$/ },
 ];
 
-/**
- * @param {string} method
- * @param {string} pathname
- */
 function isMustChangePasswordAllowedRoute(method, pathname) {
   const normalized = pathname.replace(/^\/api\/v1/, "/api");
   return MUST_CHANGE_PASSWORD_ALLOWED.some(
@@ -61,12 +47,6 @@ function isMustChangePasswordAllowedRoute(method, pathname) {
   );
 }
 
-/**
- * Verify Firebase ID token → members row.
- * @param {import("node:http").IncomingMessage} req
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- */
 export async function authenticateRequest(req, url, db) {
   const auth = getAuthAdmin();
   if (!auth) {
@@ -85,8 +65,6 @@ export async function authenticateRequest(req, url, db) {
       return { ok: false, status: 403, error: "This account has been disabled.", code: "ACCOUNT_DISABLED" };
     }
 
-    // Reuses the getUser() call above — no extra Firebase Admin round trip.
-    // Catches tokens revoked by a remote "Sign out" (see session-cookie-routes.js).
     if (userRecord.tokensValidAfterTime) {
       const tokensValidAfter = new Date(userRecord.tokensValidAfterTime).getTime();
       const issuedAt = decoded.iat * 1000;
@@ -165,7 +143,6 @@ export async function authenticateRequest(req, url, db) {
   }
 }
 
-/** Auth gate for protected routes; public paths skip token check. */
 export async function enforceApiAuthentication(req, url, db) {
   const requestIp = getRequestIp(req);
   const deviceGate = await assertDeviceNotBanned(db, requestIp);

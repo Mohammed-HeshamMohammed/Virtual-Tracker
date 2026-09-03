@@ -13,7 +13,6 @@ type IdleDetectorConstructor = {
   new (): IdleDetectorInstance
 }
 
-/** Calls `onIdle` when the user is idle (API or no input while timer runs). */
 export function startIdleWatch(onIdle: () => void): () => void {
   if (typeof window === "undefined") return () => {}
 

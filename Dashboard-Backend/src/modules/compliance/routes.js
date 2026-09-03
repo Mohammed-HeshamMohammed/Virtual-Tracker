@@ -41,33 +41,15 @@ const ERROR_STATUS = {
   INVALID_MATCH_TYPE: 400,
   PATTERN_REQUIRED: 400,
   FORBIDDEN: 403,
-  // CF-4: "may we" failing is a policy refusal, not malformed input.
   CAPABILITY_NOT_OFFERABLE_IN_JURISDICTION: 403,
   UNKNOWN_DATA_TYPE: 400,
   INVALID_RETENTION_DAYS: 400,
 };
 
-/**
- * CF-1 registry endpoints. Reading the policy is open to any authenticated
- * member (it's exactly what CF-2's disclosure notice shows them - nothing to
- * protect by hiding it); writing it and reading its audit trail requires
- * management (enforced again inside setMonitoringCapability/here, belt and
- * braces since this is the compliance-evidence path).
- *
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeCompliance(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/compliance")) return false;
 
-  // CF-4: "which capabilities are even offerable" for a given profile -
-  // what a settings UI calls to decide which toggles to render at all, not
-  // just which start unchecked. Read-only, no management gate: knowing the
-  // matrix isn't sensitive, only changing it is.
   if (pn === "/api/compliance/jurisdiction-offerable" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -145,10 +127,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-2: the mandatory first-run (and re-triggered-on-change) disclosure.
-  // requiresAcknowledgement is computed per-viewer, not cached, since a
-  // consented member and a never-seen member hitting this at the same
-  // moment must see different answers against the same notice.
   if (pn === "/api/compliance/notice" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -166,8 +144,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-0.2: "the employee can always see their own collected data" - a
-  // member's own consent record, self-service, no management gate.
   if (pn === "/api/compliance/consent" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -234,11 +210,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-3 data minimization. Reading the exclusion list/settings is
-  // management-only (unlike the policy/notice endpoints above) - unlike "what
-  // is collected", "which specific apps/domains are exempted" isn't
-  // something every employee needs visibility into, and the list itself can
-  // be sensitive (it may name specific banking/health apps).
   if (pn === "/api/compliance/capture-exclusions" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -351,9 +322,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-5 retention. Settings are readable by anyone signed in - "how long is
-  // this kept" is exactly what CF-2's notice needs to be able to say, and
-  // isn't sensitive on its own.
   if (pn === "/api/compliance/retention-settings" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -398,10 +366,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-0.5 DSAR: self-service for one's own data; management can pull it for
-  // another member (fulfilling a request on someone's behalf is still a
-  // management action, distinct from the free-for-all "anyone can read
-  // anyone's export" this would otherwise be).
   if (pn === "/api/compliance/dsar" || pn.startsWith("/api/compliance/dsar/")) {
     if (req.method !== "GET") return false;
     const viewer = requireAuthContext(req, res, origin);
@@ -420,8 +384,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-0.5 erasure. Management-only and POST-only (no bulk/wildcard path) -
-  // this is the single most destructive endpoint in this module.
   if (pn.startsWith("/api/compliance/erasure/") && req.method === "POST") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -447,7 +409,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-0.5: who has viewed my screenshots - self, or management for another member.
   if (pn === "/api/compliance/screenshot-access-log" || pn.startsWith("/api/compliance/screenshot-access-log/")) {
     if (req.method !== "GET") return false;
     const viewer = requireAuthContext(req, res, origin);
@@ -469,7 +430,6 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
-  // CF-6: device ownership. Self, or management for another member.
   const isOwnershipPath = pn.startsWith("/api/compliance/devices/") && pn.endsWith("/ownership");
 
   if ((pn === "/api/compliance/devices" || pn.startsWith("/api/compliance/devices/")) &&
@@ -523,7 +483,7 @@ export async function routeCompliance(req, res, url, origin) {
       const updated = await setAgentDeviceOwnership(deviceId, String(body.ownership ?? ""), viewer.memberId);
       sendJson(res, origin, 200, { success: true, data: updated });
     } catch (e) {
-      const status = e && /** @type {{code?:string}} */ (e).code === "UNKNOWN_OWNERSHIP" ? 400 : 500;
+      const status = e && (e).code === "UNKNOWN_OWNERSHIP" ? 400 : 500;
       if (status === 500) logSafeError("[compliance/devices ownership POST]", e);
       sendJson(res, origin, status, {
         success: false,

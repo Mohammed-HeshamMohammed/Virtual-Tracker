@@ -1,4 +1,3 @@
-/** Count Mon–Fri between start and end dates (inclusive). */
 export function countWorkingDaysBetween(startDate: string | null, endDate: string | null): number | null {
   if (!startDate || !endDate) return null
   const start = new Date(startDate)

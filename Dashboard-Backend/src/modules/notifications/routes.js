@@ -3,13 +3,6 @@ import { requireAuthContext } from "../../http/auth-context.js";
 import { sendJson } from "../../http/response.js";
 import { listNotificationsForMember, markAllNotificationsAsRead, markNotificationAsRead } from "./service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>} true if handled
- */
 export async function routeNotifications(req, res, url, origin) {
   if (!url.pathname.startsWith("/api/notifications")) return false;
 
@@ -18,7 +11,6 @@ export async function routeNotifications(req, res, url, origin) {
 
   const memberId = viewer.memberId;
 
-  // GET /api/notifications
   if (url.pathname === "/api/notifications" && req.method === "GET") {
     try {
       const data = await listNotificationsForMember(null, memberId);
@@ -29,7 +21,6 @@ export async function routeNotifications(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/notifications/:id/read
   const readMatch = /^\/api\/notifications\/([^/]+)\/read$/.exec(url.pathname);
   if (readMatch && req.method === "POST") {
     const notificationId = readMatch[1];
@@ -46,7 +37,6 @@ export async function routeNotifications(req, res, url, origin) {
     return true;
   }
 
-  // POST /api/notifications/read-all
   if (url.pathname === "/api/notifications/read-all" && req.method === "POST") {
     try {
       await markAllNotificationsAsRead(null, memberId);
@@ -57,7 +47,6 @@ export async function routeNotifications(req, res, url, origin) {
     return true;
   }
 
-  // DELETE /api/notifications/:id
   const deleteMatch = /^\/api\/notifications\/([^/]+)$/.exec(url.pathname);
   if (deleteMatch && req.method === "DELETE") {
     const notificationId = deleteMatch[1];

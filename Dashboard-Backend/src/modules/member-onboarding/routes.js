@@ -60,8 +60,6 @@ function computeSource(item) {
 }
 
 function normalizeRole(value) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(value);
 }
 
@@ -101,10 +99,6 @@ export async function routeMemberOnboarding(req, res, url, origin) {
         query("SELECT DISTINCT member_id FROM activity_sessions WHERE active_seconds > 0", []),
       ]);
 
-      // "Downloaded app" / "Tracked time" are read live off the desktop-agent
-      // link timestamp and activity_sessions, not off downloaded_app/tracked_time
-      // in the onboarding row - nothing ever PATCHes those columns, so they'd
-      // otherwise stay false forever and the checklist could never complete.
       const linkedMemberIds = new Set(
         membersRows.filter((d) => d.desktop_agent_linked_at).map((d) => String(d.id)),
       );
@@ -386,13 +380,6 @@ export async function routeMemberOnboarding(req, res, url, origin) {
   return false;
 }
 
-/**
- * Emails the member/invitee a nudge for whichever onboarding step they're
- * actually stuck on. Best-effort - a delivery failure must not fail the
- * reminder request itself (the timestamp is already recorded).
- * @param {Record<string, unknown>} row - the just-updated onboarding row
- * @returns {Promise<{ sent: boolean }>}
- */
 async function sendReminderEmailFor(row) {
   try {
     if (row.member_id) {
@@ -418,13 +405,6 @@ async function sendReminderEmailFor(row) {
   }
 }
 
-/**
- * Defensive check for synthetic member updates/reminders.
- * Fetches one member row by id and verifies owner role exclusion.
- * Keeps owner filtering enforced even when IDs are user-provided.
- * @param {string} memberId
- * @returns {Promise<boolean>}
- */
 async function isOwnerMemberById(memberId) {
   if (!memberId) return false;
   const row = await getMemberByIdPg(memberId);

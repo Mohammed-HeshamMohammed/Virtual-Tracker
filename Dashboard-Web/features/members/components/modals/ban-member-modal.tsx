@@ -29,8 +29,6 @@ export function BanMemberModal({ member: presetMember, onClose, onBanned }: BanM
   const [reason, setReason] = useState("")
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // If the exit animation's deferred unmount ever stalls, this invisible fixed-inset-0
-  // backdrop would keep intercepting every click/hover on the dashboard underneath it.
   const [isClosing, setIsClosing] = useState(false)
   const handleClose = () => {
     setIsClosing(true)

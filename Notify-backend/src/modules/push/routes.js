@@ -1,16 +1,8 @@
-// POST /api/notify/push — FCM via Firebase Admin (needs FIREBASE_SERVICE_ACCOUNT or GOOGLE_APPLICATION_CREDENTIALS).
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { getMessaging } from "../../config/firebase.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routePush(req, res, url, origin) {
   if (url.pathname !== "/api/notify/push" || req.method !== "POST") return false;
 
@@ -63,7 +55,6 @@ export async function routePush(req, res, url, origin) {
   }
 
   try {
-    /** @type {import("firebase-admin/messaging").Message} */
     const message = {
       notification: {
         title: String(body.title),
@@ -118,7 +109,6 @@ export async function routePush(req, res, url, origin) {
   return true;
 }
 
-/** FCM data values must be strings. @param {Record<string, unknown>} data @returns {Record<string, string>} */
 function flattenData(data) {
   return Object.fromEntries(
     Object.entries(data).map(([k, v]) => [k, String(v)]),

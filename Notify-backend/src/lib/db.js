@@ -1,8 +1,6 @@
-// Optional Postgres client for delivery logging only. No POSTGRES_URL → no-op.
 import pg from "pg";
 import { getEnv } from "../config/env.js";
 
-/** @type {pg.Pool | null} */
 let _pool = null;
 let _initAttempted = false;
 
@@ -21,7 +19,6 @@ function getPool() {
   return _pool;
 }
 
-/** SQL query — never throws. @param {string} sql @param {unknown[]} [params] @returns {Promise<Record<string, unknown>[] | null>} */
 export async function dbQuery(sql, params = []) {
   const pool = getPool();
   if (!pool) return null;
@@ -39,7 +36,6 @@ export async function dbQuery(sql, params = []) {
   }
 }
 
-/** Startup DB ping. */
 export async function verifyDbConnectivity() {
   const pool = getPool();
   if (!pool) return false;

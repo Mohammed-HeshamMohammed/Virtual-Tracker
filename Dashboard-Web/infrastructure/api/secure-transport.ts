@@ -1,4 +1,3 @@
-// Auth API calls must use HTTPS in production.
 
 const LOCAL_API_HOST = /^(localhost|127\.0\.0\.1)$/i
 

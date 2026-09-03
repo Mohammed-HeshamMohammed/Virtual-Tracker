@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState } from "react"
@@ -18,7 +17,6 @@ export function BillingPage({ onNavigate }: { onNavigate: (id: string) => void }
 
   return (
     <div className="flex flex-col h-full w-full">
-      {/* Sticky tab bar */}
       <div className="shrink-0 border-b border-slate-200 flex gap-0 overflow-x-auto scrollbar-none">
         {TABS.map(t => (
           <button
@@ -34,7 +32,6 @@ export function BillingPage({ onNavigate }: { onNavigate: (id: string) => void }
         ))}
       </div>
 
-      {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] relative">
         <div className="p-6">
           <AnimatePresence mode="wait">

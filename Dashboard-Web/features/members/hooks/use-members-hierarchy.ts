@@ -13,7 +13,6 @@ import type { ScopedHierarchyMembers } from "@/infrastructure/api"
 const EMPTY_MEMBER_IDS = new Set<string>()
 const SCOPED_CACHE_STALE_MS = 60_000
 
-/** Bumped when backend splits visible vs manageable member scope. */
 export const MEMBER_SCOPE_CACHE_PREFIX = "hierarchy-scope-v6-"
 
 export function memberScopeCacheKey(memberId: string): string {
@@ -22,9 +21,7 @@ export function memberScopeCacheKey(memberId: string): string {
 
 interface UseMemberScopeProps {
   canSeeAllMembers: boolean
-  /** Backend-linked member id from auth — do not infer from cached list rows. */
   currentMemberId: string | undefined
-  /** Wait until Firebase session + backend member are ready before calling scoped-members. */
   sessionReady?: boolean
 }
 
@@ -39,7 +36,6 @@ function teamStaffableFromScoped(result: ScopedHierarchyMembers): string[] {
   return result.team_staffable_members
 }
 
-/** People scope from backend — visible vs manageable member ids. */
 export function useMemberScope({
   canSeeAllMembers,
   currentMemberId,

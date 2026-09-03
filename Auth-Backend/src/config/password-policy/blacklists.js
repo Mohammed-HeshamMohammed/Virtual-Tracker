@@ -1,6 +1,3 @@
-// Password deny-lists — never expose via public APIs.
-
-/** @type {readonly string[]} */
 export const COMMON_PASSWORDS = [
   "password",
   "password123",
@@ -28,7 +25,6 @@ export const COMMON_PASSWORDS = [
   "iloveyou",
 ];
 
-/** @type {readonly string[]} */
 export const EXAMPLE_PASSWORDS = [
   "password123!",
   "qwerty123!",
@@ -40,7 +36,6 @@ export const EXAMPLE_PASSWORDS = [
   "letmein123",
 ];
 
-/** @type {readonly string[]} */
 export const SEQUENTIAL_PATTERNS = [
   "0123456789",
   "9876543210",

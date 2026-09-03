@@ -4,10 +4,8 @@ import { dirname, join } from "path"
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-/** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  // Monorepo: parent folder has another package-lock.json — pin tracing to this app.
   outputFileTracingRoot: join(__dirname),
   images: { unoptimized: true },
   compress: true,

@@ -8,11 +8,6 @@ type AssignedTodayBadgeProps = {
   assignedCarriedLabel: string;
 };
 
-/** Member-wide ("across every project"), not scoped to whichever project or
- *  task happens to be open - it used to sit as a full-width card in the main
- *  pane, implying it was about the open task the way the panels around it
- *  are, when it never was. Lives in the header next to Refresh instead, as
- *  the small extra it actually is. */
 export function AssignedTodayBadge({
   memberLimits,
   assignedTodayLabel,

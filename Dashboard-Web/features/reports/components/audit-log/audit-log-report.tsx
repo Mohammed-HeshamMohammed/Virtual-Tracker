@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { Fragment, useEffect, useMemo, useState as useComponentState } from "react"
@@ -51,11 +50,6 @@ const DEFAULT_COLS: Record<AuditLogColumnKey, boolean> = {
   detail: true,
 }
 
-// AuditLogRow has no identifiable project (see groupAuditRows' doc comment
-// in utils/audit-log.ts), so Author and Action - real per-row fields the
-// endpoint already populates - replace it as group-by dimensions instead of
-// leaving "Date" as the only option in a dropdown that otherwise does
-// nothing.
 const GROUP_OPTIONS: { value: AuditLogGroupBy; label: string }[] = [
   { value: "date", label: "Date" },
   { value: "author", label: "Author" },
@@ -76,7 +70,6 @@ function actionBadgeClass(kind: AuditLogRow["actionKind"]): string {
   }
 }
 
-/** One checkbox group in the audit Filters panel. */
 function AuditFacet({
   title,
   values,
@@ -130,8 +123,6 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   const [rangeEnd, setRangeEnd] = useComponentState(() => endOfDay(new Date()))
   const [rows, setRows] = useComponentState<AuditLogRow[]>([])
   const [loading, setLoading] = useComponentState(true)
-  // A failed read used to be indistinguishable from an empty log:
-  // getJson swallowed every error and the table rendered no rows.
   const [error, setError] = useComponentState<string | null>(null)
   const [reloadKey, setReloadKey] = useComponentState(0)
   const [showDatePicker, setShowDatePicker] = useComponentState(false)
@@ -495,8 +486,6 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
               className="fixed right-6 top-24 z-50 w-[min(360px,calc(100vw-2rem))] rounded-2xl border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] p-4 shadow-xl"
             >
               <div className="mb-3 text-sm font-semibold text-slate-800 dark:text-[#dce1fb]">Filters</div>
-              {/* Author/action values come from the loaded rows themselves, so the
-                  panel can only ever offer filters that match real audit data. */}
               <div className="max-h-[50vh] space-y-4 overflow-y-auto custom-scrollbar pr-1">
                 <AuditFacet
                   title="Author"

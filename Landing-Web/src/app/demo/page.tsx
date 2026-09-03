@@ -96,7 +96,6 @@ export default function DemoPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-16">
-          {/* Workspaces Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
             {[
               {
@@ -156,7 +155,6 @@ export default function DemoPage() {
             ))}
           </div>
 
-          {/* Interactive Workspace Simulator Viewport */}
           <section className="rounded-3xl border border-slate-200 bg-white p-6 md:p-8 shadow-md">
             <h3 className="text-lg font-bold text-slate-900 mb-2">Interactive Dashboard Simulator</h3>
             <p className="text-xs text-slate-400 font-light mb-8">
@@ -164,7 +162,6 @@ export default function DemoPage() {
             </p>
 
             <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col md:grid md:grid-cols-[200px_1fr] bg-slate-50 min-h-[350px]">
-              {/* Sidebar Mockup */}
               <div className="bg-slate-900 text-slate-300 p-4 border-r border-slate-800 space-y-4 text-xs">
                 <div className="flex items-center gap-2 px-2 py-1 bg-slate-800 rounded-lg text-white">
                   <div className="w-5 h-5 rounded bg-violet-600 flex items-center justify-center font-bold text-[10px]">VT</div>
@@ -192,7 +189,6 @@ export default function DemoPage() {
                 </div>
               </div>
 
-              {/* Viewport Content Mockup */}
               <div className="bg-white p-6 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
@@ -205,7 +201,6 @@ export default function DemoPage() {
                     </span>
                   </div>
 
-                  {/* Stateful Content Renders */}
                   {activeScreen === "timesheets" && (
                     <div className="space-y-2">
                       {screens.timesheets.logs.map((log, idx) => (
@@ -291,7 +286,6 @@ export default function DemoPage() {
             </div>
           </section>
 
-          {/* Call to action */}
           <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-violet-50/50 via-slate-50/30 to-blue-50/50 -z-10" />
             <h3 className="text-2xl font-extrabold text-slate-900 mb-2">{user ? "See your own activity" : "Access the Workspace"}</h3>

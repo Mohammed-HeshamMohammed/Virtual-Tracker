@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useEffect, useState, type ReactNode } from "react"
@@ -7,11 +6,6 @@ import { ChevronDown, Upload } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { BatchEditAction } from "@/features/members/components/modals/batch-edit-modal"
 
-/** Owner/Super Admin/Admin/Super Manager only - server enforces this too
- *  (updateMemberProfile's hasPayBill branch, every payBill write including
- *  batch-update funnels through it), so without this a Manager could pick
- *  "Edit pay rate", fill in a value, and only find out it was refused after
- *  submitting. */
 const PAY_RATE_ACTIONS = new Set<BatchEditAction>(["payRate", "billRate", "payPeriod"])
 
 const groups: {

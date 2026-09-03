@@ -11,7 +11,6 @@ type SimpleDatePickerProps = {
   "aria-label"?: string
 }
 
-/** People modals date picker — same calendar/trigger as Tasks & Projects add forms. */
 export function SimpleDatePicker({
   value,
   onChange,

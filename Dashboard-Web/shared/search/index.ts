@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/js-combine-iterations */
 import { NAV_SECTIONS, getPageLabel, getSectionForPage, type NavSection } from "@/shared/ui/layout"
 import { visibleNavSections, canAccessAllSidebarTabs } from "@/features/auth"
 import { POPULAR_REPORTS, REPORT_SECTIONS } from "@/features/reports"
@@ -185,7 +184,6 @@ function entryFromNavPage(
   }
 }
 
-/** Full searchable catalog: pages, buttons, tabs, and section titles. */
 export function buildAppSearchIndex(): AppSearchEntry[] {
   const byId = new Map<string, AppSearchEntry>()
 
@@ -256,11 +254,6 @@ export function buildAppSearchIndex(): AppSearchEntry[] {
   return [...byId.values()]
 }
 
-/**
- * Page ids this role may open. Built from visibleNavSections, the same
- * source the sidebar and breadcrumb dropdowns use, so search cannot surface
- * a page that neither of those would let the role reach.
- */
 export function getAccessiblePageIds(role: string): Set<string> {
   const ids = new Set<string>(["profile"])
 
@@ -328,7 +321,6 @@ export function searchAppIndex(
   const q = query.trim()
   if (!q) return []
 
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   return entries
     .filter((entry) => accessiblePageIds.has(entry.pageId))
     .map((entry) => ({ entry, score: scoreEntry(entry, q) }))

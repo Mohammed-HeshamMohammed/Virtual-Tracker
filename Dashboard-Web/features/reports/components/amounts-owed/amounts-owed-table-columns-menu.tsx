@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState } from "react"
@@ -8,12 +7,6 @@ import { AMOUNTS_OWED_TOGGLEABLE_COLUMNS } from "@/features/reports/components/s
 import type { AmountsOwedColumnKey } from "@/features/reports/components/shared/constants"
 import { cn } from "@/shared/utils/utils"
 
-/**
- * Controls the columns this report actually renders. It used to offer member
- * fields (email, job title, tax info, location, ...) that the table has no
- * column for and the endpoint returns no data for, with the checked state held
- * locally so toggling anything did nothing either way.
- */
 export function AmountsOwedTableColumnsMenu({
   visible,
   onVisibleChange,

@@ -1,7 +1,6 @@
 import type { MemberRole } from "@/features/members/models/member"
 import { normalizeMemberRole } from "@/features/auth/permissions/member-role-access"
 
-/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js (prototype-less — see that file). */
 const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
@@ -38,7 +37,6 @@ export function isAdminLevelRole(roleName: string): boolean {
   return key === "admin" || key === "superadmin" || key === "owner"
 }
 
-/** Confidential-data gate (member emails): Owner/Super Admin only. Mirrors Backend field-policy.js. */
 export function isOwnerOrSuperAdminRole(roleName: string): boolean {
   const key = normalizeMemberRole(roleName)
   return key === "owner" || key === "superadmin"
@@ -92,7 +90,6 @@ export function canManageAllTeams(roleName: string): boolean {
   )
 }
 
-/** Manager — subtree-scoped team create; full roster control only on teams they lead. */
 export function isManagerRole(roleName: string): boolean {
   return normalizeMemberRole(roleName) === "manager"
 }
@@ -101,7 +98,6 @@ export function isOwnerRole(roleName: string): boolean {
   return normalizeMemberRole(roleName) === "owner"
 }
 
-/** Returns an error message when an Owner role change is attempted. */
 export function validateOwnerRoleChange(currentRole: string, nextRole: string): string | null {
   const next = nextRole.trim()
   if (!next) return null
@@ -115,7 +111,6 @@ export function canApproveDeactivationRequests(roleName: string): boolean {
   return isAdminLevelRole(roleName)
 }
 
-/** Target role keys an actor may not edit or remove (mirrors Backend role-manage-policy.js). */
 const BLOCKED_TARGET_KEYS_BY_ACTOR: Record<string, Set<string>> = {
   owner: new Set(["owner"]),
   superadmin: new Set(["owner", "superadmin"]),
@@ -125,7 +120,6 @@ const BLOCKED_TARGET_KEYS_BY_ACTOR: Record<string, Set<string>> = {
   manager: new Set(["owner", "admin", "superadmin", "supermanager", "supermanger"]),
 }
 
-/** UI hint — server enforces via canManageMember and validateMemberRoleChange. */
 export function canActorManageTargetRole(actorRoleName: string, targetRoleName: string): boolean {
   const actorKey = normalizeMemberRole(actorRoleName)
   const targetKey = normalizeMemberRole(targetRoleName)

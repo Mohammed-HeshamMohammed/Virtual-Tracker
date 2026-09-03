@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import { useEffect, useState } from "react"
@@ -39,7 +38,6 @@ export {
   TimeActivityReportView,
 }
 
-/** Empty default payload until report data is loaded from the API. */
 export function buildDefaultTimeActivityReportData(): TimeActivityReportData {
   return { days: [], memberRows: {}, entries: [] }
 }
@@ -55,7 +53,6 @@ function defaultRange(): { start: Date; end: Date } {
   return { start, end }
 }
 
-/** Time & Activity report, wired to real data — owns the date range so it can refetch on change. */
 export function TimeAndActivityReport() {
   const [range, setRange] = useState<{ start: Date; end: Date }>(() => defaultRange())
   const [reportData, setReportData] = useState<TimeActivityReportData>(() => buildDefaultTimeActivityReportData())

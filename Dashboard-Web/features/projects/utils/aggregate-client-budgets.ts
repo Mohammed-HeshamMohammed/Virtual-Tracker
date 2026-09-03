@@ -25,7 +25,6 @@ function mapClientResetsToProject(resets: string): string {
   return "Never"
 }
 
-/** One client's budget contribution when linked to a single project. */
 export function clientBudgetContributionForProject(
   budget: ClientBudgetSnapshot,
   options?: { memberCount?: number },
@@ -36,7 +35,6 @@ export function clientBudgetContributionForProject(
   return budget.cost
 }
 
-/** Sum selected client budgets into project Budget & Limits fields. */
 export function aggregateClientBudgetsForProject(
   clients: { id: string; budget?: ClientBudgetSnapshot }[],
   selectedClientIds: string[],

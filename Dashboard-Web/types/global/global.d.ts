@@ -92,7 +92,6 @@ declare global {
     getExtension<K extends keyof WebGLExtensionMap>(name: K): WebGLExtensionMap[K] | null;
   }
 
-  /** pywebview injects this object on window at runtime when the page is hosted inside a pywebview window. */
   interface PyWebViewAPI {
     close_app_window?: () => void
     maximize_app_window?: () => void

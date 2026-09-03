@@ -4,7 +4,6 @@ import { fmtHours, fmtLimitHours, initialsFromName } from "../../utils/formatter
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Icon } from "../common/Icon";
 
-/** Timesheet states read as states, same as the role/status badges above. */
 function timesheetTone(status: string): string {
   const key = status.toLowerCase();
   if (key === "approved") return "good";
@@ -19,8 +18,6 @@ function timesheetLabel(status: string): string {
   return key ? key.charAt(0).toUpperCase() + key.slice(1) : "Draft";
 }
 
-/** `days` carries fractions (a half-day of leave is 0.5) - trimmed so a
- *  whole number doesn't render as "12.0 days". */
 function fmtDays(days: number): string {
   const rounded = Math.round(days * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)} day${rounded === 1 ? "" : "s"}`;
@@ -30,13 +27,10 @@ function fmtMoney(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
   } catch {
-    // An unrecognized currency code would otherwise throw and take the whole
-    // panel with it - the number still reads fine with the code beside it.
     return `${amount.toFixed(2)} ${currency}`;
   }
 }
 
-/** A cap read as a ratio, matching how the stats pane reads every ceiling. */
 function LimitCard({
   label,
   limitHours,
@@ -84,8 +78,6 @@ export function ProfilePanel({
   profile: ProfileInfo | null;
   memberProfile: MemberProfile | null;
   memberLimits: MemberLimits | null;
-  /** null until loaded, or on a backend without the route - every section
-   *  below is skipped rather than rendering an empty shell. */
   workspace: AgentWorkspace | null;
   screenshots: ScreenshotRef[];
   screenshotImages: Record<string, string>;
@@ -98,9 +90,6 @@ export function ProfilePanel({
   onSignOut: () => void;
   signingOut: boolean;
 }) {
-  // memberProfile (People-page record) is the richer, canonical source once
-  // it loads; profile (JWT claims) is what's available immediately so the
-  // page isn't blank on first open.
   const displayName = memberProfile?.name || profile?.name || "Not signed in";
   const displayEmail = memberProfile?.email || profile?.email || "";
   const displayAvatar = memberProfile?.avatarUrl || profile?.avatarUrl || "";
@@ -124,8 +113,6 @@ export function ProfilePanel({
             <div className="profile-identity-copy">
               <h1 className="profile-name">{displayName}</h1>
               {displayEmail ? <span className="profile-email">{displayEmail}</span> : null}
-              {/* Role and status are states, not free text - they read far
-                  faster as badges than as monospace rows. */}
               {memberProfile ? (
                 <div className="badge-row">
                   {memberProfile.role ? <span className="badge neutral">{memberProfile.role}</span> : null}
@@ -200,12 +187,6 @@ export function ProfilePanel({
           )}
         </section>
 
-        {/* Time off, timesheet and earnings all answer "where do I stand",
-            which is the same question the limits card above answers for
-            hours - so they live together rather than as a fourth view. Each
-            block is skipped entirely when the org doesn't use that feature
-            (no policies, no timesheet yet, no pay rate), so this section
-            simply doesn't appear for a workspace that has none of them. */}
         {workspace &&
         (workspace.self.timeOff.length > 0 ||
           workspace.self.timesheet ||
@@ -256,9 +237,6 @@ export function ProfilePanel({
               </div>
             ) : null}
 
-            {/* Only a draft is submittable - the server refuses an already
-                submitted or approved period, so offering the button there
-                would be offering a guaranteed error. */}
             {workspace.self.timesheet && workspace.self.timesheet.status.toLowerCase() === "draft" ? (
               <button
                 className="btn btn-primary"
@@ -271,9 +249,6 @@ export function ProfilePanel({
               </button>
             ) : null}
 
-            {/* A rate of 0 means none is configured (or isn't visible to
-                this viewer) - showing "$0.00 earned" would read as a fact
-                rather than an absence. */}
             {workspace.self.earnings.hourlyRate > 0 ? (
               <div className="profile-limit-grid">
                 <div className="profile-limit">

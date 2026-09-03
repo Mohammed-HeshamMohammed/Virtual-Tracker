@@ -18,7 +18,6 @@ export type TaskTimerState = {
 
 const EMPTY_TIMER: TaskTimerState = { activeSeconds: 0, idleSeconds: 0 }
 
-/** Scope local timer cache to the signed-in member so accounts never share counters. */
 let scopedMemberId: string | null = null
 
 export function configureTimerStorageScope(memberId: string | null | undefined): void {
@@ -157,7 +156,6 @@ export function getTimerTask(): TimerTaskRef | null {
   }
 }
 
-/** Backend is source of truth when idle; while timer runs, never drop below local counters. */
 export function applyBackendTaskTimerState(
   taskId: string,
   state: TaskTimerState,

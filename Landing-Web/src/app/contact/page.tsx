@@ -50,7 +50,6 @@ export default function ContactPage() {
         />
 
         <section className="mx-auto max-w-7xl px-6 lg:px-8 mt-16 grid gap-12 lg:grid-cols-[1.2fr_0.8fr]">
-          {/* Contact Form */}
           <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-10 shadow-sm">
             {submitted ? (
               <div className="h-full flex flex-col items-center justify-center text-center py-12 space-y-4">
@@ -75,7 +74,6 @@ export default function ContactPage() {
                 <div className="space-y-3">
                   <h3 className="text-lg font-bold text-slate-900">Inquire about a deployment</h3>
                   
-                  {/* Topic Selector Chips */}
                   <div className="space-y-1.5">
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider font-mono">Topic of Interest</label>
                     <div className="flex flex-wrap gap-2 pt-1">
@@ -165,7 +163,6 @@ export default function ContactPage() {
             )}
           </div>
 
-          {/* Quick Help Channels */}
           <div className="space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Book a Walkthrough</h3>

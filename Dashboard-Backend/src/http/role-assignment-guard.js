@@ -16,11 +16,6 @@ import {
   MEMBER_ROLE_MANAGE_DENIED_MESSAGE,
 } from "./role-manage-policy.js";
 
-/**
- * Role name from body.roleName or body.roleId lookup.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ roleName?: string, roleId?: string }} input
- */
 async function resolveTargetRoleName(db, input) {
   if (typeof input.roleName === "string" && input.roleName.trim()) {
     return input.roleName.trim();
@@ -32,13 +27,6 @@ async function resolveTargetRoleName(db, input) {
   return "";
 }
 
-/**
- * Can actor assign this role? (privilege checks, never trust client).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} actorRoleName
- * @param {{ roleName?: string, roleId?: string }} target
- * @returns {Promise<string | null>} error message or null when allowed
- */
 export async function validateRoleAssignment(db, actorRoleName, target) {
   const targetRoleName = await resolveTargetRoleName(db, target);
   if (!targetRoleName) return null;
@@ -62,14 +50,6 @@ export async function validateRoleAssignment(db, actorRoleName, target) {
   return null;
 }
 
-/**
- * Role change guard: Owner protection + actor privilege ceiling.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} nextRoleName
- * @param {string} actorRoleName
- * @returns {Promise<string | null>}
- */
 import { getMemberByIdPg } from "../lib/postgres/members-postgres.service.js";
 
 export async function validateMemberRoleChange(db, memberId, nextRoleName, actorRoleName) {
@@ -108,14 +88,6 @@ export async function validateMemberRoleChange(db, memberId, nextRoleName, actor
   return null;
 }
 
-/**
- * Post role-change hierarchy side effects.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} nextRoleName
- * @param {string} actorMemberId
- * @param {string} actorRoleName
- */
 export async function applyRoleChangeHierarchy(db, memberId, nextRoleName, actorMemberId, actorRoleName) {
   const { applyRoleChangeHierarchyEffects } = await import("../modules/hierarchy/hierarchy-sync.js");
   return applyRoleChangeHierarchyEffects(db, {

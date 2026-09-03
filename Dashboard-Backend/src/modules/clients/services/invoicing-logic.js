@@ -1,12 +1,8 @@
-// Client invoicing tab rules — auto-send, reminders, line items, tax/net terms.
 
 import { LINE_ITEM_OPTIONS } from "./form-config.js";
 
 const LINE_ITEM_KEYS = new Set(LINE_ITEM_OPTIONS.map((o) => o.value));
 
-/**
- * @param {Record<string, unknown>|null|undefined} invoicing
- */
 export function normalizeInvoicing(invoicing) {
   const row = invoicing ?? {};
   return {
@@ -26,9 +22,6 @@ export function normalizeInvoicing(invoicing) {
   };
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- */
 export function buildInvoicingPolicy(invoicing) {
   const lineItemsValid = LINE_ITEM_KEYS.has(invoicing.autoLineItems);
 
@@ -56,9 +49,6 @@ export function buildInvoicingPolicy(invoicing) {
   };
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- */
 function buildInvoicingTriggerDefinitions(invoicing) {
   const triggers = [];
 
@@ -89,7 +79,6 @@ function buildInvoicingTriggerDefinitions(invoicing) {
   return triggers;
 }
 
-/** @param {string} issueDateIso YYYY-MM-DD */
 export function computeInvoiceDueDate(issueDateIso, netTermsDays) {
   const base = issueDateIso ? new Date(issueDateIso) : new Date();
   if (Number.isNaN(base.getTime())) return new Date().toISOString().slice(0, 10);
@@ -111,7 +100,6 @@ function frequencyToDays(frequency) {
   return 30;
 }
 
-/** Next auto-invoice time from frequency + delay (v1: period end = now). */
 export function computeNextAutoInvoiceAt(invoicing, from = new Date()) {
   if (!invoicing.autoInvoicing) return null;
   const periodDays = frequencyToDays(invoicing.autoFrequency);
@@ -119,10 +107,6 @@ export function computeNextAutoInvoiceAt(invoicing, from = new Date()) {
   return addDays(from, periodDays + delayDays);
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {string} dueDateIso
- */
 export function computeNextPaymentReminderAt(invoicing, dueDateIso) {
   if (!invoicing.autoInvoicing || !dueDateIso) return null;
   const due = new Date(dueDateIso);
@@ -130,10 +114,6 @@ export function computeNextPaymentReminderAt(invoicing, dueDateIso) {
   return addDays(due, invoicing.autoReminderDays);
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {{ lastAutoInvoiceAt?: Date|string|null; asOf?: Date }} state
- */
 export function shouldRunAutoInvoice(invoicing, state = {}) {
   if (!invoicing.autoInvoicing) {
     return { due: false, reason: "auto_invoicing_disabled" };
@@ -159,10 +139,6 @@ export function shouldRunAutoInvoice(invoicing, state = {}) {
   };
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {{ dueDate?: string; lastReminderAt?: Date|string|null; asOf?: Date }} state
- */
 export function shouldRunPaymentReminder(invoicing, state = {}) {
   if (!invoicing.autoInvoicing || !state.dueDate) {
     return { due: false, reason: "no_due_date" };
@@ -183,7 +159,6 @@ export function shouldRunPaymentReminder(invoicing, state = {}) {
   return { due: true, reason: "past_due_reminder", nextAt: remindAt };
 }
 
-/** Timesheet → invoice line item spec (future). */
 export function resolveLineItemSpec(lineItemsKey) {
   const valid = LINE_ITEM_KEYS.has(lineItemsKey);
   const group = lineItemsKey.startsWith("detailed_todo")
@@ -199,7 +174,6 @@ export function resolveLineItemSpec(lineItemsKey) {
   };
 }
 
-/** Invoice amount stub until timesheets feed in. */
 export function computeInvoiceAmount(invoicing, usage = {}) {
   if (invoicing.autoAmountBasis === "fixed") {
     const subtotal = invoicing.autoFixedAmount;
@@ -213,10 +187,6 @@ export function computeInvoiceAmount(invoicing, usage = {}) {
   return { subtotal, tax, total: subtotal + tax, basis: "hourly", hours, rate };
 }
 
-/**
- * @param {ReturnType<typeof normalizeInvoicing>} invoicing
- * @param {{ lastAutoInvoiceAt?: Date|string|null; lastReminderAt?: Date|string|null; openDueDate?: string|null; asOf?: Date }} state
- */
 export function evaluateInvoicingAutomation(invoicing, state = {}) {
   const policy = buildInvoicingPolicy(invoicing);
   const autoSend = shouldRunAutoInvoice(invoicing, {

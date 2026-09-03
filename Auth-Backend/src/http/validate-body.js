@@ -1,10 +1,5 @@
 const snakeToCamel = (input) => input.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
 
-/**
- * Reject JSON keys outside the allowlist (blocks mass-assignment).
- * @param {unknown} body
- * @param {string[]} allowedKeys
- */
 export function rejectUnknownFields(body, allowedKeys) {
   if (body === null || body === undefined) return;
   if (typeof body !== "object" || Array.isArray(body)) {
@@ -18,11 +13,6 @@ export function rejectUnknownFields(body, allowedKeys) {
   }
 }
 
-/**
- * @param {unknown} body
- * @param {Record<string, string>} entityFields
- * @param {string[]} [extraAllowed]
- */
 export function rejectUnknownEntityFields(body, entityFields, extraAllowed = []) {
   const allowed = new Set([
     ...Object.keys(entityFields),
@@ -32,11 +22,6 @@ export function rejectUnknownEntityFields(body, entityFields, extraAllowed = [])
   rejectUnknownFields(body, [...allowed]);
 }
 
-/**
- * @param {unknown} value
- * @param {number} maxLen
- * @param {string} fieldName
- */
 export function assertMaxLength(value, maxLen, fieldName) {
   if (typeof value !== "string") return;
   if (value.length > maxLen) {

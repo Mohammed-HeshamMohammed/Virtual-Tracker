@@ -33,7 +33,6 @@ for (const extraPageId of ["profile", "favorites"]) {
 
 const NAV_PAGE_INDEX = new Map(NAV_PAGE_ORDER.map((pageId, index) => [pageId, index]))
 
-/** Sidebar order index for transition direction; -1 when unknown. */
 export function getPageNavIndex(pageId: string): number {
   return NAV_PAGE_INDEX.get(pageId) ?? -1
 }

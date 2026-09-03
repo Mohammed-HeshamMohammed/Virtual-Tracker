@@ -10,13 +10,6 @@ import {
   removeMemberFromTree,
 } from "../services/member-remove-from-tree-service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeMemberRemoveFromTree(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1/, "/api");
 

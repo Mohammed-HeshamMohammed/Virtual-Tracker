@@ -41,10 +41,6 @@ function mapHealth(items: CommandCenterApiPayload["projects"][number]["health"])
     return {
       name: item.name,
       percent: item.percent,
-      // The status now shows on every row, including one measured by budget
-      // burn instead of task progress - the hint says which of the two the
-      // bar is, so an on-track label is never read as progress it does not
-      // have.
       status: ui.status,
       statusColor: ui.statusColor,
       barColor: ui.barColor,

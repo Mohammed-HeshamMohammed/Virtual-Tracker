@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/exhaustive-deps */
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState as useComponentState } from "react"
@@ -16,13 +15,11 @@ import { ChangePasswordDialog } from "@/features/profile/components/change-passw
 import { TIME_ZONES } from "@/features/settings/components/shared/constants"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
 
-/** "(GMT-08:00) America/Los_Angeles" -> "America/Los_Angeles" */
 function ianaIdFromTimeZoneLabel(label: string): string {
   const idx = label.indexOf(") ")
   return idx === -1 ? label : label.slice(idx + 2)
 }
 
-/** Browser-only — must not run during SSR (would bake in the server's zone, not the visitor's). */
 function detectBrowserTimezone(): string {
   if (typeof window === "undefined") return ""
   try {
@@ -138,8 +135,6 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
     setTimezone(baseline.timezone)
   }, [baseline.firstName, baseline.lastName, baseline.email, baseline.phone, baseline.phoneVerified, baseline.timezone])
 
-  // Pre-fill the browser's detected zone once, only if nothing's saved yet — client-only,
-  // runs after mount so it never affects SSR output (server doesn't know the visitor's zone).
   useEffect(() => {
     if (baseline.timezone) return
     const detected = detectBrowserTimezone()

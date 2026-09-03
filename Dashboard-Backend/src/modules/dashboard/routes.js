@@ -5,14 +5,6 @@ import { getDashboardCache, setDashboardCache } from "./dashboard-cache.js";
 import { getCommandCenterPayload } from "./command-center-service.js";
 import { getGeneralDashboardPayload } from "./general-dashboard-service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeDashboard(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 

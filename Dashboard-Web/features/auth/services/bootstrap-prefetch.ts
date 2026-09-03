@@ -66,9 +66,6 @@ function seedMembersListCache(members: Member[]): void {
 function mapWarmMember(row: Record<string, unknown>): Member {
   const first = typeof row.first_name === "string" ? row.first_name : ""
   const last = typeof row.last_name === "string" ? row.last_name : ""
-  // Same order as normalizeMember and the server's memberMetaFromRow:
-  // display_name is the column that actually holds a full name for members
-  // created through an invite or renamed in profile settings.
   const display = typeof row.display_name === "string" ? row.display_name : ""
   const name =
     (typeof row.name === "string" && row.name.trim()) ||
@@ -273,7 +270,6 @@ async function warmCoreDataLegacy(options: WarmCoreDataOptions = {}): Promise<vo
   report(onProgress, 3, "Caches ready")
 }
 
-/** Background warm-up API round-trip after login. */
 export async function warmCoreDataForBootstrap(options: WarmCoreDataOptions = {}): Promise<void> {
   const { onProgress, currentMember } = options
   report(onProgress, 1, "Warming workspace caches...")

@@ -6,9 +6,7 @@ let cached: FirebaseOptions | null = null
 let cachedPhoneVerificationConfig: PhoneVerificationConfig | null = null
 
 export type PhoneVerificationConfig = {
-  /** Server default: console OTP in dev, Firebase SMS in production. */
   mode: "dev" | "firebase"
-  /** When true, the UI may offer Firebase SMS alongside console OTP locally. */
   allowFirebaseInDev: boolean
 }
 
@@ -45,17 +43,14 @@ async function loadSignInClientExtras(): Promise<void> {
   }
 }
 
-/** Dashboard-Backend sign-in UI flags (parallel with other boot calls). */
 export function prefetchSignInClientExtras(): Promise<void> {
   return loadSignInClientExtras()
 }
 
-/** Auth-Backend Firebase web config (parallel with other boot calls). */
 export function prefetchFirebaseWebConfig(): Promise<FirebaseOptions> {
   return fetchFirebaseWebConfigFromBackend()
 }
 
-/** Firebase web config from Auth-Backend (not in client bundle). */
 export async function fetchFirebaseWebConfigFromBackend(): Promise<FirebaseOptions> {
   if (cached) return cached
 

@@ -1,13 +1,6 @@
-/**
- * Baseline security headers for API responses.
- * HSTS is enabled in production when traffic is expected over HTTPS.
- */
 
 import { getEnv } from "../config/env.js";
 
-/**
- * @param {import("node:http").IncomingMessage} [req]
- */
 export function getSecurityHeaders(req) {
   const headers = {
     "X-Content-Type-Options": "nosniff",

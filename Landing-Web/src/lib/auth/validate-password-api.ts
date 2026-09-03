@@ -27,7 +27,6 @@ function parseRequirements(data: ValidatePasswordResponse): BackendPasswordRequi
   }
 }
 
-/** Server-side password check before client-only Firebase operations. */
 export async function validatePasswordWithBackend(password: string, confirmPassword?: string): Promise<ValidatePasswordResult> {
   const res = await apiFetch(
     "/api/auth/validate-password",

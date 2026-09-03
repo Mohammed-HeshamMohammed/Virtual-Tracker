@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { motion, AnimatePresence } from "framer-motion"
@@ -11,15 +10,10 @@ interface StatCardsSectionProps {
 
 export function StatCardsSection({ project }: StatCardsSectionProps) {
   const d = project
-  // Intern/Employee only: personalTaskStats is set, and stands in for the
-  // "Active Members" card - a team headcount makes no sense when the rest of
-  // the row is already this one person's own hours and activity.
   const personal = d.personalTaskStats
   const statCards = [
     {
       Icon: Clock,      iconBg: "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/80",
-      // Real week-over-week change; hidden when there is no prior week to
-      // compare against. This was hardcoded "+12%" for every org.
       badge:
         d.stats.timeWorkedTrendPercent === null
           ? ""

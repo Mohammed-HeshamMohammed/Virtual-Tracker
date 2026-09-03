@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useRef, useState } from "react"
@@ -142,9 +141,7 @@ export function SubNavLayout({ items, active, onChange, isDark, children }: {
   children: React.ReactNode
 }) {
   return (
-    // h-full so the layout fills whatever parent gives it (Achievements wraps it in h-full)
     <div className="flex flex-col md:flex-row w-full h-full gap-0 overflow-hidden">
-      {/* Subnav — self-start so it never stretches to fill height and never scrolls */}
       <div className={cn("w-full md:w-48 md:border-r py-2 md:pr-4 space-y-0.5 shrink-0 self-start", isDark ? "border-white/5" : "border-slate-100")}>
         {items.map(i => (
           <button key={i.k} onClick={() => onChange(i.k)}
@@ -158,7 +155,6 @@ export function SubNavLayout({ items, active, onChange, isDark, children }: {
         ))}
       </div>
 
-      {/* Content panel — fills remaining height, children handle their own scroll */}
       <div className="flex-1 md:pl-8 py-2 h-full overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div

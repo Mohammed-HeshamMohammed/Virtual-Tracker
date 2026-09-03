@@ -69,7 +69,6 @@ export function IntegrationsSettingsPage() {
         </p>
       </header>
 
-      {/* Most popular */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Most popular</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -105,7 +104,6 @@ export function IntegrationsSettingsPage() {
         </div>
       </section>
 
-      {/* Connected */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Connected</h2>
         <div
@@ -168,7 +166,6 @@ export function IntegrationsSettingsPage() {
         </div>
       </section>
 
-      {/* Payment processors */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Payment processors</h2>
         <div
@@ -240,7 +237,6 @@ export function IntegrationsSettingsPage() {
         </div>
       </section>
 
-      {/* Payroll & accounting */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
           Payroll providers &amp; accounting
@@ -265,7 +261,6 @@ export function IntegrationsSettingsPage() {
         </div>
       </section>
 
-      {/* Help desk */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Help desk</h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 max-w-2xl">
@@ -284,7 +279,6 @@ export function IntegrationsSettingsPage() {
         </div>
       </section>
 
-      {/* Communication */}
       <section className="space-y-4">
         <h2 className={cn("text-base font-bold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>Communication</h2>
         <div className="max-w-[200px]">

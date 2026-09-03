@@ -20,7 +20,6 @@ export default function PageShell({
       >
         <NavigationBar />
       </ErrorBoundary>
-      {/* Bottom padding clears the fixed mobile/tablet bottom nav (hidden at lg and up). */}
       <div className="pb-24 lg:pb-0">
         <ErrorBoundary section="page content">{children}</ErrorBoundary>
       </div>

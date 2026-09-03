@@ -20,9 +20,6 @@ import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
 const PAY_RATE_CURRENCY_VALUES = PAY_RATE_CURRENCIES.map((c) => c.value)
 
 interface PayBillTabProps extends TabProps {
-  /** Owner/Super Admin/Admin/Super Manager only - server enforces this
-   * (member-profile.service.js); this only decides whether the tab reads as
-   * editable or read-only for the signed-in actor. */
   canEditPayRate: boolean
 }
 
@@ -63,11 +60,6 @@ function HistoryStatusPill({ tone, children }: { tone: "current" | "past"; child
   )
 }
 
-/** Real rows from pay_rate_history when there are any; a member whose rate
- * has never changed since this table existed has none yet, so this falls
- * back to one synthesized "Current" row built from the live pay_rates
- * values - same as what the tab always showed, just now honestly labeled as
- * a fallback rather than presented as if it were history. */
 function buildDisplayRows(
   history: PayRateHistoryEntry[],
   fallback: { payRate: string; payPeriod: string; dateAdded: string },
@@ -99,8 +91,6 @@ function buildDisplayRows(
 }
 
 export function PayBillTab({ member, state, setState, canEditPayRate, onNavigate, onClose }: PayBillTabProps) {
-  // Leaving the page behind this modal, not opening a second one on top of
-  // it - close first so the report is what's on screen after the click.
   function goToReport(pageId: string) {
     onClose?.()
     onNavigate?.(pageId)

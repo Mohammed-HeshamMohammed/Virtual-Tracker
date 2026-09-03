@@ -13,9 +13,7 @@ import {
 import { validateWorkLimitsCombo } from "@/shared/validation/work-limits"
 
 export type MemberFormValidationContext = {
-  /** Saved role from member record (not in-form draft). */
   memberRole?: string
-  /** True when the signed-in user is editing their own member record. */
   isSelfEdit?: boolean
 }
 
@@ -26,7 +24,6 @@ export function validateMemberFormState(state: MemberFormState): string | null {
   )
 }
 
-/** Validates only the member-manage tabs included in a save request. */
 export function validateMemberFormStateForTabs(
   tabs: MemberManageTab[],
   state: MemberFormState,

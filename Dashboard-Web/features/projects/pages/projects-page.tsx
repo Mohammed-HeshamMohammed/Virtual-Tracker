@@ -23,7 +23,6 @@ import { ProjectsTab } from "@/features/projects/components/tables/projects-tab"
 import type { ProjectListItem as Project } from "@/features/projects/models/list"
 import type { ProjectType } from "@/features/projects/api/project-api"
 
-// Custom hooks, components & modal
 import { useProjectColumns } from "@/features/projects/hooks/use-project-columns"
 import { useProjectMutations } from "@/features/projects/hooks/use-project-mutations"
 import { ProjectModal } from "@/features/projects/components/modals/project-modal"
@@ -50,8 +49,6 @@ function mapApiProject(
   const teams = ctx.teamNamesByProject.get(id) ?? []
   const members = ctx.memberCountByProject.get(id) ?? 0
   const memberLimit = ctx.memberLimitByProject.get(id) ?? null
-  // Was `p.type === "calling" ? "calling" : "normal"`, which flattened every
-  // other type into "normal" before it ever reached the table.
   const type = normalizeProjectType(p.type)
 
   return {
@@ -63,18 +60,10 @@ function mapApiProject(
     teams,
     members,
     memberLimit,
-    // Real counts from the server-side aggregate. Task-less types (calling,
-    // support) have no tasks at all, so they get null rather than a
-    // misleading 0/0.
     todos: isTaskLessProjectType(type) ? null : ctx.taskCountsByProject.get(id) ?? { done: 0, total: 0 },
-    // spent is now real - computed server-side from tracked time x rate
-    // (see computeProjectSpentPg in Dashboard-Backend), not fabricated.
     budget: budgetRow
       ? {
         spent: budgetRow.spent ?? 0,
-        // target is the real total: for scope='per_person' rows `cost` is
-        // hours-per-member, not a total. `cost` is only correct here for
-        // scope='per_project', where target already equals cost.
         total: budgetRow.target ?? budgetRow.cost,
         type: budgetRow.type === "Hours based" ? "hours" : "cost",
       }
@@ -111,12 +100,9 @@ export function ProjectsPage() {
   const [isAddOpen, setIsAddOpen] = useComponentState(false)
   const [editingProjectId, setEditingProjectId] = useComponentState<string | null>(null)
   const [entityGoneNotice, setEntityGoneNotice] = useComponentState<string | null>(null)
-  // Double-click a row - separate from editingProjectId so it opens read-only
-  // for anyone who can see the table, not gated on canManage the way Edit is.
   const [previewProjectId, setPreviewProjectId] = useComponentState<string | null>(null)
   const [anchorProjectId, setAnchorProjectId] = useComponentState<string | null>(null)
 
-  // Columns Hook
   const {
     enabledCols,
     colOrder,
@@ -144,14 +130,10 @@ export function ProjectsPage() {
     onError: (err) => console.error("Failed to fetch projects:", err),
     staleMs: 300_000,
     minLoadingMs: 0,
-    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 1,2): forceRefetch
-    // bypasses the 5min staleMs above so a broadcast repaints within ~1s
-    // instead of waiting out the poll window.
     presencePingEvent: changedEvent("projects"),
     backgroundRefetch: { forceRefetch: true },
   })
 
-  // Mutations Hook
   const {
     archiveProject,
     deleteProject,
@@ -191,10 +173,6 @@ export function ProjectsPage() {
   }
 
   const projectList = useMemo(() => {
-    // A client has no project_members row - they are attached through their
-    // client record - so this membership filter emptied their list even
-    // though the server had already scoped the response to exactly their
-    // projects. Roles whose scope the server resolves are passed through.
     if (SERVER_SCOPED_PROJECT_ROLES.has(normalizedRole)) return data
     if (!currentMemberId) return data
     return data.filter((p: Project) => p.memberIds.includes(currentMemberId))
@@ -308,10 +286,6 @@ export function ProjectsPage() {
           showCompactSearchRow={showCompactSearchRow}
           toolbarRef={toolbarRef}
           canManageProjects={canManage}
-          // forceRefetch: true - without it, useCachedList's refetch silently
-          // re-applies the cached data and skips the network call whenever
-          // it's within staleMs (5min here) of the last fetch, which made
-          // this button look broken most of the time it was clicked.
           onRefresh={() => void refetchProjects({ forceRefetch: true })}
           isRefreshing={isLoading}
           t={t}
@@ -381,10 +355,6 @@ export function ProjectsPage() {
         )}
       </AnimatePresence>
 
-      {/* Double-click preview - open to anyone who can see the row, not just
-          canManage, since nothing here can be changed. Separate modal
-          instance from Edit above so opening one never touches the other's
-          state. */}
       <AnimatePresence>
         {previewProjectId && (
           <div

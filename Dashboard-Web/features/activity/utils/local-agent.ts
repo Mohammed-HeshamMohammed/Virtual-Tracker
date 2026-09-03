@@ -1,18 +1,13 @@
 const DEFAULT_AGENT_AUTH_PORT = 17389
 
-/** Chrome Local Network Access: mark loopback fetches from the public dashboard origin. */
 type LoopbackFetchInit = RequestInit & { targetAddressSpace?: "loopback" }
 
 function loopbackFetch(url: string, init: LoopbackFetchInit = {}): Promise<Response> {
-  // targetAddressSpace is a Chrome LNA extension not yet in lib.dom RequestInit.
-  // Chrome classifies 127.0.0.1 as its own "loopback" address space, distinct from
-  // "private"/"local" — confirmed by the live CORS error naming that exact space.
   return fetch(url, { ...init, targetAddressSpace: "loopback" } as RequestInit)
 }
 
 let lastHealthCheckErrorLogged: string | null = null
 
-/** Surface loopback fetch failures once per distinct error so DevTools shows the real cause. */
 function logHealthCheckFailure(url: string, err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
   const key = `${url}::${message}`
@@ -21,7 +16,6 @@ function logHealthCheckFailure(url: string, err: unknown) {
   console.warn(`[VT agent-check] loopback fetch to ${url} failed: ${message}`)
 }
 
-/** Prime Chrome loopback permission (LNA) before POSTing credentials to the agent. */
 export async function ensureLoopbackAgentAccess(port = DEFAULT_AGENT_AUTH_PORT): Promise<boolean> {
   if (typeof window === "undefined") return false
   try {
@@ -41,7 +35,6 @@ export interface LocalAgentHealth {
   linkToken?: string
 }
 
-/** Fetch health payload from the local desktop agent. */
 export async function fetchLocalAgentHealth(
   port = DEFAULT_AGENT_AUTH_PORT,
 ): Promise<LocalAgentHealth | null> {
@@ -83,7 +76,6 @@ export async function waitForLocalAgentAuthenticated(
   return false
 }
 
-/** Ask the local agent to resume polling for linked credentials after web complete. */
 export async function resumeLocalAgentLinkPoll(
   port = DEFAULT_AGENT_AUTH_PORT,
 ): Promise<boolean> {
@@ -101,7 +93,6 @@ export async function resumeLocalAgentLinkPoll(
   }
 }
 
-/** Best-effort localhost handoff; linking must succeed via backend link/exchange poll. */
 export async function deliverLocalAgentCredentials(
   linkToken: string,
   idToken: string,

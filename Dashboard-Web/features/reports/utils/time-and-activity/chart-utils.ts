@@ -25,12 +25,6 @@ export function normalizeSeriesTo01(raw: number[]): number[] {
   const max = Math.max(...raw)
   const span = max - min
   if (span < 1e-9) {
-    // A flat series - every day the same value. If that value is genuinely
-    // zero (nobody logged anything for this metric all period, the common
-    // case), bars must read as zero-height - flattening to a mid-height bar
-    // made a $0.00/0% day look like it had real data, contradicting its own
-    // tooltip. A flat but truly nonzero series still gets a consistent
-    // half-height bar, so "every day was equal" doesn't just vanish either.
     return raw.map(() => (max <= 1e-9 ? 0 : 0.5))
   }
   return raw.map((v) => (v - min) / span)

@@ -1,4 +1,3 @@
-/** Notify-Backend env config (Zod). Don't log parsed values (secrets). */
 import { z } from "zod";
 import { loadEnvFile } from "node:process";
 import path from "node:path";
@@ -22,14 +21,11 @@ const envSchema = z
     NODE_ENV: z.string().optional(),
     PORT: z.coerce.number().int().min(1).max(65535).optional(),
 
-    // CORS — only vt-dashboard-api should call this service
     FRONTEND_ORIGIN: optionalTrimmedString,
     CORS_ORIGINS: optionalTrimmedString,
 
-    // Internal auth — requests from vt-dashboard-api must carry this secret
     INTERNAL_SERVICE_SECRET: optionalTrimmedString,
 
-    // Email delivery — SMTP only
     SMTP_HOST: optionalTrimmedString,
     SMTP_PORT: optionalTrimmedString,
     SMTP_SECURE: optionalTrimmedString,
@@ -37,14 +33,11 @@ const envSchema = z
     SMTP_PASS: optionalTrimmedString,
     SMTP_FROM: optionalTrimmedString,
 
-    // Firebase Admin — required for FCM push notifications
     FIREBASE_SERVICE_ACCOUNT: optionalTrimmedString,
     GOOGLE_APPLICATION_CREDENTIALS: optionalTrimmedString,
 
-    // PostgreSQL — optional, used for delivery logging only
     POSTGRES_URL: optionalTrimmedString,
 
-    // contact-inquiry inbox lives here (SUPPORT_EMAIL), not in the caller payload
     SUPPORT_EMAIL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
@@ -79,7 +72,6 @@ const envSchema = z
     }
   });
 
-/** @type {ReturnType<typeof buildConfig> | null} */
 let _config = null;
 
 function buildConfig(source = process.env) {

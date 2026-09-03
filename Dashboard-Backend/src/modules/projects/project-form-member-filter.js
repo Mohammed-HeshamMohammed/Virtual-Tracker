@@ -2,10 +2,6 @@ import { isManagementRole } from "../../http/auth-context.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { normalizeRoleKey } from "../members/services/relation-sync.js";
 
-/**
- * @param {string | undefined} roleName
- * @param {"manager_and_above" | "employee" | "client" | undefined} roleFilter
- */
 export function memberMatchesProjectFormRoleFilter(roleName, roleFilter) {
   const label = typeof roleName === "string" ? roleName : "";
   if (!roleFilter) {

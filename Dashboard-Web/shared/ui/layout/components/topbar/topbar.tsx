@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { HelpCircle } from "lucide-react"
@@ -31,10 +30,8 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
       "sticky top-0 z-40 grid grid-cols-3 items-center w-full px-6 backdrop-blur-xl shrink-0 h-16 transition-colors duration-300",
       t.header
     )}>
-      {/* Left: Breadcrumb */}
       <Breadcrumbs activeItem={activeItem} onNavigate={onNavigate} />
 
-      {/* Center: Global app search */}
       <motion.div layout="position" className="flex items-center justify-center">
         <GlobalSearchBar
           onNavigate={onNavigate}
@@ -43,7 +40,6 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
         />
       </motion.div>
 
-      {/* Right: Actions */}
       <div className="flex items-center gap-1 justify-end">
         <NotificationsBell onNavigate={onNavigate} />
 

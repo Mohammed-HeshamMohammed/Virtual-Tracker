@@ -24,13 +24,6 @@ import {
   STANDARD_REPORT_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
 
-/**
- * PaymentReportRow carries no project - only a client (money received) or a
- * member (money paid out), never both, so "Project" is excluded from
- * PAYMENTS_GROUP_BY_OPTIONS. "Member"/"Client" bucket the side of the
- * payment that dimension actually applies to and label the other side's
- * rows plainly rather than crashing or showing a blank group.
- */
 function groupPaymentRows(
   rows: PaymentReportRow[],
   groupBy: string
@@ -76,21 +69,11 @@ function formatDay(day: string): string {
     : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-/**
- * Money actually recorded against an invoice.
- *
- * This report used to be served by the amounts-owed handler, so it showed an
- * estimate of what was still *owed* under a title promising a record of what
- * had been *paid* - the same numbers as Amounts Owed, relabelled.
- */
 function PaymentsTable({ filters }: { filters: ReportFilterState }) {
   const { isDark } = useTheme()
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<PaymentReportRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed request used to fall through to the empty state, so an
-  // outage read as "no data for this range". reloadKey re-runs the fetch
-  // when the viewer retries.
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())

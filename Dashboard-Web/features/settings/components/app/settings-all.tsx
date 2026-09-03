@@ -9,7 +9,6 @@ interface SettingsCard {
   description: string
   link: string
   navigateTo: string | null
-  /** Optional icon container / icon color (default: purple theme) */
   iconWrapClass?: string
   iconClass?: string
 }

@@ -2,10 +2,6 @@ import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getLookupData, invalidateLookupCache } from "./lookup-cache.js";
 
-/**
- * Actor-id columns (created_by/updated_by) store either an internal member UUID or a
- * Firebase Auth uid (28-char alphanumeric) — both are valid VARCHAR(255) values.
- */
 function actorIdOrNull(value) {
   if (value === null || value === undefined) return null;
   if (typeof value !== "string") return null;
@@ -22,7 +18,6 @@ export const LOOKUP_POSTGRES_ENTITY_KEYS = new Set([
   "tax-types",
 ]);
 
-/** @type {Record<string, string>} */
 export const LOOKUP_ENTITY_CATEGORY = {
   "job-titles": "job_title",
   departments: "department",
@@ -30,7 +25,6 @@ export const LOOKUP_ENTITY_CATEGORY = {
   "tax-types": "tax_type",
 };
 
-/** @type {Record<string, string>} */
 export const LOOKUP_COLLECTION_TO_CATEGORY = {
   job_titles: "job_title",
   departments: "department",
@@ -52,10 +46,6 @@ export const ORG_FIELD_OPTION_TYPES = new Set([
 const ROLE_COLUMNS = ["id", "name", "description", "created_at", "created_by", "updated_by", "updated_at"];
 const LOOKUP_COLUMNS = ["id", "category", "name", "list_ranking", "created_at", "created_by", "updated_by", "updated_at"];
 
-/**
- * @param {Record<string, unknown>} row
- * @returns {Record<string, unknown>}
- */
 export function normalizeLookupRow(row) {
   const out = { ...row };
   for (const [key, value] of Object.entries(out)) {
@@ -68,17 +58,10 @@ export function normalizeLookupRow(row) {
   return out;
 }
 
-/**
- * @param {string} entityKey
- */
 export function isLookupPostgresEntityKey(entityKey) {
   return LOOKUP_POSTGRES_ENTITY_KEYS.has(entityKey);
 }
 
-/**
- * @param {string} entityKey
- * @param {URL} url
- */
 export async function listLookupPostgresRows(entityKey, url) {
   if (entityKey === "roles") {
     const rows = await query(`SELECT ${ROLE_COLUMNS.join(", ")} FROM roles ORDER BY name LIMIT 200`);
@@ -102,10 +85,6 @@ export async function listLookupPostgresRows(entityKey, url) {
   return rows.map(normalizeLookupRow);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function getLookupPostgresRow(entityKey, id) {
   if (entityKey === "roles") {
     const rows = await query(`SELECT ${ROLE_COLUMNS.join(", ")} FROM roles WHERE id = $1 LIMIT 1`, [id]);
@@ -119,10 +98,6 @@ export async function getLookupPostgresRow(entityKey, id) {
   return rows[0] ? normalizeLookupRow(rows[0]) : null;
 }
 
-/**
- * @param {string} entityKey
- * @param {Record<string, unknown>} payload
- */
 export async function createLookupPostgresRow(entityKey, payload) {
   if (entityKey === "roles") {
     const rows = await query(
@@ -140,7 +115,6 @@ export async function createLookupPostgresRow(entityKey, payload) {
     );
     invalidateLookupCache();
     if (rows[0]) return normalizeLookupRow(rows[0]);
-    // Another concurrent request already seeded this role name — return it instead of erroring.
     const existing = await query(`SELECT ${ROLE_COLUMNS.join(", ")} FROM roles WHERE name = $1 LIMIT 1`, [payload.name]);
     return existing[0] ? normalizeLookupRow(existing[0]) : null;
   }
@@ -162,7 +136,6 @@ export async function createLookupPostgresRow(entityKey, payload) {
   );
   invalidateLookupCache();
   if (rows[0]) return normalizeLookupRow(rows[0]);
-  // Another concurrent request already seeded this category/name — return it instead of erroring.
   const existing = await query(
     `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE category = $1 AND name = $2 LIMIT 1`,
     [category, payload.name],
@@ -170,12 +143,6 @@ export async function createLookupPostgresRow(entityKey, payload) {
   return existing[0] ? normalizeLookupRow(existing[0]) : null;
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- * @param {Record<string, unknown>} payload
- * @param {Record<string, unknown>} existing
- */
 export async function updateLookupPostgresRow(entityKey, id, payload, existing) {
   if (entityKey === "roles") {
     const merged = { ...existing, ...payload, id };
@@ -200,10 +167,6 @@ export async function updateLookupPostgresRow(entityKey, id, payload, existing) 
   return normalizeLookupRow(rows[0]);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function deleteLookupPostgresRow(entityKey, id) {
   if (entityKey === "roles") {
     await query("DELETE FROM roles WHERE id = $1", [id]);
@@ -214,10 +177,6 @@ export async function deleteLookupPostgresRow(entityKey, id) {
   invalidateLookupCache();
 }
 
-/**
- * @param {string} collection
- * @param {string} id
- */
 export async function lookupRowExistsInPostgres(collection, id) {
   if (!id) return false;
   if (collection === "roles") {
@@ -230,9 +189,6 @@ export async function lookupRowExistsInPostgres(collection, id) {
   return rows.length > 0;
 }
 
-/**
- * @param {string} roleId
- */
 export async function resolveRoleNameByIdPg(roleId) {
   if (!roleId) return "";
   const data = await getLookupData();
@@ -240,9 +196,6 @@ export async function resolveRoleNameByIdPg(roleId) {
   return typeof row?.name === "string" ? row.name.trim() : "";
 }
 
-/**
- * @param {string} roleName
- */
 export async function resolveRoleIdByNamePg(roleName) {
   const name = typeof roleName === "string" && roleName.trim() ? roleName.trim() : "User";
   const data = await getLookupData();
@@ -262,9 +215,6 @@ export async function resolveRoleIdByNamePg(roleName) {
   return id;
 }
 
-/**
- * @param {string[]} names
- */
 export async function ensureDefaultRolesPg(names) {
   const data = await getLookupData();
   const existing = new Set(
@@ -279,10 +229,6 @@ export async function ensureDefaultRolesPg(names) {
   }
 }
 
-/**
- * @param {string} collection
- * @param {string} name
- */
 export async function resolveLookupIdByNamePg(collection, name) {
   const trimmed = typeof name === "string" ? name.trim() : "";
   if (!trimmed) return "";
@@ -306,10 +252,6 @@ export async function resolveLookupIdByNamePg(collection, name) {
   return id;
 }
 
-/**
- * @param {string} collection
- * @param {string} id
- */
 export async function lookupNameByIdPg(collection, id) {
   if (!id) return "";
   const category = LOOKUP_COLLECTION_TO_CATEGORY[collection];
@@ -319,9 +261,6 @@ export async function lookupNameByIdPg(collection, id) {
   return typeof row?.name === "string" ? row.name : "";
 }
 
-/**
- * @param {string} type
- */
 export async function listOrgFieldOptionsPg(type) {
   const data = await getLookupData();
   return data.orgOptions
@@ -339,9 +278,6 @@ export async function listOrgFieldOptionsPg(type) {
     );
 }
 
-/**
- * @param {{ type: string; label: string; position?: number; modified_by?: string }} payload
- */
 export async function createOrgFieldOptionPg(payload) {
   const id = crypto.randomUUID();
   const rows = await query(
@@ -358,11 +294,6 @@ export async function createOrgFieldOptionPg(payload) {
   });
 }
 
-/**
- * @param {string} collection
- * @param {string[]} names
- * @param {string} actor
- */
 export async function seedLookupTablePostgresIfEmpty(collection, names, actor) {
   const category = LOOKUP_COLLECTION_TO_CATEGORY[collection];
   if (!category) return [];
@@ -389,10 +320,6 @@ export async function seedLookupTablePostgresIfEmpty(collection, names, actor) {
   return created;
 }
 
-/**
- * @param {string} type
- * @param {string[]} labels
- */
 export async function seedOrgFieldOptionsPostgresIfEmpty(type, labels) {
   const [{ count }] = await query(
     "SELECT COUNT(*)::int AS count FROM org_field_options WHERE type = $1",

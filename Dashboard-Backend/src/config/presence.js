@@ -1,6 +1,5 @@
 import { getEnv } from "./env.js";
 
-/** Presence thresholds (ms). Values from Backend/.env via {@link getEnv}. */
 
 export const PRESENCE_ONLINE_MS = getEnv().presence.onlineMs;
 export const PRESENCE_IDLE_MS = getEnv().presence.idleMs;

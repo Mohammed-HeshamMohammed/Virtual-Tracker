@@ -14,14 +14,8 @@ import { createRedisPresenceStore } from "./presence-store-redis.js";
 import { publishPresenceChange, presenceRecordToChange } from "./presence-pubsub.js";
 import { updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
 
-/** @type {{ presenceService: ReturnType<typeof createPresenceService>; presenceManager: ReturnType<typeof createPresenceManager>; store: ReturnType<typeof createMemoryPresenceStore>; rtdbStore: ReturnType<typeof createRtdbPresenceStore> | ReturnType<typeof createRedisPresenceStore> | null } | null} */
 let runtime = null;
 
-/**
- * On disconnect, persist last_seen_at to PostgreSQL.
- * @param {string} memberId
- * @param {number} lastSeenAt
- */
 async function persistLastSeenAtOnDisconnect(memberId, lastSeenAt) {
   if (!memberId) return;
   try {
@@ -80,7 +74,6 @@ function ensureRuntime() {
   return createRuntime();
 }
 
-/** Wire WebSocket presence gateway to the HTTP server (once at startup). */
 export function initPresenceGateway(httpServer) {
   const { presenceService, presenceManager } = ensureRuntime();
   const auth = getAuthAdmin();
@@ -99,17 +92,14 @@ export function initPresenceGateway(httpServer) {
   });
 }
 
-/** @returns {ReturnType<typeof createPresenceService>} */
 export function getPresenceService() {
   return ensureRuntime().presenceService;
 }
 
-/** @returns {ReturnType<typeof createRtdbPresenceStore> | null} */
 export function getRtdbStore() {
   return ensureRuntime().rtdbStore;
 }
 
-/** Reset runtime (tests only). */
 export function resetPresenceRuntimeForTests() {
   if (!runtime) return;
   runtime.presenceService.resetForTests?.();

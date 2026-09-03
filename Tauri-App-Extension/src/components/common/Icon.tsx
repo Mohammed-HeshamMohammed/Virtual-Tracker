@@ -1,12 +1,3 @@
-/**
- * The agent's icon set.
- *
- * Exists so the brand feature list and the password checklist in SignInPanel
- * can stop using emoji: emoji render differently on every machine, ignore
- * `currentColor` (so they can't follow the theme), and the checklist swapped
- * the glyph outright for "✓" when a rule passed, which changed the row's
- * shape mid-typing. These take the theme and keep one shape per row.
- */
 export type IconName =
   | "check"
   | "check-filled"

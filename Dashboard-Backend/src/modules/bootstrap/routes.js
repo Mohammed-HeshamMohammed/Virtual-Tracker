@@ -4,14 +4,6 @@ import { sendJson } from "../../http/response.js";
 import { getBootstrapPayload } from "./bootstrap-service.js";
 import { getBootstrapWarmPayload } from "./bootstrap-warm-service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeBootstrap(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 

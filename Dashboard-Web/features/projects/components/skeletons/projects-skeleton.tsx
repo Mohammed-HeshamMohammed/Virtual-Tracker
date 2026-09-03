@@ -42,7 +42,6 @@ function SkeletonFooter({ isDark }: { isDark: boolean }) {
   )
 }
 
-/** Table-only loading placeholder — toolbar stays visible on ProjectsPage during data load. */
 export function ProjectsSkeleton({
   isDark = false,
   rowCount = TEAMS_TABLE_ROWS_PER_PAGE,

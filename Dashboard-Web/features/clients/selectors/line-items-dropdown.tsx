@@ -7,7 +7,6 @@ import { cn } from "@/shared/utils/utils"
 import { useClientFormTheme } from "@/shared/ui/forms/form-styles"
 import { LINE_ITEM_GROUPS } from "@/features/projects/constants"
 
-/** Two-line option row (label + example) with py-2.5 */
 const LINE_ITEM_OPTION_ROW_REM = 3.625
 const LINE_ITEM_GROUP_HEADER_REM = 1.75
 const LINE_ITEM_MAX_VISIBLE_ROWS = 3

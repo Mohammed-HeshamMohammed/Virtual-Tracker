@@ -1,4 +1,3 @@
-// Hierarchy edge validation rules and repair planning.
 
 export const INVALID_EDGE_REASON = {
   SELF_LOOP: "self_loop",
@@ -6,12 +5,10 @@ export const INVALID_EDGE_REASON = {
   MULTIPLE_PARENTS: "multiple_parents",
   BACK_EDGE: "back_edge",
   CYCLE: "cycle",
-  /** Owner cannot report to another Owner — subtree stays under the nested Owner. */
   OWNER_UNDER_OWNER: "owner_under_owner",
 };
 
 export class RelationshipIntegrityError extends Error {
-  /** @param {string} code @param {string} message */
   constructor(code, message) {
     super(message);
     this.name = "RelationshipIntegrityError";
@@ -19,7 +16,6 @@ export class RelationshipIntegrityError extends Error {
   }
 }
 
-/** @param {unknown} value */
 function toMillis(value) {
   if (!value) return 0;
   if (value instanceof Date) return value.getTime();
@@ -30,15 +26,10 @@ function toMillis(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** @param {{ parent_member_id: string, child_member_id: string }} edge */
 function edgePairKey(edge) {
   return `${edge.parent_member_id}:${edge.child_member_id}`;
 }
 
-/**
- * @param {Array<{ id?: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} edges
- * @param {string} [rootMemberId] When set, also drops edges pointing at this root (team subtree view).
- */
 export function filterDownwardEdges(edges, rootMemberId) {
   const filtered = edges.filter(
     (e) =>
@@ -90,11 +81,6 @@ export function filterDownwardEdges(edges, rootMemberId) {
   });
 }
 
-/**
- * @param {Array<{ id?: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} edges
- * @param {string} from
- * @param {string} to
- */
 function isReachable(from, to, edges) {
   if (from === to) return true;
   const adjacency = new Map();
@@ -118,11 +104,6 @@ function isReachable(from, to, edges) {
   return false;
 }
 
-/**
- * @param {Array<{ id?: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} existingEdges
- * @param {string} parentMemberId
- * @param {string} childMemberId
- */
 export function validateNewRelationship(existingEdges, parentMemberId, childMemberId) {
   if (!parentMemberId || !childMemberId) {
     return { ok: false, code: "invalid_input", message: "parent and child member ids are required." };
@@ -160,13 +141,6 @@ export function validateNewRelationship(existingEdges, parentMemberId, childMemb
   return { ok: true };
 }
 
-/**
- * @param {Array<{ id?: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} existingEdges
- * @param {string} parentMemberId
- * @param {string} childMemberId
- * @param {string | null | undefined} parentRoleKey normalized role key for parent
- * @param {string | null | undefined} childRoleKey normalized role key for child
- */
 export function validateNewRelationshipWithRoles(
   existingEdges,
   parentMemberId,
@@ -184,13 +158,7 @@ export function validateNewRelationshipWithRoles(
   return validateNewRelationship(existingEdges, parentMemberId, childMemberId);
 }
 
-/**
- * Drop Owner-under-Owner edges; nested Owner's subtree moves with them.
- * @param {Array<{ id: string, parent_member_id: string, child_member_id: string, created_at?: unknown }>} rawEdges
- * @param {Map<string, string> | Record<string, string>} roleKeyByMemberId normalized role keys by member id
- */
 export function planOwnerRootSeparationRepairs(rawEdges, roleKeyByMemberId) {
-  /** @type {Array<{ id: string, reason: string, edge: typeof rawEdges[number] }>} */
   const remove = [];
   const lookup =
     roleKeyByMemberId instanceof Map
@@ -209,13 +177,10 @@ export function planOwnerRootSeparationRepairs(rawEdges, roleKeyByMemberId) {
   return remove;
 }
 
-/** Plan edge removals to restore a valid forest (oldest edge wins on conflict). */
 export function planRelationshipRepairs(rawEdges) {
-  /** @type {Array<{ id: string, reason: string, edge: { id: string, parent_member_id: string, child_member_id: string, created_at?: unknown } }>} */
   const remove = [];
   const removedIds = new Set();
 
-  /** @param {{ id: string, reason: string, edge: typeof rawEdges[number] }} entry */
   const markRemove = (entry) => {
     if (removedIds.has(entry.id)) return;
     removedIds.add(entry.id);
@@ -281,10 +246,6 @@ export function planRelationshipRepairs(rawEdges) {
   return { remove, kept };
 }
 
-/**
- * @param {string} rootMemberId
- * @param {Array<{ parent_member_id: string, child_member_id: string }>} edges
- */
 export function filterTeamScopeEdges(rootMemberId, edges) {
   return filterDownwardEdges(edges, rootMemberId);
 }

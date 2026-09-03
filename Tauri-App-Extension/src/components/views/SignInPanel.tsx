@@ -38,7 +38,6 @@ function hasSimplePattern(password: string): boolean {
   return false;
 }
 
-// Signed-out screen: full-width split (brand panel + form), taking over the full window.
 export function SignInPanel({
   busy,
   actionError,
@@ -87,7 +86,6 @@ export function SignInPanel({
   const [showPassword, setShowPassword] = useState(false);
   const [showSignUpPassword, setShowSignUpPassword] = useState(false);
 
-  // Live Password Validation Hints matching Dashboard-Web & Dashboard-Backend policy
   const isMinLengthValid = signUp.password.length >= 10;
   const isUppercaseValid = UPPERCASE_RE.test(signUp.password);
   const isLowercaseValid = LOWERCASE_RE.test(signUp.password);
@@ -127,16 +125,11 @@ export function SignInPanel({
             <span data-tauri-drag-region>Virtual Tracker</span>
           </div>
 
-          {/* Brand stays brand in every view. The password checklist used to
-              live here - 420px from the password field it describes - and is
-              now rendered beside that field instead. */}
           <div className="auth-brand-copy">
             <h2>Time tracking that stays out of your way.</h2>
             <p>Sign in to link this desktop agent to your account and start tracking your work.</p>
 
             <div className="auth-brand-features">
-              {/* SVG, not emoji: emoji render differently per machine and
-                  ignore currentColor, so they can't follow the theme. */}
               <div className="auth-feature-item">
                 <span className="auth-feature-icon">
                   <Icon name="bolt" />
@@ -311,9 +304,6 @@ export function SignInPanel({
                   </div>
 
 
-                  {/* The rules sit with the field they describe. Each row keeps
-                      one glyph in both states - only its colour changes - so
-                      the list never reflows or swaps shape as you type. */}
                   <div className="pw-rules">
                     <div className="pw-strength">
                       <div className="pw-strength-track">

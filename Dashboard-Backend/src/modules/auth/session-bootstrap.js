@@ -14,13 +14,6 @@ import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { validateSessionAuthorization } from "./session-authorization.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {URL} url
- * @returns {Promise<boolean>}
- */
 export async function handleSessionBootstrap(req, res, origin, url) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
   if (authPath !== "/api/auth/session-bootstrap" || req.method !== "POST") {

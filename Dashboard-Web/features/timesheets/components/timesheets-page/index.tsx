@@ -12,12 +12,6 @@ import { getMembers, getTimesheets } from "@/infrastructure/api"
 import { saveTimesheetApprovalSetup } from "@/features/timesheets/api/timesheet-api"
 import { changedEvent } from "@/infrastructure/api/change-events"
 
-/**
- * Submit your own timesheet, and (management only) review everyone else's
- * submitted ones. Was one of two tabs sharing a page with manual time
- * requests - split out so each is reachable as its own nav item, since they
- * were never actually related beyond both landing under "Timesheets".
- */
 export function TimesheetsPage() {
   const { memberRole } = useAuth()
   const canManage = canManageTimesheetApprovals(memberRole)

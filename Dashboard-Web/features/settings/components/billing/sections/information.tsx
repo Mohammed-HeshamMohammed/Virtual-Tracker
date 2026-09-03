@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -10,7 +9,6 @@ import { Badge } from "@/shared/ui/badge"
 import { Button } from "@/shared/ui/button"
 import { ADD_ONS, BANKS, SAVED_CARDS, type AddOn } from "@/features/settings/components/shared/constants"
 
-// ─── Payment Details Modal ────────────────────────────────────────────────────
 
 function PaymentDetailsModal({ onClose }: { onClose: () => void }) {
   const [cards, setCards] = useComponentState(SAVED_CARDS)
@@ -87,7 +85,6 @@ function PaymentDetailsModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ─── Bank Link Modal ──────────────────────────────────────────────────────────
 
 function BankLinkModal({ bank, onClose }: { bank: typeof BANKS[number]; onClose: () => void }) {
   return (
@@ -127,7 +124,6 @@ function BankLinkModal({ bank, onClose }: { bank: typeof BANKS[number]; onClose:
   )
 }
 
-// ─── Change Payment Modal ─────────────────────────────────────────────────────
 
 function PaymentModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useComponentState<"card" | "bank">("card")
@@ -326,12 +322,10 @@ function PaymentModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-// ─── Addon Card ───────────────────────────────────────────────────────────────
 
 function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) {
   const cols = addon.featuresColumns === 2 ? "grid-cols-2" : "grid-cols-1"
 
-  // Shared CTA button
   const ctaButton = (
     <Button
       size="sm"
@@ -343,7 +337,6 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
     </Button>
   )
 
-  // Shared price block
   const priceBlock = (
     <div>
       {addon.price
@@ -357,7 +350,6 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
     </div>
   )
 
-  // Shared features list
   const featuresList = (
     <ul className={cn("grid gap-2", cols)}>
       {addon.features.map(f => (
@@ -375,7 +367,6 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
       addon.colSpan
     )}>
 
-      {/* ── Top bar: badge / active status / [price for Insights] / button ── */}
       <div className="flex flex-wrap items-center gap-3 p-4">
         <Badge
           variant={addon.active ? "default" : "secondary"}
@@ -397,7 +388,6 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
           </span>
         )}
 
-        {/* Insights: price sits between badge and button */}
         {addon.priceInHeader && (
           <div className="flex items-baseline gap-1">
             <span className="font-mono text-xl font-semibold tracking-tight text-slate-800">{addon.price}</span>
@@ -408,23 +398,19 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
         <div className="ml-auto">{ctaButton}</div>
       </div>
 
-      {/* ── Body ── */}
       <div className="px-4 pb-4">
         {addon.priceInHeader ? (
-          /* INSIGHTS layout: headline then 2-col features, no price block in body */
           <div>
             <p className="text-xs font-bold text-slate-600 mb-2">{addon.headline}</p>
             {featuresList}
           </div>
         ) : addon.headlineUnderPrice ? (
-          /* MORE SCREENSHOTS layout: price → headline → features stacked vertically */
           <div className="space-y-3">
             {priceBlock}
             <p className="text-xs font-bold text-slate-600">{addon.headline}</p>
             {featuresList}
           </div>
         ) : (
-          /* DEFAULT layout: side-by-side price | features */
           <div className="flex flex-col lg:flex-row gap-4">
             <div className="lg:w-[35%]">{priceBlock}</div>
             <div className="lg:w-[65%]">
@@ -438,7 +424,6 @@ function AddonCard({ addon, onToggle }: { addon: AddOn; onToggle: () => void }) 
   )
 }
 
-// ─── Main Export ──────────────────────────────────────────────────────────────
 
 export function BillingInformation({
   onNavigateToInvoices,

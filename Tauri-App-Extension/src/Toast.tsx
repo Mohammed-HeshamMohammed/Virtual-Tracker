@@ -2,8 +2,6 @@ import { ReactNode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Icon, type IconName } from "./components/common/Icon";
 
-/** Type is signalled by icon as well as colour - colour alone is unreadable
- *  for a colourblind user and slow to parse for everyone else. */
 export type ToastType = "message" | "success" | "warning" | "error";
 
 const TYPE_ICON: Record<ToastType, IconName> = {
@@ -16,7 +14,6 @@ const TYPE_ICON: Record<ToastType, IconName> = {
 export type Toast = {
   id: number;
   text: string | ReactNode;
-  /** Secondary line under the title, so the first line carries the message. */
   detail?: string;
   measuredHeight?: number;
   timeout?: ReturnType<typeof setTimeout>;
@@ -260,8 +257,6 @@ const ToastContainer = () => {
                 </div>
               </div>
 
-              {/* Mirrors the store's own 4s timer, and the CSS pauses it on
-                  hover exactly where pause()/resume() already fire. */}
               {!t.preserve && t.remaining ? (
                 <div className="vt-toast-progress">
                   <span style={{ animationDuration: `${t.remaining}ms` }} />

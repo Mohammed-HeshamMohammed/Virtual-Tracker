@@ -1,4 +1,3 @@
-//components/activity/screenshots.tsx
 "use client"
 
 import { useState, useMemo, useEffect, useCallback } from "react"
@@ -46,9 +45,7 @@ export interface Screenshot {
   id: string
   member: string
   avatar: string
-  /** Task title when the session tracked a task, else the project name. */
   project: string
-  /** "Task" or "Project" - which of the two `project` holds. */
   contextLabel?: string
   taskTitle?: string
   projectName?: string
@@ -61,11 +58,9 @@ export interface Screenshot {
   hasImage?: boolean
   pageTitle?: string
   memberId?: string
-  /** Configured productivity classification for `activeApp`. */
   category?: string
 }
 
-/** Format a capturedAt ISO string (or fallback to pre-formatted time) in the user's local timezone. */
 function localTime(screenshot: Screenshot): string {
   const raw = screenshot.capturedAt
   if (!raw) return screenshot.time
@@ -82,11 +77,6 @@ function localDate(screenshot: Screenshot): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
-// Productivity here comes from the classification an admin actually
-// configured (activity_categories, surfaced as `category` on each row) - not
-// from a hardcoded list of app names. The previous lists called Chrome and
-// Safari "suspicious" for everyone and credited only five specific IDEs as
-// core work, regardless of what the org had classified.
 const FOCUS_THRESHOLD = 75
 const HIGH_ACTIVITY_THRESHOLD = 90
 const LOW_ACTIVITY_THRESHOLD = 50
@@ -122,9 +112,6 @@ function WorkTimeSection({ data }: { data: Screenshot[] }) {
     data.forEach((s) => {
       if (!map[s.member]) map[s.member] = { avatar: s.avatar, core: 0, nonCore: 0, unproductive: 0, total: 0 }
       const e = map[s.member]
-      // Unclassified captures are left out of both the numerator and the
-      // denominator - the split describes classified activity, and counting
-      // "not yet classified" as any of the three would misreport it.
       const category = normalizeActivityCategory(s.category)
       if (category === "productive") { e.core++; e.total++ }
       else if (category === "neutral") { e.nonCore++; e.total++ }
@@ -438,7 +425,6 @@ export function ActivityScreenshots() {
     [deletingId, reload],
   )
 
-  /** Modal already holds the decoded data URL, so download needs no extra fetch. */
   const handleDownloadScreenshot = useCallback((imageData: string | null, screenshotId: string) => {
     if (!imageData) return
     const a = document.createElement("a")
@@ -511,8 +497,6 @@ export function ActivityScreenshots() {
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(displayScreenshots, SCREENSHOTS_PER_PAGE)
 
-  // Arrow-key navigation walks the full filtered/sorted list, not just the
-  // current page, so paging doesn't interrupt stepping through screenshots.
   const selectedIndex = selectedScreenshot
     ? displayScreenshots.findIndex((s) => s.id === selectedScreenshot.id)
     : -1
@@ -770,7 +754,6 @@ export function ActivityScreenshots() {
         </ActivitySection>
       ) : null}
 
-      {/* Screenshot Modal */}
       <AnimatePresence>
         {selectedScreenshot && (
           <motion.div

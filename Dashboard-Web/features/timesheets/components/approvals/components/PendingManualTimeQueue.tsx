@@ -16,15 +16,6 @@ function formatSeconds(seconds: number): string {
   return `${h}:${String(m).padStart(2, "0")}`
 }
 
-/**
- * Management's counterpart to ManualTimeContent's own "your requests" list -
- * everyone else's still-pending manual time, with approve/reject.
- *
- * The queue itself is not scoped here: GET /api/time-entries?status=pending
- * already returns whatever this viewer is allowed to see (the same
- * canAccessMember visibility every other management surface reads through),
- * so this component just renders what comes back.
- */
 export function PendingManualTimeQueue({
   members,
 }: {
@@ -47,11 +38,6 @@ export function PendingManualTimeQueue({
   useEffect(() => {
     load()
     const handler = () => load()
-    // Published as "timesheets", not "time-entries" - see the create/update
-    // branches for entityKey "time-entries" in postgres-crud.service.js,
-    // which both call publishChange("timesheets", ...). A manual entry
-    // counts toward a timesheet, so this is deliberate, not a typo to work
-    // around - listening for "time-entries" here would just never fire.
     window.addEventListener(changedEvent("timesheets"), handler)
     return () => window.removeEventListener(changedEvent("timesheets"), handler)
   }, [])

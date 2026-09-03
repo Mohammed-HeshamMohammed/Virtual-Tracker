@@ -63,7 +63,6 @@ import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-/** Report pages the hub can pin. Mirrors the reports section of the sidebar. */
 const SAVEABLE_REPORT_PAGE_IDS = new Set([
   "reports-time",
   "reports-work-sessions",
@@ -92,32 +91,17 @@ const SAVEABLE_REPORT_PAGE_IDS = new Set([
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_FREQUENCIES = new Set(["Daily", "Weekly", "Bi-weekly", "Monthly"]);
 
-/** @param {string | null} value */
 function parseDateParam(value) {
   if (typeof value !== "string" || !DATE_RE.test(value)) return null;
   return Number.isNaN(new Date(`${value}T00:00:00.000Z`).getTime()) ? null : value;
 }
 
-/** @param {Date | string | null | undefined} value */
 function toDayStr(value) {
   if (!value) return "";
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   return String(value).slice(0, 10);
 }
 
-/**
- * Each visible member's real rate timeline - pay_rate_history's points plus
- * their current pay_rates row as the latest one - for resolveRateForDay to
- * pick the rate that was actually in effect on a given report day, instead
- * of (as before) applying whatever the rate happens to be right now to
- * every day in the report. A member with no history yet (their rate has
- * never changed since this table existed) gets a single-point timeline from
- * their current row alone - same "only one rate on file" result
- * resolveRateForDay already falls back to for a day before the earliest
- * point, so nothing changes for them.
- * @param {string[]} memberIds
- * @returns {Promise<Map<string, Array<{ effectiveDate: string, rate: number, currency: string }>>>}
- */
 export async function buildHistoricalRateMap(memberIds) {
   const [historyRows, currentRows] = await Promise.all([
     pgQuery(
@@ -144,9 +128,6 @@ export async function buildHistoricalRateMap(memberIds) {
     const id = String(row.member_id);
     const points = rateMap.get(id) ?? [];
     points.push({
-      // No effective_date on file at all (a row predating that column ever
-      // being written) is treated as "since the beginning" - the same
-      // unconditional-everywhere behavior a flat rate number already had.
       effectiveDate: row.effective_date ? toDayStr(row.effective_date) : "0001-01-01",
       rate: Math.max(0, Number(row.rate) || 0),
       currency: (row.currency || "USD").toUpperCase(),
@@ -159,33 +140,15 @@ export async function buildHistoricalRateMap(memberIds) {
   return rateMap;
 }
 
-/**
- * Report-scoped visible ids. getVisibleMemberIds gives Employee-tier roles a
- * full read of their org/team subtree for the People directory, but reports
- * are personal data, not a roster - an Employee/Intern/Team Lead's report
- * scope is always just themselves, regardless of who they can see listed on
- * the Members page.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- */
 async function resolveReportVisibleIds(db, viewer) {
   if (isEmployeeRole(viewer.roleName)) return [viewer.memberId];
   return getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
 }
 
-/**
- * Resolves which member ids the viewer is allowed to pull this report for.
- * Returns `null` (no filter, i.e. every visible member) or an array of ids.
- * Throws with a `status` field on the error when the request should be rejected.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string | null} requestedMemberId
- */
 async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
   const visibleIds = await resolveReportVisibleIds(db, viewer);
 
   if (!requestedMemberId) {
-    // No specific member requested - scope to everyone the viewer can already see.
     return visibleIds;
   }
 
@@ -198,14 +161,6 @@ async function resolveMemberIdsFilter(db, viewer, requestedMemberId) {
   return [requestedMemberId];
 }
 
-/**
- * Multi-select variant for report filter panels. Every requested id is checked
- * against the viewer's visible set, so a client cannot widen its own scope by
- * naming members it isn't allowed to see.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string[]} requestedMemberIds
- */
 async function resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds) {
   const visibleIds = await resolveReportVisibleIds(db, viewer);
   if (!requestedMemberIds || requestedMemberIds.length === 0) return visibleIds;
@@ -222,7 +177,6 @@ async function resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds) {
   return requestedMemberIds;
 }
 
-/** Comma-separated uuid list from a query param; [] when absent/empty. */
 function parseUuidListParam(value) {
   if (typeof value !== "string" || !value.trim()) return [];
   return value
@@ -233,54 +187,22 @@ function parseUuidListParam(value) {
 
 const UUID_PARAM_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/**
- * One member-scope resolver for every report route, so they all accept the
- * same params and enforce the same rule: `memberIds` (CSV, from a filter
- * panel's multi-select) or `memberId` (single), each validated against the
- * viewer's visible set; absent means "everyone this viewer can see".
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {URL} url
- * @returns {Promise<string[] | null>} null = unrestricted
- */
 async function resolveReportMemberScope(db, viewer, url) {
   const many = parseUuidListParam(url.searchParams.get("memberIds"));
   if (many.length > 0) return resolveMemberIdsMultiFilter(db, viewer, many);
   return resolveMemberIdsFilter(db, viewer, url.searchParams.get("memberId") || null);
 }
 
-/**
- * Narrow a requested project filter to the ones the viewer may actually see,
- * so the filter can never be used to surface time on an out-of-scope project.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {string[]} requestedProjectIds
- * @returns {Promise<string[] | null>} null = no project filter
- */
 async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
   if (!requestedProjectIds || requestedProjectIds.length === 0) return null;
   const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
   if (allowed === null) return requestedProjectIds;
   const allowedSet = new Set(allowed);
   const permitted = requestedProjectIds.filter((id) => allowedSet.has(id));
-  // Every requested project was out of scope - return an impossible filter
-  // rather than silently falling back to "no filter" (which would widen the
-  // result to everything).
   return permitted.length > 0 ? permitted : ["00000000-0000-0000-0000-000000000000"];
 }
 
-/**
- * The actual aggregation, independent of any HTTP viewer - also used by the
- * schedule runner, which has no request/auth-context to resolve visibility from.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[] | null} memberIds
- * @param {string} from
- * @param {string} to
- */
 export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null) {
-  // Sessions and manual entries live in different tables and are fetched
-  // together - manual time was previously stored and then never read back
-  // here, so the report's own "Manual hours" column always read 0.
   const [rawRows, manualRows] = await Promise.all([
     getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
     getManualTimeEntryRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
@@ -290,9 +212,6 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
     buildMemberMetaMap(db, memberIdsInResult),
     getMemberTimezones(db, memberIdsInResult),
   ]);
-  // Money columns are compensation data - only populate them for a viewer
-  // allowed to see each member's rate, same gate the rest of the app uses.
-  // Without a viewer (internal callers) rates stay empty and cost reports 0.
   let rateMap = new Map();
   if (viewer && memberIdsInResult.length > 0) {
     const visibleRateMemberIds = memberIdsInResult.filter((id) => canViewCompensation(viewer, id));
@@ -303,13 +222,6 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
   return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows);
 }
 
-/**
- * Shared by the GET report endpoint and Send - resolves visibility from an
- * authenticated viewer first, then aggregates.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {{ memberId: string, roleName: string }} viewer
- * @param {{ requestedMemberId: string | null, from: string, to: string }} params
- */
 async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, requestedMemberIds, from, to, requestedProjectIds }) {
   const memberIds =
     requestedMemberIds && requestedMemberIds.length > 0
@@ -323,12 +235,6 @@ function rangeLabel(from, to) {
   return from === to ? from : `${from} - ${to}`;
 }
 
-/**
- * Builds the attachment (base64 content + filename + mime type) for a report send/schedule.
- * @param {{ days: unknown[] }} payload
- * @param {"csv" | "pdf"} fileType
- * @param {string} rangeLbl
- */
 async function buildReportAttachment(payload, fileType, rangeLbl) {
   const baseName = `time-and-activity-${new Date().toISOString().slice(0, 10)}`;
   if (fileType === "csv") {
@@ -347,25 +253,10 @@ async function buildReportAttachment(payload, fileType, rangeLbl) {
   };
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string | undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeReports(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   if (!pn.startsWith("/api/reports/")) return false;
 
-  // Viewer is read-only access to whatever the org chose to show it
-  // directly, not a reporting seat (see isViewerRole's own doc comment) -
-  // blocked here, once, ahead of every individual route below, rather than
-  // relying on each route's own visible-ids scoping to happen to come back
-  // empty. requireAuthContext is cheap to call again per-route below (it
-  // just re-reads the AuthContext auth-middleware already attached to req,
-  // no repeat token verification), so this doesn't change any other route's
-  // own auth handling.
   const earlyViewer = requireAuthContext(req, res, origin);
   if (!earlyViewer) return true;
   if (isViewerRole(earlyViewer.roleName)) {
@@ -373,9 +264,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // Options for the report filter panels. Scoped to what the viewer may see,
-  // so the panel can only ever offer members/projects they're allowed to
-  // filter by. Replaces the hardcoded name lists the panels used to render.
   if (pn === "/api/reports/filter-options" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -405,9 +293,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // Reports the viewer pinned to the hub's "Customized reports" strip. Always
-  // the viewer's own rows - there is no cross-member read here, so no role
-  // check beyond being signed in.
   if (pn === "/api/reports/saved" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -427,8 +312,6 @@ export async function routeReports(req, res, url, origin) {
       const body = (await readJsonBody(req)) || {};
       const pageId = typeof body.pageId === "string" ? body.pageId.trim() : "";
       const title = typeof body.title === "string" ? body.title.trim() : "";
-      // The page id is what the hub navigates to; an unknown one would pin a
-      // card that goes nowhere.
       if (!SAVEABLE_REPORT_PAGE_IDS.has(pageId) || !title) {
         sendJson(res, origin, 400, { success: false, error: "A known report page id and a title are required." });
         return true;
@@ -609,7 +492,6 @@ export async function routeReports(req, res, url, origin) {
     try {
       const db = getDb();
       if (requestedMemberId) {
-        // Reuses the same visibility check as GET/Send - fails closed with a 403 if not allowed.
         await resolveMemberIdsFilter(db, viewer, requestedMemberId);
       }
 
@@ -642,7 +524,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Amounts Owed / Daily Totals / Payments (same "hours x rate" shape) ──
   if (
     pn === "/api/reports/amounts-owed" &&
     req.method === "GET"
@@ -693,7 +574,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Work Sessions ────────────────────────────────────────────────────────
   if (pn === "/api/reports/work-sessions" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -727,13 +607,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // A tracked session and everything captured under it - screenshots, app
-  // usage, URL visits (see deleteActivitySessionWithChildrenPg's own doc
-  // comment) - deleted together in one transaction. Manager and above only
-  // (same tier canManageActivityData already anticipated for this exact
-  // capability), and only for a member within the viewer's own visible
-  // scope, same rule every other report route in this file already enforces
-  // for reading - a scoped Manager cannot delete what they cannot see.
   const workSessionDeleteMatch = pn.match(/^\/api\/reports\/work-sessions\/([^/]+)$/);
   if (workSessionDeleteMatch && req.method === "DELETE") {
     const viewer = requireAuthContext(req, res, origin);
@@ -763,12 +636,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // DELETE /api/reports/time-and-activity/day?memberId=X&date=YYYY-MM-DD
-  // One member's whole tracked record for one day, and everything captured
-  // under it (see deleteMemberDayActivityWithChildrenPg's own doc comment) -
-  // the Time & Activity report's own per-row delete. Same tier and same
-  // visible-scope rule as the work-sessions delete right above; classification
-  // (activity_categories) is never touched by the cascade underneath this.
   if (pn === "/api/reports/time-and-activity/day" && req.method === "DELETE") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -797,7 +664,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Audit Log ────────────────────────────────────────────────────────────
   if (pn === "/api/reports/audit-log" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -823,7 +689,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Manual Time Edits ────────────────────────────────────────────────────
   if (pn === "/api/reports/manual-time-edits" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -844,8 +709,6 @@ export async function routeReports(req, res, url, origin) {
       );
       const entries = await getManualTimeEditRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
 
-      // created_by/updated_by hold a member id for in-app writes; resolve both
-      // those and the entry owner in one lookup.
       const ids = new Set();
       for (const e of entries) {
         if (e.memberId) ids.add(String(e.memberId));
@@ -869,7 +732,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Work Breaks ──────────────────────────────────────────────────────────
   if (pn === "/api/reports/work-breaks" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -880,8 +742,6 @@ export async function routeReports(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
       return true;
     }
-    // How long a gap has to be before it counts as a break rather than a
-    // stop/start while switching task.
     const rawMinGap = Number.parseInt(url.searchParams.get("minGapMinutes") ?? "", 10);
     const minGapMinutes = Number.isFinite(rawMinGap) ? Math.min(Math.max(rawMinGap, 1), 240) : 5;
 
@@ -901,7 +761,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Expenses ─────────────────────────────────────────────────────────────
   if (pn === "/api/reports/expenses" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -944,9 +803,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Time off balances ────────────────────────────────────────────────────
-  // Balance is as of the end of the selected range, not "now" - an accrual
-  // dated later in the year must not count towards a period that ended before it.
   if (pn === "/api/reports/time-off-balances" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -968,7 +824,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Time off transactions ────────────────────────────────────────────────
   if (pn === "/api/reports/time-off-transactions" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -995,10 +850,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Invoices (client / team) and their aging ─────────────────────────────
-  // One handler per pair: the only difference is which side of the ledger the
-  // invoice sits on, so splitting them into four near-identical handlers would
-  // only guarantee they drift.
   {
     const invoiceMatch = /^\/api\/reports\/(client|team)-invoices(-aging)?$/.exec(pn);
     if (invoiceMatch && req.method === "GET") {
@@ -1007,8 +858,6 @@ export async function routeReports(req, res, url, origin) {
       const kind = invoiceMatch[1] === "client" ? "client" : "team";
       const aging = Boolean(invoiceMatch[2]);
 
-      // Client invoices are org financials; team invoices are scoped to the
-      // members the viewer can see.
       if (kind === "client" && !isManagementRole(viewer.roleName)) {
         sendJson(res, origin, 403, { success: false, error: "Management role required." });
         return true;
@@ -1053,11 +902,6 @@ export async function routeReports(req, res, url, origin) {
     }
   }
 
-  // ─── Payments ─────────────────────────────────────────────────────────────
-  // Money actually recorded against an invoice, as opposed to amounts-owed's
-  // estimate of what is still due. These used to share one handler, so this
-  // report showed outstanding estimates under a title promising a record of
-  // what was paid.
   if (pn === "/api/reports/payments" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -1093,7 +937,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Shift attendance ─────────────────────────────────────────────────────
   if (pn === "/api/reports/shift-attendance" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -1121,7 +964,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Project Budgets ──────────────────────────────────────────────────────
   if (pn === "/api/reports/project-budgets" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -1134,11 +976,6 @@ export async function routeReports(req, res, url, origin) {
       const [allProjects, budgets] = await Promise.all([listProjectsPg({ limit: 500 }), getAllProjectBudgetsPg()]);
       const budgetByProject = new Map(budgets.map((b) => [b.project_id, b]));
 
-      // Same rule the Projects page and the schema visibility layer apply to
-      // `projects` and `project-budgets`: the projects the viewer is on, plus
-      // any they created. This report listed every project in the org, so a
-      // Manager saw budgets for projects the Project Management pages hide
-      // from them.
       const allowedProjectIds = await getViewerProjectIds(getDb(), viewer.memberId, viewer.roleName);
       const allowedSet = allowedProjectIds === null ? null : new Set(allowedProjectIds);
       const visibleProjects =
@@ -1149,8 +986,6 @@ export async function routeReports(req, res, url, origin) {
                 allowedSet.has(String(project.id)) || String(project.created_by ?? "") === viewer.memberId,
             );
 
-      // `projectIds` here narrows which projects' budget rows come back, not
-      // sessions within a project - each row already IS a project.
       const requestedProjectIds = await filterProjectIdsForViewer(
         getDb(),
         viewer,
@@ -1164,10 +999,6 @@ export async function routeReports(req, res, url, origin) {
         projects.map(async (project) => {
           const budget = budgetByProject.get(project.id);
           const cost = budget ? Number(budget.cost) || 0 : 0;
-          // Bounded to the budget's own reset period (start_date/end_date),
-          // same as spentAmount just below - was unbounded (all-time) here,
-          // so an Hours-based project's "Spent" column disagreed with what
-          // its own Anchor period said the current period actually covers.
           const spentSeconds = await getProjectTrackedSecondsPg(project.id, {
             fromDate: budget ? toDayStrOrNull(budget.start_date) || undefined : undefined,
             toDate: budget ? toDayStrOrNull(budget.end_date) || undefined : undefined,
@@ -1200,7 +1031,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Client Budgets ───────────────────────────────────────────────────────
   if (pn === "/api/reports/client-budgets" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -1213,9 +1043,6 @@ export async function routeReports(req, res, url, origin) {
       const [allClients, budgets] = await Promise.all([listClientsPg({ limit: 500 }), getAllClientBudgetsPg()]);
       const budgetByClient = new Map(budgets.map((b) => [b.client_id, b]));
 
-      // Same rule the schema visibility layer applies to `clients`: a client
-      // is visible when its contact member is someone the viewer can see.
-      // This report listed every client in the org regardless.
       const visibleMemberIds = await getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName);
       const visibleSet = visibleMemberIds === null ? null : new Set(visibleMemberIds);
       let clients =
@@ -1226,10 +1053,6 @@ export async function routeReports(req, res, url, origin) {
               return memberId ? visibleSet.has(memberId) : false;
             });
 
-      // A client isn't scoped to one project (it can have many, via
-      // client_projects), so `projectIds` here narrows to clients that have
-      // at least one of the allowed projects linked, rather than trying to
-      // scope a client to a single project.
       const requestedProjectIds = await filterProjectIdsForViewer(
         getDb(),
         viewer,
@@ -1285,7 +1108,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Weekly Limits / Daily Limits (same table, different threshold column) ─
   if (
     (pn === "/api/reports/weekly-limits" || pn === "/api/reports/daily-limits") &&
     req.method === "GET"
@@ -1325,7 +1147,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Timesheet Approvals ──────────────────────────────────────────────────
   if (pn === "/api/reports/timesheet-approvals" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -1357,7 +1178,6 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
-  // ─── Apps & URLs ──────────────────────────────────────────────────────────
   if (pn === "/api/reports/apps-urls" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;

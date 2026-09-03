@@ -7,7 +7,6 @@ import { fetchActivityScreenshotImage } from "@/features/activity/services/activ
 import type { ActivityFeedItem } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
 
-/** The two latest captures, shown side by side above the rest of the feed. */
 function ScreenshotCard({ item }: { item: ActivityFeedItem }) {
   const [image, setImage] = useState<string | null>(null)
   const screenshotId = item.screenshotId
@@ -55,8 +54,6 @@ interface ActivityFeedSectionProps {
 }
 
 export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionProps) {
-  // The two latest captures go in the grid above; everything else keeps the
-  // stacked timeline, which no longer renders its own placeholder tile.
   const shots = feed.filter((item) => item.type === "screenshot").slice(0, 2)
   const rest = feed.filter((item) => !shots.includes(item))
 

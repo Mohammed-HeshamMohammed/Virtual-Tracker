@@ -1,6 +1,5 @@
 import { normalizeMemberRole } from "@/features/auth/permissions/member-role-access"
 
-/** Mirrors Backend `ROLE_PRIVILEGE_RANK` in relation-sync.js (prototype-less — see that file). */
 const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(null), {
   owner: 100,
   superadmin: 90,
@@ -35,7 +34,6 @@ export function hasManageEmployeeTeamsPrivilege(
   return member?.privileges?.manage_employee_teams === true
 }
 
-/** Team Lead tier only (not Manager or above). */
 export function isEmployeeL2OrHigherRole(role: string): boolean {
   const rank = roleRank(role)
   const managerRank = ROLE_PRIVILEGE_RANK.manager ?? 60
@@ -53,12 +51,10 @@ export function canCreateTeams(
   return isEmployeeL2OrHigherRole(roleName)
 }
 
-/** General team roster rule: clients may never be team members. */
 export function isClientRole(roleName: string): boolean {
   return normalizeMemberRole(roleName) === "client"
 }
 
-/** Roles that may appear on a team roster (clients and viewers excluded). */
 export function canBeTeamMember(roleName: string): boolean {
   const key = normalizeMemberRole(roleName)
   if (!key || key === "viewer" || key === "user" || key === "client") return false
@@ -67,7 +63,6 @@ export function canBeTeamMember(roleName: string): boolean {
 
 export const TEAM_CLIENT_DENIED_MESSAGE = "Clients cannot be assigned to teams."
 
-/** UI hint — server enforces via team-member-assign-policy.js */
 export function canAssignMemberToTeam(actorRoleName: string, targetRoleName: string): boolean {
   const actorKey = normalizeMemberRole(actorRoleName)
   const targetKey = normalizeMemberRole(targetRoleName)
@@ -80,7 +75,6 @@ export function canAssignMemberToTeam(actorRoleName: string, targetRoleName: str
   return targetRank <= actorRank
 }
 
-/** Team leads must be Team Lead or higher (management roles included). */
 export function canBeTeamLead(roleName: string): boolean {
   const rank = roleRank(roleName)
   const l2Rank = ROLE_PRIVILEGE_RANK.teamlead ?? 50

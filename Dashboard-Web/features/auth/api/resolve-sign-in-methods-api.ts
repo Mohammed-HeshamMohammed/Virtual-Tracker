@@ -15,7 +15,6 @@ export type ResolveSignInMethodsResponse =
     }
   | { success: false; error: string; code?: string }
 
-/** Sign-in methods from backend Admin + client SDK merge. */
 export async function resolveSignInMethodsFromApi(email: string): Promise<ResolveSignInMethodsResponse | null> {
   const trimmed = email.trim().toLowerCase()
   if (!trimmed) return null

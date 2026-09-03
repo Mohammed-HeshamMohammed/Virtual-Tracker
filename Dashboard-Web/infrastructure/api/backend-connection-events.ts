@@ -1,9 +1,7 @@
-/** Browser events when the Node API becomes unreachable or recovers mid-session. */
 
 export const BACKEND_CONNECTION_LOST = "vt-backend-connection-lost"
 export const BACKEND_CONNECTION_RESTORED = "vt-backend-connection-restored"
 
-/** User-facing copy when the app cannot reach its API (end users, not operators). */
 export const BACKEND_UNAVAILABLE_TITLE = "Service unavailable"
 
 export const BACKEND_UNAVAILABLE_MESSAGE =
@@ -41,9 +39,6 @@ const DEFAULT_LOST_MESSAGE = BACKEND_UNAVAILABLE_MESSAGE
 
 let connectionLostActive = false
 let consecutiveFailureCount = 0
-/** A single flaky request (dev-server blip, one timed-out call among many concurrent
- * ones) must not freeze the whole dashboard. Only declare the connection lost once
- * failures happen back-to-back with no successful request in between. */
 const CONSECUTIVE_FAILURES_BEFORE_LOST = 4
 
 export function isApiConnectionFailureStatus(status: number): boolean {
@@ -82,18 +77,15 @@ export function isBackendConnectionLost(): boolean {
   return connectionLostActive
 }
 
-/** How long background pollers back off after a 429, when the server gives no Retry-After. */
 const DEFAULT_RATE_LIMIT_BACKOFF_MS = 20_000
 
 let rateLimitedUntil = 0
 
-/** Record that the server just rate-limited us — background pollers should pause until this clears. */
 export function notifyBackendRateLimited(retryAfterMs?: number): void {
   const cooldown = retryAfterMs && retryAfterMs > 0 ? retryAfterMs : DEFAULT_RATE_LIMIT_BACKOFF_MS
   rateLimitedUntil = Math.max(rateLimitedUntil, Date.now() + cooldown)
 }
 
-/** True while a prior 429's backoff window is still in effect. Pollers should skip their tick. */
 export function isBackendRateLimited(): boolean {
   return Date.now() < rateLimitedUntil
 }

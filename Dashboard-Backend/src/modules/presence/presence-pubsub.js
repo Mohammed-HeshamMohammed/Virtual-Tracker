@@ -4,22 +4,16 @@ import { resolveFirebaseDatabaseUrl } from "../../config/firebase.js";
 import { isRedisConfigured, getRedisClient, getRedisSubscriberClient } from "../../lib/redis/client.js";
 import admin from "firebase-admin";
 
-/** @typedef {{ memberId: string; status: import("./presence-events.js").PresenceStatus; lastSeenAt: number; lastActivityAt: number; updatedAt?: number }} PresenceChangeMessage */
 
 const REDIS_CHANNEL = "presence:changes";
 
 const localBus = new EventEmitter();
 localBus.setMaxListeners(100);
 
-/** @type {boolean} */
 let rtdbSubscribed = false;
-/** @type {boolean} */
 let redisSubscribed = false;
 const localChanges = new Set();
 
-/**
- * @param {PresenceChangeMessage} message
- */
 export async function publishPresenceChange(message) {
   if (!message.updatedAt) {
     message.updatedAt = Date.now();
@@ -43,11 +37,6 @@ export async function publishPresenceChange(message) {
   }
 }
 
-/**
- * Subscribe to presence changes (Redis, RTD, or local bus).
- * @param {(message: PresenceChangeMessage) => void} handler
- * @returns {() => void}
- */
 export function subscribePresenceChanges(handler) {
   localBus.on("change", handler);
 
@@ -119,7 +108,6 @@ function ensureRtdbSubscriber() {
   }
 }
 
-/** @param {import("./presence-events.js").PresenceRecord} record */
 export function presenceRecordToChange(record) {
   return {
     memberId: record.userId,
@@ -130,7 +118,6 @@ export function presenceRecordToChange(record) {
   };
 }
 
-/** Tear down subscriber (tests). */
 export async function resetPresencePubSubForTests() {
   if (rtdbSubscribed) {
     try {

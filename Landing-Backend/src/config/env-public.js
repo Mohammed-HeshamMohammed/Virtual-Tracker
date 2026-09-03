@@ -1,4 +1,3 @@
-/** Redacted env for logs/health. @param {import("./env.js").AppEnv} config */
 export function toPublicEnv(config) {
   return Object.freeze({
     nodeEnv: config.nodeEnv,

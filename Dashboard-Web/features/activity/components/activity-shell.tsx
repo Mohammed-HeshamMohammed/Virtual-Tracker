@@ -35,11 +35,6 @@ function ActivityPageFilters() {
     return (
       <>
         <ActivityCategoryFilter value={selectedCategory} onChange={setSelectedCategory} />
-        {/* Replaced the By time / By name sort control. Both pages keep their
-            own default ordering (most time / most visits first); classifying
-            is the action people actually come to this toolbar for, and it used
-            to be buried in the table header, where it disappeared entirely
-            whenever the day had no data to show. */}
         {canClassify ? (
           <button
             type="button"

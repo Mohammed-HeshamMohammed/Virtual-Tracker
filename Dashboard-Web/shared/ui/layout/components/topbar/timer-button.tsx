@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
 "use client"
 
 import { useEffect, useState } from "react"
@@ -18,7 +16,6 @@ import { TIMER_LIMIT_REACHED_MESSAGE } from "@/features/activity/utils/timer-lim
 import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 import type { NavigateHandler } from "@/app/routes/types"
 
-/** How often to check for a session the desktop agent already started. */
 const EXTERNAL_SESSION_POLL_MS = 8_000
 
 interface TimerButtonProps {
@@ -26,8 +23,6 @@ interface TimerButtonProps {
   onNavigate: NavigateHandler
 }
 
-/** The Tauri agent is the only thing that starts, stops, or shows detail for a
- * tracking session — this button is a read-only mirror of agent+backend state. */
 export function TimerButton({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { active } = useActivityRuntime()
   if (!active) {
@@ -36,9 +31,6 @@ export function TimerButton({ isCollapsed = false, onNavigate }: TimerButtonProp
   return <TimerButtonLive isCollapsed={isCollapsed} />
 }
 
-/** Idle: task selection and starting both happen in the desktop agent now — this
- * button only detects an agent-started session and reflects it (or points at the
- * agent/backend when it can't). It never starts anything itself. */
 function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light
@@ -85,8 +77,6 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
       onNavigate("activity-tools")
       return
     }
-    // Agent is connected but hasn't started tracking — nothing to trigger from
-    // here, starting only happens in the agent's own UI.
     setNotice("Open the Virtual Tracker Agent on your computer to start tracking.")
   }
 
@@ -160,8 +150,6 @@ function TimerButtonIdle({ isCollapsed = false, onNavigate }: TimerButtonProps) 
   )
 }
 
-/** Live: a session exists (adopted from the agent). Pure read-only reflection —
- * no popup, no stop/start controls. Those live in the Tauri app now. */
 function TimerButtonLive({ isCollapsed = false }: Pick<TimerButtonProps, "isCollapsed">) {
   const { isDark } = useTheme()
   const t = isDark ? dark : light

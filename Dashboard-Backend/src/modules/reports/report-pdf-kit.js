@@ -1,26 +1,11 @@
-// Server-side twin of Dashboard-Web's
-// features/reports/utils/pdf/report-pdf-kit.ts - same library (jsPDF +
-// jspdf-autotable, both Node-compatible, no canvas/native deps), same
-// drawing primitives, so a report's *emailed* PDF (Send / Schedule) looks
-// like the one its own Export -> To PDF button downloads instead of two
-// visually unrelated documents built by two different code paths. Ported
-// rather than shared as one file because the two runtimes need different
-// output calls at the end (doc.save() in the browser vs. a Buffer here) and
-// this backend has no bundler step to share a TS module across a browser
-// and a plain Node ESM backend without one.
-//
-// Keep this in sync with report-pdf-kit.ts by eye when either changes - the
-// two are deliberately duplicated, not published as a shared package, since
-// this is the only backend/frontend visual-parity case in the repo that
-// needs it.
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const PAGE_MARGIN = 40;
-const INK = { r: 30, g: 41, b: 59 }; // slate-800, body text
-const MUTED = { r: 100, g: 116, b: 139 }; // slate-500
-const RULE = { r: 226, g: 232, b: 240 }; // slate-200
-const BRAND = [37, 99, 235]; // blue-600, matches the on-screen report accent
+const INK = { r: 30, g: 41, b: 59 };
+const MUTED = { r: 100, g: 116, b: 139 };
+const RULE = { r: 226, g: 232, b: 240 };
+const BRAND = [37, 99, 235];
 
 function setInk(doc) {
   doc.setTextColor(INK.r, INK.g, INK.b);
@@ -34,15 +19,11 @@ function contentWidth(doc) {
 }
 
 function pctColor(pct) {
-  if (pct >= 100) return [220, 38, 38]; // red-600
-  if (pct >= 80) return [217, 119, 6]; // amber-600
-  return [22, 163, 74]; // emerald-600
+  if (pct >= 100) return [220, 38, 38];
+  if (pct >= 80) return [217, 119, 6];
+  return [22, 163, 74];
 }
 
-/**
- * @param {import("jspdf").jsPDF} doc
- * @param {{ title: string, subtitle?: string, orgLabel: string, timezoneLabel?: string, rangeLabel?: string, scopeLabel?: string }} spec
- */
 function drawLetterhead(doc, spec) {
   const left = PAGE_MARGIN;
   let y = PAGE_MARGIN;
@@ -270,23 +251,6 @@ function chartHeightEstimate(chart) {
   return CHART_HEIGHT + 46;
 }
 
-/**
- * Builds the same "report paper" document report-pdf-kit.ts's
- * downloadReportPdf draws in the browser, and returns it as a Buffer instead
- * of triggering a save - for the email attachment path (Send / Schedule).
- * @param {{
- *   title: string, subtitle?: string, orgLabel: string, timezoneLabel?: string,
- *   rangeLabel?: string, scopeLabel?: string,
- *   summary?: { label: string, value: string }[],
- *   charts?: Array<
- *     | { type: "bar", title: string, data: { label: string, value: number }[], valueFormatter?: (v: number) => string, color?: [number, number, number] }
- *     | { type: "line", title: string, points: { label: string, value: number }[], valueFormatter?: (v: number) => string, color?: [number, number, number] }
- *     | { type: "progress", title: string, rows: { label: string, pct: number, sublabel?: string }[] }
- *   >,
- *   table: { columns: { header: string, key: string, align?: "left"|"right"|"center", width?: number }[], rows: Record<string, string|number>[], emptyMessage?: string },
- * }} spec
- * @returns {Buffer}
- */
 export function buildReportPdfBuffer(spec) {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageH = doc.internal.pageSize.getHeight();

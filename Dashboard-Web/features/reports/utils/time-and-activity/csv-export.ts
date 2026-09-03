@@ -4,11 +4,6 @@ function escapeCsvCell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
 
-/** CSV of the currently displayed (filtered/sorted/grouped) rows — same data
- *  the table shows. groupColumnLabel matches whatever the table's own
- *  leading column is currently labelled (see group-aggregate.ts's
- *  groupByColumnLabel) - "Date" for the default grouping, "Project"/
- *  "Client"/"Member"/"Team"/"Week" for the others. */
 export function buildTimeActivityCsv(days: TimeActivityDayRow[], groupColumnLabel = "Date"): string {
   const header = [groupColumnLabel, "Members", "Total hours", "Activity %", "Idle %", "Idle hours", "Total spent"]
   const rows = days.map((d) => [

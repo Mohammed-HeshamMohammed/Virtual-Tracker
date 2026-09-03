@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -32,7 +31,6 @@ export function CreatePaymentsContent() {
   const [dateRange, setDateRange] = useComponentState("Mar 1, 2026 - Mar 15, 2026")
   const [showDates, setShowDates] = useComponentState(false)
 
-  // hours tab states
   const [team, setTeam] = useComponentState("All teams")
   const [project, setProject] = useComponentState("All projects")
   const [member, setMember] = useComponentState<string | null>(null)
@@ -203,7 +201,6 @@ export function CreatePaymentsContent() {
           )}
         </div>
 
-        {/* Sidebar Summary */}
         <div className="w-[320px] shrink-0 sticky top-6">
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-5">Payment queue</h3>

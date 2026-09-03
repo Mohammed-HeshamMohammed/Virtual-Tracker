@@ -14,14 +14,6 @@ const EXE_DISPLAY_NAMES: Record<string, string> = {
   "pythonw.exe": "Python",
 }
 
-// CQ-4/MAC-3: server-delivered overrides (CLS-1's activity_categories),
-// checked before EXE_DISPLAY_NAMES above. This stays a *synchronous* lookup
-// - both call sites (apps.tsx, screenshots.tsx) use formatActivityAppName
-// inline during render, and forcing them to await would mean restructuring
-// both into per-row loading states for what's a cosmetic label. Populated by
-// a fire-and-forget background fetch instead: before it completes, or if it
-// fails, every lookup falls through to EXE_DISPLAY_NAMES exactly as before
-// this existed - this can only ever add mappings, never regress one.
 let serverDisplayNames: Record<string, string> | null = null
 let serverDisplayNamesFetchStarted = false
 
@@ -59,7 +51,6 @@ function isInvalidAppToken(name: string): boolean {
   return lower.includes("://") || lower.includes("media-stream") || lower.startsWith("current-web-contents")
 }
 
-/** Friendly label for activity app rows (also cleans legacy web-capture stream IDs). */
 export function formatActivityAppName(raw: string): string {
   ensureServerDisplayNamesLoading()
 

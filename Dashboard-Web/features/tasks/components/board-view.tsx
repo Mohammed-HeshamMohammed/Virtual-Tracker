@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 
 "use client"
 
@@ -210,10 +209,6 @@ function DroppableColumn({
         <AnimatePresence>
           {items.map((task: any) => {
             const assignee = task.assignedTo ? memberMap[task.assignedTo] : null
-            // Fallback for the same reason PriorityDot has one: tasks.priority is
-            // nullable, and PRIORITY_CONFIG has no undefined-safe entry - an
-            // unset priority (any caller that skips it, or a pre-default-fix row)
-            // must not crash this card's render.
             const pCfg = PRIORITY_CONFIG[task.priority as Priority] ?? PRIORITY_CONFIG.medium
             const teamName = task.teamId ? teamNamesById[task.teamId] : undefined
             return (
@@ -286,8 +281,6 @@ export function BoardView({
   onAddTask?: (status: TaskStatus) => void
   onSubmitHours?: (taskId: string) => void
   onReview?: (taskId: string) => void
-  /** Self-service "I'm blocked, waiting on X" - blocks only the current
-   * user's own assignment on this task, not the whole task. */
   onBlockTask?: (task: Task) => void
   canMarkCompleted?: boolean
 }) {

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
@@ -29,8 +28,6 @@ export function ProjectHealthGrid({
 }: ProjectHealthGridProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const firstRowRef = useRef<HTMLTableRowElement>(null)
-  // Guess before the first real measurement so mount doesn't flash a single
-  // row; corrected (grown or shrunk) below before paint via useLayoutEffect.
   const [visibleCount, setVisibleCount] = useState(() => Math.min(projects.length, 7))
 
   useLayoutEffect(() => {
@@ -147,9 +144,6 @@ export function ProjectHealthGrid({
                     )}
                   </td>
                   <td className="px-4 py-3.5">
-                    {/* memberLimit is a per-member cost/hour cap, not a
-                        headcount - showing it as members/memberLimit read
-                        as "3 of 5 seats used" when it isn't. */}
                     <span className="text-sm text-slate-600">{p.members}</span>
                   </td>
                 </motion.tr>

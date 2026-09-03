@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion, react-doctor/js-combine-iterations */
-/* eslint-disable react-doctor/no-giant-component */
 "use client"
 
 import { useEffect, useMemo, useState as useComponentState } from "react"
@@ -32,7 +30,6 @@ import { bannerEnterExit } from "@/features/clients/constants/motion"
 import { ClientsSkeleton } from "@/features/clients/components/skeletons/clients-skeleton"
 import { ClientsTab } from "@/features/clients/components/tables/clients-tab"
 
-// Custom hooks, components & dialogs
 import { useClientColumns } from "@/features/clients/hooks/use-client-columns"
 import { useClientMutations } from "@/features/clients/hooks/use-client-mutations"
 import { ClientsToolbar } from "@/features/clients/components/clients-toolbar"
@@ -60,7 +57,6 @@ export function ClientsPage() {
   const [actionBusy, setActionBusy] = useComponentState(false)
   const [showUnlinkedModal, setShowUnlinkedModal] = useComponentState(false)
 
-  // Columns Hook
   const {
     enabledCols,
     colOrder,
@@ -125,19 +121,10 @@ export function ClientsPage() {
       console.error("Failed to fetch clients data:", err)
       setPageError(err instanceof Error ? err.message : "Failed to load clients")
     },
-    // Live sync (PLAN-livesyncandagenttimer.md §6.4/case 4): replaces the
-    // 50s poll - forceRefetch bypasses staleMs so a broadcast repaints in
-    // under a second instead of waiting out the interval.
     presencePingEvent: changedEvent("clients"),
     backgroundRefetch: { forceRefetch: true },
   })
 
-  // Live sync (case 16/17): useCachedMultiList only accepts one
-  // presencePingEvent, already spent above on "clients" - a member
-  // deleted while this page is open needs its own listener to force the
-  // "members" sub-list to refetch (the cache is already marked stale via
-  // change-events.ts either way; this is what makes a *mounted* page act
-  // on it instead of waiting for its next natural revisit).
   useEffect(() => {
     const handler = () => void refetchClientsData({ keys: ["members"], forceRefetch: true })
     window.addEventListener(changedEvent("members"), handler)
@@ -170,7 +157,6 @@ export function ClientsPage() {
 
   const modalMembers = useMemo(() => {
     const isClientRole = (role: string) => role.toLowerCase().replace(/\s+/g, "") === "client"
-// eslint-disable-next-line react-doctor/js-flatmap-filter
     const linkedMemberIds = new Set(
       clients.map((client) => client.clientMember).filter((memberId) => memberId.trim().length > 0),
     )

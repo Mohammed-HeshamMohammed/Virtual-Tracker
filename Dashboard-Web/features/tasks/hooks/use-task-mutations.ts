@@ -23,7 +23,6 @@ import {
 } from "@/features/projects/constants"
 import { countWorkingDaysBetween } from "@/features/tasks/utils/working-days"
 
-// Helper to map api tasks
 function mapApiTask(row: any): Task {
   const durationHoursPerDayRaw = row.durationHoursPerDay ?? row.duration_hours_per_day
   const durationHoursPerDay =
@@ -127,13 +126,11 @@ export function useTaskMutations({
     if (selectedTaskId === id) setSelectedTaskId(null)
     if (taskPreview?.taskId === id) setTaskPreview(null)
     
-    // Optimistic update
     setTasks((prev) => prev.filter((task) => task.id !== id))
 
     try {
       await deleteTaskApi(id)
     } catch {
-      // Re-fetch on error
       const fetched = await getTasks(
         { projectId: selectedProjectId },
         {
@@ -245,8 +242,6 @@ export function useTaskMutations({
       rollingHourCap: boolean
       sharedTaskBudget: boolean
       position: "Top" | "Bottom"
-      /** Optimistic-concurrency token (§6.9) - the task's updatedAt when
-       * the form loaded, sent back unchanged so a stale write 409s. */
       expectedUpdatedAt?: string
     }
   ) {
@@ -312,9 +307,6 @@ export function useTaskMutations({
         ...durationFields,
         expectedUpdatedAt: formValues.expectedUpdatedAt,
       }
-      // §6.9 - a 409 here (stale write) is left to propagate: the modal's
-      // own submit handler shows a reload/keep-editing notice instead of a
-      // generic save error.
       await updateTaskApi(editingId, updatePayload)
       const fresh = await getTask(editingId)
       applyTaskToState(mapApiTask(fresh as unknown as Record<string, unknown>), editingId)

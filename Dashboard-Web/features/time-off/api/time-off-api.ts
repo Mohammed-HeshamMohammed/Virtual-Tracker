@@ -82,8 +82,6 @@ export function createTimeOffRequest(input: {
   })
 }
 
-/** approved/rejected are management actions; cancelled is self-service on your
- *  own pending request. Both rules are enforced server-side. */
 export function reviewTimeOffRequest(
   id: string,
   status: "approved" | "rejected" | "cancelled",

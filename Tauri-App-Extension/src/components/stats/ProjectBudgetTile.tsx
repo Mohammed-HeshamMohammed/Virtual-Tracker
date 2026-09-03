@@ -7,8 +7,6 @@ type ProjectBudgetTileProps = {
   projectBudgetPercent: number;
 };
 
-// Only rendered when the project actually has an Hours-based budget - no
-// dash-filled card cluttering the common case of no budget configured.
 export function ProjectBudgetTile({ projectBudget, projectBudgetReached, projectBudgetPercent }: ProjectBudgetTileProps) {
   if (!projectBudget) return null;
   return (

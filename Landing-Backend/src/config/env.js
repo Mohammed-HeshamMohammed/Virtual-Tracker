@@ -1,6 +1,3 @@
-/**
- * Landing-Backend env config. Use getEnv() — lint blocks direct process.env reads.
- */
 
 import { loadEnvFile } from "node:process";
 import path from "node:path";
@@ -16,9 +13,7 @@ try {
   // Optional — npm scripts also pass --env-file-if-exists=.env
 }
 
-/** @typedef {ReturnType<typeof buildEnv>} AppEnv */
 
-/** @param {NodeJS.ProcessEnv} source */
 function readString(source, key, fallback = "") {
   const raw = source[key];
   if (typeof raw !== "string") return fallback;
@@ -26,7 +21,6 @@ function readString(source, key, fallback = "") {
   return trimmed || fallback;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
 function readPositiveInt(source, key, fallback) {
   const raw = readString(source, key, "");
   if (!raw) return fallback;
@@ -34,7 +28,6 @@ function readPositiveInt(source, key, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
 function readBool(source, key, defaultWhenUnset) {
   const raw = readString(source, key, "");
   if (!raw) return defaultWhenUnset;
@@ -44,7 +37,6 @@ function readBool(source, key, defaultWhenUnset) {
   return defaultWhenUnset;
 }
 
-/** Parse + validate env into frozen AppEnv. */
 export function buildEnv(source = process.env) {
   const skipValidation =
     readString(source, "SKIP_ENV_VALIDATION", "") === "1" ||
@@ -91,15 +83,12 @@ export function buildEnv(source = process.env) {
   });
 }
 
-/** @type {AppEnv | null} */
 let cached = null;
 
-/** Eager init — same as getEnv(). */
 export function initConfig() {
   return getEnv();
 }
 
-/** Cached env snapshot (validates on first call). @returns {AppEnv} */
 export function getEnv() {
   if (!cached) {
     cached = buildEnv(process.env);
@@ -107,15 +96,12 @@ export function getEnv() {
   return cached;
 }
 
-/** Redacted env for logs / health (no secrets). */
 export function getPublicEnv() {
   return toPublicEnv(getEnv());
 }
 
-/** @internal Tests only — re-read process.env after mutations. */
 export function __resetEnvForTests() {
   cached = null;
 }
 
-/** @type {typeof getEnv} */
 export const env = getEnv;

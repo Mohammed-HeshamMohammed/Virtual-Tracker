@@ -5,7 +5,6 @@ const DASHBOARD_PONG_TYPE = "vt-dashboard-pong"
 const DASHBOARD_PING_STORAGE_KEY = "vt-dashboard-ping"
 const DASHBOARD_PONG_STORAGE_KEY = "vt-dashboard-pong"
 
-/** Notify all same-origin tabs that agent linking completed. */
 export function broadcastAgentLinked(): void {
   if (typeof window === "undefined") return
   window.dispatchEvent(new Event("vt-agent-linked"))
@@ -23,7 +22,6 @@ export function broadcastAgentLinked(): void {
   }
 }
 
-/** Listen for agent-linked events in this tab (same tab, popup opener, or other tabs). */
 export function subscribeAgentLinked(handler: () => void): () => void {
   if (typeof window === "undefined") return () => {}
 
@@ -52,7 +50,6 @@ export function subscribeAgentLinked(handler: () => void): () => void {
   }
 }
 
-/** Ask other tabs whether the main app is already open. */
 export function pingDashboardTab(timeoutMs = 400): Promise<boolean> {
   if (typeof window === "undefined") return Promise.resolve(false)
 
@@ -106,7 +103,6 @@ export function pingDashboardTab(timeoutMs = 400): Promise<boolean> {
   })
 }
 
-/** Let other tabs detect that this tab has the main app mounted. */
 export function registerDashboardPresence(): () => void {
   if (typeof window === "undefined") return () => {}
 

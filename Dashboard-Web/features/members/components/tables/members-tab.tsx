@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
@@ -34,7 +33,6 @@ import { Checkbox } from "@/shared/ui/checkbox";
 import { MemberRowMenu } from "@/features/members/components/menus/member-row-menu"
 import { useRangeSelect } from "@/shared/hooks/use-range-select"
 
-/* ── Helpers ────────────────────────────────────────────────── */
 
 function getRoleSortRank(role: string): number {
   const r = role.trim().toLowerCase().replace(/\s+/g, "")
@@ -68,7 +66,6 @@ function ColumnCellSkeleton({ isDark, rowH }: { isDark: boolean; rowH?: number }
   )
 }
 
-/* ── Main component ─────────────────────────────────────────── */
 
 export function MembersTab({
   members,
@@ -128,9 +125,7 @@ export function MembersTab({
   onDragEnd: () => void
   canManage?: boolean
   showActionsColumn?: boolean
-  /** When false, row is visible but read-only (e.g. upline in subtree). */
   isRowManageable?: (member: Member) => boolean
-  /** When false, hides row checkboxes used for batch actions. */
   enableBatchSelect?: boolean
   getRowAllowedEntries?: (member: Member) => MemberEntryAction[]
   isDark?: boolean

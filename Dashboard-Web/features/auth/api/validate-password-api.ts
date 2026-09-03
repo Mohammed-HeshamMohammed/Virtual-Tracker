@@ -2,7 +2,6 @@ import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import type { BackendPasswordRequirements } from "@/features/auth/services/password-policy/use-password-backend-check"
 
-/** Server password check — POST body only, never stored locally. */
 
 type ValidatePasswordResponse = {
   success?: boolean

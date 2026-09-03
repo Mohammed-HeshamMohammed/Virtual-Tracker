@@ -66,15 +66,9 @@ export function computeParticipationStats(assignments) {
 }
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
-// Pure scheduling math (working-day counting, seconds estimation) now lives
-// in task-schedule-math.js so it can be imported without this file's much
-// larger transitive dependency graph - re-exported here so every existing
-// caller of these names keeps working unchanged.
 export {
   countWorkingDaysBetween,
   workingDaysForTask,
@@ -146,20 +140,6 @@ async function notifyRecipients(db, recipientIds, payload) {
   );
 }
 
-/**
- * Best-effort by design. Every one of the six call sites persists the status
- * change BEFORE calling this, and several go on to do essential work after it
- * (recomputeTaskStatus, updateTrackingFieldsPg) - including the timer
- * start/resume path in task-time-tracking.js. Letting a notification failure
- * propagate therefore aborted that follow-up work and reported an already-
- * applied status change as failed, inviting the caller to retry it.
- *
- * A notification is not the operation it describes; the recipient lookups
- * alone (member_relationships, project tables) are enough DB surface to fail
- * independently. Same rule maybeNotifyProjectBudget already follows in
- * activity/routes.js: "a failed notification is not a reason to stop someone
- * from working".
- */
 async function notifyAssignmentStatusChange(db, params) {
   try {
     await dispatchAssignmentStatusNotification(db, params);
@@ -224,9 +204,6 @@ async function dispatchAssignmentStatusNotification(
   }
 
   if (nextStatus === "blocked") {
-    // Self-service ("I'm blocked, waiting on X") - notify the people who'd
-    // want to know work stalled, same audience as the "started" notification,
-    // not the assignee themselves (they already know, they just did this).
     const parents = await getDirectParentIds(db, assigneeId);
     const projectLeaders = await getProjectLeadershipIds(db, projectId, assigneeId);
     await notifyRecipients(db, [...parents, ...projectLeaders], {
@@ -349,11 +326,6 @@ export async function startTaskForUser(db, { taskId, userId, userName }) {
   };
 }
 
-/** Self-service "I'm blocked, waiting on X" - mirrors startTaskForUser. Only
- * the caller's own assignment (userId is always the viewer, set by the
- * route), never another assignee's on their behalf. A task with one blocked
- * assignee and others still working stays "in_progress" overall -
- * recomputeTaskStatus already checks in_progress before blocked. */
 export async function blockTaskForUser(db, { taskId, userId, userName }) {
   const task = await getTaskPg(taskId);
   if (!task) throw new Error("Task not found");
@@ -448,16 +420,6 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
     }
   }
 
-  // "New Task Assigned" used to fire from the generic Firestore CRUD fallback
-  // on assigned_to changes, so it went dead when tasks moved to Postgres and
-  // was deleted with that fallback. Restored here instead: this is the single
-  // choke point every real assignment flows through (task create with
-  // assignees, the assign button, reassignment), and it fires per newly added
-  // assignee rather than only for the primary one. Best-effort, like every
-  // other notify call in this file - see notifyRecipients.
-  // Link format matches dispatchAssignmentStatusNotification, not the dead
-  // code's `/tasks/:id`: the bell passes notification.link straight to
-  // onNavigate(pageId), so a URL path there navigates nowhere.
   await notifyRecipients(db, newlyAssigned, {
     type: "task_assigned",
     title: "New Task Assigned",
@@ -469,12 +431,10 @@ export async function syncTaskAssignments(db, taskId, assigneeIds = [], options 
   return getTaskAssignments(db, taskId);
 }
 
-/** Task IDs assigned to any of these members. */
 export async function getTaskIdsAssignedToMembers(db, userIds) {
   return getTaskIdsAssignedToMembersPg(userIds);
 }
 
-/** Attach assignee_ids + primary assigned_to on task rows. */
 export async function enrichTasksWithAssignees(db, rows) {
   if (!rows.length) return rows;
 
@@ -588,16 +548,8 @@ export async function recomputeTaskStatus(db, taskId) {
   } else if (statuses.every((s) => s === "blocked" || s === "done")) {
     nextStatus = statuses.some((s) => s === "blocked") ? "blocked" : "done";
   } else if (statuses.some((s) => s === "blocked")) {
-    // Every branch above ruled out done/in_review/in_progress, so this is a
-    // blocked+todo mix - nobody has started. "blocked" is the honest status;
-    // "in_progress" claimed active work that isn't happening.
     nextStatus = "blocked";
   } else if (previousStatus === "blocked") {
-    // Only "todo" assignees here, so no assignee signal justifies overriding
-    // a block. A task blocked manually (board drag writes tasks.status
-    // directly, bypassing assignments) must not silently revert just because
-    // an unrelated field was edited - any edit carrying assigneeIds runs
-    // syncTaskAssignments, which always calls back into this function.
     nextStatus = "blocked";
   } else {
     nextStatus = statuses[0] ?? "todo";
@@ -646,18 +598,12 @@ async function getClientProjectIds(db, memberId) {
   const projects = memberRow.projects;
   if (Array.isArray(projects) && projects.length > 0) return projects;
 
-  // Falling back to project_members is the one thing a client never has a row
-  // in - the real link is clients.member_id -> client_projects, which
-  // listViewerProjectIdsPg covers along with the other two.
   return listViewerProjectIdsPg(memberId).catch(() => []);
 }
 
 async function isAssignmentVisible(db, viewerMemberId, viewerRole, assignment, task) {
   const role = normalizeRole(viewerRole);
 
-  // Employee tier reads the review queue for their own assignments only -
-  // getVisibleMemberIds gives them their whole org/team subtree for the
-  // People directory, which is far wider than "their stuff" here.
   if (isEmployeeRole(viewerRole)) {
     return assignment.userId === viewerMemberId;
   }
@@ -755,10 +701,6 @@ async function enrichAssignmentRow(db, assignment, trackingByKey, caches) {
 }
 
 export async function getReviewQueue(db, viewerMemberId, viewerRole, filters = {}) {
-  // Employee tier may open the queue too, read-only and scoped to their own
-  // assignments only (see the isEmployeeRole branch in isAssignmentVisible) -
-  // deliberately not folded into isReviewCenterRole/REVIEW_CENTER_ROLES, which
-  // other checks in this module reuse to mean "can see/edit anyone's rows".
   if (!isReviewCenterRole(viewerRole) && !isEmployeeRole(viewerRole)) {
     throw new Error("Only review center roles can access the review queue");
   }

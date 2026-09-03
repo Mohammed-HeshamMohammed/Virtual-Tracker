@@ -1,4 +1,3 @@
-// Config barrel — env values live in env.js.
 
 export { getEnv, buildEnv, initConfig, getPublicEnv, __resetEnvForTests, env } from "./env.js";
 export { collectEnvValidationErrors, validateEnvSource } from "./env-schema.js";

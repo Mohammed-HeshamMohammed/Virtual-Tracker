@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/prefer-module-scope-pure-function */
 "use client"
 
 import { useState, useMemo } from "react"
@@ -46,8 +44,6 @@ export function Sidebar({
   const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set())
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
 
-  // Below Manager tier, the button opened a creation flow the server would
-  // refuse - only Manager and above may create tasks from the sidebar.
   const canAddTask = isManagementRole(memberRole)
 
   const isSectionActive = (s: NavSection) =>
@@ -56,10 +52,6 @@ export function Sidebar({
   const toggleSet = (setter: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     setter(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  // Single source with the breadcrumb dropdowns and global search
-  // (visibleNavSections) - each used to carry its own copy of this
-  // filtering, so a role could see a page from one of them that another
-  // didn't show.
   const visibleSections = useMemo(() => {
     return visibleNavSections(memberRole).filter(
       (s: NavSection) => s.id !== "favorites" && !hiddenSections.has(s.id),

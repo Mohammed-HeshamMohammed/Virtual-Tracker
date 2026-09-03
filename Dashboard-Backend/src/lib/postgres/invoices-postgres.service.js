@@ -1,7 +1,3 @@
-// Invoices, their line items, and payments recorded against them.
-//
-// `kind` splits client invoices (money in) from team invoices (money out);
-// everything else is shared, including how they age.
 
 import { query } from "./client.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
@@ -23,7 +19,6 @@ function num(value) {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Next sequential number for a kind, e.g. INV-000007 / TEAM-000003. */
 export async function nextInvoiceNumberPg(kind) {
   const prefix = kind === "team" ? "TEAM-" : "INV-";
   const rows = await query(
@@ -89,8 +84,6 @@ export async function listInvoiceLineItemsPg(invoiceId) {
   return query("SELECT * FROM invoice_line_items WHERE invoice_id = $1 ORDER BY created_at ASC", [invoiceId]);
 }
 
-/** Recompute stored totals from line items. Only meaningful while a draft is
- *  still being edited - see the schema comment on why totals are stored. */
 export async function recalcInvoiceTotalsPg(invoiceId, actorId) {
   const rows = await query(
     `UPDATE invoices SET
@@ -132,8 +125,6 @@ export async function recordInvoicePaymentPg(data) {
   );
   const created = rows[0] ?? null;
 
-  // Fully-settled invoices mark themselves paid, so "paid" never has to be
-  // kept in sync by hand.
   if (created) {
     await query(
       `UPDATE invoices SET status = 'paid'
@@ -148,16 +139,6 @@ export async function recordInvoicePaymentPg(data) {
   return created;
 }
 
-/**
- * Invoices with what has been paid against them and what is still due.
- * `projectIds` narrows to invoices with at least one line item billed against
- * one of those projects - invoices are against a client/member, not a project
- * directly, so this reaches project_id via the invoice_line_items join
- * (line items with no project_id, e.g. a flat fee, don't count towards it).
- * @param {{ kind: 'client'|'team', memberIds?: string[]|null, clientIds?: string[]|null,
- *           fromDay?: string|null, toDay?: string|null, status?: string|null,
- *           projectIds?: string[]|null }} params
- */
 export async function listInvoicesWithBalancePg({
   kind,
   memberIds = null,
@@ -208,12 +189,6 @@ export async function listInvoicesWithBalancePg({
   }));
 }
 
-/**
- * Outstanding invoices bucketed by how overdue they are - backs the aging
- * reports. Draft and void are excluded: neither is money anyone owes yet.
- * `projectIds` narrows via invoice_line_items, same as listInvoicesWithBalancePg.
- * @param {{ kind: 'client'|'team', memberIds?: string[]|null, asOf: string, projectIds?: string[]|null }} params
- */
 export async function listInvoiceAgingPg({ kind, memberIds = null, asOf, projectIds = null }) {
   const rows = await query(
     `SELECT i.id, i.number, i.client_id, i.member_id, i.due_date, i.issue_date,
@@ -263,15 +238,6 @@ export async function listInvoiceAgingPg({ kind, memberIds = null, asOf, project
   });
 }
 
-/**
- * Payments actually recorded in a period - backs the Payments report.
- * `projectIds` narrows to payments on invoices that carry at least one line
- * item billed against one of those projects (a payment is against the whole
- * invoice, not a specific line item, so this is "was any of what this invoice
- * billed for on an allowed project", the same invoice_line_items join the
- * invoice reports use).
- * @param {{ memberIds?: string[]|null, fromDay: string, toDay: string, projectIds?: string[]|null }} params
- */
 export async function listInvoicePaymentsPg({ memberIds = null, fromDay, toDay, projectIds = null }) {
   const rows = await query(
     `SELECT p.id, p.amount, p.paid_on, p.method, p.reference, p.note,

@@ -38,13 +38,6 @@ const STATUS_STYLE: Record<ExpenseStatus, string> = {
   pending: "bg-amber-50 text-amber-600",
 }
 
-/**
- * Expenses a member has claimed, and (for managers) the queue to review them.
- *
- * Statuses are the real ones the `expenses` table stores. The tabs used to be
- * uninvoiced/invoiced/paid over a hardcoded empty array - an invoicing model
- * that does not exist - so nothing here could ever have shown or saved data.
- */
 export function ExpensesReportContent() {
   const { registerExportHandler } = useStandardReportLayout()
   const { memberId, memberRole } = useAuth()
@@ -221,7 +214,6 @@ export function ExpensesReportContent() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        {/* Reviewing your own claim is refused server-side too. */}
                         {canReview && e.status === "pending" && !isOwn ? (
                           <span className="inline-flex gap-2">
                             <button

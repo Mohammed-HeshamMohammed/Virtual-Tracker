@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useMemo } from "react"
@@ -15,7 +14,6 @@ import {
 } from "@/features/projects/mappers/project-mapper"
 import { useProjectOverview } from "@/features/projects/hooks/use-project-overview"
 
-// Custom Components
 import { SummaryStats } from "@/features/projects/components/overview/components/summary-stats"
 import { ProjectHealthGrid } from "@/features/projects/components/overview/components/project-health-grid"
 import { BelowFoldPanels } from "@/features/projects/components/overview/components/below-fold-panels"
@@ -70,7 +68,6 @@ export function ProjectManagementOverview({ onNavigate }: { onNavigate?: (id: st
   return (
     <motion.div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pt-2 pb-6 scrollbar-hide">
-        {/* Above the fold: stats + projects table fill viewport */}
         <section className="flex min-h-full flex-col gap-4">
           <motion.div className="shrink-0" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <SummaryStats summary={core.summary} isDark={isDark} onNavigate={onNavigate} />

@@ -7,7 +7,6 @@ type LauncherGoogleOAuthBannerProps = {
   onCancel: () => void
 }
 
-/** Inline cancel shown on the login page while Google redirect is starting in the launcher dashboard window. */
 export function LauncherGoogleOAuthBanner({ message, onCancel }: LauncherGoogleOAuthBannerProps) {
   if (!isLauncherPywebviewWindow()) return null
   if (message !== GOOGLE_OAUTH_REDIRECT_MESSAGE) return null

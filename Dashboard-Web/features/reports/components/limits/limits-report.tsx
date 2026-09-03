@@ -21,13 +21,6 @@ import {
   STANDARD_REPORT_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
 
-/**
- * LimitUsageRow is one aggregate row per member for the whole selected range
- * - there is no per-row date and no project on it, so "Member" (the only
- * option LIMITS_GROUP_BY_OPTIONS offers) is the sole real dimension. Kept as
- * a small local grouping function rather than importing one, matching the
- * bucket-the-already-loaded-rows pattern used by work sessions.
- */
 function groupLimitRows(rows: LimitUsageRow[]): { key: string; label: string; rows: LimitUsageRow[] }[] {
   return rows
     .slice()
@@ -40,8 +33,6 @@ function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: Rep
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<LimitUsageRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
@@ -146,9 +137,6 @@ function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: Rep
     return () => registerPdfExportHandler(null)
   }, [rows, kind, dateLabel, registerPdfExportHandler])
 
-  // Only "member" exists as a dimension (see LIMITS_GROUP_BY_OPTIONS), so
-  // groupBy itself never changes the bucketing - it is read here so the
-  // shared dropdown is a live control rather than a decoration.
   const grouped = useMemo(() => groupLimitRows(rows), [rows, groupBy])
 
   if (loading) return <ReportTableSkeleton rows={6} columns={3} />
@@ -242,8 +230,6 @@ function LimitsTable({ kind, filters }: { kind: "weekly" | "daily"; filters: Rep
   )
 }
 
-/** Limits are per member and carry no project dimension, so the panel offers
- *  members only. */
 function LimitsReport({
   kind,
   title,

@@ -20,17 +20,9 @@ interface Tile {
   description: string
   headline: string
   detail: string
-  /** Set when this tile's source failed - "0 with a budget" would otherwise
-   *  read as a measurement rather than a failed read. */
   failed?: boolean
 }
 
-/**
- * Budgets and limits at a glance, with a way through to each detailed report.
- *
- * Every number here comes from the same endpoints the four linked reports use,
- * so the summary and the detail can never disagree.
- */
 function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }) {
   const { isDark } = useTheme()
   const { rangeStart, rangeEnd } = useStandardReportLayout()
@@ -41,8 +33,6 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
 
-    // Each tile falls back on its own: one failing source should not blank the
-    // other three. The tile says so rather than reporting a zero it never read.
     const failed = { project: false, client: false, weekly: false, daily: false }
     void Promise.all([
       fetchProjectBudgetsReport().catch(() => {
@@ -64,11 +54,6 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
     ]).then(([projectSections, clientRows, weekly, daily]) => {
       if (cancelled) return
 
-      // budgetType !== null, not budgetSeconds > 0 - a cost-based project's
-      // budgetSeconds is always 0 (its cap is dollars, not time), so that
-      // filter silently dropped every cost-based project from both this
-      // count and the over-budget one. budgetPercentUsed reads whichever
-      // unit the row's own budgetType actually is.
       const projectRows = projectSections.flatMap((s) => s.rows).filter((r) => r.budgetType !== null)
       const projectsOver = projectRows.filter((r) => budgetPercentUsed(r) >= 100).length
       const clientsOver = clientRows.filter((r) => r.pctUsed >= 100).length

@@ -2,12 +2,6 @@
 
 import { memberAvatarColor } from "@/features/members/utils/build-tree"
 
-/**
- * Colour is derived from the initials so every member gets a stable, distinct
- * one. This used to look up a six-entry map keyed by specific initials (SJ,
- * MC, ED, ...) left over from mock data, so real members almost always fell
- * through to the same grey.
- */
 export function ReportMemberAvatar({ initials }: { initials: string }) {
   return (
     <div

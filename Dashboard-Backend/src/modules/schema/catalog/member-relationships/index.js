@@ -1,7 +1,3 @@
-/**
- * Member Relationships Tree Schema
- * Tracks who added whom, forming a hierarchical tree structure
- */
 
 export const memberRelationshipSchemas = [
   {

@@ -6,7 +6,6 @@ import { useActivityTracking } from "@/features/activity/components/activity-tra
 import { useAgentStatus } from "@/features/activity/components/agent-status-context"
 import { createWebActivityTracker } from "@/features/activity/utils/web-activity-tracker"
 
-/** In-browser capture — only when server capture mode is `web`. */
 export function WebActivityReporter() {
   const { isAgentMode } = useAgentStatus()
   const { phase, sessionId } = useActivityTracking()

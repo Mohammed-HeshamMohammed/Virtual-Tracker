@@ -1,4 +1,3 @@
-// In-memory cache for GET /api/members/:id/profile (60s SWR, list-cache-registry).
 import {
   getFetchPromise,
   getLastFetchTime,
@@ -200,7 +199,6 @@ export async function fetchMemberProfileSectionCached(
   return result
 }
 
-/** Fire-and-forget refresh when showing stale cached data. */
 export function revalidateMemberProfileCache(
   memberId: string,
   fetcher: () => Promise<CachedMemberProfile>,

@@ -7,9 +7,6 @@ type StopNoteModalProps = {
   onStop: () => void;
 };
 
-// The Stop button when the project asks for a note: opens this instead of
-// stopping straight away. position:fixed, so its actual place in the DOM
-// tree doesn't affect where it renders on screen.
 export function StopNoteModal({ open, draft, busy, onDraftChange, onKeepTracking, onStop }: StopNoteModalProps) {
   if (!open) return null;
   return (

@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { useMemo } from "react"
@@ -42,12 +41,6 @@ export function ActivitySummary({ activity, isDark = false, className }: Activit
             </div>
           ) : (
             projectActivity.map((p, i) => {
-              // Same rule the Overview table's Progress column uses: a
-              // budget means real spend is the progress signal, not the
-              // task checklist (a task can have real logged time long
-              // before it's marked "done") - without this the bar here
-              // could read empty/0% while the table right above it showed
-              // real budget-based progress, looking like a contradiction.
               const budgetPct = p.budget && p.budget.total > 0 ? Math.min(Math.round((p.budget.spent / p.budget.total) * 100), 100) : null
               const budgetBarColor = budgetPct !== null && budgetPct >= 100 ? "bg-red-500" : budgetPct !== null && budgetPct >= 85 ? "bg-amber-500" : "bg-emerald-500"
               return (
@@ -91,9 +84,6 @@ export function ActivitySummary({ activity, isDark = false, className }: Activit
             })
           )}
         </div>
-        {/* Legend - only meaningful for rows still using the task-status
-            bar; hidden entirely once every visible project is budgeted and
-            showing the budget-usage bar instead. */}
         {projectActivity.some((p) => !p.budget || p.budget.total <= 0) && (
           <div className="flex items-center gap-4 pt-3 mt-auto">
             {[

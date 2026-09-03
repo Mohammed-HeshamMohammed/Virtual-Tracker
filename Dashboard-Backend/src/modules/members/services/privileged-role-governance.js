@@ -11,27 +11,14 @@ export const UNAUTHORIZED_PRIVILEGED_ROLE_REASON =
 
 const PRIVILEGED_ROLE_KEYS = new Set(["admin", "superadmin"]);
 
-/**
- * @param {string} roleName
- */
 export function requiresOwnerGrantedRole(roleName) {
   return PRIVILEGED_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
 
-/**
- * @param {Record<string, unknown> | null | undefined} memberData
- */
 export function hasOwnerRoleGrant(memberData) {
   return Boolean(memberData && (memberData.privileged_role_owner_granted === true || memberData.privilegedRoleOwnerGranted === true));
 }
 
-/**
- * Track whether Owner signed off on Admin / Super Admin.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @param {string} [actorRoleName]
- */
 export async function syncPrivilegedRoleOwnerGrant(db, memberId, roleName, actorRoleName = "") {
   if (!memberId) return;
   const roleKey = normalizeRoleKey(roleName);
@@ -53,14 +40,6 @@ export async function syncPrivilegedRoleOwnerGrant(db, memberId, roleName, actor
   }).catch(() => null);
 }
 
-/**
- * Admin / Super Admin without Owner grant → demote to Viewer and ban.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @param {Record<string, unknown> | null | undefined} memberData
- * @param {{ requestIp?: string }} [opts]
- */
 export async function enforceUnauthorizedPrivilegedRole(db, memberId, roleName, memberData, opts = {}) {
   if (!memberId || !requiresOwnerGrantedRole(roleName)) {
     return { ok: true };
@@ -97,11 +76,6 @@ export async function enforceUnauthorizedPrivilegedRole(db, memberId, roleName, 
   };
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {{ requestIp?: string }} [opts]
- */
 export async function enforcePrivilegedRoleGovernanceForMember(db, memberId, opts = {}) {
   if (!memberId) return { ok: true };
   const roleName = await resolveMemberRoleName(db, memberId);

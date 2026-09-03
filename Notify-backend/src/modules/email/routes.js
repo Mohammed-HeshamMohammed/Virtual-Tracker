@@ -1,4 +1,3 @@
-// POST /api/notify/email — template id + payload only, no raw HTML from callers.
 import { sendJson } from "../../http/response.js";
 import { requireInternalAuth } from "../../http/internal-auth.js";
 import { getEnv } from "../../config/env.js";
@@ -33,13 +32,6 @@ const ALLOWED_TEMPLATES = new Set([
   "onboarding-reminder",
 ]);
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {URL} url
- * @param {string|undefined} origin
- * @returns {Promise<boolean>}
- */
 export async function routeEmail(req, res, url, origin) {
   if (!url.pathname.startsWith("/api/notify/email")) return false;
 
@@ -56,7 +48,6 @@ export async function routeEmail(req, res, url, origin) {
 
     const recipientMemberId = typeof body.recipientMemberId === "string" ? body.recipientMemberId : null;
 
-    // contact-inquiry → SUPPORT_EMAIL, not body.email
     const isContactInquiry = template === "contact-inquiry";
     const recipient = isContactInquiry
       ? getEnv().email.supportEmail
@@ -71,7 +62,6 @@ export async function routeEmail(req, res, url, origin) {
         }
       : null;
 
-    // contact-inquiry: skip dedupe (shared recipient)
     const dupe = isContactInquiry ? false : await isDuplicate({ recipient, template, channel: "email" });
     if (dupe) {
       await logDelivery({
@@ -218,10 +208,6 @@ async function dispatchEmailTemplate(template, body) {
   }
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @returns {Promise<Record<string, unknown>>}
- */
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let raw = "";

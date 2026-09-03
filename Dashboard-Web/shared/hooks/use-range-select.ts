@@ -2,14 +2,6 @@
 
 import { useRef, type Dispatch, type SetStateAction } from "react"
 
-/**
- * Shift-click range select for checkbox tables: a plain click toggles one
- * row, a shift-click fills every row between the last-clicked row and this
- * one. `orderedIds` is passed per-call (not fixed at hook creation) so one
- * hook instance can serve a page with multiple grouped tables - a
- * shift-click against a row from a different group/table just won't find
- * the last-clicked id in `orderedIds` and falls back to a plain toggle.
- */
 export function useRangeSelect() {
   const lastClickedId = useRef<string | null>(null)
 

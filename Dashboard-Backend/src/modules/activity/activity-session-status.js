@@ -8,10 +8,6 @@ function timestampMs(value) {
   return Number.isFinite(ms) ? ms : 0;
 }
 
-/**
- * @param {{ status?: string, updated_at?: unknown, ended_at?: unknown } | null | undefined} session
- * @returns {"online"|"active"|"tracking"|"idle"|"offline"}
- */
 export function effectiveTrackingStatusFromSession(session) {
   if (!session || session.ended_at != null) return "offline";
   const updatedMs = timestampMs(session.updated_at ?? session.started_at);
@@ -22,10 +18,6 @@ export function effectiveTrackingStatusFromSession(session) {
   return "offline";
 }
 
-/**
- * Latest open session per member.
- * @returns {Promise<Map<string, Record<string, unknown>>>}
- */
 export async function buildOpenSessionIndex() {
   const rows = await fetchAllOpenPgSessions();
   const byMember = new Map();
@@ -40,15 +32,10 @@ export async function buildOpenSessionIndex() {
   return byMember;
 }
 
-/** @param {string} memberId */
 export async function findOpenSessionForMember(memberId) {
   return findOpenPgSession(memberId);
 }
 
-/**
- * Add tracking_status + last_presence_at from open activity session.
- * @param {Array<Record<string, unknown> & { id: string }>} members
- */
 export async function enrichMembersWithSessionStatus(members) {
   if (!members.length) return members;
   const index = await buildOpenSessionIndex();

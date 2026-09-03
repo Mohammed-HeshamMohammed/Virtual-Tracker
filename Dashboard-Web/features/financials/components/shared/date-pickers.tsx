@@ -1,6 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/only-export-components */
-/* eslint-disable react-doctor/no-multi-comp */
 "use client"
 
 import { useState as useComponentState } from "react"
@@ -9,13 +6,12 @@ import { ChevronLeft, ChevronRight, Calendar } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { MONTHS_FULL, DAY_NAMES, DAY_NAMES_SU } from "@/features/financials/components/shared/constants"
 
-// ─── Utilities ──────────────────────────────────────────────────────────────
 
 function getDIM(y: number, m: number) { return new Date(y, m + 1, 0).getDate() }
 function getFDOW(y: number, m: number, firstDayOfWeek: 0 | 1) {
   const d = new Date(y, m, 1).getDay()
-  if (firstDayOfWeek === 1) return d === 0 ? 6 : d - 1 // Mo-first
-  return d // Su-first
+  if (firstDayOfWeek === 1) return d === 0 ? 6 : d - 1
+  return d
 }
 function sameDay(a: Date | null, b: Date | null) {
   return !!a && !!b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
@@ -29,7 +25,6 @@ export function fmtShort(d: Date) {
   return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
 }
 
-// ─── Shared Grid ──────────────────────────────────────────────────────────────
 
 interface DateGridProps {
   year: number
@@ -77,7 +72,6 @@ function DateGrid({
 
   return (
     <div className="min-w-[230px]">
-      {/* Header */}
       <div
         className={cn(
           "flex items-center justify-between px-3 py-2",
@@ -97,7 +91,6 @@ function DateGrid({
         </button>
       </div>
 
-      {/* Days row */}
       <div
         className={cn(
           "grid grid-cols-7",
@@ -120,7 +113,6 @@ function DateGrid({
         ))}
       </div>
 
-      {/* Cells */}
       <div className={cn("grid grid-cols-7", !isWhite && !isSolidBlue ? "bg-white" : "")}>
         {cells.map((cell, i) => {
           const isS = sameDay(cell.date, start ?? null)
@@ -151,7 +143,6 @@ function DateGrid({
         })}
       </div>
 
-      {/* Footer */}
       {showFooter && (
         <div className={cn("text-center text-xs py-2", isSolidBlue ? "text-blue-100 border-t border-white/10 mt-1" : "text-slate-500 border-t border-slate-100 bg-white")}>
           {start ? fmtShort(start) : "—"}
@@ -161,7 +152,6 @@ function DateGrid({
   )
 }
 
-// ─── Single Date Picker ────────────────────────────────────────────────────────
 
 export function SingleDatePicker({
   value,
@@ -200,7 +190,6 @@ export function SingleDatePicker({
   )
 }
 
-// ─── Date Range Picker ─────────────────────────────────────────────────────────
 
 export function DateRangePicker({
   onApply,
@@ -216,7 +205,7 @@ export function DateRangePicker({
   minWidth?: number
 }) {
   const [lY, setLY] = useComponentState(2026)
-  const [lM, setLM] = useComponentState(1) // Feb
+  const [lM, setLM] = useComponentState(1)
   const [start, setStart] = useComponentState<Date | null>(new Date(2026, 1, 19))
   const [end, setEnd] = useComponentState<Date | null>(new Date(2026, 2, 21))
   const [hover, setHover] = useComponentState<Date | null>(null)
@@ -271,7 +260,6 @@ export function DateRangePicker({
         background: isSolidBlue ? "linear-gradient(135deg, #1e88e5 0%, #26a69a 100%)" : undefined
       }}
     >
-      {/* Presets */}
       <div className={cn("flex flex-col gap-1 p-4 min-w-[140px]", isSolidBlue ? "border-r border-white/10" : "border-r border-slate-100")}>
         {PRESETS.map((p) => (
           <button
@@ -301,7 +289,6 @@ export function DateRangePicker({
         </div>
       </div>
 
-      {/* Dual calendars */}
       <div className="flex gap-4 p-4">
         <DateGrid
           year={lY} month={lM}

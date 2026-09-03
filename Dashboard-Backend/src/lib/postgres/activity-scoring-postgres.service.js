@@ -3,8 +3,6 @@ import { query } from "./client.js";
 const COLUMNS = `saturation_events, window_ms, screenshot_min_delay_sec, screenshot_max_delay_sec,
                  idle_threshold_sec, idle_warn_sec, idle_alert_sec, idle_stop_sec, updated_by, updated_at`;
 
-// ACT-3: mirrors the Rust constants these override, so shipping this table is
-// a no-op until an admin actually tunes something.
 const DEFAULTS = {
   saturation_events: 120,
   window_ms: 60000,
@@ -21,14 +19,6 @@ export async function getActivityScoringSettingsPg() {
   return rows[0] ?? DEFAULTS;
 }
 
-/**
- * @param {{
- *   saturationEvents?: number, windowMs?: number,
- *   screenshotMinDelaySec?: number, screenshotMaxDelaySec?: number,
- *   idleThresholdSec?: number, idleWarnSec?: number, idleAlertSec?: number, idleStopSec?: number,
- *   updatedBy?: string,
- * }} input
- */
 export async function setActivityScoringSettingsPg(input) {
   const rows = await query(
     `UPDATE activity_scoring_settings SET

@@ -14,7 +14,6 @@ export type TimerAllowance = {
   workedWeekSeconds: number
 }
 
-/** Applies backend allowance to the active-second ceiling for the current task timer. */
 export function resolveTimerActiveLimit(
   allowance: TimerAllowance | null | undefined,
   fallbackLimitSeconds: number | null,

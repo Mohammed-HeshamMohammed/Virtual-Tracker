@@ -1,10 +1,3 @@
-/**
- * The productivity vocabulary, shared by the Apps and URLs pages and the
- * classify dialog. These four values are exactly what the backend's
- * `activity_categories.category` column accepts — the UI used to speak a
- * different dialect ("unproductive", and a hardcoded "neutral" for every row),
- * so anything an admin classified never showed up on either page.
- */
 export const ACTIVITY_CATEGORIES = ["productive", "neutral", "distracting", "unclassified"] as const
 
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number]
@@ -18,7 +11,6 @@ const LEGACY_ALIASES: Record<string, ActivityCategory> = {
   "": "unclassified",
 }
 
-/** Anything unrecognized reads as unclassified — never as a guess. */
 export function normalizeActivityCategory(value: unknown): ActivityCategory {
   const key = typeof value === "string" ? value.trim().toLowerCase() : ""
   return LEGACY_ALIASES[key] ?? "unclassified"
@@ -31,7 +23,6 @@ export const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   unclassified: "Unclassified",
 }
 
-/** Solid fill — avatars, progress bars. */
 export function activityCategoryColor(category: unknown): string {
   switch (normalizeActivityCategory(category)) {
     case "productive":
@@ -45,7 +36,6 @@ export function activityCategoryColor(category: unknown): string {
   }
 }
 
-/** Badge styling — the pill in the Category column. */
 export function activityCategoryBadgeClass(category: unknown): string {
   switch (normalizeActivityCategory(category)) {
     case "productive":
@@ -63,17 +53,10 @@ export function activityCategoryLabel(category: unknown): string {
   return ACTIVITY_CATEGORY_LABELS[normalizeActivityCategory(category)]
 }
 
-/**
- * Shortcuts for the classify dialog. The stored model is only
- * (pattern → category), so a preset is just a category plus a suggested
- * label — "Games" is a kind of thing, "not productive" is the judgement the
- * reports actually use.
- */
 export const CLASSIFY_PRESETS: ReadonlyArray<{
   id: string
   label: string
   category: ActivityCategory
-  /** Prefilled into the display-name field when the preset is picked. */
   suggestedLabel?: string
 }> = [
   { id: "work", label: "Work tool", category: "productive", suggestedLabel: "Work" },

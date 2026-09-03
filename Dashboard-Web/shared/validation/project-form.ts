@@ -13,10 +13,6 @@ export type ProjectBudgetFieldErrors = {
   memberLimitNotifyAt?: string | null
 }
 
-// A budget is required for every project, of every type - see item 6 of the
-// budget fixes plan. This is deliberately unconditional: it used to be gated
-// on the stop-timer switch (then called `hasBudget`), which meant a project
-// created without ever opening the BUDGET tab silently saved cost = 0.
 export function validateBudgetTotalValue(value: string): string | null {
   if (!value.trim()) return "Enter a budget greater than zero."
   return parsePositiveNumber(value) === null ? "Enter a budget greater than zero." : null

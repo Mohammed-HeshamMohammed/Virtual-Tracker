@@ -1,8 +1,3 @@
-/**
- * Replaces the bare `<input type="checkbox">` with accent-color that Settings
- * used - the only unstyled control left in the app. Keeps real checkbox
- * semantics via role="switch" so it stays keyboard- and screen-reader-usable.
- */
 export function Switch({
   checked,
   disabled,

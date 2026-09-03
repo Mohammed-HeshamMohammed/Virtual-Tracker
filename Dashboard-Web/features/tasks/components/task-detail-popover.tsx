@@ -1,5 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
-/* eslint-disable react-doctor/only-export-components */
 "use client"
 
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from "react"

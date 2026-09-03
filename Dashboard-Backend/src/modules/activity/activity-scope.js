@@ -10,8 +10,6 @@ const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 
 function normalizeRole(roleName) {
-  // Delegates to the canonical normalizer - a local copy here would
-  // drop the legacy-misspelling fold and silently mis-rank "Super Manger".
   return normalizeRoleKey(roleName);
 }
 
@@ -25,12 +23,8 @@ export async function resolveMemberRoleName(db, memberId) {
   return pickHighestPrivilegeRoleName([roleName || "Viewer"]);
 }
 
-/** Member IDs on projects the viewer belongs to (via project_members). */
 export async function getProjectScopedMemberIds(db, viewerMemberId) {
   const ids = new Set([viewerMemberId]);
-  // listProjectIdsForMemberPg only reads project_members, which a client never
-  // has a row in - their activity feed came back holding nobody but
-  // themselves. listViewerProjectIdsPg covers the client link too.
   const projectIds = new Set(await listViewerProjectIdsPg(viewerMemberId));
 
   for (const mid of await listMemberIdsForProjectsPg([...projectIds])) {
@@ -64,11 +58,6 @@ function memberMetaFromRow(row) {
 export async function buildMemberMetaMap(db, allowedIds) {
   const meta = new Map();
   if (allowedIds === null) {
-    // null means "unrestricted - every member", which is what Owner/Super
-    // Admin/Admin get. This used to call getMembersByIdsPg([]), but that
-    // short-circuits an empty id list to [], so "everyone" silently resolved
-    // to nobody and blanked the General Dashboard's presence panel for
-    // exactly the roles meant to see the whole org.
     const memberRows = await listMembersPg({ limit: 5000 });
     for (const row of memberRows) {
       if (row.id) meta.set(String(row.id), memberMetaFromRow(row));
@@ -87,7 +76,6 @@ export async function buildMemberMetaMap(db, allowedIds) {
   return meta;
 }
 
-/** Allowed member IDs for activity feed + optional memberId filter check. */
 export async function resolveActivityFeedScope(db, viewerMemberId, options = {}) {
   const memberIdFilter = String(options.memberId || "").trim();
   const projectScopeOnly = options.projectScopeOnly === true || options.projectScopeOnly === "true";
@@ -95,9 +83,6 @@ export async function resolveActivityFeedScope(db, viewerMemberId, options = {})
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
 
-  // Activity feeds (screenshots/apps/urls) are private behavioral data, not the org
-  // roster — getVisibleMemberIds gives employees a full-org read for directory/People-tree
-  // purposes, which is too broad here. Narrow to self only for this module.
   let allowedMemberIds = isEmployeeRole(roleName)
     ? [viewerMemberId]
     : await getVisibleMemberIds(db, viewerMemberId, roleName);

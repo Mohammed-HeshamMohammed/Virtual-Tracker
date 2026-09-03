@@ -12,11 +12,9 @@ interface MigrateFormProps {
   users: MigratableAuthUser[]
   selectedUids: Set<string>
   onToggle: (uid: string) => void
-  /** Bulk set for the rows currently shown (respects the active filter). */
   onToggleMany: (uids: string[], selected: boolean) => void
   filterText: string
   onFilterChange: (val: string) => void
-  /** Suggested role for this person, clamped to what the viewer may assign. */
   resolveRole: (user: MigratableAuthUser) => MemberRole
   isLoading: boolean
   hasMore: boolean
@@ -137,8 +135,6 @@ export function MigrateForm({
                 <Checkbox
                   checked={checked}
                   isDark={isDark}
-                  // Row div also toggles on click; stop the bubble so a click on
-                  // the box itself doesn't toggle here and then again via the row.
                   onChange={(e) => {
                     e.stopPropagation()
                     onToggle(u.uid)

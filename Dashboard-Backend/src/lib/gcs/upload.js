@@ -1,7 +1,6 @@
 import { getStorageBucketAsync, formatStorageSetupError } from "../../config/firebase.js";
 import { getEnv } from "../../config/env.js";
 
-/** GCS_BUCKET_NAME, else Firebase storage bucket, else {projectId}.appspot.com */
 export function resolveGcsBucketName() {
   const explicit = getEnv().storage.gcsBucketName;
   if (explicit) return explicit;
@@ -11,14 +10,6 @@ export function resolveGcsBucketName() {
   return projectId ? `${projectId}.appspot.com` : "";
 }
 
-/**
- * Upload a buffer to GCS and return the object path.
- * @param {Buffer} buffer
- * @param {string} objectPath - e.g. 'profile-avatars/uid123/1720000000_avatar.webp'
- * @param {string} contentType - e.g. 'image/webp'
- * @param {boolean} [isPublic=false] - true for avatars, false for screenshots/attachments
- * @returns {Promise<string>} objectPath
- */
 export async function uploadToGCS(buffer, objectPath, contentType, isPublic = false) {
   const bucket = await getStorageBucketAsync();
   if (!bucket) {
@@ -35,12 +26,6 @@ export async function uploadToGCS(buffer, objectPath, contentType, isPublic = fa
   return objectPath;
 }
 
-/**
- * Generate a signed URL for private objects.
- * @param {string} objectPath
- * @param {number} [expiresInMinutes=15]
- * @returns {Promise<string>}
- */
 export async function getSignedUrl(objectPath, expiresInMinutes = 15) {
   const bucket = await getStorageBucketAsync();
   if (!bucket) {
@@ -53,14 +38,6 @@ export async function getSignedUrl(objectPath, expiresInMinutes = 15) {
   return url;
 }
 
-/**
- * CF-5: erasure has to remove archived data too, not just the hot-storage
- * row - "Erasure removes the data from hot storage and archive." Missing
- * ("not found") is treated as success since the end state (no object) is
- * what erasure actually cares about, not whether this call happened to be
- * the one that removed it.
- * @param {string} objectPath
- */
 export async function deleteFromGCS(objectPath) {
   const bucket = await getStorageBucketAsync();
   if (!bucket) {
@@ -73,7 +50,6 @@ export async function deleteFromGCS(objectPath) {
   }
 }
 
-/** Public avatar URL for a GCS object path. */
 export function getPublicUrl(objectPath) {
   const bucketName = resolveGcsBucketName();
   if (!bucketName) return objectPath;

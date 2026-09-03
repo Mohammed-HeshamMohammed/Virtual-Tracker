@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/js-combine-iterations */
 import { apiFetch } from "@/infrastructure/api/http"
 import { parseAuthSessionErrorCode, type AuthSessionErrorCode } from "@/features/auth/services/auth-session-errors"
 import { handleSuspiciousAuthFailure, isSuspiciousAuthError } from "@/features/auth/services/browser-state-hygiene"
@@ -25,25 +24,18 @@ export type AuthProfileSnapshot = {
   identities: AuthProfileIdentity[]
   authCreationTime: string | null
   authLastSignInTime: string | null
-  /** Legacy Firebase Storage path when present (uploaded before in-doc images). */
   avatarStoragePath?: string | null
-  /** Base64-encoded profile image stored in Firestore (no Firebase Storage). */
   profileImageData?: string
   profileImageMimeType?: string
   profileImageUpdatedAt?: string | null
-  /** App-managed fields merged from Firestore (see `PATCH` via profile settings API). */
   firstName?: string | null
   lastName?: string | null
   payRateUsdPerHour?: number | null
   twoFactorEnabled?: boolean
-  /** Server-set: user must set a new password (pre-provisioned account). */
   mustChangePassword?: boolean
-  /** Server-set: first login after admin pre-provision. */
   firstLogin?: boolean
-  /** App-managed contact phone (User_profiles.phone). */
   phone?: string | null
   phoneVerified?: boolean
-  /** IANA zone id, e.g. "America/Los_Angeles" — mirrored onto the member doc for reports. */
   timezone?: string | null
 }
 
@@ -56,7 +48,6 @@ function parseProfile(raw: unknown): AuthProfileSnapshot | undefined {
   const o = raw as Record<string, unknown>
   if (typeof o.uid !== "string") return undefined
   const identitiesRaw = Array.isArray(o.identities) ? o.identities : []
-// eslint-disable-next-line react-doctor/js-flatmap-filter
   const identities: AuthProfileIdentity[] = identitiesRaw
     .filter((row): row is Record<string, unknown> => row !== null && typeof row === "object")
     .map((row) => ({
@@ -142,7 +133,6 @@ export type VerifyIdTokenResult =
 
 const verifyInFlightByUid = new Map<string, Promise<VerifyIdTokenResult>>()
 
-/** Verify token (Auth) + bootstrap session (Dashboard); coalesced per uid. */
 export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
   const uid = user.uid?.trim()
   if (uid) {

@@ -3,9 +3,6 @@ import type { ProjectInfo, TeamMemberStatus } from "../types";
 type LogTimeModalProps = {
   open: boolean;
   projects: ProjectInfo[];
-  /** Empty unless the viewer leads a team - see TeamStatusCard. Their own
-   *  entry is always available; teammates are only offered when the
-   *  workspace actually sent a roster, so this never guesses at who exists. */
   teammates: TeamMemberStatus[];
   memberId: string;
   projectId: string;
@@ -23,12 +20,6 @@ type LogTimeModalProps = {
   onSave: () => void;
 };
 
-// Manual time entry - time that was worked but never tracked live. Only
-// rendered when the server says so (workspace.capabilities.canLogManualTime,
-// which is Manager-and-above): hand-typed hours are an attestation, not
-// something every member should be able to mint for themselves.
-//
-// Shares the .modal-* CSS with StopNoteModal / NewTaskModal.
 export function LogTimeModal({
   open,
   projects,
@@ -68,7 +59,6 @@ export function LogTimeModal({
               value={memberId}
               onChange={(e) => onMemberIdChange(e.target.value)}
             >
-              {/* "" is resolved to the caller's own member id server-side. */}
               <option value="">Me</option>
               {teammates.map((m) => (
                 <option key={m.memberId} value={m.memberId}>{m.name}</option>

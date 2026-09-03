@@ -1,4 +1,3 @@
-// Command Center aggregates, scoped by viewer role.
 
 import {
   buildMemberMetaMap,
@@ -32,11 +31,8 @@ import {
 
 const PROJECT_COLORS = 10;
 
-// Intern and Employee specifically - not Team Lead, who still manages a
-// team and keeps the whole-project view every other role gets.
 const PERSONAL_VIEW_ROLES = new Set(["employee", "intern"]);
 
-/** YYYY-MM-DD shifted by whole days. */
 function shiftDay(day, delta) {
   const d = new Date(`${day}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + delta);
@@ -57,22 +53,11 @@ function taskRowFromDoc(doc, assigneeNames) {
     assigneeId,
     assigneeName: assigneeId ? assigneeNames.get(assigneeId) || "Team member" : null,
     updatedMs: timestampMs(row.updated_at ?? row.updatedAt ?? row.created_at ?? row.createdAt),
-    // Real progress the task tracker maintains, rather than a number inferred
-    // from the status column.
     progressPercent: num(row, "aggregated_progress_percent", "aggregatedProgressPercent"),
     activeSeconds: num(row, "total_active_seconds", "totalActiveSeconds"),
   };
 }
 
-/**
- * Weekly productivity trend from time actually worked.
- *
- * This used to count task rows whose updated_at happened to fall on a day and
- * call that "active"/"idle" - so a day where someone worked eight hours on one
- * task scored 1, and touching five tickets without tracking anything scored 5.
- * `dailyTotals` is real per-day active/idle seconds; the task list is still
- * carried per day for the drill-down the UI shows on hover.
- */
 function buildWeeklyTrend(tasks, projectId, dailyTotals) {
   const days = getRollingWeekDays();
   const scoped = projectId ? tasks.filter((task) => task.projectId === projectId) : tasks;
@@ -83,7 +68,6 @@ function buildWeeklyTrend(tasks, projectId, dailyTotals) {
     return {
       key: day.key,
       label: day.label,
-      // Hours worked, to one decimal - the series the chart plots.
       active: Math.round((totals.activeSeconds / 3600) * 10) / 10,
       idle: Math.round((totals.idleSeconds / 3600) * 10) / 10,
       activeSeconds: totals.activeSeconds,
@@ -99,19 +83,6 @@ function buildWeeklyTrend(tasks, projectId, dailyTotals) {
   });
 }
 
-/**
- * Utilisation: hours worked against the member's own weekly capacity.
- *
- * This used to be `min(100, activeTaskCount / 3 * 100)` - three in-progress
- * tickets read as 100% utilised regardless of whether anyone tracked a minute,
- * and the 3 was arbitrary. Capacity comes from the member's configured weekly
- * limit, falling back to their working-days count at 8h/day.
- *
- * `memberSeconds` is each member's own tracked seconds (see
- * getMemberActivitySecondsPg) and covers everyone staffed on the projects in
- * scope, including those at zero hours - so the breakdown is a real per-member
- * roll-up rather than the project total divided by head count.
- */
 function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
   let optimal = 0;
   let over = 0;
@@ -126,7 +97,6 @@ function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
     count += 1;
     const pct = Math.round((seconds / capacity) * 100);
     pctSum += Math.min(150, pct);
-    // Under 60% of capacity is slack, over 100% is overloaded.
     let load = "under";
     if (pct > 100) {
       over += 1;
@@ -152,36 +122,18 @@ function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
 
   members.sort((a, b) => b.percent - a.percent);
   const utilizationPercent = count ? Math.round(pctSum / count) : 0;
-  // The gauge arc is 251.2 long; clamp the visual at 100% even when someone is
-  // over capacity, so the ring cannot wrap past full.
   const utilizationOffset = Math.max(0, 251.2 - (Math.min(100, utilizationPercent) / 100) * 251.2);
   return {
     utilizationPercent,
     utilizationOffset,
     utilizationMembers: { optimal, over, under },
-    // Named per-member rows behind the counts, so the panel can say who is
-    // over or under rather than only how many people are.
     utilizationBreakdown: members.slice(0, 8),
   };
 }
 
-/**
- * Milestone bars for the health panel.
- *
- * Progress is `tasks.aggregated_progress_percent`, which the task tracker
- * already maintains, rather than a number inferred from the status column
- * (in_progress used to mean "55%" for every task regardless of how far along
- * it was). Tasks in flight are surfaced first - a milestone panel showing four
- * arbitrary rows is not telling anyone anything.
- *
- * A project with no tasks reports 0%, not the invented 85/45/15 this used to
- * return based on its health label.
- */
 function buildHealthMilestones(tasks, projectId, projectRow) {
   const scoped = tasks.filter((task) => task.projectId === projectId);
   if (!scoped.length) {
-    // No tasks to measure progress with - report what the project does have:
-    // how much of its budget is spent, and whether that reads as on track.
     return [projectProgressRow(projectRow)];
   }
 
@@ -202,14 +154,6 @@ function buildHealthMilestones(tasks, projectId, projectRow) {
   });
 }
 
-/**
- * One health bar for a whole project.
- *
- * Task completion is the preferred measure; a project with no tasks falls back
- * to budget burn, which is a real number the project does have. Both used to
- * render as an empty bar labelled "NO TASKS", so the panel showed nothing for
- * exactly the projects someone would open it to check on.
- */
 function projectProgressRow(projectRow) {
   const total = projectRow?.total ?? 0;
   if (total > 0) {
@@ -221,10 +165,6 @@ function projectProgressRow(projectRow) {
     };
   }
 
-  // budgetPercentOverride (the synthetic "All Projects" row - see
-  // averageBudgetPercent) already accounts for mixed money/hours budgets by
-  // averaging each project's own percent, so it's used as-is rather than
-  // re-deriving from this row's (deliberately zeroed) budgetTotal/budgetSpent.
   const hasOverride = projectRow?.budgetPercentOverride !== undefined;
   if (hasOverride && projectRow.budgetPercentOverride !== null) {
     const percent = projectRow.budgetPercentOverride;
@@ -241,8 +181,6 @@ function projectProgressRow(projectRow) {
     const percent = Math.round(((projectRow?.budgetSpent ?? 0) / budgetTotal) * 100);
     return {
       name: projectRow?.name || "Project",
-      // Over budget is a real state worth seeing, so the bar clamps at 100 but
-      // the status does not.
       percent: Math.min(100, percent),
       health: percent > 100 ? "stalled" : percent >= 90 ? "at_risk" : "on_track",
       metric: "budget",
@@ -257,26 +195,6 @@ function projectProgressRow(projectRow) {
   };
 }
 
-/**
- * "All Projects" budget %: that union view mixes Cost-based (money) and
- * Hours-based (hours) budgets, which share no unit - summing their raw
- * totals before dividing produces a number with no real meaning. In
- * practice it skewed toward 0%: a handful of large, barely-touched money
- * budgets (a client contract just set up, say $10,000 with $0 spent yet)
- * swamp real usage on much smaller hours budgets (say 40h, 30h spent) once
- * both are added into one pool - the org could be genuinely burning
- * through its hour caps and the card would still read near 0%.
- *
- * Averaging each budgeted project's own percent instead never combines
- * mismatched units - only the ratio *within* one project (spent/total of
- * the exact same unit) is ever computed, then those unit-agnostic
- * percentages are averaged together. Projects with no budget at all
- * (budgetTotal === 0) don't participate - they have no percent to
- * contribute, not a 0% one, so they can't drag the average down either.
- * Returns null (not 0) when nothing in scope has a budget, so buildStats
- * can tell "no budgeted projects" apart from "budgets exist and read 0%".
- * @param {{ budgetTotal: number, budgetSpent: number }[]} projectRows
- */
 function averageBudgetPercent(projectRows) {
   const withBudget = projectRows.filter((row) => row.budgetTotal > 0);
   if (!withBudget.length) return null;
@@ -284,25 +202,11 @@ function averageBudgetPercent(projectRows) {
   return Math.round(percents.reduce((sum, p) => sum + p, 0) / percents.length);
 }
 
-/**
- * The four stat cards.
- *
- * Every number here used to be derived from task rows:
- *   timeWorked      = (non-todo task count) x 2 hours, i.e. invented outright
- *   activeMembers   = task assignees, floored at 1 so it never read zero
- *   activityPercent = task completion %, badged PEAK/HIGH/LOW as if it were
- *                     the activity meter the rest of the app means by that word
- * They now come from tracked time, matching what the Time & Activity report
- * and the Projects Overview page report for the same period.
- */
 function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
   const activeSeconds = metrics?.activeSeconds ?? 0;
   const idleSeconds = metrics?.idleSeconds ?? 0;
   const trackedSeconds = activeSeconds + idleSeconds;
 
-  // budgetPercentOverride is set only on the synthetic "All Projects" row
-  // (see averageBudgetPercent above) - every single-project row is
-  // untouched and still divides its own budgetSpent/budgetTotal directly.
   const hasOverride = projectRow?.budgetPercentOverride !== undefined;
   const hasBudget = hasOverride ? projectRow.budgetPercentOverride !== null : projectRow?.budgetTotal > 0;
   const budgetPct = hasOverride
@@ -311,11 +215,8 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
       ? Math.min(100, Math.round((projectRow.budgetSpent / projectRow.budgetTotal) * 100))
       : 0;
 
-  // The app's activity meter everywhere else: active out of active+idle.
   const activityPercent = trackedSeconds > 0 ? Math.round((activeSeconds / trackedSeconds) * 100) : 0;
 
-  // Null when there is nothing to compare against - the card hides the badge
-  // rather than claiming a change from zero.
   const timeWorkedTrendPercent =
     prevActiveSeconds > 0
       ? Math.round(((activeSeconds - prevActiveSeconds) / prevActiveSeconds) * 100)
@@ -324,7 +225,6 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
   return {
     timeWorked: formatSecondsAsHours(activeSeconds),
     timeWorkedTrendPercent,
-    // Members who actually tracked time in the window - 0 is a real answer.
     activeMembers: String(metrics?.memberIds?.size ?? 0),
     totalMembers: String(Math.max(projectRow?.members ?? 0, 0)),
     budgetPercent: budgetPct,
@@ -345,7 +245,6 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
   };
 }
 
-/** Seconds -> "7h 30m" style label for the stat card. */
 function formatSecondsAsHours(seconds) {
   const safe = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(safe / 3600);
@@ -363,21 +262,11 @@ function relativeTime(iso) {
   return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- */
 export async function getCommandCenterPayload(db, viewerMemberId) {
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
   const isOwner = roleKey === "owner";
-  // Owner, Super Admin, Admin and Super Manager all see the whole org here -
-  // the same set getViewerProjectIds returns null for. Keying the org-wide
-  // view off `isOwner` alone was what left an Admin looking at "No projects
-  // yet" on a populated org.
   const seesAllProjects = isOrgProjectAdminRole(roleName);
-  // Intern/Employee: Time Worked and Avg Activity become this person's own
-  // hours instead of the whole project's; every other role is untouched.
   const isPersonalView = PERSONAL_VIEW_ROLES.has(roleKey);
   const allowedProjectIds = await getMemberProjectIds(db, viewerMemberId, roleName);
 
@@ -394,10 +283,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     if (pid && !budgetByProject.has(pid)) budgetByProject.set(pid, row);
   }
 
-  // Member IDS per project, not just counts: the all-projects card needs the
-  // distinct union. Summing per-project counts double-counted anyone staffed
-  // on more than one project, so the Command Center reported a bigger team
-  // than the Projects Overview page for the same org.
   const memberIdsByProject = new Map();
   for (const doc of projectMembersSnap.docs) {
     const row = doc.data() || {};
@@ -453,7 +338,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       name: str(row, "name") || "Untitled project",
       colorIndex: colorIndex % PROJECT_COLORS,
       health,
-      // No floor: a project with nobody on it reports 0, not 1.
       members,
       budgetTotal,
       budgetSpent: spent,
@@ -471,15 +355,10 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       ? allTasks
       : allTasks.filter((task) => allowedProjectIdList.includes(task.projectId));
 
-  // Real tracked-time metrics for the same rolling week the trend chart shows,
-  // scoped to the projects this viewer may see. One round trip each, reused by
-  // every project payload below.
   const weekDays = getRollingWeekDays();
   const weekFrom = weekDays[0].dateKey;
   const weekTo = weekDays[weekDays.length - 1].dateKey;
   const metricProjectIds = allowedProjectIdList === null ? null : allowedProjectIdList;
-  // Previous week, so "Total Time Worked" can show a real change instead of
-  // the hardcoded "+12%" the card used to display for every org, forever.
   const prevFrom = shiftDay(weekFrom, -7);
   const prevTo = shiftDay(weekTo, -7);
   const [
@@ -506,8 +385,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       : Promise.resolve(new Map()),
   ]);
 
-  // Names for everyone staffed on an in-scope project plus anyone who tracked
-  // time against one, so the utilisation breakdown can name them.
   const utilizationMemberIds = new Set();
   for (const row of projectRows) {
     for (const memberId of memberIdsByProject.get(row.id) ?? []) utilizationMemberIds.add(memberId);
@@ -516,7 +393,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const utilizationMeta =
     utilizationMemberIds.size > 0 ? await buildMemberMetaMap(db, [...utilizationMemberIds]) : new Map();
 
-  /** Previous-week active seconds for a project scope. */
   function prevActiveSecondsFor(projectId) {
     if (projectId) return prevMetrics.get(projectId)?.activeSeconds ?? 0;
     let total = 0;
@@ -524,13 +400,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return total;
   }
 
-  /**
-   * Seconds each member worked across a project scope, for utilisation.
-   *
-   * Everyone staffed on the projects in scope is seeded at zero first: a member
-   * who tracked nothing this week is underutilised, not absent from the gauge,
-   * which is what dropping them did to both the average and the counts.
-   */
   function memberSecondsFor(projectId) {
     const perMember = new Map();
     const scopeIds = projectId ? [projectId] : projectRows.map((row) => row.id);
@@ -545,7 +414,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return perMember;
   }
 
-  /** Aggregate metrics across every in-scope project. */
   function metricsFor(projectId) {
     if (projectId) return projectMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
     const all = { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
@@ -557,7 +425,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return all;
   }
 
-  /** Personal view only: this viewer's own active/idle seconds, not the project's. */
   function personalMetricsFor(projectId) {
     if (projectId) return personalMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0 };
     const all = { activeSeconds: 0, idleSeconds: 0 };
@@ -568,7 +435,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return all;
   }
 
-  /** Personal view only: this viewer's own previous-week active seconds. */
   function prevPersonalActiveSecondsFor(projectId) {
     if (projectId) return prevPersonalMetrics.get(projectId)?.activeSeconds ?? 0;
     let total = 0;
@@ -576,12 +442,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     return total;
   }
 
-  /**
-   * Personal view only: how many of this viewer's own tasks (in the scope)
-   * are in progress, out of how many are assigned to them at all - the
-   * Command Center's stand-in for "Active Members" when the view is one
-   * person, not a team.
-   */
   function personalTaskStatsFor(projectId) {
     const pool = projectId ? scopedTasks.filter((task) => task.projectId === projectId) : scopedTasks;
     const mine = pool.filter((task) => task.assigneeId === viewerMemberId);
@@ -591,8 +451,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     };
   }
 
-  // Personal view: this person's own captures only. Everyone else keeps the
-  // project-scoped feed of whoever they may already see.
   let activityMemberIds = [viewerMemberId];
   if (!isPersonalView) {
     const scope = await resolveActivityFeedScope(db, viewerMemberId, {
@@ -625,14 +483,10 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       time: relativeTime(captured || new Date().toISOString()),
       activityBadge: `${Math.round(d.activity_level ?? 0)}% Activity`,
       type: "screenshot",
-      // The card renders the capture itself; the image bytes are fetched
-      // separately through the auth-gated screenshot endpoint.
       screenshotId: String(d.id ?? ""),
     };
   });
 
-  // Personal view: only tasks this person completed, matching the
-  // screenshot half of the feed above.
   const feedTasks = isPersonalView
     ? scopedTasks.filter((task) => task.assigneeId === viewerMemberId)
     : scopedTasks;
@@ -653,21 +507,15 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const globalActivityFeed = [...globalFeed, ...doneTaskFeed].slice(0, 8);
 
   async function mapProjectPayload(projectRow, projectId) {
-    // The all-projects card reuses the scope-wide totals already loaded; a
-    // single project needs its own per-day series.
     const dailyTotals = projectId
       ? isPersonalView
         ? await getMemberDailyActivityTotalsPg({ projectIds: [projectId], memberId: viewerMemberId, fromDay: weekFrom, toDay: weekTo })
         : await getDailyActivityTotalsPg({ projectIds: [projectId], fromDay: weekFrom, toDay: weekTo })
       : dailyTotalsAll;
-    // feedTasks is already narrowed to this person in the personal view, so
-    // the chart's per-day drill-down lists their tasks, not the team's.
     const weeklyTrend = buildWeeklyTrend(feedTasks, projectId, dailyTotals);
     const activeSeries = weeklyTrend.map((day) => day.active);
     const { chartPath, chartFill } = buildTrendPaths(activeSeries);
     const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember, utilizationMeta);
-    // Intern/Employee: their own hours, not the project's - everyone else
-    // keeps the whole-project totals unchanged.
     const metrics = isPersonalView ? personalMetricsFor(projectId) : metricsFor(projectId);
     const prevActiveSeconds = isPersonalView
       ? prevPersonalActiveSecondsFor(projectId)
@@ -676,15 +524,9 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     const aggregateRow = projectId
       ? projectRows.find((row) => row.id === projectId)
       : {
-          // Distinct people across every in-scope project, not the sum of
-          // per-project counts.
           members: new Set(
             projectRows.flatMap((row) => [...(memberIdsByProject.get(row.id) ?? [])]),
           ).size,
-          // "All Projects" budget %: see averageBudgetPercent below - budgetTotal/
-          // budgetSpent are no longer read for this row (buildStats reads
-          // budgetPercentOverride instead), kept at 0 only so the object shape
-          // still matches a single project row for any other reader.
           budgetTotal: 0,
           budgetSpent: 0,
           budgetPercentOverride: averageBudgetPercent(projectRows),
@@ -695,9 +537,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
 
     const health = projectId
       ? buildHealthMilestones(scopedTasks, projectId, aggregateRow)
-      : // Project Health across the scope: task completion where there are
-        // tasks, budget burn where there are not, each labelled with which of
-        // the two it is and whether the project reads as on track.
+      :
         projectRows.slice(0, 4).map((row) => projectProgressRow(row));
 
     return {
@@ -705,8 +545,6 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       name: projectId ? aggregateRow?.name || "Project" : seesAllProjects ? "All Projects" : "All My Projects",
       colorIndex: projectId ? aggregateRow?.colorIndex ?? 0 : 0,
       stats: buildStats(aggregateRow, projectId, metrics, prevActiveSeconds),
-      // Only set for Intern/Employee - the "Active Members" card's personal
-      // stand-in. null for every other role, who keep that card as-is.
       personalTaskStats: isPersonalView ? personalTaskStatsFor(projectId) : null,
       chartPath,
       chartFill,

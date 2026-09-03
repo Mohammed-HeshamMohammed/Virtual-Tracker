@@ -3,7 +3,6 @@ import type { AppChunkId, PageChunkProps } from "@/app/routes/types"
 
 type ChunkModule = { default: ComponentType<PageChunkProps> }
 
-/** Domain route bundles — loaded on first visit to any page in that domain. */
 export const CHUNK_COMPONENTS: Record<AppChunkId, LazyExoticComponent<ComponentType<PageChunkProps>>> = {
   dashboard: lazy(() => import("@/app/routes/chunks/dashboard-chunk") as Promise<ChunkModule>),
   people: lazy(() => import("@/app/routes/chunks/people-chunk") as Promise<ChunkModule>),
@@ -16,7 +15,6 @@ export const CHUNK_COMPONENTS: Record<AppChunkId, LazyExoticComponent<ComponentT
   profile: lazy(() => import("@/app/routes/chunks/profile-chunk") as Promise<ChunkModule>),
 }
 
-/** Raw import fns for idle prefetch (no React wrapper). */
 export const CHUNK_IMPORTS: Record<AppChunkId, () => Promise<unknown>> = {
   dashboard: () => import("@/app/routes/chunks/dashboard-chunk"),
   people: () => import("@/app/routes/chunks/people-chunk"),

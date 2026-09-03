@@ -1,4 +1,3 @@
-/** User closed a popup or started a second popup before the first finished — not an actionable error. */
 export function isBenignAuthCancellation(err: unknown): boolean {
   const code =
     err && typeof err === "object" && err !== null && "code" in err
@@ -7,7 +6,6 @@ export function isBenignAuthCancellation(err: unknown): boolean {
   return code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request"
 }
 
-/** User-facing text for common Firebase Auth errors. */
 export function formatAuthError(err: unknown): string {
   if (isBenignAuthCancellation(err)) return ""
   const code =

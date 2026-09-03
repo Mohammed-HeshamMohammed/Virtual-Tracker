@@ -20,7 +20,6 @@ import { AuthMobileHelperStrip, AuthSidePanel } from "@/features/auth/components
 import { getAuthStyles } from "@/features/auth/components/style-utils"
 import { DASHBOARD_PATH } from "@/features/auth/services/navigation"
 
-/** Required password change for pre-provision accounts; re-sign-in after success. */
 export function CompleteRegistrationGate() {
   const { user } = useAuth()
   const { isDark } = useTheme()

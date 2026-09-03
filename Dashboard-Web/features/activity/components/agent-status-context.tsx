@@ -30,7 +30,6 @@ interface AgentStatusContextValue {
 
 const AgentStatusContext = createContext<AgentStatusContextValue | undefined>(undefined)
 
-/** Backend heartbeat TTL is 15s (see Dashboard-Backend agent-heartbeat.js) — poll faster than that. */
 const POLL_MS = 8_000
 
 export function useAgentStatus() {
@@ -44,7 +43,6 @@ export function AgentStatusProvider({
   deferPollingUntilRefresh = false,
 }: {
   children: ReactNode
-  /** When true, skip agent/status API calls until refreshAgentStatus() runs (timer start). */
   deferPollingUntilRefresh?: boolean
 }) {
   const { isLoggedIn } = useAuth()
@@ -56,8 +54,6 @@ export function AgentStatusProvider({
   const isAgentMode = captureMode === "agent"
   const isAgentLinked = Boolean(remote?.linkedAt)
   const agentIngestEnabled = remote?.agentIngestEnabled ?? false
-  // "Running" and "authenticated" are now both just: has the desktop agent's own
-  // traffic touched the backend recently? No more probing 127.0.0.1 from the browser.
   const isLocalAgentRunning = remote?.agentOnline === true
   const isLocalAgentAuthenticated = isLocalAgentRunning && isAgentLinked
 

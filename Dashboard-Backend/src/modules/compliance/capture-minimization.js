@@ -22,16 +22,11 @@ function normalizeExclusionRow(row) {
   };
 }
 
-/** CF-0.3: everything currently excluded, for both the admin UI and the ingest gate below. */
 export async function getCaptureExclusions() {
   const rows = await getCaptureExclusionsPg();
   return rows.map(normalizeExclusionRow);
 }
 
-/**
- * @param {{ matchType: 'app'|'domain', pattern: string, note?: string }} input
- * @param {{ memberId: string, roleName: string }} actor
- */
 export async function addCaptureExclusion(input, actor) {
   if (!["app", "domain"].includes(input.matchType)) {
     const err = new Error(`matchType must be 'app' or 'domain', got '${input.matchType}'`);
@@ -58,7 +53,6 @@ export async function addCaptureExclusion(input, actor) {
   return row ? normalizeExclusionRow(row) : null;
 }
 
-/** @param {string} id @param {{ memberId: string, roleName: string }} actor */
 export async function removeCaptureExclusion(id, actor) {
   if (!isManagementRole(actor?.roleName)) {
     const err = new Error("Only management may change capture exclusions.");
@@ -68,25 +62,12 @@ export async function removeCaptureExclusion(id, actor) {
   await removeCaptureExclusionPg(id);
 }
 
-/**
- * Pure - takes an already-fetched exclusion list (routes.js fetches it once
- * per ingest request, not once per event in a batch of up to 50). True if
- * `name` (an app name or URL domain, case-insensitive) is excluded for
- * `matchType`. This is "produces no capture at all", not a redacted one.
- * @param {ReturnType<typeof normalizeExclusionRow>[]} exclusions
- * @param {'app'|'domain'} matchType @param {string|null|undefined} name
- */
 export function matchesExclusion(exclusions, matchType, name) {
   const needle = normalizePattern(name);
   if (!needle) return false;
   return exclusions.some((e) => e.matchType === matchType && normalizePattern(e.pattern) === needle);
 }
 
-/**
- * Convenience single-check wrapper (fetches the list itself) for callers
- * outside a batch-ingest loop.
- * @param {'app'|'domain'} matchType @param {string|null|undefined} name
- */
 export async function isCaptureExcluded(matchType, name) {
   return matchesExclusion(await getCaptureExclusions(), matchType, name);
 }
@@ -104,10 +85,6 @@ export async function getCaptureMinimizationSettings() {
   return normalizeSettingsRow(await getCaptureMinimizationSettingsPg());
 }
 
-/**
- * @param {{ urlDomainOnly?: boolean, screenshotBlurDefault?: boolean }} input
- * @param {{ memberId: string, roleName: string }} actor
- */
 export async function setCaptureMinimizationSettings(input, actor) {
   if (!isManagementRole(actor?.roleName)) {
     const err = new Error("Only management may change capture minimization settings.");

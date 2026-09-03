@@ -1,4 +1,3 @@
-/** Client IP from X-Forwarded-For (first hop) or socket. */
 export function getRequestIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {

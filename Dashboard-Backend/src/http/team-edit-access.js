@@ -10,18 +10,15 @@ import { getMemberByIdPg, getMembersByIdsPg, listMembersPg } from "../lib/postgr
 import { listTeamMembersPg } from "../lib/postgres/teams-postgres.service.js";
 import { query as pgQuery } from "../lib/postgres/client.js";
 
-/** Owner-tier roles can manage any team. */
 export function canManageAllTeams(roleName) {
   const key = normalizeRoleKey(roleName);
   return key === "owner" || key === "superadmin" || key === "admin" || key === "supermanager" || key === "supermanger";
 }
 
-/** Manager: subtree-scoped team create; full control on teams they lead. */
 export function isManagerRole(roleName) {
   return normalizeRoleKey(roleName) === "manager";
 }
 
-/** All employee-tier member ids (org-wide). */
 export async function getOrgWideEmployeeMemberIds(db) {
   const [members, employeeRoleIdList] = await Promise.all([
     listMembersPg(),
@@ -35,14 +32,6 @@ export async function getOrgWideEmployeeMemberIds(db) {
   return ids;
 }
 
-/**
- * Manager staffing pool: subtree + org employees.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} viewerMemberId
- * @param {string} viewerRoleName
- * @param {string} targetMemberId
- * @param {string} targetRoleName
- */
 export async function isManagerTeamStaffableMember(
   db,
   viewerMemberId,
@@ -61,12 +50,6 @@ export async function isManagerTeamStaffableMember(
   return Boolean(member);
 }
 
-/**
- * Team picker member ids for viewer (null = unrestricted).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- */
 export async function getTeamStaffableMemberIds(db, memberId, roleName) {
   if (canManageAllTeams(roleName)) return null;
   if (isManagerRole(roleName)) {
@@ -79,12 +62,6 @@ export async function getTeamStaffableMemberIds(db, memberId, roleName) {
   return getVisibleMemberIds(db, memberId, roleName);
 }
 
-/**
- * Team staffing picker rows (Manager subtree + org employees).
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- */
 export async function getTeamStaffableMemberSummaries(db, memberId, roleName) {
   const ids = await getTeamStaffableMemberIds(db, memberId, roleName);
   if (ids === null) return null;
@@ -98,9 +75,6 @@ export async function getTeamStaffableMemberSummaries(db, memberId, roleName) {
       id: m.id,
       first_name: m.first_name || "",
       last_name: m.last_name || "",
-      // Owner/Super Admin only, self excepted - same gate the members list
-      // applies via applyMemberFieldPolicy. Team staffing is Manager+, so
-      // without this the team picker shows emails the members table hides.
       work_email: canViewEmail({ memberId, roleName }, String(m.id)) ? m.work_email || "" : "",
       role_name: memberRoleName,
       avatar: m.avatar || "",
@@ -111,12 +85,6 @@ export async function getTeamStaffableMemberSummaries(db, memberId, roleName) {
   return summaries;
 }
 
-/**
- * @param {string} entityKey
- * @param {Record<string, unknown>} body
- * @param {Record<string, unknown> | undefined} existingData
- * @param {string | undefined} resourceId
- */
 export function resolveTeamIdFromWrite(entityKey, body, existingData, resourceId) {
   if (entityKey === "teams") {
     return (
@@ -134,33 +102,18 @@ export function resolveTeamIdFromWrite(entityKey, body, existingData, resourceId
   );
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} teamId
- */
 export async function teamHasMembers(db, teamId) {
   if (!teamId) return false;
   const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 LIMIT 1", [teamId]);
   return rows.length > 0;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- */
 export async function getTeamIdsLedByMember(db, memberId) {
   if (!memberId) return new Set();
   const rows = await pgQuery("SELECT team_id FROM team_members WHERE member_id = $1 AND (is_lead = true OR role = 'lead')", [memberId]);
   return new Set(rows.map((r) => r.team_id).filter(Boolean));
 }
 
-/**
- * Owner-tier or team lead can edit team data. Managers only via lead flag.
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} memberId
- * @param {string} roleName
- * @param {string} teamId
- */
 export async function canEditTeam(db, memberId, roleName, teamId) {
   if (!teamId || !memberId) return false;
   if (canManageAllTeams(roleName)) return true;
@@ -169,29 +122,18 @@ export async function canEditTeam(db, memberId, roleName, teamId) {
   return rows.length > 0;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} teamId
- * @param {string} targetMemberId
- */
 export async function isMemberOnTeam(db, teamId, targetMemberId) {
   if (!teamId || !targetMemberId) return false;
   const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 LIMIT 1", [teamId, targetMemberId]);
   return rows.length > 0;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} teamId
- * @param {string} projectId
- */
 export async function isProjectOnTeam(db, teamId, projectId) {
   if (!teamId || !projectId) return false;
   const teamIds = await listTeamIdsForProjectPg(projectId);
   return teamIds.includes(teamId);
 }
 
-/** Team roster assign: visible member or existing roster row when editing. */
 export async function canAssignMemberToTeamRoster(
   db,
   viewerMemberId,

@@ -48,7 +48,6 @@ export async function handleRequest(req, res) {
     }
   }
 
-  // Liveness before authn allowlist — /health is not in authn-paths.js.
   if (req.method === "GET" && url.pathname === "/health") {
     applyCors(res, origin);
     res.writeHead(200, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin) });

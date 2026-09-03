@@ -9,7 +9,6 @@ import { consumeSuppressedAuthStateSync } from "@/lib/auth/auth-state-sync"
 import { attemptCrossDomainSilentSignIn } from "@/lib/auth/cross-domain-sso"
 
 export type CurrentUserState = {
-  /** Undefined while Firebase/auth-state is still resolving. */
   user: User | null | undefined
   profile: AuthProfileSnapshot | null
   memberId: string | null
@@ -17,12 +16,6 @@ export type CurrentUserState = {
   error: string | null
 }
 
-/**
- * Central authority for Landing-Web's account area: observes Firebase auth
- * state and, on each new sign-in, verifies the ID token (Auth-Backend), then
- * bootstraps the session (Dashboard-Backend) and syncs the shared session
- * cookie — mirroring Dashboard-Web's onAuthStateChanged-driven flow.
- */
 export function useCurrentUser(): CurrentUserState {
   const [state, setState] = useState<CurrentUserState>({ user: undefined, profile: null, memberId: null, loading: true, error: null })
   const syncedUidRef = useRef<string | null>(null)
@@ -39,8 +32,6 @@ export function useCurrentUser(): CurrentUserState {
         if (!next) {
           if (!ssoAttemptedRef.current) {
             ssoAttemptedRef.current = true
-            // signInWithCustomToken (if it succeeds) re-triggers this callback
-            // with a real user — don't flip to signed-out state yet.
             if (await attemptCrossDomainSilentSignIn(auth)) return
           }
           syncedUidRef.current = null

@@ -1,4 +1,3 @@
-/** Overview, Projects, Tasks, Clients, Time off requests */
 export const PROJECT_MANAGEMENT_IMPORT_EXPORT_ENABLED = false
 
 export const PROJECT_MEMBER_LIMITS_ENABLED = true

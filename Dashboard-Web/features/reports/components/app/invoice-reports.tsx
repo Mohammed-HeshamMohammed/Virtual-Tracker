@@ -67,7 +67,6 @@ const BUCKET_LABEL: Record<string, string> = {
 
 const thBase = "px-4 py-3 text-sm font-semibold"
 
-/** Totals across mixed currencies would be meaningless, so they are withheld. */
 function useCurrencySummary(rows: { currency: string }[]) {
   return useMemo(() => {
     const currencies = new Set(rows.map((r) => r.currency))
@@ -75,7 +74,6 @@ function useCurrencySummary(rows: { currency: string }[]) {
   }, [rows])
 }
 
-// ─── Invoice list ──────────────────────────────────────────────────────────
 
 function keyForInvoiceGroup(r: InvoiceReportRow, groupBy: string): string {
   switch (groupBy) {
@@ -375,7 +373,6 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
   )
 }
 
-// ─── Aging ─────────────────────────────────────────────────────────────────
 
 function keyForAgingGroup(r: InvoiceAgingRow, groupBy: string): string {
   switch (groupBy) {
@@ -640,7 +637,6 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
   )
 }
 
-// ─── Page wrappers ─────────────────────────────────────────────────────────
 
 function InvoiceReportPage({
   kind,
@@ -667,10 +663,7 @@ function InvoiceReportPage({
       pageId={pageId}
       showScopeTabs={false}
       showGroupBy={true}
-      // Client invoices carry no member dimension (no project dimension
-      // either way - invoice rows have no project_id at all).
       groupByOptions={kind === "team" ? TEAM_INVOICE_GROUP_BY_OPTIONS : CLIENT_INVOICE_GROUP_BY_OPTIONS}
-      // Client invoices have no member dimension to filter on.
       filtersPanel={
         kind === "team"
           ? (close) => (

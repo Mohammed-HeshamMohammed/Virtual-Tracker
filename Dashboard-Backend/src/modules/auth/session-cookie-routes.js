@@ -11,14 +11,6 @@ import {
   SESSION_COOKIE_MAX_AGE_SECONDS,
 } from "./session-cookie.js";
 
-/**
- * @param {import("node:http").ServerResponse} res
- * @param {import("node:http").IncomingMessage} req
- * @param {string|undefined} origin
- * @param {number} status
- * @param {unknown} payload
- * @param {Record<string,string>} [extraHeaders]
- */
 function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -29,7 +21,6 @@ function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = 
   res.end(JSON.stringify(payload));
 }
 
-/** Sign-out everywhere: revoke refresh tokens + WS push to open tabs. */
 async function forceSignOutEverywhere(req) {
   const auth = getAuthAdmin();
   const cookie = readSessionCookie(req);
@@ -47,10 +38,6 @@ async function forceSignOutEverywhere(req) {
   }
 }
 
-// Session cookie routes. session-cookie/session-status/session-logout are a
-// landing↔dashboard sign-in *hint* only (API auth stays Bearer everywhere).
-// session-exchange is the one exception: it turns that hint into a real
-// signed-in session on whichever origin calls it, via a Firebase custom token.
 export async function routeSessionCookie(req, res, url, origin) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
 
@@ -108,10 +95,6 @@ export async function routeSessionCookie(req, res, url, origin) {
     }
     try {
       const decoded = await auth.verifySessionCookie(cookie, true);
-      // Short-lived (Firebase default 1h) and single-purpose — the caller
-      // immediately exchanges it via signInWithCustomToken to establish its
-      // own local Firebase session (a subdomain never shares client-side
-      // Firebase Auth state with another origin, even under one project).
       const customToken = await auth.createCustomToken(decoded.uid);
       sendCredentialedJson(res, req, origin, 200, { success: true, customToken });
     } catch {

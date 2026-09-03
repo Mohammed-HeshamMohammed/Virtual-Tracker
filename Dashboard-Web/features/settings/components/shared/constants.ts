@@ -1,9 +1,6 @@
 import { ReactNode } from "react"
 import { createElement as h } from "react"
 
-// ==========================================
-// 1. Shared Base Settings Constants
-// ==========================================
 
 export const MEMBERS = [
   { id: 1, name: "Bella Jeffery",  initials: "BJ", color: "bg-sky-400" },
@@ -12,9 +9,6 @@ export const MEMBERS = [
   { id: 4, name: "Mazen Salah",    initials: "MS", color: "bg-sky-400" },
 ]
 
-// ==========================================
-// 2. Billing Settings Constants
-// ==========================================
 
 export const LINE_ITEMS_OPTIONS = [
   "By user, project, and date",
@@ -479,9 +473,6 @@ export const ADDONS: Addon[] = [
   },
 ]
 
-// ==========================================
-// 3. General Settings / Schedules Constants
-// ==========================================
 
 export const ALERT_OPTIONS = ["Both", "Management", "User", "No one"] as const
 export type AlertOption = typeof ALERT_OPTIONS[number]
@@ -497,9 +488,6 @@ export const SCHEDULE_SUBNAV: { k: ScheduleKey; l: string }[] = [
   { k: "graceperiod",  l: "Grace period"   },
 ] as const
 
-// ==========================================
-// 4. Members Settings Constants
-// ==========================================
 
 export const MEMBERS_TABS = [
   { k: "custom" as const,       l: "Custom Fields"    },
@@ -520,9 +508,6 @@ export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 export const DEFAULT_ACTIVE_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 export const DEFAULT_EXPECTED_HRS = "40"
 
-// ==========================================
-// 5. Organization Settings Constants
-// ==========================================
 
 export const INDUSTRIES = ["Technology", "Design", "Marketing", "Finance", "Healthcare"]
 
@@ -673,9 +658,6 @@ export const SECURITY_LOGIN_NAV = [
 
 export type SecurityNavKey = "sso" | "2fa"
 
-// ==========================================
-// 6. Policy Settings Constants
-// ==========================================
 
 export const POLICY_MAIN_TABS = [
   { k: "timeoff" as const, l: "Time off" },

@@ -36,7 +36,6 @@ async function countProjectMembers(projectId) {
   return Math.max(1, rows.length);
 }
 
-/** Sum linked client budget caps for one project. */
 export async function aggregateProjectBudgetFromClients(db, projectId) {
   const clientIds = (await listClientIdsForProjectPg(projectId)).map((id) => String(id).trim()).filter(Boolean);
 
@@ -62,7 +61,6 @@ export async function aggregateProjectBudgetFromClients(db, projectId) {
   };
 }
 
-/** Upsert project_budgets cost from linked client budgets. */
 export async function syncProjectBudgetFromClients(db, projectId) {
   if (!projectId) return { skipped: "missing_project" };
 

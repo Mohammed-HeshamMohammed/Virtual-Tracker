@@ -5,20 +5,7 @@ import { AlertCircle, RefreshCw } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { reportCardFor } from "@/features/reports/catalog"
 
-/**
- * Shared surface, loading, error and heading primitives for report pages.
- *
- * Reports had grown their own versions of each of these: a centred "Loading…"
- * line that collapsed the page height, no error state at all on most pages
- * (a failed request fell through to "no data"), and three different title and
- * org-header treatments depending on which page you opened.
- *
- * These use `dark:` variants rather than the `useTheme()` / `isDark` ternary
- * the older pages use, so a plain class string is enough and a report body
- * does not need the theme hook just to draw a surface.
- */
 
-/** Card surface: the standard container for a report table or panel. */
 export function ReportCard({
   className,
   children,
@@ -39,12 +26,6 @@ export function ReportCard({
 }
 
 const reportHeadRow = "border-b border-slate-100 dark:border-white/10"
-/**
- * Loading placeholder shaped like the table it replaces.
- *
- * Reports used to render a centred "Loading…" line, which collapses the page
- * height and then snaps back when rows arrive.
- */
 export function ReportTableSkeleton({ rows = 6, columns = 5 }: { rows?: number; columns?: number }) {
   return (
     <div className="space-y-4" aria-busy="true" aria-live="polite">
@@ -71,7 +52,6 @@ export function ReportTableSkeleton({ rows = 6, columns = 5 }: { rows?: number; 
   )
 }
 
-/** Tiles + table skeleton, for reports that lead with a summary row. */
 export function ReportSkeleton({
   tiles = 0,
   rows = 6,
@@ -98,10 +78,6 @@ export function ReportSkeleton({
   )
 }
 
-/**
- * A report that failed to load says so and offers a retry, rather than
- * rendering the same empty state a successful-but-empty report shows.
- */
 export function ReportErrorState({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 px-6 py-16 text-center">
@@ -122,13 +98,6 @@ export function ReportErrorState({ message, onRetry }: { message: string; onRetr
   )
 }
 
-/**
- * Title block for a report that builds its own header instead of using
- * StandardReportLayout. Renders exactly what the layout renders, so the four
- * hand-built report pages stop being visibly different from the seventeen
- * that use the layout - two of them had no page title at all, and the other
- * two set their own size and weight.
- */
 export function ReportPageHeading({
   title,
   pageId,
@@ -136,9 +105,7 @@ export function ReportPageHeading({
   className,
 }: {
   title: string
-  /** Supplies the subtitle from the report catalog. */
   pageId?: string
-  /** Overrides the catalog description. */
   subtitle?: string
   className?: string
 }) {
@@ -151,11 +118,6 @@ export function ReportPageHeading({
   )
 }
 
-/**
- * Org name + timezone, the same one line the layout shows. Report pages had
- * this at text-xl bold, text-2xl bold and text-base semibold depending on
- * which page you were on.
- */
 export function ReportOrgLine({ org, timezone }: { org: string; timezone: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-x-2">

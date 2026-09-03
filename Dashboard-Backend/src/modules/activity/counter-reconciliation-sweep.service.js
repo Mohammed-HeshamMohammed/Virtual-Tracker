@@ -12,15 +12,10 @@ import {
   fetchLifetimeDailyRollupByMemberPg,
 } from "../../lib/postgres/counter-reconciliation-postgres.service.js";
 
-// OBS-1: a daily job, not a tick - the three stores it compares only fully
-// settle once a day is over (activity_sessions.active_seconds keeps growing
-// while a session is still open), so checking more often would just report
-// normal in-flight lag as false "drift".
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 let timer = null;
 
-/** Idempotent - a second call while already scheduled is a no-op, same as the other sweep jobs. */
 export function scheduleCounterReconciliationSweep() {
   if (timer) return;
   const run = () => reconcileCounters().catch((err) => logSafeWarn("[counter reconciliation]", err));
@@ -51,16 +46,6 @@ async function reconcileYesterdaysSessions() {
   }
 }
 
-/**
- * task_member_progress carries no day column - it's a lifetime total per
- * (task, member), not per day - so this can only compare lifetime sums, not
- * pinpoint which day drifted. Ceiling: a real drift on an otherwise-quiet
- * account could take a while to clear the threshold here. Upgrade path if
- * that ever matters: daily_member_task_active_seconds already carries a day
- * column per (member, task) and could reconcile day-by-day the same way the
- * session check does - not built now since nothing today needs day-level
- * precision on the task-progress side specifically.
- */
 async function reconcileLifetimeTaskProgress() {
   const [taskProgressTotals, rollupTotals] = await Promise.all([
     fetchLifetimeTaskProgressByMemberPg(),

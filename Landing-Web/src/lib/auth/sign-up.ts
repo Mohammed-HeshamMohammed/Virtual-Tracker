@@ -17,11 +17,6 @@ export type RegisterOptions = {
   rememberMe?: boolean
 }
 
-/**
- * Creates the account, saves profile fields, sends a verification email, then
- * signs the user back out — they must verify before their first real sign-in,
- * matching Dashboard-Web's registration flow.
- */
 export async function registerWithEmailPassword(email: string, password: string, options: RegisterOptions): Promise<void> {
   const trimmed = email.trim()
   const firstName = options.firstName.trim()
@@ -49,8 +44,6 @@ export async function registerWithEmailPassword(email: string, password: string,
     throw new Error(formatAuthError(err))
   }
 
-  // Suppress immediately — the account is momentarily "signed in" until we sign
-  // back out below, and useCurrentUser shouldn't try to verify/bootstrap it yet.
   suppressNextAuthStateSync()
 
   const displayName = `${firstName} ${lastName}`.trim()

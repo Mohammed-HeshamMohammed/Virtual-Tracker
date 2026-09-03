@@ -10,10 +10,6 @@ type WeeklyActivityCardProps = {
   weekIdleSeconds: number;
 };
 
-// Same weekly-activity percentage the web dashboard's own general view
-// shows this member, drawn as a ring so it reads as one family with the
-// Activity ring in the main pane instead of a second, differently-shaped
-// chart.
 export function WeeklyActivityCard({
   signedIn,
   dashboardSummary,

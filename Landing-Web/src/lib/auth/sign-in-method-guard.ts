@@ -6,10 +6,6 @@ function uniqStrings(values: string[]): string[] {
   return [...new Set(values.map((s) => s.trim()).filter(Boolean))]
 }
 
-/**
- * Merges client `fetchSignInMethodsForEmail` with the backend Admin lookup
- * (same provider rows as in Firebase Auth console).
- */
 export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string): Promise<string[] | null> {
   const trimmed = email.trim()
   if (!trimmed) return null
@@ -29,7 +25,6 @@ export async function fetchSignInMethodsForEmailSafe(auth: Auth, email: string):
 
 const has = (methods: string[], m: string) => methods.includes(m)
 
-/** Clear instruction when this email cannot use email+password (no `password` in Firebase methods). */
 export function instructionWhenNoPasswordOnFile(methods: string[]): string {
   const g = has(methods, "google.com")
   if (g) {
@@ -67,7 +62,6 @@ function getEmailFromAccountExistsError(error: unknown): string | null {
   return null
 }
 
-/** After OAuth error `account-exists-with-different-credential`. */
 export async function messageForAccountExistsWithDifferentCredential(auth: Auth, error: unknown): Promise<string> {
   const email = getEmailFromAccountExistsError(error)
   if (!email) {

@@ -7,10 +7,6 @@ import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { promotePendingMemberCore } from "../members/routes/member-invites.routes.js";
 import { notifyPasswordUpdated } from "./security-login-alerts.js";
 
-/**
- * @param {string} email
- * @param {string} password
- */
 async function verifyCurrentPasswordWithFirebaseWebApi(email, password) {
   const web = readFirebaseWebConfigFromEnv();
   if (!web.apiKey) {
@@ -27,12 +23,6 @@ async function verifyCurrentPasswordWithFirebaseWebApi(email, password) {
   return res.ok;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {import("firebase-admin/auth").Auth} auth
- * @param {string} uid
- * @param {{ currentPassword: string; newPassword: string; confirmPassword: string }} body
- */
 export async function completeFirstLoginPasswordChange(db, auth, uid, body) {
   const currentPassword = typeof body.currentPassword === "string" ? body.currentPassword : "";
   const newPassword = typeof body.newPassword === "string" ? body.newPassword : "";

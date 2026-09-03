@@ -1,14 +1,6 @@
 import { apiFetch } from "@/infrastructure/api/http"
 import { signInWithCustomToken, type Auth } from "firebase/auth"
 
-/**
- * If the visitor is already signed in on another Virtual Tracker subdomain
- * (via the shared session cookie — e.g. they signed in on the landing page
- * and clicked "Open dashboard"), silently establish a matching Firebase
- * session here too. Firebase's client-side auth state never crosses origins
- * on its own — even under the same project, app.myvirtualtracker.com and
- * myvirtualtracker.com have separate local/IndexedDB persistence.
- */
 export async function attemptCrossDomainSilentSignIn(auth: Auth): Promise<boolean> {
   try {
     const statusRes = await apiFetch(

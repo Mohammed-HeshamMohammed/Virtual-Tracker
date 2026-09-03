@@ -1,7 +1,6 @@
 import { isManagementRole } from "./auth-context.js";
 import { isOwnerOrSuperAdminRole } from "./role-hierarchy.js";
 
-/** Fields that must never be returned unless the viewer is authorized. */
 const COMPENSATION_FIELDS = [
   "pay_rate",
   "payRate",
@@ -10,8 +9,6 @@ const COMPENSATION_FIELDS = [
   "payPeriod",
   "weekly_limit",
   "weeklyLimit",
-  // Same class as weekly_limit and returned alongside it by
-  // v_members_enriched - it was simply missing from this list.
   "daily_limit",
   "dailyLimit",
   "limits",
@@ -19,21 +16,14 @@ const COMPENSATION_FIELDS = [
   "currency",
 ];
 
-/** Email fields: confidential — Owner/Super Admin only (mirrors frontend member table gating). */
 const EMAIL_FIELDS = ["email", "work_email", "personalEmail", "personal_email"];
 
-/** Emails: self always; Owner/Super Admin only for others. */
 export function canViewEmail(viewer, targetMemberId) {
   if (!viewer?.memberId) return false;
   if (targetMemberId && viewer.memberId === targetMemberId) return true;
   return isOwnerOrSuperAdminRole(viewer.roleName);
 }
 
-/**
- * @param {Record<string, unknown>} row
- * @param {import("./auth-context.js").AuthContext | null} viewer
- * @param {string} [targetMemberId]
- */
 export function redactEmailFields(row, viewer, targetMemberId) {
   const memberId =
     targetMemberId ||
@@ -50,18 +40,12 @@ export function redactEmailFields(row, viewer, targetMemberId) {
   return out;
 }
 
-/** Pay/limits: self always; managers+ for others in scope. */
 export function canViewCompensation(viewer, targetMemberId) {
   if (!viewer?.memberId) return false;
   if (targetMemberId && viewer.memberId === targetMemberId) return true;
   return isManagementRole(viewer.roleName);
 }
 
-/**
- * @param {Record<string, unknown>} row
- * @param {import("./auth-context.js").AuthContext | null} viewer
- * @param {string} [targetMemberId]
- */
 export function redactCompensationFields(row, viewer, targetMemberId) {
   const memberId =
     targetMemberId ||
@@ -78,20 +62,11 @@ export function redactCompensationFields(row, viewer, targetMemberId) {
   return out;
 }
 
-/**
- * @param {Record<string, unknown>[]} rows
- * @param {import("./auth-context.js").AuthContext | null} viewer
- */
 export function applyMemberFieldPolicy(rows, viewer) {
   if (!viewer) return [];
   return rows.map((row) => redactEmailFields(redactCompensationFields(row, viewer), viewer));
 }
 
-/**
- * @param {Record<string, unknown>} form
- * @param {import("./auth-context.js").AuthContext | null} viewer
- * @param {string} [targetMemberId]
- */
 export function redactProfileFormCompensation(form, viewer, targetMemberId) {
   if (!form || typeof form !== "object") return form;
   if (canViewCompensation(viewer, targetMemberId)) return form;
@@ -101,15 +76,12 @@ export function redactProfileFormCompensation(form, viewer, targetMemberId) {
     payPeriod: "None",
     weeklyLimit: "",
     dailyLimit: "",
-    // Same audit trail as payRate itself (pay_rate_history) - a viewer who
-    // can't see the current rate shouldn't see what it used to be either.
     payNote: "",
     payEffectiveDate: "",
     payRateHistory: [],
   };
 }
 
-/** Hide invite pay_rate from non-management viewers. */
 export function applyInviteFieldPolicy(rows, viewer) {
   if (!viewer) return [];
   if (isManagementRole(viewer.roleName)) return rows;

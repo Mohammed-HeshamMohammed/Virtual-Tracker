@@ -19,14 +19,6 @@ function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`
 }
 
-/**
- * ClientBudgetRow (see models/client-budgets.ts) is already one row per
- * client with no date/period and no member on it, and the endpoint takes no
- * query params - so this report gets no ReportFiltersPanel (nothing to
- * filter by that the row or the endpoint supports). "Budget type" is the
- * one real secondary dimension the row carries; "Client" groups one row per
- * client (identity, alphabetical).
- */
 function groupClientBudgetRows(
   rows: ClientBudgetRow[],
   groupBy: string
@@ -55,8 +47,6 @@ function ClientBudgetsTable() {
   const { groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ClientBudgetRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
@@ -256,9 +246,6 @@ export function ClientBudgetsReport({ onNavigate }: { onNavigate: (id: string) =
       onNavigate={onNavigate}
       exportFileBaseName="client-budgets"
       pageId="reports-client-budgets"
-      // Client budget usage derives its own period from the budget's reset
-      // cadence (client-budget-usage.js), so an arbitrary date range has no
-      // meaning here and the backend never accepted one.
       showDateRange={false}
       showScopeTabs={false}
       showGroupBy={true}

@@ -1,5 +1,3 @@
-/** Pay-rate currency options. USD keeps the existing "$X/hr" display for
- * backward compatibility; anything else shows as "X CODE/hr". */
 export const PAY_RATE_CURRENCIES = [
   { value: "USD", label: "USD" },
   { value: "EGP", label: "EGP" },
@@ -13,7 +11,6 @@ export function formatPayRateDisplay(amount: number, currency: string = "USD"): 
   return `${amount} ${currency}/hr`
 }
 
-/** Inverse of formatPayRateDisplay - parses "$50/hr" or "50 EGP/hr" back into parts. */
 export function parsePayRateDisplay(payment: string | undefined): { amount: string; currency: string } {
   const value = (payment ?? "").trim()
   const usdMatch = value.match(/^\$([\d.]+)\/hr$/)

@@ -6,7 +6,6 @@ import type { AppChunkId } from "@/app/routes/types"
 
 const PRIVILEGED_WARMUP: AppChunkId[] = ["people", "projects", "activity"]
 const STANDARD_WARMUP: AppChunkId[] = ["people", "activity", "settings"]
-// A client lands on the dashboard and works across projects and reports.
 const CLIENT_WARMUP: AppChunkId[] = ["projects", "reports", "activity"]
 
 let prefetchStarted = false
@@ -15,7 +14,6 @@ function prefetchChunk(id: AppChunkId) {
   void CHUNK_IMPORTS[id]()
 }
 
-/** Idle prefetch of route chunks after login. */
 export function prefetchAppRoutesForRole(role: string) {
   if (prefetchStarted || typeof window === "undefined") return
   prefetchStarted = true
@@ -37,7 +35,6 @@ export function prefetchAppRoutesForRole(role: string) {
   }
 }
 
-/** Call from sidebar / topbar hover to prefetch a domain before click. */
 export function prefetchChunkForPage(pageId: string) {
   if (typeof window === "undefined") return
   prefetchChunk(resolveChunkId(pageId))

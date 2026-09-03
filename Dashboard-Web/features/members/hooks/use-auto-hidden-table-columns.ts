@@ -1,7 +1,5 @@
-/* eslint-disable react-doctor/exhaustive-deps, react-doctor/js-set-map-lookups */
 import { useLayoutEffect, useMemo, useState, type RefObject } from "react"
 
-/** Lowest-priority columns are hidden first when the table is too narrow. */
 export const MEMBER_COL_AUTO_HIDE_PRIORITY = [
   "teams",
   "projects",
@@ -21,7 +19,6 @@ export const INVITE_COL_AUTO_HIDE_PRIORITY = [
 ] as const
 
 export const MEMBER_NAME_COL_MIN_WIDTH = 300
-/** Role is a fixed column — same treatment as Member (never auto-hidden or shrunk). */
 export const MEMBER_ROLE_COL_MIN_WIDTH = 148
 export const MEMBER_SELECT_COL_WIDTH = 44
 export const MEMBER_ACTIONS_COL_WIDTH = 48

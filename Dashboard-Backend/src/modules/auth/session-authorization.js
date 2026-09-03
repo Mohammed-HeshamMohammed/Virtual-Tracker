@@ -1,16 +1,11 @@
-// Sign-in eligibility checks (server-side). @see Engineering Constitution — Never Trust the Client
 
 import { assertMemberNotBanned } from "../members/services/member-ban-service.js";
 
-/**
- * @param {import("firebase-admin/auth").UserRecord} userRecord
- */
 export function isPasswordProviderUser(userRecord) {
   const providers = Array.isArray(userRecord.providerData) ? userRecord.providerData : [];
   return providers.some((p) => p && p.providerId === "password");
 }
 
-/** Admin-preprovision accounts skip email verification (temp password flow). */
 export function isAdminPreprovisionedMember(memberData) {
   return (
     memberData &&
@@ -20,7 +15,6 @@ export function isAdminPreprovisionedMember(memberData) {
   );
 }
 
-/** Email-locked invite sign-ups count as verified (legacy self-invite rows too). */
 export function isEmailConfirmedInviteMember(memberData) {
   if (!memberData || typeof memberData !== "object") return false;
   if (typeof memberData.created_by !== "string" || memberData.created_by !== "self-invite") {
@@ -34,10 +28,6 @@ export function isEmailConfirmedInviteMember(memberData) {
   return inviteKind === "email" || inviteKind === "";
 }
 
-/**
- * @param {import("firebase-admin/auth").UserRecord} userRecord
- * @param {{ mustChangePassword?: boolean; memberData?: Record<string, unknown> | null }} [options]
- */
 export function requiresEmailVerification(userRecord, options = {}) {
   const mustChangePassword = options.mustChangePassword === true;
   if (mustChangePassword) return false;
@@ -48,16 +38,6 @@ export function requiresEmailVerification(userRecord, options = {}) {
   return true;
 }
 
-/**
- * @param {{
- *   userRecord: import("firebase-admin/auth").UserRecord;
- *   memberId?: string | null;
- *   memberData?: Record<string, unknown> | null;
- *   profile?: Record<string, unknown> | null;
- *   memberBootstrapSkipped?: string;
- *   db?: import("firebase-admin/firestore").Firestore | null;
- * }} input
- */
 export async function validateSessionAuthorization(input) {
   const { userRecord, memberId, memberData, profile, memberBootstrapSkipped, db } = input;
 

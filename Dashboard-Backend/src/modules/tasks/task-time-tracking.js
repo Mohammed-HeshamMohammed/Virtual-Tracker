@@ -39,9 +39,6 @@ function toIso(value) {
   return null;
 }
 
-// Accepts a task_member_progress row (Postgres: member_id, last_started_at)
-// directly now - kept the same output shape (userId, startedAt) so every
-// caller downstream of this function needed zero changes.
 function normalizeTracking(row) {
   if (!row) return row;
   return {
@@ -66,7 +63,6 @@ function progressPercentFor(activeSeconds, estimatedSeconds) {
   return Math.min(100, Math.round((activeSeconds / estimatedSeconds) * 100));
 }
 
-/** Sum all member timers and persist task-level aggregates (TaskMemberProgress lives in task_time_tracking). */
 export async function aggregateTaskProgress(db, taskId) {
   const taskData = await getTaskPg(taskId);
   if (!taskData) return null;
@@ -122,11 +118,6 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
   let statusChanged = false;
   for (const row of assignmentRows) {
     const status = String(row.status ?? "todo").toLowerCase();
-    // Only assignees who actually worked. Promoting a "todo" assignee because
-    // a co-assignee hit the task's combined estimate marks work as reviewed/
-    // done for someone who logged zero seconds, and inflates their
-    // participation stats. Per-assignee completion ("done with my part") is
-    // what the assignment rows model in the first place.
     if (status !== "in_progress") continue;
     const result = await updateAssignmentStatus(db, row.id, "in_review", userId);
     if (result && result.previousStatus !== result.nextStatus) {
@@ -147,9 +138,6 @@ async function maybePromoteTaskToReview(db, taskId, task, userId, userName, esti
   return statusChanged;
 }
 
-/**
- * Sync timer counters for a task assignment. Backend is source of truth.
- */
 export async function syncTaskTimeTracking(db, {
   taskId,
   userId,
@@ -178,17 +166,8 @@ export async function syncTaskTimeTracking(db, {
     action,
   );
   const active = enforced.activeSeconds;
-  // Always recompute live from the task's current hours - assignment.expectedSeconds is a
-  // snapshot only refreshed when the assignee list changes, so it silently goes stale (and
-  // drops any overtime added later) if the task's hours are edited after assignment. Matches
-  // what computeTimerAllowance already does for enforcement, so display and enforcement agree.
   const estimatedSeconds = estimateAssignmentSeconds(task);
 
-  // Single upsert covers both create and update - upsertTrackingRowPg's
-  // ON CONFLICT clause already keeps last_started_at COALESCE'd against the
-  // existing value, matching the old create-vs-update branch's "set
-  // started_at only if it wasn't already set" behavior without needing to
-  // read-before-write here.
   const trackingRow = await upsertTrackingRowPg(
     {
       task_id: taskId,
@@ -202,8 +181,6 @@ export async function syncTaskTimeTracking(db, {
       session_id: sessionId ?? null,
       action,
     },
-    // Only "stop" may lower active_seconds - the desktop agent's
-    // idle-escalation rewind (TC-4).
     { allowDecrease: action === "stop" },
   );
 
@@ -263,11 +240,6 @@ export async function syncTaskTimeTracking(db, {
   };
 }
 
-/** Whole-task pool total for a shared_task_budget task - every assignee's
- * currently-persisted active_seconds summed together, computed fresh (not
- * from the periodically-recomputed total_active_seconds column, which can
- * lag). Undefined for a non-shared task; callers fall back to the member's
- * own activeSeconds in that case, unchanged from before this feature. */
 async function sumAllAssigneesActiveSeconds(taskId) {
   const rows = await getTaskTrackingRowsPg(taskId);
   return rows.reduce((sum, row) => sum + Math.max(0, Math.floor(Number(row.active_seconds) || 0)), 0);
@@ -278,21 +250,13 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const trackingRow = await getTrackingRowPg(taskId, userId);
   const taskData = (await getTaskPg(taskId)) ?? {};
   const sharedBudget = taskData.shared_task_budget === true;
-  // Always live - see the comment on the identical line in syncTaskTimeTracking above.
   const estimatedSeconds = estimateAssignmentSeconds(taskData);
   const overtimeSeconds = estimateAssignmentOvertimeSeconds(taskData);
-  // Raw schedule breakdown ("7 days x 8h/day") - estimatedSeconds/overtimeSeconds
-  // are these three numbers pre-multiplied together, which is enough to
-  // enforce a cap but not enough to show the reader how the total was built.
   const workingDays = workingDaysForTask(taskData);
   const hoursPerDay = Number(taskData.duration_hours_per_day ?? taskData.durationHoursPerDay ?? 0);
   const overtimeHoursPerDay = Number(taskData.overtime_hours_per_day ?? taskData.overtimeHoursPerDay ?? 0);
   const includeMemberBreakdown = options.includeMemberBreakdown === true;
 
-  // ID-3: the owning project's idle-time settings, fetched alongside the
-  // task on every re-baseline so the desktop agent applies the right
-  // project's threshold instead of one hardcoded/org-wide number - see
-  // PLAN-agent-crash-safe-progress.md.
   const projectId = taskData.project_id ?? taskData.projectId ?? null;
   const project = projectId ? await getProjectPg(projectId) : null;
   const disableIdleTime = Boolean(project?.disable_idle_time ?? false);
@@ -318,9 +282,6 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       ...taskData,
       id: taskId,
     }, { currentCumulativeActiveSeconds: 0 });
-    // Other assignees may already have logged time even though this member
-    // hasn't started yet - a shared pool's "Task budget left" has to reflect
-    // that, not read as if nothing has been spent.
     const sharedActiveSeconds = sharedBudget ? await sumAllAssigneesActiveSeconds(taskId) : 0;
     return {
       tracking: null,
@@ -357,10 +318,6 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
 
   return {
     tracking,
-    // "Today, this task" stays this member's own worked-today figure
-    // (timerAllowance.workedTodayOnTaskSeconds, unaffected by this field) -
-    // this activeSeconds is the whole-task lifetime total that "Task budget
-    // left" is computed from, which the shared pool changes the meaning of.
     activeSeconds: wholeTaskActiveSeconds,
     idleSeconds: tracking.idleSeconds,
     taskStatus: taskData.status ?? "todo",
@@ -416,16 +373,11 @@ export async function getManagementTaskTrackingRows(db, viewerMemberId, viewerRo
   return unique;
 }
 
-/** @deprecated Use reviewAssignment from task-assignments */
 export async function reviewTaskTracking(db, { taskId, reviewerId, reviewerName, decision, notes }) {
   const inReviewRows = await getInReviewAssignmentsForTaskPg(taskId);
   if (!inReviewRows.length) throw new Error("No assignment in review for this task");
 
   const mappedDecision = decision === "rework" ? "reject" : decision;
-  // Every in-review row, not just the first: getInReviewAssignmentsForTaskPg
-  // has no ORDER BY, so "the first" was whichever row Postgres happened to
-  // return, leaving co-assignees stuck in review while the API reported
-  // success. Matches the sibling POST /api/tasks/:taskId/review endpoint.
   let last = null;
   for (const row of inReviewRows) {
     last = await reviewAssignment(db, {

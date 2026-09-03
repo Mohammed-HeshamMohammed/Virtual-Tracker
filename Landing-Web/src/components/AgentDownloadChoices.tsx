@@ -3,7 +3,6 @@
 import React from "react"
 import { getAgentDownloadUrl } from "@/lib/site-urls"
 
-/** Classic four-pane Windows logo (Simple Icons) */
 function WindowsIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -12,7 +11,6 @@ function WindowsIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-/** Apple logo (Simple Icons) */
 function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>
@@ -21,7 +19,6 @@ function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-/** Tux / Linux mark (Simple Icons) */
 function LinuxIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" {...props}>

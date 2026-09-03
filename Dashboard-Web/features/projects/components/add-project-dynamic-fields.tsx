@@ -30,13 +30,9 @@ type AddProjectDynamicFieldsProps = {
   availableTeams: Team[]
   teamsLoading: boolean
   teamsLoadError: string | null
-  /** Called with the new client's id right after a quick-add succeeds (see quick-add-client-popover.tsx). */
   onClientAdded?: (clientId: string) => void
 }
 
-/** Shared with the batch member-limits modal, so a member picker looks the
- *  same (initials chip + label) whether it's on this per-project form or
- *  applying across several projects at once. */
 export function memberOptionsToSelect(options: ProjectFormOption[]) {
   return options.map((m) => ({
     label: m.label,

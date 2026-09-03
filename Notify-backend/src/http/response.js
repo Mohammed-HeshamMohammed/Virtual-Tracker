@@ -1,9 +1,3 @@
-/**
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @param {number} status
- * @param {unknown} body
- */
 export function sendJson(res, origin, status, body) {
   const payload = JSON.stringify(body);
   res.writeHead(status, {

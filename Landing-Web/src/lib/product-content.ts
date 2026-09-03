@@ -1,4 +1,3 @@
-/** Product copy for landing pages. */
 
 export const PRODUCT_TAGLINE =
   "Work tracking and utilization monitoring for distributed teams."

@@ -72,7 +72,6 @@ export interface TeamProject {
   project_id: string
   assigned_at?: string
   assigned_by?: string
-  // Joined fields from projects
   project_name?: string
 }
 
@@ -95,7 +94,6 @@ export interface CreateTeamProjectPayload {
   project_id: string
 }
 
-// Teams API
 export async function getTeams(options: { fields?: string[] } = {}): Promise<Team[]> {
   const params = new URLSearchParams()
   const fields = options.fields ?? ["id", "name", "schedule_weekly_report", "created_at", "created_by", "updated_by"]
@@ -135,7 +133,6 @@ export async function deleteTeam(id: string): Promise<void> {
   }
 }
 
-// Team Members API
 export async function getTeamMembers(
   teamId?: string,
   options: { fields?: string[] } = {},
@@ -191,7 +188,6 @@ export async function removeTeamMember(id: string): Promise<void> {
   }
 }
 
-// Team Projects API
 export async function getTeamProjects(
   teamId?: string,
   options: { fields?: string[] } = {},

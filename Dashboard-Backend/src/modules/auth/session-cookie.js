@@ -14,12 +14,10 @@ const SESSION_COOKIE_PATHS = new Set([
   "/api/v1/auth/session-exchange",
 ]);
 
-/** @param {string} pathname */
 export function isSessionCookiePath(pathname) {
   return SESSION_COOKIE_PATHS.has(pathname);
 }
 
-/** Parent domain so the cookie is readable from both the landing page and the dashboard subdomain. */
 function getCookieDomain() {
   try {
     const frontend = getEnv().urls.frontendOrigin || getEnv().urls.appPublicUrl;
@@ -34,7 +32,6 @@ function getCookieDomain() {
   }
 }
 
-/** @param {string} sessionCookieValue */
 export function buildSessionCookieHeader(sessionCookieValue) {
   const domain = getCookieDomain();
   const secure = getEnv().isProduction ? "; Secure" : "";
@@ -49,7 +46,6 @@ export function buildClearSessionCookieHeader() {
   return `${SESSION_COOKIE_NAME}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${domainPart}${secure}`;
 }
 
-/** @param {import("node:http").IncomingMessage} req */
 export function readSessionCookie(req) {
   const header = req.headers.cookie;
   if (!header) return "";

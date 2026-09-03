@@ -1,4 +1,3 @@
-/* eslint-disable react-doctor/use-lazy-motion */
 "use client"
 
 import { Fragment, useEffect, useMemo, useState as useComponentState } from "react"
@@ -128,7 +127,6 @@ function downloadAmountsOwedPdf(groups: AmountsOwedDayGroup[], dateLabel: string
   })
 }
 
-/** Total amount per day, plotted from the report's own rows. */
 function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
   const series = groups.map((g) => ({
     label: g.dateLabel,
@@ -144,7 +142,6 @@ function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
   const plotW = vbW - padL - padR
   const plotH = CHART_H - padT - padB
   const rawMax = Math.max(0, ...series.map((s) => s.value))
-  // Round the axis up to something readable instead of ending on a stray value.
   const yMax = rawMax <= 0 ? 10 : Math.ceil(rawMax / 4) * 4
   const xAt = (i: number) => padL + (n <= 1 ? plotW / 2 : (i / (n - 1)) * plotW)
   const yAt = (v: number) => padT + plotH - (v / yMax) * plotH
@@ -168,11 +165,6 @@ function AmountPerDayChart({ groups }: { groups: AmountsOwedDayGroup[] }) {
         <h3 className="text-base font-semibold text-slate-800 dark:text-[#dce1fb]">Total amount per day</h3>
       </div>
       <div className="px-6 pb-6 pt-2">
-        {/* maxWidth caps this at the chart's own natural (960-unit) size -
-            w-full alone let it stretch to fill whatever wide card/page it
-            sat in, and with preserveAspectRatio="none" that didn't just
-            widen the chart, it distorted the line's own slope. Still
-            shrinks on a narrow viewport (w-full below the cap). */}
         <div className="w-full" style={{ height: CHART_H, maxWidth: vbW }}>
           <svg
             className="h-full w-full"
@@ -242,8 +234,6 @@ export function AmountsOwedReport() {
   const [scheduleDialogOpen, setScheduleDialogOpen] = useComponentState(false)
   const [groups, setGroups] = useComponentState<AmountsOwedDayGroup[]>([])
   const [loading, setLoading] = useComponentState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and the table said "No data in this range".
   const [error, setError] = useComponentState<string | null>(null)
   const [reloadKey, setReloadKey] = useComponentState(0)
   const [filterOptions, setFilterOptions] = useComponentState<ReportFilterOptions>({ members: [], projects: [] })
@@ -255,8 +245,6 @@ export function AmountsOwedReport() {
 
   useEffect(() => {
     let cancelled = false
-    // Filter options failing is not fatal - the panel just offers nothing to
-    // filter by, which beats taking the whole report down.
     void fetchReportFilterOptions()
       .then((opts) => {
         if (!cancelled) setFilterOptions(opts)
@@ -273,8 +261,6 @@ export function AmountsOwedReport() {
     let cancelled = false
     const from = rangeStart.toISOString().slice(0, 10)
     const to = rangeEnd.toISOString().slice(0, 10)
-    // scope "me" filters to the signed-in member server-side; without it in
-    // the dep list (and in the request) the ME tab showed everyone.
     setLoading(true)
     setError(null)
     fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null,

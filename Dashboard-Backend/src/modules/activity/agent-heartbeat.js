@@ -5,26 +5,12 @@ import { recordSecurityEvent } from "../../core/metrics.js";
 
 const HEARTBEAT_TTL_SEC = 15;
 
-// How stale activity_sessions.updated_at must be before a session is treated
-// as abandoned. The agent syncs every SESSION_SYNC_INTERVAL_SEC (20s), so
-// 90s (~4 missed syncs) sounded generous but wasn't: a laptop sleep, a wifi
-// roam/VPN reconnect, or a brief backend blip routinely runs past it while
-// the employee is still genuinely working (tracker.rs keeps ticking off
-// wall-clock the whole time, independent of the network) - closing the
-// session this fast turned ordinary hiccups into "abandoned" far too often.
-// 5 minutes (~15 missed syncs) still catches a real crash/kill in a
-// reasonable window for reporting/limits purposes, while giving normal
-// transient gaps room to recover on their own. The agent's own
-// try_recover_lost_session (agent/tracker.rs) is the real backstop now if a
-// session does get closed out from under it - this constant only controls
-// how often that recovery path has to run at all.
 const SESSION_STALE_MS = 5 * 60_000;
 
 function key(memberId) {
   return `agent:heartbeat:${memberId}`;
 }
 
-/** Called whenever the desktop agent's own client hits the backend (no browser Origin). */
 export async function touchAgentHeartbeat(memberId) {
   const redis = getRedisClient();
   if (!redis || !memberId) return;
@@ -35,12 +21,6 @@ export async function touchAgentHeartbeat(memberId) {
   }
 }
 
-/**
- * True if the desktop agent has pinged the backend within the last
- * HEARTBEAT_TTL_SEC. Presence/UI signal only - NOT used to decide whether a
- * session is abandoned (see isSessionAbandoned). A false "offline" here is
- * cosmetic; it must never be destructive.
- */
 export async function isAgentOnline(memberId) {
   const redis = getRedisClient();
   if (!redis || !memberId) return false;
@@ -51,29 +31,15 @@ export async function isAgentOnline(memberId) {
   }
 }
 
-/**
- * True if `session` (an open activity_sessions row) was started by the
- * desktop agent, is still marked active/idle, and hasn't synced in
- * SESSION_STALE_MS - i.e. it was left open by a crash/kill with no clean
- * stop. Deliberately does not consult Redis: an unreachable/unconfigured
- * cache is "we don't know", not "the agent is gone", and must not be read as
- * evidence that an employee stopped working.
- * @param {{ source?: string, status?: string, member_id?: string, updated_at?: unknown }} session
- */
 export async function isSessionAbandoned(session) {
   if (!session) return false;
   const status = String(session.status || "").toLowerCase();
   if (session.source !== "agent" || (status !== "active" && status !== "idle")) return false;
-  if (session.updated_at == null) return false; // unknown -> fail open, same as Redis-unknown
+  if (session.updated_at == null) return false;
   const updatedAt = new Date(session.updated_at).getTime();
   return Number.isFinite(updatedAt) && Date.now() - updatedAt > SESSION_STALE_MS;
 }
 
-/**
- * Closes an abandoned desktop-agent session server-side, keeping whatever
- * active_seconds/idle_seconds it last synced instead of losing them.
- * @param {{ id: string, member_id?: string }} session
- */
 export async function closeAbandonedSession(session) {
   const now = new Date();
   await updatePgSession(session.id, { status: "stopped", endedAt: now, updatedAt: now });
@@ -81,10 +47,6 @@ export async function closeAbandonedSession(session) {
     sessionId: session.id,
     memberId: session.member_id,
   });
-  // OBS-3: "alert on abandoned-session closures per minute... under TC-1's
-  // fix this is near-zero in normal operation, so a spike is a real
-  // incident." Same /monitor security-event feed as OBS-2 - one place an
-  // operator already looks, not a second dashboard.
   recordSecurityEvent({
     event: "abandoned_session_closed",
     detail: `session=${session.id} member=${session.member_id ?? "unknown"}`,

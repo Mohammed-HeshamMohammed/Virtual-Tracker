@@ -23,8 +23,6 @@ export function ProjectRowMenu({
   onEdit: () => void
   onArchive: () => void
   onDelete: () => void
-  /** Opens the "Anchor" small form - set the next reset period's start/end.
-   *  Omitted entirely (not shown) when the project has no budget yet. */
   onAnchor?: () => void
   isDark?: boolean
 }) {

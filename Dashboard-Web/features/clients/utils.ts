@@ -1,7 +1,6 @@
 import type { Client as ApiClient } from "@/features/clients/api/client-api"
 import type { Client, ClientFormData } from "@/features/clients/models/client"
 
-/** Map API client (optional address fields) to modal form defaults. */
 export function clientFormFromApi(data: ApiClient): ClientFormData {
   const base = emptyClient()
   return {

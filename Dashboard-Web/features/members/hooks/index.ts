@@ -1,4 +1,3 @@
-/** @internal Import from `../../shared/hooks/<file>` within `people/` only. */
 
 export { usePaginatedTable } from "@/shared/tables/hooks/use-paginated-table"
 export { useCachedList } from "@/shared/tables/hooks/use-cached-list"

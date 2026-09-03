@@ -76,7 +76,6 @@ export default function AboutPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-16 space-y-20">
-          {/* Pillars section */}
           <section className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {pillars.map((pillar) => (
               <div key={pillar.title} className="group relative rounded-3xl border border-slate-200/80 bg-white p-8 shadow-sm hover:shadow-md hover:border-violet-200 transition-all duration-300">
@@ -91,7 +90,6 @@ export default function AboutPage() {
             ))}
           </section>
 
-          {/* Interactive Architecture Section */}
           <section className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-violet-100/50 rounded-full blur-3xl -z-10" />
             <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 mb-2">Technical Architecture</h2>
@@ -100,7 +98,6 @@ export default function AboutPage() {
             </p>
 
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] items-start">
-              {/* Layer Selection */}
               <div className="space-y-3">
                 {archLayers.map((layer, idx) => (
                   <button
@@ -123,7 +120,6 @@ export default function AboutPage() {
                 ))}
               </div>
 
-              {/* Layer Detail Display */}
               <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-6 md:p-8 space-y-6 min-h-[300px] flex flex-col justify-between backdrop-blur-sm">
                 <div className="space-y-4">
                   <div>
@@ -166,7 +162,6 @@ export default function AboutPage() {
             </div>
           </section>
 
-          {/* Development Milestone Timeline */}
           <section className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm max-w-4xl mx-auto">
             <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-10 text-center">Development Roadmap Milestones</h3>
             <div className="relative border-l border-slate-200 pl-8 ml-4 space-y-10">

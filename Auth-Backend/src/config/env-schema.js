@@ -1,7 +1,3 @@
-/**
- * Zod schemas for env + Firebase credential validation. Don't log parsed values (secrets).
- */
-
 import { z } from "zod";
 
 const nodeEnvSchema = z.enum(["development", "production", "test"]);
@@ -16,7 +12,6 @@ const optionalTrimmedString = z
   .optional()
   .transform((value) => (typeof value === "string" ? value.trim() : ""));
 
-/** Firebase web client config (public — still validate shape). */
 export const firebaseWebConfigSchema = z.object({
   apiKey: z.string().min(1, "apiKey is required"),
   authDomain: z.string().min(1, "authDomain is required"),
@@ -27,7 +22,6 @@ export const firebaseWebConfigSchema = z.object({
   measurementId: z.string().optional().default(""),
 });
 
-/** Firebase Admin service account JSON (private). */
 export const firebaseServiceAccountSchema = z.object({
   type: z.literal("service_account"),
   project_id: z.string().min(1),
@@ -42,7 +36,6 @@ export const firebaseServiceAccountSchema = z.object({
   universe_domain: z.string().optional(),
 });
 
-/** Web Push VAPID public key (URL-safe base64). */
 export const vapidPublicKeySchema = z
   .string()
   .min(80, "VAPID public key is too short")
@@ -244,37 +237,22 @@ const envSourceSchema = z
     }
   });
 
-/**
- * @param {unknown} raw
- * @returns {z.infer<typeof firebaseServiceAccountSchema>}
- */
 export function parseFirebaseServiceAccountJson(raw) {
   const value = typeof raw === "string" ? JSON.parse(raw.trim()) : raw;
   return firebaseServiceAccountSchema.parse(value);
 }
 
-/**
- * @param {unknown} raw
- * @returns {z.infer<typeof firebaseWebConfigSchema>}
- */
 export function parseFirebaseWebConfigJson(raw) {
   const value = typeof raw === "string" ? JSON.parse(raw) : raw;
   return firebaseWebConfigSchema.parse(value);
 }
 
-/**
- * @param {Record<string, string | undefined>} source
- * @returns {string[]}
- */
 export function collectEnvValidationErrors(source = process.env) {
   const result = envSourceSchema.safeParse(source);
   if (result.success) return [];
   return formatZodIssues(result.error);
 }
 
-/**
- * @param {Record<string, string | undefined>} source
- */
 export function validateEnvSource(source = process.env) {
   const errors = collectEnvValidationErrors(source);
   if (errors.length > 0) {
@@ -282,15 +260,10 @@ export function validateEnvSource(source = process.env) {
   }
 }
 
-/** @deprecated Use validateEnvSource — kept for tests that validated built config. */
 export function validateEnv(source = process.env) {
   validateEnvSource(source);
 }
 
-/**
- * @param {import("zod").ZodError} error
- * @returns {string[]}
- */
 function formatZodIssues(error) {
   return error.issues.map((issue) => {
     const path = issue.path.length > 0 ? `${issue.path.join(".")}: ` : "";

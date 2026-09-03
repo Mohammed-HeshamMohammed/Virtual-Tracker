@@ -30,10 +30,6 @@ function matchesTaskFilters(row, url) {
   return true;
 }
 
-/** List tasks by primary assignee (Postgres `tasks.assigned_to`) + task_assignments
- * rows (still Firestore - task_assignments itself isn't migrated yet, see
- * implementation.md Phase 2). Tasks found only via the assignment lookup are
- * still fetched from Postgres, since the task rows themselves have moved. */
 export async function listTasksForAssignee(req, db, url, assigneeId) {
   const rows = [];
   const seen = new Set();
@@ -61,10 +57,6 @@ export async function listTasksForAssignee(req, db, url, assigneeId) {
   return visible;
 }
 
-/**
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string[]} taskIds
- */
 export async function enrichTaskIds(db, taskIds) {
   const unique = [...new Set(taskIds.filter(Boolean))];
   if (!unique.length) return [];
@@ -72,11 +64,6 @@ export async function enrichTaskIds(db, taskIds) {
   return enrichTasksWithAssignees(db, rows);
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("firebase-admin/firestore").Firestore} db
- * @param {string} taskId
- */
 export async function getEnrichedTaskById(req, db, taskId) {
   const row = await getTaskPg(taskId);
   if (!row) return null;

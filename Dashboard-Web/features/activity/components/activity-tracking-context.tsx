@@ -52,7 +52,6 @@ interface ActivityTrackingContextValue {
   setCurrentTask: (task: TimerTaskRef | null) => void
   canStartTimer: boolean
   startTracking: () => Promise<boolean>
-  /** Passively reflect whatever session already exists (e.g. one the desktop agent started) without POSTing a new one. */
   restoreSession: () => Promise<void>
   setIdle: () => Promise<void>
   resumeTracking: () => Promise<boolean>
@@ -65,9 +64,7 @@ const ActivityTrackingContext = createContext<ActivityTrackingContextValue | und
 const SYNC_MS = ACTIVITY_SESSION_SYNC_MS
 const SESSION_POLL_MS = 5_000
 const AGENT_CHECK_MS = 5_000
-/** Pause immediately when the agent is unavailable in desktop capture mode. */
 const AGENT_FAIL_PAUSE_THRESHOLD = 1
-/** Consecutive missing session polls before treating the session as ended. */
 const SESSION_MISS_STOP_THRESHOLD = 3
 const STORAGE_KEY = "vt-activity-session"
 const LIMIT_EVENT = "vt-task-timer-limit-reached"
@@ -87,9 +84,6 @@ function notifyTaskLimitReached(taskTitle: string, message?: string) {
   )
 }
 
-// Reuses the same toast path as a limit-reached stop (timer-button.tsx
-// only reads detail.message, not detail.taskTitle) - no new UI plumbing
-// needed for a second kind of forced stop.
 function notifyTimerStoppedLive(taskTitle: string, message: string) {
   notifyTaskLimitReached(taskTitle, message)
 }
@@ -114,13 +108,11 @@ function applyTaskTimerToRefs(
   setIdleSeconds(state.idleSeconds)
 }
 
-/** Task timer backed by activity_sessions. Desktop/Python agent captures while session is active. */
 export function ActivityTrackingProvider({
   children,
   deferInitialSessionRestore = false,
 }: {
   children: ReactNode
-  /** When true, do not call GET /api/activity/session until the user starts a timer. */
   deferInitialSessionRestore?: boolean
 }) {
   const { isLoggedIn, user, profile, sessionReady, memberId } = useAuth()
@@ -392,17 +384,6 @@ export function ActivityTrackingProvider({
     applyPhase("online")
   }, [applyPhase, persistCurrentTaskTimer, sessionCounters, syncTaskTracking])
 
-  // Live sync (PLAN-livesyncandagenttimer.md §6.11, case 41) - the
-  // highest-value item in that plan after the reported bug itself: without
-  // this, a task deleted while its timer is running keeps counting and
-  // produces a time entry against a task that no longer exists. The 5s
-  // session poll below is kept as the fallback for whenever the WS is
-  // down; this listener just closes the gap from up-to-5s to sub-second.
-  //
-  // Deliberately scoped to task deletion only for this pass - a currently-
-  // tracked task's project isn't stored anywhere in this context (only
-  // TimerTaskRef, which has no projectId), so live-stopping on the parent
-  // project being archived (case 42) isn't wired here.
   useEffect(() => {
     const handler = (event: Event) => {
       const detail = (event as CustomEvent<ChangeFrame>).detail

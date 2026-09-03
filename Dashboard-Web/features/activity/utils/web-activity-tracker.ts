@@ -18,7 +18,6 @@ export type WebActivityTrackerOptions = {
   onFlush?: () => void
 }
 
-/** Browser-tab activity capture while the task timer is active (replaces desktop agent for web users). */
 export function createWebActivityTracker(options: WebActivityTrackerOptions) {
   const { sessionId, isActive, onFlush } = options
   let appInterval: ReturnType<typeof setInterval> | null = null

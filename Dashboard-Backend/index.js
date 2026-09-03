@@ -1,10 +1,8 @@
-// Bootstrap: load and validate configuration before other modules run.
 import { getEnv, initConfig } from "./src/config/env.js";
 
 const config = initConfig();
 
 if (config.security.disableTlsVerificationInDev) {
-  // Node.js Windows SSL workaround for Firebase Admin in local development only.
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
@@ -48,16 +46,11 @@ function registerServerErrorHandler(server, port) {
   });
 }
 
-// Last-resort process guards. Rejections from fire-and-forget work (schedulers,
-// void-called services) have no request scope to catch them; without these Node
-// would kill the process on a single Firestore blip.
 process.on("unhandledRejection", (reason) => {
   logError(reason instanceof Error ? reason : new Error(String(reason)), "unhandledRejection");
 });
 process.on("uncaughtException", (err) => {
   logError(err, "uncaughtException");
-  // State is unknown after an uncaught throw: stop taking traffic and let the
-  // supervisor restart us.
   if (activeServer) {
     activeServer.close(() => process.exit(1));
     setTimeout(() => process.exit(1), 5000).unref();
@@ -66,7 +59,6 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-// Graceful shutdown
 process.on("SIGTERM", () => {
   console.log("\n[shutdown] SIGTERM received, closing server...");
   if (activeServer) {
@@ -87,10 +79,6 @@ process.on("SIGINT", () => {
 export async function startServer(port = getEnv().server.port) {
   const server = createServer();
   initPresenceGateway(server);
-  // Live sync (PLAN-livesyncandagenttimer.md §6.1): reuses the presence
-  // gateway's socket set as the change-notification transport. One
-  // subscription for the whole process lifetime, wired once here so every
-  // publishChange() call anywhere in the app reaches every connected client.
   subscribeChanges((msg) => broadcastToAll({ type: "changed", ...msg }));
   activeServer = server;
   registerServerErrorHandler(server, port);
@@ -129,7 +117,6 @@ export async function startServer(port = getEnv().server.port) {
     const routes = [
       "/health",
       "/api/readiness",
-      // Auth-identity routes owned by Dashboard (NOT Auth-Backend)
       "/api/auth/sign-in-client-extras",
       "/api/auth/session-bootstrap",
       "/api/auth/complete-first-login",
@@ -137,7 +124,6 @@ export async function startServer(port = getEnv().server.port) {
       "/api/auth/access-request",
       "/api/auth/send-verification-email",
       "/api/auth/notify-*",
-      // App / entity routes
       "/api/bootstrap",
       "/api/public/invites/*",
       "/api/members",
@@ -152,7 +138,6 @@ export async function startServer(port = getEnv().server.port) {
       "/api/presence",
       "/api/dashboard",
       "/api/notifications/*",
-      // ⚠️ Restrict at gateway before first production deploy:
       "/monitor",
     ];
 

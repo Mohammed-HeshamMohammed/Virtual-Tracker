@@ -2,7 +2,6 @@ import { apiFetch } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
 import type { ActivityCategory } from "@/features/activity/utils/activity-categories"
 
-/** One row of `activity_categories` — the org-wide label for an app or domain. */
 export interface ClassificationRow {
   id: string
   matchType: "app" | "domain"
@@ -23,7 +22,6 @@ async function readEnvelope<T>(res: Response, fallback: string): Promise<T> {
   return (json?.data ?? null) as T
 }
 
-/** Readable by any signed-in member — writing is Owner / Super Admin / Admin. */
 export async function fetchClassifications(): Promise<ClassificationRow[]> {
   const res = await apiFetch(apiPath("/api/classification/categories"), {
     headers: { Accept: "application/json" },
@@ -59,7 +57,6 @@ export async function deleteClassification(id: string): Promise<void> {
   await readEnvelope<null>(res, "Failed to remove classification.")
 }
 
-/** Key a classification map the same way the backend's unique index does. */
 export function classificationKey(matchType: "app" | "domain", pattern: string): string {
   return `${matchType}:${pattern.trim().toLowerCase()}`
 }

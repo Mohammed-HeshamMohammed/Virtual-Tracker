@@ -1,4 +1,3 @@
-/** Auth/session sync retry policy — fail fast with user-visible retry instead of 60s trap. */
 
 export const AUTH_SYNC_RETRY = {
   minDurationMs: 12_000,

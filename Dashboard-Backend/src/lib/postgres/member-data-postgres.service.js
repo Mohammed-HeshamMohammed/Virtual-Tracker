@@ -25,10 +25,6 @@ function parseDateOnly(value) {
   return str.slice(0, 10);
 }
 
-/**
- * @param {Record<string, unknown>} row
- * @returns {Record<string, unknown>}
- */
 export function normalizeMemberDataRow(row) {
   const out = { ...row };
   for (const [key, value] of Object.entries(out)) {
@@ -47,13 +43,7 @@ export function normalizeMemberDataRow(row) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// limits
-// ---------------------------------------------------------------------------
 
-/**
- * @param {string} memberId
- */
 export async function getLimitsPg(memberId) {
   const rows = await query(
     "SELECT member_id, weekly, daily, updated_by, updated_at FROM limits WHERE member_id = $1 LIMIT 1",
@@ -71,9 +61,6 @@ export async function getLimitsPg(memberId) {
   });
 }
 
-/**
- * @param {string[]} memberIds
- */
 export async function getLimitsBatchPg(memberIds) {
   const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
   if (!unique.length) return [];
@@ -93,12 +80,6 @@ export async function getLimitsBatchPg(memberIds) {
   );
 }
 
-/**
- * @param {string} memberId
- * @param {string} limitType
- * @param {number} value
- * @param {string} updatedBy
- */
 export async function upsertLimitFieldPg(memberId, limitType, value, updatedBy) {
   const field = limitType === "daily" ? "daily" : "weekly";
   const actor = actorIdOrNull(updatedBy) ?? "system";
@@ -115,10 +96,6 @@ export async function upsertLimitFieldPg(memberId, limitType, value, updatedBy) 
   ]);
 }
 
-/**
- * @param {string} memberId
- * @param {string} actor
- */
 export async function ensureLimitsDocPg(memberId, actor) {
   const existing = await getLimitsPg(memberId);
   if (existing) return { created: false, id: memberId };
@@ -132,35 +109,10 @@ export async function ensureLimitsDocPg(memberId, actor) {
   return { created: true, id: memberId };
 }
 
-/**
- * @param {string} memberId
- */
 export async function deleteLimitsDocPg(memberId) {
   await query("DELETE FROM limits WHERE member_id = $1", [memberId]);
 }
 
-/**
- * §6.9 follow-up - the workLimits tab spans two tables (`limits`.weekly/daily,
- * `time_settings`.work_days/disable_tracking_specific_days/use_shifts_for_limits)
- * with no single row/timestamp to condition on. Callers pass one composite
- * token (built by member-profile.service.js's buildWorkLimitsToken) split
- * back into the two sides here, and both sides are checked-and-written inside
- * one DB transaction: a stale token on either table rolls back both writes,
- * so the tab never ends up half-saved.
- *
- * Only touches the four time_settings columns workLimits owns - unlike
- * upsertMemberScopedRowPg's full-row overwrite, this never resets the
- * settings tab's able_to_track_time/keep_idle_time/idle_timeout/modify_time/
- * require_approval columns to their defaults.
- *
- * @param {string} memberId
- * @param {{ weekly: number, daily: number, workDays: number[], makeupDays: number[], disableTrackingSpecificDays: boolean, useShiftsForLimits: boolean }} payload
- * @param {string} actor
- * @param {{ limits?: string, timeSettings?: string }} [expected] ISO updated_at
- *   tokens; a missing side is unconditional (first-time create, or no prior
- *   token to compare against).
- * @returns {Promise<{ conflict: boolean }>}
- */
 export async function updateWorkLimitsConditionalPg(memberId, payload, actor, expected = {}) {
   const actorId = actorIdOrNull(actor) ?? "system";
   const workDaysJson = JSON.stringify(Array.isArray(payload.workDays) ? payload.workDays : [0, 1, 2, 3, 4]);
@@ -239,14 +191,7 @@ export async function updateWorkLimitsConditionalPg(memberId, payload, actor, ex
   }
 }
 
-// ---------------------------------------------------------------------------
-// member-scoped singleton rows (employment, time_settings)
-// ---------------------------------------------------------------------------
 
-/**
- * @param {string} collection
- * @param {string} memberId
- */
 export async function getMemberScopedRowPg(collection, memberId) {
   if (!MEMBER_SCOPED_COLLECTIONS.has(collection)) return null;
   const rows = await query(`SELECT * FROM ${collection} WHERE member_id = $1 ORDER BY updated_at DESC LIMIT 1`, [
@@ -255,11 +200,6 @@ export async function getMemberScopedRowPg(collection, memberId) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
-/**
- * Batch variant for member-list-enrichment.js's enrichMembersWithPayAndLimits,
- * same shape as getLimitsBatchPg.
- * @param {string[]} memberIds
- */
 export async function getPayRatesBatchPg(memberIds) {
   const unique = [...new Set(memberIds.filter((id) => typeof id === "string" && id))];
   if (!unique.length) return [];
@@ -267,12 +207,6 @@ export async function getPayRatesBatchPg(memberIds) {
   return rows.map((row) => normalizeMemberDataRow(row));
 }
 
-/**
- * Append-only audit row for a pay/bill rate change - see pay_rate_history's
- * own comment in ensure-lookup-schema.js. Written by member-profile.service.js
- * right after an accepted payBill save, never by anything else.
- * @param {Record<string, unknown>} payload
- */
 export async function insertPayRateHistoryRowPg(payload) {
   const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
   await query(
@@ -302,13 +236,6 @@ export async function insertPayRateHistoryRowPg(payload) {
   return id;
 }
 
-/**
- * Most recent history rows first - what the Pay/Bill tab's history table
- * renders. Capped well above what the UI shows so it never silently looks
- * truncated for a member with a long compensation history.
- * @param {string} memberId
- * @param {number} [limit]
- */
 export async function listPayRateHistoryByMemberIdPg(memberId, limit = 50) {
   const rows = await query(
     `SELECT * FROM pay_rate_history WHERE member_id = $1 ORDER BY created_at DESC LIMIT $2`,
@@ -317,7 +244,6 @@ export async function listPayRateHistoryByMemberIdPg(memberId, limit = 50) {
   return rows.map((row) => normalizeMemberDataRow(row));
 }
 
-/** @param {string} memberId */
 export async function deletePayRateHistoryByMemberIdPg(memberId) {
   await query(`DELETE FROM pay_rate_history WHERE member_id = $1`, [memberId]);
 }
@@ -440,16 +366,6 @@ const SCOPED_COLUMN_SPECS = {
   pay_rates: { columns: PAY_RATES_UPDATABLE_COLUMNS, valueFor: payRatesColumnValue },
 };
 
-/**
- * §6.9 conditional-write path for an existing employment/time_settings/
- * pay_rates row. Same shape as project_budgets' equivalent: a plain
- * `WHERE member_id = $1 AND date_trunc('milliseconds', updated_at) = $expected`
- * UPDATE, returning true (conflict) on zero rows.
- * @param {string} collection @param {string} memberId
- * @param {Record<string, unknown>} payload @param {string} actor
- * @param {string} expectedUpdatedAt
- * @returns {Promise<boolean>} true on conflict
- */
 async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload, actor, expectedUpdatedAt) {
   const { columns, valueFor } = SCOPED_COLUMN_SPECS[collection];
   const params = [memberId];
@@ -461,8 +377,6 @@ async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload,
   params.push(actor);
   setClauses.push(`updated_by = $${params.length}`);
   params.push(expectedUpdatedAt);
-  // See projects-postgres.service.js's updateProjectPg for why this must be
-  // millisecond-truncated on both sides (now() vs a JS Date round-trip).
   const rows = await query(
     `UPDATE ${collection} SET ${setClauses.join(", ")}, updated_at = now()
      WHERE member_id = $1 AND date_trunc('milliseconds', updated_at) = $${params.length}::timestamptz
@@ -472,13 +386,6 @@ async function conditionalUpdateMemberScopedRowPg(collection, memberId, payload,
   return rows.length === 0;
 }
 
-/**
- * @param {string} collection
- * @param {string} memberId
- * @param {Record<string, unknown>} payload
- * @param {string} [expectedUpdatedAt] §6.9 - only checked when a row already
- *   exists; a first-time create has nothing to conflict with.
- */
 export async function upsertMemberScopedRowPg(collection, memberId, payload, expectedUpdatedAt) {
   if (!MEMBER_SCOPED_COLLECTIONS.has(collection)) {
     throw new Error(`Unsupported member-scoped collection: ${collection}`);
@@ -598,7 +505,6 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
     return id;
   }
 
-  // pay_rates
   await query(
     `INSERT INTO pay_rates (
       id, member_id, type, rate, currency, pay_period, require_timesheet_approval,
@@ -634,11 +540,6 @@ export async function upsertMemberScopedRowPg(collection, memberId, payload, exp
   return id;
 }
 
-/**
- * @param {string} collection
- * @param {string} memberId
- * @param {() => Record<string, unknown>} buildPayload
- */
 export async function ensureMemberScopedRowPg(collection, memberId, buildPayload) {
   const existing = await getMemberScopedRowPg(collection, memberId);
   if (existing) return { created: false, id: existing.id };
@@ -647,30 +548,17 @@ export async function ensureMemberScopedRowPg(collection, memberId, buildPayload
   return { created: true, id };
 }
 
-/**
- * @param {string} collection
- * @param {string} memberId
- */
 export async function deleteMemberScopedRowsPg(collection, memberId) {
   if (!MEMBER_SCOPED_COLLECTIONS.has(collection)) return;
   await query(`DELETE FROM ${collection} WHERE member_id = $1`, [memberId]);
 }
 
-/**
- * @param {string} memberId
- */
 export async function memberUsesShiftsForLimitsPg(memberId) {
   const row = await getMemberScopedRowPg("time_settings", memberId);
   return row?.use_shifts_for_limits === true;
 }
 
-// ---------------------------------------------------------------------------
-// member_bans / device_bans
-// ---------------------------------------------------------------------------
 
-/**
- * @param {string} emailNorm
- */
 export async function findActiveBanByEmailPg(emailNorm) {
   const rows = await query(
     `SELECT * FROM member_bans WHERE email = $1 AND active = true ORDER BY banned_at DESC LIMIT 1`,
@@ -679,9 +567,6 @@ export async function findActiveBanByEmailPg(emailNorm) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
-/**
- * @param {string} memberId
- */
 export async function findActiveBanByMemberIdPg(memberId) {
   const rows = await query(
     `SELECT * FROM member_bans WHERE member_id = $1 AND active = true ORDER BY banned_at DESC LIMIT 1`,
@@ -690,9 +575,6 @@ export async function findActiveBanByMemberIdPg(memberId) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
-/**
- * @param {string} firebaseUid
- */
 export async function findActiveBanByFirebaseUidPg(firebaseUid) {
   const rows = await query(
     `SELECT * FROM member_bans WHERE firebase_uid = $1 AND active = true ORDER BY banned_at DESC LIMIT 1`,
@@ -708,9 +590,6 @@ export async function listActiveMemberBansPg() {
   return rows.map(normalizeMemberDataRow);
 }
 
-/**
- * @param {Record<string, unknown>} payload
- */
 export async function insertMemberBanPg(payload) {
   const id = typeof payload.id === "string" ? payload.id : crypto.randomUUID();
   await query(
@@ -740,10 +619,6 @@ export async function insertMemberBanPg(payload) {
   return id;
 }
 
-/**
- * @param {string} banId
- * @param {Record<string, unknown>} patch
- */
 export async function updateMemberBanPg(banId, patch) {
   const fields = [];
   const params = [banId];
@@ -763,17 +638,11 @@ export async function updateMemberBanPg(banId, patch) {
   await query(`UPDATE member_bans SET ${fields.join(", ")} WHERE id = $1`, params);
 }
 
-/**
- * @param {string} banId
- */
 export async function getMemberBanPg(banId) {
   const rows = await query("SELECT * FROM member_bans WHERE id = $1 LIMIT 1", [banId]);
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
-/**
- * @param {string} ip
- */
 export async function isDevicePermanentlyBannedPg(ip) {
   const rows = await query(
     "SELECT permanently_banned FROM device_bans WHERE ip_address = $1 LIMIT 1",
@@ -782,10 +651,6 @@ export async function isDevicePermanentlyBannedPg(ip) {
   return rows[0]?.permanently_banned === true;
 }
 
-/**
- * @param {string} ip
- * @param {string} memberId
- */
 export async function recordBanIpAndMaybeDeviceBanPg(ip, memberId) {
   const pool = getPostgresPool();
   if (!pool) return;
@@ -828,13 +693,7 @@ export async function recordBanIpAndMaybeDeviceBanPg(ip, memberId) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// system_meta
-// ---------------------------------------------------------------------------
 
-/**
- * @param {string} docKey
- */
 export async function getSystemMetaPg(docKey) {
   const rows = await query("SELECT doc_key, payload, updated_at FROM system_meta WHERE doc_key = $1 LIMIT 1", [
     docKey,
@@ -847,10 +706,6 @@ export async function getSystemMetaPg(docKey) {
   };
 }
 
-/**
- * @param {string} docKey
- * @param {Record<string, unknown>} payload
- */
 export async function setSystemMetaPg(docKey, payload) {
   await query(
     `INSERT INTO system_meta (doc_key, payload, updated_at)
@@ -862,13 +717,7 @@ export async function setSystemMetaPg(docKey, payload) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// member_tree_cache
-// ---------------------------------------------------------------------------
 
-/**
- * @param {string} memberId
- */
 export async function getMemberTreeCachePg(memberId) {
   const rows = await query("SELECT * FROM member_tree_cache WHERE member_id = $1 LIMIT 1", [memberId]);
   if (!rows[0]) return null;
@@ -883,10 +732,6 @@ export async function getMemberTreeCachePg(memberId) {
   });
 }
 
-/**
- * @param {string} memberId
- * @param {Record<string, unknown>} data
- */
 export async function setMemberTreeCachePg(memberId, data) {
   await query(
     `INSERT INTO member_tree_cache (member_id, ancestors, descendants, root_id, depth, updated_at)
@@ -907,9 +752,6 @@ export async function setMemberTreeCachePg(memberId, data) {
   );
 }
 
-/**
- * @param {string} memberId
- */
 export async function deleteMemberTreeCachePg(memberId) {
   await query("DELETE FROM member_tree_cache WHERE member_id = $1", [memberId]);
 }
@@ -918,10 +760,6 @@ export async function clearAllMemberTreeCachePg() {
   await query("DELETE FROM member_tree_cache");
 }
 
-/**
- * @param {string} oldId
- * @param {string} newId
- */
 export async function rekeyMemberDataMemberIdPg(oldId, newId) {
   await query("UPDATE employment SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
   await query("UPDATE time_settings SET member_id = $2, updated_at = now() WHERE member_id = $1", [oldId, newId]);
@@ -941,17 +779,10 @@ export const MEMBER_DATA_POSTGRES_ENTITY_KEYS = new Set([
   "member-onboarding",
 ]);
 
-/**
- * @param {string} entityKey
- */
 export function isMemberDataPostgresEntityKey(entityKey) {
   return MEMBER_DATA_POSTGRES_ENTITY_KEYS.has(entityKey);
 }
 
-/**
- * @param {string} entityKey
- * @param {URL} url
- */
 export async function listMemberDataSchemaRows(entityKey, url) {
   if (entityKey === "employment") {
     const conditions = [];
@@ -1027,10 +858,6 @@ export async function listMemberDataSchemaRows(entityKey, url) {
   );
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function getMemberDataSchemaRow(entityKey, id) {
   if (entityKey === "limits") return getLimitsPg(id);
   if (entityKey === "member-tree-cache") return getMemberTreeCachePg(id);
@@ -1040,10 +867,6 @@ export async function getMemberDataSchemaRow(entityKey, id) {
   return rows[0] ? normalizeMemberDataRow(rows[0]) : null;
 }
 
-/**
- * @param {string} entityKey
- * @param {Record<string, unknown>} payload
- */
 export async function createMemberDataSchemaRow(entityKey, payload) {
   if (entityKey === "limits") {
     const memberId = String(payload.member_id ?? payload.id ?? "");
@@ -1069,12 +892,6 @@ export async function createMemberDataSchemaRow(entityKey, payload) {
   return getMemberScopedRowPg(collection, memberId);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- * @param {Record<string, unknown>} payload
- * @param {Record<string, unknown>} existing
- */
 export async function updateMemberDataSchemaRow(entityKey, id, payload, existing) {
   if (entityKey === "limits") {
     const memberId = String(existing.member_id ?? existing.id ?? id);
@@ -1099,10 +916,6 @@ export async function updateMemberDataSchemaRow(entityKey, id, payload, existing
   return getMemberScopedRowPg(collection, memberId);
 }
 
-/**
- * @param {string} entityKey
- * @param {string} id
- */
 export async function deleteMemberDataSchemaRow(entityKey, id) {
   if (entityKey === "limits") {
     await deleteLimitsDocPg(id);
@@ -1120,9 +933,6 @@ export async function deleteMemberDataSchemaRow(entityKey, id) {
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }
 
-// ---------------------------------------------------------------------------
-// member_onboarding
-// ---------------------------------------------------------------------------
 
 const MEMBER_ONBOARDING_COLUMNS = [
   "id",
@@ -1142,7 +952,6 @@ const MEMBER_ONBOARDING_COLUMNS = [
   "updated_at",
 ];
 
-/** @param {Record<string, unknown>} row */
 function normalizeOnboardingRowPg(row) {
   return normalizeMemberDataRow(row);
 }
@@ -1154,30 +963,21 @@ export async function listMemberOnboardingRowsPg() {
   return rows.map(normalizeOnboardingRowPg);
 }
 
-/** @param {string} id */
 export async function getMemberOnboardingRowByIdPg(id) {
   const rows = await query("SELECT * FROM member_onboarding WHERE id = $1 LIMIT 1", [id]);
   return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
 }
 
-/** @param {string} memberId */
 export async function findMemberOnboardingByMemberIdPg(memberId) {
   const rows = await query("SELECT * FROM member_onboarding WHERE member_id = $1 LIMIT 1", [memberId]);
   return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
 }
 
-/** @param {string} inviteId */
 export async function findMemberOnboardingByInviteIdPg(inviteId) {
   const rows = await query("SELECT * FROM member_onboarding WHERE invite_id = $1 LIMIT 1", [inviteId]);
   return rows[0] ? normalizeOnboardingRowPg(rows[0]) : null;
 }
 
-/**
- * Full overwrite (INSERT .. ON CONFLICT (id) DO UPDATE SET everything),
- * matching the Firestore `.set()` calls this replaces in
- * member-onboarding/routes.js - not a partial merge.
- * @param {string} id @param {Record<string, unknown>} data
- */
 export async function setMemberOnboardingRowPg(id, data) {
   await query(
     `INSERT INTO member_onboarding (
@@ -1219,10 +1019,6 @@ export async function setMemberOnboardingRowPg(id, data) {
   return getMemberOnboardingRowByIdPg(id);
 }
 
-/**
- * Partial update, matching the Firestore `.update()` calls this replaces.
- * @param {string} id @param {Record<string, unknown>} patch
- */
 export async function updateMemberOnboardingRowPg(id, patch) {
   const columns = MEMBER_ONBOARDING_COLUMNS.filter((c) => c !== "id" && patch[c] !== undefined);
   if (!columns.length) return getMemberOnboardingRowByIdPg(id);
@@ -1244,22 +1040,15 @@ export async function updateMemberOnboardingRowPg(id, patch) {
   return getMemberOnboardingRowByIdPg(id);
 }
 
-/** Cascade-delete cleanup counterpart to deleteMemberScopedRowsPg. @param {string} memberId */
 export async function deleteMemberOnboardingByMemberIdPg(memberId) {
   await query("DELETE FROM member_onboarding WHERE member_id = $1", [memberId]);
 }
 
-/** @param {Record<string, unknown>} payload */
 export async function createMemberOnboardingRowPg(payload) {
   const id = typeof payload.id === "string" && payload.id ? payload.id : crypto.randomUUID();
   return setMemberOnboardingRowPg(id, { ...payload, id });
 }
 
-/**
- * Bootstrap helper - same `{ created, id }` contract as ensureMemberScopedRowPg,
- * for callers (member-entity-bootstrap.js) that don't care about invite_id.
- * @param {string} memberId @param {() => Record<string, unknown>} buildPayload
- */
 export async function ensureMemberOnboardingRowPg(memberId, buildPayload) {
   const existing = await findMemberOnboardingByMemberIdPg(memberId);
   if (existing) return { created: false, id: existing.id };
@@ -1268,14 +1057,6 @@ export async function ensureMemberOnboardingRowPg(memberId, buildPayload) {
   return { created: true, id };
 }
 
-/**
- * member_onboarding has no unique constraint on member_id (a row can also
- * key off invite_id alone with member_id null) - dedupe the same way the
- * Firestore version did: keep the most-recently-updated row per member_id,
- * delete the rest.
- * @param {string} memberId
- * @returns {Promise<number>} rows removed
- */
 export async function dedupeMemberOnboardingByMemberIdPg(memberId) {
   const rows = await query(
     "SELECT id FROM member_onboarding WHERE member_id = $1 ORDER BY updated_at DESC NULLS LAST, created_at DESC",

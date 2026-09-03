@@ -1,10 +1,3 @@
-// Pure task-scheduling arithmetic, split out of task-assignments.js and
-// task-workload-validation.js so it can be imported without dragging in
-// either file's much larger transitive dependency graph (Postgres services,
-// notifications, member-relationships, ...) - those two files still own the
-// read/write assignment lifecycle and re-export these names for their
-// existing callers. Deliberately dependency-free: no Postgres, no
-// Firestore, just date/number math.
 
 export function toIso(value) {
   if (!value) return null;
@@ -25,7 +18,6 @@ function parseDate(value) {
   return d;
 }
 
-/** Count Mon–Fri between start and due (inclusive). */
 export function countWorkingDaysBetween(startValue, endValue) {
   const start = parseDate(startValue);
   const end = parseDate(endValue);
@@ -41,8 +33,6 @@ export function countWorkingDaysBetween(startValue, endValue) {
   return count;
 }
 
-/** Exported so callers (e.g. getTaskTimeTracking) can show "7 days x 8h/day"
- * as a distinct breakdown instead of only ever seeing it pre-multiplied. */
 export function workingDaysForTask(taskData) {
   let workingDays = countWorkingDaysBetween(
     taskData.start_date ?? taskData.startDate,
@@ -65,8 +55,6 @@ export function estimateAssignmentSeconds(taskData) {
   return Math.floor(workingDaysForTask(taskData) * hoursTotal * 3600);
 }
 
-/** Overtime-only portion of estimateAssignmentSeconds, so callers can show it distinctly
- * instead of it only ever appearing silently folded into the combined total. */
 export function estimateAssignmentOvertimeSeconds(taskData) {
   if (!taskData) return null;
   const overtimePerDay = Number(taskData.overtime_hours_per_day ?? taskData.overtimeHoursPerDay ?? 0);
@@ -75,12 +63,10 @@ export function estimateAssignmentOvertimeSeconds(taskData) {
   return Math.floor(workingDaysForTask(taskData) * overtimePerDay * 3600);
 }
 
-/** @deprecated Use estimateAssignmentSeconds */
 export function estimateTaskDurationSeconds(taskData) {
   return estimateAssignmentSeconds(taskData);
 }
 
-/** hours/day + overtime/day */
 export function computeTaskDailyHours(task) {
   const hoursPerDay = Number(task.duration_hours_per_day ?? task.durationHoursPerDay ?? 0);
   const overtimePerDay = Number(task.overtime_hours_per_day ?? task.overtimeHoursPerDay ?? 0);

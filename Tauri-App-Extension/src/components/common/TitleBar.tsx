@@ -1,8 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ThemePreference } from "../../types";
 
-/** Cycles system -> light -> dark -> system, so one control covers all three
- *  without opening a menu in a 38px title bar. */
 const NEXT_THEME: Record<ThemePreference, ThemePreference> = {
   system: "light",
   light: "dark",
@@ -36,7 +34,6 @@ function ThemeGlyph({ theme }: { theme: ThemePreference }) {
       </svg>
     );
   }
-  // System: half-filled disc - neither sun nor moon is pinned.
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" strokeWidth="1.8" />

@@ -4,12 +4,6 @@ import type { ProfileInfo } from "../../types";
 import { initialsFromName } from "../../utils/formatters";
 import { TitleBar } from "../common/TitleBar";
 
-/**
- * Shown when the agent still knows who you are but can no longer talk to the
- * backend. Name and avatar come from the cached token claims, so this renders
- * fully offline. The button recovers in-app - it does not send you to a
- * browser unless the device itself has been unlinked.
- */
 export function WelcomeBackPanel({
   profile,
   message,
@@ -53,12 +47,6 @@ export function WelcomeBackPanel({
 
           <h1 className="reconnect-name">{name}</h1>
           <p className="reconnect-text">
-            {/* The caller ORs its own stale-session flag into needsRelink
-                before this ever reaches us (App.tsx: needsRelink ||
-                staleSession) - a stale session with no device credential
-                genuinely has no lighter recovery than this, so there used to
-                be a separate "we couldn't verify this session" message here
-                for it that could never actually be reached. */}
             {message ??
               (needsRelink
                 ? "This device is no longer linked to your account."
@@ -80,9 +68,6 @@ export function WelcomeBackPanel({
                   : "Welcome back"}
           </button>
 
-          {/* Replaces the old "Log out instead" button: signing out only to
-              sign back in as someone else was two steps and read as a dead
-              end. A link, not a third stacked button - it is the rarer path. */}
           <button className="link-btn" type="button" disabled={busy} onClick={onSwitchAccount}>
             Not you? Switch account →
           </button>

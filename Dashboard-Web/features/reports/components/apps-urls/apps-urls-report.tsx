@@ -23,9 +23,6 @@ import {
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
-// AppUsageRow/UrlUsageRow are pre-aggregated per member for the whole
-// selected range - no per-row date and no project, so "Member" (the
-// dropdown's only option) is the one real key to bucket by.
 function keyForUsageGroup<T extends { memberName: string }>(row: T): string {
   return row.memberName
 }
@@ -125,8 +122,6 @@ function AppsUrlsTables({ filters }: { filters: ReportFilterState }) {
   const [apps, setApps] = useState<AppUsageRow[]>([])
   const [urls, setUrls] = useState<UrlUsageRow[]>([])
   const [loading, setLoading] = useState(true)
-  // A failed read used to be indistinguishable from an empty report:
-  // getJson swallowed every error and both tables rendered "no rows".
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
 
