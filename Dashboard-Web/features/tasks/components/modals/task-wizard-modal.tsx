@@ -21,6 +21,14 @@ import {
 } from "@/features/projects/constants"
 import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 
+type TaskModalTab = "details" | "schedule" | "limits"
+
+const TASK_MODAL_TABS: { key: TaskModalTab; label: string }[] = [
+  { key: "details", label: "DETAILS" },
+  { key: "schedule", label: "SCHEDULE & ASSIGNEES" },
+  { key: "limits", label: "TIME LIMITS" },
+]
+
 /** Decimal-hours field split into separate hour/minute inputs, same pattern
  *  the project modal's Hours-based budget field uses (see
  *  shared/utils/hours-minutes.ts) - lets someone type "1h 30m" as two plain
@@ -127,6 +135,7 @@ export function TaskWizardModal({
 
   const [prevId, setPrevId] = useComponentState<string | null>(null)
   const [prevOpen, setPrevOpen] = useComponentState(false)
+  const [activeTab, setActiveTab] = useComponentState<TaskModalTab>("details")
 
   const currentTaskId = task ? task.id : null
 
@@ -153,6 +162,7 @@ export function TaskWizardModal({
     setCreateTaskError(null)
     setLiveUpdateNotice(false)
     setStaleSelectionNote(null)
+    setActiveTab("details")
 
     if (task) {
       setNewTaskTitle(task.title)
@@ -296,18 +306,22 @@ export function TaskWizardModal({
     if (isSavingTask) return
     const titleError = validateRequiredText(newTaskTitle, "Task title")
     if (titleError) {
+      setActiveTab("details")
       setCreateTaskError(titleError)
       return
     }
     if (formTeamOptions.length > 0 && !newTaskTeamId) {
+      setActiveTab("details")
       setCreateTaskError("Select a team")
       return
     }
     if (newTaskDurationHoursPerDay.trim() && parseNonNegativeNumber(newTaskDurationHoursPerDay) === null) {
+      setActiveTab("limits")
       setCreateTaskError("Duration hours per day must be a valid number.")
       return
     }
     if (newTaskOvertimeHoursPerDay.trim() && parseNonNegativeNumber(newTaskOvertimeHoursPerDay) === null) {
+      setActiveTab("limits")
       setCreateTaskError("Overtime hours per day must be a valid number.")
       return
     }
@@ -361,7 +375,34 @@ export function TaskWizardModal({
             {isEditingTask ? "Edit task" : "Create new task"}
           </DialogTitle>
         </DialogHeader>
+        <div
+          className={cn(
+            "flex shrink-0 gap-1 overflow-x-auto border-b px-6",
+            isDark ? "border-[#2e3447]" : "border-slate-100",
+          )}
+        >
+          {TASK_MODAL_TABS.map((tab) => (
+            <button
+              key={tab.key}
+              type="button"
+              onClick={() => setActiveTab(tab.key)}
+              className={cn(
+                "whitespace-nowrap border-b-2 px-3 py-3 text-xs font-semibold transition-colors",
+                activeTab === tab.key
+                  ? isDark
+                    ? "border-[#4be277] text-[#4be277]"
+                    : "border-blue-500 text-blue-600"
+                  : isDark
+                    ? "border-transparent text-[#bccbb9] hover:text-[#dce1fb]"
+                    : "border-transparent text-slate-500 hover:text-slate-800",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+          {activeTab === "details" ? (
           <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")} htmlFor="fallback-id">NAME</label>
@@ -449,66 +490,6 @@ export function TaskWizardModal({
               }))}
             />
           </div>
-          <div className="space-y-1.5">
-            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
-              DURATION HOURLY / DAY
-            </label>
-            <HoursMinutesInput
-              value={newTaskDurationHoursPerDay}
-              onChange={setNewTaskDurationHoursPerDay}
-              isDark={isDark}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
-              OVERTIME HOURLY PER DAY
-            </label>
-            <HoursMinutesInput
-              value={newTaskOvertimeHoursPerDay}
-              onChange={setNewTaskOvertimeHoursPerDay}
-              isDark={isDark}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
-            <div className="space-y-0.5">
-              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
-                Continuous session cap
-              </p>
-              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
-                Count the daily-hour limit against one continuous clock-in-to-clock-out session instead of
-                resetting at midnight - for shifts that cross into the next calendar day.
-              </p>
-            </div>
-            <Toggle checked={newTaskRollingHourCap} onChange={setNewTaskRollingHourCap} />
-          </div>
-          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
-            <div className="space-y-0.5">
-              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
-                Shared team budget
-              </p>
-              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
-                Split this task's total hours as one pool shared by every assignee combined, instead of each
-                assignee getting their own full allotment independently.
-              </p>
-            </div>
-            <Toggle checked={newTaskSharedBudget} onChange={setNewTaskSharedBudget} />
-          </div>
-          <div className="space-y-1.5">
-            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>START DATE</label>
-            <DatePickerField
-              value={newTaskStartDate}
-              onChange={setNewTaskStartDate}
-              placeholder="Select date"
-            />
-          </div>
-          <div className={cn("space-y-1.5", isEditingTask && "sm:col-span-2")}>
-            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>DUE DATE</label>
-            <DatePickerField
-              value={newTaskDueDate}
-              onChange={setNewTaskDueDate}
-              placeholder="Select date"
-            />
-          </div>
           {!isEditingTask ? (
             <div className="space-y-1.5">
               <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>POSITION</label>
@@ -527,6 +508,26 @@ export function TaskWizardModal({
               />
             </div>
           ) : null}
+          </div>
+          ) : null}
+          {activeTab === "schedule" ? (
+          <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>START DATE</label>
+            <DatePickerField
+              value={newTaskStartDate}
+              onChange={setNewTaskStartDate}
+              placeholder="Select date"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>DUE DATE</label>
+            <DatePickerField
+              value={newTaskDueDate}
+              onChange={setNewTaskDueDate}
+              placeholder="Select date"
+            />
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
               ASSIGNEES
@@ -578,6 +579,55 @@ export function TaskWizardModal({
             )}
           </div>
           </div>
+          ) : null}
+          {activeTab === "limits" ? (
+          <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
+              DURATION HOURLY / DAY
+            </label>
+            <HoursMinutesInput
+              value={newTaskDurationHoursPerDay}
+              onChange={setNewTaskDurationHoursPerDay}
+              isDark={isDark}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className={cn("text-xs font-semibold text-slate-500", isDark && "text-slate-400")}>
+              OVERTIME HOURLY PER DAY
+            </label>
+            <HoursMinutesInput
+              value={newTaskOvertimeHoursPerDay}
+              onChange={setNewTaskOvertimeHoursPerDay}
+              isDark={isDark}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
+            <div className="space-y-0.5">
+              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
+                Continuous session cap
+              </p>
+              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
+                Count the daily-hour limit against one continuous clock-in-to-clock-out session instead of
+                resetting at midnight - for shifts that cross into the next calendar day.
+              </p>
+            </div>
+            <Toggle checked={newTaskRollingHourCap} onChange={setNewTaskRollingHourCap} />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2 sm:col-span-2 border-slate-200 dark:border-[#2e3447]">
+            <div className="space-y-0.5">
+              <p className={cn("text-sm font-medium", isDark ? "text-[#dce1fb]" : "text-slate-700")}>
+                Shared team budget
+              </p>
+              <p className={cn("text-xs text-slate-500", isDark && "text-slate-400")}>
+                Split this task's total hours as one pool shared by every assignee combined, instead of each
+                assignee getting their own full allotment independently.
+              </p>
+            </div>
+            <Toggle checked={newTaskSharedBudget} onChange={setNewTaskSharedBudget} />
+          </div>
+          </div>
+          ) : null}
           {staleSelectionNote ? (
             <div
               className={cn(
