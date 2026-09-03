@@ -7,7 +7,7 @@ import { useActivityShell, useActivityShellRegistration } from "@/features/activ
 import { useAuth } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity, canManageActivityData } from "@/features/auth"
 import { motion } from "framer-motion"
-import { Globe, ExternalLink, TrendingUp, TrendingDown, Eye } from "lucide-react"
+import { Clock, Globe, ExternalLink, TrendingUp, TrendingDown, Eye } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   ActivityDayEmptyState,
@@ -40,6 +40,19 @@ interface URLUsage {
   sourceKind?: "url" | "window"
 }
 
+interface MemberUrlUsage {
+  memberId?: string
+  member: string
+  avatar: string
+  productiveTime: string
+  productivePercent: number
+  neutralTime: string
+  unproductiveTime: string
+  topDomain: string
+}
+
+type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
+
 // Shared with the Apps page and the classify dialog - see
 // activity-categories.ts for why these stopped being local.
 const getCategoryColor = activityCategoryColor
@@ -51,15 +64,15 @@ export function ActivityURLsContent() {
   const canManage = canManageActivityData(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
-  const { day, searchQuery, selectedCategory, showBlocked } = useActivityShell()
+  const { day, searchQuery, selectedCategory, showBlocked, resetPageFilters } = useActivityShell()
   const periodLabel = day.dayMode === "all" ? "all days" : day.selectedDayLabel
-  const { scope } = useActivityFeedContext()
-  const { data: liveUrls, loading, reload } = useActivityFeed<URLUsage[]>("urls", { day: day.dayKey })
-  const memberOpts = scope?.members ?? []
+  const { setSelectedMemberId } = useActivityFeedContext()
+  const { data: feed, loading, reload } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
+  const membersSource = feed?.members ?? []
 
   const urlsSource = useMemo(
-    () => (liveUrls ?? []).map((url) => ({ ...url, category: normalizeActivityCategory(url.category) })),
-    [liveUrls],
+    () => (feed?.urls ?? []).map((url) => ({ ...url, category: normalizeActivityCategory(url.category) })),
+    [feed?.urls],
   )
 
   const categoryFiltered =
@@ -134,17 +147,24 @@ export function ActivityURLsContent() {
     const membersSheet = workbook.addWorksheet("Members")
     membersSheet.columns = [
       { header: "Member", key: "member", width: 20 },
-      { header: "Productivity", key: "productivity", width: 15 },
-      { header: "Total Time", key: "totalTime", width: 15 },
+      { header: "Productive %", key: "productivePercent", width: 15 },
+      { header: "Productive Time", key: "productiveTime", width: 15 },
+      { header: "Neutral Time", key: "neutralTime", width: 15 },
+      { header: "Unproductive Time", key: "unproductiveTime", width: 18 },
       { header: "Top Domain", key: "topDomain", width: 25 },
-      { header: "Productive Sites", key: "productiveSites", width: 18 },
-      { header: "Unproductive Sites", key: "unproductiveSites", width: 20 },
     ]
-    
-    memberOpts.forEach((member) => {
-      membersSheet.addRow({ member: member.name })
+
+    membersSource.forEach((member) => {
+      membersSheet.addRow({
+        member: member.member,
+        productivePercent: `${member.productivePercent}%`,
+        productiveTime: member.productiveTime,
+        neutralTime: member.neutralTime,
+        unproductiveTime: member.unproductiveTime,
+        topDomain: member.topDomain,
+      })
     })
-    
+
     const buffer = await workbook.xlsx.writeBuffer()
     const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const url = URL.createObjectURL(blob)
@@ -153,7 +173,7 @@ export function ActivityURLsContent() {
     a.download = `url-usage-${day.dayKey}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
-  }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, memberOpts, selectedCategory])
+  }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, membersSource, selectedCategory])
 
   // Real sites only. A row whose sourceKind is "window" came from a browser
   // window title the agent could not resolve to a URL, so its `domain` is the
@@ -206,11 +226,12 @@ export function ActivityURLsContent() {
           icon={Globe}
           title="No URL activity for this day"
           description="URLs appear when the desktop agent reads the browser address bar, or from browser window titles when the address bar cannot be read. Keep the agent running with the timer active while browsing."
+          onShowAllDays={day.dayMode !== "all" ? day.setAllDays : undefined}
         />
       ) : null}
 
       {!loading && showSearchEmpty ? (
-        <ActivitySearchEmptyState entityLabel="URLs" />
+        <ActivitySearchEmptyState entityLabel="URLs" onClear={resetPageFilters} />
       ) : null}
 
       {!loading && showMainContent ? (
@@ -298,13 +319,13 @@ export function ActivityURLsContent() {
                                   href={url.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <ExternalLink className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                                 </a>
                               ) : (
-                                <button type="button" className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" disabled>
+                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" disabled>
                                   <ExternalLink className="h-4 w-4 text-slate-300 dark:text-slate-700" />
                                 </button>
                               )}
@@ -383,29 +404,48 @@ export function ActivityURLsContent() {
       </motion.div>
           </ActivitySection>
 
-          {memberOpts.length > 0 ? (
-            <ActivitySection title="Members with activity" description="Use the member filter above to narrow results">
+          {membersSource.length > 0 ? (
+            <ActivitySection title="Usage by member" description="Click a member to filter the table above by them">
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="overflow-hidden rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm"
               >
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {memberOpts.map((member, index) => (
-                    <motion.div
-                      key={String(member.id ?? index)}
+                  {membersSource.map((member, index) => (
+                    <motion.button
+                      key={member.memberId || `${member.member}-${index}`}
+                      type="button"
+                      onClick={() => member.memberId && setSelectedMemberId(member.memberId)}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.03 + index * 0.03 }}
-                      className="p-4 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                      className="block w-full p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
-                          {member.initials}
+                      <div className="flex items-center gap-4">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
+                          {member.avatar}
                         </div>
-                        <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{member.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-2 flex items-center justify-between">
+                            <p className="font-medium text-slate-800 dark:text-slate-100">{member.member}</p>
+                            <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                              {member.productivePercent}% productive
+                            </span>
+                          </div>
+                          <div className="flex h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                            <div className="h-full bg-emerald-500" style={{ width: `${member.productivePercent}%` }} />
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {member.productiveTime} tracked
+                            </span>
+                            <span>Top site: {member.topDomain}</span>
+                          </div>
+                        </div>
                       </div>
-                    </motion.div>
+                    </motion.button>
                   ))}
                 </div>
               </motion.div>

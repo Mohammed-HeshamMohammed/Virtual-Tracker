@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
+import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity } from "@/features/auth"
@@ -64,7 +65,8 @@ export function ActivityAppsContent() {
   const canExport = canExportActivity(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
-  const { day, searchQuery, selectedCategory } = useActivityShell()
+  const { day, searchQuery, selectedCategory, resetPageFilters } = useActivityShell()
+  const { setSelectedMemberId } = useActivityFeedContext()
   const { data: feed, loading, reload } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
 
   const appsSource = useMemo(
@@ -216,11 +218,15 @@ export function ActivityAppsContent() {
       {loading ? <ActivityLoadingState label="Loading app activity…" /> : null}
 
       {!loading && showDayEmpty ? (
-        <ActivityDayEmptyState icon={Monitor} title="No app activity for this day" />
+        <ActivityDayEmptyState
+          icon={Monitor}
+          title="No app activity for this day"
+          onShowAllDays={day.dayMode !== "all" ? day.setAllDays : undefined}
+        />
       ) : null}
 
       {!loading && showSearchEmpty ? (
-        <ActivitySearchEmptyState entityLabel="apps" />
+        <ActivitySearchEmptyState entityLabel="apps" onClear={resetPageFilters} />
       ) : null}
 
       {!loading && showMainContent ? (
@@ -357,7 +363,7 @@ export function ActivityAppsContent() {
           </ActivitySection>
 
           {membersSource.length > 0 ? (
-            <ActivitySection title="Usage by member" description="Per-member app breakdown">
+            <ActivitySection title="Usage by member" description="Click a member to filter the table above by them">
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -365,12 +371,14 @@ export function ActivityAppsContent() {
               >
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {membersSource.map((member, index) => (
-                    <motion.div
+                    <motion.button
                       key={member.memberId || `${member.member}-${index}`}
+                      type="button"
+                      onClick={() => member.memberId && setSelectedMemberId(member.memberId)}
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       transition={{ delay: 0.03 + index * 0.03 }}
-                      className="p-4 transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
+                      className="block w-full p-4 text-left transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-4">
                         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
@@ -398,7 +406,7 @@ export function ActivityAppsContent() {
                           </div>
                         </div>
                       </div>
-                    </motion.div>
+                    </motion.button>
                   ))}
                 </div>
               </motion.div>
