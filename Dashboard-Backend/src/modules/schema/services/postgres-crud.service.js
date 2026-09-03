@@ -1,4 +1,5 @@
 import { isPostgresConfigured, query } from "../../../lib/postgres/client.js";
+import { computeTimesheetSummary } from "../../timesheets/timesheet-summary.js";
 import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { isPostgresMemberDataReady } from "../../../lib/postgres/member-data-availability.js";
 import {
@@ -152,6 +153,9 @@ const TIMESHEET_COLUMNS = [
   "status",
   "total_hours",
   "billable_hours",
+  "amount",
+  "currency",
+  "project_breakdown",
   "submitted_at",
   "approved_at",
   "approved_by",
@@ -615,16 +619,23 @@ export async function createPostgresRow(entityKey, payload) {
 
   let totalHours = payload.total_hours ?? null;
   let billableHours = payload.billable_hours ?? null;
+  let amount = payload.amount ?? null;
+  let currency = payload.currency ?? null;
+  let projectBreakdown = payload.project_breakdown ?? null;
   if (payload.status === "submitted" && payload.member_id && payload.period_start && payload.period_end) {
-    const summary = await computeTimesheetHours(payload.member_id, payload.period_start, payload.period_end);
+    const summary = await computeTimesheetSummary(payload.member_id, payload.period_start, payload.period_end);
     totalHours = summary.total_hours;
     billableHours = summary.billable_hours;
+    amount = summary.amount;
+    currency = summary.currency;
+    projectBreakdown = summary.project_breakdown;
   }
 
   const rows = await query(
     `INSERT INTO timesheets
-      (id, member_id, period_start, period_end, status, total_hours, billable_hours, submitted_at, approved_at, approved_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      (id, member_id, period_start, period_end, status, total_hours, billable_hours, amount, currency,
+       project_breakdown, submitted_at, approved_at, approved_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
      RETURNING ${TIMESHEET_COLUMNS.join(", ")}`,
     [
       payload.id,
@@ -634,6 +645,9 @@ export async function createPostgresRow(entityKey, payload) {
       payload.status ?? "draft",
       totalHours,
       billableHours,
+      amount,
+      currency,
+      projectBreakdown ? JSON.stringify(projectBreakdown) : null,
       payload.submitted_at ?? (payload.status === "submitted" ? new Date() : null),
       payload.approved_at ?? null,
       payload.approved_by ?? null,
@@ -738,16 +752,20 @@ export async function updatePostgresRow(entityKey, id, payload, existing, expect
 
   const merged = { ...existing, ...payload, id };
   if (merged.status === "submitted" && merged.member_id && merged.period_start && merged.period_end) {
-    const summary = await computeTimesheetHours(merged.member_id, merged.period_start, merged.period_end);
+    const summary = await computeTimesheetSummary(merged.member_id, merged.period_start, merged.period_end);
     merged.total_hours = summary.total_hours;
     merged.billable_hours = summary.billable_hours;
+    merged.amount = summary.amount;
+    merged.currency = summary.currency;
+    merged.project_breakdown = summary.project_breakdown;
     if (!merged.submitted_at) merged.submitted_at = new Date();
   }
 
   const rows = await query(
     `UPDATE timesheets SET
       member_id = $2, period_start = $3, period_end = $4, status = $5,
-      total_hours = $6, billable_hours = $7, submitted_at = $8, approved_at = $9, approved_by = $10
+      total_hours = $6, billable_hours = $7, amount = $8, currency = $9, project_breakdown = $10,
+      submitted_at = $11, approved_at = $12, approved_by = $13
      WHERE id = $1
      RETURNING ${TIMESHEET_COLUMNS.join(", ")}`,
     [
@@ -758,6 +776,9 @@ export async function updatePostgresRow(entityKey, id, payload, existing, expect
       merged.status ?? "draft",
       merged.total_hours ?? null,
       merged.billable_hours ?? null,
+      merged.amount ?? null,
+      merged.currency ?? null,
+      merged.project_breakdown ? JSON.stringify(merged.project_breakdown) : null,
       merged.submitted_at ?? null,
       merged.approved_at ?? null,
       merged.approved_by ?? null,
@@ -826,51 +847,6 @@ export async function deletePostgresRow(entityKey, id) {
   const table = entityKey === "time-entries" ? "time_entries" : "timesheets";
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
   void publishChange("timesheets", id, "deleted");
-}
-
-/**
- * @param {string} memberId
- * @param {string} periodStart
- * @param {string} periodEnd
- */
-/**
- * Hours for a member's pay period.
- *
- * Unions the two places worked time actually lands, the same way
- * getProjectTrackedSecondsPg does: manual `time_entries` rows, and time the
- * agent/web tracker recorded as `activity_sessions`. Reading only time_entries
- * (as this did) reports 0 for anyone who tracks their time instead of typing
- * it in - which is every member using the tracker, so every submitted
- * timesheet came out empty.
- *
- * `duration` on time_entries is SECONDS, matching activity_sessions'
- * active_seconds and every other reader in this codebase.
- *
- * Tracked session time counts as billable: it is time worked against a
- * project, and sessions carry no billable flag of their own. Manual entries
- * keep their explicit flag.
- */
-export async function computeTimesheetHours(memberId, periodStart, periodEnd) {
-  const [summary] = await query(
-    `WITH worked AS (
-       SELECT duration AS seconds, billable
-       FROM time_entries
-       WHERE member_id = $1 AND date BETWEEN $2 AND $3 AND status != 'rejected'
-       UNION ALL
-       SELECT active_seconds AS seconds, true AS billable
-       FROM activity_sessions
-       WHERE member_id = $1 AND started_at::date BETWEEN $2 AND $3
-     )
-     SELECT
-       COALESCE(SUM(seconds), 0) / 3600.0 AS total_hours,
-       COALESCE(SUM(CASE WHEN billable THEN seconds ELSE 0 END), 0) / 3600.0 AS billable_hours
-     FROM worked`,
-    [memberId, periodStart, periodEnd],
-  );
-  return {
-    total_hours: Number(summary?.total_hours ?? 0),
-    billable_hours: Number(summary?.billable_hours ?? 0),
-  };
 }
 
 /**

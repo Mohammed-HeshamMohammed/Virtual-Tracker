@@ -33,6 +33,19 @@ function toTimeEntry(input: any): TimeEntry {
   }
 }
 
+/** project_breakdown comes back from Postgres as a JSONB value - already a
+ *  real array via the pg driver, but tolerate a stringified one too. */
+function toProjectBreakdown(input: any): TimesheetProjectAmount[] {
+  const raw = typeof input === "string" ? (() => { try { return JSON.parse(input) } catch { return [] } })() : input
+  if (!Array.isArray(raw)) return []
+  return raw.map((p) => ({
+    projectId: p.projectId ?? p.project_id ?? null,
+    projectName: p.projectName ?? p.project_name ?? "No project",
+    hours: Number(p.hours ?? 0),
+    amount: Number(p.amount ?? 0),
+  }))
+}
+
 function toTimesheet(input: any): Timesheet {
   return {
     id: input.id,
@@ -42,6 +55,9 @@ function toTimesheet(input: any): Timesheet {
     status: input.status ?? "draft",
     totalHours: Number(input.totalHours ?? input.total_hours ?? 0),
     billableHours: Number(input.billableHours ?? input.billable_hours ?? 0),
+    amount: Number(input.amount ?? 0),
+    currency: input.currency ?? "USD",
+    projectBreakdown: toProjectBreakdown(input.projectBreakdown ?? input.project_breakdown),
     entries: Array.isArray(input.entries) ? input.entries.map(toTimeEntry) : [],
     submittedAt: input.submittedAt ?? input.submitted_at ?? null,
     approvedAt: input.approvedAt ?? input.approved_at ?? null,
@@ -67,6 +83,13 @@ export interface TimeEntry {
   updatedAt: string
 }
 
+export interface TimesheetProjectAmount {
+  projectId: string | null
+  projectName: string
+  hours: number
+  amount: number
+}
+
 export interface Timesheet {
   id: string
   memberId: string
@@ -75,6 +98,11 @@ export interface Timesheet {
   status: "draft" | "submitted" | "approved" | "rejected"
   totalHours: number
   billableHours: number
+  /** Real historical pay rate x hours, resolved server-side - see
+   *  computeTimesheetSummary (Dashboard-Backend). */
+  amount: number
+  currency: string
+  projectBreakdown: TimesheetProjectAmount[]
   entries: TimeEntry[]
   submittedAt: string | null
   approvedAt: string | null
@@ -276,25 +304,40 @@ export interface TimesheetPeriodSummary {
   periodEnd: string
   totalHours: number
   billableHours: number
+  /** Real historical pay rate x hours, resolved server-side. 0 if the
+   *  viewer isn't allowed to see this member's compensation. */
+  amount: number
+  currency: string
+  projects: TimesheetProjectAmount[]
   timesheet: {
     id: string
     status: "draft" | "submitted" | "approved" | "rejected"
     submitted_at: string | null
     total_hours: number | null
     billable_hours: number | null
+    amount: number | null
+    currency: string | null
   } | null
 }
 
-/** Hours the member has actually tracked in a period, plus any existing
- *  timesheet row for it. Server-computed - never derived on the client. */
+/** Hours (and real dollar amount + per-project breakdown) the member has
+ *  actually tracked in a period, plus any existing timesheet row for it -
+ *  all server-computed, never derived on the client. periodStart/periodEnd
+ *  are optional: omitted, the server resolves the member's *current* period
+ *  from their own configured pay_rates.pay_period (weekly/bi-weekly/
+ *  twice-per-month/monthly), instead of the caller having to know or guess
+ *  their cadence. */
 export async function fetchTimesheetPeriodSummary(
-  periodStart: string,
-  periodEnd: string,
+  periodStart?: string,
+  periodEnd?: string,
   memberId?: string,
 ): Promise<TimesheetPeriodSummary | null> {
-  const params = new URLSearchParams({ from: periodStart, to: periodEnd })
+  const params = new URLSearchParams()
+  if (periodStart) params.set("from", periodStart)
+  if (periodEnd) params.set("to", periodEnd)
   if (memberId) params.set("memberId", memberId)
-  const res = await apiFetch(apiPath(`/api/timesheets/period-summary?${params.toString()}`))
+  const query = params.toString()
+  const res = await apiFetch(apiPath(`/api/timesheets/period-summary${query ? `?${query}` : ""}`))
   if (!res.ok) return null
   const json = (await res.json()) as ApiEnvelope<TimesheetPeriodSummary>
   return json.success ? (json.data ?? null) : null

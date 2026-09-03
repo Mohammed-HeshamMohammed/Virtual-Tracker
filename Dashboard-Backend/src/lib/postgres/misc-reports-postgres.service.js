@@ -179,6 +179,64 @@ export async function getLimitsUsageRowsPg({ memberIds, fromDay, toDay }) {
 }
 
 /**
+ * Per-day-per-project tracked seconds for one member's pay period, each day's
+ * real historical rate/currency already resolved (same LEFT JOIN LATERAL
+ * against pay_rate_history as getMemberDailyAmountRowsPg above) - backs the
+ * Timesheets page's own dollar amount and per-project breakdown.
+ *
+ * Not reused from getMemberDailyAmountRowsPg directly: that one reads
+ * daily_member_active_seconds, a live-timer-only rollup with no project_id
+ * column and no manual time_entries in it at all. A timesheet has to count
+ * manual entries too (same as computeTimesheetHours always has), and the
+ * whole point here is a project breakdown - so this queries time_entries +
+ * activity_sessions directly, unioned the same way computeTimesheetHours
+ * already does for hours, with the per-day rate join layered on top.
+ * @param {{ memberId: string, fromDay: string, toDay: string }} params
+ */
+export async function getTimesheetPeriodAmountRowsPg({ memberId, fromDay, toDay }) {
+  const rows = await query(
+    `WITH worked AS (
+       SELECT date AS day, project_id, duration AS seconds, billable
+       FROM time_entries
+       WHERE member_id = $1 AND date BETWEEN $2 AND $3 AND status != 'rejected'
+       UNION ALL
+       SELECT started_at::date AS day, project_id, active_seconds AS seconds, true AS billable
+       FROM activity_sessions
+       WHERE member_id = $1 AND started_at::date BETWEEN $2 AND $3
+     ),
+     by_day_project AS (
+       SELECT day, project_id, SUM(seconds) AS seconds,
+              SUM(CASE WHEN billable THEN seconds ELSE 0 END) AS billable_seconds
+       FROM worked
+       GROUP BY day, project_id
+     )
+     SELECT bdp.day, bdp.project_id, COALESCE(p.name, '') AS project_name,
+            bdp.seconds, bdp.billable_seconds,
+            COALESCE(h.rate, pr.rate, 0) AS rate,
+            COALESCE(h.currency, pr.currency, 'USD') AS currency
+     FROM by_day_project bdp
+     LEFT JOIN projects p ON p.id = bdp.project_id
+     LEFT JOIN pay_rates pr ON pr.member_id = $1
+     LEFT JOIN LATERAL (
+       SELECT rate, currency FROM pay_rate_history
+       WHERE member_id = $1 AND effective_date <= bdp.day
+       ORDER BY effective_date DESC, created_at DESC LIMIT 1
+     ) h ON true
+     ORDER BY bdp.day ASC`,
+    [memberId, fromDay, toDay],
+  );
+  return rows.map((r) => ({
+    day: toDayString(r.day),
+    projectId: r.project_id,
+    projectName: r.project_name || "",
+    seconds: Math.max(0, Number(r.seconds) || 0),
+    billableSeconds: Math.max(0, Number(r.billable_seconds) || 0),
+    rate: Math.max(0, Number(r.rate) || 0),
+    currency: r.currency || "USD",
+  }));
+}
+
+/**
  * Real submitted/approved/rejected timesheet rows - backs Timesheet Approvals.
  * @param {{ memberIds: string[] | null, fromDay: string, toDay: string }} params
  */

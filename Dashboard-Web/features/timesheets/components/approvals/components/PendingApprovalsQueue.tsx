@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useAuth } from "@/shared/providers/app"
 import { getTimesheets, approveTimesheet, rejectTimesheet, type Timesheet } from "@/infrastructure/api"
+import { formatMoney } from "@/features/reports/utils/money"
 import { changedEvent } from "@/infrastructure/api/change-events"
 
 function formatPeriodLabel(start: string, end: string): string {
@@ -79,15 +80,25 @@ export function PendingApprovalsQueue({
         <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900">
           {pending.map((ts) => (
             <div key={ts.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-              <div>
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                  {nameById.get(ts.memberId) ?? "Unknown member"}
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {nameById.get(ts.memberId) ?? "Unknown member"}
+                  </span>
+                  {ts.amount > 0 ? (
+                    <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                      {formatMoney(ts.amount, ts.currency)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
                   {formatPeriodLabel(ts.periodStart, ts.periodEnd)} · {ts.totalHours.toFixed(2)}h total
+                  {ts.projectBreakdown.length > 0
+                    ? ` · ${ts.projectBreakdown.map((p) => p.projectName).join(", ")}`
+                    : ""}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
                   disabled={busyId === ts.id}

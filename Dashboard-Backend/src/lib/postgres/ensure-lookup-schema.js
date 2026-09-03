@@ -588,6 +588,9 @@ END $$`,
                               CHECK (status IN ('draft', 'submitted', 'approved', 'rejected')),
   total_hours     NUMERIC(8,2),
   billable_hours  NUMERIC(8,2),
+  amount          NUMERIC(12,2),
+  currency        VARCHAR(10),
+  project_breakdown JSONB,
   submitted_at    TIMESTAMPTZ,
   approved_at     TIMESTAMPTZ,
   approved_by     VARCHAR(255),
@@ -600,6 +603,13 @@ END $$`,
   "CREATE INDEX IF NOT EXISTS idx_ts_status        ON timesheets (status)",
   "CREATE INDEX IF NOT EXISTS idx_ts_member_status ON timesheets (member_id, status)",
   "CREATE INDEX IF NOT EXISTS idx_ts_approved_by   ON timesheets (approved_by) WHERE approved_by IS NOT NULL",
+  // Pre-existing databases created before pay rate / project linkage existed
+  // on a timesheet - the dollar amount (member's real historical rate,
+  // resolved per day) and the per-project hours/amount breakdown, frozen at
+  // submit time same as total_hours/billable_hours already are.
+  "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS amount NUMERIC(12,2)",
+  "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS currency VARCHAR(10)",
+  "ALTER TABLE timesheets ADD COLUMN IF NOT EXISTS project_breakdown JSONB",
   `DROP TRIGGER IF EXISTS trg_time_entries_updated_at ON time_entries`,
   `CREATE TRIGGER trg_time_entries_updated_at
   BEFORE UPDATE ON time_entries

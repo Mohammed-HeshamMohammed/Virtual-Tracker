@@ -7,9 +7,12 @@
 // period, hours are computed server-side from the time they actually worked,
 // and the row lands as 'submitted' for a manager to action.
 //
-// Hours are never taken from the client. computeTimesheetHours reads
+// Hours are never taken from the client. computeTimesheetSummary reads
 // time_entries + activity_sessions directly, so a member cannot submit a
-// timesheet claiming hours they did not track.
+// timesheet claiming hours they did not track - and, same guarantee, cannot
+// claim a pay rate or project breakdown of their own choosing either; both
+// are resolved server-side from pay_rates/pay_rate_history and the tracked
+// rows themselves.
 
 import { getAuthContext, requireManagementRole } from "../../http/auth-context.js";
 import { canManageMember } from "../../http/authorization.js";
@@ -18,7 +21,8 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { query } from "../../lib/postgres/client.js";
-import { computeTimesheetHours } from "../schema/services/postgres-crud.service.js";
+import { computeTimesheetSummary } from "./timesheet-summary.js";
+import { resolvePayPeriodBounds } from "./pay-period-bounds.js";
 import { publishChange } from "../realtime/change-bus.js";
 
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -34,6 +38,14 @@ function parseDay(value) {
   return Number.isNaN(parsed.getTime()) ? "" : day;
 }
 
+/** A member with no pay_rates row yet (never configured) resolves like
+ *  "None" does - no cadence on file, resolvePayPeriodBounds's own weekly
+ *  fallback applies. */
+async function getMemberPayPeriod(memberId) {
+  const rows = await query("SELECT pay_period FROM pay_rates WHERE member_id = $1 LIMIT 1", [memberId]);
+  return rows[0]?.pay_period ?? "None";
+}
+
 /**
  * @param {import("node:http").IncomingMessage} req
  * @param {import("node:http").ServerResponse} res
@@ -45,19 +57,17 @@ function parseDay(value) {
 export async function routeTimesheets(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
 
-  // GET /api/timesheets/period-summary?from&to[&memberId]
+  // GET /api/timesheets/period-summary[?from&to][&memberId]
   // What the member is about to submit, computed from real tracked time, so
-  // the UI can show the hours before they commit to them.
+  // the UI can show the hours (and now the real dollar amount + per-project
+  // breakdown) before they commit to them. from/to are optional - omitted,
+  // the member's own configured pay_rates.pay_period resolves the current
+  // period, instead of the frontend hardcoding a Monday-Sunday week
+  // regardless of what pay cadence they're actually set up on.
   if (pn === "/api/timesheets/period-summary" && req.method === "GET") {
     const viewer = getAuthContext(req);
     if (!viewer) {
       sendJson(res, origin, 401, { success: false, error: "Authorization required." });
-      return true;
-    }
-    const from = parseDay(url.searchParams.get("from"));
-    const to = parseDay(url.searchParams.get("to"));
-    if (!from || !to || from > to) {
-      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
       return true;
     }
     const requestedMemberId = (url.searchParams.get("memberId") || "").trim();
@@ -70,10 +80,25 @@ export async function routeTimesheets(req, res, url, db, origin) {
       }
     }
 
+    const fromParam = parseDay(url.searchParams.get("from"));
+    const toParam = parseDay(url.searchParams.get("to"));
+    let from = fromParam;
+    let to = toParam;
+    if (!from || !to) {
+      const payPeriod = await getMemberPayPeriod(targetMemberId);
+      const bounds = resolvePayPeriodBounds(payPeriod);
+      from = fromParam || bounds.start;
+      to = toParam || bounds.end;
+    }
+    if (from > to) {
+      sendJson(res, origin, 400, { success: false, error: "from must not be after to." });
+      return true;
+    }
+
     try {
-      const summary = await computeTimesheetHours(targetMemberId, from, to);
+      const summary = await computeTimesheetSummary(targetMemberId, from, to);
       const existing = await query(
-        `SELECT id, status, submitted_at, total_hours, billable_hours
+        `SELECT id, status, submitted_at, total_hours, billable_hours, amount, currency, project_breakdown
          FROM timesheets
          WHERE member_id = $1 AND period_start = $2 AND period_end = $3
          LIMIT 1`,
@@ -87,6 +112,9 @@ export async function routeTimesheets(req, res, url, db, origin) {
           periodEnd: to,
           totalHours: summary.total_hours,
           billableHours: summary.billable_hours,
+          amount: summary.amount,
+          currency: summary.currency,
+          projects: summary.project_breakdown,
           timesheet: existing[0] ?? null,
         },
       });
@@ -149,7 +177,11 @@ export async function routeTimesheets(req, res, url, db, origin) {
         return true;
       }
 
-      const summary = await computeTimesheetHours(memberId, periodStart, periodEnd);
+      // Rates can genuinely change between a rejection and a resubmit (a
+      // correction is often exactly why it was rejected), so this is
+      // recomputed fresh on every submit rather than reusing whatever an
+      // earlier attempt for this same period already stored.
+      const summary = await computeTimesheetSummary(memberId, periodStart, periodEnd);
       if (summary.total_hours <= 0) {
         sendJson(res, origin, 400, {
           success: false,
@@ -162,19 +194,32 @@ export async function routeTimesheets(req, res, url, db, origin) {
       // after a rejection updates that row rather than colliding with it.
       const rows = await query(
         `INSERT INTO timesheets
-           (member_id, period_start, period_end, status, total_hours, billable_hours, submitted_at,
-            approved_at, approved_by)
-         VALUES ($1, $2, $3, 'submitted', $4, $5, now(), NULL, NULL)
+           (member_id, period_start, period_end, status, total_hours, billable_hours, amount, currency,
+            project_breakdown, submitted_at, approved_at, approved_by)
+         VALUES ($1, $2, $3, 'submitted', $4, $5, $6, $7, $8, now(), NULL, NULL)
          ON CONFLICT (member_id, period_start, period_end) DO UPDATE SET
            status = 'submitted',
            total_hours = EXCLUDED.total_hours,
            billable_hours = EXCLUDED.billable_hours,
+           amount = EXCLUDED.amount,
+           currency = EXCLUDED.currency,
+           project_breakdown = EXCLUDED.project_breakdown,
            submitted_at = now(),
            approved_at = NULL,
            approved_by = NULL,
            updated_at = now()
-         RETURNING id, member_id, period_start, period_end, status, total_hours, billable_hours, submitted_at`,
-        [memberId, periodStart, periodEnd, summary.total_hours, summary.billable_hours],
+         RETURNING id, member_id, period_start, period_end, status, total_hours, billable_hours,
+                   amount, currency, project_breakdown, submitted_at`,
+        [
+          memberId,
+          periodStart,
+          periodEnd,
+          summary.total_hours,
+          summary.billable_hours,
+          summary.amount,
+          summary.currency,
+          JSON.stringify(summary.project_breakdown),
+        ],
       );
 
       const saved = rows[0] ?? null;
