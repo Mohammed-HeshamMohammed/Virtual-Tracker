@@ -43,7 +43,8 @@ export function ManualTimeContent() {
   const { memberId, memberRole } = useAuth()
   const { isDark } = useTheme()
   const likelyInstant = isManagementRole(memberRole)
-  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string }[]>([])
+  const [teamMembers, setTeamMembers] = useState<{ id: string; name: string; avatarUrl?: string | null }[]>([])
+  const [viewerAvatarUrl, setViewerAvatarUrl] = useState<string | null>(null)
   const [projects, setProjects] = useState<TrackableProject[]>([])
   const [loadingProjects, setLoadingProjects] = useState(false)
   const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
@@ -79,15 +80,12 @@ export function ManualTimeContent() {
   useEffect(() => {
     if (!likelyInstant || !memberId) return
     let cancelled = false
-    getMembers({ fields: ["id", "name"], singlePage: true, limit: 500 })
+    getMembers({ fields: ["id", "name", "avatarUrl"], singlePage: true, limit: 500 })
       .then((rows) => {
         if (cancelled) return
-        setTeamMembers(
-          rows
-            .map((m) => ({ id: String(m.id), name: m.name || "Unnamed" }))
-            .filter((m) => m.id !== memberId)
-            .sort((a, b) => a.name.localeCompare(b.name)),
-        )
+        const mapped = rows.map((m) => ({ id: String(m.id), name: m.name || "Unnamed", avatarUrl: m.avatarUrl }))
+        setViewerAvatarUrl(mapped.find((m) => m.id === memberId)?.avatarUrl ?? null)
+        setTeamMembers(mapped.filter((m) => m.id !== memberId).sort((a, b) => a.name.localeCompare(b.name)))
       })
       .catch(() => setTeamMembers([]))
     return () => {
@@ -97,17 +95,21 @@ export function ManualTimeContent() {
 
   // "Myself" (memberId) sits first, then whoever this manager can see/manage
   // (already server-scoped by getMembers - see getVisibleMemberIds), each
-  // with an avatar for quick scanning.
+  // with a real profile photo when they have one, initials otherwise.
   const memberOptions = useMemo<SearchableSelectOption[]>(() => {
     if (!memberId) return []
     const options: SearchableSelectOption[] = [
-      { value: memberId, label: "Myself", meta: <ReportMemberAvatar initials="Me" /> },
+      { value: memberId, label: "Myself", meta: <ReportMemberAvatar initials="Me" imageUrl={viewerAvatarUrl} /> },
     ]
     for (const m of teamMembers) {
-      options.push({ value: m.id, label: m.name, meta: <ReportMemberAvatar initials={initialsFromName(m.name)} /> })
+      options.push({
+        value: m.id,
+        label: m.name,
+        meta: <ReportMemberAvatar initials={initialsFromName(m.name)} imageUrl={m.avatarUrl} />,
+      })
     }
     return options
-  }, [memberId, teamMembers])
+  }, [memberId, teamMembers, viewerAvatarUrl])
 
   const loadEntries = useCallback(() => {
     if (!memberId) return

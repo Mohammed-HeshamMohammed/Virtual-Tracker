@@ -54,7 +54,7 @@ export function AddManualEntryDialog({
   const { memberId: viewerMemberId } = useAuth()
   const { isDark } = useTheme()
 
-  const [members, setMembers] = useState<{ id: string; name: string }[]>([])
+  const [members, setMembers] = useState<{ id: string; name: string; avatarUrl?: string | null }[]>([])
   const [projects, setProjects] = useState<{ id: string; name: string; type: string }[]>([])
   const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
   const [projectMemberIds, setProjectMemberIds] = useState<Set<string> | null>(null)
@@ -96,7 +96,7 @@ export function AddManualEntryDialog({
     let cancelled = false
     setLoadingOptions(true)
     Promise.all([
-      getMembers({ fields: ["id", "name"], singlePage: true, limit: 500 }),
+      getMembers({ fields: ["id", "name", "avatarUrl"], singlePage: true, limit: 500 }),
       getProjects({ fields: ["id", "name", "type", "status"] }),
       getTrackableProjects().catch(() => []),
     ])
@@ -104,7 +104,7 @@ export function AddManualEntryDialog({
         if (cancelled) return
         setMembers(
           memberRows
-            .map((m) => ({ id: String(m.id), name: m.name || "Unnamed" }))
+            .map((m) => ({ id: String(m.id), name: m.name || "Unnamed", avatarUrl: m.avatarUrl }))
             .sort((a, b) => a.name.localeCompare(b.name)),
         )
         setProjects(
@@ -222,13 +222,18 @@ export function AddManualEntryDialog({
     const options = roster.map((m) => ({
       value: m.id,
       label: m.name,
-      meta: <ReportMemberAvatar initials={initialsFromName(m.name)} />,
+      meta: <ReportMemberAvatar initials={initialsFromName(m.name)} imageUrl={m.avatarUrl} />,
     }))
     if (viewerCanTrackSelectedProject && viewerMemberId) {
-      options.unshift({ value: viewerMemberId, label: "Myself", meta: <ReportMemberAvatar initials="Me" /> })
+      const viewerAvatarUrl = members.find((m) => m.id === viewerMemberId)?.avatarUrl
+      options.unshift({
+        value: viewerMemberId,
+        label: "Myself",
+        meta: <ReportMemberAvatar initials="Me" imageUrl={viewerAvatarUrl} />,
+      })
     }
     return options
-  }, [projectMembers, viewerCanTrackSelectedProject, viewerMemberId])
+  }, [members, projectMembers, viewerCanTrackSelectedProject, viewerMemberId])
 
   async function submit() {
     setError(null)

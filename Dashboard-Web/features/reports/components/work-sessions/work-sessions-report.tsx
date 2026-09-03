@@ -534,7 +534,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                               {columnVisibility.member ? (
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-2">
-                                    <ReportMemberAvatar initials={r.memberInitials} />
+                                    <ReportMemberAvatar initials={r.memberInitials} imageUrl={r.memberAvatarUrl} />
                                     <span className="text-sm text-slate-800 dark:text-[#dce1fb]">{r.memberName}</span>
                                   </div>
                                 </td>

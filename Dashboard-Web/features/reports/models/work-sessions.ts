@@ -12,6 +12,7 @@ export interface WorkSessionRow {
   memberId: string
   memberName: string
   memberInitials: string
+  memberAvatarUrl?: string | null
   todoJob: string
   manualPct: number
   startedLabel: string

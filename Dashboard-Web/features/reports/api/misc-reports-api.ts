@@ -116,6 +116,7 @@ interface RawWorkSession {
   id: string
   memberId: string
   memberName: string
+  memberAvatarUrl?: string | null
   projectName: string
   taskTitle: string
   startedAt: string
@@ -151,6 +152,7 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
       memberId: s.memberId,
       memberName: s.memberName,
       memberInitials: initialsFor(s.memberName),
+      memberAvatarUrl: s.memberAvatarUrl,
       todoJob: s.taskTitle || "",
       manualPct: 0,
       startedLabel: started.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
