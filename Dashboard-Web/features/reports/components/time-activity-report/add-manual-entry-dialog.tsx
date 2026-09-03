@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from "@/shared/ui/dialog"
 import { getMembers } from "@/features/members/api/member-api"
-import { getProjects } from "@/features/projects/api/project-api"
+import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
 import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
 import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
@@ -60,7 +60,13 @@ export function AddManualEntryDialog({
   const [members, setMembers] = useState<{ id: string; name: string }[]>([])
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([])
   const [tasks, setTasks] = useState<{ id: string; title: string }[]>([])
+  // null until a project is picked - the member field is scoped to whoever
+  // is actually on that project, not the whole org roster (a member not on
+  // the project could otherwise be picked here and the entry never shows up
+  // anywhere real, since nothing ties it to the project it claims).
+  const [projectMemberIds, setProjectMemberIds] = useState<Set<string> | null>(null)
   const [loadingOptions, setLoadingOptions] = useState(false)
+  const [loadingProjectMembers, setLoadingProjectMembers] = useState(false)
   const [loadingTasks, setLoadingTasks] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +95,7 @@ export function AddManualEntryDialog({
     setDescription("")
     setBillable(true)
     setTasks([])
+    setProjectMemberIds(null)
 
     let cancelled = false
     setLoadingOptions(true)
@@ -147,6 +154,40 @@ export function AddManualEntryDialog({
     }
   }, [projectId])
 
+  // Member choices are scoped to this project's own roster - re-fetched (and
+  // the picked member cleared if they turn out not to be on the new
+  // project) every time the project changes, mirroring the To-do effect
+  // above. The backend enforces the same rule on submit; this just keeps
+  // the dropdown from offering a choice it would reject anyway.
+  useEffect(() => {
+    if (!projectId) {
+      setProjectMemberIds(null)
+      return
+    }
+    let cancelled = false
+    setLoadingProjectMembers(true)
+    getProjectMembers(projectId)
+      .then((rows) => {
+        if (cancelled) return
+        const ids = new Set(rows.map((r) => r.memberId))
+        setProjectMemberIds(ids)
+        setSelectedMemberId((current) => (current && !ids.has(current) ? "" : current))
+      })
+      .catch(() => {
+        if (!cancelled) setProjectMemberIds(new Set())
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProjectMembers(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId])
+
+  const projectMembers = useMemo(
+    () => (projectMemberIds ? members.filter((m) => projectMemberIds.has(m.id)) : []),
+    [members, projectMemberIds],
+  )
 
   async function submit() {
     setError(null)
@@ -204,13 +245,35 @@ export function AddManualEntryDialog({
 
         <div className="space-y-4">
           <div>
+            <span className={labelCls}>Project</span>
+            <ReportSimpleDropdown
+              value={projectId}
+              onChange={setProjectId}
+              options={projects.map((p) => ({ value: p.id, label: p.name }))}
+              placeholder="Select a project"
+              disabled={loadingOptions}
+              width="w-full"
+              accentBar={false}
+            />
+          </div>
+
+          <div>
             <label className={labelCls}>Member</label>
             <SearchableSelectField
               value={selectedMemberId || null}
               onChange={(v) => setSelectedMemberId(v ?? "")}
-              options={members.map((m) => ({ value: m.id, label: m.name }))}
-              placeholder={loadingOptions ? "Loading members…" : "Select a member"}
+              options={projectMembers.map((m) => ({ value: m.id, label: m.name }))}
+              placeholder={
+                !projectId
+                  ? "Pick a project first"
+                  : loadingProjectMembers
+                    ? "Loading this project's members…"
+                    : projectMembers.length === 0
+                      ? "No members on this project"
+                      : "Select a member"
+              }
               isDark={isDark}
+              className={!projectId || loadingProjectMembers ? "pointer-events-none opacity-60" : undefined}
             />
           </div>
 
@@ -243,18 +306,6 @@ export function AddManualEntryDialog({
               {hours && durationSeconds > 0 ? (
                 <p className="mt-1 text-xs text-slate-400">= {formatSeconds(durationSeconds)}</p>
               ) : null}
-            </div>
-            <div>
-              <span className={labelCls}>Project</span>
-              <ReportSimpleDropdown
-                value={projectId}
-                onChange={setProjectId}
-                options={projects.map((p) => ({ value: p.id, label: p.name }))}
-                placeholder="Select a project"
-                disabled={loadingOptions}
-                width="w-full"
-                accentBar={false}
-              />
             </div>
             <div>
               <span className={labelCls}>

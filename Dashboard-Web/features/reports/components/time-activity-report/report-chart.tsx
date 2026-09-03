@@ -168,7 +168,7 @@ export function ReportTimeActivityChart({
       {/* ── Chart area (horizontally scrollable) ───────────────────────── */}
       <div
         ref={wrapRef}
-        className="overflow-x-auto"
+        className="overflow-x-auto custom-scrollbar-x"
         style={{ WebkitOverflowScrolling: "touch" }}
       >
         {days.length === 0 ? (
