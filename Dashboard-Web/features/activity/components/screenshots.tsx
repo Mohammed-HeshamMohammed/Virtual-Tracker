@@ -404,6 +404,14 @@ export function ActivityScreenshots() {
   const { data: liveRows, loading, error, disabledReason, reload } = useActivityFeed<Screenshot[]>("screenshots", {
     day: day.dayKey,
   })
+  // Insights are a standing overview, not a reflection of whatever single
+  // day the table below happens to be drilled into - fetched independently
+  // (day: "all") so they stay populated and stable instead of going empty
+  // on a quiet day, or reshuffling every time the day picker moves.
+  const { data: insightsRows, loading: insightsLoading, reload: reloadInsights } = useActivityFeed<Screenshot[]>(
+    "screenshots",
+    { day: "all" },
+  )
   const [modalImageData, setModalImageData] = useState<string | null>(null)
   const [modalImageLoading, setModalImageLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -415,14 +423,14 @@ export function ActivityScreenshots() {
       try {
         await deleteActivityScreenshot(screenshotId)
         setSelectedScreenshot((current) => (current?.id === screenshotId ? null : current))
-        await reload({ force: true })
+        await Promise.all([reload({ force: true }), reloadInsights({ force: true })])
       } catch (err) {
         console.error("Failed to delete screenshot:", err)
       } finally {
         setDeletingId(null)
       }
     },
-    [deletingId, reload],
+    [deletingId, reload, reloadInsights],
   )
 
   const handleDownloadScreenshot = useCallback((imageData: string | null, screenshotId: string) => {
@@ -436,6 +444,7 @@ export function ActivityScreenshots() {
   useActivityShellRegistration({
     onRefresh: () => {
       void reload({ force: true })
+      void reloadInsights({ force: true })
     },
   })
 
@@ -531,7 +540,8 @@ export function ActivityScreenshots() {
   const showNoHistoryEmpty = !loading && !hasDayData && isAllDays && !!disabledReason
   const showAllDaysEmpty = !loading && !hasDayData && isAllDays && !disabledReason
   const showSearchEmpty = !loading && hasDayData && displayScreenshots.length === 0
-  const showInsights = !loading && hasDayData
+  const allTimeScreenshots = insightsRows ?? []
+  const showInsights = !insightsLoading && allTimeScreenshots.length > 0
 
   return (
     <>
@@ -570,6 +580,33 @@ export function ActivityScreenshots() {
 
       {!loading && showSearchEmpty ? (
         <ActivitySearchEmptyState entityLabel="screenshots" onClear={resetPageFilters} />
+      ) : null}
+
+      {showInsights ? (
+        <ActivitySection title="Insights" description="Overview across every captured day, not just the one shown below">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4"
+        >
+          {insightCards.map(({ id, icon, title, Component }, i) => (
+            <motion.div
+              key={id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.06 + i * 0.04 }}
+              className="flex flex-col gap-3 p-4"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400 dark:text-slate-500">{icon}</span>
+                <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500">{title}</span>
+              </div>
+              <Component data={allTimeScreenshots} />
+            </motion.div>
+          ))}
+        </motion.div>
+        </ActivitySection>
       ) : null}
 
       {!loading && displayScreenshots.length > 0 && viewMode === "grid" ? (
@@ -717,32 +754,6 @@ export function ActivityScreenshots() {
         </div>
       ) : null}
 
-      {showInsights ? (
-        <ActivitySection title="Daily insights" description="Aggregated from today's captures">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4"
-        >
-          {insightCards.map(({ id, icon, title, Component }, i) => (
-            <motion.div
-              key={id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.06 + i * 0.04 }}
-              className="flex flex-col gap-3 p-4"
-            >
-              <div className="flex items-center gap-2">
-                <span className="text-slate-400 dark:text-slate-500">{icon}</span>
-                <span className="text-[10px] font-semibold tracking-widest uppercase text-slate-400 dark:text-slate-500">{title}</span>
-              </div>
-              <Component data={displayScreenshots} />
-            </motion.div>
-          ))}
-        </motion.div>
-        </ActivitySection>
-      ) : null}
 
       <AnimatePresence>
         {selectedScreenshot && (

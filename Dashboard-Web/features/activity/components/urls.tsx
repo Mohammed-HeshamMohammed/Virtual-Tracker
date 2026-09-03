@@ -67,6 +67,11 @@ export function ActivityURLsContent() {
   const { setSelectedMemberId } = useActivityFeedContext()
   const { data: feed, loading, reload } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
   const membersSource = feed?.members ?? []
+  // Summary is a standing overview, not a reflection of whatever single day
+  // the table below happens to be drilled into - fetched independently
+  // (day: "all") so it stays populated and stable instead of going empty on
+  // a quiet day, or reshuffling every time the day picker moves.
+  const { data: allTimeFeed, reload: reloadAllTime } = useActivityFeed<UrlsFeed>("urls", { day: "all" })
 
   const urlsSource = useMemo(
     () => (feed?.urls ?? []).map((url) => ({ ...url, category: normalizeActivityCategory(url.category) })),
@@ -98,11 +103,15 @@ export function ActivityURLsContent() {
   const showSearchEmpty = !loading && hasData && filteredURLs.length === 0
   const showMainContent = !loading && hasData && !showSearchEmpty
 
-  const totalVisits = urlsSource.reduce((acc, url) => acc + url.visits, 0)
-  const urlCount = urlsSource.length
-  const productiveCount = urlsSource.filter((u) => u.category === "productive").length
-  const neutralCount = urlsSource.filter((u) => u.category === "neutral").length
-  const blockedCount = urlsSource.filter((u) => u.category === "distracting").length
+  const allTimeUrls = useMemo(
+    () => (allTimeFeed?.urls ?? []).map((url) => ({ ...url, category: normalizeActivityCategory(url.category) })),
+    [allTimeFeed?.urls],
+  )
+  const totalVisits = allTimeUrls.reduce((acc, url) => acc + url.visits, 0)
+  const urlCount = allTimeUrls.length
+  const productiveCount = allTimeUrls.filter((u) => u.category === "productive").length
+  const neutralCount = allTimeUrls.filter((u) => u.category === "neutral").length
+  const blockedCount = allTimeUrls.filter((u) => u.category === "distracting").length
 
   const handleExport = useCallback(async () => {
     if (!canExport) return
@@ -183,6 +192,7 @@ export function ActivityURLsContent() {
   useActivityShellRegistration({
     onRefresh: () => {
       void reload({ force: true })
+      void reloadAllTime({ force: true })
     },
     onExport: canExport
       ? () => {
@@ -223,6 +233,51 @@ export function ActivityURLsContent() {
 
       {!loading && showMainContent ? (
         <div className="space-y-8">
+          <ActivitySection title="Summary" description="Across every tracked day, not just the one shown below">
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x lg:grid-cols-4"
+            >
+              <div className="flex items-center gap-3 p-5">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 flex items-center justify-center">
+                  <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Productive</p>
+                  <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{productiveCount}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-slate-600 dark:text-slate-300" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Neutral</p>
+                  <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{neutralCount}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-red-100 dark:bg-red-950/80 flex items-center justify-center">
+                  <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Blocked</p>
+                  <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{blockedCount}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="w-10 h-10 shrink-0 rounded-lg bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center">
+                  <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Sites / Visits</p>
+                  <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{urlCount} / {totalVisits}</p>
+                </div>
+              </div>
+            </motion.div>
+          </ActivitySection>
+
           <ActivitySection
             title="Website records"
             description={`${filteredURLs.length} site${filteredURLs.length !== 1 ? "s" : ""} for ${periodLabel}`}
@@ -333,51 +388,6 @@ export function ActivityURLsContent() {
                 />
               ) : null}
             </motion.div>
-          </ActivitySection>
-
-          <ActivitySection title="Summary">
-            <motion.div
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm sm:grid-cols-2 sm:divide-y-0 sm:divide-x lg:grid-cols-4"
-            >
-        <div className="flex items-center gap-3 p-5">
-          <div className="w-10 h-10 shrink-0 rounded-lg bg-emerald-100 dark:bg-emerald-950/80 flex items-center justify-center">
-            <TrendingUp className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Productive</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{productiveCount}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 p-5">
-          <div className="w-10 h-10 shrink-0 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-            <Globe className="w-5 h-5 text-slate-600 dark:text-slate-300" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Neutral</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{neutralCount}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 p-5">
-          <div className="w-10 h-10 shrink-0 rounded-lg bg-red-100 dark:bg-red-950/80 flex items-center justify-center">
-            <TrendingDown className="w-5 h-5 text-red-600 dark:text-red-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Blocked</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{blockedCount}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3 p-5">
-          <div className="w-10 h-10 shrink-0 rounded-lg bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center">
-            <Eye className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm text-slate-500 dark:text-slate-400">Sites / Visits</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{urlCount} / {totalVisits}</p>
-          </div>
-        </div>
-      </motion.div>
           </ActivitySection>
 
           {membersSource.length > 0 ? (
