@@ -123,6 +123,12 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     justSaved,
   } = useTimeAndActivityReport({ days, memberRows, entries, range })
 
+  // Only "Date per day" carries a real per-row date - every other groupBy
+  // repurposes that field as a group key (member/project/client/team name),
+  // so the delete action (and its column) is hidden outside that mode
+  // rather than risking a wrong day getting deleted.
+  const canDeleteDay = canAddForOthers && groupBy === "date_per_day"
+
   // Same width-aware auto-hide the Members/Projects tables already use -
   // visibleMetricColumns is already narrowed by the column picker's manual
   // toggles; this narrows it further by whatever the card's real measured
@@ -133,7 +139,12 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     {
       minWidths: TIME_ACTIVITY_TABLE_COL_MIN_WIDTH,
       hidePriority: TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
-      fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH,
+      // +72 reserves the trailing delete-action column (w-10 + px-4 padding)
+      // when it's actually rendered - otherwise the auto-hide math thinks
+      // that space is free for one more metric column, which just pushes
+      // the table into the same horizontal-scrollbar overflow this hook
+      // exists to avoid.
+      fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH + (canDeleteDay ? 72 : 0),
     },
   )
 
@@ -447,7 +458,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto custom-scrollbar-x">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800">
@@ -476,6 +487,11 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                       )}
                     />
                   ))}
+                  {canDeleteDay ? (
+                    <th className="w-10 px-4 py-3">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -508,6 +524,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                             </td>
                           )
                         })}
+                        {canDeleteDay ? <td className="px-4 py-3.5" /> : null}
                       </tr>
                       <AnimatePresence>
                         {isExpanded &&
@@ -521,30 +538,9 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                               className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
                             >
                               <td className="px-5 py-3">
-                                <div className="flex items-center justify-between gap-2.5 pl-6">
-                                  <div className="flex items-center gap-2.5">
-                                    <ReportMemberAvatar initials={member.avatar} />
-                                    <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
-                                  </div>
-                                  {canAddForOthers && groupBy === "date_per_day" ? (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        confirmDeleteDay(member.memberId, day.date, member.name, day.dateLabel)
-                                      }}
-                                      disabled={deletingKey === `${member.memberId}::${day.date}`}
-                                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                                      title="Delete this day's activity and its screenshots, app usage, and URL visits"
-                                      aria-label="Delete this day's activity"
-                                    >
-                                      {deletingKey === `${member.memberId}::${day.date}` ? (
-                                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      )}
-                                    </button>
-                                  ) : null}
+                                <div className="flex items-center gap-2.5 pl-6">
+                                  <ReportMemberAvatar initials={member.avatar} />
+                                  <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
                                 </div>
                               </td>
                               {fittedMetricColumns.map((col) => {
@@ -559,6 +555,27 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
                                   </td>
                                 )
                               })}
+                              {canDeleteDay ? (
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      confirmDeleteDay(member.memberId, day.date, member.name, day.dateLabel)
+                                    }}
+                                    disabled={deletingKey === `${member.memberId}::${day.date}`}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                    title="Delete this day's activity and its screenshots, app usage, and URL visits"
+                                    aria-label="Delete this day's activity"
+                                  >
+                                    {deletingKey === `${member.memberId}::${day.date}` ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                </td>
+                              ) : null}
                             </motion.tr>
                           ))}
                       </AnimatePresence>

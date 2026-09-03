@@ -502,7 +502,7 @@ export function StandardReportLayout({
                 initial={{ opacity: 0, x: 12 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 12 }}
-                className="fixed right-6 top-28 z-110 max-h-[calc(100%-8rem)] overflow-y-auto"
+                className="fixed right-6 top-28 z-110 max-h-[calc(100%-8rem)] overflow-y-auto custom-scrollbar"
               >
                 {panel}
               </motion.div>

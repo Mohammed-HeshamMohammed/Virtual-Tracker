@@ -262,7 +262,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
         isDark ? "border-white/10 bg-[#151b2d]" : "border-slate-100 bg-white"
       )}
     >
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto custom-scrollbar-x">
         <table className="w-full min-w-[860px] table-fixed">
           <thead>
             <tr className={cn("border-b", isDark ? "border-white/10" : "border-slate-100")}>
@@ -555,7 +555,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
           isDark ? "border-white/10 bg-[#151b2d]" : "border-slate-100 bg-white"
         )}
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar-x">
           <table className="w-full min-w-[740px] table-fixed">
             <thead>
               <tr className={cn("border-b", isDark ? "border-white/10" : "border-slate-100")}>

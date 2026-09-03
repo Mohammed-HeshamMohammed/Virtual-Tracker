@@ -257,7 +257,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
 
   return (
     <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10" : "border-slate-200")}>
-      <div ref={tableWidthRef} className="overflow-x-auto">
+      <div ref={tableWidthRef} className="overflow-x-auto custom-scrollbar-x">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className={cn("border-b", isDark ? "border-white/10 bg-white/3" : "border-slate-200 bg-slate-50")}>

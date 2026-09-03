@@ -264,7 +264,7 @@ function ExpensesTable({ filters }: { filters: ReportFilterState }) {
           isDark ? "border-white/10 bg-[#151b2d]" : "border-slate-100 bg-white"
         )}
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto custom-scrollbar-x">
           <table className="w-full min-w-[880px] table-fixed">
             <thead>
               <tr className={cn("border-b", isDark ? "border-white/10" : "border-slate-100")}>

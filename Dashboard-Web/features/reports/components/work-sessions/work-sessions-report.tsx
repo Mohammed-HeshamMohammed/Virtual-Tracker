@@ -461,7 +461,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
             <ReportErrorState message={error} onRetry={retry} />
           ) : (
           <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
-            <div className={cn("overflow-x-auto", tableCollapsed && "hidden")}>
+            <div className={cn("overflow-x-auto custom-scrollbar-x", tableCollapsed && "hidden")}>
               <table className="w-full min-w-[900px] table-fixed">
                 <thead>
                   <tr className="border-b border-slate-100 dark:border-white/10">
