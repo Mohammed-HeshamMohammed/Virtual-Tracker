@@ -307,45 +307,36 @@ export function ActivityAppsContent() {
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              className="grid grid-cols-1 gap-4 md:grid-cols-3"
+              className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl sm:grid-cols-3 sm:divide-y-0 sm:divide-x"
             >
-              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Productive</p>
-                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
-                    <TrendingUp className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-                  </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
+                  <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Neutral</p>
-                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
-                    <Minus className="h-6 w-6 text-slate-600 dark:text-slate-300" />
-                  </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+                  <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
                 </div>
-                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
+                </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-5 shadow-sm backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Unproductive</p>
-                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
-                  </div>
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
-                    <TrendingDown className="h-6 w-6 text-rose-600 dark:text-rose-400" />
-                  </div>
+              <div className="flex items-center gap-3 p-5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
+                  <TrendingDown className="h-5 w-5 text-rose-600 dark:text-rose-400" />
                 </div>
-                <p className="mt-4 text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
+                </div>
               </div>
             </motion.div>
           </ActivitySection>

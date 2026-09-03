@@ -607,29 +607,19 @@ export function ActivityScreenshots() {
                   </div>
                 </div>
               </div>
-              <div className="p-4">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200">
+              <div className="p-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="h-7 w-7 shrink-0 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-[11px] font-semibold text-slate-600 dark:text-slate-200">
                     {screenshot.avatar}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{screenshot.member}</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{localTime(screenshot)}</p>
-                  </div>
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">{screenshot.member}</p>
+                  <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{localTime(screenshot)}</span>
                 </div>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-slate-500 dark:text-slate-400">
-                    {screenshot.contextLabel ?? "Task"}: {screenshot.project}
-                  </span>
-                  <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">
-                    {formatActivityAppName(screenshot.activeApp)}
-                  </span>
-                </div>
-                {screenshot.pageTitle ? (
-                  <p className="mt-1 truncate text-[11px] text-slate-400 dark:text-slate-500" title={screenshot.pageTitle}>
-                    {screenshot.pageTitle}
-                  </p>
-                ) : null}
+                <p className="mt-2 truncate text-xs text-slate-500 dark:text-slate-400" title={screenshot.pageTitle}>
+                  <span className="font-medium text-slate-600 dark:text-slate-300">{formatActivityAppName(screenshot.activeApp)}</span>
+                  {" · "}
+                  {screenshot.project}
+                </p>
               </div>
             </motion.div>
           ))}
@@ -733,15 +723,15 @@ export function ActivityScreenshots() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+          className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800 rounded-xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 sm:grid-cols-2 sm:divide-y-0 sm:divide-x xl:grid-cols-4"
         >
           {insightCards.map(({ id, icon, title, Component }, i) => (
             <motion.div
               key={id}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.12 + i * 0.05 }}
-              className="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-4 flex flex-col gap-3"
+              transition={{ delay: 0.06 + i * 0.04 }}
+              className="flex flex-col gap-3 p-4"
             >
               <div className="flex items-center gap-2">
                 <span className="text-slate-400 dark:text-slate-500">{icon}</span>

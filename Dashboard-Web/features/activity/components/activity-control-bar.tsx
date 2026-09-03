@@ -75,10 +75,10 @@ export function ActivityControlBar({
   pageFilters,
 }: ActivityControlBarProps) {
   return (
-    <div className="overflow-visible rounded-2xl border border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-3 sm:p-4 shadow-sm shadow-slate-900/5 transition-all">
+    <div className="overflow-visible rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-slate-50/70 dark:bg-slate-900/50 p-2.5 sm:p-3 transition-colors">
       <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
         <div
-          className="flex shrink-0 items-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-0.5 shadow-inner"
+          className="flex shrink-0 items-center rounded-lg border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-800/50 p-0.5"
           role="group"
           aria-label="Day navigation"
         >
