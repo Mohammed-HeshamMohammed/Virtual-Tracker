@@ -114,6 +114,13 @@ export function ActivityAppsContent() {
   const tableRef = useRef<HTMLDivElement>(null)
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(filteredApps, ACTIVITY_TABLE_ROWS_PER_PAGE)
+  const {
+    currentPage: memberPage,
+    setCurrentPage: setMemberPage,
+    totalPages: memberTotalPages,
+    visibleRows: visibleMembers,
+    rowsPerPage: memberRowsPerPage,
+  } = usePaginatedTable(membersSource, ACTIVITY_TABLE_ROWS_PER_PAGE)
   const showDayEmpty = !loading && !hasData
   const showSearchEmpty = !loading && hasData && filteredApps.length === 0
   const showMainContent = !loading && hasData && !showSearchEmpty
@@ -241,53 +248,58 @@ export function ActivityAppsContent() {
 
       {summarySlotEl && summaryStats.appCount > 0
         ? createPortal(
-            <ActivitySection title="Summary" description="Productivity breakdown across every tracked day, not just the one shown below">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <motion.div
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="grid grid-cols-1 divide-y divide-slate-100 dark:divide-slate-800/80 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl sm:grid-cols-3 sm:divide-y-0 sm:divide-x"
+                className="flex items-center gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl p-5"
               >
-                <div className="flex items-center gap-3 p-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
-                    <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
-                  </div>
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200/80 dark:border-emerald-800/80">
+                  <TrendingUp className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
                 </div>
-
-                <div className="flex items-center gap-3 p-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
-                    <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3 p-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
-                    <TrendingDown className="h-5 w-5 text-rose-600 dark:text-rose-400" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
-                    <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
-                  </div>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.productive}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">productive apps</p>
                 </div>
               </motion.div>
-            </ActivitySection>,
+
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.04 }}
+                className="flex items-center gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl p-5"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/80 dark:border-slate-700/80">
+                  <Minus className="h-5 w-5 text-slate-600 dark:text-slate-300" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.neutral}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.sessionCount} sessions tracked</p>
+                </div>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+                className="flex items-center gap-3 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl p-5"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-950/60 border border-rose-200/80 dark:border-rose-800/80">
+                  <TrendingDown className="h-5 w-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">{summaryStats.unproductive}</p>
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{summaryStats.appCount} apps total</p>
+                </div>
+              </motion.div>
+            </div>,
             summarySlotEl,
           )
         : null}
 
       {!loading && showMainContent ? (
         <div className="space-y-8">
-          <ActivitySection
-            title="Application records"
-            description={`${filteredApps.length} app${filteredApps.length !== 1 ? "s" : ""} tracked for ${day.selectedDayLabel}`}
-          >
+          <div className="space-y-4">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
@@ -366,7 +378,7 @@ export function ActivityAppsContent() {
                 />
               ) : null}
             </motion.div>
-          </ActivitySection>
+          </div>
 
           {membersSource.length > 0 ? (
             <ActivitySection title="Usage by member" description="Click a member to filter the table above by them">
@@ -376,7 +388,7 @@ export function ActivityAppsContent() {
                 className="overflow-hidden rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 shadow-sm backdrop-blur-xl"
               >
                 <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                  {membersSource.map((member, index) => (
+                  {visibleMembers.map((member, index) => (
                     <motion.button
                       key={member.memberId || `${member.member}-${index}`}
                       type="button"
@@ -415,6 +427,15 @@ export function ActivityAppsContent() {
                     </motion.button>
                   ))}
                 </div>
+                {membersSource.length > 0 ? (
+                  <TablePagination
+                    currentPage={memberPage}
+                    totalPages={memberTotalPages}
+                    totalItems={membersSource.length}
+                    rowsPerPage={memberRowsPerPage}
+                    onPageChange={setMemberPage}
+                  />
+                ) : null}
               </motion.div>
             </ActivitySection>
           ) : null}
