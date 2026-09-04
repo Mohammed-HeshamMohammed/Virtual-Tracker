@@ -1,17 +1,10 @@
-// Bearer INTERNAL_SERVICE_SECRET on all routes. Dev skips check when secret unset.
+import { timingSafeEqual } from "node:crypto";
 import { getEnv } from "../config/env.js";
 import { sendJson } from "./response.js";
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- * @param {string|undefined} origin
- * @returns {boolean} true if authorized
- */
 export function requireInternalAuth(req, res, origin) {
   const { secret } = resolveSecret();
 
-  // Skip guard in dev when no secret is configured — warn once.
   if (!secret) {
     if (!requireInternalAuth._warnedOnce) {
       requireInternalAuth._warnedOnce = true;
@@ -25,7 +18,7 @@ export function requireInternalAuth(req, res, origin) {
 
   const header = req.headers["authorization"] || "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (token !== secret) {
+  if (!safeEqual(token, secret)) {
     sendJson(res, origin, 401, { success: false, error: "Unauthorized" });
     return false;
   }
@@ -33,6 +26,22 @@ export function requireInternalAuth(req, res, origin) {
 }
 
 requireInternalAuth._warnedOnce = false;
+
+/**
+ * Constant-time comparison of the presented token against the shared secret.
+ *
+ * `token !== secret` short-circuits at the first differing byte, so response
+ * time leaks how much of the secret a guess got right - enough to recover it
+ * byte by byte from off-box. timingSafeEqual has no such shortcut, but it
+ * throws on length mismatch, so lengths are compared first and that comparison
+ * is the only thing this leaks (the length of a secret is not the secret).
+ */
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a), "utf8");
+  const right = Buffer.from(String(b), "utf8");
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
 
 function resolveSecret() {
   try {

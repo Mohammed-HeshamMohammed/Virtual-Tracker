@@ -1,14 +1,11 @@
-// SMTP sender for transactional emails.
 import nodemailer from "nodemailer";
 import { getEnv } from "../../config/env.js";
 import { getEmailDeliveryConfig } from "./email-config.js";
 
 export { escapeHtml } from "./email-template.js";
 
-/** @type {import("nodemailer").Transporter | null} */
 let smtpTransporter = null;
 
-/** Gmail app passwords are 16 chars; strip spaces from .env paste. */
 function normalizeSmtpPass(pass) {
   return typeof pass === "string" ? pass.replace(/\s+/g, "") : "";
 }
@@ -30,7 +27,22 @@ function getSmtpTransporter() {
   return smtpTransporter;
 }
 
-/** SMTP verify at startup — catches 535 login errors early. */
+/**
+ * Masks a recipient before it reaches a log line: `alice@example.com` becomes
+ * `a***@example.com`.
+ *
+ * Delivery failures have to name *someone* to be diagnosable, but a full
+ * address is personal data, and this is an employee-monitoring product whose
+ * logs should not accumulate staff addresses. The first character plus the
+ * domain is enough to identify which user in practice.
+ */
+function maskEmail(address) {
+  const value = String(address ?? "");
+  const at = value.indexOf("@");
+  if (at <= 0) return value ? "***" : "";
+  return `${value[0]}***${value.slice(at)}`;
+}
+
 export async function verifySmtpDelivery() {
   const transporter = getSmtpTransporter();
   if (!transporter) return { ok: false, error: "SMTP is not configured." };
@@ -43,7 +55,6 @@ export async function verifySmtpDelivery() {
   }
 }
 
-/** Send via SMTP; console fallback when unconfigured. @param {{ to: string; subject: string; text: string; html: string; logPrefix?: string; attachments?: Array<{ filename: string; content: Buffer | string; contentType?: string }> }} input @returns {Promise<{ sent: boolean; channel: string; error?: string }>} */
 export async function sendTransactionalEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";
   if (!to) return { sent: false, channel: "skipped" };
@@ -77,11 +88,10 @@ export async function sendTransactionalEmail(input) {
   // already misconfigured.
   if (process.env.NODE_ENV === "production") {
     console.warn(
-      `${logPrefix} SMTP is not configured - email to ${to} ("${input.subject}") was NOT delivered. ` +
+      `${logPrefix} SMTP is not configured - email to ${maskEmail(to)} ("${input.subject}") was NOT delivered. ` +
         "Configure SMTP_* to send real email.",
     );
   } else {
-    // Dev fallback - log content to console when SMTP is not configured.
     console.info(
       `${logPrefix} Email for ${to} (SMTP not configured — copy content below):\n${input.text}\n` +
         "Configure SMTP_* in Notify-Backend/.env to deliver real email.",

@@ -1,4 +1,3 @@
-// Request pipeline: CORS → health → internal auth → email | phone | push.
 import { getEnv } from "../config/env.js";
 import { logRequest, logResponse } from "../core/logger.js";
 import { sendJson } from "../http/response.js";
@@ -16,14 +15,19 @@ function resolveAllowedOrigin(reqOrigin) {
   const env = getEnv();
   const raw = env.cors.corsOrigins || env.cors.frontendOrigin || "";
   const allowed = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  if (!allowed.length) return reqOrigin || "*";
+  if (!allowed.length) {
+    // Nothing configured. Reflecting the caller's origin back is convenient
+    // in development and fail-open in production - the same shape as the TLS
+    // bug fixed in a1bf554, where posture depended on an env var being
+    // present. Not exploitable today (no Access-Control-Allow-Credentials is
+    // ever sent, and these routes are Bearer-authenticated, so a browser
+    // cannot ride a session), but permissive-by-default is the wrong default.
+    if (env.isProduction) return "";
+    return reqOrigin || "*";
+  }
   return allowed.includes(reqOrigin) ? reqOrigin : allowed[0];
 }
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {import("node:http").ServerResponse} res
- */
 export async function handleRequest(req, res) {
   const start = Date.now();
   const reqOrigin = req.headers.origin;
@@ -44,29 +48,30 @@ export async function handleRequest(req, res) {
     logResponse(req, res, url, Date.now() - start);
   };
 
-  // 1. CORS preflight
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { ...CORS_HEADERS, "Access-Control-Allow-Origin": origin });
+    // Omit the header entirely when there is no allowed origin, rather than
+    // sending an empty one - same shape sendJson already uses in response.js.
+    res.writeHead(204, {
+      ...CORS_HEADERS,
+      ...(origin ? { "Access-Control-Allow-Origin": origin } : {}),
+    });
     res.end();
     done();
     return;
   }
 
-  // 2. Health (unauthenticated)
   if (url.pathname === "/health" && req.method === "GET") {
     sendJson(res, origin, 200, { status: "ok" });
     done();
     return;
   }
 
-  // 3. Readiness (unauthenticated)
   if (url.pathname === "/api/notify/readiness" && req.method === "GET") {
     sendJson(res, origin, 200, { status: "ok", service: "vt-notify-api" });
     done();
     return;
   }
 
-  // 4. Domain routes (all require INTERNAL_SERVICE_SECRET)
   const handled =
     (await routeEmail(req, res, url, origin)) ||
     (await routePhone(req, res, url, origin)) ||
