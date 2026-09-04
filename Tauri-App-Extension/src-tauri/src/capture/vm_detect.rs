@@ -9,10 +9,17 @@
 //! majority of real cases and has essentially no false-negative risk (every
 //! hypervisor, even a paravirtualized one with nothing else to fingerprint,
 //! sets it) - driver-file checks are a cheap corroborating extra, not load-
-//! bearing. ponytail: no MAC-OUI or registry/WMI enumeration - CPUID plus a
-//! fixed driver-file list is the lazy-and-sufficient rung here; add those if
-//! a real VM setup ever slips past CPUID (unlikely - it would mean a
-//! hypervisor hiding its own presence bit, which most legitimate ones don't).
+//! bearing. ponytail: CPUID alone is the rung here.
+//!
+//! The Windows driver-file probe (vmmouse.sys, vboxguest.sys, ...) was
+//! removed deliberately. It corroborated CPUID without adding reach - every
+//! hypervisor sets the CPUID bit whether or not its guest tools are
+//! installed - and scanning System32\drivers for hypervisor artifacts is a
+//! textbook anti-analysis pattern. That matters here because AV engines
+//! detonate samples *inside a VM*: the scanner watches the binary check
+//! whether it is being analysed, which is one of the strongest heuristics
+//! there is. Paying that for a corroborating signal on an advisory boolean
+//! was a bad trade. See PLAN §13.3.
 
 pub struct VmDetection {
     pub detected: bool,
@@ -52,31 +59,6 @@ fn cpuid_hypervisor_signals() -> Vec<String> {
     Vec::new()
 }
 
-/// Windows-only corroborating signal: driver files that ship only with a
-/// specific hypervisor's guest tools, installed by default.
-#[cfg(windows)]
-fn windows_driver_signals() -> Vec<String> {
-    const KNOWN_VM_DRIVERS: &[&str] = &[
-        "vmmouse.sys",
-        "vmhgfs.sys",
-        "vboxguest.sys",
-        "vboxmouse.sys",
-        "vboxsf.sys",
-        "vboxvideo.sys",
-    ];
-    let drivers_dir = std::path::Path::new(r"C:\Windows\System32\drivers");
-    KNOWN_VM_DRIVERS
-        .iter()
-        .filter(|name| drivers_dir.join(name).exists())
-        .map(|name| format!("driver:{name}"))
-        .collect()
-}
-
-#[cfg(not(windows))]
-fn windows_driver_signals() -> Vec<String> {
-    Vec::new()
-}
-
 /// macOS-only signal: the kernel publishes whether it's running under a
 /// hypervisor directly. Unverified on real macOS hardware - this codebase is
 /// built and tested from Windows only (see `capture/activity.rs`'s
@@ -105,7 +87,6 @@ fn macos_hypervisor_signals() -> Vec<String> {
 /// doesn't change mid-session.
 pub fn detect_vm() -> VmDetection {
     let mut signals = cpuid_hypervisor_signals();
-    signals.extend(windows_driver_signals());
     signals.extend(macos_hypervisor_signals());
     VmDetection { detected: !signals.is_empty(), signals }
 }
@@ -133,9 +114,4 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn windows_driver_scan_never_panics() {
-        let _ = windows_driver_signals();
-    }
 }

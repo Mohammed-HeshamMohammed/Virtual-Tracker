@@ -30,6 +30,12 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "activityLevel")]
         activity_level: u32,
+        /// Site open at capture time, when the focused window was a browser
+        /// and a recent reading exists. Lets the server categorise the capture
+        /// by what was actually on screen instead of inferring it from a
+        /// separate URL log. Omitted entirely when unknown - never guessed.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        url: Option<String>,
         #[serde(flatten)]
         signal: ActivitySignal,
     },
@@ -674,6 +680,31 @@ mod tests {
     // reflection since Rust has no runtime field enumeration; bounded to the
     // enum's own text so an unrelated field elsewhere named e.g. "content"
     // (there isn't one, but hypothetically) wouldn't false-positive this.
+    #[test]
+    fn activity_event_carries_no_classification_verdict() {
+        // The agent caches the server's classification data locally (see
+        // capture/classification_cache.rs). That cache is safe to keep on a
+        // machine the member controls *only* because it has no authority:
+        // categories are resolved server-side at read time, so editing the
+        // file changes what one person's own window displays and nothing else.
+        //
+        // The moment ActivityEvent grows a category field, that stops being
+        // true - the local cache becomes authoritative and therefore worth
+        // tampering with. This fails loudly the day someone tries.
+        let source = include_str!("types.rs");
+        let start = source.find("pub enum ActivityEvent").expect("ActivityEvent enum must exist");
+        let end = start + source[start..].find("
+}").expect("ActivityEvent enum must close") + 2;
+        let enum_source = &source[start..end];
+
+        for forbidden in ["category", "classification", "productive", "verdict"] {
+            assert!(
+                !enum_source.contains(&format!("{forbidden}:")),
+                "ActivityEvent must never carry a '{forbidden}' field - the server resolves                  categories at read time, and an agent-supplied verdict would make the local                  classification cache authoritative and worth tampering with"
+            );
+        }
+    }
+
     #[test]
     fn activity_event_carries_no_keystroke_content_field() {
         let source = include_str!("types.rs");

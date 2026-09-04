@@ -185,6 +185,7 @@ impl ActivityTracker {
             Arc::clone(&activity),
             settings.url_script_path.clone(),
             settings.macos_url_script_path.clone(),
+            settings.classification_cache_path.clone(),
         );
         Self {
             api,
@@ -1216,6 +1217,7 @@ mod tests {
             store_path: dir.join("store.json"),
             prefs_path: dir.join("prefs.json"),
             queue_path: dir.join("queue.jsonl"),
+            classification_cache_path: dir.join("classifications.json"),
             progress_path: dir.join("progress.json"),
             log_path: dir.join("agent.log"),
             url_script_path: dir.join("missing-get-browser-url.ps1"),

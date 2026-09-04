@@ -50,8 +50,8 @@ export async function insertActivityScreenshot(row) {
          id, member_id, session_id, task_id, task_title, screenshot_url, image_data,
          app_name, page_title, activity_level, captured_at, source,
          keystroke_count, distinct_key_count, mouse_distance_px, injected_event_count, active_seconds_in_window,
-         perceptual_hash
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+         perceptual_hash, url, domain
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        ON CONFLICT (id) DO NOTHING`,
       [
         row.id,
@@ -72,6 +72,8 @@ export async function insertActivityScreenshot(row) {
         signal.injectedEventCount,
         signal.activeSecondsInWindow,
         row.perceptualHash ?? null,
+        row.url ?? null,
+        row.domain ?? null,
       ],
     );
   } catch (err) {
@@ -215,7 +217,7 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
   params.push(limit);
   const result = await pgQuery(
     `SELECT sc.id, sc.member_id, sc.session_id, sc.task_id, sc.task_title, sc.screenshot_url,
-            sc.app_name, sc.page_title, sc.activity_level, sc.captured_at, sc.source,
+            sc.app_name, sc.page_title, sc.activity_level, sc.captured_at, sc.source, sc.domain,
             COALESCE(pt.name, ps.name) AS project_name
      FROM activity_screenshots sc
      LEFT JOIN tasks t ON t.id = sc.task_id

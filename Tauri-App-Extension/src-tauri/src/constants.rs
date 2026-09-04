@@ -17,6 +17,13 @@ pub const PROD_AUTH_URL: &str = "https://auth.myvirtualtracker.com";
 
 pub const SESSION_POLL_SEC: u64 = 5;
 pub const APP_LOG_INTERVAL_SEC: u64 = 15;
+
+/// How stale a cached browser URL may be before a screenshot stops carrying
+/// it. Two app-slice ticks: long enough that a capture landing between reads
+/// still gets one, short enough that a member who has navigated away is not
+/// credited to the previous site. Beyond this the server falls back to its own
+/// inference, which is strictly better than a confident wrong answer.
+pub const URL_CACHE_MAX_AGE_SEC: u64 = APP_LOG_INTERVAL_SEC * 2;
 /// How often the tracker flushes its accumulated active/idle seconds back to
 /// the backend session so "hours worked" reflects reality within this window
 /// instead of only updating on start/stop.

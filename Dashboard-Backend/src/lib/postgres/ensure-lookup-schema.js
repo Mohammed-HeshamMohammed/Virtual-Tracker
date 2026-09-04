@@ -791,6 +791,13 @@ GROUP BY task_id`,
   // The integrity sweep reads COALESCE(activity_level_original, activity_level)
   // for exactly this reason - anti-cheat is judged on measurements, never on
   // a correction. See integrity-postgres.service.js.
+  // Site open when the capture was taken, sent by the agent. Lets the feed
+  // categorise a browser screenshot by what was on screen rather than
+  // inferring it from a nearby URL log. Nullable: older agents send nothing,
+  // and the resolver's inference remains the fallback.
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS url TEXT`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS domain VARCHAR(255)`,
+
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_original INTEGER`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_edited_by UUID`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_edited_at TIMESTAMPTZ`,

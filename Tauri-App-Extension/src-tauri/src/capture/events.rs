@@ -3,17 +3,19 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rand::Rng;
 
 use crate::capture::activity::ActivityMeter;
 use crate::capture::screen::ScreenCapture;
+use crate::capture::classification_cache;
 use crate::capture::window::{read_browser_url, ForegroundWindow};
 use crate::constants::{
     APP_LOG_INTERVAL_SEC, MAX_APP_NAME_LEN, MAX_PAGE_TITLE_LEN, MAX_URL_LEN,
-    SCREENSHOT_MAX_DELAY_SEC, SCREENSHOT_MIN_DELAY_SEC, URL_CAPTURE_TICK_BUDGET_SEC,
+    SCREENSHOT_MAX_DELAY_SEC, SCREENSHOT_MIN_DELAY_SEC, URL_CACHE_MAX_AGE_SEC,
+    URL_CAPTURE_TICK_BUDGET_SEC,
 };
 use crate::types::ActivityEvent;
 use crate::util::truncate;
@@ -37,6 +39,17 @@ pub struct EventBuilder {
     /// on the tracker's periodic scoring-settings poll.
     screenshot_min_delay_sec: AtomicU64,
     screenshot_max_delay_sec: AtomicU64,
+    /// Last URL successfully captured, with when it was captured.
+    ///
+    /// A screenshot is taken on its own schedule (90-210s) while URLs are read
+    /// on the app-slice tick (15s), so the two are never simultaneous. Reusing
+    /// the most recent read costs nothing - no extra subprocess - and lets a
+    /// capture carry the site that was actually open, instead of the server
+    /// having to infer it from a separate URL log afterwards.
+    last_url: Mutex<Option<(String, Instant)>>,
+    /// Where the display-name map is persisted, so a cold start with no
+    /// network still resolves real app names instead of raw exe names.
+    cache_path: PathBuf,
 }
 
 impl EventBuilder {
@@ -44,15 +57,22 @@ impl EventBuilder {
         activity: Arc<ActivityMeter>,
         url_script_path: PathBuf,
         macos_url_script_path: PathBuf,
+        cache_path: PathBuf,
     ) -> Self {
+        // Seed from disk before the first server refresh - that refresh is up
+        // to DISPLAY_NAME_REFRESH_INTERVAL_SEC away, and may never arrive if
+        // the machine is offline.
+        let cached = classification_cache::load(&cache_path);
         Self {
             screen: ScreenCapture::new(),
             activity,
             url_script_path,
             macos_url_script_path,
-            display_names: Mutex::new(HashMap::new()),
+            display_names: Mutex::new(cached.into_iter().collect()),
             screenshot_min_delay_sec: AtomicU64::new(SCREENSHOT_MIN_DELAY_SEC),
             screenshot_max_delay_sec: AtomicU64::new(SCREENSHOT_MAX_DELAY_SEC),
+            last_url: Mutex::new(None),
+            cache_path,
         }
     }
 
@@ -73,6 +93,7 @@ impl EventBuilder {
     /// growing. Called periodically by the tracker loop - see
     /// DISPLAY_NAME_REFRESH_INTERVAL_SEC.
     pub fn apply_display_names(&self, entries: Vec<(String, String)>) {
+        classification_cache::save(&self.cache_path, &entries);
         *self.display_names.lock() = entries.into_iter().collect();
     }
 
@@ -105,8 +126,26 @@ impl EventBuilder {
             app_name: truncate(&self.resolve_app_name(window), MAX_APP_NAME_LEN),
             page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
             activity_level: self.activity.score(),
+            url: self.recent_url(window),
             signal: self.activity.signal_snapshot(),
         })
+    }
+
+    /// The cached URL, but only if the focused window is still a browser and
+    /// the reading is fresh. A stale URL attached to a capture would be worse
+    /// than none: the server would categorise the screenshot by a site the
+    /// member had already navigated away from, and would do so *confidently*,
+    /// ahead of its own inference.
+    fn recent_url(&self, window: &ForegroundWindow) -> Option<String> {
+        if !window.is_browser {
+            return None;
+        }
+        let guard = self.last_url.lock();
+        let (url, captured_at) = guard.as_ref()?;
+        if captured_at.elapsed() > Duration::from_secs(URL_CACHE_MAX_AGE_SEC) {
+            return None;
+        }
+        Some(url.clone())
     }
 
     pub fn app_slice(&self, window: &ForegroundWindow) -> ActivityEvent {
@@ -120,6 +159,7 @@ impl EventBuilder {
 
     pub fn url_slice(&self, window: &ForegroundWindow) -> Option<ActivityEvent> {
         let url = self.capture_url_bounded(window)?;
+        *self.last_url.lock() = Some((url.clone(), Instant::now()));
         Some(ActivityEvent::Url {
             url: truncate(&url, MAX_URL_LEN),
             page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
@@ -189,7 +229,20 @@ mod tests {
     // doing nothing here, only better once populated.
 
     fn builder() -> EventBuilder {
-        EventBuilder::new(ActivityMeter::new(), PathBuf::new(), PathBuf::new())
+        // A unique cache path per builder. apply_display_names now writes to
+        // disk, so a shared path would let one test's mappings load into the
+        // next one - which is exactly what happened the first time this used a
+        // fixed filename.
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        EventBuilder::new(
+            ActivityMeter::new(),
+            PathBuf::new(),
+            PathBuf::new(),
+            std::env::temp_dir().join(format!("vt-eventbuilder-test-{unique}.json")),
+        )
     }
 
     fn window(process_name: &str, app_name: &str) -> ForegroundWindow {
@@ -258,6 +311,59 @@ mod tests {
         let builder = builder();
         let win = window("", "Unknown");
         assert_eq!(builder.resolve_app_name(&win), "Unknown");
+    }
+
+    fn browser_window() -> ForegroundWindow {
+        ForegroundWindow {
+            app_name: "Google Chrome".to_string(),
+            title: "Some page".to_string(),
+            process_name: "chrome.exe".to_string(),
+            hwnd: 0,
+            is_browser: true,
+            browser_hint: "chrome".to_string(),
+        }
+    }
+
+    // A screenshot carries the site that was open, so the server can
+    // categorise it directly instead of inferring from a separate URL log.
+    // The cache is only ever written by a real capture in url_slice; these
+    // seed it directly because that path needs a live browser.
+
+    #[test]
+    fn no_url_on_a_screenshot_when_nothing_has_been_captured() {
+        let builder = builder();
+        assert_eq!(builder.recent_url(&browser_window()), None);
+    }
+
+    #[test]
+    fn a_fresh_url_is_attached() {
+        let builder = builder();
+        *builder.last_url.lock() = Some(("https://github.com/x".to_string(), Instant::now()));
+        assert_eq!(
+            builder.recent_url(&browser_window()),
+            Some("https://github.com/x".to_string())
+        );
+    }
+
+    #[test]
+    fn a_stale_url_is_dropped_rather_than_attached() {
+        // Worse than no URL: the server would categorise the capture by a site
+        // the member had already left, and would trust it over its own
+        // inference.
+        let builder = builder();
+        let stale = Instant::now() - Duration::from_secs(URL_CACHE_MAX_AGE_SEC + 1);
+        *builder.last_url.lock() = Some(("https://github.com/x".to_string(), stale));
+        assert_eq!(builder.recent_url(&browser_window()), None);
+    }
+
+    #[test]
+    fn a_non_browser_window_never_carries_a_url() {
+        // Focus moved from the browser to an editor; the cached URL must not
+        // follow it.
+        let builder = builder();
+        *builder.last_url.lock() = Some(("https://github.com/x".to_string(), Instant::now()));
+        let editor = window("code.exe", "VS Code");
+        assert_eq!(builder.recent_url(&editor), None);
     }
 
     #[test]

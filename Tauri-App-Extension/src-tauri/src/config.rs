@@ -15,6 +15,7 @@ pub struct Settings {
     pub store_path: PathBuf,
     pub prefs_path: PathBuf,
     pub queue_path: PathBuf,
+    pub classification_cache_path: PathBuf,
     pub progress_path: PathBuf,
     pub log_path: PathBuf,
     pub url_script_path: PathBuf,
@@ -34,6 +35,7 @@ impl Settings {
         let store_path = data_dir.join("agent-store.json");
         let prefs_path = data_dir.join("preferences.json");
         let queue_path = data_dir.join("pending-events.jsonl");
+        let classification_cache_path = data_dir.join("classifications.json");
         let progress_path = data_dir.join("tracker-progress.json");
         let log_path = data_dir.join("agent.log");
 
@@ -66,6 +68,7 @@ impl Settings {
             store_path,
             prefs_path,
             queue_path,
+            classification_cache_path,
             progress_path,
             log_path,
             url_script_path,

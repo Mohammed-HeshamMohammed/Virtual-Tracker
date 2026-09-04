@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod classification_cache;
 pub mod events;
 pub mod screen;
 pub mod vm_detect;

@@ -855,8 +855,24 @@ export async function routeActivity(req, res, url, origin) {
                 } catch (hashErr) {
                   logSafeWarn("[activity events] perceptual hash failed", hashErr);
                 }
+                // A capture's URL goes through the SAME privacy gates as a URL
+                // event: the domain-only minimiser and the exclusion list.
+                // This is not new collection - it is the URL the agent
+                // already sends, attached to the capture - and it must not
+                // become new collection by bypassing either gate.
+                const shotUrlRaw = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
+                const shotDomain = shotUrlRaw ? parseDomain(shotUrlRaw) : "";
+                const shotExcluded = shotDomain && matchesExclusion(exclusions, "domain", shotDomain);
+                const shotUrl = shotExcluded
+                  ? ""
+                  : minimizationSettings.urlDomainOnly
+                    ? shotDomain
+                    : shotUrlRaw;
+
                 await insertActivityScreenshot({
                   id,
+                  url: shotUrl || null,
+                  domain: shotExcluded ? null : shotDomain || null,
                   memberId: member.memberId,
                   sessionId,
                   taskId: sessionTaskId,
