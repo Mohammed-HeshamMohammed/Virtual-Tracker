@@ -5,12 +5,24 @@ name: security
 # report-only, so a finding shows up as an alert to triage rather than as a
 # red X blocking a merge.
 #
-# Ten scanners, chosen so they overlap as little as possible:
+# CodeQL is deliberately NOT here. This repo has code scanning *default
+# setup* enabled, which already runs CodeQL over actions + javascript-
+# typescript + rust on a weekly schedule, and GitHub refuses SARIF from an
+# advanced (workflow-defined) CodeQL analysis while default setup is on:
 #
-#   codeql             dataflow SAST over the JS/TS in all six services, plus
-#                      the workflow files in this directory
-#   semgrep            pattern SAST; covers the Dockerfiles and Rust that
-#                      CodeQL is not run against here
+#   CodeQL analyses from advanced configurations cannot be processed
+#   when the default setup is enabled
+#
+# Default setup covers more languages here than a hand-written job would
+# (it picks up Rust, which would otherwise need a full cargo build to get a
+# database), so it stays and this workflow fills in around it. To move to an
+# advanced config instead, turn default setup off in Settings > Code security
+# first, then add a codeql job back.
+#
+# Nine scanners, chosen so they overlap as little as possible:
+#
+#   semgrep            pattern SAST; covers the Dockerfiles and the Rust that
+#                      CodeQL's default query suite is thinner on
 #   njsscan            Express/Fastify-specific bugs in the four Node servers
 #   bearer             where sensitive data (screenshots, identifiers, device
 #                      info) leaks into logs or outbound calls
@@ -52,54 +64,6 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------- SAST ---
-
-  codeql:
-    name: codeql (${{ matrix.language }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      security-events: write  # upload the SARIF to Security > Code scanning
-      packages: read          # CodeQL pulls its query packs from ghcr
-      actions: read
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # `actions` analyses the workflow files themselves. An
-        # over-permissioned or compromised third-party action is as much a way
-        # into this repo as a bug in the app code, and most of what runs here
-        # is third-party.
-        #
-        # Rust is not in this matrix on purpose: CodeQL would need a full
-        # `cargo build` of the Tauri crate (webkit deps, several minutes) to
-        # build a database, and the clippy job below covers src-tauri for a
-        # fraction of that.
-        language: [javascript-typescript, actions]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: github/codeql-action/init@v3
-        with:
-          languages: ${{ matrix.language }}
-          # Nothing to compile - both languages are interpreted/declarative.
-          build-mode: none
-          # `security-extended` over the default `security` suite: more
-          # queries, slightly higher false-positive rate. Drop to `security`
-          # if the extra noise is not worth it.
-          queries: security-extended
-          config: |
-            paths-ignore:
-              - '**/node_modules'
-              - '**/.next'
-              - '**/dist'
-              - '**/build'
-              - '**/out'
-
-      - uses: github/codeql-action/analyze@v3
-        with:
-          # Distinct category per language so the two runs do not overwrite
-          # each other's results.
-          category: /language:${{ matrix.language }}
 
   semgrep:
     runs-on: ubuntu-latest
