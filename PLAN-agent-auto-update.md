@@ -1285,7 +1285,8 @@ visibility. Free to get right, expensive to get wrong.
 # PART G — What this plan deliberately does not do
 
 - **No delta/patch updates.** Full installer replacement is what the plugin
-  does and the binary is ~4 MB.
+  does and the installer is ~4 MB — see **G.1** for the measurements and why
+  splitting the artifact would make this harder, not easier.
 - **No custom update server** beyond the thin feed A.8 forces. F.1 (private
   repo) took the zero-backend option away; the answer is still the smallest
   possible one — three routes over the release metadata Landing-Backend already
@@ -1299,3 +1300,67 @@ visibility. Free to get right, expensive to get wrong.
   actually ships and quarantine proves insufficient.`
 - **No release-per-commit granularity beyond patch.** Push to `main` always
   bumps patch; minor and major stay deliberate manual acts.
+
+## G.1 Why the update is one whole installer, and why that is not the problem
+
+A reasonable objection: every update re-downloads the entire ~4 MB installer
+even for a one-line change. Doesn't shipping one fat artifact make updating
+harder than shipping loose files you could replace individually?
+
+**Where the 4 MB actually is.** Measured on `agent-v0.4.22`:
+
+| Artifact | Size | |
+|---|---|---|
+| `x64-setup.exe` (NSIS — what Windows updates download) | **4.06 MB** | |
+| `x64_en-US.msi` | 5.98 MB | |
+| `aarch64.dmg` | 5.25 MB | |
+| `amd64.AppImage` | **77.91 MB** | bundles the whole GTK/WebKit runtime — Linux only, not a shipped target |
+| Built frontend (`dist/`, embedded into the binary) | **~344 KB** | `index.js` 290 KB + `index.css` 54 KB |
+
+So the webview app is **about 8% of the download**. The other ~92% is the
+compiled Rust binary and its dependency tree — tokio, reqwest + rustls, the
+image encoder, `xcap` screen capture, the Tauri/wry webview bindings. That is
+one native executable. There is no "ship it as loose files" option for it;
+splitting is only meaningful for the 344 KB of frontend.
+
+**What is already loose.** Two files ship beside the binary rather than inside
+it — `get-browser-url.ps1` and `get-browser-url-macos.applescript`
+(`bundle.resources`). Which is a useful demonstration of the trade: those are
+exactly the files an employee could edit to change what the agent reports, and
+the AV plan already flags the PowerShell one as the single loudest malware
+heuristic in the product. Loose files are not free.
+
+**Why embedding is the right default here specifically.** This is monitoring
+software whose output people have an incentive to influence:
+
+- Embedded UI and logic can only be altered by patching a signed binary.
+  Loose JS beside the exe can be edited by anyone who can write to the install
+  directory — and the whole point of §2's `perMachine`/`currentUser` question
+  is that some deployments put that directory inside the user's own profile.
+- One artifact, one signature. Loose files each need signing, or you trust an
+  unsigned manifest, which is a strictly weaker chain than the minisign
+  signature the updater already verifies.
+- **Partial-update states cannot happen.** A file-by-file update that fails
+  halfway leaves new UI against old Rust, or vice versa — the failure mode
+  §5.6 already calls the dangerous one. Installer replacement is closer to
+  atomic, and its failure mode is "old version still runs", which is safe.
+
+**Is 4 MB worth optimising?** No. A 500-machine fleet updating monthly moves
+~2 GB/month in total, from an object store behind a redirect. Against that,
+delta updates would need a patch format, a per-version patch matrix, a
+fallback to full download, and their own signature story — several hundred
+lines of security-relevant code to save a few megabytes nobody is paying for.
+
+**What actually makes updating hard here** — none of which loose files would
+improve, and two of which they would make worse:
+
+| Real difficulty | Where | Would loose files help? |
+|---|---|---|
+| No `latest.json` has ever been produced | A.1 | No |
+| Restarting stops the user's timer | B/§1 | No |
+| `perMachine` needs elevation the user lacks | §2 | No — the write target is the same |
+| The endpoint is compiled into the binary | A.10.6 | **Marginally yes** — a loose config file could be repointed without a reinstall. But it would also let anyone repoint the agent's update feed, which is a far worse trade |
+| Mixed versions across users on one machine | §5.6 | **Worse** — more moving parts to get out of step |
+
+`// ponytail: one signed artifact, full replacement. The 4 MB is not the
+// bottleneck; the restart and the elevation are.`
