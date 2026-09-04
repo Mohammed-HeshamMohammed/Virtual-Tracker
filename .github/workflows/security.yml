@@ -43,6 +43,17 @@ name: security
 # The repo is public, so code scanning and the runner minutes are both free.
 
 on:
+# Scope note (see PLAN-browser-activity-and-screenshot-edit.md §36):
+# `**/scripts/**` and `**/*.example` are excluded from the SAST scanners.
+# Between them they produced ~80 of 592 alerts and none were real: 59 Bearer
+# "logger leak" hits in Dashboard-Backend/scripts (local developer tooling
+# that is never deployed) and 18 secret-pattern matches on .env.example
+# placeholders. Excluding them at source beats dismissing them one by one -
+# a dismissal is per-alert and returns when the file changes.
+#
+# clippy runs but no longer uploads SARIF: style lints are not security
+# findings and were crowding the same queue as real ones.
+
   push:
     branches: [main]
   pull_request:
@@ -168,7 +179,7 @@ jobs:
           format: sarif
           output: bearer.sarif
           exit-code: 0
-          skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
+          skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/*.example'
 
       - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
@@ -194,7 +205,7 @@ jobs:
           # directory-to-scan is left at its default sentinel so it takes the
           # whole workspace. ignore-globs replaces rather than extends the
           # action's default, so **/.git/** has to be repeated here.
-          ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
+          ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/*.example'
 
       - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
@@ -244,11 +255,12 @@ jobs:
         run: |
           cargo clippy --manifest-path Tauri-App-Extension/src-tauri/Cargo.toml --all-features --all-targets --message-format=json | clippy-sarif | tee clippy.sarif | sarif-fmt
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
-        if: always()
-        with:
-          sarif_file: clippy.sarif
-          category: clippy
+      # Deliberately NOT uploaded to code scanning. clippy findings are style
+      # and idiom lints - `unnecessary_lazy_evaluations`, `doc_lazy_continuation` -
+      # not security findings, and 23 of them sat in the same queue as an
+      # exploitable XSS. sarif-fmt above already renders every one into the job
+      # log, which is where a lint belongs. Add `-- -D warnings` to the clippy
+      # step to make them blocking; do not put them back in the Security tab.
 
   # ------------------------------------------------------ dependency CVEs ---
 
