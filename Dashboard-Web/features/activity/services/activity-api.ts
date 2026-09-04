@@ -187,6 +187,41 @@ export async function fetchActivityScreenshotImage(screenshotId: string): Promis
   }
 }
 
+export interface ScreenshotActivityUpdate {
+  updated: number
+  ids: string[]
+  activityLevel: number
+  runStart: string | null
+  runEnd: string | null
+}
+
+/**
+ * Correct a capture's activity level. By default the correction applies across
+ * its capture run - the unbroken stretch of tracked work it belongs to, bounded
+ * by idle gaps - because a wrong reading is rarely wrong for exactly one
+ * screenshot. Pass applyToRun: false to change only this one.
+ *
+ * The original measurement is preserved server-side; this never destroys what
+ * the agent recorded.
+ */
+export async function updateScreenshotActivityLevel(
+  screenshotId: string,
+  input: { activityLevel: number; applyToRun?: boolean; reason?: string },
+): Promise<ScreenshotActivityUpdate> {
+  if (!screenshotId) throw new Error("Screenshot id is required")
+  const res = await apiFetch(
+    apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}/activity`),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  )
+  const json = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(json?.error || "Failed to update activity level")
+  return json.data as ScreenshotActivityUpdate
+}
+
 export async function deleteActivityScreenshot(screenshotId: string): Promise<void> {
   if (!screenshotId) throw new Error("Screenshot id is required")
   const res = await apiFetch(apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}`), {

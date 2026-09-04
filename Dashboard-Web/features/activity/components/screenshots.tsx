@@ -7,7 +7,11 @@ import {
   getCachedScreenshotImage,
   loadScreenshotImage,
 } from "@/features/activity/utils/screenshot-image-cache"
-import { deleteActivityScreenshot } from "@/features/activity/services/activity-api"
+import {
+  deleteActivityScreenshot,
+  updateScreenshotActivityLevel,
+} from "@/features/activity/services/activity-api"
+import { ScreenshotActivityEditor } from "@/features/activity/components/screenshot-activity-editor"
 import { ActivityEmptyState } from "@/features/activity/components/activity-empty-state"
 import {
   ActivityDayEmptyState,
@@ -38,6 +42,7 @@ import {
   Target,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 
@@ -416,6 +421,32 @@ export function ActivityScreenshots() {
   const [modalImageData, setModalImageData] = useState<string | null>(null)
   const [modalImageLoading, setModalImageLoading] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [editingActivity, setEditingActivity] = useState(false)
+
+  // Closing the modal must not leave the editor open for the next screenshot -
+  // otherwise clicking through captures silently carries the panel along.
+  useEffect(() => {
+    setEditingActivity(false)
+  }, [selectedScreenshot?.id])
+
+  const handleSaveActivityLevel = useCallback(
+    async (activityLevel: number, applyToRun: boolean, reason: string) => {
+      if (!selectedScreenshot) return
+      const result = await updateScreenshotActivityLevel(selectedScreenshot.id, {
+        activityLevel,
+        applyToRun,
+        reason: reason || undefined,
+      })
+      setEditingActivity(false)
+      // Both feeds: the day-scoped table and the all-time Insights panel are
+      // separate fetches, and an edit changes what each of them reports.
+      await Promise.all([reload({ force: true }), reloadInsights({ force: true })])
+      setSelectedScreenshot((current) =>
+        current && result.ids.includes(current.id) ? { ...current, activityLevel } : current,
+      )
+    },
+    [selectedScreenshot, reload, reloadInsights],
+  )
 
   const handleDeleteScreenshot = useCallback(
     async (screenshotId: string) => {
@@ -847,6 +878,14 @@ export function ActivityScreenshots() {
                     </button>
                     <button
                       type="button"
+                      onClick={() => setEditingActivity((v) => !v)}
+                      className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      Edit activity
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => void handleDeleteScreenshot(selectedScreenshot.id)}
                       disabled={deletingId === selectedScreenshot.id}
                       className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/60 rounded-lg transition-colors disabled:opacity-40"
@@ -857,6 +896,13 @@ export function ActivityScreenshots() {
                   </div>
                 ) : null}
               </div>
+              {canManage && editingActivity ? (
+                <ScreenshotActivityEditor
+                  currentLevel={selectedScreenshot.activityLevel}
+                  onCancel={() => setEditingActivity(false)}
+                  onSave={handleSaveActivityLevel}
+                />
+              ) : null}
             </motion.div>
           </motion.div>
         )}
