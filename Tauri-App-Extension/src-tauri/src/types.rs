@@ -721,3 +721,59 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod queue_compat_tests {
+    use super::*;
+
+    /// An agent that queued events before `url` existed must still be able to
+    /// read its own backlog after auto-updating. queue.rs persists
+    /// ActivityEvent as JSON lines, so this is a real on-disk compatibility
+    /// boundary between two agent versions, not a theoretical one.
+    #[test]
+    fn a_pre_url_screenshot_event_still_deserializes() {
+        let old = r#"{"type":"screenshot","imageData":"data:image/jpeg;base64,AAA",
+            "appName":"Google Chrome","pageTitle":"x","activityLevel":42,
+            "keystrokeCount":1,"distinctKeyCount":1,"mouseDistancePx":0,
+            "injectedEventCount":0,"activeSecondsInWindow":15}"#;
+        let parsed: Result<ActivityEvent, _> = serde_json::from_str(old);
+        assert!(parsed.is_ok(), "old queued event must still parse: {parsed:?}");
+    }
+
+    /// The other direction: a manual downgrade leaves a new-format backlog for
+    /// an older binary. Serde ignores unknown fields by default, so `url`
+    /// should be skipped rather than rejected - asserted here because the day
+    /// someone adds #[serde(deny_unknown_fields)] this becomes a silent
+    /// data-loss bug for anyone who downgraded.
+    #[test]
+    fn an_unknown_future_field_is_ignored_not_rejected() {
+        let future = r#"{"type":"screenshot","imageData":"d","appName":"a","pageTitle":"p",
+            "activityLevel":1,"url":"https://example.com","somethingAddedLater":true,
+            "keystrokeCount":0,"distinctKeyCount":0,"mouseDistancePx":0,
+            "injectedEventCount":0,"activeSecondsInWindow":0}"#;
+        let parsed: Result<ActivityEvent, _> = serde_json::from_str(future);
+        assert!(parsed.is_ok(), "unknown fields must be ignored: {parsed:?}");
+    }
+
+    /// A round trip through the exact shape queue.rs writes.
+    #[test]
+    fn a_screenshot_with_a_url_round_trips() {
+        let event = ActivityEvent::Screenshot {
+            image_data: "d".into(),
+            app_name: "Google Chrome".into(),
+            page_title: "p".into(),
+            activity_level: 50,
+            url: Some("https://github.com/x".into()),
+            signal: ActivitySignal::default(),
+        };
+        let json = serde_json::to_string(&event).expect("serialize");
+        assert!(json.contains("\"url\""), "url must survive serialization: {json}");
+        let back: ActivityEvent = serde_json::from_str(&json).expect("deserialize");
+        match back {
+            ActivityEvent::Screenshot { url, .. } => {
+                assert_eq!(url.as_deref(), Some("https://github.com/x"));
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+}

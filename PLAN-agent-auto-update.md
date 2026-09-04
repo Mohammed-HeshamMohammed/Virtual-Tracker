@@ -865,6 +865,53 @@ tight loop from every desk.
 | Emergency/mandatory update | Same, with a shorter grace period and an explicit UI |
 | Staged rollout | Server decides eligibility per device; the agent just asks |
 
+### 5.6 Machine and OS-session cases
+
+The cases above assume one agent, one user, one machine. None of these do.
+
+| Case | Behaviour |
+|---|---|
+| **Two Windows users on one PC, `perMachine` install** | Both autostart their own agent against one shared binary. Whichever one applies the update **replaces the binary under the other's running process**. Windows keeps the open file handle valid, so the other agent keeps running the old code until it restarts — silently mixed versions on one machine. Not harmful in itself, but it makes "what version is this machine on" unanswerable (F.6) |
+| Update while another user's instance is running | The NSIS installer cannot replace a locked binary. Install fails; treat exactly like a permission failure (§5.4) — record and stop retrying, do not loop |
+| Fast user switching / RDP with two live sessions | Same as above. The apply step must tolerate "another instance holds the binary" as an ordinary outcome, not an error worth surfacing to an employee |
+| 🔴 **`relaunch()` races the single-instance plugin** | [lib.rs:662](Tauri-App-Extension/src-tauri/src/lib.rs:662) registers `tauri-plugin-single-instance` first, and a second launch calls `show_main_window` on the *existing* instance and exits. If the new process starts before the old one has fully exited, it detects the old instance, pops its window, and quits — **the update installs and the agent never restarts into it**. Wait for exit, or have the installer do the relaunch, rather than assuming `relaunch()` is atomic |
+| Machine sleeps mid-download | Download resumes or restarts under the existing backoff. Nothing special |
+| **Machine sleeps or reboots mid-install** | The dangerous window. An NSIS install interrupted part-way can leave a half-written install directory. This is the one place a rollback story would actually earn its keep — see §G. Minimum viable: do not begin applying when a shutdown is already signalled (§5.1), and treat a failed launch afterwards as the crash-loop guard's problem |
+| OS forces a reboot (Windows Update) mid-install | Same as above |
+
+### 5.7 On-disk state across versions
+
+Six files are written by version N and read by version N+1. An update that
+cannot read its own predecessor's state loses data silently.
+
+| File | Compatibility | Status |
+|---|---|---|
+| `pending-events.jsonl` | Serialized `ActivityEvent`. **Verified in both directions** — an old event without `url` parses (serde defaults a missing `Option` to `None`), and an unknown future field is ignored rather than rejected. Three tests added in `types.rs` | ✅ tested |
+| `preferences.json` | Every field already carries its own `serde(default)`, with a comment explaining exactly this hazard — adding a field must not wipe a user's other settings | ✅ by design |
+| `classifications.json` | An unparseable file is discarded and refetched; names fall back to raw exe names until the next refresh | ✅ by design |
+| `tracker-progress.json` | `PersistedProgress` has no per-field defaults. Adding a field here **would** break recovery of an in-flight session across an update — the exact case PS-1/PS-2 exist to protect | ⚠️ add `#[serde(default)]` before the shape ever changes |
+| `agent-store.json` / keyring | Credentials live in the OS keychain (`keyring` 4.x), not the file. Unaffected by agent version | ✅ |
+| Updater staging state (§4) | New in U2. Must be versioned from the start, and must tolerate its own absence | design note |
+
+> 🔴 **The silent-drop hazard.** [queue.rs:81](Tauri-App-Extension/src-tauri/src/queue.rs:81)
+> does `let Ok(batch) = serde_json::from_str(&line) else { continue; }` — an
+> unparseable line is **dropped with no log and no counter**. That is the right
+> resilience choice (one bad line must not block a backlog), but it means a
+> format break would silently discard captured work and look like nothing
+> happened. The tests above are what stop that being invisible; a `log::warn!`
+> with a count on the drop path would make it observable if it ever happens.
+
+### 5.8 Install-time environment
+
+| Case | Behaviour |
+|---|---|
+| `%TEMP%` redirected or not writable | Download fails; ordinary backoff. Worth logging distinctly — it is a machine misconfiguration, not a transient network fault |
+| Antivirus quarantines the staged installer between download and apply | Re-verify at apply time (already in §5.2) catches the file being gone; then it is a normal failure. Given the agent's own AV profile this is not hypothetical |
+| Roaming profile — `~/.virtualtracker` syncs across machines | Queue and progress files could arrive from a *different* machine's session. Out of scope to solve, but worth knowing before someone reports "duplicate time on two PCs" |
+| Disk full at install (as opposed to download) | Install fails, binary may be partially replaced. Crash-loop guard is the backstop |
+| ⚠️ **Corporate TLS interception** | `reqwest` is configured `default-features = false, features = [… "rustls-tls"]`, which in reqwest 0.12 trusts the **bundled Mozilla root set**, not the Windows certificate store. A corporate MITM proxy whose private root is installed in Windows — and therefore trusted by every browser on the machine — would **not** be trusted by the agent. If that is the case, the agent cannot reach the API *at all*, not merely the update feed, so it would present as "the product does not work here" rather than "updates are broken". **Verify before an enterprise deployment** (F.12): the fix is `rustls-tls-native-roots`, a one-line feature change |
+
+
 ## 6. Queue and progress safety
 
 Both are already solved and must be *used*, not rebuilt:
@@ -955,6 +1002,11 @@ Authenticode signing (F.7) if the certificate is obtainable in time.
 
 **Consume (Part B)**:
 
+- **Already done, in `types.rs`:** three on-disk compatibility tests covering
+  §5.7 — an old queued event without `url` still parses, an unknown future
+  field is ignored rather than rejected, and a screenshot with a URL round
+  trips. These pin the agent-to-agent format boundary that an auto-update
+  crosses on every machine.
 - `is_safe_to_apply()` as a pure function over `{session state, sign-in
   pending}` — table-driven across every row of §5.1. This is the whole design
   in one function, so it is the one that must be pinned.
@@ -967,6 +1019,10 @@ Authenticode signing (F.7) if the certificate is obtainable in time.
 - Staged update survives a process restart (staged state is persisted, not
   in-memory).
 - An update staged while tracking applies after `stop_session`.
+- `relaunch()` actually reaches the new version rather than being absorbed by
+  the single-instance plugin (§5.6) — the one case that fails *silently as a
+  success*, so it needs a real end-to-end check, not a unit test.
+- `PersistedProgress` still deserializes after a field is added to it (§5.7).
 
 ---
 
@@ -1131,6 +1187,38 @@ get no `darwin-x86_64` entry and silently never update. Same for Windows arm64.
 None ⇒ write that down in the plan so the gap is a decision rather than an
 oversight.
 
+## F.12 🟠 Does the agent work behind corporate TLS interception?
+
+**Why it matters.** `reqwest` is built `default-features = false` with
+`rustls-tls` ([Cargo.toml:43](Tauri-App-Extension/src-tauri/Cargo.toml:43)),
+which in reqwest 0.12 trusts the **bundled Mozilla root set**, not the Windows
+certificate store. Many corporate networks terminate TLS at a proxy and present
+a private root CA that is pushed into the Windows store — every browser on the
+machine trusts it; a webpki-roots client does not.
+
+If that applies, the agent cannot reach the API **at all** — this is not an
+update-only problem, and it would present as "the product does not work at this
+customer" rather than anything update-shaped. It is listed here because it is
+the failure mode most likely to be misdiagnosed as an updater bug.
+
+**How to check.** On a machine behind the proxy:
+
+```powershell
+# Does the agent's own HTTP stack get through?
+#   - browser works but this fails  => webpki-roots is the cause
+#   - both fail                     => ordinary network/firewall issue
+curl.exe --ssl-no-revoke -sS -o NUL -w "%{http_code}
+" https://<api-host>/health
+```
+Then check the agent log for TLS/certificate errors on `post_events`.
+
+**Answer:** ❓ open — and only reachable by testing on a real corporate network.
+
+**What it means.** If confirmed, switch the feature to
+`rustls-tls-native-roots` so the OS trust store is used. One line, but it must
+be in the A0 rollout build: an agent that cannot reach the API also cannot be
+updated to a version that can.
+
 ## F.9 Repo-wide `releases/latest` — is it still safe?
 
 **Why it matters.** A.6 — `releases/latest` is repo-wide. Every release here is
@@ -1180,6 +1268,7 @@ everyone's machine at once.
 | F.9 | Future non-agent releases here | — | ✅ fixed by the `agent-v*` filter in A.8.3 |
 | F.10 | Actions budget | — | Live again now that private is decided (A.3) |
 | F.11 | One manual end-to-end update | 🔴 | Do it on a VM before A0, not during |
+| F.12 | Corporate TLS interception | ❓ open | webpki-roots vs the Windows store (5.8). If it bites, the agent fails wholesale, not just updates — one-line fix, but it must be in A0 |
 
 **Two things gate the one build you get to hand out.**
 
