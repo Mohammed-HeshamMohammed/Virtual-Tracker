@@ -39,8 +39,8 @@ blast radii and can ship independently:
 | 6. **#1** browser→URL resolver | ✅ **shipped, both halves** — backend resolver + 3 feeds + §1.5 M1 cache + M3 index + C4 guard (`34f68d3`); §1.6 M2 export stamp, M3 reclassification notice, "via sites" badge (`c52e71c`). 512/512 tests, build green. Synced to `DashboardBackend-Prod` + `dashboard-web-production` | `34f68d3`, `c52e71c` |
 | 7. **#3** screenshot activity edit | ✅ **shipped** — schema audit columns, run-splitting (14 tests, all §3.3 cases), `PATCH .../activity`, editor UI beside Download, **and the §3.1 integrity fix in the same commit**. 526/526 tests, build green. Synced to both prod branches | `77b8679` |
 | 8. **#4 S6** remaining CodeQL fixes | ✅ **shipped** — §8.2 TLS opt-in, §8.3 email bodies, §8.5 regexes, §8.6 hostname checks. Synced to `DashboardBackend-Prod`, `Auth-Production`, `dashboard-web-production`. **Notify-backend still has no prod branch** | `a1bf554` |
-| 9. **#6** ownership + credits | ⬜ next |
-| 10. **agent release** (#5 A4/A5/A7, #2, #7) | ⬜ |
+| 9. **#6** ownership + credits | ✅ **shipped** — owner line + GitHub links in the agent (via `openUrl`, verified) and an About card in web settings; `publisher` set to "Soft Fix / Virtual Callers". Agent 136/136 tests, both builds green. Web synced to `dashboard-web-production`; **agent ships with the batched release** | `c2ee4fa` |
+| 10. **agent release** (#5 A4/A5/A7, #2, #7) | ⬜ next — the big one; needs real Windows to verify |
 | 11–13. docs, §36 tuning, dismissals | ⬜ |
 
 Production branches synced this round: `DashboardBackend-Prod`,
