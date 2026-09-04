@@ -1756,6 +1756,51 @@ export async function ensurePostgresLookupSchema() {
       ON CONFLICT (role_id, permission_key) DO NOTHING
     `);
 
+    // Deliberately last, and deliberately outside the DDL loop above.
+    //
+    // activity_url_logs had no (session_id, ...) index at all, unlike
+    // activity_app_logs' idx_act_app_session_open. Two callers need one: the
+    // browser category resolver matches app/screenshot rows to whichever URL
+    // was open at that moment in the session, and
+    // deleteActivitySessionWithChildrenPg's
+    // `DELETE FROM activity_url_logs WHERE session_id = $1` was a sequential
+    // scan on every session delete.
+    //
+    // CONCURRENTLY because a plain CREATE INDEX takes ACCESS EXCLUSIVE, and
+    // this runs on every boot - on a large table that blocks all agent event
+    // ingest while the backend looks hung. It is legal here only because
+    // these statements are not wrapped in a transaction; it is also why this
+    // cannot live in a DO block.
+    //
+    // Its own try/catch because CONCURRENTLY can fail transiently (a
+    // conflicting long-running transaction), and the loop above has no
+    // per-statement handling - an unguarded failure here would abort schema
+    // setup for everything ordered after it. A miss just means the index is
+    // retried next boot; queries still work, only slower.
+    try {
+      // A CONCURRENTLY build that fails midway leaves an INVALID index behind,
+      // which IF NOT EXISTS would then skip forever - present, unusable, and
+      // silently never retried. Clear that state before trying again.
+      await client.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (
+            SELECT 1 FROM pg_class c
+            JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE c.relname = 'idx_act_url_session_visited' AND NOT i.indisvalid
+          ) THEN
+            EXECUTE 'DROP INDEX idx_act_url_session_visited';
+          END IF;
+        END $$;
+      `);
+      await client.query(
+        `CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_act_url_session_visited
+           ON activity_url_logs (session_id, visited_at)`,
+      );
+    } catch (indexErr) {
+      logSafeWarn("[postgres] idx_act_url_session_visited not built this boot:", indexErr);
+    }
+
     markPostgresLookupReady();
     markPostgresMemberDataReady();
     return { ok: true };
