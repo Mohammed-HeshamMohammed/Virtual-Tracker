@@ -1,0 +1,410 @@
+name: security
+
+# Finds bugs and security issues across the whole repo and reports them to
+# Security > Code scanning. Nothing here fails a build - every job is
+# report-only, so a finding shows up as an alert to triage rather than as a
+# red X blocking a merge.
+#
+# Ten scanners, chosen so they overlap as little as possible:
+#
+#   codeql             dataflow SAST over the JS/TS in all six services, plus
+#                      the workflow files in this directory
+#   semgrep            pattern SAST; covers the Dockerfiles and Rust that
+#                      CodeQL is not run against here
+#   njsscan            Express/Fastify-specific bugs in the four Node servers
+#   bearer             where sensitive data (screenshots, identifiers, device
+#                      info) leaks into logs or outbound calls
+#   devskim            fast shallow lint over file types the others skip -
+#                      SQL, nginx config, Caddyfile, PowerShell, AppleScript
+#   clippy             Rust lints for the Tauri agent
+#   osv-scanner        known CVEs in the seven package-lock.json + Cargo.lock
+#   dependency-review  objects when a PR *introduces* a vulnerable dependency
+#   trivy              misconfiguration in the deploy surface that has no
+#                      lockfile - compose file, Dockerfiles, nginx
+#   scorecard          grades the repo itself: token scopes, action pinning,
+#                      branch protection
+#
+# Deliberately only one CVE reporter (osv-scanner). Trivy and Grype would
+# re-report the same advisories from the same lockfiles and triple every
+# alert, so Trivy is scoped to `misconfig` and Grype is left out entirely.
+#
+# The repo is public, so code scanning and the runner minutes are both free.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly. This is the run that matters: a CVE gets published, or a new
+    # CodeQL query ships, long after the code it affects stopped changing.
+    # Without it, nothing ever rescans untouched files.
+    - cron: '27 4 * * 1'
+  branch_protection_rule:  # re-grade scorecard when protection rules change
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- SAST ---
+
+  codeql:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write  # upload the SARIF to Security > Code scanning
+      packages: read          # CodeQL pulls its query packs from ghcr
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # `actions` analyses the workflow files themselves. An
+        # over-permissioned or compromised third-party action is as much a way
+        # into this repo as a bug in the app code, and most of what runs here
+        # is third-party.
+        #
+        # Rust is not in this matrix on purpose: CodeQL would need a full
+        # `cargo build` of the Tauri crate (webkit deps, several minutes) to
+        # build a database, and the clippy job below covers src-tauri for a
+        # fraction of that.
+        language: [javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Nothing to compile - both languages are interpreted/declarative.
+          build-mode: none
+          # `security-extended` over the default `security` suite: more
+          # queries, slightly higher false-positive rate. Drop to `security`
+          # if the extra noise is not worth it.
+          queries: security-extended
+          config: |
+            paths-ignore:
+              - '**/node_modules'
+              - '**/.next'
+              - '**/dist'
+              - '**/build'
+              - '**/out'
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          # Distinct category per language so the two runs do not overwrite
+          # each other's results.
+          category: /language:${{ matrix.language }}
+
+  semgrep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # The published image already carries semgrep and its Python runtime;
+    # pulling it costs less than installing per run.
+    container:
+      image: semgrep/semgrep
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Free community rulesets - no account and no SEMGREP_APP_TOKEN needed.
+      - name: semgrep scan
+        # Findings make semgrep exit non-zero; they belong in the Security tab,
+        # not in a failed build.
+        continue-on-error: true
+        run: |
+          semgrep scan \
+            --config p/security-audit \
+            --config p/secrets \
+            --config p/javascript \
+            --config p/typescript \
+            --config p/nodejs \
+            --config p/react \
+            --config p/dockerfile \
+            --config p/rust \
+            --config p/github-actions \
+            --exclude node_modules \
+            --exclude .next \
+            --exclude dist \
+            --exclude build \
+            --exclude target \
+            --metrics off \
+            --sarif --output semgrep.sarif
+
+      - uses: github/codeql-action/upload-sarif@v3
+        # `always()` so a semgrep crash still uploads whatever it wrote rather
+        # than silently reporting nothing.
+        if: always()
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  njsscan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Knows Express/Fastify idioms - unvalidated redirects, missing helmet,
+      # user input passed to res.send, weak JWT and crypto calls, SQL built by
+      # string concatenation - which the general-purpose engines either miss
+      # or report without the framework context.
+      - uses: ajinabraham/njsscan-action@v9
+        with:
+          # The trailing `|| true` is needed because the action passes args
+          # straight to a shell and njsscan exits 1 on findings.
+          args: >-
+            Auth-Backend Dashboard-Backend Landing-Backend Notify-backend
+            Dashboard-Web Landing-Web Tauri-App-Extension
+            --sarif --output njsscan.sarif || true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: njsscan.sarif
+          category: njsscan
+
+  bearer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # The one scanner here that reasons about data rather than code shape:
+      # it classifies what flows through the app and flags where sensitive
+      # fields reach a logger, a third party, or an unencrypted sink.
+      #
+      # That is the relevant question for this repo. The agent captures
+      # screenshots, window titles, visited domains and input activity for
+      # named employees, and six services pass that around - "did a screenshot
+      # path or a user identifier end up in a log line or an outbound request"
+      # is a class of bug nothing else here looks for.
+      - uses: bearer/bearer-action@v2
+        with:
+          # Stays on sast: GitHub secret scanning and push protection are
+          # already enabled on this repo and own the committed-credential
+          # case, so this does not double-report it.
+          scanner: sast
+          format: sarif
+          output: bearer.sarif
+          exit-code: 0
+          skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: bearer.sarif
+          category: bearer
+
+  devskim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Seconds to run, no build and no dependency resolution, and it reads
+      # every file type in the repo including the ones the real SAST tools
+      # skip. Shallow by design - a tripwire, not coverage.
+      - uses: microsoft/DevSkim-Action@v1
+        with:
+          # directory-to-scan is left at its default sentinel so it takes the
+          # whole workspace. ignore-globs replaces rather than extends the
+          # action's default, so **/.git/** has to be repeated here.
+          ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: devskim-results.sarif
+          category: devskim
+
+  clippy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Tauri-App-Extension/src-tauri
+
+      # Same set release.yml installs - the crate does not compile without
+      # them, and clippy has to compile to lint.
+      - name: install Linux webview deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev librsvg2-dev patchelf
+
+      # clippy-sarif converts cargo's JSON diagnostics to SARIF; sarif-fmt
+      # renders the same findings into the job log so they are readable
+      # without opening the Security tab.
+      - name: install sarif converters
+        run: cargo install clippy-sarif sarif-fmt --locked
+
+      # Run from the repo root with --manifest-path rather than from the crate
+      # directory: rustc emits diagnostic paths relative to the invocation
+      # directory, and code scanning needs them repo-relative to link a
+      # finding back to a file.
+      - name: cargo clippy
+        # Deleting this and adding `-- -D warnings` is how you make clippy
+        # blocking later.
+        continue-on-error: true
+        run: |
+          cargo clippy --manifest-path Tauri-App-Extension/src-tauri/Cargo.toml --all-features --all-targets --message-format=json | clippy-sarif | tee clippy.sarif | sarif-fmt
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: clippy.sarif
+          category: clippy
+
+  # ------------------------------------------------------ dependency CVEs ---
+
+  osv-scanner:
+    # The dependency-vulnerability scanner for the repo - the only free option
+    # that reads every lockfile shape here in one pass (seven
+    # package-lock.json plus the Cargo.lock under src-tauri) instead of
+    # needing a job per ecosystem.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.5.1
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    with:
+      # Recursive from the repo root. osv-scanner honours .gitignore, so
+      # node_modules/, .next/ and target/ are skipped without listing them.
+      scan-args: |-
+        -r
+        ./
+      # Report, do not fail. A transitive advisory with no upstream fix would
+      # otherwise red-X every PR until someone patches a dependency they do
+      # not control.
+      fail-on-vuln: false
+
+  dependency-review:
+    # The PR-time half: diffs the manifests against the base branch and
+    # objects if the change pulls in a package with a known advisory. Cheap -
+    # no install, no build.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write  # to post the summary comment on failure
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/dependency-review-action@v5.0.0
+        with:
+          # `high` rather than `moderate`: with seven package.json files and a
+          # Cargo.lock, moderate would block routine PRs on transitive
+          # advisories nobody here can act on.
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
+          # Licence gating is off. To enable, add e.g.
+          #   deny-licenses: GPL-3.0, AGPL-3.0
+          # but audit the existing tree first - it will fail on day one if
+          # anything already vendored is copyleft.
+
+  # ------------------------------------------ deploy config + repo hygiene ---
+
+  trivy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Scoped to misconfiguration, not CVEs - osv-scanner already files those
+      # from the same lockfiles. What Trivy uniquely covers is the deployment
+      # surface with no lockfile at all: deploy/docker-compose.yml, the five
+      # Dockerfiles, the nginx config and the Caddyfile. Typical catches are a
+      # container with no non-root USER, a compose service with a host volume
+      # mount or a privileged port, secrets passed as build args.
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: misconfig
+          format: sarif
+          output: trivy.sarif
+          skip-dirs: '**/node_modules,**/.next,**/dist,**/build,**/out,**/target'
+          # SARIF has no severity below "warning", so cap what is uploaded
+          # rather than filling code scanning with LOW style notes.
+          severity: 'MEDIUM,HIGH,CRITICAL'
+          limit-severities-for-sarif: true
+          cache: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy.sarif
+          category: trivy-misconfig
+
+  scorecard:
+    # Grades the repository rather than the code: branch protection, whether
+    # workflow tokens are least-privilege, whether actions are pinned, whether
+    # releases are signed. The only check here that would notice this repo's
+    # own release pipeline being the weak link rather than a line in a service.
+    #
+    # Skipped on pull_request - it needs the default branch and cannot publish
+    # from a PR run.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      security-events: write
+      id-token: write  # required by publish_results
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Leaving credentials in the checkout is exactly the sort of thing
+          # scorecard grades down.
+          persist-credentials: false
+
+      - uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          # Publishes to the public OpenSSF API and enables the score badge.
+          # Set false to keep results repo-local.
+          publish_results: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
