@@ -1,7 +1,10 @@
 export function readBearerToken(req) {
   const authHeader = req.headers?.authorization;
   if (typeof authHeader !== "string") return "";
-  const match = /^Bearer\s+(.+)$/i.exec(authHeader.trim());
+  // `\s+` beside `.+` backtracks quadratically on a header of repeated
+  // whitespace that never matches. `\S` anchors the first captured char so
+  // there is nothing for the engine to re-split.
+  const match = /^Bearer\s+(\S.*)$/i.exec(authHeader.trim());
   return match?.[1] || "";
 }
 

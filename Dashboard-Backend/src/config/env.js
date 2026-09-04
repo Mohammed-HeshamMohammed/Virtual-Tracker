@@ -67,7 +67,12 @@ export function buildEnv(source = process.env) {
 
     security: Object.freeze({
       allowInsecureHttp: readBool(source, "ALLOW_INSECURE_HTTP", false),
-      disableTlsVerificationInDev: !isProduction,
+      // Requires an explicit opt-in as well as a non-production NODE_ENV.
+      // It used to be `!isProduction` alone, which fails *open*: an unset or
+      // misspelled NODE_ENV in a container silently turned off certificate
+      // validation for every outbound call. Security posture must not depend
+      // on an env var being present.
+      disableTlsVerificationInDev: !isProduction && readBool(source, "DISABLE_TLS_VERIFY", false),
     }),
 
     urls: Object.freeze({

@@ -5,6 +5,14 @@ import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { hasRemovableUploadedProfileImage } from "./profile-image-resolve.js";
 import { getPublicUrl, uploadToGCS } from "../../lib/gcs/upload.js";
 
+function isFirebaseStorageUrl(value) {
+  try {
+    return new URL(value).hostname === "firebasestorage.googleapis.com";
+  } catch {
+    return false;
+  }
+}
+
 export const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 
 const ALLOWED_TYPES = new Map([
@@ -98,10 +106,10 @@ export async function clearProfileAvatar(auth, db, uid) {
     try {
       const userRecord = await auth.getUser(uid);
       const authPhoto = typeof userRecord.photoURL === "string" ? userRecord.photoURL : "";
-      if (
-        authPhoto.includes("firebasestorage.googleapis.com") ||
-        authPhoto.includes("profile-avatars/")
-      ) {
+      // Hostname equality rather than substring: a crafted URL containing
+      // "firebasestorage.googleapis.com" in its path or query would otherwise
+      // match. Only affects avatar cleanup, but the pattern is wrong.
+      if (isFirebaseStorageUrl(authPhoto) || authPhoto.includes("profile-avatars/")) {
         await auth.updateUser(uid, { photoURL: null });
       }
     } catch {
