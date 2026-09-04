@@ -14,7 +14,13 @@ async function pgQuery(sql, params = []) {
 
 export async function fetchRecentScreenshotsPg(since) {
   const result = await pgQuery(
-    `SELECT member_id, session_id, perceptual_hash, activity_level, keystroke_count, injected_event_count
+    // COALESCE to the original: a manager can correct activity_level, and
+    // anti-cheat must be judged on what the agent measured, never on the
+    // correction - otherwise integrity checking becomes editable by the
+    // people it exists to check.
+    `SELECT member_id, session_id, perceptual_hash,
+            COALESCE(activity_level_original, activity_level) AS activity_level,
+            keystroke_count, injected_event_count
      FROM activity_screenshots
      WHERE captured_at >= $1
      ORDER BY session_id, captured_at ASC`,
@@ -25,7 +31,10 @@ export async function fetchRecentScreenshotsPg(since) {
 
 export async function fetchRecentActivityLevelsBySessionPg(since) {
   const result = await pgQuery(
-    `SELECT session_id, member_id, AVG(activity_level)::float AS avg_activity
+    // Same reason as above - the average that feeds detectCategoryConflict
+    // has to be the measured one.
+    `SELECT session_id, member_id,
+            AVG(COALESCE(activity_level_original, activity_level))::float AS avg_activity
      FROM activity_screenshots
      WHERE captured_at >= $1
      GROUP BY session_id, member_id`,

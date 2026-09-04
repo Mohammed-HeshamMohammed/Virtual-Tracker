@@ -366,6 +366,45 @@ export async function fetchPgScreenshotById(screenshotId) {
   return result?.rows?.[0] ?? null;
 }
 
+/** Every capture in one session, oldest first - the input to run splitting. */
+export async function fetchPgSessionScreenshots(sessionId) {
+  const result = await pgQuery(
+    `SELECT id, captured_at, activity_level, activity_level_original
+     FROM activity_screenshots
+     WHERE session_id = $1::text
+     ORDER BY captured_at ASC`,
+    [String(sessionId ?? "")],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * Apply a corrected activity level to a set of captures, in one transaction so
+ * a run updates all-or-nothing.
+ *
+ * activity_level_original is written only on the FIRST edit (COALESCE), so
+ * re-editing never overwrites what the agent measured - that column is both
+ * the audit trail and the rollback path.
+ */
+export async function updatePgScreenshotActivityLevels(ids, { activityLevel, editedBy, reason }) {
+  const cleanIds = (ids ?? []).map((id) => parseProgressUuid(String(id))).filter(Boolean);
+  if (cleanIds.length === 0) return 0;
+  const level = Math.max(0, Math.min(100, Math.floor(Number(activityLevel))));
+  return withTransaction(async (client) => {
+    const result = await client.query(
+      `UPDATE activity_screenshots
+       SET activity_level_original = COALESCE(activity_level_original, activity_level),
+           activity_level = $2,
+           activity_level_edited_by = $3,
+           activity_level_edited_at = now(),
+           activity_level_edit_reason = $4
+       WHERE id = ANY($1::uuid[])`,
+      [cleanIds, level, editedBy ? parseProgressUuid(editedBy) : null, reason || null],
+    );
+    return result.rowCount ?? 0;
+  });
+}
+
 export async function fetchLatestPgScreenshot(memberId, sessionId) {
   const id = parseProgressUuid(memberId);
   if (!id) return null;
