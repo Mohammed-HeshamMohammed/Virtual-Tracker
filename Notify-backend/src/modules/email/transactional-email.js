@@ -65,9 +65,21 @@ export async function sendTransactionalEmail(input) {
     }
   }
 
-  console.info(
-    `${logPrefix} Email for ${to} (SMTP not configured — copy content below):\n${input.text}\n` +
-      "Configure SMTP_* in Notify-Backend/.env to deliver real email.",
-  );
+  // The body is only echoed outside production. It carries verification and
+  // password-reset links, so in a deployed environment that has lost its SMTP
+  // config this would write working credentials into the log file - a dev
+  // convenience turning into a credential leak exactly when something is
+  // already misconfigured.
+  if (process.env.NODE_ENV === "production") {
+    console.warn(
+      `${logPrefix} SMTP is not configured - email to ${to} ("${input.subject}") was NOT delivered. ` +
+        "Configure SMTP_* to send real email.",
+    );
+  } else {
+    console.info(
+      `${logPrefix} Email for ${to} (SMTP not configured — copy content below):\n${input.text}\n` +
+        "Configure SMTP_* in Notify-Backend/.env to deliver real email.",
+    );
+  }
   return { sent: false, channel: "console" };
 }

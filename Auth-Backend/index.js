@@ -3,6 +3,14 @@ import { getEnv, initConfig } from "./src/config/env.js";
 const config = initConfig();
 
 if (config.security.disableTlsVerificationInDev) {
+  // Loud on purpose: this disables certificate validation for every outbound
+  // request in this process. It needs DISABLE_TLS_VERIFY=true *and* a
+  // non-production NODE_ENV, so it cannot switch itself on by accident - but
+  // if it is ever on in a deployed environment, the log is how you find out.
+  console.warn(
+    "[security] TLS certificate verification is DISABLED (DISABLE_TLS_VERIFY=true, NODE_ENV=%s). Never use this in production.",
+    config.nodeEnv,
+  );
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 }
 
