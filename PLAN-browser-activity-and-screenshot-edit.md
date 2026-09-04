@@ -36,8 +36,8 @@ blast radii and can ship independently:
 | 3. **#4 S3** pin Actions + base images | ✅ **shipped** — 13 actions → commit SHAs in both workflows, `node:20-alpine` → digest in all 5 Dockerfiles. No mutable refs left | `48956f7` |
 | 4. **#4 S5** Dockerfile `USER` + §8.4 perms | ✅ **shipped** — 3 backends dropped to `USER node` (both web apps already had `USER nextjs`); `verify` job scoped to `contents: read`. Every job in both workflows now declares permissions | `c21131a` |
 | 5. **#4 S4** dependency bumps | ✅ **partly** — browserslist 4.28.1 → 4.28.8, build verified. **glib cannot be fixed** (§ below). Dependabot now reports **1 vuln, was 3** | `8175353` |
-| 6. **#1** browser→URL resolver | ⬜ next |
-| 7. **#3** screenshot activity edit | ⬜ |
+| 6. **#1** browser→URL resolver | 🟡 **backend shipped** — main + `DashboardBackend-Prod`. Resolver + all 3 feeds + §1.5 M1 cache + M3 index + C4 guard. 512/512 tests. **Frontend half (§1.6 M2/M3) still open** | `34f68d3` |
+| 7. **#3** screenshot activity edit | ⬜ next |
 | 8. **#4 S6** remaining CodeQL fixes | ⬜ |
 | 9. **#6** ownership + credits | ⬜ |
 | 10. **agent release** (#5 A4/A5/A7, #2, #7) | ⬜ |
@@ -65,6 +65,23 @@ Production branches synced this round: `DashboardBackend-Prod`,
   path is not built. **Treat Dependabot #43 as accepted, not actionable.**
 - **Unblocked by step 2:** Issue #5's A0 signature check can now be run
   against the GitHub release artifact (it was measuring the stale binary).
+- **Attribution precision bug found while building #1.** URL slices are
+  back-to-back and the match tolerance is as wide as a slice, so a
+  nearest-match lookup selected the *next* interval and shifted a member's
+  whole day's attribution by one slice. Containment now wins over proximity.
+  Found by running real numbers through the resolver, not by the unit tests —
+  worth remembering that the table-driven tests all passed while the
+  end-to-end totals were wrong.
+- **The category cache leaked across tests.** `focused-time.test.js` swaps
+  the mocked classification rows per test; memoising `getAllCategories()`
+  made a test read the previous test's data. `reset()` now calls
+  `invalidateCategoryCache()`. Real deployments are unaffected (writes
+  invalidate), but any *external* write to `activity_categories` is stale for
+  up to 15s — acceptable, and now documented in the module.
+- **"Existing files only" needed an exception.** `category-resolver.js` is
+  new and `routes.js` imports it, so syncing the modified files without it
+  would crash the backend on boot. New files that existing code imports must
+  ship; new *test* files still do not.
 
 ## Contents
 
