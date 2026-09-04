@@ -12,6 +12,11 @@ ENV PORT=5713
 
 EXPOSE 5713
 
+# Drop root: the node image ships an unprivileged `node` user (uid 1000).
+# COPY and `npm ci` run as root, so /app is chowned before the switch.
+RUN chown -R node:node /app
+USER node
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||5713)+'/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 

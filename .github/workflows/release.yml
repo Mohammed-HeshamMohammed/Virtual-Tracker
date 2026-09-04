@@ -40,6 +40,11 @@ jobs:
   # matrix builds entirely on a bad commit instead of burning them first.
   verify:
     runs-on: ubuntu-latest
+    # Checks out and runs tests, nothing more. The other two jobs declare
+    # contents:write because they push a tag and publish a release; this one
+    # inherited the repo default, which is the only reason it had more.
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
