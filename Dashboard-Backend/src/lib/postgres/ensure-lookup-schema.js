@@ -781,6 +781,20 @@ GROUP BY task_id`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS injected_event_count INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS active_seconds_in_window INTEGER NOT NULL DEFAULT 0`,
   `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS perceptual_hash VARCHAR(16)`,
+
+  // activity_level is evidence, produced from the raw counters stored beside
+  // it. A manager can correct it, but the original must survive that: an edit
+  // that overwrites in place destroys the audit trail of a time-tracking
+  // product. Written only on the FIRST edit (COALESCE), so re-editing never
+  // loses what the agent actually measured.
+  //
+  // The integrity sweep reads COALESCE(activity_level_original, activity_level)
+  // for exactly this reason - anti-cheat is judged on measurements, never on
+  // a correction. See integrity-postgres.service.js.
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_original INTEGER`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_edited_by UUID`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_edited_at TIMESTAMPTZ`,
+  `ALTER TABLE activity_screenshots ADD COLUMN IF NOT EXISTS activity_level_edit_reason TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_member_captured ON activity_screenshots (member_id, captured_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_session ON activity_screenshots (session_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_ss_captured ON activity_screenshots (captured_at DESC)`,

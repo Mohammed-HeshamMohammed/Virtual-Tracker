@@ -40,6 +40,7 @@ import {
 } from "./agent-devices.service.js";
 import { assertMemberNotBanned } from "../members/services/member-ban-service.js";
 import { isBrowserAppName, normalizeAppName } from "./app-name.js";
+import { runContaining } from "./screenshot-run.js";
 import {
   buildUrlIndex,
   extractHttpUrl,
@@ -82,6 +83,8 @@ import {
   fetchPgAppLogs,
   fetchPgScreenshotById,
   fetchPgScreenshots,
+  fetchPgSessionScreenshots,
+  updatePgScreenshotActivityLevels,
   fetchPgUrlLogs,
   findOpenPgSession,
   getPgSessionById,
@@ -1027,6 +1030,103 @@ export async function routeActivity(req, res, url, origin) {
       });
     } catch (e) {
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Screenshot load failed" });
+    }
+    return true;
+  }
+
+  // Correct a capture's activity level. Applies across its capture run - the
+  // unbroken stretch of tracked work it belongs to - because a wrong reading
+  // is almost never wrong for exactly one screenshot. Idle gaps bound it; see
+  // screenshot-run.js for why a gap is a reliable idle signal.
+  if (pn.startsWith("/api/activity/screenshot/") && pn.endsWith("/activity") && req.method === "PATCH") {
+    const idToken = readIdToken(req, url);
+    const screenshotId = pn.slice("/api/activity/screenshot/".length).split("/")[0];
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    if (!screenshotId) {
+      sendJson(res, origin, 400, { success: false, error: "Screenshot id is required" });
+      return true;
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      sendJson(res, origin, 400, { success: false, error: "Invalid JSON body" });
+      return true;
+    }
+    const rawLevel = Number(body?.activityLevel);
+    if (!Number.isFinite(rawLevel) || rawLevel < 0 || rawLevel > 100) {
+      sendJson(res, origin, 400, {
+        success: false,
+        error: "activityLevel must be a number between 0 and 100",
+      });
+      return true;
+    }
+    const activityLevel = Math.floor(rawLevel);
+    const applyToRun = body?.applyToRun !== false;
+    const reason = typeof body?.reason === "string" ? body.reason.slice(0, 500) : null;
+
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      // Same gate as deleting a screenshot - no new permission concept.
+      if (!isManagementRole(getAuthContext(req)?.roleName ?? "")) {
+        sendJson(res, origin, 403, {
+          success: false,
+          error: "Insufficient permissions to edit screenshot activity.",
+        });
+        return true;
+      }
+
+      const pgRow = await fetchPgScreenshotById(screenshotId);
+      if (!pgRow) {
+        sendJson(res, origin, 404, { success: false, error: "Screenshot not found" });
+        return true;
+      }
+      const ownerId = String(pgRow.member_id ?? "");
+      const scope = await resolveActivityFeedScope(db, member.memberId, { memberId: ownerId });
+      if (scope.forbidden) {
+        sendJson(res, origin, 403, { success: false, error: "Not allowed to manage this screenshot" });
+        return true;
+      }
+
+      let targetIds = [String(pgRow.id ?? screenshotId)];
+      let runStart = toIso(pgRow.captured_at);
+      let runEnd = runStart;
+      if (applyToRun && pgRow.session_id) {
+        // Threshold comes from the server setting, not a constant - an org
+        // that raised the capture interval would otherwise see every capture
+        // treated as its own run.
+        const settings = await getActivityScoringSettings().catch(() => null);
+        const sessionShots = await fetchPgSessionScreenshots(pgRow.session_id);
+        const run = runContaining(sessionShots, pgRow.id ?? screenshotId, settings?.screenshotMaxDelaySec);
+        if (run.length > 0) {
+          targetIds = run.map((s) => String(s.id));
+          runStart = toIso(run[0].captured_at);
+          runEnd = toIso(run[run.length - 1].captured_at);
+        }
+      }
+
+      const updated = await updatePgScreenshotActivityLevels(targetIds, {
+        activityLevel,
+        editedBy: member.memberId,
+        reason,
+      });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { updated, ids: targetIds, activityLevel, runStart, runEnd },
+      });
+    } catch (e) {
+      logSafeError("[activity/screenshot activity PATCH]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Activity level update failed",
+      });
     }
     return true;
   }
