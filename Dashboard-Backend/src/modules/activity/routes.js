@@ -167,20 +167,30 @@ function dominantCategory(categorySeconds) {
 
 async function buildCategoryLookup() {
   const byKey = new Map();
+  // Categories resolve at read time, so re-classifying an app changes what
+  // past periods report. That is correct - a classification is a statement
+  // about what something *is* - but it is surprising when two exports of the
+  // same period disagree with nothing explaining why. Reporting when the
+  // classifications last changed lets the UI say so instead of silently
+  // moving the numbers.
+  let updatedAt = null;
   try {
     for (const row of await getAllCategories()) {
       const pattern = typeof row.pattern === "string" ? row.pattern.trim().toLowerCase() : "";
       if (!pattern) continue;
       byKey.set(`${row.matchType}:${pattern}`, row.category || "unclassified");
+      const rowUpdated = toIso(row.updatedAt);
+      if (rowUpdated && (!updatedAt || rowUpdated > updatedAt)) updatedAt = rowUpdated;
     }
   } catch (err) {
     logSafeWarn("[activity/feed] classification lookup failed", err);
   }
-  return (matchType, pattern) => {
+  const lookup = (matchType, pattern) => {
     const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
     if (!key) return "unclassified";
     return byKey.get(`${matchType}:${key}`) ?? "unclassified";
   };
+  return { lookup, updatedAt };
 }
 
 // These four moved to category-resolver.js so the resolver and the feeds
@@ -1104,16 +1114,16 @@ export async function routeActivity(req, res, url, origin) {
             : scope.targetMemberIds ?? [],
       );
       const memberOptions = memberOptionsFromMeta(scope.allowedMemberIds, memberMeta, member.memberId);
+      const { lookup: categoryLookup, updatedAt: classificationsUpdatedAt } = await buildCategoryLookup();
       const scopeMeta = {
         members: memberOptions,
+        classificationsUpdatedAt,
         scope: {
           roleName: scope.roleName,
           canFilterByProject: scope.canFilterByProject,
           projectScopeOnly: scope.projectScopeOnly,
         },
       };
-
-      const categoryLookup = await buildCategoryLookup();
 
       if (feedType === "screenshots") {
         const captureEnabled = isActivityScreenshotsEnabled();
