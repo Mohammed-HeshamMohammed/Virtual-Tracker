@@ -29,6 +29,16 @@ blast radii and can ship independently:
 
 ## Progress
 
+> **12 of 13 steps shipped.** The one remaining step needs your authorisation
+> (dismissing alerts), and two items are deliberately held back with reasons
+> below (A4, A7). **Nothing in the agent reaches users until someone triggers
+> the release workflow** — that is not something I do unasked.
+>
+> **Open questions still unanswered:** §3.4 (does an activity edit move
+> *tracked time*? — built as "no"), §24.3 #2 (install mode → blocks A7), and
+> how **Notify-backend** deploys (it has no production branch, so §8.3's fix
+> sits on `main` only).
+
 | Step (§25) | Status | Commit |
 |---|---|---|
 | 1. **#4 S1** §8.1 auth-page XSS/redirect | ✅ **shipped** — main + `DashboardBackend-Prod` + `Auth-Production`. Verified in-browser: `javascript:` → `/`, `https://evil.example/login` → `/login`, legit path preserved. 7 tests, 500/500 suite green | `0c4ca3a` |
@@ -42,7 +52,9 @@ blast radii and can ship independently:
 | 9. **#6** ownership + credits | ✅ **shipped** — owner line + GitHub links in the agent (via `openUrl`, verified) and an About card in web settings; `publisher` set to "Soft Fix / Virtual Callers". Agent 136/136 tests, both builds green. Web synced to `dashboard-web-production`; **agent ships with the batched release** | `c2ee4fa` |
 | 10. **agent code** (A5, #2, #7 + §19.3 guard) | 🟡 **committed, not released** — Rust 102/102, agent frontend 136/136, backend 526/526, no new clippy warnings. Backend half synced to `DashboardBackend-Prod`. **Someone must trigger the release workflow** for any of it to reach users | `6b009b5` |
 | 10b. **A4** UIAutomation, **A7** install mode | ⬜ **deliberately held back** — see below |
-| 11–13. docs, §36 tuning, dismissals | ⬜ |
+| 11. **A6** transparency doc | ✅ **shipped** — `docs/tauri-app-extension/WHAT-THE-AGENT-DOES.md`. Under the no-certificate constraint this substitutes for the signature: states the AV warning is expected, what is and is not collected, and IT exclusion paths | `75765fe` |
+| 12. **#4 S7** §36 tune `security.yml` | ✅ **shipped** — clippy no longer uploads SARIF (~23), `**/scripts/**` and `**/*.example` excluded (~80). Every scanner kept; coverage unchanged for deployed code | `bba0037` |
+| 13. **#4 S8** dismiss remaining false positives | ⛔ **needs your authorisation** — §24.2. I will not change alert state unasked |
 
 Production branches synced this round: `DashboardBackend-Prod`,
 `Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`,
