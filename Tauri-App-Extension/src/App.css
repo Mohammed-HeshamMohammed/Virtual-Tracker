@@ -3839,3 +3839,32 @@ select.modal-input {
   color: rgb(var(--c-good));
   font-weight: 600;
 }
+
+.settings-credit-links {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding-bottom: 4px;
+}
+
+.settings-credit-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--on-surface-fainter);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.settings-credit-link:hover {
+  color: var(--on-surface-faint);
+  background: rgb(var(--c-surface-highest) / 0.6);
+}
