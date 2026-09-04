@@ -23,3 +23,7 @@ tracker-progress.json
 .vscode/
 # Tauri private key
 updater-key.pem
+# Runtime classification-name cache written by capture/classification_cache.rs
+# (dev builds run from this directory write it here instead of the real
+# per-user data dir). Not source, never commit.
+classifications.json
