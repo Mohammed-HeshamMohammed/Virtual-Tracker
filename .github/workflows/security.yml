@@ -77,7 +77,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Free community rulesets - no account and no SEMGREP_APP_TOKEN needed.
       - name: semgrep scan
@@ -103,7 +103,7 @@ jobs:
             --metrics off \
             --sarif --output semgrep.sarif
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         # `always()` so a semgrep crash still uploads whatever it wrote rather
         # than silently reporting nothing.
         if: always()
@@ -119,13 +119,13 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Knows Express/Fastify idioms - unvalidated redirects, missing helmet,
       # user input passed to res.send, weak JWT and crypto calls, SQL built by
       # string concatenation - which the general-purpose engines either miss
       # or report without the framework context.
-      - uses: ajinabraham/njsscan-action@v9
+      - uses: ajinabraham/njsscan-action@231750a435d85095d33be7d192d52ec650625146 # v9
         with:
           # The trailing `|| true` is needed because the action passes args
           # straight to a shell and njsscan exits 1 on findings.
@@ -134,7 +134,7 @@ jobs:
             Dashboard-Web Landing-Web Tauri-App-Extension
             --sarif --output njsscan.sarif || true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: njsscan.sarif
@@ -148,7 +148,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # The one scanner here that reasons about data rather than code shape:
       # it classifies what flows through the app and flags where sensitive
@@ -159,7 +159,7 @@ jobs:
       # named employees, and six services pass that around - "did a screenshot
       # path or a user identifier end up in a log line or an outbound request"
       # is a class of bug nothing else here looks for.
-      - uses: bearer/bearer-action@v2
+      - uses: bearer/bearer-action@828eeb928ce2f4a7ca5ed57fb8b59508cb8c79bc # v2
         with:
           # Stays on sast: GitHub secret scanning and push protection are
           # already enabled on this repo and own the committed-credential
@@ -170,7 +170,7 @@ jobs:
           exit-code: 0
           skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: bearer.sarif
@@ -184,19 +184,19 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Seconds to run, no build and no dependency resolution, and it reads
       # every file type in the repo including the ones the real SAST tools
       # skip. Shallow by design - a tripwire, not coverage.
-      - uses: microsoft/DevSkim-Action@v1
+      - uses: microsoft/DevSkim-Action@4b5047945a44163b94642a1cecc0d93a3f428cc6 # v1
         with:
           # directory-to-scan is left at its default sentinel so it takes the
           # whole workspace. ignore-globs replaces rather than extends the
           # action's default, so **/.git/** has to be repeated here.
           ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**'
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: devskim-results.sarif
@@ -210,13 +210,13 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           components: clippy
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: Tauri-App-Extension/src-tauri
 
@@ -244,7 +244,7 @@ jobs:
         run: |
           cargo clippy --manifest-path Tauri-App-Extension/src-tauri/Cargo.toml --all-features --all-targets --message-format=json | clippy-sarif | tee clippy.sarif | sarif-fmt
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: clippy.sarif
@@ -257,7 +257,7 @@ jobs:
     # that reads every lockfile shape here in one pass (seven
     # package-lock.json plus the Cargo.lock under src-tauri) instead of
     # needing a job per ecosystem.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.5.1
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
     permissions:
       security-events: write
       contents: read
@@ -284,9 +284,9 @@ jobs:
       contents: read
       pull-requests: write  # to post the summary comment on failure
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/dependency-review-action@v5.0.0
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           # `high` rather than `moderate`: with seven package.json files and a
           # Cargo.lock, moderate would block routine PRs on transitive
@@ -308,7 +308,7 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Scoped to misconfiguration, not CVEs - osv-scanner already files those
       # from the same lockfiles. What Trivy uniquely covers is the deployment
@@ -316,7 +316,7 @@ jobs:
       # Dockerfiles, the nginx config and the Caddyfile. Typical catches are a
       # container with no non-root USER, a compose service with a host volume
       # mount or a privileged port, secrets passed as build args.
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -330,7 +330,7 @@ jobs:
           limit-severities-for-sarif: true
           cache: true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: trivy.sarif
@@ -353,13 +353,13 @@ jobs:
       contents: read
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Leaving credentials in the checkout is exactly the sort of thing
           # scorecard grades down.
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@v2.4.4
+      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
         with:
           results_file: scorecard.sarif
           results_format: sarif
@@ -367,7 +367,7 @@ jobs:
           # Set false to keep results repo-local.
           publish_results: true
 
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
         with:
           sarif_file: scorecard.sarif
