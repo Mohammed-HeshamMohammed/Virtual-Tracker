@@ -48,7 +48,7 @@
     "@visx/group": "^4.0.0",
     "@visx/hierarchy": "^4.0.0",
     "@visx/shape": "^4.0.0",
-    "autoprefixer": "^10.4.20",
+    "autoprefixer": "^10.5.4",
     "boneyard-js": "^1.8.1",
     "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
