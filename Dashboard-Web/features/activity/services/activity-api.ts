@@ -161,6 +161,10 @@ export async function fetchActivityScope(projectScopeOnly: boolean): Promise<Act
 export interface ActivityFeedResult<T> {
   data: T
   members: { id: string; name: string; initials: string }[]
+  /** When any app/site classification was last changed. Categories resolve at
+   *  read time, so re-classifying changes what past periods report - this is
+   *  what lets the UI say so rather than silently moving the numbers. */
+  classificationsUpdatedAt?: string
   scope?: {
     roleName: string
     canFilterByProject: boolean
@@ -244,6 +248,8 @@ export async function fetchActivityFeed<T>(query: ActivityFeedQuery): Promise<Ac
         scope: json.scope,
         screenshotsEnabled: json.screenshotsEnabled as boolean | undefined,
         disabledReason: typeof json.disabledReason === "string" ? json.disabledReason : undefined,
+        classificationsUpdatedAt:
+          typeof json.classificationsUpdatedAt === "string" ? json.classificationsUpdatedAt : undefined,
       }
       const result =
         query.type === "apps" && json.data?.apps

@@ -50,6 +50,9 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
   const [loading, setLoading] = useState(() => !initialCache)
   const [error, setError] = useState<string | null>(null)
   const [disabledReason, setDisabledReason] = useState<string | null>(() => initialCache?.disabledReason ?? null)
+  const [classificationsUpdatedAt, setClassificationsUpdatedAt] = useState<string | null>(
+    () => initialCache?.classificationsUpdatedAt ?? null,
+  )
   const fetchGenRef = useRef(0)
 
   const applyCache = useCallback((cached: ReturnType<typeof readCache>) => {
@@ -57,6 +60,7 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
     setData(cached.data as T)
     setMembers(cached.members)
     setDisabledReason(cached.disabledReason)
+    setClassificationsUpdatedAt(cached.classificationsUpdatedAt ?? null)
     return true
   }, [])
 
@@ -99,11 +103,13 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
           data: result.data,
           members: result.members,
           disabledReason: result.disabledReason ?? null,
+          classificationsUpdatedAt: result.classificationsUpdatedAt ?? null,
           fetchedAt: Date.now(),
         })
         setData(result.data)
         setMembers(result.members)
         setDisabledReason(result.disabledReason ?? null)
+        setClassificationsUpdatedAt(result.classificationsUpdatedAt ?? null)
       } catch {
         if (gen !== fetchGenRef.current) return
         if (!cached) setError("Failed to load activity data")
@@ -165,5 +171,5 @@ export function useActivityFeed<T>(type: "screenshots" | "apps" | "urls", option
 
   const showLoading = loading && data === null && error === null
 
-  return { data, members, loading: showLoading, error, disabledReason, reload }
+  return { data, members, loading: showLoading, error, disabledReason, classificationsUpdatedAt, reload }
 }
