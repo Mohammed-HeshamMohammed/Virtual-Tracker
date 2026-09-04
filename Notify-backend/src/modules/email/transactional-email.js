@@ -27,6 +27,22 @@ function getSmtpTransporter() {
   return smtpTransporter;
 }
 
+/**
+ * Masks a recipient before it reaches a log line: `alice@example.com` becomes
+ * `a***@example.com`.
+ *
+ * Delivery failures have to name *someone* to be diagnosable, but a full
+ * address is personal data, and this is an employee-monitoring product whose
+ * logs should not accumulate staff addresses. The first character plus the
+ * domain is enough to identify which user in practice.
+ */
+function maskEmail(address) {
+  const value = String(address ?? "");
+  const at = value.indexOf("@");
+  if (at <= 0) return value ? "***" : "";
+  return `${value[0]}***${value.slice(at)}`;
+}
+
 export async function verifySmtpDelivery() {
   const transporter = getSmtpTransporter();
   if (!transporter) return { ok: false, error: "SMTP is not configured." };
@@ -72,7 +88,7 @@ export async function sendTransactionalEmail(input) {
   // already misconfigured.
   if (process.env.NODE_ENV === "production") {
     console.warn(
-      `${logPrefix} SMTP is not configured - email to ${to} ("${input.subject}") was NOT delivered. ` +
+      `${logPrefix} SMTP is not configured - email to ${maskEmail(to)} ("${input.subject}") was NOT delivered. ` +
         "Configure SMTP_* to send real email.",
     );
   } else {
