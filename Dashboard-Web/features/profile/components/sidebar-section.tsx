@@ -19,8 +19,20 @@ import type { AuthProfileSnapshot } from "@/features/auth/services/verify-sessio
 
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp"])
 
+function hostnameIs(url: string, host: string): boolean {
+  try {
+    return new URL(url).hostname === host
+  } catch {
+    return false
+  }
+}
+
 function withCacheBust(url: string): string {
-  if (!url || url.startsWith("blob:") || url.startsWith("data:") || url.includes("api.dicebear.com")) return url
+  if (!url || url.startsWith("blob:") || url.startsWith("data:")) return url
+  // Hostname equality, not a substring: "https://evil.example/?x=api.dicebear.com"
+  // would otherwise match. No security consequence here - the only effect is a
+  // skipped cache-buster - but the pattern is wrong wherever it appears.
+  if (hostnameIs(url, "api.dicebear.com")) return url
   const separator = url.includes("?") ? "&" : "?"
   return `${url}${separator}v=${Date.now()}`
 }
