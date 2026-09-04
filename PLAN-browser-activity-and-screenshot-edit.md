@@ -27,6 +27,24 @@ blast radii and can ship independently:
 > match a certificate. With no certificate, it drops to a cosmetic choice —
 > I just need the string.
 
+## Progress
+
+| Step (§25) | Status | Commit |
+|---|---|---|
+| 1. **#4 S1** §8.1 auth-page XSS/redirect | ✅ **shipped** — main + `DashboardBackend-Prod` + `Auth-Production`. Verified in-browser: `javascript:` → `/`, `https://evil.example/login` → `/login`, legit path preserved. 7 tests, 500/500 suite green | `0c4ca3a` |
+| 2. **#4 S2** §35 stale committed installers | ✅ **shipped** — main + `dashboard-web-production` + `LandingWeb-Prod`. 4 files, ~15 MB, gitignored on both apps. Nothing referenced them; `/api/download` was already the real path | `4a830e0` |
+| 3. **#4 S3** pin Actions + base images | ⬜ next |
+| 4. **#4 S4** dependency bumps | ⬜ |
+| 5. **#1** browser→URL resolver | ⬜ |
+| 6. **#3** screenshot activity edit | ⬜ |
+| 7. **#4 S5/S6** Dockerfiles, perms, remaining CodeQL | ⬜ |
+| 8. **#6** ownership + credits | ⬜ |
+| 9. **agent release** (#5 A4/A5/A7, #2, #7, glib) | ⬜ |
+| 10–12. docs, §36 tuning, dismissals | ⬜ |
+
+**Unblocked by step 2:** Issue #5's A0 signature check can now be run against
+the GitHub release artifact (it was measuring the stale binary before).
+
 ## Contents
 
 **Part I — the three original requests**
