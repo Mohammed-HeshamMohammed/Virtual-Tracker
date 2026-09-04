@@ -1,22 +1,6 @@
-# Dependencies & build output
-node_modules/
-.next/
-out/
-.turbo/
-.vercel/
-.gsap/
-# Environment
-.env
-.env.*
-!.env.example
-
-# TypeScript
-*.tsbuildinfo
-
-# OS / editor
-.DS_Store
-Thumbs.db
-
+# Everything else (node_modules, .env, build output) is covered by the repo
+# root .gitignore - only the rule that is specific to this app lives here.
+#
 # Agent installers are distributed from GitHub Releases via Landing-Backend's
 # /api/download, never committed - four stale v0.4.0 binaries were being
 # served publicly from public/downloads/ long after the agent reached 0.4.21.
