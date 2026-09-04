@@ -49,7 +49,12 @@ export async function handleRequest(req, res) {
   };
 
   if (req.method === "OPTIONS") {
-    res.writeHead(204, { ...CORS_HEADERS, "Access-Control-Allow-Origin": origin });
+    // Omit the header entirely when there is no allowed origin, rather than
+    // sending an empty one - same shape sendJson already uses in response.js.
+    res.writeHead(204, {
+      ...CORS_HEADERS,
+      ...(origin ? { "Access-Control-Allow-Origin": origin } : {}),
+    });
     res.end();
     done();
     return;
