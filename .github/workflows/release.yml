@@ -70,58 +70,52 @@ jobs:
           npm run test
           npm run build
 
-
       # A.4 step 4 / F.2. The updater only trusts a signature made by the
-      # private half of the pubkey compiled into the app. There are two
-      # different public keys in this repo's history, so "which key is in the
-      # secret" has never been established - and getting it wrong publishes a
-      # latest.json that every installed agent rejects, which is a hard stop
-      # (§5.2) and unrecoverable without touching each machine.
+      # private half of the pubkey compiled into the app. Getting this wrong
+      # publishes a latest.json every installed agent rejects - a hard stop
+      # (§5.2), unrecoverable without touching each machine - so this must
+      # fail here, before the paid matrix build.
       #
-      # Signing a scratch file is the only way to learn the answer without
-      # printing the key. minisign puts the key id in the signature's untrusted
-      # comment, so comparing that id to the one in the shipped pubkey answers
-      # F.2 definitively. Runs in `verify`, before the paid matrix build.
+      # Logic lives in .github/scripts/assert-updater-key.mjs, not inline:
+      # comparing raw keynum bytes at a fixed offset in the key/signature
+      # blobs, not a hex string grepped from a comment - minisign does not
+      # zero-pad the displayed id, and a signature's own comment does not
+      # contain a key id at all. An earlier version of this check grepped for
+      # one anyway and could never have passed, matching key or not.
       - name: assert the signing key matches the shipped pubkey (F.2)
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        working-directory: Tauri-App-Extension
         run: |
           set -euo pipefail
           if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
             echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty - updater artifacts cannot be signed."
             exit 1
           fi
-
           echo "updater-key-check" > /tmp/keycheck.txt
           npx --yes @tauri-apps/cli signer sign \
             --private-key "${TAURI_SIGNING_PRIVATE_KEY}" \
             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
             /tmp/keycheck.txt
-
-          # The .sig is base64; its decoded first line carries the key id.
-          SIG_KEY_ID="$(base64 -d < /tmp/keycheck.txt.sig | head -1 | grep -oE '[0-9A-F]{16}' | head -1)"
-          PUB_KEY_ID="$(node -e "
-            const fs=require('fs');
-            const c=JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json','utf8'));
-            const pub=Buffer.from(c.plugins.updater.pubkey,'base64').toString('utf8');
-            const m=pub.match(/[0-9A-F]{16}/);
-            process.stdout.write(m ? m[0] : '');
-          ")"
-
-          echo "signing key id : ${SIG_KEY_ID:-<none>}"
-          echo "shipped pubkey : ${PUB_KEY_ID:-<none>}"
-
-          if [ -z "$SIG_KEY_ID" ] || [ -z "$PUB_KEY_ID" ]; then
-            echo "::error::Could not determine one of the key ids - refusing to build updater artifacts blind."
+          node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
+      # comparing raw keynum bytes at a fixed offset in the key/signature
+      # blobs, not a hex string grepped from a comment - minisign does not
+      # zero-pad the displayed id, and a signature's own comment does not
+      # contain a key id at all. An earlier version of this check grepped for
+      # one anyway and could never have passed, matching key or not.
+      - name: assert the signing key matches the shipped pubkey (F.2)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
+            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty - updater artifacts cannot be signed."
             exit 1
           fi
-          if [ "$SIG_KEY_ID" != "$PUB_KEY_ID" ]; then
-            echo "::error::Signing key ($SIG_KEY_ID) does not match the pubkey shipped in tauri.conf.json ($PUB_KEY_ID). Every installed agent would reject this release."
-            exit 1
-          fi
-          echo "✅ signing key matches the shipped pubkey"
+          echo "updater-key-check" > /tmp/keycheck.txt
+          npx --yes @tauri-apps/cli signer sign             --private-key "${TAURI_SIGNING_PRIVATE_KEY}"             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"             /tmp/keycheck.txt
+          node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
 
   bump:
     needs: verify

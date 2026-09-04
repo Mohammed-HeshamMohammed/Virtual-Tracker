@@ -30,7 +30,7 @@ fails silently if it is wrong.
 | Check | Answer | Consequence |
 |---|---|---|
 | F.1 visibility | **Will be private** | 🔴 `releases/latest/download/latest.json` is unusable — the agent fetches it anonymously. The feed moves to Landing-Backend (**A.8**), which is the right answer **whether the repo is public or private** (**A.10.1**). One ordering trap: `GITHUB_PAT` must be set *before* the flip or `/api/download` dies and takes the rollout path with it (**A.10.2**) |
-| F.2 which keypair | ✅ **`8216A44B8570A492`** — the key deployed agents already trust | 🟢 **A0 is off the critical path.** The fleet is reachable: a bridge release (H.4.4) carries it onto the new endpoint. **Do not rotate the key** (H.5.1). Confirmed by the CI assertion in `64ca530` |
+| F.2 which keypair | ⚠️ **`8216A44B8570A492` — password unrecoverable, key rotated.** New key `06B6CFAC4AC47020` | 🔴 **H.5's optimistic branch did not hold** — see the correction after H.5. A0 (manual rollout / fresh install) is back in play; the bridge-release path (H.4.4) is abandoned |
 | F.3 key password | Implied correct by F.2 | The CI assertion signs with it, so a wrong password fails `verify` before any build |
 | F.4 bot can push to `main` | *Possibly not* | The `bump` job must stop pushing to `main`. Version comes from the tag instead (**A.9**) |
 
@@ -1655,6 +1655,48 @@ infrastructure you control, rather than a GitHub URL whose behaviour depends on
 a repository setting. Landing-Backend can be repointed, cached, versioned or
 failed over without touching a single machine. This class of problem does not
 recur.
+
+> ## ⚠️ Correction — H.5's branch did not hold; the key was rotated
+>
+> Everything in H.5 below assumed the CI assertion's *design intent* would be
+> confirmed: that `TAURI_SIGNING_PRIVATE_KEY` held the private half of
+> `8216A44B8570A492` and its password was known. In practice:
+>
+> 1. The password on file for that key was tried **twice**, entered cleanly
+>    the second time (no paste/prompt mixup), and both attempts failed with
+>    minisign's genuine "Wrong password for that key" error — reproduced
+>    locally against the exact same file and confirmed to be a real
+>    password mismatch, not a formatting bug like the earlier BOM issue.
+> 2. Rather than keep guessing at a password that may not exist, the decision
+>    was made to **rotate**: generate a brand-new keypair (key id
+>    `06B6CFAC4AC47020`), update `tauri.conf.json`'s shipped pubkey, replace
+>    the committed `updater-key.pem.pub` at the repo root, and set both
+>    `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to
+>    the new values.
+> 3. **This reverses H.5.1's conclusion.** The bridge release in H.4.4 depended
+>    on the *old* key still being usable — it is not, so that path is
+>    abandoned. **A0 (a manual install to establish trust in the new key) is
+>    back**, for any agent already in the field. If none has shipped yet
+>    (§A.1 found that no release has ever produced a working `latest.json`,
+>    so no agent has ever verified a real signed update), this is not a
+>    disruptive rotation so much as the trust anchor being defined for the
+>    first time — worth confirming before treating A0 as urgent.
+>
+> **A genuinely separate finding surfaced while diagnosing this**, independent
+> of which key is in use: the original CI assertion
+> (`.github/workflows/release.yml`, added in `64ca530`) extracted a signature's
+> key id by grepping its comment text for a 16-hex-digit pattern — but a
+> minisign signature's comment never contains one (it just says *"signature
+> from tauri secret key"*). **That check could never have passed, regardless
+> of which key was correct.** It also assumed the displayed key id is always
+> 16 hex characters; minisign does not zero-pad a leading `0x00`–`0x0F`
+> byte, so a key like the new one (`06B6CFAC4AC47020` → displayed as
+> `6B6CFAC4AC47020`, 15 characters) would have broken the old regex outright.
+>
+> Replaced with `.github/scripts/assert-updater-key.mjs`, which decodes both
+> blobs and compares the raw 8-byte keynum directly — verified against both
+> a real match and a real mismatch before being committed, using the actual
+> repo files.
 
 ## H.5 F.2 answered: `8216A44B8570A492` — what it unlocks, and what it does not
 

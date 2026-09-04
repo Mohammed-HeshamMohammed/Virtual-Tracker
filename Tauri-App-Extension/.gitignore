@@ -27,3 +27,7 @@ updater-key.pem
 # (dev builds run from this directory write it here instead of the real
 # per-user data dir). Not source, never commit.
 classifications.json
+
+# Plaintext handoff of the updater signing key's password - move to a password
+# manager and delete this file. Never commit it.
+updater-key-password.txt
