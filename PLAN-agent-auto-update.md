@@ -30,14 +30,22 @@ fails silently if it is wrong.
 | Check | Answer | Consequence |
 |---|---|---|
 | F.1 visibility | **Will be private** | 🔴 `releases/latest/download/latest.json` is unusable — the agent fetches it anonymously. The feed moves to Landing-Backend (**A.8**), which is the right answer **whether the repo is public or private** (**A.10.1**). One ordering trap: `GITHUB_PAT` must be set *before* the flip or `/api/download` dies and takes the rollout path with it (**A.10.2**) |
-| F.2 which keypair | *Unknown* | Moot — see below. Generate a fresh one (A.8.4) |
+| F.2 which keypair | *Unknown* | 🔴 **No longer moot — check this first (H.4.3).** If the secret holds the deployed key `8216A44B…`, the manual rollout is avoidable entirely via a bridge release (H.4.4). Only if it does not is a fresh keypair free (A.8.4) |
 | F.3 key password | *Unknown* | Moot — same |
 | F.4 bot can push to `main` | *Possibly not* | The `bump` job must stop pushing to `main`. Version comes from the tag instead (**A.9**) |
 
-**These three collapse into one fact.** `plugins.updater.endpoints` is compiled
-into the binary. Every agent already installed points at `github.com`, and a
-private repo will 404 it — so **there is no way to redirect the existing fleet
-to a new feed except by installing a new build on each machine, by hand, once.**
+**These three collapse into one fact — with one exception found later.**
+`plugins.updater.endpoints` is compiled into the binary. Every agent already
+installed points at `github.com`, and a private repo will 404 it — so the
+existing fleet cannot be redirected to a new feed by any server-side change.
+
+> ⚠️ **H.4 revisits this and finds the exception.** The URL half is solvable
+> without touching a machine (H.4.2: keep a *public releases-only repo* under
+> the original name and move the source to a renamed private one). What is left
+> is the signature half, which depends entirely on **F.2** — whether the
+> signing secret holds the key deployed agents already trust. If it does, a
+> single **bridge release** (H.4.4) carries the whole fleet across and the
+> manual rollout disappears. **Answer F.2 before planning around A0.**
 
 That is not a cost this plan adds; it is a cost F.1 already imposed. But it
 pays for itself immediately, because that same one-time rollout can carry
@@ -1258,10 +1266,10 @@ everyone's machine at once.
 | # | Check | Answer | Where it lands |
 |---|---|---|---|
 | F.1 | Repo public or private | **Private** | Feed moves to Landing-Backend (A.8) — correct for **both** visibilities (A.10.1); manual rollout A0. 🔴 **Set `GITHUB_PAT` before flipping** or `/api/download` 500s (A.10.2) |
-| F.2 | Which keypair is in the secret | *Unknown* | Moot — fresh keypair in A0 (A.8.4) |
+| F.2 | Which keypair is in the secret | 🔴 **check first** | Decides whether A0 happens at all (H.4.3). Old key present ⇒ bridge release, no manual rollout |
 | F.3 | Signing key password | *Unknown* | Moot — same |
 | F.4 | Bot can push to `main` | *Possibly not* | Tag-driven versioning (A.9). **Still check: tag rulesets** |
-| F.5 | Users are local admins | ❓ **open** | Decides `perMachine` vs `currentUser` (C.1) — **must be answered before A0** |
+| F.5 | Users are local admins | ❓ **open** | Picks the deployment shape in H.3.1 — B (`currentUser`, self-update) or C (IT-deployed, self-update off). **Must be answered before A0** |
 | F.6 | Installed versions in the field | ❓ open | Fold version reporting into A0 or stay blind |
 | F.7 | Authenticode certificate | ❓ open | Into A0 if obtainable; else expect AV blocks |
 | F.8 | Intel Mac / arm64 Windows in use | ❓ open | A3, or write off explicitly |
@@ -1270,7 +1278,12 @@ everyone's machine at once.
 | F.11 | One manual end-to-end update | 🔴 | Do it on a VM before A0, not during |
 | F.12 | Corporate TLS interception | ❓ open | webpki-roots vs the Windows store (5.8). If it bites, the agent fails wholesale, not just updates — one-line fix, but it must be in A0 |
 
-**Two things gate the one build you get to hand out.**
+**Two things gate the one build you get to hand out — and one decides whether
+you hand out anything at all.**
+
+**F.2 comes first now.** H.4.3 shows the manual rollout is only unavoidable if
+the original signing key is unrecoverable. Checking one secret can delete the
+single most expensive step in this plan.
 
 **F.5 is the critical path.** It is the last open answer that can still
 change what goes into the one build you get to hand out, and unlike the others
@@ -1364,3 +1377,258 @@ improve, and two of which they would make worse:
 
 `// ponytail: one signed artifact, full replacement. The 4 MB is not the
 // bottleneck; the restart and the elevation are.`
+
+# PART H — Solving the four hard problems
+
+G.1 ended by naming the four things that actually make updating hard here.
+A.4 solves the first. This part solves the other three — and shows that one of
+them silently decides another.
+
+| # | Problem | Where | Solved by |
+|---|---|---|---|
+| P1 | No `latest.json` has ever been produced | A.1 | ✅ A.4 — one config key plus a CI assertion |
+| P2 | Applying an update stops the user's timer | §1 | **H.2** |
+| P3 | `perMachine` needs elevation the user does not have | §2 | **H.3** |
+| P4 | The endpoint is compiled into every deployed binary | A.10.6 | **H.4** — and it turns on F.2 |
+
+## H.2 P2 — Applying an update without stopping the timer
+
+### H.2.1 The mechanism that makes this easy
+
+Tauri v2's updater already splits the two halves this design needs:
+
+```ts
+const update = await check();
+await update.download();   // fetch + verify signature. Safe at ANY time.
+await update.install();    // replace the binary. Safe only at a safe point.
+```
+
+Today's code calls `downloadAndInstall()`
+([App.tsx:203](Tauri-App-Extension/src/App.tsx:203)), which fuses them and is
+the entire cause of P2. **Splitting that call is most of the fix** — download
+eagerly whenever an update appears, install only when restarting is free.
+
+### H.2.2 Where the decision lives
+
+Not in `App.tsx`. That effect only runs while a window exists, and this app
+spends most of the day in the tray with the window closed (`start_hidden` is a
+supported preference). An update policy that cannot run headless is not a
+policy.
+
+The tracker tick already does periodic work of exactly this shape —
+`maybe_refresh_display_names`, `maybe_refresh_activity_scoring`. Add
+`maybe_apply_staged_update` beside them, reusing the interval-and-backoff
+pattern already there.
+
+### H.2.3 The safe-point predicate
+
+One pure function, which is the whole design and therefore the thing to test:
+
+```rust
+/// A restart is free only when nothing is mid-flight that a restart would
+/// destroy. Deliberately conservative: staying staged costs a delay, applying
+/// at the wrong moment costs someone their tracked time.
+pub fn is_safe_to_apply(s: &AgentState) -> SafePoint {
+    if s.session_open     { return SafePoint::No("session open"); }   // active OR paused
+    if s.sign_in_pending  { return SafePoint::No("auth callback server live"); }
+    if s.upload_in_flight { return SafePoint::No("post in progress"); }
+    if s.os_shutting_down { return SafePoint::No("shutdown signalled"); }
+    SafePoint::Yes
+}
+```
+
+`session_open` covers active **and** paused deliberately — a pause is still an
+open session server-side (§5.1), and ending one mid-break looks to a manager
+exactly like the employee stopped working.
+
+### H.2.4 Staged state must survive a restart
+
+Persist it beside the other agent state, atomically, in the shape §5.7 asks for:
+
+```jsonc
+// <data-dir>/pending-update.json
+{ "schema": 1, "version": "0.4.23", "installer": "…/staged/setup.exe",
+  "downloaded_at": "…", "attempts": 0 }
+```
+
+- `schema` from the first version — §5.7's whole point.
+- Re-verify the file at install time (§5.2): a staged installer can be
+  quarantined by AV or deleted between download and apply.
+- `attempts` feeds the crash-loop guard (§5.4). Three failed applies of the
+  same version ⇒ quarantine it and stop.
+
+### H.2.5 Every case, resolved
+
+| Situation | Download | Install |
+|---|---|---|
+| Idle agent, no session | now | now |
+| Tracking | now | on stop/quit |
+| Paused | now | on resume→stop, or quit |
+| Idle escalation already stopped the session | now | now |
+| Sign-in in progress | now | after the callback completes |
+| Window hidden, tracking | now | on stop/quit |
+| User clicks "check now" while tracking | now | **offer**, with the cost stated: "this will stop your timer" |
+| OS shutting down | — | never start; the next launch applies it |
+| Agent quit before a safe point arrived | already staged | on next launch, before tracking begins |
+
+**The last row is what makes this work in practice.** An employee who never
+manually stops their timer still gets the update, because quitting the app — or
+the machine restarting — is itself a safe point, and the staged installer is
+still on disk.
+
+### H.2.6 What ships first
+
+**U1 is a few lines and removes the damage**, before any of the machinery above:
+
+```diff
+- await update.downloadAndInstall();
+- await relaunch();
++ await update.download();                 // safe at any time
++ if (!(await isSafeToApply())) return;    // staged; retry on a later tick
++ await update.install();
+```
+
+Even with the check implemented crudely — "is there an open session?" over the
+existing session state — that turns "silently stops your timer" into "waits".
+The rest of H.2 makes it robust; U1 makes it stop being harmful.
+
+## H.3 P3 — Elevation, per deployment shape
+
+There is no single answer, because there are three genuinely different
+deployments and the right choice differs between them. What is *not* an option
+is the current combination: `perMachine` + self-update + non-admin users
+silently produces an agent that can never update itself.
+
+### H.3.1 The three shapes
+
+| Shape | Install mode | Who updates | Verdict |
+|---|---|---|---|
+| **A. Self-service, users are local admins** | `perMachine` | The agent | Works, but every update raises UAC. Training employees to click through UAC prompts from a monitoring agent is its own security problem |
+| **B. Self-service, users are NOT admins** | **`currentUser`** | The agent | **The only shape where silent auto-update works.** Installs to `%LOCALAPPDATA%`; no elevation, ever |
+| **C. IT-deployed (Intune / GPO / SCCM)** | `perMachine` (MSI) | **IT, not the agent** | Correct for managed fleets. The agent should *disable* self-update here and let the deployment tool own versioning |
+
+### H.3.2 The recommendation
+
+**Ship B as the default, support C explicitly, and stop treating A as viable.**
+
+- B is what makes the feature work for the typical customer.
+- C is what enterprise IT will insist on anyway, and it is nearly free: the MSI
+  is already built (`targets: "all"`), and "do not self-update" is a flag.
+- A is the current state and the worst of both — elevation prompts *and* a
+  self-updater that mostly fails.
+
+### H.3.3 Making C real: one setting
+
+```jsonc
+// preferences.json, overridable by a machine-level value IT can push
+{ "autoUpdate": "enabled" | "notify-only" | "disabled" }
+```
+
+- `disabled` for shape C, set by the deployment package. The agent still
+  *reports* its version (F.6) so IT can see drift; it simply never installs.
+- `notify-only` for shape A: surface that an update exists rather than raising
+  UAC unprompted.
+- Read it from a machine-level source IT can push, **not only** the
+  user-writable preferences file — otherwise an employee can switch off their
+  own updates, which on a monitoring agent is a policy hole rather than a
+  preference.
+
+### H.3.4 Migrating `perMachine` → `currentUser` (D3)
+
+One-way, and it needs care: to Windows these are two different products.
+
+| Case | Behaviour |
+|---|---|
+| Fresh machine | Installs to `%LOCALAPPDATA%`. Nothing to migrate |
+| Existing `perMachine` install | The new installer does **not** replace it. Both can exist and both can autostart. **The A0 rollout must uninstall the old one first** |
+| Two users on one machine sharing a `perMachine` install | Each now needs their own install; the shared one must go, or §5.6's mixed-version case becomes permanent |
+| User data (`~/.virtualtracker`) | Untouched by either installer — queue, progress and credentials survive. **Verify explicitly during A0** rather than assuming |
+| Autostart entry | `tauri-plugin-autostart` writes `HKCU\…\Run` in both modes so it survives, but a stale entry pointing into `Program Files` must be cleaned |
+
+**A0 is the only cheap moment to do this**, because it is already a manual
+touch on every machine. Later means a second one.
+
+## H.4 P4 — The compiled-in endpoint, and the question that decides it
+
+### H.4.1 Reaching an already-deployed agent needs two things
+
+An installed agent acts on an update only if it gets **both**:
+
+1. a `latest.json` at the URL compiled into it —
+   `github.com/Mohammed-HeshamMohammed/Virtual-Tracker/releases/latest/download/latest.json`, and
+2. a signature over it verifying against the pubkey compiled into it —
+   minisign **`8216A44B8570A492`**.
+
+Miss either and the fleet is unreachable. They fail for different reasons, and
+only one is fixable by choice.
+
+### H.4.2 The URL half is solvable — without touching any machine
+
+GitHub redirects a renamed repository, and a **new** repository created under
+the old name takes that name over. So:
+
+1. rename `Virtual-Tracker` → `Virtual-Tracker-Source`, then make it private;
+2. create a **new public repo** named `Virtual-Tracker` holding nothing but
+   releases;
+3. publish agent releases into it from the private repo's workflow.
+
+Existing agents keep resolving
+`.../Virtual-Tracker/releases/latest/download/latest.json`, now served by the
+releases-only repo. **The source goes private and the fleet stays reachable.**
+
+Caveats, stated plainly:
+
+- Release **binaries were already public** on a public repo. This changes
+  nothing about their exposure; only source history moves behind the wall.
+- That history does not vanish from forks or from cached object SHAs. If the
+  worry is "the source was never meant to be public", this does not
+  retroactively fix it — it stops future exposure.
+- It fixes F.9 for free: the public repo holds *only* agent releases, so
+  `releases/latest` cannot be hijacked by a future backend release.
+
+### H.4.3 The signature half turns on F.2 — and that is the real gate
+
+Producing a `latest.json` that deployed agents *accept* requires signing with
+the private key for `8216A44B8570A492`.
+
+| F.2 / F.3 outcome | What becomes possible |
+|---|---|
+| **The secret holds `8216A44B…` and the password is known** | **No manual rollout.** Ship a *bridge release* signed with the old key (H.4.4); the fleet updates itself onto the new endpoint and new key |
+| The secret holds `ED55D4ADD4061EE2`, or the password is lost | **Manual rollout is forced.** Nothing you can sign will be accepted by a deployed agent, and A.8.4's "generate a fresh key, it is free" applies exactly as written |
+
+> **This reframes A.8.4.** A fresh keypair is free *only after* accepting the
+> manual rollout. If the original key is recoverable, checking F.2 first is
+> worth real money — it is the difference between touching every machine and
+> touching none.
+>
+> **Check F.2 before doing anything else in this plan.**
+
+### H.4.4 The bridge release (only if F.2 is favourable)
+
+One release whose only job is to move the fleet, signed with the **old** key:
+
+| It carries | Why |
+|---|---|
+| The new endpoint (Landing-Backend, A.8) | The point of the exercise |
+| The **new** pubkey in `tauri.conf.json` | Rotates the key going forward |
+| `createUpdaterArtifacts` (A.4) | So it can itself produce updates |
+| The U1 guard (H.2.6) | So the first update the fleet ever applies does not stop anyone's timer |
+| `currentUser` install mode (H.3), if chosen | The one-way change, done once |
+
+Signed with the old key so deployed agents accept it; every release *after* it
+is signed with the new key, which that release has just installed. This is the
+standard two-release rotation, and it is why a new pubkey must ship one release
+ahead of the key that signs with it.
+
+**The order is unforgiving:** publish the bridge, confirm real agents have
+taken it (F.6 version reporting, or wait out the check interval), *then* rotate
+the signing secret. Rotate first and the bridge itself becomes unverifiable.
+
+### H.4.5 Preventing a third occurrence
+
+The endpoint stays compiled in, and that is correct — A.10.6 explains why a
+loose, editable endpoint is worse. What changes is *what it points at*:
+infrastructure you control, rather than a GitHub URL whose behaviour depends on
+a repository setting. Landing-Backend can be repointed, cached, versioned or
+failed over without touching a single machine. This class of problem does not
+recur.
