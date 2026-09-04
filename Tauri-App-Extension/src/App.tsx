@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 import { toast } from "./Toast";
@@ -195,25 +195,71 @@ function MainApp() {
     setAvatarError(false);
   }, [profile?.avatarUrl]);
 
-  const checkForUpdate = useCallback(async (manual = false) => {
-    setCheckingUpdate(true);
+  // U1 (PLAN-agent-auto-update H.2.6). Downloading and installing used to be
+  // one call - downloadAndInstall() then relaunch() - which meant an update
+  // arriving mid-shift restarted the agent while the timer was running.
+  // relaunch() raises RunEvent::Exit, which calls controller.stop() and posts
+  // "stop" to the API, so the session was closed server-side and did NOT
+  // resume on restart: the employee silently lost tracked time and their
+  // manager saw a gap.
+  //
+  // The two halves are now separate. Downloading is safe at any moment and
+  // happens eagerly; installing waits for a point where restarting costs
+  // nothing. An update that arrives while tracking simply sits staged until
+  // the timer stops - including the stop that happens when the user quits.
+  const pendingUpdateRef = useRef<Update | null>(null);
+  const sessionOpenRef = useRef(false);
+
+  // Read through a ref rather than a dependency: this is consulted from
+  // callbacks that must see the *current* session, not the value captured when
+  // the callback was created.
+  const isSafeToApplyUpdate = useCallback(() => !sessionOpenRef.current, []);
+
+  const applyStagedUpdate = useCallback(async () => {
+    const staged = pendingUpdateRef.current;
+    if (!staged || !isSafeToApplyUpdate()) return;
+    pendingUpdateRef.current = null;
     try {
-      const update = await check();
-      if (update) {
-        await update.downloadAndInstall();
-        await relaunch();
-      } else if (manual) {
-        toast.message("You're up to date");
-      }
+      await staged.install();
+      await relaunch();
     } catch (err) {
-      console.error("update check failed", err);
-      if (manual) {
-        toast.error("Couldn't check for updates. Try again later.");
-      }
-    } finally {
-      setCheckingUpdate(false);
+      console.error("update install failed", err);
     }
-  }, []);
+  }, [isSafeToApplyUpdate]);
+
+  const checkForUpdate = useCallback(
+    async (manual = false) => {
+      setCheckingUpdate(true);
+      try {
+        const update = pendingUpdateRef.current ?? (await check());
+        if (!update) {
+          if (manual) toast.message("You're up to date");
+          return;
+        }
+        // Safe whatever the session state is: this only writes a verified
+        // installer to disk. ponytail: staged in memory, so a restart before a
+        // safe point just re-downloads ~4 MB - persisting it is H.2.4's job,
+        // not U1's.
+        if (pendingUpdateRef.current !== update) {
+          await update.download();
+          pendingUpdateRef.current = update;
+        }
+        if (isSafeToApplyUpdate()) {
+          await applyStagedUpdate();
+        } else if (manual) {
+          toast.message("Update ready - it will install when you stop the timer");
+        }
+      } catch (err) {
+        console.error("update check failed", err);
+        if (manual) {
+          toast.error("Couldn't check for updates. Try again later.");
+        }
+      } finally {
+        setCheckingUpdate(false);
+      }
+    },
+    [applyStagedUpdate, isSafeToApplyUpdate],
+  );
 
   const signedIn = Boolean(profile?.signedIn);
   const staleSession = connection === "signedOut" && signedIn;
@@ -221,6 +267,15 @@ function MainApp() {
     (session?.status || "").toLowerCase() === "active" ||
     (link?.status || "").toLowerCase().includes("active");
   const sessionOpen = tracking || paused;
+
+  // Mirrors sessionOpen into the ref the update path reads, and applies a
+  // staged update the moment the timer stops. A session that is *paused* still
+  // counts as open: ending one mid-break looks exactly like the employee
+  // stopped working.
+  useEffect(() => {
+    sessionOpenRef.current = sessionOpen;
+    if (!sessionOpen) void applyStagedUpdate();
+  }, [sessionOpen, applyStagedUpdate]);
 
   const refresh = useCallback(async () => {
     const [nextProfile, nextLink, nextSession, nextConnection, nextNotice, nextPaused] = await Promise.all([

@@ -59,7 +59,8 @@
         "installMode": "perMachine",
         "displayLanguageSelector": false
       }
-    }
+    },
+    "createUpdaterArtifacts": true
   },
   "plugins": {
     "deep-link": {
