@@ -975,14 +975,22 @@ there will not be a second one.
 
 | Phase | Content | Size |
 |---|---|---|
-| **A1** | 🔴 **Make updates exist and be fetchable.** `createUpdaterArtifacts: true`; fresh keypair (A.8.4); single committed pubkey; key-identity assertion in `verify`; Landing-Backend feed + signature inlining + anonymous download proxy (A.8); `agent-v*` tag filter (fixes F.9); endpoint reachability assertion, checked unauthenticated, as the last workflow step | ~1½ days (backend included) |
-| **B1** | 🔴 **Guard auto-update.** Do not `relaunch()` while a session is open — stage instead, apply on stop/quit. Smallest possible fix to the §1 defect | ~half day |
+| **A1** | 🟡 **partly shipped (`64ca530`)** — `createUpdaterArtifacts: true`, stale pubkey deleted, key-identity assertion in `verify`. **Remaining:** the keypair decision (blocked on F.2 — see below), Landing-Backend feed + signature inlining + download proxy (A.8), `agent-v*` filter, endpoint reachability assertion. 🔴 **Make updates exist and be fetchable.** `createUpdaterArtifacts: true`; fresh keypair (A.8.4); single committed pubkey; key-identity assertion in `verify`; Landing-Backend feed + signature inlining + anonymous download proxy (A.8); `agent-v*` tag filter (fixes F.9); endpoint reachability assertion, checked unauthenticated, as the last workflow step | ~1½ days (backend included) |
+| **B1** | ✅ **shipped (`64ca530`)** — download and install split; a staged update waits for a closed session and applies on stop/quit; a paused session counts as open. 🔴 **Guard auto-update.** Do not `relaunch()` while a session is open — stage instead, apply on stop/quit. Smallest possible fix to the §1 defect | ~half day |
 | **A0** | 🔴 **The one manual rollout.** Build one installer carrying A1 + B1 + the new endpoint + the new pubkey + the C.1 install-mode decision, and install it on every machine by hand. **Everything before this is invisible to the fleet; everything after it is automatic.** Not optional, not deferrable, and not repeatable — get every irreversible decision into this build | scheduling, not engineering |
 | **A2** | Tag-driven versioning, no push to `main` (A.9); path-filtered `push: main` trigger with `[skip release]` guard; `cancel-in-progress: false` | ~1 day |
 | **B2** | Checking moves into the tracker loop with interval + backoff and jitter; stage/apply state machine; downgrade refusal; crash-loop guard; unreachable-feed treated as "no update" | ~2 days |
 | **B3** | UI: "restart to finish updating" affordance; manual check reports staged state honestly; install-failure reporting for admins | ~1 day |
 | **A3** | *Optional* — Intel Mac matrix entry (F.8); Authenticode certificate (F.7) | ~half day |
 | **U5** | *Optional* — server-driven minimum version and staged rollout. Cheap now: the backend already owns the feed | ~1 day + backend |
+
+> **Progress (`64ca530`):** B1 is done and the P1 half of A1 is done, shipped
+> together as the ordering requires. What A1 still needs is the *delivery* side
+> — and that is now gated on **F.2**, because H.4.3 showed the keypair decision
+> determines whether A0 is needed at all. **The next action is not code: it is
+> running the release workflow once so the new `verify` assertion prints which
+> key the secret holds.** It fails before the paid matrix build either way, so
+> the answer is cheap.
 
 **A1 → B1 → A0 is the shippable unit and the ordering is not negotiable.** A1
 without B1 would arm §1 on every machine at once; B1 without A1 guards a path
