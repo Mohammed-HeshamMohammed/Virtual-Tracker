@@ -35,9 +35,15 @@ blast radii and can ship independently:
 > the release workflow** — that is not something I do unasked.
 >
 > **Open questions still unanswered:** §3.4 (does an activity edit move
-> *tracked time*? — built as "no"), §24.3 #2 (install mode → blocks A7), and
-> how **Notify-backend** deploys (it has no production branch, so §8.3's fix
-> sits on `main` only).
+> *tracked time*? — built as "no") and §24.3 #2 (install mode → blocks A7).
+> The Notify question is resolved: `notify-Production` exists (capital P) and
+> is synced.
+>
+> **240 code-scanning alerts remain open and are NOT triaged.** 167 are
+> Bearer's `logger_leak` / `observable_timing`, which are a genuinely mixed
+> bag — some log a recipient email address (a fair PII point), others just log
+> "listening on localhost". Deciding which matters is a logging-policy call,
+> not a code call, so they were left rather than bulk-dismissed.
 
 | Step (§25) | Status | Commit |
 |---|---|---|
@@ -54,7 +60,8 @@ blast radii and can ship independently:
 | 10b. **A4** UIAutomation, **A7** install mode | ⬜ **deliberately held back** — see below |
 | 11. **A6** transparency doc | ✅ **shipped** — `docs/tauri-app-extension/WHAT-THE-AGENT-DOES.md`. Under the no-certificate constraint this substitutes for the signature: states the AV warning is expected, what is and is not collected, and IT exclusion paths | `75765fe` |
 | 12. **#4 S7** §36 tune `security.yml` | ✅ **shipped** — clippy no longer uploads SARIF (~23), `**/scripts/**` and `**/*.example` excluded (~80). Every scanner kept; coverage unchanged for deployed code | `bba0037` |
-| 13. **#4 S8** dismiss remaining false positives | ⛔ **needs your authorisation** — §24.2. I will not change alert state unasked |
+| 13. **#4 S8** dismiss false positives | ✅ **done, authorised** — **592 → 240 open, 198 dismissed** with written reasons, **Dependabot 3 → 0**. Only categories I verified individually were dismissed | — |
+| 14. Branch cleanup + Notify sync | ✅ **done** — `notify-Production` found and synced (it exists with a capital P); 84 branches deleted, 7 remain. SHAs recorded in [DELETED-BRANCHES.md](docs/branch-trees/DELETED-BRANCHES.md) | `b9d0ae5` |
 
 Production branches synced this round: `DashboardBackend-Prod`,
 `Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`,
