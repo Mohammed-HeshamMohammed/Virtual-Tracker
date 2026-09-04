@@ -195,7 +195,7 @@ jobs:
           $env:THUMB = $thumb
           node -e "const fs=require('fs');const p='Tauri-App-Extension/src-tauri/tauri.conf.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));j.bundle=j.bundle||{};j.bundle.windows=j.bundle.windows||{};j.bundle.windows.certificateThumbprint=process.env.THUMB;j.bundle.windows.digestAlgorithm=j.bundle.windows.digestAlgorithm||'sha256';j.bundle.windows.timestampUrl=j.bundle.windows.timestampUrl||'http://timestamp.digicert.com';fs.writeFileSync(p,JSON.stringify(j,null,2)+'\n');"
 
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
