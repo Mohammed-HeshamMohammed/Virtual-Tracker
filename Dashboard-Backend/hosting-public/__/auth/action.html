@@ -241,16 +241,39 @@
           return host.split(".")[0] || "virtual-tracker";
         }
 
-        function resolveContinuePath() {
-          if (!continueUrl) return "/?emailVerified=1";
+        // continueUrl comes straight off the query string, so it is attacker
+        // controlled. Only ever emit a same-origin *relative* destination
+        // from it: an absolute URL would make this trusted auth page an open
+        // redirect into a credential-harvesting clone, and a javascript: URL
+        // would execute when the button is clicked. Keeping only
+        // pathname+search+hash is what resolveContinuePath already did for
+        // the success path - the error paths used to hand the raw value
+        // straight to actionBtn.href, which is the hole this closes.
+        function safeInternalPath(raw, fallback) {
+          var fb = fallback || "/";
+          if (!raw) return fb;
+          var url;
           try {
-            var url = new URL(continueUrl);
+            url = new URL(raw, window.location.origin);
+          } catch (e) {
+            return fb;
+          }
+          if (url.protocol !== "http:" && url.protocol !== "https:") return fb;
+          var path = url.pathname + url.search + url.hash;
+          return path.charAt(0) === "/" ? path : fb;
+        }
+
+        function resolveContinuePath() {
+          var fallback = "/?emailVerified=1";
+          var safe = safeInternalPath(continueUrl, fallback);
+          try {
+            var url = new URL(safe, window.location.origin);
             if (!url.searchParams.has("emailVerified")) {
               url.searchParams.set("emailVerified", "1");
             }
             return url.pathname + url.search + url.hash;
           } catch (e) {
-            return "/?emailVerified=1";
+            return fallback;
           }
         }
 
@@ -295,7 +318,7 @@
             "Unsupported link",
             "This sign-in link is not supported here. Return to Virtual Tracker and try again.",
             "Back to sign in",
-            continueUrl || "/",
+            safeInternalPath(continueUrl),
           );
           return;
         }
@@ -306,7 +329,7 @@
             "Invalid link",
             "This verification link is incomplete. Request a new verification email from the sign-in page.",
             "Back to sign in",
-            continueUrl || "/",
+            safeInternalPath(continueUrl),
           );
           return;
         }
@@ -339,7 +362,7 @@
               "Try verifying your email again",
               formatError(err),
               "Back to sign in",
-              continueUrl || "/",
+              safeInternalPath(continueUrl),
             );
           });
       })();

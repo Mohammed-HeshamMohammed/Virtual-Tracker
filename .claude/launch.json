@@ -12,6 +12,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "Tauri-App-Extension", "run", "dev", "--", "--port", "4173"],
       "port": 4173
+    },
+    {
+      "name": "static-hosting-public",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8099"],
+      "port": 8099
     }
   ]
 }
