@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 import { cn } from "@/shared/utils/utils"
+import { AboutCard } from "@/features/settings/components/app/about-card"
 
 interface SettingsCard {
   icon: string
@@ -121,6 +122,8 @@ export function SettingsAllPage({ onNavigate }: { onNavigate: (id: string) => vo
             </div>
           </div>
         </section>
+
+        <AboutCard />
       </div>
     </>
   )
