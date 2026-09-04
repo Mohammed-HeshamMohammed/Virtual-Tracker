@@ -15,7 +15,16 @@ function resolveAllowedOrigin(reqOrigin) {
   const env = getEnv();
   const raw = env.cors.corsOrigins || env.cors.frontendOrigin || "";
   const allowed = raw.split(",").map((s) => s.trim()).filter(Boolean);
-  if (!allowed.length) return reqOrigin || "*";
+  if (!allowed.length) {
+    // Nothing configured. Reflecting the caller's origin back is convenient
+    // in development and fail-open in production - the same shape as the TLS
+    // bug fixed in a1bf554, where posture depended on an env var being
+    // present. Not exploitable today (no Access-Control-Allow-Credentials is
+    // ever sent, and these routes are Bearer-authenticated, so a browser
+    // cannot ride a session), but permissive-by-default is the wrong default.
+    if (env.isProduction) return "";
+    return reqOrigin || "*";
+  }
   return allowed.includes(reqOrigin) ? reqOrigin : allowed[0];
 }
 
