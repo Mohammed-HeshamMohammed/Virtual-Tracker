@@ -36,7 +36,7 @@ blast radii and can ship independently:
 | 3. **#4 S3** pin Actions + base images | ✅ **shipped** — 13 actions → commit SHAs in both workflows, `node:20-alpine` → digest in all 5 Dockerfiles. No mutable refs left | `48956f7` |
 | 4. **#4 S5** Dockerfile `USER` + §8.4 perms | ✅ **shipped** — 3 backends dropped to `USER node` (both web apps already had `USER nextjs`); `verify` job scoped to `contents: read`. Every job in both workflows now declares permissions | `c21131a` |
 | 5. **#4 S4** dependency bumps | ✅ **partly** — browserslist 4.28.1 → 4.28.8, build verified. **glib cannot be fixed** (§ below). Dependabot now reports **1 vuln, was 3** | `8175353` |
-| 6. **#1** browser→URL resolver | 🟡 **backend shipped** — main + `DashboardBackend-Prod`. Resolver + all 3 feeds + §1.5 M1 cache + M3 index + C4 guard. 512/512 tests. **Frontend half (§1.6 M2/M3) still open** | `34f68d3` |
+| 6. **#1** browser→URL resolver | ✅ **shipped, both halves** — backend resolver + 3 feeds + §1.5 M1 cache + M3 index + C4 guard (`34f68d3`); §1.6 M2 export stamp, M3 reclassification notice, "via sites" badge (`c52e71c`). 512/512 tests, build green. Synced to `DashboardBackend-Prod` + `dashboard-web-production` | `34f68d3`, `c52e71c` |
 | 7. **#3** screenshot activity edit | ⬜ next |
 | 8. **#4 S6** remaining CodeQL fixes | ⬜ |
 | 9. **#6** ownership + credits | ⬜ |
