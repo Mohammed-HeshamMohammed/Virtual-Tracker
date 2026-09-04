@@ -263,7 +263,7 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) 
   return result?.rows ?? [];
 }
 
-export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
+export async function fetchPgUrlLogs(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
 
@@ -276,6 +276,11 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit) {
   if (dayFilter) {
     params.push(dayFilter);
     where += ` AND ${localDay("u.visited_at")} = $${params.length}::date`;
+  } else if (options.sinceDay) {
+    // Was the only one of the three fetchers without this, though its two
+    // siblings (screenshots, app logs) both support it.
+    params.push(options.sinceDay);
+    where += ` AND ${localDay("u.visited_at")} >= $${params.length}::date`;
   }
   params.push(limit);
   const result = await pgQuery(

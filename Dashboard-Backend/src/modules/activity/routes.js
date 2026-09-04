@@ -41,6 +41,14 @@ import {
 import { assertMemberNotBanned } from "../members/services/member-ban-service.js";
 import { isBrowserAppName, normalizeAppName } from "./app-name.js";
 import {
+  buildUrlIndex,
+  extractHttpUrl,
+  parseDomain,
+  resolveActivityCategory,
+  siteNameFromWindowTitle,
+  titleFromBrowserPageTitle,
+} from "./category-resolver.js";
+import {
   completeAgentLinkSession,
   createAgentLinkSession,
   exchangeAgentLinkSession,
@@ -136,6 +144,27 @@ function readActivitySignal(ev) {
   };
 }
 
+/** URL rows fetched purely to build the matching index. Higher than the
+ *  feeds' own 500-row page because one app row can need any URL row in its
+ *  session to resolve; an unmatched row still falls back to the window title,
+ *  so a short read degrades gracefully rather than mis-categorising. */
+const URL_INDEX_LIMIT = 2000;
+
+/** Category holding the most seconds; "unclassified" when there is nothing to
+ *  weigh. Non-browser apps only ever accumulate one category, so this returns
+ *  exactly what a direct lookup would for them. */
+function dominantCategory(categorySeconds) {
+  let best = null;
+  let bestSeconds = 0;
+  for (const [category, seconds] of Object.entries(categorySeconds ?? {})) {
+    if (seconds > bestSeconds) {
+      best = category;
+      bestSeconds = seconds;
+    }
+  }
+  return best ?? "unclassified";
+}
+
 async function buildCategoryLookup() {
   const byKey = new Map();
   try {
@@ -154,56 +183,10 @@ async function buildCategoryLookup() {
   };
 }
 
-function parseDomain(url) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
-function extractHttpUrl(text) {
-  const match = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
-  return match ? match[0] : "";
-}
-
-export function titleFromBrowserPageTitle(pageTitle, appName) {
-  const raw = String(pageTitle || "").trim();
-  if (!raw) return "";
-  const suffixes = [
-    ` - ${appName}`,
-    ` — ${appName}`,
-    ` | ${appName}`,
-    " - Google Chrome",
-    " - Microsoft Edge",
-    " - Mozilla Firefox",
-  ];
-  let title = raw;
-  for (const suffix of suffixes) {
-    if (title.endsWith(suffix)) title = title.slice(0, -suffix.length).trim();
-  }
-  return title;
-}
-
-export function siteNameFromWindowTitle(cleanTitle) {
-  const separators = [" | ", " — ", " - "];
-  for (const sep of separators) {
-    const idx = cleanTitle.lastIndexOf(sep);
-    if (idx === -1) continue;
-    const candidate = cleanTitle
-      .slice(idx + sep.length)
-      .trim()
-      // Trailing trademark/registered/copyright marks stripped so the same
-      // site across different tabs/titles always yields the same
-      // classification pattern instead of silently splitting into several.
-      .replace(/[®™©]+$/, "")
-      .trim();
-    if (candidate.length >= 2 && candidate.length <= 60 && /[a-z]/i.test(candidate)) {
-      return candidate;
-    }
-  }
-  return "";
-}
+// These four moved to category-resolver.js so the resolver and the feeds
+// share one implementation. Re-exported here because that is where callers
+// (and test/activity-window-title-site-name.test.js) already import them from.
+export { titleFromBrowserPageTitle, siteNameFromWindowTitle };
 
 const MANAGER_TRACKING_DISABLED_MESSAGE =
   "Time tracking on this project has been turned off for managers. Contact an admin or owner.";
@@ -1145,6 +1128,12 @@ export async function routeActivity(req, res, url, origin) {
         const screenshotLimit = dayFilter ? 80 : 500;
 
         const pgRows = await fetchPgScreenshots(scope.targetMemberIds, dayFilter, screenshotLimit);
+        // A screenshot taken while a browser was focused is categorised by the
+        // site that was open, not by the browser. Only fetch the URL logs
+        // needed to do that when a browser actually appears in the results.
+        const screenshotUrlIndex = pgRows.some((r) => isBrowserAppName(r.app_name || ""))
+          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT))
+          : new Map();
         const rowMemberIds = [...new Set(pgRows.map((r) => String(r.member_id)).filter(Boolean))];
         const rowMemberMeta =
           rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
@@ -1157,6 +1146,14 @@ export async function routeActivity(req, res, url, origin) {
           const projectName = (typeof d.project_name === "string" && d.project_name.trim()) || "";
           const contextLabel = taskTitle ? "Task" : projectName ? "Project" : "Task";
           const contextValue = taskTitle || projectName || "No task linked";
+          const resolved = resolveActivityCategory(categoryLookup, {
+            appName: d.app_name || "",
+            pageTitle: d.page_title || "",
+            at: d.captured_at,
+            sessionId: d.session_id,
+            urlIndex: screenshotUrlIndex,
+            domain: d.domain || "",
+          });
           return {
             id: String(d.id),
             memberId,
@@ -1171,7 +1168,11 @@ export async function routeActivity(req, res, url, origin) {
             time: date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
             activityLevel: d.activity_level ?? 75,
             activeApp: d.app_name || "Browser",
-            category: categoryLookup("app", d.app_name || ""),
+            category: resolved.category,
+            // Lets the UI explain *why* a browser capture is categorised the
+            // way it is, instead of a badge that looks arbitrary.
+            matchedDomain: resolved.domain || null,
+            categorySource: resolved.source,
             hasImage: true,
             pageTitle: d.page_title || "",
           };
@@ -1190,15 +1191,35 @@ export async function routeActivity(req, res, url, origin) {
         const byApp = new Map();
         const byMember = new Map();
 
-        const ingestAppRow = (d, memberIdKey) => {
+        const ingestAppRow = (d, memberIdKey, urlIndex) => {
           const appName = normalizeAppName(d.app_name || d.appName || "Unknown");
           if (!appName) return;
           const dur = typeof d.duration_seconds === "number" ? d.duration_seconds : Number(d.durationSeconds ?? 0);
           const meta = memberMeta.get(memberIdKey) || { name: "Unknown", initials: "??" };
           const startedIso = toIso(d.started_at ?? d.startedAt);
-          const appRow = byApp.get(appName) || { name: appName, totalSeconds: 0, sessions: 0, lastActivityAt: "" };
+          // Resolved per log row, not per app: one row is ~15s on one page, so
+          // a browser's time is attributed to whichever site was open at that
+          // moment rather than lumped under the browser's own category.
+          const resolved = resolveActivityCategory(categoryLookup, {
+            appName,
+            pageTitle: d.page_title || d.pageTitle || "",
+            at: d.started_at ?? d.startedAt,
+            sessionId: d.session_id ?? d.sessionId,
+            urlIndex,
+          });
+          const appRow = byApp.get(appName) || {
+            name: appName,
+            totalSeconds: 0,
+            sessions: 0,
+            lastActivityAt: "",
+            categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
+            viaUrl: false,
+          };
           appRow.totalSeconds += dur;
           appRow.sessions += 1;
+          appRow.categorySeconds[resolved.category] =
+            (appRow.categorySeconds[resolved.category] ?? 0) + dur;
+          if (resolved.source !== "app") appRow.viaUrl = true;
           if (startedIso && startedIso > (appRow.lastActivityAt || "")) appRow.lastActivityAt = startedIso;
           byApp.set(appName, appRow);
           const memRow = byMember.get(memberIdKey) || {
@@ -1209,16 +1230,19 @@ export async function routeActivity(req, res, url, origin) {
             categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
           };
           memRow.totalSeconds += dur;
-          const category = categoryLookup("app", appName);
-          memRow.categorySeconds[category] = (memRow.categorySeconds[category] ?? 0) + dur;
+          memRow.categorySeconds[resolved.category] =
+            (memRow.categorySeconds[resolved.category] ?? 0) + dur;
           const appDur = memRow.apps.get(appName) || 0;
           memRow.apps.set(appName, appDur + dur);
           byMember.set(memberIdKey, memRow);
         };
 
         const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+        const appsUrlIndex = pgRows.some((r) => isBrowserAppName(r.app_name || ""))
+          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT))
+          : new Map();
         for (const d of pgRows) {
-          ingestAppRow(d, String(d.member_id ?? ""));
+          ingestAppRow(d, String(d.member_id ?? ""), appsUrlIndex);
         }
 
         const formatDur = (sec) => {
@@ -1237,7 +1261,11 @@ export async function routeActivity(req, res, url, origin) {
           .map((r, i) => ({
             id: String(i + 1),
             name: r.name,
-            category: categoryLookup("app", r.name),
+            // A browser row spans many sites with different categories, so the
+            // badge shows whichever category holds the most of its seconds.
+            // Non-browser rows only ever have one, so this is a no-op there.
+            category: dominantCategory(r.categorySeconds),
+            viaUrl: r.viaUrl === true,
             totalTime: formatDur(r.totalSeconds),
             percentage: Math.round((r.totalSeconds / totalAll) * 100),
             trend: "neutral",

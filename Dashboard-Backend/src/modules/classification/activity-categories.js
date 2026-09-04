@@ -36,9 +36,24 @@ function normalizeRow(row) {
   };
 }
 
+// Every /api/activity/feed request rebuilt the classification lookup from a
+// full table scan, for a table that changes a handful of times a month. That
+// was a bigger per-request cost than the URL-index join added alongside it.
+// Same 15s TTL + explicit invalidation shape as lib/postgres/lookup-cache.js.
+const CATEGORY_CACHE_TTL_MS = 15 * 1000;
+let categoryCache = { rows: null, expiresAt: 0 };
+
+export function invalidateCategoryCache() {
+  categoryCache = { rows: null, expiresAt: 0 };
+}
+
 export async function getAllCategories() {
-  const rows = await getAllCategoriesPg();
-  return rows.map(normalizeRow);
+  if (categoryCache.rows && Date.now() < categoryCache.expiresAt) {
+    return categoryCache.rows;
+  }
+  const rows = (await getAllCategoriesPg()).map(normalizeRow);
+  categoryCache = { rows, expiresAt: Date.now() + CATEGORY_CACHE_TTL_MS };
+  return rows;
 }
 
 export async function setCategory(input, actor) {
@@ -71,6 +86,9 @@ export async function setCategory(input, actor) {
     roleOverride: input.roleOverride,
     createdBy: actor.memberId,
   });
+  // Without this a just-saved classification would take up to the TTL to show
+  // in the feeds - indistinguishable from the bug this whole change fixes.
+  invalidateCategoryCache();
   return row ? normalizeRow(row) : null;
 }
 
@@ -81,6 +99,7 @@ export async function removeCategory(id, actor) {
     throw err;
   }
   await deleteCategoryPg(id);
+  invalidateCategoryCache();
 }
 
 export async function categorize(matchType, name, roleName) {

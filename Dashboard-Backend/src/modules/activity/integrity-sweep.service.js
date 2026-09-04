@@ -88,6 +88,18 @@ async function runCategoryConflictCheck(since) {
     fetchRecentActivityLevelsBySessionPg(since),
   ]);
 
+  // Deliberately NOT routed through category-resolver.js, unlike the activity
+  // feeds. The agent emits an app slice and a URL slice on the same tick, so
+  // 15s of Chrome on a distracting site exists as 15s in activity_app_logs
+  // AND 15s in activity_url_logs - and the loops below sum both tables into
+  // one per-session total. Today that does not double-count only because a
+  // browser app is `unclassified`, so its app row is skipped and just the URL
+  // row counts. Teaching this sweep to resolve browser rows by domain would
+  // remove that accidental protection and report double the real distracting
+  // seconds, flagging sessions that never crossed the threshold.
+  //
+  // If these are ever unified, de-duplicate browser app-time against URL-time
+  // for the same session and window FIRST.
   const appCategoryCache = new Map();
   const domainCategoryCache = new Map();
   async function isDistractingApp(name) {
