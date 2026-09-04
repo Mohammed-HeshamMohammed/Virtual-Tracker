@@ -1,0 +1,92 @@
+# osv-scanner ignore list.
+#
+# Every entry below is transitive through Tauri's own dependency tree - gtk/glib
+# and atk (the Linux webkit2gtk stack), xcb via xcap, urlpattern via tauri-utils,
+# zbus via tauri-plugin-notification. None is declared directly in Cargo.toml,
+# `cargo update` locks 0 packages for any of them, and the fixes live in major
+# versions nothing in the tauri stack has moved to yet.
+#
+# The agent ships Windows and macOS; the GTK/X11 path is not built there.
+#
+# Re-check when tauri/wry move off webkit2gtk 4.1 - most of this list should
+# disappear in one go. Do not add anything here that is a direct dependency.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0411"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0412"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0413"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0414"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0415"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0416"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0417"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0418"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0419"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0420"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0194"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0195"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0221"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
