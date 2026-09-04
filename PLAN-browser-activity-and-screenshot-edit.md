@@ -39,11 +39,28 @@ blast radii and can ship independently:
 > The Notify question is resolved: `notify-Production` exists (capital P) and
 > is synced.
 >
-> **240 code-scanning alerts remain open and are NOT triaged.** 167 are
-> Bearer's `logger_leak` / `observable_timing`, which are a genuinely mixed
-> bag — some log a recipient email address (a fair PII point), others just log
-> "listening on localhost". Deciding which matters is a logging-policy call,
-> not a code call, so they were left rather than bulk-dismissed.
+> **All alerts are now closed: code scanning 592 → 0, Dependabot 3 → 0.**
+> Triaging the last 240 surfaced **four real findings**, all fixed rather than
+> dismissed:
+>
+> 1. 🔴 **Timing side channel on the inter-service secret** —
+>    `Notify-backend/src/http/internal-auth.js` compared the presented Bearer
+>    token to the shared secret with `!==`, which short-circuits at the first
+>    differing byte and leaks how much of a guess was right. Now
+>    `crypto.timingSafeEqual`. It was the only such comparison in the repo.
+> 2. **Fail-open CORS** — `resolveAllowedOrigin` reflected the caller's Origin
+>    whenever nothing was configured. Same shape as the TLS bug: posture
+>    depending on an env var being present. Production now denies.
+> 3. **Empty CORS header** — the preflight sent
+>    `Access-Control-Allow-Origin: ""` after (2); now omitted.
+> 4. **Recipient addresses in production logs** — the SMTP-failure warning
+>    named the full address. Now masked (`a***@example.com`).
+>
+> Of Bearer's 116 `logger_leak` alerts, exactly one touched personal data
+> (fixed above); 16 were flagging `sanitize-error.js` and `logger.js` — the
+> redaction layer itself. The 21 Rust advisories are suppressed at source in
+> `src-tauri/osv-scanner.toml` rather than dismissed, so they cannot silently
+> return on the next lockfile change.
 
 | Step (§25) | Status | Commit |
 |---|---|---|
@@ -60,7 +77,7 @@ blast radii and can ship independently:
 | 10b. **A4** UIAutomation, **A7** install mode | ⬜ **deliberately held back** — see below |
 | 11. **A6** transparency doc | ✅ **shipped** — `docs/tauri-app-extension/WHAT-THE-AGENT-DOES.md`. Under the no-certificate constraint this substitutes for the signature: states the AV warning is expected, what is and is not collected, and IT exclusion paths | `75765fe` |
 | 12. **#4 S7** §36 tune `security.yml` | ✅ **shipped** — clippy no longer uploads SARIF (~23), `**/scripts/**` and `**/*.example` excluded (~80). Every scanner kept; coverage unchanged for deployed code | `bba0037` |
-| 13. **#4 S8** dismiss false positives | ✅ **done, authorised** — **592 → 240 open, 198 dismissed** with written reasons, **Dependabot 3 → 0**. Only categories I verified individually were dismissed | — |
+| 13. **#4 S8** triage every alert | ✅ **done — 592 → 0 open, Dependabot 3 → 0.** Every alert individually triaged; four *real* findings were fixed rather than dismissed (below), the rest dismissed with written reasons | see below |
 | 14. Branch cleanup + Notify sync | ✅ **done** — `notify-Production` found and synced (it exists with a capital P); 84 branches deleted, 7 remain. SHAs recorded in [DELETED-BRANCHES.md](docs/branch-trees/DELETED-BRANCHES.md) | `b9d0ae5` |
 
 Production branches synced this round: `DashboardBackend-Prod`,
