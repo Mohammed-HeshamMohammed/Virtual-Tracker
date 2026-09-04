@@ -30,8 +30,8 @@ fails silently if it is wrong.
 | Check | Answer | Consequence |
 |---|---|---|
 | F.1 visibility | **Will be private** | 🔴 `releases/latest/download/latest.json` is unusable — the agent fetches it anonymously. The feed moves to Landing-Backend (**A.8**), which is the right answer **whether the repo is public or private** (**A.10.1**). One ordering trap: `GITHUB_PAT` must be set *before* the flip or `/api/download` dies and takes the rollout path with it (**A.10.2**) |
-| F.2 which keypair | *Unknown* | 🔴 **No longer moot — check this first (H.4.3).** If the secret holds the deployed key `8216A44B…`, the manual rollout is avoidable entirely via a bridge release (H.4.4). Only if it does not is a fresh keypair free (A.8.4) |
-| F.3 key password | *Unknown* | Moot — same |
+| F.2 which keypair | ✅ **`8216A44B8570A492`** — the key deployed agents already trust | 🟢 **A0 is off the critical path.** The fleet is reachable: a bridge release (H.4.4) carries it onto the new endpoint. **Do not rotate the key** (H.5.1). Confirmed by the CI assertion in `64ca530` |
+| F.3 key password | Implied correct by F.2 | The CI assertion signs with it, so a wrong password fails `verify` before any build |
 | F.4 bot can push to `main` | *Possibly not* | The `bump` job must stop pushing to `main`. Version comes from the tag instead (**A.9**) |
 
 **These three collapse into one fact — with one exception found later.**
@@ -47,9 +47,16 @@ existing fleet cannot be redirected to a new feed by any server-side change.
 > single **bridge release** (H.4.4) carries the whole fleet across and the
 > manual rollout disappears. **Answer F.2 before planning around A0.**
 
-That is not a cost this plan adds; it is a cost F.1 already imposed. But it
-pays for itself immediately, because that same one-time rollout can carry
-*everything else that is currently unfixable in the field*:
+> ✅ **Superseded by H.5.** F.2 came back as `8216A44B8570A492` — the key
+> deployed agents already trust — so the fleet **is** reachable and the manual
+> rollout is off the critical path. A **bridge release** (H.4.4) carries
+> everything below instead. One caveat survives: if users are not local admins
+> (**F.5**), a `perMachine` install cannot be written to by *any* update,
+> including the bridge, so a touch is still needed — for elevation, not for the
+> endpoint. See **H.5.2**.
+
+The rollout would have paid for itself, because that same one-time touch could
+have carried *everything otherwise unfixable in the field*:
 
 - the new endpoint (Landing-Backend, A.8),
 - a **fresh signing keypair**, which is why F.2 and F.3 stop mattering — you do
@@ -446,10 +453,19 @@ optimisation, but it must never be the only thing standing between an agent and
 a downgrade — §5.3 still refuses an older version whatever the feed says. A
 compromised or simply buggy backend must not be able to roll the fleet back.
 
-### A.8.4 The new keypair (F.2/F.3 = unknown)
+### A.8.4 The new keypair — ⛔ **do not do this now** (F.2 answered)
 
-Do not go looking for the old private key. Since the manual rollout is
-unavoidable anyway, generate a new one and make the rollout carry it:
+> **Superseded by H.5.1.** This section assumed F.2 was unanswerable and the
+> manual rollout unavoidable. F.2 came back as `8216A44B8570A492`, so the
+> current key is the only thing making the installed fleet reachable —
+> **rotating it now would strand every agent that has not yet taken the
+> bridge.** Keep the existing key; rotate later as a deliberate two-release
+> dance, once version reporting shows uptake (H.5.4).
+>
+> Kept below for the day rotation is actually wanted.
+
+Do not go looking for the old private key. If the manual rollout were
+unavoidable, you would generate a new one and make the rollout carry it:
 
 ```bash
 npx tauri signer generate -w ./updater-key.pem   # keep the password
@@ -467,11 +483,10 @@ npx tauri signer generate -w ./updater-key.pem   # keep the password
   *next* key mismatch, and it is the reason F.2 never becomes an unanswerable
   question again.
 
-Because the old key signed nothing that any agent ever accepted, this is not a
-key rotation in the dangerous sense (A.6, "signing key rotated"). There is no
-installed base verifying against the old pubkey in anger. **This is the one and
-only moment when changing the key is free** — after the rollout it goes back to
-being a two-release dance.
+That reasoning depended on the old key never having reached anyone. With F.2
+answered it is **wrong**: the installed base verifies against
+`8216A44B8570A492` right now, so rotation is the dangerous kind (A.6, "signing
+key rotated") and must wait for confirmed uptake of the bridge.
 
 ### A.8.5 What this costs if Landing-Backend is down
 
@@ -977,7 +992,7 @@ there will not be a second one.
 |---|---|---|
 | **A1** | 🟡 **partly shipped (`64ca530`)** — `createUpdaterArtifacts: true`, stale pubkey deleted, key-identity assertion in `verify`. **Remaining:** the keypair decision (blocked on F.2 — see below), Landing-Backend feed + signature inlining + download proxy (A.8), `agent-v*` filter, endpoint reachability assertion. 🔴 **Make updates exist and be fetchable.** `createUpdaterArtifacts: true`; fresh keypair (A.8.4); single committed pubkey; key-identity assertion in `verify`; Landing-Backend feed + signature inlining + anonymous download proxy (A.8); `agent-v*` tag filter (fixes F.9); endpoint reachability assertion, checked unauthenticated, as the last workflow step | ~1½ days (backend included) |
 | **B1** | ✅ **shipped (`64ca530`)** — download and install split; a staged update waits for a closed session and applies on stop/quit; a paused session counts as open. 🔴 **Guard auto-update.** Do not `relaunch()` while a session is open — stage instead, apply on stop/quit. Smallest possible fix to the §1 defect | ~half day |
-| **A0** | 🔴 **The one manual rollout.** Build one installer carrying A1 + B1 + the new endpoint + the new pubkey + the C.1 install-mode decision, and install it on every machine by hand. **Everything before this is invisible to the fleet; everything after it is automatic.** Not optional, not deferrable, and not repeatable — get every irreversible decision into this build | scheduling, not engineering |
+| **A0** | 🟢 **off the critical path (F.2 = `8216A44B…`, H.5).** Replaced by the **bridge release** — same payload, delivered by the updater instead of by hand. Still required *only* if F.5 says users are not local admins, in which case a `perMachine` install cannot be written by any update including the bridge (H.5.2), and the install-mode change cannot ride the updater regardless (H.5.3). ~~🔴 **The one manual rollout.**~~ Build one installer carrying A1 + B1 + the new endpoint + the new pubkey + the C.1 install-mode decision, and install it on every machine by hand. **Everything before this is invisible to the fleet; everything after it is automatic.** Not optional, not deferrable, and not repeatable — get every irreversible decision into this build | scheduling, not engineering |
 | **A2** | Tag-driven versioning, no push to `main` (A.9); path-filtered `push: main` trigger with `[skip release]` guard; `cancel-in-progress: false` | ~1 day |
 | **B2** | Checking moves into the tracker loop with interval + backoff and jitter; stage/apply state machine; downgrade refusal; crash-loop guard; unreachable-feed treated as "no update" | ~2 days |
 | **B3** | UI: "restart to finish updating" affordance; manual check reports staged state honestly; install-failure reporting for admins | ~1 day |
@@ -1274,7 +1289,7 @@ everyone's machine at once.
 | # | Check | Answer | Where it lands |
 |---|---|---|---|
 | F.1 | Repo public or private | **Private** | Feed moves to Landing-Backend (A.8) — correct for **both** visibilities (A.10.1); manual rollout A0. 🔴 **Set `GITHUB_PAT` before flipping** or `/api/download` 500s (A.10.2) |
-| F.2 | Which keypair is in the secret | 🔴 **check first** | Decides whether A0 happens at all (H.4.3). Old key present ⇒ bridge release, no manual rollout |
+| F.2 | Which keypair is in the secret | ✅ **`8216A44B…`** | Bridge release, no manual rollout for the endpoint (H.5). **Do not rotate** until uptake is confirmed |
 | F.3 | Signing key password | *Unknown* | Moot — same |
 | F.4 | Bot can push to `main` | *Possibly not* | Tag-driven versioning (A.9). **Still check: tag rulesets** |
 | F.5 | Users are local admins | ❓ **open** | Picks the deployment shape in H.3.1 — B (`currentUser`, self-update) or C (IT-deployed, self-update off). **Must be answered before A0** |
@@ -1293,7 +1308,7 @@ you hand out anything at all.**
 the original signing key is unrecoverable. Checking one secret can delete the
 single most expensive step in this plan.
 
-**F.5 is the critical path.** It is the last open answer that can still
+**F.5 is now the only question that decides whether anyone walks to a machine** (H.5.2). It is the last open answer that can still
 change what goes into the one build you get to hand out, and unlike the others
 it cannot be fixed later by an update — a `perMachine` agent that cannot
 elevate is an agent that never updates itself.
@@ -1640,3 +1655,79 @@ infrastructure you control, rather than a GitHub URL whose behaviour depends on
 a repository setting. Landing-Backend can be repointed, cached, versioned or
 failed over without touching a single machine. This class of problem does not
 recur.
+
+## H.5 F.2 answered: `8216A44B8570A492` — what it unlocks, and what it does not
+
+**Decision: the signing secret holds the key deployed agents already trust.**
+`tauri.conf.json` ships that same key, so no config change is needed — the
+bridge release (H.4.4) is available and **A0, the manual rollout, comes off the
+critical path for the endpoint problem.**
+
+> The CI assertion added in `64ca530` is what *proves* this. It signs a scratch
+> file with the secret and compares key ids, failing in `verify` before any paid
+> build. If it disagrees with this decision, everything below reverts to A0 and
+> A.8.4's fresh keypair — that is the whole reason the gate exists.
+
+### H.5.1 What changes now that the fleet is reachable
+
+| Was | Now |
+|---|---|
+| A0: hand-install on every machine | **Bridge release** (H.4.4), delivered by the updater |
+| A.8.4: generate a fresh keypair, "free" because A0 was happening anyway | **Do not rotate.** The key is the only thing making the fleet reachable. Rotation becomes a deliberate two-release dance later, not part of this work |
+| "Get every irreversible decision into the one build" | Mostly unnecessary — anything the updater can carry can now ship whenever it is ready |
+| F.6 version reporting: fold into A0 or stay blind | Ships in the bridge; you find out whether the bridge worked |
+
+### H.5.2 🔴 But F.5 can force a rollout anyway — for a different reason
+
+P4 is solved. **P3 is not**, and it gates the bridge itself.
+
+The updater applies an update by running the new NSIS installer. On a
+`perMachine` install that writes to `%ProgramFiles%`, which needs elevation:
+
+| F.5 answer | Can the bridge install itself? |
+|---|---|
+| **Users are local admins** | Yes — with a UAC prompt per update (shape A, §H.3.1) |
+| **Users are NOT admins** | 🔴 **No.** The bridge cannot install, for the same reason no update can. The endpoint being fixed does not help if nothing can be written |
+
+So **F.2 removes the endpoint blocker; F.5 decides whether that is enough.**
+If users are not admins, a manual touch is still required — not to fix the
+feed, but to change the install mode. Same cost, different cause.
+
+**F.5 is now the single remaining question that decides whether anyone has to
+walk to a machine.**
+
+### H.5.3 The install-mode change cannot ride the updater
+
+Worth stating on its own, because it is a trap that looks like it should work:
+
+Switching `perMachine` → `currentUser` **cannot be delivered as an update**.
+The updater downloads the new installer and runs it; a `currentUser` build
+installs to `%LOCALAPPDATA%` and leaves the `%ProgramFiles%` copy untouched.
+Then `relaunch()` restarts *the currently running executable* — still the old
+Program Files binary. The update reports success and changes nothing, while
+leaving two installs and two possible autostart entries behind.
+
+Whichever way F.5 goes, the install-mode migration is a one-time manual or
+IT-pushed action. What F.2 bought is that it is the **only** thing that has to
+be, and it can happen on its own schedule rather than gating updates.
+
+### H.5.4 Revised order
+
+1. ✅ `64ca530` — updater artifacts, timer guard, key assertion.
+2. **Run the release workflow once.** The assertion confirms F.2. Fails cheap
+   in `verify` if this decision is wrong.
+3. Build the A.8 delivery side — Landing-Backend feed, signature inlining,
+   download proxy, `agent-v*` filter. Still needed: the GitHub endpoint dies
+   when the repo goes private (F.1), and H.4.2's public releases-only repo is
+   what keeps the *old* URL alive for agents that have not taken the bridge yet.
+4. **Ship the bridge release** — new endpoint, `createUpdaterArtifacts`, the
+   B1 guard, version reporting (F.6), and the TLS-roots fix if F.12 says so.
+   Signed with `8216A44B8570A492` so the existing fleet accepts it.
+5. Confirm uptake via version reporting before touching anything else.
+6. *Then* decide install mode (F.5) and, separately and later, key rotation.
+
+**Do not rotate the signing key in the bridge.** Rotating means shipping a new
+pubkey in the release that the old key signs, then signing the *next* release
+with the new key — and if uptake of the bridge is partial, every un-updated
+agent is stranded permanently. Rotate only once version reporting shows the
+fleet has moved.
