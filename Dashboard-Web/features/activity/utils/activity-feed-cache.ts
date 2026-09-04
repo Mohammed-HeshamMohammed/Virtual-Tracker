@@ -6,6 +6,9 @@ export type ActivityFeedCacheEntry = {
   data: unknown
   members: ActivityMemberOption[]
   disabledReason: string | null
+  /** When any app/site classification last changed, so the UI can explain why
+   *  a past period's numbers moved. Categories resolve at read time. */
+  classificationsUpdatedAt?: string | null
   fetchedAt: number
 }
 

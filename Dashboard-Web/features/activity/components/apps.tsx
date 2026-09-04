@@ -17,6 +17,8 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { ReclassificationNotice } from "@/features/activity/components/reclassification-notice"
+import { classificationStamp } from "@/features/activity/utils/classification-freshness"
 import { ClassificationDialog } from "@/features/activity/components/classification-dialog"
 import {
   activityCategoryBadgeClass,
@@ -39,6 +41,9 @@ interface AppUsage {
   trend: "up" | "down" | "neutral"
   trendValue: string
   sessions: number
+  /** True when this row's category came from the sites visited rather than
+   *  from the app itself - browsers only. */
+  viaUrl?: boolean
 }
 
 interface MemberAppUsage {
@@ -64,7 +69,7 @@ export function ActivityAppsContent() {
   const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, resetPageFilters, summarySlotEl } = useActivityShell()
   const { setSelectedMemberId } = useActivityFeedContext()
-  const { data: feed, loading, reload } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
+  const { data: feed, loading, reload, classificationsUpdatedAt } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
   // Summary is a standing overview, not a reflection of whatever single day
   // the table below happens to be drilled into - fetched independently
   // (day: "all") so it stays populated and stable instead of going empty on
@@ -163,6 +168,9 @@ export function ActivityAppsContent() {
     appsSheet.addRow(["Period", day.selectedDayLabel])
     appsSheet.addRow(["Category Filter", selectedCategory])
     appsSheet.addRow(["Exported At", new Date().toLocaleString()])
+    // Categories resolve at read time, so two exports of the same period
+    // can differ. This says which classification state produced these rows.
+    appsSheet.addRow(["Categories as of", classificationStamp(classificationsUpdatedAt)])
     
     const membersSheet = workbook.addWorksheet("Members")
     membersSheet.columns = [
@@ -193,7 +201,7 @@ export function ActivityAppsContent() {
     a.download = `app-usage-${day.dayKey}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
-  }, [canExport, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
+  }, [canExport, classificationsUpdatedAt, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
 
   const classifyItems = useMemo(
     () => allTimeAppsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
@@ -299,6 +307,10 @@ export function ActivityAppsContent() {
 
       {!loading && showMainContent ? (
         <div className="space-y-8">
+          <ReclassificationNotice
+            classificationsUpdatedAt={classificationsUpdatedAt}
+            dayKey={day.dayKey}
+          />
           <div className="space-y-4">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
@@ -360,8 +372,16 @@ export function ActivityAppsContent() {
                               "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold tracking-tight",
                               getCategoryBgColor(app.category),
                             )}
+                            title={
+                              app.viaUrl
+                                ? "A browser takes its category from the sites visited, not from the browser itself. This shows whichever category holds most of its time."
+                                : undefined
+                            }
                           >
                             {activityCategoryLabel(app.category)}
+                            {app.viaUrl ? (
+                              <span className="ml-1 font-normal opacity-70">· via sites</span>
+                            ) : null}
                           </span>
                         </td>
                       </motion.tr>

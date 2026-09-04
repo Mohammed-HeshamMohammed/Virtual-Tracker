@@ -16,6 +16,8 @@ import {
   ActivitySearchEmptyState,
 } from "@/features/activity/components/activity-page-states"
 import { ActivitySection } from "@/features/activity/components/activity-section"
+import { ReclassificationNotice } from "@/features/activity/components/reclassification-notice"
+import { classificationStamp } from "@/features/activity/utils/classification-freshness"
 import { ClassificationDialog } from "@/features/activity/components/classification-dialog"
 import {
   activityCategoryBadgeClass,
@@ -65,7 +67,7 @@ export function ActivityURLsContent() {
   const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, showBlocked, resetPageFilters, summarySlotEl } = useActivityShell()
   const { setSelectedMemberId } = useActivityFeedContext()
-  const { data: feed, loading, reload } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
+  const { data: feed, loading, reload, classificationsUpdatedAt } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
   const membersSource = feed?.members ?? []
   // Summary is a standing overview, not a reflection of whatever single day
   // the table below happens to be drilled into - fetched independently
@@ -152,6 +154,9 @@ export function ActivityURLsContent() {
     urlsSheet.addRow(["Period", day.selectedDayLabel])
     urlsSheet.addRow(["Category Filter", selectedCategory])
     urlsSheet.addRow(["Exported At", new Date().toLocaleString()])
+    // Categories resolve at read time, so two exports of the same period
+    // can differ. This says which classification state produced these rows.
+    urlsSheet.addRow(["Categories as of", classificationStamp(classificationsUpdatedAt)])
     
     const membersSheet = workbook.addWorksheet("Members")
     membersSheet.columns = [
@@ -182,7 +187,7 @@ export function ActivityURLsContent() {
     a.download = `url-usage-${day.dayKey}.xlsx`
     a.click()
     URL.revokeObjectURL(url)
-  }, [canExport, day.dayKey, day.selectedDayLabel, filteredURLs, membersSource, selectedCategory])
+  }, [canExport, classificationsUpdatedAt, day.dayKey, day.selectedDayLabel, filteredURLs, membersSource, selectedCategory])
 
   // Every domain ever visited, not just ones with activity on the currently
   // selected day - classification rules are patterns ("reddit.com" ->
@@ -300,6 +305,10 @@ export function ActivityURLsContent() {
 
       {!loading && showMainContent ? (
         <div className="space-y-8">
+          <ReclassificationNotice
+            classificationsUpdatedAt={classificationsUpdatedAt}
+            dayKey={day.dayKey}
+          />
           <div className="space-y-4">
             <motion.div
               initial={{ opacity: 0, y: 12 }}
