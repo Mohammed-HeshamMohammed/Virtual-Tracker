@@ -33,17 +33,38 @@ blast radii and can ship independently:
 |---|---|---|
 | 1. **#4 S1** §8.1 auth-page XSS/redirect | ✅ **shipped** — main + `DashboardBackend-Prod` + `Auth-Production`. Verified in-browser: `javascript:` → `/`, `https://evil.example/login` → `/login`, legit path preserved. 7 tests, 500/500 suite green | `0c4ca3a` |
 | 2. **#4 S2** §35 stale committed installers | ✅ **shipped** — main + `dashboard-web-production` + `LandingWeb-Prod`. 4 files, ~15 MB, gitignored on both apps. Nothing referenced them; `/api/download` was already the real path | `4a830e0` |
-| 3. **#4 S3** pin Actions + base images | ⬜ next |
-| 4. **#4 S4** dependency bumps | ⬜ |
-| 5. **#1** browser→URL resolver | ⬜ |
-| 6. **#3** screenshot activity edit | ⬜ |
-| 7. **#4 S5/S6** Dockerfiles, perms, remaining CodeQL | ⬜ |
-| 8. **#6** ownership + credits | ⬜ |
-| 9. **agent release** (#5 A4/A5/A7, #2, #7, glib) | ⬜ |
-| 10–12. docs, §36 tuning, dismissals | ⬜ |
+| 3. **#4 S3** pin Actions + base images | ✅ **shipped** — 13 actions → commit SHAs in both workflows, `node:20-alpine` → digest in all 5 Dockerfiles. No mutable refs left | `48956f7` |
+| 4. **#4 S5** Dockerfile `USER` + §8.4 perms | ✅ **shipped** — 3 backends dropped to `USER node` (both web apps already had `USER nextjs`); `verify` job scoped to `contents: read`. Every job in both workflows now declares permissions | `c21131a` |
+| 5. **#4 S4** dependency bumps | ✅ **partly** — browserslist 4.28.1 → 4.28.8, build verified. **glib cannot be fixed** (§ below). Dependabot now reports **1 vuln, was 3** | `8175353` |
+| 6. **#1** browser→URL resolver | ⬜ next |
+| 7. **#3** screenshot activity edit | ⬜ |
+| 8. **#4 S6** remaining CodeQL fixes | ⬜ |
+| 9. **#6** ownership + credits | ⬜ |
+| 10. **agent release** (#5 A4/A5/A7, #2, #7) | ⬜ |
+| 11–13. docs, §36 tuning, dismissals | ⬜ |
 
-**Unblocked by step 2:** Issue #5's A0 signature check can now be run against
-the GitHub release artifact (it was measuring the stale binary before).
+Production branches synced this round: `DashboardBackend-Prod`,
+`Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`,
+`LandingWeb-Prod` — all zero-drift verified.
+
+**Findings from execution that change the plan:**
+
+- **D2 is resolved — §8.2 is safe to ship.** All five Dockerfiles set
+  `ENV NODE_ENV=production`, so `disableTlsVerificationInDev: !isProduction`
+  is already false in every deployed container. TLS verification is on today;
+  the hardening is pure defence in depth, not a behaviour change.
+- **The dirty `Cargo.toml` was a phantom.** `git diff --ignore-cr-at-eol`
+  shows no content change — it was CRLF noise, now reverted. C3's warning
+  about it tangling with the agent release no longer applies.
+- **glib / RUSTSEC-2024-0429 is genuinely unfixable from here.**
+  `cargo update -p glib` locks 0 packages: the 0.18 line has no patched
+  release, and glib is pulled by the GTK stack (atk → cairo-rs → gdk → gtk)
+  behind wry's Linux webkit2gtk backend. The fix is in glib ≥ 0.20, which
+  nothing in the tauri stack has moved to. Already recorded as accepted risk
+  in `src-tauri/Cargo.toml`, and the agent ships Windows/macOS where that
+  path is not built. **Treat Dependabot #43 as accepted, not actionable.**
+- **Unblocked by step 2:** Issue #5's A0 signature check can now be run
+  against the GitHub release artifact (it was measuring the stale binary).
 
 ## Contents
 
