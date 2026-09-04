@@ -40,12 +40,30 @@ blast radii and can ship independently:
 | 7. **#3** screenshot activity edit | ✅ **shipped** — schema audit columns, run-splitting (14 tests, all §3.3 cases), `PATCH .../activity`, editor UI beside Download, **and the §3.1 integrity fix in the same commit**. 526/526 tests, build green. Synced to both prod branches | `77b8679` |
 | 8. **#4 S6** remaining CodeQL fixes | ✅ **shipped** — §8.2 TLS opt-in, §8.3 email bodies, §8.5 regexes, §8.6 hostname checks. Synced to `DashboardBackend-Prod`, `Auth-Production`, `dashboard-web-production`. **Notify-backend still has no prod branch** | `a1bf554` |
 | 9. **#6** ownership + credits | ✅ **shipped** — owner line + GitHub links in the agent (via `openUrl`, verified) and an About card in web settings; `publisher` set to "Soft Fix / Virtual Callers". Agent 136/136 tests, both builds green. Web synced to `dashboard-web-production`; **agent ships with the batched release** | `c2ee4fa` |
-| 10. **agent release** (#5 A4/A5/A7, #2, #7) | ⬜ next — the big one; needs real Windows to verify |
+| 10. **agent code** (A5, #2, #7 + §19.3 guard) | 🟡 **committed, not released** — Rust 102/102, agent frontend 136/136, backend 526/526, no new clippy warnings. Backend half synced to `DashboardBackend-Prod`. **Someone must trigger the release workflow** for any of it to reach users | `6b009b5` |
+| 10b. **A4** UIAutomation, **A7** install mode | ⬜ **deliberately held back** — see below |
 | 11–13. docs, §36 tuning, dismissals | ⬜ |
 
 Production branches synced this round: `DashboardBackend-Prod`,
 `Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`,
 `LandingWeb-Prod` — all zero-drift verified.
+
+**Why A4 and A7 are held back (my call, reversible):**
+
+- **A4 (native UIAutomation)** is Windows-only COM I cannot compile or run
+  here. Bundling an unverifiable rewrite with three other agent changes would
+  make a failed release impossible to attribute — if URLs stop appearing, was
+  it A4, the URL cache, or the VM-detect removal? Ship `6b009b5` first,
+  confirm it is stable on real hardware, then do A4 alone.
+- **A7 (install mode)** needs §24.3 #2 answered: `currentUser` removes the UAC
+  prompt entirely for self-service installs, but buys nothing for an
+  IT-pushed Intune/GPO deployment, and D3 makes it effectively one-way for
+  existing installs.
+
+**Not done in #7:** encryption at rest. It needs a crypto dependency, and per
+§19.4 it is defence-in-depth on data that §19.2 establishes carries no
+authority. The ceiling is documented in `classification_cache.rs` rather than
+left implied.
 
 **Findings from execution that change the plan:**
 
