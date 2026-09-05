@@ -61,18 +61,7 @@ jobs:
 
       - name: cargo test
         working-directory: Tauri-App-Extension/src-tauri
-        # The crates.io sparse index occasionally serves a transient hiccup to
-        # `cargo test --locked` ("cannot update the lock file") with no repo
-        # change involved - retry a few times before failing the build for it.
-        run: |
-          for attempt in 1 2 3; do
-            if cargo test --locked; then
-              exit 0
-            fi
-            echo "cargo test --locked failed (attempt $attempt/3), retrying after a short wait..."
-            sleep 10
-          done
-          exit 1
+        run: cargo test --locked
 
       - name: frontend typecheck, test, build
         working-directory: Tauri-App-Extension
@@ -152,6 +141,7 @@ jobs:
           CONF="Tauri-App-Extension/src-tauri/tauri.conf.json"
           PKG="Tauri-App-Extension/package.json"
           CARGO="Tauri-App-Extension/src-tauri/Cargo.toml"
+          LOCK="Tauri-App-Extension/src-tauri/Cargo.lock"
 
           current=$(node -p "require('./${PKG}').version")
           IFS=. read -r major minor patch <<<"$current"
@@ -182,9 +172,15 @@ jobs:
           # Only the [package] version line — never touch dependency versions.
           sed -i -E "0,/^version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/s//version = \"${next}\"/" "$CARGO"
 
+          # Cargo.lock pins our own package's version too (its [[package]]
+          # block right after `name = "virtual-tracker-agent"`) - `verify`'s
+          # `cargo test --locked` treats that as out of sync with Cargo.toml
+          # otherwise and fails deterministically on every run from here on.
+          sed -i -E "/^name = \"virtual-tracker-agent\"\$/{n;s/^version = \"[0-9]+\\.[0-9]+\\.[0-9]+\"/version = \"${next}\"/}" "$LOCK"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add "$PKG" "$CONF" "$CARGO"
+          git add "$PKG" "$CONF" "$CARGO" "$LOCK"
           git commit -m "chore(tauri-agent): bump version to ${next}"
           git tag -a "$tag" -m "Agent v${next}"
           git push origin HEAD:main
