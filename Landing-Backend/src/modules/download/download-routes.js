@@ -6,7 +6,7 @@ import { getSecurityHeaders } from "../../http/security-headers.js";
 let cachedRelease = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-async function getLatestRelease(repoOwner, repoName, pat) {
+export async function getLatestRelease(repoOwner, repoName, pat) {
   const now = Date.now();
   if (cachedRelease && now - cachedRelease.fetchedAt < CACHE_TTL_MS) {
     return cachedRelease.data;

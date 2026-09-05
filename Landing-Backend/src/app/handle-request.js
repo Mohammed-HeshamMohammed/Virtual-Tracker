@@ -6,6 +6,7 @@ import { getSecurityHeaders } from "../http/security-headers.js";
 import { routeContact } from "../modules/contact/contact-routes.js";
 import { routeSessionProxy } from "../modules/session/session-proxy-routes.js";
 import { routeDownload } from "../modules/download/download-routes.js";
+import { routeUpdateFeed } from "../modules/update/update-routes.js";
 
 const SESSION_PROXY_PATHS = new Set(["/api/session-status", "/api/session-logout"]);
 
@@ -80,6 +81,7 @@ export async function handleRequest(req, res) {
       return;
     }
 
+    if (await routeUpdateFeed(req, res, url, origin)) return;
     if (await routeDownload(req, res, url, origin)) return;
     if (await routeSessionProxy(req, res, url, origin)) return;
     if (await routeContact(req, res, url, origin)) return;

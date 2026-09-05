@@ -73,7 +73,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/Mohammed-HeshamMohammed/Virtual-Tracker/releases/latest/download/latest.json"
+        "https://api.myvirtualtracker.com/api/agent/update/{{target}}/{{arch}}/{{current_version}}"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE2QTY3MjYyRUMwOUQ4NDcKUldSSDJBbnNZbkttcHZIY1A2TGpreloxVjhkSG1KUWtrRzFyYzIwLzh0RG5zK3pnZGkwVXhJM0gK"
     }
