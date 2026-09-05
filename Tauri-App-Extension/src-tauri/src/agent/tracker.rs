@@ -13,8 +13,7 @@ use crate::client::api::ApiClient;
 use crate::config::Settings;
 use crate::constants::{
     ACTIVITY_SCORING_REFRESH_INTERVAL_SEC, APP_LOG_INTERVAL_SEC, DISPLAY_NAME_REFRESH_INTERVAL_SEC,
-    FIRST_SCREENSHOT_DELAY_SEC, IDLE_FLAG_ALERT_SEC, IDLE_FLAG_STOP_SEC, IDLE_FLAG_WARN_SEC,
-    IDLE_THRESHOLD_SEC, SESSION_POLL_SEC, SESSION_SYNC_INTERVAL_SEC,
+    FIRST_SCREENSHOT_DELAY_SEC, IDLE_THRESHOLD_SEC, SESSION_POLL_SEC, SESSION_SYNC_INTERVAL_SEC,
 };
 use crate::queue::EventQueue;
 
@@ -53,7 +52,9 @@ pub struct ActivityTracker {
     /// numbers instead of hardcoded 0s.
     task_progress: Arc<Mutex<(Option<String>, u64, u64)>>,
     /// Current idle escalation stage, readable by the UI.
-    /// 0 = working, 1 = warned, 2 = alerted, 3 = stopped for idling.
+    /// 0 = working, 3 = stopped for idling (1/2 no longer used - idle time is
+    /// decided solely by the project's own allowance now, no separate
+    /// warn/alert stages ahead of it).
     idle_stage: Arc<Mutex<u8>>,
     /// TC-6: an idle-escalation "stop" that hasn't reached the server yet.
     /// While this is `Some`, `tick()` does nothing but retry it - it must not
@@ -65,13 +66,11 @@ pub struct ActivityTracker {
     /// continuously, so without this the same detection would log every
     /// SESSION_POLL_SEC forever instead of once per episode.
     last_synthetic_warning_at: Mutex<Option<Instant>>,
-    /// ACT-3: server-tunable idle thresholds, defaulted to the compile-time
-    /// constants and overwritten by `apply_idle_thresholds` on the periodic
+    /// ACT-3: server-tunable idle threshold (org-wide fallback, used only
+    /// when a project doesn't set its own), defaulted to the compile-time
+    /// constant and overwritten by `apply_idle_thresholds` on the periodic
     /// scoring-settings poll.
     idle_threshold_sec: AtomicU64,
-    idle_warn_sec: AtomicU64,
-    idle_alert_sec: AtomicU64,
-    idle_stop_sec: AtomicU64,
 }
 
 /// Everything needed to retry a "stop" action that failed to reach the
@@ -167,11 +166,12 @@ impl TickState {
     }
 }
 
-/// ACT-3: a server-tunable idle-stage triple is only applied whole, never
-/// partially - an inverted stage order would make `tick_idle_escalation`'s
-/// stages fire out of the sequence a manager configured.
-fn valid_idle_thresholds(threshold_sec: u64, warn_sec: u64, alert_sec: u64, stop_sec: u64) -> bool {
-    threshold_sec > 0 && warn_sec < alert_sec && alert_sec < stop_sec
+/// Idle time is entirely the project's call now: `idle_threshold_sec` (the
+/// per-project allowance, or this org-wide fallback) is the only threshold -
+/// crossing it stops the timer and rewinds the idle stretch immediately, with
+/// no separate warn/alert stages first.
+fn valid_idle_threshold(threshold_sec: u64) -> bool {
+    threshold_sec > 0
 }
 
 impl ActivityTracker {
@@ -203,22 +203,13 @@ impl ActivityTracker {
             pending_stop: Arc::new(Mutex::new(None)),
             last_synthetic_warning_at: Mutex::new(None),
             idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
-            idle_warn_sec: AtomicU64::new(IDLE_FLAG_WARN_SEC),
-            idle_alert_sec: AtomicU64::new(IDLE_FLAG_ALERT_SEC),
-            idle_stop_sec: AtomicU64::new(IDLE_FLAG_STOP_SEC),
         }
     }
 
-    /// ACT-3: applied from the periodic scoring-settings poll. Refused,
-    /// rather than partially stored, unless the whole triple stays ordered -
-    /// an inverted stage order would make the escalation stages in
-    /// `tick_idle_escalation` fire out of the sequence a manager configured.
-    fn apply_idle_thresholds(&self, threshold_sec: u64, warn_sec: u64, alert_sec: u64, stop_sec: u64) {
-        if valid_idle_thresholds(threshold_sec, warn_sec, alert_sec, stop_sec) {
+    /// ACT-3: applied from the periodic scoring-settings poll.
+    fn apply_idle_thresholds(&self, threshold_sec: u64) {
+        if valid_idle_threshold(threshold_sec) {
             self.idle_threshold_sec.store(threshold_sec, Ordering::Relaxed);
-            self.idle_warn_sec.store(warn_sec, Ordering::Relaxed);
-            self.idle_alert_sec.store(alert_sec, Ordering::Relaxed);
-            self.idle_stop_sec.store(stop_sec, Ordering::Relaxed);
         }
     }
 
@@ -364,12 +355,7 @@ impl ActivityTracker {
                 .apply_scoring_settings(settings.saturation_events, settings.window_ms);
             self.events
                 .apply_screenshot_cadence(settings.screenshot_min_delay_sec, settings.screenshot_max_delay_sec);
-            self.apply_idle_thresholds(
-                settings.idle_threshold_sec,
-                settings.idle_warn_sec,
-                settings.idle_alert_sec,
-                settings.idle_stop_sec,
-            );
+            self.apply_idle_thresholds(settings.idle_threshold_sec);
         }
     }
 
@@ -783,13 +769,15 @@ impl ActivityTracker {
         );
     }
 
-    /// Three-stage idle escalation. Returns true when the timer was stopped.
+    /// Idle enforcement. Returns true when the timer was stopped.
     ///
-    /// Stages fire at 5 / 10 / 15 minutes without input. The first two only
-    /// warn. The third stops the timer and rewinds the active total to what it
-    /// was at the last real input - so the entire idle stretch, including the
-    /// minute that `tick_progress` credited before its own threshold kicked
-    /// in, is reversed rather than banked.
+    /// The project's own idle allowance (`idle_threshold_sec`, same value
+    /// `tick_progress` uses for the active/idle split) is the only threshold -
+    /// no separate org-wide warn/alert stages ahead of it. The moment idle
+    /// time crosses it, the timer stops and the active total is rewound to
+    /// what it was at the last real input - so the entire idle stretch,
+    /// including the moment that `tick_progress` credited before its own
+    /// threshold kicked in, is reversed rather than banked.
     #[allow(clippy::too_many_arguments)]
     fn tick_idle_escalation(
         &self,
@@ -822,10 +810,9 @@ impl ActivityTracker {
         let idle_for = self.activity.idle_seconds();
         let active_total = active_baseline.saturating_add(*active_elapsed);
 
-        // Real input: clear any warning and remember this as the last honest
-        // point the clock can be rewound to. Same per-project threshold
-        // tick_progress uses (ID-3) - this is the identical boundary, just
-        // read here too, not the separate warn/alert/stop stage timers below.
+        // Real input: remember this as the last honest point the clock can be
+        // rewound to. Same per-project threshold tick_progress uses (ID-3) -
+        // this is the identical boundary.
         if idle_for < idle_threshold_sec {
             if watch.stage != 0 {
                 watch.stage = 0;
@@ -836,67 +823,56 @@ impl ActivityTracker {
             return false;
         }
 
-        if idle_for >= self.idle_stop_sec.load(Ordering::Relaxed) {
-            // Never let the rewind push the total up, and never below zero -
-            // clamping both ways because a mis-ordered snapshot would
-            // otherwise mint or destroy hours.
-            let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
-            let idle_total = idle_baseline.saturating_add(*idle_elapsed);
+        // Past the project's own allowance: stop immediately and rewind.
+        // Never let the rewind push the total up, and never below zero -
+        // clamping both ways because a mis-ordered snapshot would otherwise
+        // mint or destroy hours.
+        let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
+        let idle_total = idle_baseline.saturating_add(*idle_elapsed);
 
-            log::info!(
-                "Idle {}s - stopping timer and reversing {}s of active time (from {}s to {}s)",
-                idle_for,
-                reversed,
-                active_total,
-                rewound
-            );
+        log::info!(
+            "Idle {}s past the project's {}s allowance - stopping timer and reversing {}s of active time (from {}s to {}s)",
+            idle_for,
+            idle_threshold_sec,
+            reversed,
+            active_total,
+            rewound
+        );
 
-            self.set_task_progress(task_id, rewound, idle_total);
-            let delivered = self
-                .api
-                .lock()
-                .post_session_action(
-                    "stop",
-                    Some(task_id).filter(|id| !id.is_empty()),
-                    Some(project_id).filter(|id| !id.is_empty()),
-                    rewound,
-                    idle_total,
-                    None,
-                )
-                .is_ok();
-            if !delivered {
-                // TC-6: the network problem that often accompanies an idle
-                // stretch must not mean the stop is silently lost. Without
-                // this, the server still thinks the session is active, and
-                // the next tick's re-baseline path would resume tracking
-                // with the rewind never applied - re-crediting exactly the
-                // idle time this escalation just reversed.
-                *self.pending_stop.lock() = Some(PendingStop {
-                    task_id: task_id.to_string(),
-                    project_id: project_id.to_string(),
-                    active_seconds: rewound,
-                    idle_seconds: idle_total,
-                });
-                log::warn!("Idle-stop POST failed - will retry until delivered, tracking stays halted meanwhile");
-            }
-
-            watch.stage = 3;
-            *self.idle_stage.lock() = 3;
-            watch.active_at_last_input = 0;
-            self.emit_status("Timer stopped — idle too long, idle time removed");
-            return true;
+        self.set_task_progress(task_id, rewound, idle_total);
+        let delivered = self
+            .api
+            .lock()
+            .post_session_action(
+                "stop",
+                Some(task_id).filter(|id| !id.is_empty()),
+                Some(project_id).filter(|id| !id.is_empty()),
+                rewound,
+                idle_total,
+                None,
+            )
+            .is_ok();
+        if !delivered {
+            // TC-6: the network problem that often accompanies an idle
+            // stretch must not mean the stop is silently lost. Without
+            // this, the server still thinks the session is active, and
+            // the next tick's re-baseline path would resume tracking
+            // with the rewind never applied - re-crediting exactly the
+            // idle time this escalation just reversed.
+            *self.pending_stop.lock() = Some(PendingStop {
+                task_id: task_id.to_string(),
+                project_id: project_id.to_string(),
+                active_seconds: rewound,
+                idle_seconds: idle_total,
+            });
+            log::warn!("Idle-stop POST failed - will retry until delivered, tracking stays halted meanwhile");
         }
 
-        if idle_for >= self.idle_alert_sec.load(Ordering::Relaxed) && watch.stage < 2 {
-            watch.stage = 2;
-            *self.idle_stage.lock() = 2;
-            self.emit_status("Still idle — timer will stop soon and this idle time will be removed");
-        } else if idle_for >= self.idle_warn_sec.load(Ordering::Relaxed) && watch.stage < 1 {
-            watch.stage = 1;
-            *self.idle_stage.lock() = 1;
-            self.emit_status("Idle — no activity detected");
-        }
-        false
+        watch.stage = 3;
+        *self.idle_stage.lock() = 3;
+        watch.active_at_last_input = 0;
+        self.emit_status("Timer stopped — idle too long, idle time removed");
+        true
     }
 
     /// Seconds to credit for one tick: real elapsed wall time since the last
@@ -1180,7 +1156,7 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_idle_thresholds, ActivityTracker, TickState};
+    use super::{valid_idle_threshold, ActivityTracker, TickState};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1330,11 +1306,9 @@ mod tests {
     #[test]
     fn tick_stops_the_timer_once_the_idle_escalation_deadline_passes() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
-        // Shrunk far below the real 5/10/15-minute defaults so this test
-        // finishes in a few seconds instead of a quarter hour. Distinct,
-        // strictly increasing values, same shape `apply_idle_thresholds`
-        // requires in production.
-        tracker.apply_idle_thresholds(1, 1, 2, 3);
+        // Shrunk far below any real project allowance so this test finishes
+        // in a few seconds instead of waiting out a real idle period.
+        tracker.apply_idle_thresholds(1);
         let mut state = TickState::new();
 
         // Starts the session. ActivityMeter's last-input clock is set at
@@ -1375,9 +1349,9 @@ mod tests {
             }
         });
         let tracker = test_tracker(base_url);
-        // Same shrunk stages as the test above - if disable_idle_time were
+        // Same shrunk threshold as the test above - if disable_idle_time were
         // being ignored, this would stop the timer within the same 3.5s.
-        tracker.apply_idle_thresholds(1, 1, 2, 3);
+        tracker.apply_idle_thresholds(1);
         let mut state = TickState::new();
 
         tracker.tick(&mut state);
@@ -1509,28 +1483,18 @@ mod tests {
         assert_eq!(idle_elapsed, 0);
     }
 
-    // Guards ACT-3: a server-pushed idle-stage triple must be applied whole
-    // or not at all - a partially-applied inverted order would make the
-    // warn/alert/stop escalation fire out of sequence.
+    // Guards ACT-3: a server-pushed idle threshold is only applied if it's
+    // sane - idle time is decided solely by the project's own allowance now,
+    // so there's nothing left to validate but "not zero".
 
     #[test]
-    fn a_correctly_ordered_triple_is_valid() {
-        assert!(valid_idle_thresholds(60, 300, 600, 900));
-    }
-
-    #[test]
-    fn warn_equal_to_alert_is_rejected() {
-        assert!(!valid_idle_thresholds(60, 300, 300, 900));
-    }
-
-    #[test]
-    fn alert_after_stop_is_rejected() {
-        assert!(!valid_idle_thresholds(60, 100, 1000, 900));
+    fn a_positive_idle_threshold_is_valid() {
+        assert!(valid_idle_threshold(60));
     }
 
     #[test]
     fn a_zero_idle_threshold_is_rejected() {
-        assert!(!valid_idle_thresholds(0, 300, 600, 900));
+        assert!(!valid_idle_threshold(0));
     }
 
     // Guards TC-2: the tracker must credit real elapsed wall time, not an

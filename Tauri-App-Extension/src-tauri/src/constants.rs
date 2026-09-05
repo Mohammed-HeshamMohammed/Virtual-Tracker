@@ -78,19 +78,13 @@ pub const CADENCE_MACHINE_STDDEV_MS: f64 = 15.0;
 /// signal (AC-1's OS-level injected flag is the harder anti-cheat signal).
 pub const CADENCE_MACHINE_PENALTY: f64 = 0.3;
 /// No mouse/keyboard input for this long counts a tick as idle rather than
-/// active time.
+/// active time. Also the sole idle-enforcement threshold (org-wide fallback
+/// when a project doesn't set its own `idleTimeSeconds`): crossing it stops
+/// the timer and reverses the active time credited since the user actually
+/// stopped working, so an unattended machine cannot bank hours nobody
+/// worked - idle time is entirely the project's call, no separate org-wide
+/// warn/alert stages ahead of it.
 pub const IDLE_THRESHOLD_SEC: u64 = 60;
-
-// ─── Idle escalation ────────────────────────────────────────────────────────
-// Three stages. The first two only warn; the third stops the timer and
-// reverses the active time credited since the user actually stopped working,
-// so an unattended machine cannot bank hours nobody worked.
-/// First warning flag.
-pub const IDLE_FLAG_WARN_SEC: u64 = 5 * 60;
-/// Second, louder warning flag.
-pub const IDLE_FLAG_ALERT_SEC: u64 = 10 * 60;
-/// Timer stops and the idle stretch is reversed.
-pub const IDLE_FLAG_STOP_SEC: u64 = 15 * 60;
 
 pub const TOKEN_REFRESH_BUFFER_MS: i64 = 120_000;
 

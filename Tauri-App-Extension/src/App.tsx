@@ -754,19 +754,11 @@ function MainApp() {
   useEffect(() => {
     const stage = session?.idleStage ?? 0;
     const prevStage = prevIdleStageRef.current;
-    if (stage === 1 && prevStage < 1) {
-      const msg = "You look idle — the timer will stop in 10 minutes if there's no activity.";
-      toast.warning(msg);
-      void notify("You look idle", msg);
-    } else if (stage === 2 && prevStage < 2) {
-      const msg = "Still idle — the timer stops in 5 minutes and this idle time will be removed.";
-      toast.warning(msg);
-      void notify("Still idle", msg);
-    } else if (stage === 3 && prevStage < 3) {
+    if (stage === 3 && prevStage < 3) {
       idleRewindFromRef.current = liveWorkedTodaySeconds;
       void notify(
         "Timer stopped",
-        "Stopped after 15 minutes idle. The idle time was removed from your hours.",
+        "Stopped after being idle longer than this project allows. The idle time was removed from your hours.",
       );
     }
     prevIdleStageRef.current = stage;
@@ -1846,13 +1838,9 @@ function MainApp() {
 
                 {taskLessSession ? null : <TaskDetailPanel detail={taskDetail} />}
 
-                {idleStage > 0 ? (
+                {idleStage >= 3 ? (
                   <p className={`page-idle-banner stage-${idleStage}`}>
-                    {idleStage >= 3
-                      ? "Timer stopped after 15 minutes idle. The idle time was removed from your hours."
-                      : idleStage === 2
-                        ? "Still no activity — the timer stops in 5 minutes and this idle time will be removed."
-                        : "No activity detected — this time won't be counted."}
+                    Timer stopped after being idle longer than this project allows. The idle time was removed from your hours.
                   </p>
                 ) : null}
 

@@ -6,17 +6,14 @@ use super::ApiClient;
 use crate::constants::HTTP_TIMEOUT_SEC;
 
 /// ACT-3: every server-tunable agent constant the plan names - scoring
-/// calibration, screenshot cadence, and idle-escalation thresholds - fetched
-/// and applied together since they share one poll cycle and one backend row.
+/// calibration, screenshot cadence, and the idle threshold - fetched and
+/// applied together since they share one poll cycle and one backend row.
 pub struct ActivityScoringSettings {
     pub saturation_events: u64,
     pub window_ms: u64,
     pub screenshot_min_delay_sec: u64,
     pub screenshot_max_delay_sec: u64,
     pub idle_threshold_sec: u64,
-    pub idle_warn_sec: u64,
-    pub idle_alert_sec: u64,
-    pub idle_stop_sec: u64,
 }
 
 impl ApiClient {
@@ -45,9 +42,6 @@ impl ApiClient {
             screenshot_min_delay_sec: field("screenshotMinDelaySec")?,
             screenshot_max_delay_sec: field("screenshotMaxDelaySec")?,
             idle_threshold_sec: field("idleThresholdSec")?,
-            idle_warn_sec: field("idleWarnSec")?,
-            idle_alert_sec: field("idleAlertSec")?,
-            idle_stop_sec: field("idleStopSec")?,
         })
     }
 }

@@ -2171,27 +2171,17 @@ body {
   cursor: default;
 }
 
-/* Idle escalation notice - louder as it approaches the auto-stop. */
+/* Idle-stop notice - the project's allowance was exceeded and idle time was
+   reversed. Only stage 3 (stopped) ever renders this now - there's no
+   warn/alert stage ahead of it. */
 .page-idle-banner {
   margin-top: 12px;
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 12px;
   line-height: 1.5;
-  background: rgb(var(--c-warn) / 0.1);
-  border: 1px solid rgb(var(--c-warn) / 0.3);
-  color: rgb(var(--c-warn));
-}
-
-.page-idle-banner.stage-2 {
-  background: rgb(var(--c-warn) / 0.14);
-  border-color: rgb(var(--c-warn) / 0.4);
-  color: rgb(var(--c-warn));
-}
-
-.page-idle-banner.stage-3 {
   background: rgb(var(--c-bad) / 0.14);
-  border-color: rgb(var(--c-bad) / 0.4);
+  border: 1px solid rgb(var(--c-bad) / 0.4);
   color: rgb(var(--c-bad));
 }
 
