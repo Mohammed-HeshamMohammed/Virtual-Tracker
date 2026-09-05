@@ -895,6 +895,23 @@ impl AgentController {
         }
     }
 
+    /// An idle-triggered stop from the *previous* session can still be queued
+    /// for delivery (`ActivityTracker::flush_pending_stop`) at the moment the
+    /// user clicks Start again. The server keys the open session by member,
+    /// not by session id, so letting "start" through first would let the
+    /// pending stop land on the just-started session instead and kill it with
+    /// stale, idle-rewound totals. Flush it first; refuse to start only if it
+    /// genuinely can't be delivered right now (still offline).
+    fn blocked_by_pending_idle_stop(&self) -> Option<String> {
+        let tracker = self.tracker.lock();
+        match tracker.as_ref() {
+            Some(tracker) if !tracker.flush_pending_stop() => {
+                Some("Still finishing the previous idle stop — try starting again in a moment.".into())
+            }
+            _ => None,
+        }
+    }
+
     /// CF-2: the current disclosure notice for the UI to show. `None` on any
     /// failure (network, not signed in) - the UI treats that the same as
     /// "nothing to show yet", not as "already acknowledged".
@@ -923,6 +940,9 @@ impl AgentController {
             };
         }
         if let Some(error) = self.blocked_by_monitoring_notice() {
+            return ActionResult { success: false, error: Some(error), session: None };
+        }
+        if let Some(error) = self.blocked_by_pending_idle_stop() {
             return ActionResult { success: false, error: Some(error), session: None };
         }
         // Seed with the task's known cumulative totals instead of 0s so a
@@ -969,6 +989,9 @@ impl AgentController {
             };
         }
         if let Some(error) = self.blocked_by_monitoring_notice() {
+            return ActionResult { success: false, error: Some(error), session: None };
+        }
+        if let Some(error) = self.blocked_by_pending_idle_stop() {
             return ActionResult { success: false, error: Some(error), session: None };
         }
         match self

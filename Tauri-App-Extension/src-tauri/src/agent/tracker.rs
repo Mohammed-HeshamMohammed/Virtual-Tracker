@@ -285,6 +285,54 @@ impl ActivityTracker {
         self.session_id.lock().clone()
     }
 
+    /// One delivery attempt for a pending idle-stop, if any. Returns `true`
+    /// when there's nothing pending (already delivered, or never was one) and
+    /// `false` when a pending stop still exists and this attempt didn't land.
+    /// Shared by `tick()`'s own per-tick retry and `flush_pending_stop` below.
+    fn try_deliver_pending_stop(&self) -> bool {
+        let Some(pending) = self.pending_stop.lock().clone() else {
+            return true;
+        };
+        let delivered = self
+            .api
+            .lock()
+            .post_session_action(
+                "stop",
+                Some(pending.task_id.as_str()).filter(|id| !id.is_empty()),
+                Some(pending.project_id.as_str()).filter(|id| !id.is_empty()),
+                pending.active_seconds,
+                pending.idle_seconds,
+                None,
+            )
+            .is_ok();
+        if delivered {
+            *self.pending_stop.lock() = None;
+            log::info!("Pending idle-stop delivered");
+        } else {
+            log::warn!("Idle-stop still undelivered, retrying next tick");
+        }
+        delivered
+    }
+
+    /// Must be called (and must succeed) before a NEW session is allowed to
+    /// start. The server keys an open session by member, not by session id
+    /// (`findOpenSession`), so if an idle-triggered stop for the *previous*
+    /// session is still queued here when "start" is posted, the server sees
+    /// its own still-"active" old row and just overwrites it in place rather
+    /// than opening an independent new one - the new session and the old
+    /// pending stop are now the same server row. The next tick's retry then
+    /// delivers that pending stop, which "stops" the row with the OLD,
+    /// idle-rewound totals - silently killing the session the user just
+    /// started and discarding whatever it had already accumulated. Flushing
+    /// here first, before start_task_session/start_project_session post
+    /// "start", closes that window entirely: either the old stop lands first
+    /// (so "start" opens a genuinely fresh row), or it's still stuck (network
+    /// down) and starting anyway would just race it again, so callers should
+    /// refuse to start rather than proceed.
+    pub fn flush_pending_stop(&self) -> bool {
+        self.try_deliver_pending_stop()
+    }
+
     /// Task being tracked plus the real cumulative active/idle seconds worked
     /// on it so far (baseline pulled from the server at session start +
     /// elapsed ticks). The controller reads this right before posting "stop"
@@ -369,25 +417,8 @@ impl ActivityTracker {
         // confirmed the stop - is exactly what let a task-id mismatch on the
         // next tick re-baseline from the server's still-active, pre-rewind
         // totals and silently resume tracking.
-        if let Some(pending) = self.pending_stop.lock().clone() {
-            let delivered = self
-                .api
-                .lock()
-                .post_session_action(
-                    "stop",
-                    Some(pending.task_id.as_str()).filter(|id| !id.is_empty()),
-                    Some(pending.project_id.as_str()).filter(|id| !id.is_empty()),
-                    pending.active_seconds,
-                    pending.idle_seconds,
-                    None,
-                )
-                .is_ok();
-            if delivered {
-                *self.pending_stop.lock() = None;
-                log::info!("Pending idle-stop delivered");
-            } else {
-                log::warn!("Idle-stop still undelivered, retrying next tick");
-            }
+        if self.pending_stop.lock().is_some() {
+            self.try_deliver_pending_stop();
             return;
         }
 
@@ -1156,7 +1187,8 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_idle_threshold, ActivityTracker, TickState};
+    use super::{valid_idle_threshold, ActivityTracker, PendingStop, TickState};
+    use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
     use std::time::{Duration, Instant};
 
@@ -1362,6 +1394,51 @@ mod tests {
 
         assert!(state.was_active, "idle time disabled must never stop the timer");
         assert_eq!(state.current_session, "sess-1");
+    }
+
+    /// Guards the Start/idle-stop race: `start_task_session`/
+    /// `start_project_session` must refuse to proceed (get `false` back) while
+    /// a pending idle-stop genuinely can't be delivered, and must actually
+    /// clear it (get `true`, and `pending_stop` empty) the moment the server
+    /// accepts it - a caller that pressed on regardless would let the pending
+    /// stop later land on the session it just started.
+    #[test]
+    fn flush_pending_stop_reports_false_while_stuck_and_true_once_delivered() {
+        let attempts = std::sync::Arc::new(AtomicUsize::new(0));
+        let attempts_clone = attempts.clone();
+        let base_url = fake_server(move |request| {
+            let path = request.url().split('?').next().unwrap_or("").to_string();
+            match (request.method(), path.as_str()) {
+                (Method::Post, "/api/activity/session") => {
+                    if attempts_clone.fetch_add(1, AtomicOrdering::SeqCst) == 0 {
+                        (500, "{}".to_string())
+                    } else {
+                        (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+                    }
+                }
+                _ => (404, "{}".to_string()),
+            }
+        });
+        let tracker = test_tracker(base_url);
+        *tracker.pending_stop.lock() = Some(PendingStop {
+            task_id: "task-1".into(),
+            project_id: String::new(),
+            active_seconds: 120,
+            idle_seconds: 30,
+        });
+
+        assert!(!tracker.flush_pending_stop(), "first attempt fails (500) - must report false");
+        assert!(tracker.pending_stop.lock().is_some(), "still queued after a failed attempt");
+
+        assert!(tracker.flush_pending_stop(), "second attempt succeeds - must report true");
+        assert!(tracker.pending_stop.lock().is_none(), "cleared once actually delivered");
+    }
+
+    #[test]
+    fn flush_pending_stop_is_a_true_no_op_when_nothing_is_queued() {
+        let base_url = fake_server(|_| (404, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        assert!(tracker.flush_pending_stop(), "nothing pending - must not block starting a session");
     }
 
     /// ID-3, missed the first time: tick_progress and tick_idle_escalation
