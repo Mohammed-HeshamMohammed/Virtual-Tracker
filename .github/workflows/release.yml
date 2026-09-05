@@ -61,7 +61,18 @@ jobs:
 
       - name: cargo test
         working-directory: Tauri-App-Extension/src-tauri
-        run: cargo test --locked
+        # The crates.io sparse index occasionally serves a transient hiccup to
+        # `cargo test --locked` ("cannot update the lock file") with no repo
+        # change involved - retry a few times before failing the build for it.
+        run: |
+          for attempt in 1 2 3; do
+            if cargo test --locked; then
+              exit 0
+            fi
+            echo "cargo test --locked failed (attempt $attempt/3), retrying after a short wait..."
+            sleep 10
+          done
+          exit 1
 
       - name: frontend typecheck, test, build
         working-directory: Tauri-App-Extension
