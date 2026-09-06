@@ -5,7 +5,9 @@ import {
   getMemberLimitHours,
   memberUsesShiftsForLimits,
 } from "./task-workload-validation.js";
-import { getRollingWeekDays, startOfDay } from "../dashboard/dashboard-utils.js";
+import { addLocalDays, localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
+import { getMemberTimezone } from "../reports/member-timezones.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import {
   sumDailyMemberActiveSeconds,
   sumDailyMemberTaskActiveSeconds,
@@ -22,19 +24,31 @@ import {
 export const TIMER_LIMIT_REACHED_MESSAGE =
   "Maximum allowed work time for this task has been reached.";
 
-function dayKey(ms) {
-  return new Date(ms).toISOString().slice(0, 10);
+function dayKey(ms, timeZone = "UTC") {
+  return localDayFor(new Date(ms), timeZone);
 }
 
-export function currentDayRange() {
-  const todayStart = startOfDay(new Date()).getTime();
+/**
+ * "Today" and the start of today's week, in the member's own timezone.
+ *
+ * `timeZone` is not optional in spirit - it defaults to UTC only so callers
+ * that genuinely have no member context (and therefore no correct answer)
+ * keep the previous behaviour rather than crashing. Anything deciding a
+ * member's limits should pass their real zone; see `loadMemberCapContext`.
+ *
+ * The week start is derived from the local day string rather than by
+ * subtracting milliseconds, because a week window that spans a DST
+ * transition is not 7 * 86400 seconds long.
+ */
+export function currentDayRange(timeZone = "UTC") {
+  const todayDay = localDayFor(new Date(), timeZone);
   return {
-    todayDay: dayKey(todayStart),
-    weekStartDay: dayKey(getRollingWeekDays()[0]?.startMs ?? todayStart),
+    todayDay,
+    weekStartDay: addLocalDays(todayDay, -weekdayIndexForLocalDay(todayDay)),
   };
 }
 
-async function loadMemberCapContext(db, memberId) {
+async function loadMemberCapContext(db, memberId, timeZone) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
     return {
       usesShifts: true,
@@ -51,7 +65,10 @@ async function loadMemberCapContext(db, memberId) {
     getMemberLimitHours(db, memberId, "daily"),
   ]);
 
-  const { todayDay, weekStartDay } = currentDayRange();
+  // The member's own calendar decides when their daily/weekly allowance
+  // resets - not the server's. Someone in Cairo rolls over to a new day
+  // hours before a UTC-clocked server thinks they do.
+  const { todayDay, weekStartDay } = currentDayRange(timeZone);
   const [workedTodaySeconds, workedWeekSeconds] = await Promise.all([
     sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay }),
     sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay }),
@@ -72,10 +89,11 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
     0,
     Math.floor(Number(options.currentCumulativeActiveSeconds ?? 0)),
   );
+  const timeZone = await getMemberTimezone(memberId);
   const [ctx, projectBudgetRemainder, memberLimitRemainder] = await Promise.all([
-    loadMemberCapContext(db, memberId),
+    loadMemberCapContext(db, memberId, timeZone),
     loadPerPersonProjectBudgetRemainderSeconds(options.projectId ?? null, memberId),
-    loadProjectMemberLimitRemainderSeconds(db, options.projectId ?? null, memberId, currentDayRange()),
+    loadProjectMemberLimitRemainderSeconds(db, options.projectId ?? null, memberId, currentDayRange(timeZone)),
   ]);
 
   const remainders = [];
@@ -104,13 +122,13 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   });
 }
 
-async function resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay) {
+async function resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay, timeZone = "UTC") {
   if (!taskId) return 0;
   if (task?.rolling_hour_cap) {
     const tracking = await getTrackingRowPg(taskId, memberId);
     const sessionStart = tracking?.rolling_session_started_at;
     if (sessionStart) {
-      const sessionStartDay = dayKey(new Date(sessionStart).getTime());
+      const sessionStartDay = dayKey(new Date(sessionStart).getTime(), timeZone);
       return sumDailyMemberTaskActiveSecondsRange(memberId, taskId, {
         fromDay: sessionStartDay,
         toDay: todayDay,
@@ -203,15 +221,25 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const totalTaskSeconds = estimateAssignmentSeconds(task);
   const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
   const projectId = task.project_id ?? task.projectId ?? null;
-  const { todayDay } = currentDayRange();
+  const timeZone = await getMemberTimezone(memberId);
+  const dayRange = currentDayRange(timeZone);
+  const { todayDay } = dayRange;
+
+  // Task-scoped totals are bucketed in the project's calendar (see
+  // lib/time/resolve-time-zone.js), so they have to be *read* in it too -
+  // reading a project-day bucket with a member-day key would miss the row
+  // whenever the two zones disagree. Identical unless the project declares
+  // its own zone.
+  const projectTimeZone = await resolveProjectTimeZone(projectId, memberId);
+  const taskTodayDay = currentDayRange(projectTimeZone).todayDay;
 
   const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder, memberLimitRemainder] =
     await Promise.all([
-      loadMemberCapContext(db, memberId),
-      resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay),
+      loadMemberCapContext(db, memberId, timeZone),
+      resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, taskTodayDay, projectTimeZone),
       task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
       loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
-      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, currentDayRange()),
+      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange),
     ]);
   const totalTaskConsumedSeconds = othersActiveSeconds + currentCumulativeActiveSeconds;
 

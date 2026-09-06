@@ -5,6 +5,7 @@ import { canViewCompensation } from "../../http/field-policy.js";
 import { getTeamIdsLedByMember } from "../../http/team-edit-access.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { currentDayRange } from "../tasks/timer-limit.service.js";
+import { getMemberTimezone } from "../reports/member-timezones.js";
 import { getTimeOffBalanceRowsPg } from "../../lib/postgres/time-off-postgres.service.js";
 import { sumMemberActiveIdleSeconds } from "../../lib/postgres/activity-events-postgres.service.js";
 
@@ -129,7 +130,9 @@ async function buildPulseSection(todayDay) {
 }
 
 export async function buildAgentWorkspace(db, viewer) {
-  const { todayDay, weekStartDay } = currentDayRange();
+  // The viewer's own "today" - a workspace opened at 1am in Cairo is showing
+  // a different day than the server's clock would report.
+  const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(viewer.memberId));
 
   const ledTeamIds = [...(await getTeamIdsLedByMember(db, viewer.memberId))];
   const isManagement = isManagementRole(viewer.roleName);
