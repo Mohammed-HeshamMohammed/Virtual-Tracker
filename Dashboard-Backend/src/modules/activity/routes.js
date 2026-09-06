@@ -64,6 +64,8 @@ import {
   currentDayRange,
   TIMER_LIMIT_REACHED_MESSAGE,
 } from "../tasks/timer-limit.service.js";
+import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
+import { getMemberTimezone } from "../reports/member-timezones.js";
 import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole } from "../../http/role-hierarchy.js";
 import { buildAgentWorkspace } from "./workspace.service.js";
@@ -97,10 +99,6 @@ import {
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
 
-function todayWeekdayIndex() {
-  return (new Date().getDay() + 6) % 7;
-}
-
 async function getMemberTodayWorkStatus(db, memberId) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
     return { workingToday: true, isMakeupDay: false };
@@ -108,7 +106,9 @@ async function getMemberTodayWorkStatus(db, memberId) {
   const timeSettings = await getSingleByMemberId(db, "time_settings", memberId);
   const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
   const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
-  const today = todayWeekdayIndex();
+  // The member's own calendar, not the server's - they can be a day apart.
+  const memberTimeZone = await getMemberTimezone(memberId);
+  const today = weekdayIndexForLocalDay(localDayFor(new Date(), memberTimeZone));
   const isMakeupDay = makeupDays.includes(today);
   return { workingToday: isMakeupDay || workDays.includes(today), isMakeupDay };
 }
@@ -315,7 +315,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const { todayDay } = currentDayRange();
+      const { todayDay } = currentDayRange(await getMemberTimezone(member.memberId));
       const projectId = (url.searchParams.get("projectId") || "").trim();
       const [
         dailyHours,
@@ -482,10 +482,22 @@ export async function routeActivity(req, res, url, origin) {
           return true;
         }
 
-        if (!(await memberUsesShiftsForLimits(db, member.memberId))) {
+        // Gate starting a session only - never resuming one.
+        //
+        // A shift that legitimately began on a working day stays valid for
+        // its whole life, including the part that runs past midnight into a
+        // weekend or holiday (those hours book back to the working day it
+        // started on, so the rest day still records nothing). Re-checking on
+        // "resume" meant taking a break at 11:55pm on the last working day
+        // and being refused at 12:05am - locked out of a shift already
+        // underway. The day is resolved in the member's own timezone, since
+        // "is today a working day" is a question about their calendar, not
+        // the server's.
+        if (action === "start" && !(await memberUsesShiftsForLimits(db, member.memberId))) {
           const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
           const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
-          const today = todayWeekdayIndex();
+          const memberTimeZone = await getMemberTimezone(member.memberId);
+          const today = weekdayIndexForLocalDay(localDayFor(now, memberTimeZone));
           if (!workDays.includes(today) && !makeupDays.includes(today)) {
             sendJson(res, origin, 403, {
               success: false,

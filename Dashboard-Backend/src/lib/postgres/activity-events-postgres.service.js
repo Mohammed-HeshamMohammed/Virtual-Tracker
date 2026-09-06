@@ -2,6 +2,8 @@ import { getPostgresPool, withTransaction } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
+import { getMemberTimezone } from "../../modules/reports/member-timezones.js";
+import { localDayFor } from "../time/timezone-utils.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 
 const APP_LOG_MERGE_GRACE_MS = 120_000;
@@ -596,11 +598,29 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   await pgQuery(`UPDATE activity_sessions SET ${sets.join(", ")} WHERE id = $1`, params);
 }
 
+/**
+ * Credit a session's active-time delta to the day that session *started*.
+ *
+ * Two deliberate properties, both load-bearing:
+ *
+ * 1. **Sticky attribution.** `attributedTo` is the session's `started_at`,
+ *    never "now", so a shift running 8pm -> 5am lands entirely on the day it
+ *    began. Crossing midnight does not hand the member a fresh daily
+ *    allowance, and a shift that finishes inside a weekend still books its
+ *    hours to the working day it started on - the rest day records nothing.
+ * 2. **The member's own calendar.** The day is resolved through the member's
+ *    IANA zone rather than being left to Postgres' `::date` cast (which would
+ *    use the database session's timezone - effectively UTC, and unrelated to
+ *    where the member actually is). Passing an explicit `YYYY-MM-DD` string
+ *    means the stored bucket no longer depends on server configuration at all.
+ */
 async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo) {
   const delta = Math.trunc(Number(deltaSeconds) || 0);
   if (delta === 0) return;
-  const day = attributedTo ? new Date(attributedTo) : new Date();
-  const dayStr = Number.isNaN(day.getTime()) ? new Date() : day;
+  const startedAt = attributedTo ? new Date(attributedTo) : new Date();
+  const anchor = Number.isNaN(startedAt.getTime()) ? new Date() : startedAt;
+  const timeZone = await getMemberTimezone(memberId);
+  const dayStr = localDayFor(anchor, timeZone);
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)

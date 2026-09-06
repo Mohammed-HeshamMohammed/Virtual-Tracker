@@ -1,36 +1,28 @@
-import { localDayFor, localMidnightUtc, nextLocalDay } from "./timezone-utils.js";
+import { localDayFor } from "./timezone-utils.js";
 
-function splitSessionByLocalDay(session, timeZone) {
+/**
+ * A session's hours belong to the day it started - all of them.
+ *
+ * This used to prorate a session across every local midnight it crossed,
+ * which disagreed with how limit enforcement books the same session (all of
+ * it against `started_at`). One shift therefore appeared as one day's work to
+ * the limit checker and as two partial days on a report.
+ *
+ * Start-day attribution is the agreed model, and it is what a shift actually
+ * is to the person working it: an 8pm -> 5am shift is one night's work, not
+ * two fractions of two days. It also keeps a shift that runs into a rest day
+ * booked against the working day it started on, leaving the weekend/holiday
+ * showing zero rather than a stray few hours.
+ */
+function attributeSessionToStartDay(session, timeZone) {
   const start = new Date(session.started_at);
-  const endRaw = new Date(session.ended_at ?? session.updated_at);
-  const end = endRaw > start ? endRaw : new Date(start.getTime() + 1000);
-
-  const startDay = localDayFor(start, timeZone);
-  const endDay = localDayFor(end, timeZone);
-  if (startDay === endDay) {
-    return [{ day: startDay, activeSeconds: session.active_seconds, idleSeconds: session.idle_seconds }];
-  }
-
-  const totalMs = end.getTime() - start.getTime();
-  const segments = [];
-  let cursor = start;
-  let day = startDay;
-  while (day < endDay) {
-    const boundary = localMidnightUtc(nextLocalDay(day), timeZone);
-    const segmentEnd = boundary < end ? boundary : end;
-    segments.push({ day, ms: Math.max(0, segmentEnd.getTime() - cursor.getTime()) });
-    cursor = segmentEnd;
-    day = nextLocalDay(day);
-  }
-  segments.push({ day: endDay, ms: Math.max(0, end.getTime() - cursor.getTime()) });
-
-  return segments
-    .filter((s) => s.ms > 0)
-    .map((s) => ({
-      day: s.day,
-      activeSeconds: Math.round((session.active_seconds * s.ms) / totalMs),
-      idleSeconds: Math.round((session.idle_seconds * s.ms) / totalMs),
-    }));
+  return [
+    {
+      day: localDayFor(start, timeZone),
+      activeSeconds: session.active_seconds,
+      idleSeconds: session.idle_seconds,
+    },
+  ];
 }
 
 function round2(value) {
@@ -77,7 +69,7 @@ export function buildTimeAndActivityReportPayload(
 
   for (const row of rawRows) {
     const timeZone = memberTimezones.get(row.member_id) ?? "UTC";
-    const segments = splitSessionByLocalDay(row, timeZone);
+    const segments = attributeSessionToStartDay(row, timeZone);
 
     for (const segment of segments) {
       if (segment.day < fromDay || segment.day > toDay) continue;
