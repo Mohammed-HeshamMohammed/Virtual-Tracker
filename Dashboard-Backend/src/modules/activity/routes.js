@@ -66,6 +66,7 @@ import {
 } from "../tasks/timer-limit.service.js";
 import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
+import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
 import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole } from "../../http/role-hierarchy.js";
 import { buildAgentWorkspace } from "./workspace.service.js";
@@ -432,6 +433,10 @@ export async function routeActivity(req, res, url, origin) {
       typeof body.stopNote === "string" && body.stopNote.trim()
         ? body.stopNote.trim().slice(0, 1000)
         : null;
+    const reportedTimeZone =
+      typeof body.timeZone === "string" && body.timeZone.trim()
+        ? body.timeZone.trim().slice(0, 64)
+        : null;
     if (!idToken) {
       sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
       return true;
@@ -462,6 +467,12 @@ export async function routeActivity(req, res, url, origin) {
           return true;
         }
       }
+
+      // Before anything reads this member's day boundary below, give them one
+      // if they have none - otherwise an agent-only member is stuck on UTC and
+      // every day-based decision that follows is made against the wrong
+      // calendar.
+      await adoptReportedTimezone(member.memberId, reportedTimeZone);
 
       const now = new Date();
       let open = await findOpenSession(member.memberId);

@@ -47,6 +47,12 @@ xcap = "0.3"
 tiny_http = "0.12"
 urlencoding = "2"
 parking_lot = "0.12"
+# The machine's IANA zone (e.g. "Africa/Cairo"), reported so the backend can
+# book a session's hours to the right calendar day. Already in the tree
+# transitively, so naming it directly adds no new code - just makes the
+# dependency honest. Never used for timestamps: the server still stamps every
+# session itself, so a wrong clock here cannot move tracked time.
+iana-time-zone = "0.1"
 dirs = "6"
 log = "0.4"
 env_logger = "0.11"

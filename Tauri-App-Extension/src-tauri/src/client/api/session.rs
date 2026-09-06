@@ -5,6 +5,18 @@ use serde_json::{json, Value};
 use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 
+/// The machine's IANA timezone name, or `None` if the OS won't tell us.
+///
+/// `None` is a normal outcome, not an error: the backend simply keeps
+/// whatever it already had (or its UTC default), which is exactly the
+/// behaviour that shipped before this was reported at all.
+fn local_timezone() -> Option<String> {
+    iana_time_zone::get_timezone()
+        .ok()
+        .map(|tz| tz.trim().to_string())
+        .filter(|tz| !tz.is_empty())
+}
+
 impl ApiClient {
     /// `Ok(None)` = reachable, genuinely no active session. `Err(_)` = could
     /// not reach the backend, or reached it but got a bad response — the
@@ -45,6 +57,15 @@ impl ApiClient {
             "activeSeconds": active_seconds,
             "idleSeconds": idle_seconds,
         });
+        // Which calendar day this member's hours belong to is decided from
+        // their timezone, and until now nothing populated it for anyone who
+        // never opened the web profile - they silently fell back to UTC. The
+        // machine already knows the answer, so report it and let the backend
+        // decide whether to adopt it. Deliberately a zone *name*, never a
+        // timestamp: the server still stamps every session itself.
+        if let Some(tz) = local_timezone() {
+            payload["timeZone"] = json!(tz);
+        }
         if let Some(tid) = task_id {
             payload["taskId"] = json!(tid);
         }
