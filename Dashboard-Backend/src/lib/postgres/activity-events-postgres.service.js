@@ -4,6 +4,7 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
 import { getMemberTimezone } from "../../modules/reports/member-timezones.js";
 import { localDayFor } from "../time/timezone-utils.js";
+import { resolveProjectTimeZone } from "../time/resolve-time-zone.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 
 const APP_LOG_MERGE_GRACE_MS = 120_000;
@@ -527,7 +528,7 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   let prev = null;
   if (wantsActive || wantsIdle) {
     const prevResult = await pgQuery(
-      `SELECT member_id, task_id, started_at, active_seconds, idle_seconds FROM activity_sessions WHERE id = $1`,
+      `SELECT member_id, task_id, project_id, started_at, active_seconds, idle_seconds FROM activity_sessions WHERE id = $1`,
       [sessionId],
     );
     prev = prevResult?.rows?.[0] ?? null;
@@ -591,7 +592,7 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   if (wantsActive && prev) {
     const delta = Math.floor(effectiveActive) - Math.floor(Number(prev.active_seconds ?? 0));
     if (delta !== 0) {
-      await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta, prev.started_at);
+      await recordDailyActiveSecondsDelta(prev.member_id, prev.task_id, delta, prev.started_at, prev.project_id);
     }
   }
 
@@ -614,13 +615,22 @@ export async function updatePgSession(sessionId, patch, options = {}) {
  *    where the member actually is). Passing an explicit `YYYY-MM-DD` string
  *    means the stored bucket no longer depends on server configuration at all.
  */
-async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo) {
+async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo, projectId = null) {
   const delta = Math.trunc(Number(deltaSeconds) || 0);
   if (delta === 0) return;
   const startedAt = attributedTo ? new Date(attributedTo) : new Date();
   const anchor = Number.isNaN(startedAt.getTime()) ? new Date() : startedAt;
-  const timeZone = await getMemberTimezone(memberId);
-  const dayStr = localDayFor(anchor, timeZone);
+
+  // Two calendars on purpose (see lib/time/resolve-time-zone.js):
+  //   - the member's own, for their personal daily/weekly totals, because a
+  //     person cannot be having two different "todays" at once;
+  //   - the project's, for task-scoped totals, so work on a client's timeline
+  //     lines up with that client's days rather than the worker's.
+  // They are the same value unless a project declares its own zone.
+  const memberZone = await getMemberTimezone(memberId);
+  const memberDay = localDayFor(anchor, memberZone);
+  const taskDay = taskId ? localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId)) : memberDay;
+  const dayStr = memberDay;
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
@@ -639,7 +649,7 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
        DO UPDATE SET
          active_seconds = GREATEST(0, daily_member_task_active_seconds.active_seconds + $4::bigint),
          updated_at = now()`,
-      [memberId, taskId, dayStr, delta],
+      [memberId, taskId, taskDay, delta],
     );
   }
 }

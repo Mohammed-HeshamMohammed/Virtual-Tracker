@@ -1110,6 +1110,12 @@ GROUP BY task_id`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_task_to_track BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_task_creation BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_stop_note BOOLEAN NOT NULL DEFAULT false`,
+  // The zone this project's schedule is anchored to, for work done on a
+  // client's timeline rather than the worker's own - an Egypt-based member on
+  // a US-hours project should have that project's days line up with the
+  // client's calendar, not theirs. NULL means "use the member's own zone",
+  // which is the right default and what every existing project keeps.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,

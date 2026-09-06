@@ -7,6 +7,7 @@ import {
 } from "./task-workload-validation.js";
 import { addLocalDays, localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import {
   sumDailyMemberActiveSeconds,
   sumDailyMemberTaskActiveSeconds,
@@ -224,10 +225,18 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const dayRange = currentDayRange(timeZone);
   const { todayDay } = dayRange;
 
+  // Task-scoped totals are bucketed in the project's calendar (see
+  // lib/time/resolve-time-zone.js), so they have to be *read* in it too -
+  // reading a project-day bucket with a member-day key would miss the row
+  // whenever the two zones disagree. Identical unless the project declares
+  // its own zone.
+  const projectTimeZone = await resolveProjectTimeZone(projectId, memberId);
+  const taskTodayDay = currentDayRange(projectTimeZone).todayDay;
+
   const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder, memberLimitRemainder] =
     await Promise.all([
       loadMemberCapContext(db, memberId, timeZone),
-      resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay, timeZone),
+      resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, taskTodayDay, projectTimeZone),
       task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
       loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
       loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange),
