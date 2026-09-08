@@ -178,7 +178,7 @@ impl ApiClient {
         let Some(refresh) = self.refresh_token.clone() else {
             log::warn!("ID token expired and no refresh token is stored");
             self.last_refresh = RefreshOutcome::Rejected;
-            return false;
+            return self.fall_back_to_device_reauth();
         };
         let (outcome, tokens) = self.firebase.refresh(&refresh);
         self.last_refresh = outcome;
@@ -187,8 +187,26 @@ impl ApiClient {
                 self.apply_fresh_tokens(id, next_refresh);
                 true
             }
+            // A dead refresh token (Rejected, a definitive 4xx - not
+            // Unreachable, which is just Google having a bad moment) used to
+            // sit here doing nothing until the user noticed the reconnect
+            // screen and clicked its button, which called this exact same
+            // device-credential fallback manually. Every authenticated
+            // endpoint goes through this method and they all share one
+            // Mutex<ApiClient>, so trying it here means the first of a
+            // whole burst of cold-start calls (get_profile, list_projects,
+            // list_tasks, ...) fixes it for every other one queued behind
+            // the lock instead of each repeating the same doomed refresh.
+            None if outcome == RefreshOutcome::Rejected => self.fall_back_to_device_reauth(),
             None => false,
         }
+    }
+
+    fn fall_back_to_device_reauth(&mut self) -> bool {
+        if !self.has_device_credential() {
+            return false;
+        }
+        self.reauth_with_device().is_ok()
     }
 
     fn apply_fresh_tokens(&mut self, id_token: String, refresh_token: String) {
@@ -502,5 +520,17 @@ mod tests {
         let mut api = authed_client("http://127.0.0.1:1".into());
         let err = api.reauth_with_device().expect_err("no device credential stored");
         assert!(err.is_rejected());
+    }
+
+    #[test]
+    fn refresh_without_a_refresh_token_or_device_credential_fails_closed() {
+        // Expired id token, no refresh token, no device credential: the
+        // device-reauth fallback this exercises must decline without making
+        // any network call (nothing reachable is configured at either URL),
+        // same end result as before that fallback existed.
+        let mut api = ApiClient::new("http://127.0.0.1:1".into(), "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.set_tokens(&fake_jwt(-3600), "");
+        assert!(!api.refresh_token_if_needed());
     }
 }
