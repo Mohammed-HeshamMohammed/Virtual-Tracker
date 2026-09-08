@@ -1826,10 +1826,6 @@ function MainApp() {
         {signedIn ? (
           <section className="page-area">
             <div className="page-header">
-              <div className="page-header-titles">
-                <span className="page-eyebrow">Today</span>
-                <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
-              </div>
               <div className="page-header-actions">
                 <AssignedTodayBadge
                   memberLimits={memberLimits}
