@@ -3,6 +3,7 @@ import {
   fmtClock,
   fmtHours,
   fmtLimitHours,
+  fmtWallClock,
   initialsFromName,
   statusLabel,
   statusTone,
@@ -24,6 +25,19 @@ describe("fmtClock", () => {
   it("floors fractional seconds and clamps negative input to zero", () => {
     expect(fmtClock(59.9)).toBe("00:00:59");
     expect(fmtClock(-5)).toBe("00:00:00");
+  });
+});
+
+describe("fmtWallClock", () => {
+  it("reads 12-hour with AM/PM, no leading zero on the hour", () => {
+    // Local machine time, not a chosen zone - just checking the shape here
+    // since the actual hour/minute depend on wherever the test runs.
+    expect(fmtWallClock(new Date(2024, 0, 1, 9, 5))).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
+  });
+
+  it("rolls midnight and noon to 12, not 0", () => {
+    expect(fmtWallClock(new Date(2024, 0, 1, 0, 0))).toMatch(/^12:00 AM$/);
+    expect(fmtWallClock(new Date(2024, 0, 1, 12, 0))).toMatch(/^12:00 PM$/);
   });
 });
 

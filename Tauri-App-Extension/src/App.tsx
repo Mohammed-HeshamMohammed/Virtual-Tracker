@@ -32,7 +32,7 @@ import type {
   SignUpState,
   TaskTimeTracking,
 } from "./types";
-import { fmtClock, fmtHours } from "./utils/formatters";
+import { fmtClock, fmtHours, fmtWallClock } from "./utils/formatters";
 import { computeHomeStats } from "./utils/homeStats";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
@@ -163,6 +163,14 @@ function MainApp() {
   const [liveWorkedTodaySeconds, setLiveWorkedTodaySeconds] = useState(0);
   const [timerViewMode, setTimerViewMode] = useState<"day" | "task">("day");
   const [liveTaskActiveSeconds, setLiveTaskActiveSeconds] = useState(0);
+  // The page header's own wall clock, not the elapsed-time stopwatch above -
+  // minute resolution is all it needs, so a 30s tick (not liveActiveSeconds'
+  // 1s one) is enough to never show a minute-stale reading.
+  const [wallClockNow, setWallClockNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setWallClockNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [savingTimezone, setSavingTimezone] = useState(false);
@@ -1826,6 +1834,10 @@ function MainApp() {
         {signedIn ? (
           <section className="page-area">
             <div className="page-header">
+              <div className="page-header-titles">
+                <span className="page-header-clock">{fmtWallClock(wallClockNow)}</span>
+                <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
+              </div>
               <div className="page-header-actions">
                 <AssignedTodayBadge
                   memberLimits={memberLimits}

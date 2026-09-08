@@ -717,12 +717,34 @@ body {
   gap: 12px;
 }
 
+.page-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* Where the "TODAY" eyebrow used to sit - a live wall clock instead, the
+   device's own current time (not the elapsed-time stopwatch below, and not
+   the selectable-zone clock in the timezone picker - always "now, here"). */
+.page-header-clock {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-variant);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .page-header-actions {
-  /* Was the second half of a space-between row against .page-header-titles
-     (the "TODAY" eyebrow + task/project name, now removed) - margin-left:
-     auto keeps it pinned to the right on its own instead of collapsing to
-     the left now that it is .page-header's only child. */
-  margin-left: auto;
   flex-shrink: 0;
   display: flex;
   flex-direction: row;
