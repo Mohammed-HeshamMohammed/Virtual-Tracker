@@ -519,65 +519,102 @@ export const CURRENCIES = [
 
 export const WEEK_STARTS = ["Monday", "Sunday"]
 
-export const TIME_ZONES = [
-  "(GMT-10:00) America/Adak",
-  "(GMT-09:00) America/Anchorage",
-  "(GMT-09:00) America/Juneau",
-  "(GMT-09:00) America/Metlakatla",
-  "(GMT-09:00) America/Nome",
-  "(GMT-09:00) America/Sitka",
-  "(GMT-09:00) America/Yakutat",
-  "(GMT-08:00) America/Los_Angeles",
-  "(GMT-08:00) America/Metlakatla",
-  "(GMT-08:00) America/Santa_Isabel",
-  "(GMT-07:00) America/Boise",
-  "(GMT-07:00) America/Cambridge_Bay",
-  "(GMT-07:00) America/Chihuahua",
-  "(GMT-07:00) America/Creston",
-  "(GMT-07:00) America/Dawson_Creek",
-  "(GMT-07:00) America/Denver",
-  "(GMT-07:00) America/Edmonton",
-  "(GMT-07:00) America/Hermosillo",
-  "(GMT-07:00) America/Inuvik",
-  "(GMT-07:00) America/Mazatlan",
-  "(GMT-07:00) America/Ojinaga",
-  "(GMT-07:00) America/Phoenix",
-  "(GMT-07:00) America/Shiprock",
-  "(GMT-07:00) America/Yellowknife",
-  "(GMT-06:00) America/Chicago",
-  "(GMT-06:00) America/Indiana/Knox",
-  "(GMT-06:00) America/Indiana/Tell_City",
-  "(GMT-06:00) America/Matamoros",
-  "(GMT-06:00) America/Menominee",
-  "(GMT-06:00) America/North_Dakota/Beulah",
-  "(GMT-06:00) America/North_Dakota/Center",
-  "(GMT-06:00) America/North_Dakota/New_Salem",
-  "(GMT-06:00) America/Rainy_River",
-  "(GMT-06:00) America/Rankin_Inlet",
-  "(GMT-06:00) America/Resolute",
-  "(GMT-06:00) America/Winnipeg",
-  "(GMT-05:00) America/Detroit",
-  "(GMT-05:00) America/Fort_Wayne",
-  "(GMT-05:00) America/Grand_Turk",
-  "(GMT-05:00) America/Indiana/Indianapolis",
-  "(GMT-05:00) America/Indiana/Marengo",
-  "(GMT-05:00) America/Indiana/Petersburg",
-  "(GMT-05:00) America/Indiana/Vevay",
-  "(GMT-05:00) America/Indiana/Vincennes",
-  "(GMT-05:00) America/Indiana/Winamac",
-  "(GMT-05:00) America/Iqaluit",
-  "(GMT-05:00) America/Kentucky/Louisville",
-  "(GMT-05:00) America/Kentucky/Monticello",
-  "(GMT-05:00) America/Nassau",
-  "(GMT-05:00) America/New_York",
-  "(GMT-05:00) America/Nipigon",
-  "(GMT-05:00) America/Pangnirtung",
-  "(GMT-05:00) America/Port-au-Prince",
-  "(GMT-05:00) America/Thunder_Bay",
-  "(GMT-05:00) America/Toronto",
-  "(GMT+02:00) Africa/Cairo",
-  "(GMT+03:00) Africa/Cairo (Summer)",
+/**
+ * Current UTC offset for `timeZone`, in minutes.
+ *
+ * Mirrors `offsetMinutesAt` in Dashboard-Backend's `lib/time/timezone-utils.js`
+ * on purpose: asking `Intl` to render the instant in the zone and reading the
+ * fields back is the only way to get an offset that respects DST. Arithmetic on
+ * a written-down offset is wrong for half the year in any zone that observes it.
+ */
+function timeZoneOffsetMinutes(date: Date, timeZone: string): number {
+  const parts: Record<string, string> = {}
+  for (const part of new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(date)) {
+    parts[part.type] = part.value
+  }
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second),
+  )
+  return (asUtc - date.getTime()) / 60000
+}
+
+function gmtOffsetLabel(offsetMinutes: number): string {
+  const sign = offsetMinutes < 0 ? "-" : "+"
+  const abs = Math.abs(offsetMinutes)
+  const hh = String(Math.floor(abs / 60)).padStart(2, "0")
+  const mm = String(abs % 60).padStart(2, "0")
+  return `(GMT${sign}${hh}:${mm})`
+}
+
+/** Kept only for runtimes without `Intl.supportedValuesOf` (pre-2022 engines). */
+const FALLBACK_TIME_ZONE_IDS = [
+  "America/Los_Angeles",
+  "America/Denver",
+  "America/Chicago",
+  "America/New_York",
+  "Europe/London",
+  "Europe/Berlin",
+  "Africa/Cairo",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "Asia/Tokyo",
+  "Australia/Sydney",
+  "UTC",
 ]
+
+/**
+ * Every canonical IANA zone this runtime knows, labelled `(GMT+02:00) Africa/Cairo`.
+ *
+ * This was a hand-written list of 56 zones - 54 of them `America/*`, two
+ * African, and nothing at all from Europe, Asia, Australia or the Pacific - so
+ * a member outside the Americas had no zone they could pick and silently stayed
+ * on the UTC fallback. Deriving it from `Intl.supportedValuesOf` yields all ~418
+ * and keeps this list in step with the backend, which validates the saved value
+ * against that exact set (`Dashboard-Backend/src/modules/auth/profile-settings.js`).
+ * Anything offered here is therefore accepted there by construction.
+ *
+ * The label shape is unchanged so `ianaIdFromTimeZoneLabel` and existing
+ * `defaultValue` matches keep working. Offsets are computed rather than written
+ * down because they move with DST - the old list's fixed `(GMT-05:00)
+ * America/New_York` was wrong for the ~8 months a year that zone is on EDT.
+ */
+export const TIME_ZONES: string[] = (() => {
+  let ids: string[]
+  try {
+    ids = typeof Intl.supportedValuesOf === "function"
+      ? [...Intl.supportedValuesOf("timeZone")]
+      : FALLBACK_TIME_ZONE_IDS
+  } catch {
+    ids = FALLBACK_TIME_ZONE_IDS
+  }
+
+  const now = new Date()
+  return ids
+    .map((id) => {
+      try {
+        return { id, offset: timeZoneOffsetMinutes(now, id) }
+      } catch {
+        return null
+      }
+    })
+    .filter((entry): entry is { id: string; offset: number } => entry !== null)
+    .sort((a, b) => a.offset - b.offset || a.id.localeCompare(b.id))
+    .map((entry) => `${gmtOffsetLabel(entry.offset)} ${entry.id}`)
+})()
 
 export const ROLE_TYPES = [
   { k: "admin",   l: "Admin",     info: "Full access to all features and settings" },

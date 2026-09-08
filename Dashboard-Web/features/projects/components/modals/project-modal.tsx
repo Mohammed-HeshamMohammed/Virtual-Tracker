@@ -103,6 +103,14 @@ interface AddProjectFormState {
 }
 
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
+
+/**
+ * 7.5 minutes — the same default `projects.idle_time_seconds` carries in
+ * `ensure-lookup-schema.js`, and the fallback the agent and backend both use.
+ * Kept in one place here so the form's initial value, the edit-time hydration
+ * and the save-time floor can't drift apart.
+ */
+const DEFAULT_IDLE_TIME_SECONDS = 450
 export const MEMBERS_TEAMS_TAB_KEY = "members-teams"
 export const LIMITS_TAB_KEY = "limits"
 export const MANAGEMENT_TAB_KEY = "management"
@@ -162,7 +170,7 @@ function createDefaultAddForm(): AddProjectFormState {
     clientCanTrack: false,
     subProjectIds: [],
     disableIdleTime: false,
-    idleTimeMinutes: "7.5",
+    idleTimeMinutes: String(DEFAULT_IDLE_TIME_SECONDS / 60),
     endDate: "",
     clientIds: [],
     teams: [],
@@ -302,7 +310,12 @@ function formStateToPayload(
     clientCanTrack: addForm.clientCanTrack,
     subProjectIds: projectTypeDef(addForm.type).hasSubProjects ? addForm.subProjectIds : [],
     disableIdleTime: addForm.disableIdleTime,
-    idleTimeSeconds: Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60)),
+    // ID-4: a cleared field used to floor to 0, which the agent reads as an
+    // idle allowance that can never be satisfied - it stops and rewinds the
+    // session on the first tick, so the project cannot be tracked at all.
+    // Fall back to the same 450s default an unset project already gets rather
+    // than sending a value that bricks tracking.
+    idleTimeSeconds: Math.round((Number(addForm.idleTimeMinutes) || 0) * 60) || DEFAULT_IDLE_TIME_SECONDS,
     endDate: addForm.endDate,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
@@ -632,7 +645,7 @@ export function ProjectModal({
           clientCanTrack: payload.clientCanTrack,
           subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
-          idleTimeMinutes: String((payload.idleTimeSeconds ?? 450) / 60),
+          idleTimeMinutes: String((payload.idleTimeSeconds || DEFAULT_IDLE_TIME_SECONDS) / 60),
           endDate: payload.endDate || "",
           clientIds: payload.clientIds,
           teams: payload.teamIds,

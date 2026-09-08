@@ -312,7 +312,12 @@ export function useTaskMutations({
       applyTaskToState(mapApiTask(fresh as unknown as Record<string, unknown>), editingId)
       if (completed) setShowCompleted(true)
     } else {
-      if (!selectedProjectId) return
+      // Throw rather than return: the caller awaits this and closes the modal on
+      // success, so a bare return read as "saved" and dismissed the form having
+      // created nothing at all.
+      if (!selectedProjectId) {
+        throw new Error("Pick a project before creating a task.")
+      }
       const createPayload: CreateTaskInput = {
         projectId: selectedProjectId,
         teamId: formValues.teamId,

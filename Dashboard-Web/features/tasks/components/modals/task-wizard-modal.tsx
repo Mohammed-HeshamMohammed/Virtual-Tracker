@@ -693,7 +693,15 @@ export function TaskWizardModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={!newTaskTitle.trim() || (formTeamOptions.length > 0 && !newTaskTeamId) || isSavingTask}
+            // Only the in-flight guard belongs here. Disabling on "no title" or
+            // "no team picked" duplicated the checks handleSave already makes,
+            // and won by default - so the click never landed, handleSave never
+            // ran, and the messages it sets ("Select a team", the title error)
+            // were unreachable. Since the form moved into tabs the missing field
+            // can be on a tab the user isn't looking at, so a silently dead
+            // button is all they get. Let the click through and let handleSave
+            // switch to the offending tab and say what's wrong.
+            disabled={isSavingTask}
             className={cn("px-6 py-2.5 text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50", isDark ? "bg-[#4be277] hover:bg-[#4be277]/90 text-black" : "bg-blue-400 hover:bg-blue-500")}
           >
             {isSavingTask ? (isEditingTask ? "Saving…" : "Creating…") : isEditingTask ? "Save" : "Create"}
