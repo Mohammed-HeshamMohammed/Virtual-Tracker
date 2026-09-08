@@ -4,6 +4,7 @@ import {
   fmtHours,
   fmtLimitHours,
   fmtWallClock,
+  fmtWallDate,
   initialsFromName,
   statusLabel,
   statusTone,
@@ -38,6 +39,25 @@ describe("fmtWallClock", () => {
   it("rolls midnight and noon to 12, not 0", () => {
     expect(fmtWallClock(new Date(2024, 0, 1, 0, 0))).toMatch(/^12:00 AM$/);
     expect(fmtWallClock(new Date(2024, 0, 1, 12, 0))).toMatch(/^12:00 PM$/);
+  });
+
+  it("reads a chosen zone's own time, not the device's", () => {
+    // New Year's Eve in New York is already Jan 1 in Tokyo.
+    const at = new Date("2023-12-31T23:30:00-05:00");
+    expect(fmtWallClock(at, "America/New_York")).toBe("11:30 PM");
+    expect(fmtWallClock(at, "Asia/Tokyo")).toBe("1:30 PM");
+  });
+});
+
+describe("fmtWallDate", () => {
+  it("reads weekday, month and day", () => {
+    expect(fmtWallDate(new Date(2024, 0, 1))).toMatch(/^\w+, \w+ 1$/);
+  });
+
+  it("reads a chosen zone's own date, not the device's", () => {
+    const at = new Date("2023-12-31T23:30:00-05:00");
+    expect(fmtWallDate(at, "America/New_York")).toContain("Dec 31");
+    expect(fmtWallDate(at, "Asia/Tokyo")).toContain("Jan 1");
   });
 });
 

@@ -24,6 +24,22 @@ export function fmtWallClock(at: number | Date = Date.now(), timeZone?: string):
   }
 }
 
+/** "Tue, Sep 9" - today's date in `timeZone` (the device's own zone when
+ *  omitted). Same zone fmtWallClock reads, so the two never disagree about
+ *  what day it is in a zone far from the device's own. */
+export function fmtWallDate(at: number | Date = Date.now(), timeZone?: string): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }).format(at);
+  } catch {
+    return "";
+  }
+}
+
 export function fmtHours(totalSeconds: number | null | undefined): string {
   if (totalSeconds == null || totalSeconds <= 0) return "0s";
   const total = Math.floor(totalSeconds);

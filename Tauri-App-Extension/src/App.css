@@ -725,14 +725,25 @@ body {
 }
 
 /* Where the "TODAY" eyebrow used to sit - a live wall clock instead, the
-   device's own current time (not the elapsed-time stopwatch below, and not
-   the selectable-zone clock in the timezone picker - always "now, here"). */
+   selected timezone's current time and date (not the elapsed-time
+   stopwatch below - always "now, there"). */
 .page-header-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--on-surface-variant);
+}
+
+.page-header-date {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--on-surface-fainter);
 }
 
 .page-title {

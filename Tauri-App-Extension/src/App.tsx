@@ -32,7 +32,7 @@ import type {
   SignUpState,
   TaskTimeTracking,
 } from "./types";
-import { fmtClock, fmtHours, fmtWallClock } from "./utils/formatters";
+import { fmtClock, fmtHours, fmtWallClock, fmtWallDate } from "./utils/formatters";
 import { computeHomeStats } from "./utils/homeStats";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
@@ -1852,7 +1852,10 @@ function MainApp() {
           <section className="page-area">
             <div className="page-header">
               <div className="page-header-titles">
-                <span className="page-header-clock">{fmtWallClock(wallClockNow, displayTimezone || undefined)}</span>
+                <span className="page-header-clock">
+                  {fmtWallClock(wallClockNow, displayTimezone || undefined)}
+                  <span className="page-header-date">{fmtWallDate(wallClockNow, displayTimezone || undefined)}</span>
+                </span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
               <div className="page-header-actions">
