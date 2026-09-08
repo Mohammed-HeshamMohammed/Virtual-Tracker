@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { zonesMatchingPlaceQuery } from "../../utils/timezoneSearch";
 
 /**
  * Every canonical IANA zone the runtime knows, straight from the platform.
@@ -103,6 +104,8 @@ export function TimezonePicker({
       .sort((a, b) => a.minutes - b.minutes || a.zone.localeCompare(b.zone));
   }, []);
 
+  const placeMatches = useMemo(() => zonesMatchingPlaceQuery(query), [query]);
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return zones;
@@ -110,9 +113,10 @@ export function TimezonePicker({
       (z) =>
         z.zone.toLowerCase().includes(needle) ||
         z.city.toLowerCase().includes(needle) ||
-        z.offset.toLowerCase().includes(needle),
+        z.offset.toLowerCase().includes(needle) ||
+        placeMatches.has(z.zone),
     );
-  }, [zones, query]);
+  }, [zones, query, placeMatches]);
 
   useEffect(() => {
     if (!open) return;
@@ -188,7 +192,7 @@ export function TimezonePicker({
             ref={inputRef}
             className="tz-search"
             type="text"
-            placeholder="Search city, region or offset"
+            placeholder="Search city, country or offset"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
