@@ -1107,6 +1107,16 @@ GROUP BY task_id`,
   `ALTER TABLE projects ADD CONSTRAINT projects_type_check CHECK (type IN ('normal', 'calling', 'retainer', 'fixed_price', 'internal', 'support', 'management'))`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS end_date DATE`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS idle_time_seconds INTEGER NOT NULL DEFAULT 450`,
+  // ID-4: 0 is not a usable allowance - the agent compares `idle_for <
+  // threshold`, so a 0 can never be satisfied and the session stops and
+  // rewinds on its first tick, making the project untrackable. Nothing
+  // previously forbade it: this column had no CHECK (unlike every idle column
+  // on activity_scoring_settings) and the project modal floored a cleared
+  // field to 0. Normalize any stored 0/negative back to the product default
+  // first, or adding the constraint would fail on existing rows.
+  `UPDATE projects SET idle_time_seconds = 450 WHERE idle_time_seconds <= 0`,
+  `ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_idle_time_seconds_check`,
+  `ALTER TABLE projects ADD CONSTRAINT projects_idle_time_seconds_check CHECK (idle_time_seconds > 0)`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_task_to_track BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_task_creation BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS require_stop_note BOOLEAN NOT NULL DEFAULT false`,
