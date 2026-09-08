@@ -28,6 +28,7 @@ describe("TaskProgressPanel", () => {
         <TaskProgressPanel
           taskLessSession={true}
           taskTracking={baseTaskTracking}
+        taskPriority=""
           taskEstimateSeconds={36000}
           taskRegularPercent={100}
           taskOvertimePercent={0}
@@ -45,6 +46,7 @@ describe("TaskProgressPanel", () => {
       <TaskProgressPanel
         taskLessSession={false}
         taskTracking={{ ...baseTaskTracking, sharedBudget: true }}
+        taskPriority=""
         taskEstimateSeconds={36000}
         taskRegularPercent={100}
         taskOvertimePercent={0}
@@ -62,6 +64,7 @@ describe("TaskProgressPanel", () => {
       <TaskProgressPanel
         taskLessSession={false}
         taskTracking={{ ...baseTaskTracking, estimatedSeconds: null }}
+        taskPriority=""
         taskEstimateSeconds={0}
         taskRegularPercent={0}
         taskOvertimePercent={0}
@@ -80,6 +83,7 @@ describe("TaskProgressPanel", () => {
       <TaskProgressPanel
         taskLessSession={false}
         taskTracking={baseTaskTracking}
+        taskPriority=""
         taskEstimateSeconds={36000}
         taskRegularPercent={80}
         taskOvertimePercent={20}
@@ -98,6 +102,7 @@ describe("TaskProgressPanel", () => {
       <TaskProgressPanel
         taskLessSession={false}
         taskTracking={baseTaskTracking}
+        taskPriority=""
         taskEstimateSeconds={36000}
         taskRegularPercent={100}
         taskOvertimePercent={0}
@@ -113,6 +118,7 @@ describe("TaskProgressPanel", () => {
       <TaskProgressPanel
         taskLessSession={false}
         taskTracking={{ ...baseTaskTracking, progressPercent: null }}
+        taskPriority=""
         taskEstimateSeconds={36000}
         taskRegularPercent={100}
         taskOvertimePercent={0}
@@ -123,5 +129,40 @@ describe("TaskProgressPanel", () => {
       />,
     );
     expect(withoutProgress).not.toContain("task-progress-block");
+  });
+
+  it("shows the task's priority as a badge, and nothing when it has none", () => {
+    const withPriority = renderToStaticMarkup(
+      <TaskProgressPanel
+        taskLessSession={false}
+        taskTracking={baseTaskTracking}
+        taskPriority="urgent"
+        taskEstimateSeconds={36000}
+        taskRegularPercent={100}
+        taskOvertimePercent={0}
+        taskWorkedPercent={10}
+        taskIntoOvertime={false}
+        taskScheduleLabel=""
+        taskBudgetRemainingLabel="9h"
+      />,
+    );
+    expect(withPriority).toContain("badge bad");
+    expect(withPriority).toContain("Urgent");
+
+    const withoutPriority = renderToStaticMarkup(
+      <TaskProgressPanel
+        taskLessSession={false}
+        taskTracking={baseTaskTracking}
+        taskPriority=""
+        taskEstimateSeconds={36000}
+        taskRegularPercent={100}
+        taskOvertimePercent={0}
+        taskWorkedPercent={10}
+        taskIntoOvertime={false}
+        taskScheduleLabel=""
+        taskBudgetRemainingLabel="9h"
+      />,
+    );
+    expect(withoutPriority).not.toContain("badge");
   });
 });

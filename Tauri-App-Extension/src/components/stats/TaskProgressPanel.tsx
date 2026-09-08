@@ -1,9 +1,10 @@
-import { fmtHours } from "../../utils/formatters";
+import { fmtHours, taskPriorityTone, taskStatusLabel } from "../../utils/formatters";
 import type { TaskTimeTracking } from "../../types";
 
 type TaskProgressPanelProps = {
   taskLessSession: boolean;
   taskTracking: TaskTimeTracking | null;
+  taskPriority: string;
   taskEstimateSeconds: number;
   taskRegularPercent: number;
   taskOvertimePercent: number;
@@ -16,6 +17,7 @@ type TaskProgressPanelProps = {
 export function TaskProgressPanel({
   taskLessSession,
   taskTracking,
+  taskPriority,
   taskEstimateSeconds,
   taskRegularPercent,
   taskOvertimePercent,
@@ -29,7 +31,12 @@ export function TaskProgressPanel({
     <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
       <div className="stat-panel-head">
         <h3 className="stat-panel-title">This task</h3>
-        {taskTracking?.sharedBudget ? <span className="stat-panel-hint">shared across the team</span> : null}
+        <span className="stat-panel-head-right">
+          {taskTracking?.sharedBudget ? <span className="stat-panel-hint">shared across the team</span> : null}
+          {taskPriority ? (
+            <span className={`badge ${taskPriorityTone(taskPriority)}`}>{taskStatusLabel(taskPriority)}</span>
+          ) : null}
+        </span>
       </div>
 
       <div className="task-budget-row" style={{ marginTop: 9 }}>

@@ -76,6 +76,13 @@ export function taskStatusLabel(status: string): string {
   return trimmed.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function taskPriorityTone(priority: string): "neutral" | "warn" | "bad" {
+  const key = priority.trim().toLowerCase();
+  if (key === "urgent" || key === "critical") return "bad";
+  if (key === "high") return "warn";
+  return "neutral";
+}
+
 export function fmtLimitHours(hours: number): string {
   if (!hours || hours <= 0) return "No cap";
   return Number.isInteger(hours) ? `${hours}h` : `${hours.toFixed(1)}h`;

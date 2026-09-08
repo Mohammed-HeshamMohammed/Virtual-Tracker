@@ -1,17 +1,13 @@
 import type { TaskDetail } from "../../types";
 
-function priorityTone(priority: string): string {
-  const key = priority.trim().toLowerCase();
-  if (key === "urgent" || key === "critical") return "bad";
-  if (key === "high") return "warn";
-  return "neutral";
-}
-
 export function TaskDetailPanel({ detail }: { detail: TaskDetail | null }) {
   if (!detail) return null;
   const done = detail.subtasks.filter((s) => s.completed).length;
   const hasBody = Boolean(detail.description) || detail.subtasks.length > 0;
-  const hasMeta = Boolean(detail.priority) || Boolean(detail.dueDate);
+  // Priority now has its own badge on the primary task card above this one
+  // (TaskProgressPanel) - showing it a second time here would just repeat
+  // it, so this panel's own metadata row is down to the due date.
+  const hasMeta = Boolean(detail.dueDate);
   if (!hasBody && !hasMeta) return null;
 
   return (
@@ -27,9 +23,6 @@ export function TaskDetailPanel({ detail }: { detail: TaskDetail | null }) {
 
       {hasMeta ? (
         <div className="badge-row" style={{ marginBottom: 10 }}>
-          {detail.priority ? (
-            <span className={`badge ${priorityTone(detail.priority)}`}>{detail.priority}</span>
-          ) : null}
           {detail.dueDate ? <span className="badge warn">Due {detail.dueDate}</span> : null}
         </div>
       ) : null}

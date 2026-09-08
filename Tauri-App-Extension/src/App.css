@@ -940,6 +940,12 @@ body {
   gap: 10px;
 }
 
+.stat-panel-head-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .stat-panel-title {
   margin: 0;
   font-size: 10px;

@@ -52,6 +52,7 @@ import { NewTaskModal } from "./components/NewTaskModal";
 import { LogTimeModal } from "./components/LogTimeModal";
 import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
 import { TaskDetailPanel } from "./components/stats/TaskDetailPanel";
+import { ProjectDetailPanel } from "./components/stats/ProjectDetailPanel";
 import { TitleBar } from "./components/common/TitleBar";
 import { TimezonePicker } from "./components/common/TimezonePicker";
 import { Icon } from "./components/common/Icon";
@@ -1941,6 +1942,7 @@ function MainApp() {
                 <TaskProgressPanel
                   taskLessSession={taskLessSession}
                   taskTracking={taskTracking}
+                  taskPriority={taskDetail?.priority ?? ""}
                   taskEstimateSeconds={taskEstimateSeconds}
                   taskRegularPercent={taskRegularPercent}
                   taskOvertimePercent={taskOvertimePercent}
@@ -1950,7 +1952,11 @@ function MainApp() {
                   taskBudgetRemainingLabel={taskBudgetRemainingLabel}
                 />
 
-                {taskLessSession ? null : <TaskDetailPanel detail={taskDetail} />}
+                {taskLessSession ? (
+                  <ProjectDetailPanel project={selectedProject} />
+                ) : (
+                  <TaskDetailPanel detail={taskDetail} />
+                )}
 
                 {idleStage >= 3 ? (
                   <p className={`page-idle-banner stage-${idleStage}`}>
