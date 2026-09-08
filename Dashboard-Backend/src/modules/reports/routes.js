@@ -11,7 +11,8 @@ import {
   getTimeAndActivityReportRowsPg,
 } from "../../lib/postgres/time-and-activity-report-postgres.service.js";
 import { buildTimeAndActivityReportPayload } from "./build-time-and-activity-rows.js";
-import { getMemberTimezones } from "./member-timezones.js";
+import { getMemberTimezone, getMemberTimezones } from "./member-timezones.js";
+import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
@@ -812,7 +813,12 @@ export async function routeReports(req, res, url, origin) {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
 
-    const to = parseDateParam(url.searchParams.get("to")) || new Date().toISOString().slice(0, 10);
+    // "As of" defaults to the viewer's own today, not the server's - a
+    // viewer checking this near midnight in their own zone should see a
+    // balance as of the day they're actually living in.
+    const to =
+      parseDateParam(url.searchParams.get("to")) ||
+      localDayFor(new Date(), await getMemberTimezone(viewer.memberId));
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const balances = await getTimeOffBalanceRowsPg({ memberIds, asOf: to });

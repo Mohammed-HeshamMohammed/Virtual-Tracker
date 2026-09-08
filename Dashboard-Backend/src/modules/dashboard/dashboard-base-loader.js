@@ -10,6 +10,7 @@ import {
   computeProjectSpentForAllPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { getRollingWeekDays } from "./dashboard-utils.js";
+import { addLocalDays } from "../../lib/time/timezone-utils.js";
 
 function pgRowsToSerialized(rows) {
   return rows.map((row) => ({ id: row.id, data: row }));
@@ -36,8 +37,15 @@ export function pseudoDocsFromSerialized(rows) {
 }
 
 async function fetchFreshBase(db) {
+  // Shared across every viewer, so there is no single "correct" timezone to
+  // fetch in - a viewer far enough ahead of UTC (up to +14h) can have their
+  // real local Monday start before UTC's Monday does. Fetching from one
+  // calendar day earlier than the UTC week start safely covers that (14h <
+  // 24h), so per-viewer filtering downstream (getRollingWeekDays(timeZone) in
+  // command-center-service.js/general-dashboard-service.js) never has to
+  // reach for data this base fetch already excluded.
   const weekDays = getRollingWeekDays();
-  const weekStartKey = weekDays[0].dateKey;
+  const weekStartKey = addLocalDays(weekDays[0].dateKey, -1);
 
   const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),

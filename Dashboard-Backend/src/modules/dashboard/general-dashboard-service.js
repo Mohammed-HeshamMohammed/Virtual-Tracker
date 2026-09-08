@@ -16,22 +16,23 @@ import {
   getRollingWeekDays,
   normalizeRole,
   num,
-  startOfDay,
   str,
   timestampMs,
   toIso,
 } from "./dashboard-utils.js";
+import { addLocalDays, localDayFor, localMidnightUtc } from "../../lib/time/timezone-utils.js";
+import { getMemberTimezone } from "../reports/member-timezones.js";
 
-function getLastNDays(n) {
+function getLastNDays(n, timeZone = "UTC") {
   const days = [];
-  const today = startOfDay();
+  const today = localDayFor(new Date(), timeZone);
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - i);
+    const dateKey = addLocalDays(today, -i);
+    const startMs = localMidnightUtc(dateKey, timeZone).getTime();
     days.push({
-      dateKey: d.toISOString().slice(0, 10),
-      startMs: d.getTime(),
-      endMs: d.getTime() + 86_400_000 - 1,
+      dateKey,
+      startMs,
+      endMs: localMidnightUtc(addLocalDays(dateKey, 1), timeZone).getTime() - 1,
     });
   }
   return days;
@@ -101,11 +102,17 @@ export function buildViewPayload({
   memberMeta,
   projectNameById,
   viewerMemberId,
+  timeZone = "UTC",
 }) {
-  const todayKey = startOfDay().toISOString().slice(0, 10);
-  const weekDays = getRollingWeekDays();
+  // This is the viewer's own dashboard - "today" and "this week" are the
+  // viewer's own local day/week, not the server's. Using startOfDay() here
+  // (an instant) and re-deriving a date string from its UTC ISO form would
+  // be wrong by a day near midnight in any zone ahead of or behind UTC;
+  // localDayFor asks directly, in the zone that actually matters.
+  const todayKey = localDayFor(new Date(), timeZone);
+  const weekDays = getRollingWeekDays(timeZone);
   const weekDateKeys = new Set(weekDays.map((d) => d.dateKey));
-  const sparkDays = getLastNDays(6);
+  const sparkDays = getLastNDays(6, timeZone);
 
   const workedByDay = new Map();
   const spentByDay = new Map();
@@ -352,6 +359,7 @@ function buildTrendPaths(values) {
 }
 
 export async function getGeneralDashboardPayload(db, viewerMemberId) {
+  const timeZone = await getMemberTimezone(viewerMemberId);
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
   const isOwner = roleKey === "owner";
@@ -366,10 +374,10 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
   const allMemberIds = scope.targetMemberIds;
   const meMemberIds = [viewerMemberId];
 
-  const weekDays = getRollingWeekDays();
+  const weekDays = getRollingWeekDays(timeZone);
   const weekStartKey = weekDays[0].dateKey;
 
-  const sparkStartDay = getLastNDays(6)[0].dateKey;
+  const sparkStartDay = getLastNDays(6, timeZone)[0].dateKey;
   const base = await loadDashboardBase(db);
   const [screenshotRows, appRows, sessionIndex] = await Promise.all([
     fetchPgScreenshots(allMemberIds, null, 5000, { sinceDay: sparkStartDay }),
@@ -514,6 +522,7 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
     screenshots,
     appLogs,
     viewerMemberId,
+    timeZone,
   };
 
   return {
