@@ -877,7 +877,16 @@ impl AgentController {
     }
 
     pub fn set_member_timezone(&self, timezone: &str) -> Result<(), String> {
-        self.api.lock().update_member_timezone(timezone)
+        self.api.lock().update_member_timezone(timezone)?;
+        // Cached locally too, same reason theme is: readable synchronously
+        // at startup so the picker and header clock show what was chosen
+        // last, instead of this machine's own zone, before the profile
+        // fetch resolves (or if it fails). Best-effort - a write failure
+        // here must not undo a save the server already accepted.
+        let mut prefs = self.get_app_settings().preferences;
+        prefs.member_timezone = timezone.to_string();
+        let _ = self.save_preferences(prefs);
+        Ok(())
     }
 
     /// CF-2: tracking cannot start before the current disclosure notice has

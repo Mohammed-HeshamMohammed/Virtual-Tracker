@@ -174,6 +174,12 @@ function MainApp() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [savingTimezone, setSavingTimezone] = useState(false);
+  // Seeded from disk at startup (see get_app_settings below) so the picker
+  // and header clock show the zone last chosen immediately - not this
+  // machine's own zone - before get_member_profile resolves, or if it
+  // fails. memberProfile.timezone wins the moment it loads; this is only
+  // the bridge until then.
+  const [cachedTimezone, setCachedTimezone] = useState("");
   const [avatarError, setAvatarError] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [refreshingData, setRefreshingData] = useState(false);
@@ -715,7 +721,9 @@ function MainApp() {
     try {
       setMemberProfile(await invoke<MemberProfile | null>("get_member_profile"));
     } catch {
-      setMemberProfile(null);
+      // Keeps whatever was already loaded (including the timezone the
+      // header clock and picker read) rather than blanking it on a dropped
+      // request - same reasoning as refreshProjects/refreshAssignedTasks.
     }
   }, [signedIn]);
 
@@ -883,6 +891,7 @@ function MainApp() {
     void invoke<AppSettingsView>("get_app_settings")
       .then((s) => {
         if (s?.preferences?.theme) setThemePref(s.preferences.theme);
+        if (s?.preferences?.memberTimezone) setCachedTimezone(s.preferences.memberTimezone);
       })
       .catch(() => {
         /* Falls back to "system", which is also the stored default. */
@@ -1385,6 +1394,10 @@ function MainApp() {
     setActionError(null);
     try {
       await invoke("set_member_timezone", { timezone: zone });
+      // The server accepted it (a rejected zone would have thrown above), so
+      // this much is now safe to cache - unlike memberProfile.timezone
+      // below, which still gets a real re-read rather than a local patch.
+      setCachedTimezone(zone);
       // Re-read rather than patching locally: the server is what decides the
       // stored value, and a rejected zone must not leave the picker showing a
       // selection that was never saved.
@@ -1405,6 +1418,9 @@ function MainApp() {
     }
   }
 
+  // The authoritative value the moment it loads; the cached one only bridges
+  // the gap before that (or across a failed refresh) - see cachedTimezone.
+  const displayTimezone = memberProfile?.timezone || cachedTimezone;
   const footerName = memberProfile?.name || displayName;
   const footerEmail = memberProfile?.email || profile?.email || "";
   const footerRole = memberProfile?.role || "";
@@ -1835,7 +1851,7 @@ function MainApp() {
           <section className="page-area">
             <div className="page-header">
               <div className="page-header-titles">
-                <span className="page-header-clock">{fmtWallClock(wallClockNow)}</span>
+                <span className="page-header-clock">{fmtWallClock(wallClockNow, displayTimezone || undefined)}</span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
               <div className="page-header-actions">
@@ -1914,7 +1930,7 @@ function MainApp() {
                     </button>
                   ) : null}
                   <TimezonePicker
-                    value={memberProfile?.timezone ?? ""}
+                    value={displayTimezone}
                     onSelect={handleSelectTimezone}
                     saving={savingTimezone}
                   />

@@ -52,6 +52,7 @@ export type UserPreferences = {
   hasLaunchedBefore: boolean;
   trayNoticeShown: boolean;
   theme: ThemePreference;
+  memberTimezone: string;
 };
 
 export type AppSettingsView = {

@@ -6,14 +6,15 @@ export function fmtClock(totalSeconds: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-/** "2:02 PM" - the device's own current wall-clock time, 12-hour with
- *  AM/PM. `hour: "numeric"` (not "2-digit") is deliberate: a 12-hour clock
- *  reads "2:02 PM", not "02:02 PM" - 2-digit only makes sense once hour12
- *  is off. Same rule TimezonePicker's clockOf uses for a selected zone;
- *  this one always reads the system's own zone (no `timeZone` option). */
-export function fmtWallClock(at: number | Date = Date.now()): string {
+/** "2:02 PM" - current wall-clock time in `timeZone` (the device's own zone
+ *  when omitted), 12-hour with AM/PM. `hour: "numeric"` (not "2-digit") is
+ *  deliberate: a 12-hour clock reads "2:02 PM", not "02:02 PM" - 2-digit
+ *  only makes sense once hour12 is off. Same rule TimezonePicker's
+ *  clockOf uses. */
+export function fmtWallClock(at: number | Date = Date.now(), timeZone?: string): string {
   try {
     return new Intl.DateTimeFormat("en-US", {
+      timeZone,
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

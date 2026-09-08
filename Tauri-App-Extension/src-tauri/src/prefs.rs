@@ -41,6 +41,14 @@ pub struct UserPreferences {
     /// and so the window can be painted before the first React render.
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Last IANA zone the member picked (get_member_profile's own copy is
+    /// the source of truth once it loads). Cached here for the same reason
+    /// theme is: readable synchronously at startup, before the profile
+    /// fetch resolves - or if it fails - so the picker and header clock
+    /// show what was chosen last instead of falling back to this machine's
+    /// own zone.
+    #[serde(default)]
+    pub member_timezone: String,
 }
 
 fn default_theme() -> String {
@@ -57,6 +65,7 @@ impl Default for UserPreferences {
             has_launched_before: false,
             tray_notice_shown: false,
             theme: default_theme(),
+            member_timezone: String::new(),
         }
     }
 }
@@ -132,5 +141,13 @@ mod tests {
         assert!(prefs.auto_sign_in);
         assert!(prefs.close_to_tray);
         assert!(!prefs.start_hidden);
+    }
+
+    #[test]
+    fn loads_preferences_written_before_member_timezone_existed() {
+        let old = r#"{"launchAtLogin":true,"theme":"dark"}"#;
+        let prefs: UserPreferences = serde_json::from_str(old).expect("old file must still parse");
+        assert_eq!(prefs.theme, "dark");
+        assert_eq!(prefs.member_timezone, "");
     }
 }
