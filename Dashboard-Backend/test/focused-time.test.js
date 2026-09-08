@@ -76,6 +76,7 @@ mock.module("../src/lib/postgres/classification-postgres.service.js", {
 });
 
 const { getFocusedTimeSummary } = await import("../src/modules/classification/focused-time.js");
+const { invalidateCategoryCache } = await import("../src/modules/classification/activity-categories.js");
 
 function categoryRow(matchType, pattern, category, roleOverride = {}) {
   return {
@@ -93,6 +94,10 @@ function categoryRow(matchType, pattern, category, roleOverride = {}) {
 }
 
 function reset() {
+  // getAllCategories() memoises for 15s (see activity-categories.js). Each
+  // test here swaps categoryRows underneath it, so the cache has to be
+  // cleared or a test reads the previous test's classifications.
+  invalidateCategoryCache();
   memberRole = "Employee";
   categoryRows = [
     categoryRow("app", "code.exe", "productive"),

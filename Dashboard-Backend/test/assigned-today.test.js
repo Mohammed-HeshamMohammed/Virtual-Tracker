@@ -148,3 +148,30 @@ test("computeAssignedTodayDemand sums due() across every open assignment and buc
   assert.equal(result.byProjectType.normal, 1 * HOUR);
   assert.equal(result.byProjectType.calling, 2 * HOUR);
 });
+
+test("total: every open assignment counts, including ones nothing is due on today", async () => {
+  stub.rows = [
+    // Due today: no daily schedule, so the whole remainder falls due.
+    { project_id: "p1", expected_seconds: 4 * HOUR, worked_seconds: 1 * HOUR, project_type: "normal", duration_hours_per_day: 0 },
+    // Not due today at all - starts in the future - but still assigned.
+    {
+      project_id: "p2",
+      expected_seconds: 6 * HOUR,
+      worked_seconds: 0,
+      project_type: "normal",
+      start_date: "2999-01-01",
+      duration_hours_per_day: 2,
+      working_days: 3,
+    },
+    // Same project as the first row, and overrun: worked past the estimate.
+    { project_id: "p1", expected_seconds: 2 * HOUR, worked_seconds: 3 * HOUR, project_type: "normal", duration_hours_per_day: 0 },
+  ];
+  const { total } = await computeAssignedTodayDemand("member-1");
+  assert.equal(total.assignedSeconds, 12 * HOUR);
+  assert.equal(total.workedSeconds, 4 * HOUR);
+  // 3h left on the first, 6h on the second, and the overrun contributes 0 -
+  // it must not eat another assignment's outstanding hours.
+  assert.equal(total.remainingSeconds, 9 * HOUR);
+  assert.equal(total.taskCount, 3);
+  assert.equal(total.projectCount, 2);
+});

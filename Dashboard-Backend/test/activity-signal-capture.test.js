@@ -45,6 +45,10 @@ const { insertActivityScreenshot, insertActivityAppLog } = await import(
   "../src/lib/postgres/activity-events-postgres.service.js"
 );
 
+// These assert on parameter POSITION, counted from the end of the insert.
+// Adding a column to activity_screenshots shifts them - that is the cost of
+// checking the values actually handed to the driver rather than trusting a
+// column list. Signal fields sit at -8..-4, perceptual hash at -3.
 const MEMBER_ID = "11111111-1111-4111-8111-111111111111";
 
 function reset() {
@@ -67,7 +71,7 @@ test("a screenshot with no signal at all persists zeros, not a crash", async () 
   assert.equal(calls.length, 1);
   const params = calls[0].params;
   // The 5 ACT-4 signal columns precede the trailing AC-2 perceptual_hash column.
-  assert.deepEqual(params.slice(-6, -1), [0, 0, 0, 0, 0]);
+  assert.deepEqual(params.slice(-8, -3), [0, 0, 0, 0, 0]);
 });
 
 test("a screenshot's signal values are persisted exactly, not just defaulted", async () => {
@@ -90,7 +94,7 @@ test("a screenshot's signal values are persisted exactly, not just defaulted", a
     },
   });
   const params = calls[0].params;
-  assert.deepEqual(params.slice(-6, -1), [40, 15, 1234, 2, 58]);
+  assert.deepEqual(params.slice(-8, -3), [40, 15, 1234, 2, 58]);
 });
 
 test("a negative or non-numeric signal field is clamped to 0, not rejected", async () => {
@@ -107,10 +111,10 @@ test("a negative or non-numeric signal field is clamped to 0, not rejected", asy
     signal: { keystrokeCount: -5, distinctKeyCount: "lots", mouseDistancePx: 3.9 },
   });
   const params = calls[0].params;
-  assert.deepEqual(params.slice(-6, -1), [0, 0, 3, 0, 0]);
+  assert.deepEqual(params.slice(-8, -3), [0, 0, 3, 0, 0]);
 });
 
-test("a screenshot's perceptual hash is persisted as the trailing column", async () => {
+test("a screenshot's perceptual hash is persisted", async () => {
   reset();
   await insertActivityScreenshot({
     id: "77777777-7777-7777-7777-777777777777",
@@ -123,7 +127,7 @@ test("a screenshot's perceptual hash is persisted as the trailing column", async
     source: "agent",
     perceptualHash: "abcdef0123456789",
   });
-  assert.equal(calls[0].params.at(-1), "abcdef0123456789");
+  assert.equal(calls[0].params.at(-3), "abcdef0123456789");
 });
 
 test("a missing perceptual hash persists null, not a crash", async () => {
@@ -138,7 +142,7 @@ test("a missing perceptual hash persists null, not a crash", async () => {
     capturedAt: new Date(),
     source: "agent",
   });
-  assert.equal(calls[0].params.at(-1), null);
+  assert.equal(calls[0].params.at(-3), null);
 });
 
 test("a merged app-log row accumulates the signal instead of overwriting it", async () => {

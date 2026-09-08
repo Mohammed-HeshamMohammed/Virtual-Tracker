@@ -340,7 +340,12 @@ export async function routeActivity(req, res, url, origin) {
           : null,
       ]);
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
-      const assignedToday = applyCapToAssignedTodayDemand(assignedDemand, capLeftToday);
+      // `total` is the whole open workload, not a property of today, so it
+      // travels as its own field rather than nested under assignedToday.
+      const { total: assignedTotal, ...assignedToday } = applyCapToAssignedTodayDemand(
+        assignedDemand,
+        capLeftToday,
+      );
       sendJson(res, origin, 200, {
         success: true,
         data: {
@@ -349,6 +354,7 @@ export async function routeActivity(req, res, url, origin) {
           usesShifts,
           timerAllowance,
           assignedToday,
+          assignedTotal,
           workingToday: todayWorkStatus.workingToday,
           isMakeupDay: todayWorkStatus.isMakeupDay,
           todayActivity,

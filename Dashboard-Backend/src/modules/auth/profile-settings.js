@@ -5,6 +5,7 @@ import { resolveMemberDisplayName, sanitizeMemberNamePart, assertValidMemberName
 import { assertValidPhone } from "../../http/validate-body.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
+import { __clearMemberTimezoneCache } from "../reports/member-timezones.js";
 
 async function syncMemberEmailForUid(db, uid, email) {
   if (!uid) return;
@@ -52,6 +53,14 @@ export async function syncMemberTimezoneForUid(db, uid, timezone) {
     "UPDATE members SET timezone = $2, updated_at = now(), updated_by = $1 WHERE firebase_uid = $1",
     [uid, timezone],
   );
+  // Deliberate edits have to land now, not in up to a minute. getMemberTimezone
+  // caches for 60s (it is read on every allowance check), so without this the
+  // caps would keep resetting on the *old* zone's midnight right after someone
+  // picked a new one - which is exactly the moment they are looking at them.
+  // Clears every entry rather than one member's: the write is keyed by
+  // firebase_uid, the cache by member id, and re-reading a handful of zones
+  // costs far less than the wrong day boundary.
+  __clearMemberTimezoneCache();
 }
 
 export async function syncUserProfilePhoneForUid(db, uid, phone, options = {}) {
