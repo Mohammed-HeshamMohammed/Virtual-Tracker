@@ -309,16 +309,35 @@ function MainApp() {
     setLoadingProfile(false);
   }, []);
 
+  // usePolling below fires the very first list_projects/list_tasks call the
+  // instant these mount - squarely inside the app's cold-start auth/session
+  // setup, where a single lost race is common and self-resolves in a couple
+  // seconds. Treating that first miss as final used to flip straight from
+  // skeleton to "Couldn't load your X" with nothing recovering it until the
+  // next 30s poll tick. These refs let a fail handler read the just-updated
+  // count synchronously (a setState updater running the retry as a side
+  // effect would get double-invoked under StrictMode) to decide: reveal the
+  // failure only on a second consecutive miss, and in between, retry fast
+  // instead of waiting out the full poll interval in silence.
+  const projectsFailCountRef = useRef(0);
+  const projectsQuickRetryRef = useRef(false);
+  const assignedTasksFailCountRef = useRef(0);
+  const assignedTasksQuickRetryRef = useRef(false);
+
   const refreshProjects = useCallback(async () => {
     if (!signedIn) {
       setProjects([]);
       setSelectedProjectId("");
+      projectsFailCountRef.current = 0;
+      setProjectsFailCount(0);
       return;
     }
     try {
       const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
+      projectsFailCountRef.current = 0;
       setProjectsFailCount(0);
+      setProjectsLoaded(true);
       setSelectedProjectId((current) =>
         current && next.some((p) => p.id === current && !p.budgetExhausted) ? current : "",
       );
@@ -326,26 +345,46 @@ function MainApp() {
       // The list we already have is still the truest thing we know. Blanking it
       // turned every dropped poll into an empty sidebar with a "Couldn't load"
       // banner, which is exactly the flicker this avoids - the copy now only
-      // appears when the very first load came back with nothing.
-      setProjectsFailCount((n) => n + 1);
-    } finally {
-      setProjectsLoaded(true);
+      // appears once loaded, and loaded only flips on success or a second miss.
+      projectsFailCountRef.current += 1;
+      setProjectsFailCount(projectsFailCountRef.current);
+      if (projectsFailCountRef.current >= 2) {
+        setProjectsLoaded(true);
+      } else if (!projectsQuickRetryRef.current) {
+        projectsQuickRetryRef.current = true;
+        window.setTimeout(() => {
+          projectsQuickRetryRef.current = false;
+          void refreshProjects();
+        }, 3000);
+      }
     }
   }, [signedIn]);
 
   const refreshAssignedTasks = useCallback(async () => {
     if (!signedIn) {
       setAssignedTasks([]);
+      assignedTasksFailCountRef.current = 0;
+      setAssignedTasksFailCount(0);
       return;
     }
     try {
       const next = await invoke<AgentTask[]>("list_tasks", { projectId: null });
       setAssignedTasks(next);
+      assignedTasksFailCountRef.current = 0;
       setAssignedTasksFailCount(0);
-    } catch {
-      setAssignedTasksFailCount((n) => n + 1);
-    } finally {
       setAssignedTasksLoaded(true);
+    } catch {
+      assignedTasksFailCountRef.current += 1;
+      setAssignedTasksFailCount(assignedTasksFailCountRef.current);
+      if (assignedTasksFailCountRef.current >= 2) {
+        setAssignedTasksLoaded(true);
+      } else if (!assignedTasksQuickRetryRef.current) {
+        assignedTasksQuickRetryRef.current = true;
+        window.setTimeout(() => {
+          assignedTasksQuickRetryRef.current = false;
+          void refreshAssignedTasks();
+        }, 3000);
+      }
     }
   }, [signedIn]);
 
