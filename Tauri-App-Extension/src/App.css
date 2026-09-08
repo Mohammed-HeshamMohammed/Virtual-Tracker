@@ -839,6 +839,20 @@ body {
 }
 
 .page-clock {
+  /* Every ".page-content-swap" sibling (this card, .stats-stack, the task
+     panels below) carries the fade-slide-up entrance animation, and any
+     element with an animation touching opacity/transform forms its OWN
+     stacking context in Chromium - permanently, not just while it plays,
+     since animation-fill-mode: both keeps it "in effect". .stats-stack
+     comes later in the DOM and forms that same kind of context with no
+     z-index of its own, so its whole subtree painted as one block ON TOP
+     of this card's - trapping the dropdown menu's z-index below behind
+     content it should float above, no matter how high that z-index was.
+     An explicit z-index here makes this card's context itself outrank the
+     later siblings', so everything inside it (the open menu included)
+     actually wins the comparison instead of losing before it starts. */
+  position: relative;
+  z-index: 2;
   display: flex;
   /* Was baseline: fine while every child was text, but the tz-picker is a
      button with its own box model, and baseline-aligning it against the
@@ -3974,6 +3988,33 @@ select.modal-input {
      the app's other popovers/menus sit on. */
   background: rgb(var(--c-surface-high));
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+/* Sits above the search field and option list - the live time for whatever
+   zone is currently selected, kept visible while browsing other zones. */
+.tz-menu-clock {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 8px;
+  border-bottom: 1px solid rgb(var(--c-line) / 0.4);
+}
+
+.tz-menu-clock-time {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface);
+}
+
+.tz-menu-clock-zone {
+  font-size: 11px;
+  color: var(--on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tz-search {

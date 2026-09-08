@@ -173,6 +173,12 @@ export function TimezonePicker({
 
       {open ? (
         <div className="tz-menu" role="dialog" aria-label="Choose a timezone">
+          <div className="tz-menu-clock">
+            <span className="tz-menu-clock-time">{clockOf(current, now)}</span>
+            <span className="tz-menu-clock-zone">
+              {cityOf(current)} · {offsetOf(current)}
+            </span>
+          </div>
           <input
             ref={inputRef}
             className="tz-search"
