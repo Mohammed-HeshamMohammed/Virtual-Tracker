@@ -6,6 +6,7 @@ import {
   countWorkingDaysBetween,
   computeTaskDailyHours,
 } from "./task-schedule-math.js";
+import { loadPerPersonProjectBudgetTotals } from "./timer-limit.service.js";
 
 export function computeAssignmentDueToday(row, today = new Date()) {
   const worked = Number(row.worked_seconds ?? 0) || 0;
@@ -48,6 +49,56 @@ async function fetchOpenAssignmentRowsForMember(memberId) {
 }
 
 /**
+ * Projects this member belongs to that never have tasks at all - calling,
+ * support: the project itself is what gets clocked against, via
+ * project_members, not task_assignments. computeAssignedTodayDemand's main
+ * query is task_assignments-rooted, so a member who only clocks into
+ * projects like these produced zero rows there and vanished from "assigned
+ * to me" entirely, even while actively tracking time against a real budget.
+ */
+async function fetchTaskLessProjectMembershipsForMember(memberId) {
+  const rows = await query(
+    `SELECT pm.project_id, p.type AS project_type
+     FROM project_members pm
+     JOIN projects p ON p.id = pm.project_id
+     WHERE pm.member_id = $1 AND p.status <> 'archived'`,
+    [memberId],
+  );
+  return rows.filter((row) => isTaskLessProjectType(row.project_type));
+}
+
+/**
+ * Rolls those task-less memberships into the same shape accumulateTaskRowTotals
+ * produces. Every project the member belongs to counts toward
+ * `projectIds` (that's the membership fact this exists to surface) but
+ * only contributes hours when it declares a per-person Hours-based budget
+ * - loadPerPersonProjectBudgetTotals, the exact rule that already gates
+ * this member's timer on the same project. A membership with no such
+ * budget has no numeric target to report; it still shows up in the
+ * project count, just with nothing added to assigned/worked/remaining.
+ */
+async function accumulateTaskLessProjectTotals(memberId, projectIds) {
+  const memberships = await fetchTaskLessProjectMembershipsForMember(memberId);
+  const budgets = await Promise.all(
+    memberships.map((row) => loadPerPersonProjectBudgetTotals(row.project_id, memberId)),
+  );
+
+  let assignedSeconds = 0;
+  let workedSeconds = 0;
+  let remainingSeconds = 0;
+  memberships.forEach((row, i) => {
+    projectIds.add(row.project_id);
+    const budget = budgets[i];
+    if (!budget) return;
+    assignedSeconds += budget.capSeconds;
+    workedSeconds += budget.spentSeconds;
+    remainingSeconds += Math.max(0, budget.capSeconds - budget.spentSeconds);
+  });
+
+  return { assignedSeconds, workedSeconds, remainingSeconds };
+}
+
+/**
  * Everything still on this person's plate, ignoring the calendar entirely.
  *
  * "Assigned today" answers "what does my schedule owe today"; this answers
@@ -62,11 +113,10 @@ async function fetchOpenAssignmentRowsForMember(memberId) {
  * `remaining`, which is computed per assignment so one overrun task cannot
  * eat another task's outstanding hours.
  */
-function totalsFromRows(rows) {
+function accumulateTaskRowTotals(rows, projectIds) {
   let assignedSeconds = 0;
   let workedSeconds = 0;
   let remainingSeconds = 0;
-  const projectIds = new Set();
 
   for (const row of rows) {
     const expected = Number(row.expected_seconds ?? estimateAssignmentSeconds(row) ?? 0) || 0;
@@ -77,13 +127,7 @@ function totalsFromRows(rows) {
     if (row.project_id) projectIds.add(row.project_id);
   }
 
-  return {
-    assignedSeconds,
-    workedSeconds,
-    remainingSeconds,
-    taskCount: rows.length,
-    projectCount: projectIds.size,
-  };
+  return { assignedSeconds, workedSeconds, remainingSeconds };
 }
 
 export async function computeAssignedTodayDemand(memberId) {
@@ -104,7 +148,23 @@ export async function computeAssignedTodayDemand(memberId) {
     byProjectType[bucket] += due;
   }
 
-  return { demandSeconds, rolloverSeconds, taskCount, byProjectType, total: totalsFromRows(rows) };
+  // "Assigned today" stays task_assignments-only above - task-less projects
+  // have no daily schedule to be due against. The un-scheduled total below
+  // is where they belong: every project this person can clock into, task
+  // or no task.
+  const projectIds = new Set();
+  const taskTotals = accumulateTaskRowTotals(rows, projectIds);
+  const taskLessTotals = await accumulateTaskLessProjectTotals(memberId, projectIds);
+
+  const total = {
+    assignedSeconds: taskTotals.assignedSeconds + taskLessTotals.assignedSeconds,
+    workedSeconds: taskTotals.workedSeconds + taskLessTotals.workedSeconds,
+    remainingSeconds: taskTotals.remainingSeconds + taskLessTotals.remainingSeconds,
+    taskCount: rows.length,
+    projectCount: projectIds.size,
+  };
+
+  return { demandSeconds, rolloverSeconds, taskCount, byProjectType, total };
 }
 
 export function applyCapToAssignedTodayDemand(demand, capLeftTodaySeconds) {

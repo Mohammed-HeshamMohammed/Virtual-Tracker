@@ -10,12 +10,43 @@ import assert from "node:assert/strict";
 
 const HOUR = 3600;
 
-/** @type {{ rows: Record<string, unknown>[] }} */
-const stub = { rows: [] };
+/**
+ * computeAssignedTodayDemand now runs two real, differently-shaped queries
+ * (task_assignments and project_members, plus a budget/tracked-seconds
+ * lookup per task-less project via timer-limit.service.js) against the same
+ * mocked query() function. A single shared `rows` array can't answer all of
+ * them correctly - it previously meant a "calling"-typed row meant for the
+ * task_assignments test would also get picked up as a task-less project
+ * membership, since nothing distinguished which query asked for it. Routing
+ * by a keyword in the SQL text keeps each stubbed independently, the way
+ * three separate tables actually behave.
+ * @type {{
+ *   rows: Record<string, unknown>[],
+ *   taskLessMemberships: Record<string, unknown>[],
+ *   budgetsByProject: Record<string, { type: string, scope: string, cost: number, include_non_billable_time?: boolean }>,
+ *   trackedSecondsByProject: Record<string, number>,
+ * }}
+ */
+const stub = { rows: [], taskLessMemberships: [], budgetsByProject: {}, trackedSecondsByProject: {} };
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    query: async () => stub.rows,
+    query: async (sql, params) => {
+      if (sql.includes("FROM task_assignments")) return stub.rows;
+      if (sql.includes("FROM project_members")) return stub.taskLessMemberships;
+      if (sql.includes("FROM project_budgets")) {
+        const projectId = params?.[0];
+        const budget = stub.budgetsByProject[projectId];
+        return budget ? [budget] : [];
+      }
+      if (sql.includes("FROM (")) {
+        // getProjectTrackedSecondsPg's UNION ALL subquery - projectId is
+        // params[0] (and again params[1], same value, one per branch).
+        const projectId = params?.[0];
+        return [{ total_seconds: stub.trackedSecondsByProject[projectId] ?? 0 }];
+      }
+      return [];
+    },
     __closePostgresPoolForTests: async () => null,
     getPostgresPool: async () => null,
     isPostgresConfigured: () => true,
@@ -174,4 +205,46 @@ test("total: every open assignment counts, including ones nothing is due on toda
   assert.equal(total.remainingSeconds, 9 * HOUR);
   assert.equal(total.taskCount, 3);
   assert.equal(total.projectCount, 2);
+});
+
+test("total: task-less (calling/support) project memberships count too, not just task_assignments", async () => {
+  stub.rows = [
+    { project_id: "p1", expected_seconds: 4 * HOUR, worked_seconds: 1 * HOUR, project_type: "normal", duration_hours_per_day: 0 },
+  ];
+  stub.taskLessMemberships = [
+    // Has a real per-person Hours-based budget: contributes hours.
+    { project_id: "p-calling", project_type: "calling" },
+    // No budget row at all (project_budgets has none for it): still a
+    // membership - counts toward projectCount - but adds no hours, since
+    // there is nothing to report a number against.
+    { project_id: "p-support-nobudget", project_type: "support" },
+    // Same project as the very first task_assignments row, reached via
+    // membership too (shouldn't double the project into the count).
+    { project_id: "p1", project_type: "calling" },
+  ];
+  stub.budgetsByProject = {
+    "p-calling": { type: "Hours based", scope: "per_person", cost: 5 /* hours */ },
+    // A per-project (shared) or Cost-based budget must not be treated as
+    // this member's personal quota - loadPerPersonProjectBudgetTotals
+    // already enforces that; this just confirms the wiring respects it.
+    p1: { type: "Hours based", scope: "per_project", cost: 999 },
+  };
+  stub.trackedSecondsByProject = { "p-calling": 2 * HOUR };
+
+  const { total } = await computeAssignedTodayDemand("member-1");
+
+  // 4h from the task row + 5h from the calling project's per-person budget.
+  assert.equal(total.assignedSeconds, 9 * HOUR);
+  // 1h from the task row + 2h tracked against the calling project's budget.
+  assert.equal(total.workedSeconds, 3 * HOUR);
+  assert.equal(total.remainingSeconds, 3 * HOUR + 3 * HOUR);
+  // task_assignments count is untouched by task-less memberships.
+  assert.equal(total.taskCount, 1);
+  // p1 (task_assignments) + p-calling + p-support-nobudget = 3 distinct
+  // projects; p1 reached again via membership doesn't double-count.
+  assert.equal(total.projectCount, 3);
+
+  stub.taskLessMemberships = [];
+  stub.budgetsByProject = {};
+  stub.trackedSecondsByProject = {};
 });

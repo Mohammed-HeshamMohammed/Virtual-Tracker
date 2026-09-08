@@ -147,7 +147,15 @@ export async function sumOtherAssigneesActiveSeconds(taskId, memberId) {
   }, 0);
 }
 
-async function loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId) {
+/**
+ * A member's per-person Hours-based project budget, cap and spend both -
+ * `null` when the project has no such budget (per-project scope, Cost
+ * based, or simply unset). Exported so assigned-today.service.js can fold
+ * task-less (calling/support) projects into "assigned to me" using the
+ * exact same rule this uses to gate a timer, rather than a second
+ * hand-rolled copy of it that could drift.
+ */
+export async function loadPerPersonProjectBudgetTotals(projectId, memberId) {
   if (!projectId) return null;
   const budget = await getProjectBudgetPg(projectId);
   if (!budget || budget.type !== "Hours based" || budget.scope !== "per_person") return null;
@@ -157,7 +165,12 @@ async function loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId) {
     memberId,
     includeNonBillable: budget.include_non_billable_time !== false,
   });
-  return Math.max(0, capSeconds - spentSeconds);
+  return { capSeconds, spentSeconds };
+}
+
+async function loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId) {
+  const totals = await loadPerPersonProjectBudgetTotals(projectId, memberId);
+  return totals ? Math.max(0, totals.capSeconds - totals.spentSeconds) : null;
 }
 
 function memberLimitWindow(limit, todayDay, weekStartDay) {
