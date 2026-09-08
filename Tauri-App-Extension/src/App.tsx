@@ -161,6 +161,7 @@ function MainApp() {
   const [liveTaskActiveSeconds, setLiveTaskActiveSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [savingTimezone, setSavingTimezone] = useState(false);
   const [avatarError, setAvatarError] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [refreshingData, setRefreshingData] = useState(false);
@@ -1318,6 +1319,23 @@ function MainApp() {
 
   const idleStage = session?.idleStage ?? 0;
   const displayName = loadingProfile ? "Loading…" : profile?.name || "Not signed in";
+  async function handleSelectTimezone(zone: string) {
+    if (savingTimezone) return;
+    setSavingTimezone(true);
+    setActionError(null);
+    try {
+      await invoke("set_member_timezone", { timezone: zone });
+      // Re-read rather than patching locally: the server is what decides the
+      // stored value, and a rejected zone must not leave the picker showing a
+      // selection that was never saved.
+      setMemberProfile(await invoke<MemberProfile | null>("get_member_profile"));
+    } catch (err) {
+      setActionError(typeof err === "string" ? err : "Could not save your timezone.");
+    } finally {
+      setSavingTimezone(false);
+    }
+  }
+
   const footerName = memberProfile?.name || displayName;
   const footerEmail = memberProfile?.email || profile?.email || "";
   const footerRole = memberProfile?.role || "";
@@ -1539,6 +1557,9 @@ function MainApp() {
         checkingUpdate={checkingUpdate}
         theme={themePref}
         onCycleTheme={handleCycleTheme}
+        timezone={memberProfile?.timezone ?? ""}
+        onSelectTimezone={isPanelView ? undefined : handleSelectTimezone}
+        savingTimezone={savingTimezone}
       />
 
       <div

@@ -892,6 +892,13 @@ impl ApiClient {
             date_added: str_field("dateAdded"),
             phone: str_field("phone"),
             teams: data.get("teams").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            // /api/members/current returns the member row as-is, so the column
+            // name is snake_case; accept the camelCase spelling too rather
+            // than depending on which shim the response came through.
+            timezone: {
+                let snake = str_field("timezone");
+                if snake.is_empty() { str_field("timeZone") } else { snake }
+            },
         })
     }
 

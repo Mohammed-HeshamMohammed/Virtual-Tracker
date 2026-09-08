@@ -116,8 +116,23 @@ export async function patchProfileSettings(auth, db, uid, body) {
 
   if ("timezone" in body) {
     const timezone = typeof body.timezone === "string" ? body.timezone.trim() : "";
-    if (timezone && !Intl.supportedValuesOf("timeZone").includes(timezone)) {
-      throw new Error("Not a recognized timezone.");
+    // Accept anything Intl can actually resolve, not just what
+    // `supportedValuesOf` lists. That list is canonical-only *and*
+    // ICU-version-dependent: this runtime reports `Asia/Calcutta` and
+    // `Europe/Kiev` while omitting the modern `Asia/Kolkata` / `Europe/Kyiv`
+    // that Chromium hands to a browser or WebView2 picker. Membership-testing
+    // it therefore rejected the exact ids our own clients offer, so a member
+    // in India or Ukraine could not save their timezone at all. Resolvability
+    // is the real requirement anyway - it is what every read path already
+    // uses (see canonicalizeTimeZone in lib/time/timezone-utils.js, which was
+    // written for these same aliases) - and it still rejects genuine junk,
+    // which throws a RangeError here.
+    if (timezone) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date());
+      } catch {
+        throw new Error("Not a recognized timezone.");
+      }
     }
     patch.timezone = timezone || null;
   }

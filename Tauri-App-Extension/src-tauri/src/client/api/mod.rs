@@ -336,6 +336,40 @@ impl ApiClient {
             .to_string())
     }
 
+    /// Change the signed-in member's own timezone (`members.timezone`).
+    ///
+    /// Deliberately the *same* endpoint and column the web profile page
+    /// writes, rather than an agent-local override: which calendar a member's
+    /// day boundaries resolve in has to have exactly one answer, and a second
+    /// per-install copy would need a precedence rule the moment the two
+    /// disagreed. Validated server-side against
+    /// `Intl.supportedValuesOf("timeZone")`, so an unknown id is rejected
+    /// there rather than silently stored.
+    pub fn update_member_timezone(&mut self, timezone: &str) -> Result<(), String> {
+        let auth = self.authorized().ok_or("Sign in to change your timezone.")?;
+        let url = format!("{}/api/auth/profile", self.api_url);
+        let res = self
+            .client
+            .post(url)
+            .header("Authorization", auth)
+            .json(&serde_json::json!({ "timezone": timezone }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|err| {
+                log::warn!("Timezone update network error: {err}");
+                "Could not reach the server.".to_string()
+            })?;
+        if res.status().is_success() {
+            return Ok(());
+        }
+        let body: serde_json::Value = res.json().unwrap_or(serde_json::Value::Null);
+        Err(body
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Could not save your timezone.")
+            .to_string())
+    }
+
     /// The same authorization gate a browser session passes
     /// (`POST /api/auth/session-bootstrap`): it creates or aligns the member
     /// record and refuses disabled, banned, unverified or must-change-password

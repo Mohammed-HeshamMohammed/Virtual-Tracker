@@ -260,6 +260,8 @@ export type MemberProfile = {
   dateAdded: string;
   phone: string;
   teams: number;
+  /** Member's own IANA zone (`members.timezone`); "" when never set. */
+  timezone: string;
 };
 
 export type WeeklyActivityDay = {

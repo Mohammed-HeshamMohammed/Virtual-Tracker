@@ -109,6 +109,47 @@ Every `tick()` (`tracker.rs:376-747`) fetches the session from the server (`fetc
 
 ### 3. Full idle escalation state machine
 
+> ### 🔴 Correction (fortify pass): this entire section described removed code
+>
+> The four-stage warn/alert/stop machine below **no longer exists in the agent.**
+> It was replaced by a single per-project threshold that stops and rewinds
+> immediately, with no notification stages ahead of it. Verified directly:
+>
+> - `tick_idle_escalation` now takes one `idle_threshold_sec` and, the moment
+>   `idle_for >= idle_threshold_sec`, goes straight to stop + rewind — there is
+>   no intermediate branch at all (`tracker.rs:847-874`). Its own doc comment
+>   says so: *"no separate org-wide warn/alert stages ahead of it"*
+>   (`tracker.rs:805-811`).
+> - `IdleWatch.stage` only ever holds **0** (reset, `tracker.rs:849`) or **3**
+>   (stopped, `tracker.rs:902`). Stages 1 and 2 are never assigned anywhere.
+> - `valid_idle_thresholds` (plural, the `warn < alert < stop` ordering check)
+>   is gone. What exists is `valid_idle_threshold` — singular, and the whole
+>   body is `threshold_sec > 0` (`tracker.rs:173-175`).
+> - `apply_idle_thresholds` takes a **single** `threshold_sec`
+>   (`tracker.rs:210-214`).
+> - `IDLE_FLAG_WARN_SEC` / `IDLE_FLAG_ALERT_SEC` / `IDLE_FLAG_STOP_SEC` no
+>   longer exist in `constants.rs`.
+> - The agent no longer even **fetches** the trio: `fetch_activity_scoring_settings`
+>   reads only `saturationEvents`, `windowMs`, `screenshotMinDelaySec`,
+>   `screenshotMaxDelaySec` and `idleThresholdSec` (`scoring.rs:39-45`).
+>
+> **Vestigial data, worth a cleanup decision:** `activity_scoring_settings`
+> still carries `idle_warn_sec` (300), `idle_alert_sec` (600) and
+> `idle_stop_sec` (900), all `NOT NULL` with `CHECK (... > 0)`
+> (`ensure-lookup-schema.js:971-973`), and management can still edit them. No
+> client reads them any more. They should either be removed or have their
+> now-inert status documented, so nobody tunes a value expecting an effect.
+>
+> The corrected behaviour is a two-state machine:
+>
+> | Stage | Condition | Action taken |
+> |---|---|---|
+> | 0 (working) | `idle_for < idle_threshold_sec` — the project's own allowance | Clears any prior stop state, records `active_at_last_input = active_total` as the rewind point (`tracker.rs:847-855`) |
+> | 3 (stopped) | `idle_for >= idle_threshold_sec` | **Immediately** rewinds active time to `active_at_last_input`, POSTs `"stop"`, ends the session (`tracker.rs:857-902`) |
+>
+> Everything below this box is retained for history but should be read as
+> superseded wherever it mentions warn/alert.
+
 `tick_idle_escalation()` — `tracker.rs:794-900`. Stages, in `IdleWatch.stage` (`tracker.rs:92-96`):
 
 | Stage | Threshold constant | Default | Action taken |
@@ -121,6 +162,8 @@ Every `tick()` (`tracker.rs:376-747`) fetches the session from the server (`fetc
 **Threshold sourcing**: the warn/alert/stop trio is **org-wide**, stored in `activity_scoring_settings` (`Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:970-973`: `idle_threshold_sec` default 60, `idle_warn_sec` default 300, `idle_alert_sec` default 600, `idle_stop_sec` default 900), editable only by management (`Dashboard-Backend/src/modules/activity/scoring-settings.js:33-72`, requires `isManagementRole`), pulled every 30 min via `fetch_activity_scoring_settings()` → `apply_idle_thresholds()` (`tracker.rs:216-223, 362-373`), and refused wholesale (not partially) unless `warn < alert < stop` (`valid_idle_thresholds`, `tracker.rs:173-175`; same check server-side at `scoring-settings.js:49-53`). Compile-time fallbacks are `IDLE_FLAG_WARN_SEC=300`, `IDLE_FLAG_ALERT_SEC=600`, `IDLE_FLAG_STOP_SEC=900` (`constants.rs:89,91,93`).
 
 The **per-project allowance** (`idle_threshold_sec_for_project` in `TickState`, `tracker.rs:127`) is a *completely separate* setting: `projects.idle_time_seconds`, default **450s / 7.5 minutes** (`ensure-lookup-schema.js:1091,1109`; same default echoed in `Dashboard-Backend/src/modules/tasks/task-time-tracking.js:263` and `Dashboard-Backend/src/modules/activity/routes.js:253`, and mirrored as the Rust deserialization fallback `default_idle_time_seconds() -> 450` at `Tauri-App-Extension/src-tauri/src/types.rs:295-300`). It is configured per project via a free-text hours/minutes picker in the project modal (`Dashboard-Web/features/projects/components/modals/project-modal.tsx:1137-1183`; default `"7.5"` minutes at line 165) with **no upper bound** — the value sent to the API is only floored at 0 (`Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60))`, line 305).
+
+**🔴 Superseded by the correction box above — there are no warn/alert stages to skip.** The analysis below described the removed three-stage design; the allowance is now the single stop threshold, so "skipping" is not a failure mode, it is the only behaviour. Retained for history.
 
 **Confirmed: the warn stage (and, for large enough allowances, the alert stage too) can be skipped.** `tick_idle_escalation` only starts evaluating the warn/alert/stop thresholds once `idle_for >= idle_threshold_sec` (the allowance) — see the early-return at `tracker.rs:829-836`. The very first tick where that's true, `idle_for` is already approximately equal to the allowance. If the allowance exceeds `idle_alert_sec` (600s/10min), that first evaluation already satisfies the alert condition (`tracker.rs:890`, checked before the warn `else if` at `tracker.rs:894`), so stage jumps straight from 0 to 2, **skipping warn entirely**. If the allowance exceeds `idle_stop_sec` (900s/15min), the first evaluation can satisfy the stop condition (`tracker.rs:839`) directly, skipping **both** warn and alert — the timer just stops with no prior notification at all. There is **no validation anywhere** tying `projects.idle_time_seconds` to the org-wide `idle_warn_sec`/`idle_alert_sec`/`idle_stop_sec` — the only ordering constraints that exist are `idle_warn_sec < idle_alert_sec < idle_stop_sec` among themselves (`scoring-settings.js:49-53`, `tracker.rs:173-175`); the per-project allowance is never checked against them, client or server side.
 
@@ -165,6 +208,155 @@ Two independent recovery layers:
 - **Idle escalation and `tick_progress` use the same threshold value but are separately evaluated**: both take `idle_threshold_sec_for_project` as a parameter (`tracker.rs:631-639` and `654-663`) and both read `self.activity.idle_seconds()` independently within the same `tick()` call. Since both reads happen in the same synchronous call with no intervening sleep, they cannot observe different `idle_seconds()` values in practice (same tick), so this is not a source of double-counting.
 - **No overlap between active and idle accumulation**: `active_elapsed` and `idle_elapsed` are separate counters incremented by mutually exclusive branches of the same `if` (`tracker.rs:955-964`) — a given tick's delta can only ever land in one or the other, never both, and never neither (except the `idle_time_disabled` case, which is active-only by design, and the paused case, which credits idle-only or neither).
 - **Sync-time truncation, not idle-time**: the actual "under-counting" mechanism in this bug is not idle misclassification but the server-side `GREATEST`-based ceiling on `task_member_progress.active_seconds` (see next section) plus `activity_sessions.active_seconds`'s own non-decrease clamp (`updatePgSession`, `activity-events-postgres.service.js:534-570`) — both are monotonic-non-decreasing by design (to reject "unexplained" downward writes as a data-integrity guard), which is correct for normal operation but is exactly the mechanism that freezes a number once a *legitimate* rewind or cap sets it once and a later legitimate sync can't exceed it within the same capping window.
+
+### 8. 🔴 The selected project's idle settings never reach a task-less session
+
+**Confirmed broken by reading `tracker.rs`.** A session started against a
+*project* rather than a task ignores that project's `idleTimeSeconds` and
+`disableIdleTime` entirely, and idles out on the compile-time default instead.
+
+The read itself is correct and is exactly where §6 says it is —
+`idle_time_disabled` at `tracker.rs:606-611`, `idle_threshold_sec_for_project`
+at `tracker.rs:612-620`, the latter falling back to the session's own
+`idleTimeSeconds` for the task-less shape precisely as `normalizeSession()`
+intends. The defect is the condition those lines sit inside:
+
+```rust
+// tracker.rs:572
+if state.task_id.as_str() != session_task_id {
+```
+
+**The settings are refreshed on a change of *task*, never on a change of
+*session*.** Session identity is tracked separately and independently, at
+`tracker.rs:552` (`if state.current_session.as_str() != session_id`), and that
+branch does no settings work at all.
+
+For a task-less session `session_task_id` is always `""`. `reset_task_progress()`
+clears `state.task_id` to `""` as well (`tracker.rs:1105`). So on the next
+task-less session the guard evaluates `"" != ""` → **false**, the whole block is
+skipped, and `idle_threshold_sec_for_project` keeps whatever the reset left in
+it: `IDLE_THRESHOLD_SEC`, the compile-time constant (`tracker.rs:1114`).
+
+Two concrete consequences:
+
+- **Wrong threshold, 7.5× too aggressive.** `IDLE_THRESHOLD_SEC` is **60s**
+  (`constants.rs:87`), while the product default a project is created with is
+  **450s** (7.5 min) — the value `types.rs:298-300` and `work.rs:470` both use
+  as their own fallback, explicitly documented there as matching
+  `ensure-lookup-schema.js`. A task-less session therefore hits its idle
+  threshold after one minute of no input, no matter what the project says.
+- **`disableIdleTime` is ignored on this path too.** It is reset to `false` at
+  `tracker.rs:1113` and re-read only inside the same skipped block, so a project
+  that deliberately turned idle enforcement *off* still gets idled out.
+
+**Severity, corrected upward after the §3 fortify pass.** Because there are no
+warn/alert stages any more, crossing the threshold is not a notification — it is
+an immediate `"stop"` plus a rewind of the active total back to
+`active_at_last_input` (`tracker.rs:857-902`). So this is not "the agent warns
+too early." It is: *a task-less session stops itself after 60 seconds away from
+the keyboard and reverses the time credited since the user last touched the
+machine.* From the member's side that reads as the timer quitting on its own and
+losing minutes.
+
+**It does not affect every task-less session.** The guard compares task ids, so
+which transitions are broken depends on what `state.task_id` held before:
+
+| Prior `state.task_id` | New `session_task_id` | Guard fires? | Settings used |
+|---|---|---|---|
+| `""` — fresh boot (`TickState::new`, `tracker.rs:151`) or after any `reset_task_progress` | `""` (task-less) | **no** | 🔴 stale / 60s default |
+| `"task-1"` — switching to project-level inside one live session | `""` (task-less) | yes | ✅ session payload, correct |
+| `""` | `"task-1"` | yes | ✅ `fetch_task_time_tracking` |
+| `"task-1"` | `"task-2"` | yes | ✅ correct |
+| unchanged across `try_recover_lost_session` | same id | **no** | 🔴 stale (see below) |
+
+The first row is the everyday case — every task-less session that starts from a
+clean state — and the second row is why manual testing could easily miss it:
+switching from a task to project-level *within* a live session works correctly.
+
+**Compounding: `try_recover_lost_session` refreshes nothing either.** It POSTs a
+real `"start"` and adopts a genuinely new session id (`tracker.rs:1070-1077`),
+but never clears `state.task_id` and never re-reads idle settings. The next tick
+therefore compares an unchanged task id against itself, skips the block, and the
+recovered session runs on whatever was in memory. For a task-anchored recovery
+that is usually harmless (same task, same project, same settings); for a
+task-less recovery it re-enters the broken path.
+
+**This also corrects §6's last bullet**, which describes the reset to the
+compile-time default as purely defensive ("so a stale disabled-project setting
+can never bleed into whatever starts next"). That is true only when a
+subsequent read actually happens. On the task-less path no such read is
+reachable, so the reset is not a safety net — it *is* the value the session runs
+on.
+
+**Related, worth deciding at the same time — three defaults for one number:**
+
+| Location | Value | Notes |
+|---|---|---|
+| `constants.rs:87` `IDLE_THRESHOLD_SEC` | **60** | what the broken path actually falls back to |
+| `types.rs:298-300` `default_idle_time_seconds()` | 450 | documented as the `ensure-lookup-schema.js` product default |
+| `work.rs:470` `unwrap_or(450)` | 450 | deserialization fallback |
+
+Separately, `reset_task_progress()` resets to the *compile-time* constant rather
+than to `self.idle_threshold_sec` — the org-wide value `apply_idle_thresholds()`
+keeps current from `fetch_activity_scoring_settings()` (`tracker.rs:406`). So a
+refreshed org-wide threshold is discarded on every reset, even on the paths that
+do re-read correctly.
+
+**Why it shipped: the broken path has zero test coverage.** `tracker.rs`'s test
+module contains exactly **one** session fixture — `ACTIVE_SESSION_WITH_TASK`
+(`tracker.rs:1279`), which is task-anchored. The string `taskId` occurs twice in
+the entire file: that fixture, and the production `.get("taskId")` at
+`tracker.rs:567`. So every idle test — `tick_stops_the_timer_once_the_idle_escalation_deadline_passes`,
+`tick_never_escalates_when_the_projects_idle_time_is_disabled`,
+`tick_progress_reports_idle_once_the_threshold_is_crossed` — exercises the
+task-anchored branch, which is correct. Nothing in the suite ever constructs a
+session with no `taskId`. This is the same failure mode already recorded
+elsewhere in this file for the `fetch_session`-mid-session self-deadlock
+("never triggered before because this branch had zero test coverage"), and any
+fix here must ship with a task-less fixture or it will regress silently.
+
+### 8b. ⚠️ A project idle allowance of `0` stops every session instantly
+
+Found while verifying §8, and independent of it — this one bites task-anchored
+sessions too.
+
+The org-wide path validates its threshold: `apply_idle_thresholds` refuses
+anything not `> 0` via `valid_idle_threshold` (`tracker.rs:210-214, 173-175`).
+**The per-project path performs no validation at all** — `tracker.rs:612-620`
+takes `idleTimeSeconds` exactly as received.
+
+Nothing upstream guarantees it is positive:
+
+- `projects.idle_time_seconds INTEGER NOT NULL DEFAULT 450`
+  (`ensure-lookup-schema.js:1091,1109`) has **no `CHECK (... > 0)`** — notable
+  because every `activity_scoring_settings` idle column right next to it *does*
+  (`ensure-lookup-schema.js:970-973`).
+- The project modal floors at zero rather than rejecting it:
+  `Math.max(0, Math.round((Number(addForm.idleTimeMinutes) || 0) * 60))`
+  (`project-modal.tsx:305`), and `Number("") || 0` is `0` — so clearing the
+  field and saving stores `0`.
+- `normalizeSession` uses `Number(project?.idle_time_seconds ?? 450)`
+  (`routes.js:253`); `??` only catches `null`/`undefined`, so a stored `0`
+  passes straight through.
+
+With `idle_threshold_sec == 0`, the guard `if idle_for < idle_threshold_sec`
+(`tracker.rs:847`) can never be true, so `tick_idle_escalation` takes the stop
+branch on the **very first tick** — the session stops and rewinds before any
+work is credited, every time, and the member cannot track at all on that
+project. Worth fixing at the same time as §8, in the same place: validate the
+per-project value on read and fall back to the org-wide threshold, plus a
+`CHECK` on the column and a minimum in the modal.
+
+**Fix shape for §8 (not yet applied):** key the settings refresh off session
+identity as well as task identity — either move the read into the
+`state.current_session != session_id` branch at `tracker.rs:552`, or widen the
+`tracker.rs:572` guard to fire when either changed, and have
+`try_recover_lost_session` invalidate the cached settings so the next tick
+re-reads. Whichever is chosen, the task-less branch already has a correct source
+to read from (the session payload, which `normalizeSession` populates properly —
+verified at `routes.js:248-256`), so this is a control-flow fix, not new
+plumbing. Pair it with `valid_idle_threshold` on the per-project value per §8b,
+and with a task-less test fixture.
 
 ---
 
@@ -219,7 +411,7 @@ There is no mechanism for a project-level override to "win" over the member's gl
 | Case | What happens locally (agent) | `activity_sessions` | `task_member_progress` | Known gap/risk |
 |---|---|---|---|---|
 | **Start, with task** | `fetch_task_time_tracking` re-baselines `active_baseline`/`idle_baseline` from server totals; `idle_time_disabled`/allowance fetched fresh (`tracker.rs:555-625`) | Row created/reactivated via `post_session_action("start")` (`routes.js:588-619`) | Row upserted on first sync via `enforceTimerAllowanceOnSync` + `upsertTrackingRowPg` | None known |
-| **Start, task-less (project)** | Baseline pulled from the session's own `activeSeconds`/`idleSeconds` fields, not a task-tracking fetch (`tracker.rs:566-578`) | Same as above, keyed by `project_id` | **Never written** — `syncTaskId` is empty (`routes.js:707`) | No `timerCapped`/task-level cap ever applies; only project budget cap can stop it |
+| **Start, task-less (project)** | Baseline pulled from the session's own `activeSeconds`/`idleSeconds` fields, not a task-tracking fetch (`tracker.rs:566-578`) | Same as above, keyed by `project_id` | **Never written** — `syncTaskId` is empty (`routes.js:707`) | No `timerCapped`/task-level cap ever applies; only project budget cap can stop it. **Also: the project's `idleTimeSeconds`/`disableIdleTime` are never read on this path** — the refresh is gated on a task-id change that can't fire when the task id is always `""`, so the session idles on the 60s compile-time default — see Idle-time mechanics §8 |
 | **Start, idle time disabled** | `idle_time_disabled=true` fetched from project/task; all subsequent ticks credited 100% active, no escalation possible | Same as normal start | Same as normal start | Idle allowance/escalation UI still shows "0 idle" — by design |
 | **Tick during tracking, under allowance** | `tick_progress` credits `active_elapsed`; `tick_idle_escalation` resets stage to 0 and records `active_at_last_input` (`tracker.rs:829-836`) | Updated only at the next `sync` (every 20s) | Updated only at the next task sync | None |
 | **Tick during tracking, over allowance (idle)** | `tick_progress` credits `idle_elapsed`; `tick_idle_escalation` may move to warn/alert stages (`tracker.rs:890-897`) | Same, on next sync | Same, on next task sync | Warn/alert stage can be skipped if the project allowance exceeds the corresponding org-wide threshold — see Idle-time mechanics §3 |
@@ -241,10 +433,15 @@ There is no mechanism for a project-level override to "win" over the member's gl
 |---|---|
 | Idle allowance crediting under threshold as active — `tracker.rs:955-964` | `task_member_progress.active_seconds` plateaus permanently (within a capping window) once `GREATEST`-clamped — `task-member-progress.service.js:63-105` |
 | Idle escalation no-op below the project allowance — `tracker.rs:809-836` | On-screen clock (`liveActiveSeconds`/`liveTaskActiveSeconds`) is a local `+1/sec` interval merged via `Math.max` — cannot reflect a server-side freeze — `App.tsx:707-716, 712-716, 718-727, 723-727` |
-| Idle rewind on stop reverses exactly the idle stretch (clamped both directions) — `tracker.rs:839-887, 1124-1127` | Warn stage can be skipped when a project's idle allowance exceeds `idle_alert_sec` (600s); both warn and alert can be skipped if it exceeds `idle_stop_sec` (900s) — `tracker.rs:829-900`, no cross-validation anywhere against `projects.idle_time_seconds` |
+| Idle rewind on stop reverses exactly the idle stretch (clamped both directions) — `tracker.rs:839-887, 1124-1127` | 🔴 **Stale row, corrected:** warn/alert stages no longer exist, so nothing can "skip" them — the project allowance is now the single stop threshold and crossing it stops + rewinds immediately (`tracker.rs:847-902`). See the correction box in Idle-time mechanics §3. The vestigial `idle_warn_sec`/`idle_alert_sec`/`idle_stop_sec` columns survive in `activity_scoring_settings` but no client reads them |
 | `HOOKS_SUPPORTED` gating prevents false idle/false escalation on non-Windows builds — `activity.rs:324-332`, `tracker.rs:819-821, 958` | Non-Windows builds have **no** real idle detection at all — idle time is always 0, escalation never fires — `activity.rs:247-260` (explicitly documented gap) |
 | Cross-project global daily/weekly member pool is correctly summed with no project filter — `activity-events-postgres.service.js:627-636` | Six independent remainder sources combined via bare `Math.min`, no hierarchy/override — whichever project or global limit is smallest silently wins — `timer-limit.service.js:195-290` |
 | `activity_sessions.active_seconds` and the `daily_member_*` delta tables are never capped — they track the true raw worked time — `activity-events-postgres.service.js:534-570, 592, 599-625` | Task-less (project-level) sessions never pass through `enforceTimerAllowanceOnSync`/task-cap logic at all — `routes.js:707-709` — only a configured project financial budget cap can stop them |
 | PS-1/PS-2 crash-safe local progress mirror, scoped correctly to session+task id — `progress_store.rs`, `tracker.rs:605-622, 973-993` | A true crash with no restart loses up to ~5 minutes of unsynced-but-real work (bounded by the abandoned-session sweep's `SESSION_STALE_MS`) — `agent-heartbeat.js:8` |
 | `PendingStop` retry halts all other tick activity until an idle-triggered "stop" is confirmed delivered, preventing a silent re-credit of reversed idle time — `tracker.rs:58-63, 386-406, 868-881` | Manual stop from the controller always sends `project_id: None`, so `budgetCapped` is not re-checked on that path (currently immaterial, but asymmetric with the "sync" path) — `controller.rs:1016` vs `routes.js:738-745` |
 | Pause/resume preserves accumulated totals and never resets to 0 — `tracker.rs:268-288` | Reported bug's exact plateau, 3000s, is consistent with *some* combination of the six remainder sources capping at that instant — which one cannot be determined from code alone, only from that account's live limit configuration and usage data |
+| Task-anchored sessions do read the owning project's idle settings correctly, via `fetch_task_time_tracking` — `tracker.rs:606-620` | **Task-less (project) sessions never read the selected project's `idleTimeSeconds`/`disableIdleTime` at all** — the refresh is gated on a task-id change (`tracker.rs:572`) that cannot fire when the task id is always `""`; the session runs on `IDLE_THRESHOLD_SEC` = 60s instead of the project's value (product default 450s) — see Idle-time mechanics §8 |
+| — | Three separate defaults exist for the same setting: `IDLE_THRESHOLD_SEC` = 60 (`constants.rs:87`) vs 450 in both `types.rs:298-300` and `work.rs:470`; and `reset_task_progress` resets to the compile-time constant rather than the org-wide value `apply_idle_thresholds` maintains (`tracker.rs:406, 1114`) |
+| The org-wide idle threshold is validated before use — `apply_idle_thresholds` → `valid_idle_threshold(> 0)`, `tracker.rs:210-214, 173-175` | **The per-project idle allowance is never validated.** `projects.idle_time_seconds` has no `CHECK (> 0)` (unlike every neighbouring `activity_scoring_settings` column), the project modal floors at `0` rather than rejecting it (`project-modal.tsx:305`), and `?? 450` in `normalizeSession` doesn't catch a stored `0`. A `0` allowance makes `idle_for < 0` unsatisfiable, so the session stops and rewinds on its first tick — see Idle-time mechanics §8b |
+| — | `try_recover_lost_session` adopts a new session id without clearing `state.task_id` or re-reading idle settings (`tracker.rs:1070-1083`), so a recovered session runs on whatever was cached — benign for task-anchored recovery, re-enters the §8 bug for task-less |
+| — | The task-less session path has **no test coverage at all**: one fixture in `tracker.rs`'s suite (`ACTIVE_SESSION_WITH_TASK`, line 1279) and it is task-anchored, which is why §8 shipped unnoticed |

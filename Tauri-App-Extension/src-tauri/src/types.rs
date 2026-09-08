@@ -624,6 +624,12 @@ pub struct MemberProfile {
     pub phone: String,
     #[serde(default)]
     pub teams: u32,
+    /// The member's own IANA zone (`members.timezone`) - the calendar every
+    /// day-boundary decision for this person is resolved in, and the fallback
+    /// a project's own zone defers to when it declares none. Empty when never
+    /// set, in which case the backend treats the member as UTC.
+    #[serde(default)]
+    pub timezone: String,
 }
 
 /// One day's row out of the web dashboard's own "Weekly trends" chart

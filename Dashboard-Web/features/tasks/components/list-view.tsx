@@ -304,22 +304,23 @@ function DraggableListRow({
           <GripVertical className={cn("h-4 w-4", t.tableCellMuted)} />
         </button>
       </td>
-      <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          onClick={() => isSelected ? onSelectTask?.(null) : onSelectTask?.(task.id)}
-          className="flex items-center justify-center"
-          aria-label={isSelected ? "Unselect task" : "Select task"}
-          aria-pressed={isSelected}
-        >
+      {/*
+        Status indicator, not a third selection control. This used to be a button
+        that toggled onSelectTask - the same thing clicking anywhere on the row
+        already does - which left the row carrying two controls that look like
+        selection (this and the batch checkbox) but mean different things. The
+        checkbox owns multi-select; the row owns the single highlighted task.
+      */}
+      <td className="px-5 py-3">
+        <span className="flex items-center justify-center" aria-hidden="true">
           {task.completed ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           ) : isSelected ? (
             <CheckCircle2 className={cn("w-4 h-4", isDark ? "text-[#4be277]" : "text-blue-500")} />
           ) : (
-            <Circle className="w-4 h-4 text-slate-300 transition-colors hover:text-slate-400" />
+            <Circle className="w-4 h-4 text-slate-300" />
           )}
-        </button>
+        </span>
       </td>
       <td className="px-4 py-3" onPointerDown={(e) => e.stopPropagation()}>
         <div className="space-y-0.5">
@@ -585,7 +586,8 @@ export function ListView({
   onSelectTask: (id: string | null) => void
   onTaskPreview: (task: Task, event: MouseEvent) => void
   selectedTaskIds?: Set<string>
-  onToggleTaskSelected?: (id: string) => void
+  /** Shift-click extends the selection across `orderedIds`, so all three are passed. */
+  onToggleTaskSelected?: (id: string, shiftKey: boolean, orderedIds: string[]) => void
   onDelete: (id: string) => void
   onUpdate: (id: string, patch: Partial<Task>) => void
   onEdit: (task: Task) => void

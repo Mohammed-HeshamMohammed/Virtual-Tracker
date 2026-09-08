@@ -3860,3 +3860,156 @@ select.modal-input {
   color: var(--on-surface-faint);
   background: rgb(var(--c-surface-highest) / 0.6);
 }
+
+/* ---- Titlebar timezone picker -------------------------------------------
+   Sits where the window title used to be. The titlebar wrapper is a
+   data-tauri-drag-region, so everything interactive in here needs its own
+   pointer-events and must not carry that attribute, or clicks drag the
+   window instead of opening the menu. */
+.tz-picker {
+  position: relative;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.tz-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: rgb(var(--c-overlay) / 0.85);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.tz-trigger:hover:not(:disabled) {
+  background: rgb(var(--c-overlay) / 0.12);
+  border-color: rgb(var(--c-overlay) / 0.22);
+}
+
+.tz-trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.tz-globe {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.tz-trigger-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-trigger-offset {
+  flex-shrink: 0;
+  opacity: 0.65;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tz-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 400;
+  width: 288px;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 6px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 10px;
+  background: rgb(var(--c-surface));
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
+}
+
+.tz-search {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid rgb(var(--c-border));
+  border-radius: 7px;
+  background: rgb(var(--c-bg));
+  color: rgb(var(--c-text));
+  font-size: 12px;
+  outline: none;
+}
+
+.tz-search:focus {
+  border-color: rgb(var(--c-accent));
+}
+
+.tz-list {
+  max-height: 244px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tz-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--c-text));
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tz-option:hover {
+  background: rgb(var(--c-accent) / 0.14);
+}
+
+.tz-option.is-current {
+  background: rgb(var(--c-accent) / 0.2);
+  font-weight: 600;
+}
+
+.tz-option-zone {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-option-offset {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.tz-empty {
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.tz-note {
+  margin: 0;
+  padding: 0 2px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  opacity: 0.6;
+}

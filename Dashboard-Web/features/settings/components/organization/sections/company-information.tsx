@@ -4,6 +4,14 @@ import { useTheme } from "@/shared/providers/app"
 import { Label, Input, Select } from "@/features/settings/components/organization/components/ui"
 import { INDUSTRIES, CURRENCIES, WEEK_STARTS, TIME_ZONES } from "@/features/settings/components/shared/constants"
 
+/**
+ * Looked up by zone id rather than written out in full: TIME_ZONES labels carry
+ * the zone's *current* offset, so a hardcoded "(GMT-05:00) America/New_York"
+ * stops matching any option for the ~8 months a year New York is on EDT.
+ */
+const DEFAULT_TIME_ZONE_LABEL =
+  TIME_ZONES.find((label) => label.endsWith(" America/New_York")) ?? TIME_ZONES[0]
+
 export default function CompanyInformation() {
   const { isDark } = useTheme()
 
@@ -25,7 +33,7 @@ export default function CompanyInformation() {
           </div>
         </div>
       </div>
-      <div><Label label="Time Zone" required isDark={isDark} /><Select options={TIME_ZONES} defaultValue="(GMT-05:00) America/New_York" isDark={isDark} /></div>
+      <div><Label label="Time Zone" required isDark={isDark} /><Select options={TIME_ZONES} defaultValue={DEFAULT_TIME_ZONE_LABEL} isDark={isDark} /></div>
       <div><Label label="Address" isDark={isDark} /><Input isArea isDark={isDark} /></div>
       <div className="flex gap-3 pt-2 pb-6">
         <button className={`px-5 py-2 text-sm font-medium border rounded-lg transition-colors ${isDark ? "border-white/10 text-white/50 hover:bg-white/5" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`} type="button">Cancel</button>

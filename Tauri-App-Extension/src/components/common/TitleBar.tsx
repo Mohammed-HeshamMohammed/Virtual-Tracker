@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ThemePreference } from "../../types";
+import { TimezonePicker } from "./TimezonePicker";
 
 const NEXT_THEME: Record<ThemePreference, ThemePreference> = {
   system: "light",
@@ -50,6 +51,9 @@ export function TitleBar({
   checkingUpdate,
   theme,
   onCycleTheme,
+  timezone,
+  onSelectTimezone,
+  savingTimezone,
 }: {
   title?: string;
   showBrand?: boolean;
@@ -58,6 +62,12 @@ export function TitleBar({
   checkingUpdate?: boolean;
   theme?: ThemePreference;
   onCycleTheme?: (next: ThemePreference) => void;
+  /** Member's own IANA zone. When supplied with a handler, the picker takes
+   *  the place of the window title. Sign-in/consent screens pass neither and
+   *  keep the plain label. */
+  timezone?: string;
+  onSelectTimezone?: (zone: string) => void;
+  savingTimezone?: boolean;
 }) {
   return (
     <header className="titlebar">
@@ -72,7 +82,13 @@ export function TitleBar({
               alt=""
               draggable={false}
             />
-            {title ? (
+            {onSelectTimezone ? (
+              <TimezonePicker
+                value={timezone ?? ""}
+                onSelect={onSelectTimezone}
+                saving={savingTimezone}
+              />
+            ) : title ? (
               <span className="titlebar-label" data-tauri-drag-region>
                 {title}
               </span>

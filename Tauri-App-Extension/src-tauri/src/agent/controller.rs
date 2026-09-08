@@ -876,6 +876,10 @@ impl AgentController {
         self.api.lock().fetch_member_profile().ok()
     }
 
+    pub fn set_member_timezone(&self, timezone: &str) -> Result<(), String> {
+        self.api.lock().update_member_timezone(timezone)
+    }
+
     /// CF-2: tracking cannot start before the current disclosure notice has
     /// been acknowledged. Fails CLOSED on a network problem or a malformed
     /// response - the entire point of a consent gate is that "couldn't

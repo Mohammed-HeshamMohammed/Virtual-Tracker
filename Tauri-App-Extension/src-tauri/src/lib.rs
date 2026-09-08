@@ -414,6 +414,12 @@ async fn get_member_profile(state: tauri::State<'_, AppState>) -> Result<Option<
 }
 
 #[tauri::command]
+async fn set_member_timezone(state: tauri::State<'_, AppState>, timezone: String) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.set_member_timezone(&timezone)).await
+}
+
+#[tauri::command]
 async fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> Result<ActionResult, String> {
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.start_task_session(&task_id)).await)
@@ -740,6 +746,7 @@ pub fn run() {
             get_task_detail,
             get_project_budget_status,
             get_member_profile,
+            set_member_timezone,
             get_dashboard_summary,
             start_task_session,
             get_monitoring_notice,

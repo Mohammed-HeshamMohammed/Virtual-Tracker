@@ -124,6 +124,18 @@ struct TickState {
     /// this project.
     idle_time_disabled: bool,
     idle_threshold_sec_for_project: u64,
+    /// ID-4: the two fields above were refreshed only when the *task* id
+    /// changed, which a task-less (project) session can never trigger - its
+    /// task id is always `""`, and `reset_task_progress` leaves `task_id` at
+    /// `""` too, so `"" != ""` is false and the read was skipped entirely.
+    /// Those sessions therefore ran on `IDLE_THRESHOLD_SEC` (60s) instead of
+    /// the project's own allowance, and ignored `disableIdleTime` outright -
+    /// and since crossing the threshold stops and rewinds immediately (there
+    /// are no warn stages), that meant stopping after a minute away from the
+    /// keyboard and reversing the time since the last input. Set whenever the
+    /// session identity changes under us, so the refresh is keyed on session
+    /// as well as task.
+    idle_settings_stale: bool,
     next_sync_at: Instant,
     idle_watch: IdleWatch,
     /// Real wall-clock time of the last credited tick (TC-2). Ticks are
@@ -157,6 +169,7 @@ impl TickState {
             idle_elapsed: 0,
             idle_time_disabled: false,
             idle_threshold_sec_for_project: IDLE_THRESHOLD_SEC,
+            idle_settings_stale: true,
             next_sync_at: now,
             idle_watch: IdleWatch::default(),
             last_tick_at: now,
@@ -551,6 +564,10 @@ impl ActivityTracker {
 
         if state.current_session.as_str() != session_id {
             state.current_session = session_id.clone();
+            // ID-4: a different session can carry different project settings
+            // even when the task id is unchanged (and is always unchanged for
+            // task-less sessions, where it is `""` on both sides).
+            state.idle_settings_stale = true;
             *self.session_id.lock() = Some(session_id.clone());
             state.last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
             state.next_screenshot_at = Instant::now() + Duration::from_secs(FIRST_SCREENSHOT_DELAY_SEC);
@@ -569,10 +586,12 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        if state.task_id.as_str() != session_task_id {
-            state.task_id = session_task_id.clone();
-            state.active_elapsed = 0;
-            state.idle_elapsed = 0;
+        let task_changed = state.task_id.as_str() != session_task_id;
+        // ID-4: settings follow *either* identity. Re-baselining still keys on
+        // the task alone - a recovered session (try_recover_lost_session) has
+        // already carried its own totals forward by hand, and re-reading them
+        // from the server here would throw that away.
+        if task_changed || state.idle_settings_stale {
             let tracking = if session_task_id.is_empty() {
                 None
             } else {
@@ -585,14 +604,19 @@ impl ActivityTracker {
             let session_seconds = |key: &str| {
                 session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
             };
-            state.active_baseline = tracking
-                .as_ref()
-                .map(|t| t.active_seconds)
-                .unwrap_or_else(|| session_seconds("activeSeconds"));
-            state.idle_baseline = tracking
-                .as_ref()
-                .map(|t| t.idle_seconds)
-                .unwrap_or_else(|| session_seconds("idleSeconds"));
+            if task_changed {
+                state.task_id = session_task_id.clone();
+                state.active_elapsed = 0;
+                state.idle_elapsed = 0;
+                state.active_baseline = tracking
+                    .as_ref()
+                    .map(|t| t.active_seconds)
+                    .unwrap_or_else(|| session_seconds("activeSeconds"));
+                state.idle_baseline = tracking
+                    .as_ref()
+                    .map(|t| t.idle_seconds)
+                    .unwrap_or_else(|| session_seconds("idleSeconds"));
+            }
 
             // ID-3: task-anchored sessions get this from the same
             // fetch_task_time_tracking call above (task-time-tracking.js
@@ -609,7 +633,7 @@ impl ActivityTracker {
                 .unwrap_or_else(|| {
                     session.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false)
                 });
-            state.idle_threshold_sec_for_project = tracking
+            let reported_threshold = tracking
                 .as_ref()
                 .map(|t| t.idle_time_seconds)
                 .unwrap_or_else(|| {
@@ -618,6 +642,24 @@ impl ActivityTracker {
                         .and_then(|v| v.as_u64())
                         .unwrap_or_else(|| self.idle_threshold_sec.load(Ordering::Relaxed))
                 });
+            // ID-4: the org-wide poll has always been validated
+            // (apply_idle_thresholds), but the per-project value went straight
+            // in unchecked - and nothing upstream guarantees it is positive:
+            // projects.idle_time_seconds carries no CHECK (> 0), and the
+            // project modal floors a cleared field to 0 rather than rejecting
+            // it. A 0 threshold makes `idle_for < 0` unsatisfiable, so
+            // tick_idle_escalation would stop and rewind on the very first
+            // tick and the member could never track on that project at all.
+            state.idle_threshold_sec_for_project = if valid_idle_threshold(reported_threshold) {
+                reported_threshold
+            } else {
+                let fallback = self.idle_threshold_sec.load(Ordering::Relaxed);
+                log::warn!(
+                    "Project reported an unusable idle allowance ({reported_threshold}s) - falling back to the org-wide {fallback}s"
+                );
+                fallback
+            };
+            state.idle_settings_stale = false;
 
             // PS-2: an unclean exit (crash/kill/reboot) between two `sync`
             // calls loses whatever PS-1's on-disk mirror hadn't reached the
@@ -1074,6 +1116,12 @@ impl ActivityTracker {
                     "Recovered a session the server closed as abandoned - resumed with {active_total}s active / {idle_total}s idle carried forward"
                 );
                 state.current_session = info.id.unwrap_or_default();
+                // ID-4: this adopts a brand-new session id without going
+                // through the tick's own session-change branch, so nothing
+                // else would mark the project's idle settings for a re-read -
+                // the recovered session would keep running on whatever was
+                // already cached.
+                state.idle_settings_stale = true;
                 *self.session_id.lock() = Some(state.current_session.clone());
                 state.active_baseline = active_total;
                 state.active_elapsed = 0;
@@ -1278,6 +1326,18 @@ mod tests {
 
     const ACTIVE_SESSION_WITH_TASK: &str = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0}}"#;
 
+    /// ID-4: a task-less ("calling project") session - no `taskId`, and the
+    /// project's own idle settings attached to the session itself, exactly as
+    /// `normalizeSession` sends them (`activity/routes.js`). Until this
+    /// fixture existed the whole task-less branch had no coverage at all:
+    /// every session fixture in this suite was task-anchored, which is why
+    /// the settings-refresh bug shipped unnoticed.
+    const ACTIVE_SESSION_TASK_LESS: &str = r#"{"data": {"id": "sess-2", "status": "active", "taskId": null, "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 450}}"#;
+
+    /// Same shape, but with the unusable `0` allowance a cleared field in the
+    /// project modal actually stores (nothing upstream forbids it).
+    const ACTIVE_SESSION_TASK_LESS_ZERO_ALLOWANCE: &str = r#"{"data": {"id": "sess-3", "status": "active", "taskId": null, "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 0}}"#;
+
     #[test]
     fn tick_transitions_into_a_newly_started_session() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
@@ -1334,6 +1394,53 @@ mod tests {
     // non-Windows CI/dev machine regardless of the sleep/threshold timing:
     // `tick_idle_escalation` returns `false` immediately, before ever
     // reading `idle_for`.
+    /// ID-4: the project's allowance must reach a task-less session.
+    ///
+    /// This is the regression guard for the bug where the idle-settings read
+    /// was gated on the *task* id changing. A task-less session's task id is
+    /// always `""`, and a fresh `TickState` starts at `""` too, so the guard
+    /// compared `"" != ""`, skipped the block, and left the session running on
+    /// the 60s compile-time constant instead of the project's 450s - stopping
+    /// and rewinding after a minute away from the keyboard.
+    #[test]
+    fn tick_reads_the_projects_idle_allowance_for_a_task_less_session() {
+        let tracker = test_tracker(session_test_server(ACTIVE_SESSION_TASK_LESS));
+        let mut state = TickState::new();
+        assert_eq!(
+            state.idle_threshold_sec_for_project,
+            crate::constants::IDLE_THRESHOLD_SEC,
+            "precondition: a fresh state starts on the compile-time default",
+        );
+
+        tracker.tick(&mut state);
+
+        assert!(state.was_active, "precondition: the session must have started");
+        assert!(state.task_id.is_empty(), "precondition: this session is task-less");
+        assert_eq!(
+            state.idle_threshold_sec_for_project, 450,
+            "the project's own allowance must be adopted, not IDLE_THRESHOLD_SEC",
+        );
+    }
+
+    /// ID-4: `projects.idle_time_seconds` has no `CHECK (> 0)` and the project
+    /// modal floors a cleared field to `0`, so `0` is reachable. Taken
+    /// literally it makes `idle_for < 0` unsatisfiable, which stops and
+    /// rewinds the session on its very first tick.
+    #[test]
+    fn an_unusable_project_idle_allowance_falls_back_to_the_org_wide_value() {
+        let tracker = test_tracker(session_test_server(ACTIVE_SESSION_TASK_LESS_ZERO_ALLOWANCE));
+        tracker.apply_idle_thresholds(123);
+        let mut state = TickState::new();
+
+        tracker.tick(&mut state);
+
+        assert!(state.was_active, "precondition: the session must have started");
+        assert_eq!(
+            state.idle_threshold_sec_for_project, 123,
+            "a 0 allowance must fall back to the org-wide threshold, never be used as-is",
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     fn tick_stops_the_timer_once_the_idle_escalation_deadline_passes() {
