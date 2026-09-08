@@ -16,6 +16,7 @@ import {
   getProjectActivityMetricsPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
+import { getMemberTimezone } from "../reports/member-timezones.js";
 import {
   budgetSpent,
   buildTrendPaths,
@@ -58,8 +59,8 @@ function taskRowFromDoc(doc, assigneeNames) {
   };
 }
 
-function buildWeeklyTrend(tasks, projectId, dailyTotals) {
-  const days = getRollingWeekDays();
+function buildWeeklyTrend(tasks, projectId, dailyTotals, timeZone = "UTC") {
+  const days = getRollingWeekDays(timeZone);
   const scoped = projectId ? tasks.filter((task) => task.projectId === projectId) : tasks;
 
   return days.map((day) => {
@@ -263,6 +264,7 @@ function relativeTime(iso) {
 }
 
 export async function getCommandCenterPayload(db, viewerMemberId) {
+  const timeZone = await getMemberTimezone(viewerMemberId);
   const roleName = await resolveMemberRoleName(db, viewerMemberId);
   const roleKey = normalizeRole(roleName);
   const isOwner = roleKey === "owner";
@@ -355,7 +357,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
       ? allTasks
       : allTasks.filter((task) => allowedProjectIdList.includes(task.projectId));
 
-  const weekDays = getRollingWeekDays();
+  const weekDays = getRollingWeekDays(timeZone);
   const weekFrom = weekDays[0].dateKey;
   const weekTo = weekDays[weekDays.length - 1].dateKey;
   const metricProjectIds = allowedProjectIdList === null ? null : allowedProjectIdList;
@@ -512,7 +514,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
         ? await getMemberDailyActivityTotalsPg({ projectIds: [projectId], memberId: viewerMemberId, fromDay: weekFrom, toDay: weekTo })
         : await getDailyActivityTotalsPg({ projectIds: [projectId], fromDay: weekFrom, toDay: weekTo })
       : dailyTotalsAll;
-    const weeklyTrend = buildWeeklyTrend(feedTasks, projectId, dailyTotals);
+    const weeklyTrend = buildWeeklyTrend(feedTasks, projectId, dailyTotals, timeZone);
     const activeSeries = weeklyTrend.map((day) => day.active);
     const { chartPath, chartFill } = buildTrendPaths(activeSeries);
     const utilization = buildUtilization(memberSecondsFor(projectId), capacityByMember, utilizationMeta);

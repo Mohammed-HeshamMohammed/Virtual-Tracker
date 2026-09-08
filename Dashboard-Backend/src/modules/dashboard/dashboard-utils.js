@@ -1,6 +1,7 @@
 
 import { getViewerProjectIds } from "../../http/project-access.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
+import { addLocalDays, localDayFor, localMidnightUtc, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 
 export const DAY_LABELS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
@@ -40,30 +41,39 @@ export function toIso(value) {
   return String(value);
 }
 
-export function startOfDay(date = new Date()) {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
+/**
+ * Midnight of `date`'s local day, in `timeZone`.
+ *
+ * `timeZone` defaults to UTC - the container runs with no `TZ` set, so that
+ * matches this function's own previous behaviour (`.setHours(0,0,0,0)` on
+ * the process's local clock) for any caller not yet passing a real zone.
+ * Callers showing a viewer their own "today" should pass that viewer's zone;
+ * see `getMemberTimezone`.
+ */
+export function startOfDay(date = new Date(), timeZone = "UTC") {
+  return localMidnightUtc(localDayFor(date, timeZone), timeZone);
 }
 
-export function getRollingWeekDays() {
-  const now = new Date();
-  const day = now.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = startOfDay(now);
-  monday.setDate(now.getDate() + mondayOffset);
+/**
+ * The current Mon-Sun week, in `timeZone`, as day cells consumers already
+ * expect (`startMs`/`endMs` as real UTC instants, `dateKey` as the local day
+ * string).
+ *
+ * `startMs`/`endMs` are genuine UTC instants for that local day's boundaries
+ * (via `localMidnightUtc`), not a UTC day mislabelled with a local date - the
+ * two disagree by the zone's offset, and getting this wrong would silently
+ * mis-bucket every session near a day boundary right back into the bug this
+ * whole change exists to fix.
+ */
+export function getRollingWeekDays(timeZone = "UTC") {
+  const today = localDayFor(new Date(), timeZone);
+  const monday = addLocalDays(today, -weekdayIndexForLocalDay(today));
 
   return DAY_LABELS.map((label, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    const startMs = date.getTime();
-    return {
-      key: label.toLowerCase(),
-      label,
-      startMs,
-      endMs: startMs + 86_400_000 - 1,
-      dateKey: date.toISOString().slice(0, 10),
-    };
+    const dateKey = addLocalDays(monday, index);
+    const startMs = localMidnightUtc(dateKey, timeZone).getTime();
+    const endMs = localMidnightUtc(addLocalDays(dateKey, 1), timeZone).getTime() - 1;
+    return { key: label.toLowerCase(), label, startMs, endMs, dateKey };
   });
 }
 
