@@ -38,7 +38,7 @@ import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
 import { WeekTile } from "./components/stats/WeekTile";
 import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
-import { AssignedTodayBadge } from "./components/stats/AssignedTodayBadge";
+import { AssignedTodayBadge, AssignedToMeBadge } from "./components/stats/AssignedTodayBadge";
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
 import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
 import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
@@ -53,6 +53,7 @@ import { LogTimeModal } from "./components/LogTimeModal";
 import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
 import { TaskDetailPanel } from "./components/stats/TaskDetailPanel";
 import { TitleBar } from "./components/common/TitleBar";
+import { TimezonePicker } from "./components/common/TimezonePicker";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
 import { notify } from "./utils/notify";
@@ -117,10 +118,13 @@ function MainApp() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
-  const [assignedTasksFailed, setAssignedTasksFailed] = useState(false);
+  // Consecutive failed rounds, not a bare flag: one failed poll must not
+  // repaint a working screen as broken (see refreshProjects/refreshAssignedTasks).
+  const [assignedTasksFailCount, setAssignedTasksFailCount] = useState(0);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [assignedTasksLoaded, setAssignedTasksLoaded] = useState(false);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardLoaded, setDashboardLoaded] = useState(false);
   const [workspace, setWorkspace] = useState<AgentWorkspace | null>(null);
   const [logTimeOpen, setLogTimeOpen] = useState(false);
   const [logTimeMemberId, setLogTimeMemberId] = useState("");
@@ -189,8 +193,10 @@ function MainApp() {
     error: null,
     success: null,
   });
-  const [projectsFailed, setProjectsFailed] = useState(false);
+  const [projectsFailCount, setProjectsFailCount] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>("system");
+  const projectsFailed = projectsFailCount > 0;
+  const assignedTasksFailed = assignedTasksFailCount > 0;
 
   useEffect(() => {
     setAvatarError(false);
@@ -312,13 +318,16 @@ function MainApp() {
     try {
       const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
-      setProjectsFailed(false);
+      setProjectsFailCount(0);
       setSelectedProjectId((current) =>
         current && next.some((p) => p.id === current && !p.budgetExhausted) ? current : "",
       );
     } catch {
-      setProjects([]);
-      setProjectsFailed(true);
+      // The list we already have is still the truest thing we know. Blanking it
+      // turned every dropped poll into an empty sidebar with a "Couldn't load"
+      // banner, which is exactly the flicker this avoids - the copy now only
+      // appears when the very first load came back with nothing.
+      setProjectsFailCount((n) => n + 1);
     } finally {
       setProjectsLoaded(true);
     }
@@ -332,10 +341,9 @@ function MainApp() {
     try {
       const next = await invoke<AgentTask[]>("list_tasks", { projectId: null });
       setAssignedTasks(next);
-      setAssignedTasksFailed(false);
+      setAssignedTasksFailCount(0);
     } catch {
-      setAssignedTasks([]);
-      setAssignedTasksFailed(true);
+      setAssignedTasksFailCount((n) => n + 1);
     } finally {
       setAssignedTasksLoaded(true);
     }
@@ -344,23 +352,28 @@ function MainApp() {
   const refreshDashboardSummary = useCallback(async () => {
     if (!signedIn) {
       setDashboardSummary(null);
+      setDashboardLoaded(false);
       return;
     }
     try {
       const next = await invoke<DashboardSummary | null>("get_dashboard_summary");
       setDashboardSummary(next);
     } catch {
-      setDashboardSummary(null);
+      /* Keeps the last summary on screen rather than collapsing the card. */
+    } finally {
+      setDashboardLoaded(true);
     }
   }, [signedIn]);
 
   useEffect(() => {
     if (!signedIn) return;
     if (!projectsLoaded || !assignedTasksLoaded) return;
-    if (projectsFailed && assignedTasksFailed) {
+    // Two consecutive failed rounds on both feeds, not one: a single dropped
+    // request used to swap the whole window for the reconnect screen.
+    if (projectsFailCount >= 2 && assignedTasksFailCount >= 2) {
       setConnection("disconnected");
     }
-  }, [signedIn, projectsLoaded, assignedTasksLoaded, projectsFailed, assignedTasksFailed]);
+  }, [signedIn, projectsLoaded, assignedTasksLoaded, projectsFailCount, assignedTasksFailCount]);
 
   const refreshWorkspace = useCallback(async () => {
     if (!signedIn) {
@@ -370,7 +383,7 @@ function MainApp() {
     try {
       setWorkspace(await invoke<AgentWorkspace | null>("get_agent_workspace"));
     } catch {
-      setWorkspace(null);
+      /* Holds the last workspace - see refreshProjects. */
     }
   }, [signedIn]);
 
@@ -468,7 +481,7 @@ function MainApp() {
       });
       setTaskTracking(next);
     } catch {
-      setTaskTracking(null);
+      /* Holds the last tracking figures - see refreshProjects. */
     }
   }, [selectedTaskId]);
 
@@ -483,7 +496,7 @@ function MainApp() {
         }),
       );
     } catch {
-      setMemberLimits(null);
+      /* Holds the last limits - see refreshProjects. */
     }
   }, [signedIn, selectedProjectId]);
 
@@ -501,7 +514,7 @@ function MainApp() {
         }),
       );
     } catch {
-      setProjectBudget(null);
+      /* Holds the last budget - see refreshProjects. */
     }
   }, [signedIn, selectedProjectId]);
 
@@ -1329,6 +1342,15 @@ function MainApp() {
       // stored value, and a rejected zone must not leave the picker showing a
       // selection that was never saved.
       setMemberProfile(await invoke<MemberProfile | null>("get_member_profile"));
+      // The zone decides when the daily/weekly allowance resets, so every cap
+      // on screen is now stale. Pull them again instead of leaving the old
+      // day's numbers up until the next poll ticks.
+      await Promise.all([
+        refreshMemberLimits(),
+        refreshProjectBudget(),
+        refreshTaskTracking(),
+        refreshDashboardSummary(),
+      ]);
     } catch (err) {
       setActionError(typeof err === "string" ? err : "Could not save your timezone.");
     } finally {
@@ -1422,6 +1444,8 @@ function MainApp() {
     weekFootLabel,
     projectedCapTimeLabel,
     assignedTodayLabel,
+    assignedTotalLabel,
+    assignedTotalDetail,
     assignedCarriedLabel,
     assignedTaskCountLabel,
     projectBudgetReached,
@@ -1557,9 +1581,6 @@ function MainApp() {
         checkingUpdate={checkingUpdate}
         theme={themePref}
         onCycleTheme={handleCycleTheme}
-        timezone={memberProfile?.timezone ?? ""}
-        onSelectTimezone={isPanelView ? undefined : handleSelectTimezone}
-        savingTimezone={savingTimezone}
       />
 
       <div
@@ -1591,6 +1612,7 @@ function MainApp() {
         <div className="side-panel-scroll">
           <WeeklyActivityCard
             signedIn={signedIn}
+            loading={!dashboardLoaded}
             dashboardSummary={dashboardSummary}
             weekActivityDash={weekActivityDash}
             weekActiveSeconds={weekActiveSeconds}
@@ -1607,6 +1629,7 @@ function MainApp() {
 
           <ProjectsList
             signedIn={signedIn}
+            loading={!projectsLoaded}
             projects={orderedProjects}
             selectedProjectId={selectedProjectId}
             busy={busy}
@@ -1639,12 +1662,10 @@ function MainApp() {
             </div>
           ) : (
             <>
-              {projects.length === 0 && !projectsLoaded ? (
-                <div className="side-skeleton" aria-hidden="true">
-                  <span className="skeleton-bar" />
-                  <span className="skeleton-bar" />
-                </div>
-              ) : projects.length === 0 ? (
+              {/* The placeholder for this list lives in ProjectsList itself,
+                  where the rows actually appear - it used to sit down here
+                  next to the Start button, nowhere near what it stood in for. */}
+              {projects.length === 0 && projectsLoaded ? (
                 <p className={`side-tasklist-empty side-panel-swap${projectsFailed ? " bad" : ""}`}>
                   <Icon name={projectsFailed ? "warn" : "info"} />
                   {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
@@ -1777,6 +1798,10 @@ function MainApp() {
                   assignedTaskCountLabel={assignedTaskCountLabel}
                   assignedCarriedLabel={assignedCarriedLabel}
                 />
+                <AssignedToMeBadge
+                  assignedTotalLabel={assignedTotalLabel}
+                  assignedTotalDetail={assignedTotalDetail}
+                />
                 {workspace?.capabilities.canLogManualTime ? (
                   <button
                     className="icon-btn"
@@ -1829,7 +1854,7 @@ function MainApp() {
                       title={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       aria-label={timerViewMode === "task" ? "Switch to today's time" : "Switch to whole-task time"}
                       aria-pressed={timerViewMode === "task"}
-                      style={{ marginLeft: "auto", alignSelf: "center" }}
+                      style={{ alignSelf: "center" }}
                       disabled={busy}
                       onClick={() => setTimerViewMode((m) => (m === "task" ? "day" : "task"))}
                     >
@@ -1841,6 +1866,11 @@ function MainApp() {
                       </svg>
                     </button>
                   ) : null}
+                  <TimezonePicker
+                    value={memberProfile?.timezone ?? ""}
+                    onSelect={handleSelectTimezone}
+                    saving={savingTimezone}
+                  />
                 </div>
 
                 {hoursTodayCards}

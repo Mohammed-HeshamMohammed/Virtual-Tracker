@@ -18,6 +18,13 @@ const baseMemberLimits: MemberLimits = {
     taskCount: 0,
     byProjectType: { normal: 0, calling: 0 },
   },
+  assignedTotal: {
+    assignedSeconds: 0,
+    workedSeconds: 0,
+    remainingSeconds: 0,
+    taskCount: 0,
+    projectCount: 0,
+  },
   workingToday: true,
   isMakeupDay: false,
   todayActivity: { activeSeconds: 0, idleSeconds: 0 },

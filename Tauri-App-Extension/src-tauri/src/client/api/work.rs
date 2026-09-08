@@ -561,6 +561,7 @@ impl ApiClient {
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
             assigned_today: parse_assigned_today(data.get("assignedToday")),
+            assigned_total: parse_assigned_total(data.get("assignedTotal")),
             working_today: data.get("workingToday").and_then(|v| v.as_bool()).unwrap_or(true),
             is_makeup_day: data.get("isMakeupDay").and_then(|v| v.as_bool()).unwrap_or(false),
             today_activity: {
@@ -994,6 +995,22 @@ fn parse_assigned_today(node: Option<&Value>) -> crate::types::AssignedToday {
                 .and_then(|v| v.as_i64())
                 .unwrap_or(0),
         },
+    }
+}
+
+/// Parses the `assignedTotal` block on GET /api/activity/limits. Absent on
+/// older backends, which zeroes every field - the UI reads a zero total as
+/// "nothing assigned" and hides the badge, same as an empty plate.
+fn parse_assigned_total(node: Option<&Value>) -> crate::types::AssignedTotal {
+    let i64_field = |key: &str| -> i64 {
+        node.and_then(|n| n.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
+    };
+    crate::types::AssignedTotal {
+        assigned_seconds: i64_field("assignedSeconds"),
+        worked_seconds: i64_field("workedSeconds"),
+        remaining_seconds: i64_field("remainingSeconds"),
+        task_count: i64_field("taskCount"),
+        project_count: i64_field("projectCount"),
     }
 }
 

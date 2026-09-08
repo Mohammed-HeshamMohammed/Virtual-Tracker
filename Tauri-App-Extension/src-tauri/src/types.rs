@@ -346,6 +346,11 @@ pub struct MemberLimits {
     /// am I still allowed to work" vs "how much work do I have").
     #[serde(default)]
     pub assigned_today: AssignedToday,
+    /// Everything open on this person's plate across every project, with no
+    /// calendar applied - "how much work do I hold" to assigned_today's "how
+    /// much of it does today owe".
+    #[serde(default)]
+    pub assigned_total: AssignedTotal,
     /// Work Time & Limits > "Working days" - false blocks starting/resuming
     /// a timer server-side (People > member > Work Time & Limits). Defaults
     /// true so older backends without this field never falsely block.
@@ -600,6 +605,27 @@ pub struct AssignedToday {
     pub task_count: i64,
     #[serde(default)]
     pub by_project_type: AssignedTodayByProjectType,
+}
+
+/// The un-scheduled counterpart to AssignedToday: every open assignment in
+/// every unarchived project, whether it is due today, overdue, or not started
+/// yet. `worked_seconds` is not clamped to the estimate, so it can exceed
+/// `assigned_seconds` on an overrun; `remaining_seconds` is summed per
+/// assignment, so an overrun on one task never cancels out another's
+/// outstanding hours (see assigned-today.service.js).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignedTotal {
+    #[serde(default)]
+    pub assigned_seconds: i64,
+    #[serde(default)]
+    pub worked_seconds: i64,
+    #[serde(default)]
+    pub remaining_seconds: i64,
+    #[serde(default)]
+    pub task_count: i64,
+    #[serde(default)]
+    pub project_count: i64,
 }
 
 /// The viewer's own People-page member record (GET /api/members/current) -

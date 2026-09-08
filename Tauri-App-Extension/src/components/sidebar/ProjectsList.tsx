@@ -5,6 +5,10 @@ const SEARCH_THRESHOLD = 6;
 
 type ProjectsListProps = {
   signedIn: boolean;
+  /** First load still in flight. Without this the whole section vanished
+   *  until the list arrived, so the sidebar visibly reflowed on every cold
+   *  start - the placeholder holds the space the rows are about to take. */
+  loading: boolean;
   projects: ProjectInfo[];
   selectedProjectId: string;
   busy: boolean;
@@ -17,6 +21,7 @@ type ProjectsListProps = {
 
 export function ProjectsList({
   signedIn,
+  loading,
   projects,
   selectedProjectId,
   busy,
@@ -27,7 +32,22 @@ export function ProjectsList({
   onCreateTask,
 }: ProjectsListProps) {
   const [query, setQuery] = useState("");
-  if (!signedIn || projects.length === 0) return null;
+  if (!signedIn) return null;
+  if (projects.length === 0) {
+    if (!loading) return null;
+    return (
+      <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
+        <div className="side-tasklist-head">
+          <span className="stat-tile-label">Your projects</span>
+        </div>
+        <div className="side-skeleton" aria-hidden="true">
+          <span className="skeleton-bar" />
+          <span className="skeleton-bar" />
+          <span className="skeleton-bar" />
+        </div>
+      </section>
+    );
+  }
   const trimmed = query.trim().toLowerCase();
   const visible = trimmed ? projects.filter((p) => p.name.toLowerCase().includes(trimmed)) : projects;
   return (

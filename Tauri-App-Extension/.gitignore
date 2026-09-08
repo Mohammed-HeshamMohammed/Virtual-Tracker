@@ -16,6 +16,10 @@ src-tauri/target/
 agent-store.json
 preferences.json
 tracker-progress.json
+# Runtime queue of activity events not yet delivered to the backend (dev
+# builds run from this directory write it here instead of the real
+# per-user data dir, same as classifications.json below). Not source.
+pending-events.jsonl
 
 # Editor
 .DS_Store

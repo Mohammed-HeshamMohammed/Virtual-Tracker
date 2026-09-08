@@ -862,11 +862,34 @@ body {
 }
 
 .page-clock-label {
+  margin-right: auto;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--on-surface-variant);
+}
+
+/* The timezone chip lives in the clock card, next to the elapsed time it
+   dates - not in the titlebar, where it read as the window title. Only the
+   colours change: it is on a surface here, not over the titlebar overlay. */
+.page-clock .tz-picker {
+  align-self: center;
+}
+
+.page-clock .tz-trigger {
+  color: var(--on-surface-variant);
+  text-shadow: none;
+}
+
+.page-clock .tz-trigger:hover:not(:disabled) {
+  background: rgb(var(--c-line) / 0.1);
+  border-color: rgb(var(--c-line) / 0.18);
+}
+
+.page-clock .tz-menu {
+  left: auto;
+  right: 0;
 }
 
 /* ── Stats pane ─────────────────────────────────────────────────────────
@@ -3862,10 +3885,8 @@ select.modal-input {
 }
 
 /* ---- Titlebar timezone picker -------------------------------------------
-   Sits where the window title used to be. The titlebar wrapper is a
-   data-tauri-drag-region, so everything interactive in here needs its own
-   pointer-events and must not carry that attribute, or clicks drag the
-   window instead of opening the menu. */
+   Sits in the clock card. Nothing in it may carry data-tauri-drag-region,
+   or clicks drag the window instead of opening the menu. */
 .tz-picker {
   position: relative;
   min-width: 0;

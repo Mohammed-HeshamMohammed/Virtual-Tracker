@@ -12,7 +12,7 @@ import { TodayPanel } from "./TodayPanel";
 import { ActivityTile } from "./ActivityTile";
 import { WeekTile } from "./WeekTile";
 import { ProjectBudgetTile } from "./ProjectBudgetTile";
-import { AssignedTodayBadge } from "./AssignedTodayBadge";
+import { AssignedTodayBadge, AssignedToMeBadge } from "./AssignedTodayBadge";
 import type { MemberLimits, ProjectBudgetStatus } from "../../types";
 
 const memberLimits: MemberLimits = {
@@ -30,6 +30,13 @@ const memberLimits: MemberLimits = {
     rolloverSeconds: 0,
     taskCount: 1,
     byProjectType: { normal: 3600, calling: 0 },
+  },
+  assignedTotal: {
+    assignedSeconds: 36000,
+    workedSeconds: 7200,
+    remainingSeconds: 28800,
+    taskCount: 4,
+    projectCount: 2,
   },
   workingToday: true,
   isMakeupDay: false,
@@ -167,5 +174,22 @@ describe("stat tiles render without throwing", () => {
       />,
     );
     expect(html).toBe("");
+  });
+});
+
+describe("AssignedToMeBadge", () => {
+  it("renders nothing when there is nothing assigned", () => {
+    expect(
+      renderToStaticMarkup(<AssignedToMeBadge assignedTotalLabel="" assignedTotalDetail="" />),
+    ).toBe("");
+  });
+
+  it("renders the whole open plate with its breakdown in the title", () => {
+    const html = renderToStaticMarkup(
+      <AssignedToMeBadge assignedTotalLabel="8h 0m" assignedTotalDetail="4 open tasks · 2 projects" />,
+    );
+    expect(html).toContain("Assigned to me");
+    expect(html).toContain("8h 0m");
+    expect(html).toContain("4 open tasks");
   });
 });

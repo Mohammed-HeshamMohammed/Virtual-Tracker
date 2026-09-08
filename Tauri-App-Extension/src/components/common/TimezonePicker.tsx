@@ -121,9 +121,8 @@ export function TimezonePicker({
   })();
 
   return (
-    // No data-tauri-drag-region anywhere in here: the titlebar sets it on the
-    // wrapper, and inheriting it would make every click drag the window
-    // instead of opening the menu.
+    // No data-tauri-drag-region anywhere in here: any drag-region ancestor
+    // would make every click drag the window instead of opening the menu.
     <div className="tz-picker" ref={rootRef}>
       <button
         type="button"

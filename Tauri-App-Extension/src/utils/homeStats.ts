@@ -126,6 +126,22 @@ export function computeHomeStats({
     : memberLimits.assignedToday.taskCount === 1
       ? "1 task"
       : `${memberLimits.assignedToday.taskCount} tasks`;
+  // "Assigned to me": the whole open plate, not today's slice of it. Hidden
+  // (empty label) when there is nothing assigned at all, so someone with no
+  // assignments doesn't get a badge reading 0.
+  const assignedTotalLabel = memberLimits && memberLimits.assignedTotal.taskCount > 0
+    ? fmtHours(memberLimits.assignedTotal.remainingSeconds)
+    : "";
+  const assignedTotalDetail = (() => {
+    if (!memberLimits || memberLimits.assignedTotal.taskCount === 0) return "";
+    const { assignedSeconds, workedSeconds, taskCount, projectCount } = memberLimits.assignedTotal;
+    return [
+      `${taskCount} open task${taskCount === 1 ? "" : "s"}`,
+      `${projectCount} project${projectCount === 1 ? "" : "s"}`,
+      `${fmtHours(workedSeconds)} done of ${fmtHours(assignedSeconds)} assigned`,
+    ].join(" · ");
+  })();
+
   const assignedSplitLabel = (() => {
     if (!memberLimits) return "";
     const { normal, calling } = memberLimits.assignedToday.byProjectType;
@@ -189,6 +205,8 @@ export function computeHomeStats({
     assignedCarriedLabel,
     assignedTaskCountLabel,
     assignedSplitLabel,
+    assignedTotalLabel,
+    assignedTotalDetail,
     projectBudgetReached,
     projectBudgetPercent,
     taskBudgetRemainingLabel,

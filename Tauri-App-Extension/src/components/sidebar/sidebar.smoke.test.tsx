@@ -23,22 +23,29 @@ describe("WeeklyActivityCard", () => {
     recentProjects: [],
   };
 
-  it("renders nothing when signed out or before the summary has loaded", () => {
+  it("renders nothing when signed out, or signed in with no summary to come", () => {
     expect(
       renderToStaticMarkup(
-        <WeeklyActivityCard signedIn={false} dashboardSummary={dashboardSummary} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+        <WeeklyActivityCard signedIn={false} loading={false} dashboardSummary={dashboardSummary} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
       ),
     ).toBe("");
     expect(
       renderToStaticMarkup(
-        <WeeklyActivityCard signedIn={true} dashboardSummary={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+        <WeeklyActivityCard signedIn={true} loading={false} dashboardSummary={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
       ),
     ).toBe("");
   });
 
+  it("renders a skeleton while the first summary is still loading", () => {
+    const html = renderToStaticMarkup(
+      <WeeklyActivityCard signedIn loading dashboardSummary={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+    );
+    expect(html).toContain("skeleton-bar");
+  });
+
   it("renders the rounded percent once signed in with a summary", () => {
     const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn dashboardSummary={dashboardSummary} weekActivityDash={40} weekActiveSeconds={3600} weekIdleSeconds={600} />,
+      <WeeklyActivityCard signedIn loading={false} dashboardSummary={dashboardSummary} weekActivityDash={40} weekActiveSeconds={3600} weekIdleSeconds={600} />,
     );
     expect(html).toContain("62%");
   });
@@ -53,7 +60,7 @@ describe("ProjectsList", () => {
   it("renders nothing with an empty list", () => {
     expect(
       renderToStaticMarkup(
-        <ProjectsList signedIn projects={[]} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+        <ProjectsList signedIn loading={false} projects={[]} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
       ),
     ).toBe("");
   });
@@ -62,6 +69,7 @@ describe("ProjectsList", () => {
     const html = renderToStaticMarkup(
       <ProjectsList
         signedIn
+        loading={false}
         projects={projects}
         selectedProjectId="p1"
         busy={false}
@@ -80,6 +88,7 @@ describe("ProjectsList", () => {
     const html = renderToStaticMarkup(
       <ProjectsList
         signedIn
+        loading={false}
         projects={[projects[0]]}
         selectedProjectId=""
         busy={false}
@@ -95,7 +104,7 @@ describe("ProjectsList", () => {
 
   it("hides the filter box under the search threshold - .side-tasklist-body's own scroll area covers a short list", () => {
     const html = renderToStaticMarkup(
-      <ProjectsList signedIn projects={projects} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+      <ProjectsList signedIn loading={false} projects={projects} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
     );
     expect(html).not.toContain("side-tasklist-search");
   });
@@ -113,7 +122,7 @@ describe("ProjectsList", () => {
       canCreateTasks: false,
     }));
     const html = renderToStaticMarkup(
-      <ProjectsList signedIn projects={many} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+      <ProjectsList signedIn loading={false} projects={many} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
     );
     expect(html).toContain("side-tasklist-search");
     expect(html).toContain("Filter projects");
@@ -123,6 +132,7 @@ describe("ProjectsList", () => {
     const html = renderToStaticMarkup(
       <ProjectsList
         signedIn
+        loading={false}
         projects={projects}
         selectedProjectId=""
         busy={false}
@@ -141,6 +151,7 @@ describe("ProjectsList", () => {
     const html = renderToStaticMarkup(
       <ProjectsList
         signedIn
+        loading={false}
         projects={[projects[0]]}
         selectedProjectId=""
         busy={false}
@@ -513,5 +524,25 @@ describe("TasksList loading state", () => {
     const html = renderToStaticMarkup(<TasksList {...base} loading={false} assignedTasksFailed={true} />);
     expect(html).toContain("load your tasks");
     expect(html).not.toContain("skeleton-bar");
+  });
+});
+
+describe("ProjectsList loading", () => {
+  it("holds the section with a skeleton while the first load is in flight", () => {
+    const html = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        loading
+        projects={[]}
+        selectedProjectId=""
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        onSelectProject={() => {}}
+      />,
+    );
+    expect(html).toContain("Your projects");
+    expect(html).toContain("skeleton-bar");
   });
 });

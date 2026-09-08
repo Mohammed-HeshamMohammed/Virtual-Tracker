@@ -149,6 +149,17 @@ export type AssignedToday = {
   byProjectType: { normal: number; calling: number };
 };
 
+/** Everything open across every project - the un-scheduled counterpart to
+ *  AssignedToday. workedSeconds is not clamped to the estimate, so it can
+ *  exceed assignedSeconds on an overrun. */
+export type AssignedTotal = {
+  assignedSeconds: number;
+  workedSeconds: number;
+  remainingSeconds: number;
+  taskCount: number;
+  projectCount: number;
+};
+
 export type MemberLimits = {
   dailyHours: number;
   weeklyHours: number;
@@ -158,6 +169,7 @@ export type MemberLimits = {
   allowedRemainingSeconds: number | null;
   limitReached: boolean;
   assignedToday: AssignedToday;
+  assignedTotal: AssignedTotal;
   workingToday: boolean;
   isMakeupDay: boolean;
   todayActivity: TodayActivity;
