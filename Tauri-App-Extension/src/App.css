@@ -3914,17 +3914,15 @@ select.modal-input {
 .tz-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 240px;
-  padding: 3px 8px;
+  padding: 5px 10px;
   border: 1px solid transparent;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: rgb(var(--c-overlay) / 0.85);
-  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease;
@@ -3947,26 +3945,35 @@ select.modal-input {
   opacity: 0.9;
 }
 
-.tz-trigger-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* Two stacked lines next to the globe icon: the live time, then which zone
+   and offset it belongs to - "12:00 AM" / "Gambier GMT-09:00", not one
+   cramped row of icon+city+time+offset squeezed into 11px text. */
+.tz-trigger-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  line-height: 1.2;
 }
 
-.tz-trigger-clock {
-  flex-shrink: 0;
+.tz-trigger-time {
   font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
   text-transform: none;
 }
 
-.tz-trigger-offset {
-  flex-shrink: 0;
-  opacity: 0.65;
+.tz-trigger-zone {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
   font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  opacity: 0.7;
 }
 
 .tz-menu {
@@ -3991,19 +3998,20 @@ select.modal-input {
 }
 
 /* Sits above the search field and option list - the live time for whatever
-   zone is currently selected, kept visible while browsing other zones. */
+   zone is currently selected, kept visible while browsing other zones.
+   "12:00 AM" on its own line, "Gambier GMT-09:00" underneath - same two-
+   line shape as the collapsed trigger, just bigger. */
 .tz-menu-clock {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
+  flex-direction: column;
+  gap: 2px;
   padding: 6px 8px 8px;
   border-bottom: 1px solid rgb(var(--c-line) / 0.4);
 }
 
 .tz-menu-clock-time {
   font-family: Consolas, "Cascadia Mono", monospace;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--on-surface);
@@ -4011,6 +4019,7 @@ select.modal-input {
 
 .tz-menu-clock-zone {
   font-size: 11px;
+  font-weight: 600;
   color: var(--on-surface-variant);
   overflow: hidden;
   text-overflow: ellipsis;

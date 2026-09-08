@@ -49,15 +49,17 @@ function offsetMinutes(offset: string): number {
   return sign * (Number(m[2]) * 60 + Number(m[3]));
 }
 
-/** "14:32" wall-clock time in `zone` right now - the whole point of picking a
- *  timezone is seeing what time it is there, not just its offset. */
+/** "12:00 AM" wall-clock time in `zone` right now - the whole point of
+ *  picking a timezone is seeing what time it is there, not just its offset.
+ *  `hour: "numeric"` (not "2-digit") is deliberate: a 12-hour clock reads
+ *  "1:05 PM", not "01:05 PM" - 2-digit only makes sense once hour12 is off. */
 function clockOf(zone: string, at: number): string {
   try {
-    return new Intl.DateTimeFormat("en-GB", {
+    return new Intl.DateTimeFormat("en-US", {
       timeZone: zone,
-      hour: "2-digit",
+      hour: "numeric",
       minute: "2-digit",
-      hour12: false,
+      hour12: true,
     }).format(new Date(at));
   } catch {
     return "--:--";
@@ -166,9 +168,12 @@ export function TimezonePicker({
             strokeWidth="1.6"
           />
         </svg>
-        <span className="tz-trigger-text">{cityOf(current)}</span>
-        <span className="tz-trigger-clock">{clockOf(current, now)}</span>
-        <span className="tz-trigger-offset">{offsetOf(current)}</span>
+        <span className="tz-trigger-lines">
+          <span className="tz-trigger-time">{clockOf(current, now)}</span>
+          <span className="tz-trigger-zone">
+            {cityOf(current)} {offsetOf(current)}
+          </span>
+        </span>
       </button>
 
       {open ? (
@@ -176,7 +181,7 @@ export function TimezonePicker({
           <div className="tz-menu-clock">
             <span className="tz-menu-clock-time">{clockOf(current, now)}</span>
             <span className="tz-menu-clock-zone">
-              {cityOf(current)} · {offsetOf(current)}
+              {cityOf(current)} {offsetOf(current)}
             </span>
           </div>
           <input

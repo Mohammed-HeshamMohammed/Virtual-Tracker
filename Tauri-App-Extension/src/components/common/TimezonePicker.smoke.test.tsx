@@ -13,12 +13,12 @@ describe("TimezonePicker", () => {
     expect(html).toMatch(/GMT[+-]\d{2}:\d{2}/);
   });
 
-  it("shows the wall-clock time in the selected zone, not just its offset", () => {
+  it("shows the wall-clock time in the selected zone, 12-hour with AM/PM", () => {
     const html = renderToStaticMarkup(
       <TimezonePicker value="Africa/Cairo" onSelect={noop} />,
     );
-    expect(html).toContain("tz-trigger-clock");
-    expect(html).toMatch(/tz-trigger-clock">\d{2}:\d{2}</);
+    expect(html).toContain("tz-trigger-time");
+    expect(html).toMatch(/tz-trigger-time">\d{1,2}:\d{2} (AM|PM)</);
   });
 
   it("falls back to the machine zone rather than rendering blank when unset", () => {
