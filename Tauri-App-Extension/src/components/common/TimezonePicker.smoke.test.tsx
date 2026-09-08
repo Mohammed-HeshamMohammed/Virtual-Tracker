@@ -13,6 +13,14 @@ describe("TimezonePicker", () => {
     expect(html).toMatch(/GMT[+-]\d{2}:\d{2}/);
   });
 
+  it("shows the wall-clock time in the selected zone, not just its offset", () => {
+    const html = renderToStaticMarkup(
+      <TimezonePicker value="Africa/Cairo" onSelect={noop} />,
+    );
+    expect(html).toContain("tz-trigger-clock");
+    expect(html).toMatch(/tz-trigger-clock">\d{2}:\d{2}</);
+  });
+
   it("falls back to the machine zone rather than rendering blank when unset", () => {
     const html = renderToStaticMarkup(<TimezonePicker value="" onSelect={noop} />);
     const machineZone = Intl.DateTimeFormat().resolvedOptions().timeZone;

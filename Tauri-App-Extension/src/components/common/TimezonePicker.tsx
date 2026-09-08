@@ -49,6 +49,21 @@ function offsetMinutes(offset: string): number {
   return sign * (Number(m[2]) * 60 + Number(m[3]));
 }
 
+/** "14:32" wall-clock time in `zone` right now - the whole point of picking a
+ *  timezone is seeing what time it is there, not just its offset. */
+function clockOf(zone: string, at: number): string {
+  try {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(at));
+  } catch {
+    return "--:--";
+  }
+}
+
 /** City half of an IANA id, for display and search: "Africa/Cairo" -> "Cairo". */
 function cityOf(zone: string): string {
   const tail = zone.split("/").pop() ?? zone;
@@ -68,6 +83,14 @@ export function TimezonePicker({
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Minute resolution is all a wall-clock badge needs; a 1s tick would just
+  // burn re-renders on every task-progress poll cycle for no visible change.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const zones = useMemo(() => {
     return allZones()
@@ -144,6 +167,7 @@ export function TimezonePicker({
           />
         </svg>
         <span className="tz-trigger-text">{cityOf(current)}</span>
+        <span className="tz-trigger-clock">{clockOf(current, now)}</span>
         <span className="tz-trigger-offset">{offsetOf(current)}</span>
       </button>
 

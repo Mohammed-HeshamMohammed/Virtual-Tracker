@@ -840,7 +840,10 @@ body {
 
 .page-clock {
   display: flex;
-  align-items: baseline;
+  /* Was baseline: fine while every child was text, but the tz-picker is a
+     button with its own box model, and baseline-aligning it against the
+     36px clock digits shoved it up and out through the card's top edge. */
+  align-items: center;
   gap: 14px;
   padding: 16px 20px;
   border-radius: 14px;
@@ -875,6 +878,7 @@ body {
    colours change: it is on a surface here, not over the titlebar overlay. */
 .page-clock .tz-picker {
   align-self: center;
+  margin-top: 4px;
 }
 
 .page-clock .tz-trigger {
@@ -3935,6 +3939,14 @@ select.modal-input {
   white-space: nowrap;
 }
 
+.tz-trigger-clock {
+  flex-shrink: 0;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .tz-trigger-offset {
   flex-shrink: 0;
   opacity: 0.65;
@@ -3945,7 +3957,7 @@ select.modal-input {
 
 .tz-menu {
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 8px);
   left: 0;
   z-index: 400;
   width: 288px;
@@ -3953,25 +3965,30 @@ select.modal-input {
   flex-direction: column;
   padding: 8px;
   gap: 6px;
-  border: 1px solid rgb(var(--c-border));
+  border: 1px solid rgb(var(--c-line));
   border-radius: 10px;
-  background: rgb(var(--c-surface));
+  /* Solid on purpose - these token names (--c-border/--c-bg/--c-text/
+     --c-accent) never existed in this file's theme, so every rule below
+     that referenced them resolved to nothing and the whole menu rendered
+     with no background at all. --c-surface-high is the same opaque token
+     the app's other popovers/menus sit on. */
+  background: rgb(var(--c-surface-high));
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
 }
 
 .tz-search {
   width: 100%;
   padding: 6px 9px;
-  border: 1px solid rgb(var(--c-border));
+  border: 1px solid rgb(var(--c-line));
   border-radius: 7px;
-  background: rgb(var(--c-bg));
-  color: rgb(var(--c-text));
+  background: rgb(var(--c-well));
+  color: var(--on-surface);
   font-size: 12px;
   outline: none;
 }
 
 .tz-search:focus {
-  border-color: rgb(var(--c-accent));
+  border-color: rgb(var(--c-primary));
 }
 
 .tz-list {
@@ -3992,18 +4009,18 @@ select.modal-input {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: rgb(var(--c-text));
+  color: var(--on-surface);
   font-size: 12px;
   text-align: left;
   cursor: pointer;
 }
 
 .tz-option:hover {
-  background: rgb(var(--c-accent) / 0.14);
+  background: rgb(var(--c-primary) / 0.14);
 }
 
 .tz-option.is-current {
-  background: rgb(var(--c-accent) / 0.2);
+  background: rgb(var(--c-primary) / 0.2);
   font-weight: 600;
 }
 
