@@ -195,6 +195,7 @@ function ActivityShellStickyBar() {
 function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; children: ReactNode }) {
   return (
     <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
+      <ActivitySummarySlot />
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
           key={pageId}
@@ -202,7 +203,7 @@ function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; chil
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.22, ease: "easeOut" }}
-          className="space-y-6 py-4 sm:py-6"
+          className="space-y-6 pb-4 pt-3"
         >
           {children}
         </motion.div>
@@ -211,12 +212,12 @@ function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; chil
   )
 }
 
-/** A page's Summary/Insights portals into this - it isn't scoped to the day
- *  picker below it, so it renders above the control bar entirely rather
- *  than between the bar and the table. */
+/** A page's Summary/Insights portals into this. Kept above the table but
+ *  inside the scroll area (not pinned) so it scrolls out of the way as you
+ *  work down the page instead of permanently occupying the top. */
 function ActivitySummarySlot() {
   const { setSummarySlotEl } = useActivityShell()
-  return <div ref={setSummarySlotEl} className="shrink-0 pb-4 empty:hidden" />
+  return <div ref={setSummarySlotEl} className="pt-3 empty:hidden" />
 }
 
 export function ActivityShell({
@@ -232,7 +233,6 @@ export function ActivityShell({
   return (
     <ActivityShellProvider pageId={normalizedPage}>
       <div className="-mt-2 flex h-full min-h-0 w-full flex-col">
-        <ActivitySummarySlot />
         <ActivityShellStickyBar />
         <ActivityShellBody pageId={normalizedPage}>{children}</ActivityShellBody>
       </div>
