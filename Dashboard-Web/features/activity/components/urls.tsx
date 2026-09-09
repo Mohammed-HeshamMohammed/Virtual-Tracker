@@ -61,23 +61,39 @@ type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
 const getCategoryColor = activityCategoryColor
 const getCategoryBadge = activityCategoryBadgeClass
 
+/** Best-guess hostname for a row: the recorded domain if it looks like one,
+ *  else a bare one-word site name resolved to "<name>.com" ("Zillow" ->
+ *  "zillow.com"). null when there's nothing host-shaped to work with. */
+function guessHost(domain: string, sourceKind?: "url" | "window"): string | null {
+  const name = domain.trim().toLowerCase().replace(/^www\./, "")
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(name)) return name
+  if (sourceKind !== "window" && /^[a-z0-9][a-z0-9-]{1,40}$/.test(name)) return `${name}.com`
+  return null
+}
+
 /** Where the row's open-link button should go, or null when there's nothing
- *  to open (window-title rows, or a domain that isn't a real host). Handles
- *  domain-only privacy mode, where `url` is just "example.com" with no
- *  scheme. */
+ *  sensible to open. A real captured URL wins; otherwise fall back to the
+ *  guessed host (domain-only privacy mode, or a site name from the title). */
 function openHrefFor(row: { url: string; domain: string; sourceKind?: "url" | "window" }): string | null {
   if (/^https?:\/\//i.test(row.url)) return row.url
-  if (row.sourceKind === "window") return null
-  const host = row.domain.trim().toLowerCase().replace(/^www\./, "")
-  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? `https://${host}` : null
+  const host = guessHost(row.domain, row.sourceKind)
+  return host ? `https://${host}` : null
 }
 
 /** Site favicon with a Globe fallback. Uses Google's public favicon service —
  *  the visited domain is sent to google.com to fetch the icon. */
-function SiteFavicon({ domain, category }: { domain: string; category: ActivityCategory }) {
+function SiteFavicon({
+  domain,
+  category,
+  sourceKind,
+}: {
+  domain: string
+  category: ActivityCategory
+  sourceKind?: "url" | "window"
+}) {
   const [failed, setFailed] = useState(false)
-  const host = domain.trim().toLowerCase().replace(/^www\./, "")
-  const canShow = !failed && /\./.test(host) && !/\s/.test(host)
+  const host = guessHost(domain, sourceKind)
+  const canShow = !failed && !!host
   return (
     <div
       className={cn(
@@ -87,7 +103,7 @@ function SiteFavicon({ domain, category }: { domain: string; category: ActivityC
     >
       {canShow ? (
         <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`}
+          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host ?? "")}&sz=64`}
           alt=""
           width={16}
           height={16}
@@ -405,7 +421,7 @@ export function ActivityURLsContent() {
                                 <Globe className="h-4 w-4" />
                               </div>
                             ) : (
-                              <SiteFavicon domain={url.domain} category={url.category} />
+                              <SiteFavicon domain={url.domain} category={url.category} sourceKind={url.sourceKind} />
                             )}
                             <div className="min-w-0">
                               {url.sourceKind === "window" ? (
