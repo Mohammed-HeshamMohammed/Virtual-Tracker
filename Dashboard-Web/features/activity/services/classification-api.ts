@@ -4,7 +4,7 @@ import type { ActivityCategory } from "@/features/activity/utils/activity-catego
 
 export interface ClassificationRow {
   id: string
-  matchType: "app" | "domain"
+  matchType: "app" | "domain" | "window_title"
   pattern: string
   category: ActivityCategory
   displayName: string | null
@@ -31,7 +31,7 @@ export async function fetchClassifications(): Promise<ClassificationRow[]> {
 }
 
 export async function saveClassification(input: {
-  matchType: "app" | "domain"
+  matchType: "app" | "domain" | "window_title"
   pattern: string
   category: ActivityCategory
   displayName?: string | null
@@ -57,7 +57,7 @@ export async function deleteClassification(id: string): Promise<void> {
   await readEnvelope<null>(res, "Failed to remove classification.")
 }
 
-export function classificationKey(matchType: "app" | "domain", pattern: string): string {
+export function classificationKey(matchType: "app" | "domain" | "window_title", pattern: string): string {
   return `${matchType}:${pattern.trim().toLowerCase()}`
 }
 

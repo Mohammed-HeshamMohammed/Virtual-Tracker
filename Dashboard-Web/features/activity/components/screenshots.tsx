@@ -8,6 +8,7 @@ import {
   loadScreenshotImage,
 } from "@/features/activity/utils/screenshot-image-cache"
 import {
+  clearActivityApiFeedCache,
   deleteActivityScreenshot,
   updateScreenshotActivityLevel,
 } from "@/features/activity/services/activity-api"
@@ -23,6 +24,7 @@ import { TablePagination } from "@/shared/tables/ui"
 
 const SCREENSHOTS_PER_PAGE = 8
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
+import { ActivityMemberAvatar } from "@/features/activity/components/activity-member-avatar"
 import { normalizeActivityCategory } from "@/features/activity/utils/activity-categories"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
 import { useAuth } from "@/shared/providers/app"
@@ -59,6 +61,7 @@ export interface Screenshot {
   time: string
   activityLevel: number
   activeApp: string
+  avatarUrl?: string | null
   imageData?: string
   hasImage?: boolean
   pageTitle?: string
@@ -440,6 +443,9 @@ export function ActivityScreenshots() {
       setEditingActivity(false)
       // Both feeds: the day-scoped table and the all-time Insights panel are
       // separate fetches, and an edit changes what each of them reports.
+      // reload({ force }) skips the persistent cache but not the in-memory
+      // feed cache in activity-api — clear it or the rows re-serve stale.
+      clearActivityApiFeedCache()
       await Promise.all([reload({ force: true }), reloadInsights({ force: true })])
       setSelectedScreenshot((current) =>
         current && result.ids.includes(current.id) ? { ...current, activityLevel } : current,
@@ -455,6 +461,7 @@ export function ActivityScreenshots() {
       try {
         await deleteActivityScreenshot(screenshotId)
         setSelectedScreenshot((current) => (current?.id === screenshotId ? null : current))
+        clearActivityApiFeedCache()
         await Promise.all([reload({ force: true }), reloadInsights({ force: true })])
       } catch (err) {
         console.error("Failed to delete screenshot:", err)
@@ -475,6 +482,7 @@ export function ActivityScreenshots() {
 
   useActivityShellRegistration({
     onRefresh: () => {
+      clearActivityApiFeedCache()
       void reload({ force: true })
       void reloadInsights({ force: true })
     },
@@ -674,9 +682,7 @@ export function ActivityScreenshots() {
               </div>
               <div className="p-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="h-7 w-7 shrink-0 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-[11px] font-semibold text-slate-600 dark:text-slate-200">
-                    {screenshot.avatar}
-                  </div>
+                  <ActivityMemberAvatar initials={screenshot.avatar} imageUrl={screenshot.avatarUrl} size="sm" />
                   <p className="min-w-0 flex-1 truncate text-sm font-medium text-slate-800 dark:text-slate-100">{screenshot.member}</p>
                   <span className="shrink-0 text-xs text-slate-400 dark:text-slate-500">{localTime(screenshot)}</span>
                 </div>
@@ -727,9 +733,7 @@ export function ActivityScreenshots() {
                 >
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200">
-                        {screenshot.avatar}
-                      </div>
+                      <ActivityMemberAvatar initials={screenshot.avatar} imageUrl={screenshot.avatarUrl} size="md" />
                       <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{screenshot.member}</span>
                     </div>
                   </td>
@@ -801,9 +805,7 @@ export function ActivityScreenshots() {
             >
               <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 flex items-center justify-center font-semibold text-slate-600 dark:text-slate-200">
-                    {selectedScreenshot.avatar}
-                  </div>
+                  <ActivityMemberAvatar initials={selectedScreenshot.avatar} imageUrl={selectedScreenshot.avatarUrl} size="lg" />
                   <div>
                     <p className="font-semibold text-slate-800 dark:text-slate-100">{selectedScreenshot.member}</p>
                     <p className="text-sm text-slate-500 dark:text-slate-400">{localDate(selectedScreenshot)} at {localTime(selectedScreenshot)}</p>

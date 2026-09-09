@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
+import { ActivityMemberAvatar } from "@/features/activity/components/activity-member-avatar"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
@@ -47,6 +48,7 @@ interface MemberUrlUsage {
   memberId?: string
   member: string
   avatar: string
+  avatarUrl?: string | null
   productiveTime: string
   productivePercent: number
   neutralTime: string
@@ -58,6 +60,37 @@ type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
 
 const getCategoryColor = activityCategoryColor
 const getCategoryBadge = activityCategoryBadgeClass
+
+/** Site favicon with a Globe fallback. Uses Google's public favicon service —
+ *  the visited domain is sent to google.com to fetch the icon. */
+function SiteFavicon({ domain, category }: { domain: string; category: ActivityCategory }) {
+  const [failed, setFailed] = useState(false)
+  const host = domain.trim().toLowerCase().replace(/^www\./, "")
+  const canShow = !failed && /\./.test(host) && !/\s/.test(host)
+  return (
+    <div
+      className={cn(
+        "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg text-white",
+        getCategoryColor(category),
+      )}
+    >
+      {canShow ? (
+        <img
+          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`}
+          alt=""
+          width={16}
+          height={16}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          className="h-4 w-4"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Globe className="h-4 w-4" />
+      )}
+    </div>
+  )
+}
 
 export function ActivityURLsContent() {
   const { memberRole } = useAuth()
@@ -193,12 +226,14 @@ export function ActivityURLsContent() {
   // selected day - classification rules are patterns ("reddit.com" ->
   // distracting), not day-scoped facts, so picking "today" shouldn't hide a
   // site that was last visited last week from the list of things you can
-  // classify.
+  // classify. Window-title rows (no URL) go in too, matched on the title text.
   const classifyItems = useMemo(
     () =>
-      allTimeUrls
-        .filter((url) => url.sourceKind !== "window")
-        .map((url) => ({ pattern: url.domain, label: url.domain, category: url.category })),
+      allTimeUrls.map((url) =>
+        url.sourceKind === "window"
+          ? { pattern: url.url, label: url.url, category: url.category, matchType: "window_title" as const }
+          : { pattern: url.domain, label: url.domain, category: url.category },
+      ),
     [allTimeUrls],
   )
 
@@ -347,14 +382,18 @@ export function ActivityURLsContent() {
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            <div
-                              className={cn(
-                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white",
-                                getCategoryColor(url.category),
-                              )}
-                            >
-                              <Globe className="h-4 w-4" />
-                            </div>
+                            {url.sourceKind === "window" ? (
+                              <div
+                                className={cn(
+                                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white",
+                                  getCategoryColor(url.category),
+                                )}
+                              >
+                                <Globe className="h-4 w-4" />
+                              </div>
+                            ) : (
+                              <SiteFavicon domain={url.domain} category={url.category} />
+                            )}
                             <div className="min-w-0">
                               <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{url.domain}</p>
                               <p className="truncate text-xs text-slate-500 dark:text-slate-400 max-w-[320px]">{url.url}</p>
@@ -437,9 +476,7 @@ export function ActivityURLsContent() {
                       className="block w-full p-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
-                          {member.avatar}
-                        </div>
+                        <ActivityMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} size="lg" />
                         <div className="min-w-0 flex-1">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="font-medium text-slate-800 dark:text-slate-100">{member.member}</p>

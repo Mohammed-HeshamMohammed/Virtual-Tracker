@@ -11,6 +11,7 @@ import { motion } from "framer-motion"
 import { Clock, Monitor, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
+import { ActivityMemberAvatar } from "@/features/activity/components/activity-member-avatar"
 import {
   ActivityDayEmptyState,
   ActivityLoadingState,
@@ -41,6 +42,7 @@ interface AppUsage {
   trend: "up" | "down" | "neutral"
   trendValue: string
   sessions: number
+  iconDataUrl?: string | null
   /** True when this row's category came from the sites visited rather than
    *  from the app itself - browsers only. */
   viaUrl?: boolean
@@ -50,6 +52,7 @@ interface MemberAppUsage {
   memberId?: string
   member: string
   avatar: string
+  avatarUrl?: string | null
   productiveTime: string
   productivePercent: number
   neutralTime: string
@@ -59,6 +62,44 @@ interface MemberAppUsage {
 
 const getCategoryColor = activityCategoryColor
 const getCategoryBgColor = activityCategoryBadgeClass
+
+/** The app's real icon (reported by the desktop agent) when there is one,
+ *  falling back to a category-coloured letter tile. */
+function AppIcon({
+  name,
+  category,
+  iconDataUrl,
+}: {
+  name: string
+  category: ActivityCategory
+  iconDataUrl?: string | null
+}) {
+  const [failed, setFailed] = useState(false)
+  if (iconDataUrl && !failed) {
+    return (
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+        <img
+          src={iconDataUrl}
+          alt=""
+          width={24}
+          height={24}
+          className="h-6 w-6 object-contain"
+          onError={() => setFailed(true)}
+        />
+      </div>
+    )
+  }
+  return (
+    <div
+      className={cn(
+        "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm",
+        getCategoryColor(category),
+      )}
+    >
+      {name.charAt(0)}
+    </div>
+  )
+}
 
 type AppsFeed = { apps: AppUsage[]; members: MemberAppUsage[] }
 
@@ -340,14 +381,7 @@ export function ActivityAppsContent() {
                       >
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-3">
-                            <div
-                              className={cn(
-                                "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white shadow-sm",
-                                getCategoryColor(app.category),
-                              )}
-                            >
-                              {app.name.charAt(0)}
-                            </div>
+                            <AppIcon name={app.name} category={app.category} iconDataUrl={app.iconDataUrl} />
                             <span className="font-semibold text-slate-900 dark:text-slate-100">{app.name}</span>
                           </div>
                         </td>
@@ -419,9 +453,7 @@ export function ActivityAppsContent() {
                       className="block w-full p-4 text-left transition-colors hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
                     >
                       <div className="flex items-center gap-4">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-600 text-sm font-semibold text-slate-600 dark:text-slate-200">
-                          {member.avatar}
-                        </div>
+                        <ActivityMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} size="lg" />
                         <div className="min-w-0 flex-1">
                           <div className="mb-2 flex items-center justify-between">
                             <p className="font-medium text-slate-800 dark:text-slate-100">{member.member}</p>
