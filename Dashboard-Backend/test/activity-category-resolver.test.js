@@ -133,6 +133,34 @@ test("with nothing knowable it falls back to the browser itself, not a guess", (
   assert.equal(r.source, "app");
 });
 
+test("a hand-classified window title (no URL, no site name) is honoured", () => {
+  const withTitle = (matchType, pattern) =>
+    `${matchType}:${pattern}`.toLowerCase() === "window_title:lead submission form"
+      ? "productive"
+      : lookup(matchType, pattern);
+  const r = resolveActivityCategory(withTitle, {
+    appName: "Google Chrome",
+    pageTitle: "Lead Submission Form",
+    at: AT,
+    sessionId: "s1",
+    urlIndex: new Map(),
+  });
+  assert.equal(r.category, "productive");
+  assert.equal(r.source, "title-window");
+  assert.equal(r.domain, "Lead Submission Form");
+});
+
+test("an unclassified window title still falls back to the browser", () => {
+  const r = resolveActivityCategory(lookup, {
+    appName: "Google Chrome",
+    pageTitle: "Lead Submission Form",
+    at: AT,
+    sessionId: "s1",
+    urlIndex: new Map(),
+  });
+  assert.equal(r.source, "app");
+});
+
 test("a row's own domain wins over inference", () => {
   // Step 0 - what a screenshot will carry once the agent sends it.
   const index = buildUrlIndex([urlRow("s1", "reddit.com", AT)]);

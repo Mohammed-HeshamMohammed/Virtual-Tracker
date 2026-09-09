@@ -11,7 +11,11 @@ import {
 } from "../../lib/postgres/activity-events-postgres.service.js";
 
 export const CATEGORIES = Object.freeze(["productive", "neutral", "distracting", "unclassified"]);
-export const MATCH_TYPES = Object.freeze(["app", "domain"]);
+// "window_title" is for browser rows the agent could read as a window title
+// but not as a URL - the pattern is the cleaned title text itself, not a
+// domain. Kept distinct from "domain" so labelling one noisy title never
+// touches a real site's classification.
+export const MATCH_TYPES = Object.freeze(["app", "domain", "window_title"]);
 
 export function canClassifyActivity(roleName) {
   const key = normalizeRoleKey(roleName);
@@ -58,7 +62,9 @@ export async function getAllCategories() {
 
 export async function setCategory(input, actor) {
   if (!MATCH_TYPES.includes(input.matchType)) {
-    const err = new Error(`matchType must be 'app' or 'domain', got '${input.matchType}'`);
+    const err = new Error(
+      `matchType must be one of ${MATCH_TYPES.join(", ")}, got '${input.matchType}'`,
+    );
     err.code = "INVALID_MATCH_TYPE";
     throw err;
   }

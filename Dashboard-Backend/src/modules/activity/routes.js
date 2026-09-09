@@ -94,6 +94,8 @@ import {
   insertActivityAppLog,
   insertActivityScreenshot,
   insertActivityUrlLog,
+  setAppIconPg,
+  getAppIconsByNamesPg,
   sumMemberActiveIdleSeconds,
   sumMemberActiveIdleSecondsForProject,
   sumAppLogSecondsByAppNameForProjectPg,
@@ -981,6 +983,13 @@ export async function routeActivity(req, res, url, origin) {
             signal: readActivitySignal(ev),
           };
           await insertActivityAppLog(appRow);
+          // Icon rides an app slice at most once per app per agent run.
+          const appIcon = typeof ev.appIcon === "string" ? ev.appIcon : "";
+          if (source === "agent" && appIcon.startsWith("data:image/") && appIcon.length <= 20000) {
+            void setAppIconPg(appName, appIcon).catch((err) =>
+              logSafeWarn("[activity events] app icon store failed", err),
+            );
+          }
           count++;
         } else if (type === "url") {
           const rawUrlStr = typeof ev.url === "string" ? ev.url.slice(0, 2000) : "";
@@ -1352,6 +1361,7 @@ export async function routeActivity(req, res, url, origin) {
             memberId,
             member: meta.name,
             avatar: meta.initials,
+            avatarUrl: meta.avatarUrl ?? null,
             project: contextValue,
             projectName,
             contextLabel,
@@ -1418,6 +1428,7 @@ export async function routeActivity(req, res, url, origin) {
           const memRow = byMember.get(memberIdKey) || {
             member: meta.name,
             avatar: meta.initials,
+            avatarUrl: meta.avatarUrl ?? null,
             totalSeconds: 0,
             apps: new Map(),
             categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
@@ -1445,6 +1456,9 @@ export async function routeActivity(req, res, url, origin) {
         };
 
         const totalAll = [...byApp.values()].reduce((s, r) => s + r.totalSeconds, 0) || 1;
+        const appIcons = await getAppIconsByNamesPg([...byApp.values()].map((r) => r.name)).catch(
+          () => new Map(),
+        );
         const apps = [...byApp.values()]
           .sort((a, b) =>
             sortMode === "duration"
@@ -1465,6 +1479,7 @@ export async function routeActivity(req, res, url, origin) {
             trendValue: `${Math.round((r.totalSeconds / totalAll) * 100)}%`,
             sessions: r.sessions,
             lastActivityAt: r.lastActivityAt || null,
+            iconDataUrl: appIcons.get(String(r.name).toLowerCase()) ?? null,
           }));
 
         const memberRows = [...byMember.entries()].map(([id, r]) => {
@@ -1483,6 +1498,7 @@ export async function routeActivity(req, res, url, origin) {
             memberId: id,
             member: r.member,
             avatar: r.avatar,
+            avatarUrl: r.avatarUrl ?? null,
             productiveTime: formatDur(byCategory.productive),
             productivePercent: Math.round((byCategory.productive / totalSeconds) * 100),
             neutralTime: formatDur(neutralSeconds),
@@ -1505,6 +1521,7 @@ export async function routeActivity(req, res, url, origin) {
           const memRow = byMember.get(memberIdKey) || {
             member: meta.name,
             avatar: meta.initials,
+            avatarUrl: meta.avatarUrl ?? null,
             totalSeconds: 0,
             domains: new Map(),
             categorySeconds: { productive: 0, neutral: 0, distracting: 0, unclassified: 0 },
@@ -1567,6 +1584,7 @@ export async function routeActivity(req, res, url, origin) {
           const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
           if (!cleanTitle) return;
           const siteName = siteNameFromWindowTitle(cleanTitle);
+          const isWindow = !siteName;
           const key = siteName ? `site:${siteName.toLowerCase()}` : `window:${appName}:${cleanTitle}`;
           const row = byUrl.get(key) || {
             domain: siteName || appName,
@@ -1574,13 +1592,22 @@ export async function routeActivity(req, res, url, origin) {
             totalSeconds: 0,
             visits: 0,
             lastVisit: startedIso,
-            sourceKind: siteName ? "url" : "window",
+            sourceKind: isWindow ? "window" : "url",
+            // Window-title rows are classified by the cleaned title itself, not
+            // by a domain - the "domain" shown is only the browser name.
+            classifyMatch: isWindow ? "window_title" : "domain",
+            classifyPattern: isWindow ? cleanTitle : siteName,
           };
           row.totalSeconds += dur;
           row.visits += 1;
           if (startedIso > (row.lastVisit || "")) row.lastVisit = startedIso;
           byUrl.set(key, row);
-          touchMember(String(d.member_id ?? ""), row.domain, dur, categoryLookup("domain", row.domain));
+          touchMember(
+            String(d.member_id ?? ""),
+            row.domain,
+            dur,
+            categoryLookup(row.classifyMatch, row.classifyPattern),
+          );
         };
 
         const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
@@ -1607,7 +1634,7 @@ export async function routeActivity(req, res, url, origin) {
             id: String(i + 1),
             domain: r.domain,
             url: r.url,
-            category: categoryLookup("domain", r.domain),
+            category: categoryLookup(r.classifyMatch ?? "domain", r.classifyPattern ?? r.domain),
             totalTime: formatDur(r.totalSeconds),
             visits: r.visits,
             avgTime: formatDur(Math.round(r.totalSeconds / Math.max(1, r.visits))),
@@ -1631,6 +1658,7 @@ export async function routeActivity(req, res, url, origin) {
             memberId: id,
             member: r.member,
             avatar: r.avatar,
+            avatarUrl: r.avatarUrl ?? null,
             productiveTime: formatDur(byCategory.productive),
             productivePercent: Math.round((byCategory.productive / totalSeconds) * 100),
             neutralTime: formatDur(neutralSeconds),

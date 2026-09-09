@@ -157,7 +157,7 @@ function findUrlAt(intervals, atMs) {
  *                 `domain` is the row's own recorded domain when it has one
  *                 (URL logs always; screenshots once the agent sends it).
  * @returns { category, source, domain }
- *          source: "app" | "url" | "title-url" | "title-site"
+ *          source: "app" | "url" | "title-url" | "title-site" | "title-window"
  */
 export function resolveActivityCategory(lookup, input) {
   const { appName = "", pageTitle = "", at, sessionId, urlIndex, domain } = input ?? {};
@@ -185,12 +185,22 @@ export function resolveActivityCategory(lookup, input) {
   }
 
   // 3. A site name the window title ends with ("… | GitHub").
-  const siteName = siteNameFromWindowTitle(titleFromBrowserPageTitle(pageTitle, appName));
+  const cleanTitle = titleFromBrowserPageTitle(pageTitle, appName);
+  const siteName = siteNameFromWindowTitle(cleanTitle);
   if (siteName) {
     return { category: lookup("domain", siteName), source: "title-site", domain: siteName };
   }
 
-  // 4. Nothing knowable about what was browsed - fall back to the browser
+  // 4. No URL and no recognisable site name, but the cleaned window title may
+  //    still have been classified by hand ("window_title" match type).
+  if (cleanTitle) {
+    const titleCategory = lookup("window_title", cleanTitle);
+    if (titleCategory !== "unclassified") {
+      return { category: titleCategory, source: "title-window", domain: cleanTitle };
+    }
+  }
+
+  // 5. Nothing knowable about what was browsed - fall back to the browser
   //    itself rather than guessing. Honest, and matches pre-change behaviour.
   return { category: lookup("app", appName), source: "app", domain: "" };
 }
