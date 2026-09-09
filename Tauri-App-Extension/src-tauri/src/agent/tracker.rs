@@ -849,8 +849,14 @@ impl ActivityTracker {
     /// no separate org-wide warn/alert stages ahead of it. The moment idle
     /// time crosses it, the timer stops and the active total is rewound to
     /// what it was at the last real input - so the entire idle stretch,
-    /// including the moment that `tick_progress` credited before its own
-    /// threshold kicked in, is reversed rather than banked.
+    /// including the grace window `tick_progress` had already credited
+    /// active before its own threshold kicked in, is reversed out of active
+    /// and folded into idle instead of simply vanishing. Without that fold,
+    /// idle_total only ever reflected the handful of ticks between crossing
+    /// the threshold and this stop actually running - a few seconds, not the
+    /// real time the person was away - so the reported active/idle split
+    /// silently lost a whole idle_threshold_sec-sized gap on every escalated
+    /// stop instead of accounting for where that time actually went.
     #[allow(clippy::too_many_arguments)]
     fn tick_idle_escalation(
         &self,
@@ -899,12 +905,14 @@ impl ActivityTracker {
         // Past the project's own allowance: stop immediately and rewind.
         // Never let the rewind push the total up, and never below zero -
         // clamping both ways because a mis-ordered snapshot would otherwise
-        // mint or destroy hours.
+        // mint or destroy hours. `reversed` moves to idle rather than
+        // disappearing - active and idle still have to sum to the real
+        // elapsed wall-clock time, not silently fall short of it.
         let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
-        let idle_total = idle_baseline.saturating_add(*idle_elapsed);
+        let idle_total = idle_baseline.saturating_add(*idle_elapsed).saturating_add(reversed);
 
         log::info!(
-            "Idle {}s past the project's {}s allowance - stopping timer and reversing {}s of active time (from {}s to {}s)",
+            "Idle {}s past the project's {}s allowance - stopping timer, reversing {}s of active time (from {}s to {}s) into idle",
             idle_for,
             idle_threshold_sec,
             reversed,
@@ -1235,7 +1243,7 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_idle_threshold, ActivityTracker, PendingStop, TickState};
+    use super::{valid_idle_threshold, ActivityTracker, IdleWatch, PendingStop, TickState};
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -1462,6 +1470,55 @@ mod tests {
 
         assert!(!state.was_active, "idle escalation should have stopped the timer");
         assert!(state.current_session.is_empty());
+    }
+
+    #[test]
+    fn idle_escalation_folds_the_reversed_active_chunk_into_idle_instead_of_discarding_it() {
+        let base_url = fake_server(|request| match request.method() {
+            Method::Post => (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string()),
+            _ => (404, "{}".to_string()),
+        });
+        let tracker = test_tracker(base_url);
+        tracker.apply_idle_thresholds(1);
+
+        // Real idle_seconds() growing from construction, same technique the
+        // test above uses - nothing here ever feeds ActivityMeter real input.
+        thread::sleep(Duration::from_millis(3_500));
+
+        let mut watch = IdleWatch {
+            stage: 0,
+            // The last confirmed real input was at 10s of active time -
+            // everything credited active since then (up to 100s) is the
+            // idle grace window tick_progress mistakenly counted active.
+            active_at_last_input: 10,
+        };
+        let active_baseline = 0u64;
+        let active_elapsed = 100u64;
+        let idle_baseline = 0u64;
+        // The couple of ticks tick_progress had already credited idle by the
+        // time escalation ran on the same tick it crossed the threshold.
+        let idle_elapsed = 2u64;
+
+        let stopped = tracker.tick_idle_escalation(
+            &mut watch,
+            "task-1",
+            "project-1",
+            &active_baseline,
+            &active_elapsed,
+            &idle_baseline,
+            &idle_elapsed,
+            false,
+            1,
+        );
+        assert!(stopped, "past the threshold, escalation must stop the session");
+
+        let (_, active_seconds, idle_seconds) = tracker.task_progress.lock().clone();
+        // Rewound to the last real input - 10s, not 0 and not the full 100s.
+        assert_eq!(active_seconds, 10);
+        // The reversed 90s (100 - 10) joins the 2s tick_progress already
+        // credited idle - the fix this guards: that 90s used to just vanish,
+        // reported nowhere, instead of landing here.
+        assert_eq!(idle_seconds, 92);
     }
 
     /// ID-3: `disable_idle_time = true` on the project must mean no idle
