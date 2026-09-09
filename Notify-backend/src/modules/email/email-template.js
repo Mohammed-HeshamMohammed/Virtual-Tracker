@@ -1,4 +1,3 @@
-// Shared HTML layout/helpers for transactional emails (table + inline styles for email clients).
 
 const BRAND = {
   purple: "#6b38d4",
@@ -21,9 +20,6 @@ const BRAND = {
   infoBg: "#eff6ff",
 };
 
-/**
- * @param {string} value
- */
 export function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -32,7 +28,6 @@ export function escapeHtml(value) {
     .replace(/"/g, "&quot;");
 }
 
-/** @param {{ label: string; value: string }[]} rows */
 export function detailTableHtml(rows) {
   if (!rows.length) return "";
   const body = rows
@@ -56,11 +51,6 @@ export function detailTableHtml(rows) {
     </table>`.trim();
 }
 
-/**
- * @param {"info"|"success"|"warning"|"danger"} variant
- * @param {string} title
- * @param {string} bodyHtml
- */
 export function calloutHtml(variant, title, bodyHtml) {
   const palette = {
     info: { bg: BRAND.infoBg, border: "#bfdbfe", accent: BRAND.info },
@@ -79,7 +69,6 @@ export function calloutHtml(variant, title, bodyHtml) {
     </table>`.trim();
 }
 
-/** @param {string[]} steps */
 export function stepsListHtml(steps) {
   const items = steps
     .map(
@@ -98,7 +87,6 @@ export function stepsListHtml(steps) {
     </table>`.trim();
 }
 
-/** @param {string} bodyHtml */
 export function credentialPanelHtml(bodyHtml) {
   return `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:20px 0;border-collapse:collapse;">
@@ -110,7 +98,6 @@ export function credentialPanelHtml(bodyHtml) {
     </table>`.trim();
 }
 
-/** @param {string} href */
 export function linkFallbackHtml(href) {
   return `
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:8px 0 0;border-collapse:collapse;">
@@ -126,10 +113,6 @@ export function linkFallbackHtml(href) {
     </table>`.trim();
 }
 
-/**
- * @param {string} supportEmail
- * @param {{ showAutoNotice?: boolean }} [options]
- */
 export function supportFooterHtml(supportEmail, options = {}) {
   const showAutoNotice = options.showAutoNotice !== false;
   return `
@@ -154,21 +137,6 @@ const BADGE_STYLES = {
   report: { bg: BRAND.infoBg, color: BRAND.info },
 };
 
-/**
- * @param {{
- *   title: string;
- *   subtitle?: string;
- *   badge?: string;
- *   badgeVariant?: keyof typeof BADGE_STYLES;
- *   preheader?: string;
- *   bodyHtml: string;
- *   actionLabel?: string;
- *   actionHref?: string;
- *   secondaryActionLabel?: string;
- *   secondaryActionHref?: string;
- *   footerHtml?: string;
- * }} input
- */
 export function buildAuthBrandedEmailHtml(input) {
   const badgeVariant = input.badgeVariant ?? "default";
   const badgeStyle = BADGE_STYLES[badgeVariant] ?? BADGE_STYLES.default;
@@ -283,10 +251,6 @@ export function buildAuthBrandedEmailHtml(input) {
 </html>`.trim();
 }
 
-/**
- * @param {string} link
- * @param {string} appPublicUrl
- */
 export function rewriteFirebaseActionLinkToAppHandler(link, appPublicUrl) {
   try {
     const source = new URL(link);

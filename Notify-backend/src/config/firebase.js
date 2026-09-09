@@ -1,17 +1,11 @@
-// Firebase Admin for FCM only (no Firestore). Credentials: FIREBASE_SERVICE_ACCOUNT → GOOGLE_APPLICATION_CREDENTIALS → ADC.
 import { getEnv } from "./env.js";
 
-/** @type {import("firebase-admin").app.App | null} */
 let _app = null;
 
-/**
- * @returns {import("firebase-admin").app.App | null}
- */
 export function getFirebaseApp() {
   return _app;
 }
 
-/** Init Firebase Admin for FCM. Returns null + warning if credentials missing. */
 export async function initFirebaseAdmin() {
   if (_app) return true;
 
@@ -30,7 +24,6 @@ export async function initFirebaseAdmin() {
   const { firebase: fb } = getEnv();
   let credential = null;
 
-  // FIREBASE_SERVICE_ACCOUNT JSON, else GOOGLE_APPLICATION_CREDENTIALS / ADC
   if (fb.serviceAccount) {
     try {
       const parsed = JSON.parse(fb.serviceAccount);
@@ -56,9 +49,6 @@ export async function initFirebaseAdmin() {
   return true;
 }
 
-/**
- * @returns {Promise<import("firebase-admin/messaging").Messaging | null>}
- */
 export async function getMessaging() {
   if (!_app) return null;
   try {

@@ -1,4 +1,3 @@
-// Internal messaging service — vt-dashboard-api calls this, not browsers.
 
 import { initConfig, getEnv } from "./src/config/env.js";
 

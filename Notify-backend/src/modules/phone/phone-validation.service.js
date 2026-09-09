@@ -1,18 +1,5 @@
-// libphonenumber-js wrapper.
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
-/**
- * @param {{ phone?: string; defaultCountry?: string; required?: boolean; label?: string }} input
- * @returns {{
- *   valid: true;
- *   e164: string;
- *   nationalNumber: string;
- *   countryCallingCode: string;
- *   country: string | undefined;
- *   nationalFormat: string;
- *   internationalFormat: string;
- * } | { valid: true; e164: null; phone: "" }}
- */
 export function validatePhoneNumber(input) {
   const label = typeof input.label === "string" && input.label.trim() ? input.label.trim() : "Phone number";
   const required = input.required === true;
@@ -43,10 +30,6 @@ export function validatePhoneNumber(input) {
   };
 }
 
-/**
- * @param {unknown} value
- * @returns {string | undefined}
- */
 function normalizeCountryCode(value) {
   if (typeof value !== "string") return undefined;
   const code = value.trim().toUpperCase();

@@ -1,4 +1,3 @@
-// CREATE IF NOT EXISTS for notification_deliveries when POSTGRES_URL is set.
 import pg from "pg";
 import { getEnv } from "../../config/env.js";
 
@@ -19,9 +18,6 @@ const SCHEMA_DDL = [
   ON notification_deliveries (recipient, template, channel, status, sent_at DESC)`,
 ];
 
-/**
- * @returns {Promise<{ ok: boolean, skipped?: boolean, error?: string }>}
- */
 export async function ensureNotifySchema() {
   const url = getEnv().postgres.url;
   if (!url) return { ok: true, skipped: true };

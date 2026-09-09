@@ -1,7 +1,5 @@
-// Delivery log writes to notification_deliveries. Errors are swallowed so sends aren't blocked.
 import { dbQuery } from "../../lib/db.js";
 
-/** Per-template cooldowns for deduping retries / double-clicks. @type {Record<string, string>} */
 const EMAIL_COOLDOWNS = {
   verification: "2 minutes",
   "password-updated": "10 minutes",
@@ -18,7 +16,6 @@ const EMAIL_COOLDOWNS = {
 const DEFAULT_EMAIL_COOLDOWN = "5 minutes";
 const DEFAULT_PUSH_COOLDOWN = "1 minute";
 
-/** Cooldown dedupe check — DB down returns false. @param {{ recipient: string; template: string; channel: "email" | "push" | "sms" }} params @returns {Promise<boolean>} */
 export async function isDuplicate({ recipient, template, channel }) {
   const cooldown =
     channel === "email"
@@ -40,7 +37,6 @@ export async function isDuplicate({ recipient, template, channel }) {
   return rows.length > 0;
 }
 
-/** Insert delivery row — swallows errors. @param {{ channel: "email" | "push" | "sms"; template: string; recipient: string; recipientMemberId?: string | null; status: "sent" | "failed" | "skipped"; errorMessage?: string | null; metadata?: Record<string, unknown> | null; }} params @returns {Promise<void>} */
 export async function logDelivery({
   channel,
   template,
