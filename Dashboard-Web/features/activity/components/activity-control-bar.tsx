@@ -75,10 +75,10 @@ export function ActivityControlBar({
   pageFilters,
 }: ActivityControlBarProps) {
   return (
-    <div className="overflow-visible rounded-xl border border-slate-200/70 dark:border-slate-800/70 bg-slate-50/70 dark:bg-slate-900/50 p-2.5 sm:p-3 transition-colors">
+    <div className="overflow-visible rounded-xl border border-slate-200/70 dark:border-[#3d4a3d]/40 bg-slate-100/70 dark:bg-[#151b2d] p-2.5 sm:p-3 transition-colors">
       <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
         <div
-          className="flex shrink-0 items-center rounded-lg border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-800/50 p-0.5"
+          className="flex shrink-0 items-center rounded-lg border border-slate-200/70 dark:border-[#3d4a3d]/40 bg-white/70 dark:bg-[#101417]/60 p-0.5"
           role="group"
           aria-label="Day navigation"
         >
@@ -126,7 +126,7 @@ export function ActivityControlBar({
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}
             aria-label={searchPlaceholder}
-            className="h-9 w-full rounded-xl border border-slate-200/90 dark:border-slate-700/80 bg-slate-50/60 dark:bg-slate-800/60 pl-8 pr-3 text-sm text-slate-900 dark:text-slate-100 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:bg-white dark:focus:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+            className="h-9 w-full rounded-xl border border-slate-200/90 dark:border-[#3d4a3d]/40 bg-slate-50/60 dark:bg-[#101417]/60 pl-8 pr-3 text-sm text-slate-900 dark:text-slate-100 transition-all placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-emerald-500 focus:bg-white dark:focus:bg-[#101417] focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
           />
         </div>
 
