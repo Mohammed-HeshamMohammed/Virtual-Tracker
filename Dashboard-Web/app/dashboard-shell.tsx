@@ -103,11 +103,18 @@ export function DashboardShell() {
             isCollapsed={!isSidebarCollapsed}
           />
           <HierarchyAssignmentBanner />
-          <main className="dashboard-shell-main w-full flex-1 overflow-hidden p-8">
+          <main
+            className={cn(
+              "dashboard-shell-main w-full flex-1 overflow-hidden",
+              // Dense list/table pages (activity, people, PM) waste less of
+              // the viewport on chrome with a tighter frame.
+              isFullBleedPage(activeItem) ? "p-3 sm:p-4" : "p-8",
+            )}
+          >
             <div
               className={cn(
-                "dashboard-shell-scroll scrollbar-hide h-full w-full max-w-full rounded-3xl p-8 transition-colors duration-300",
-                isFullBleedPage(activeItem) ? "overflow-hidden" : "overflow-y-auto",
+                "dashboard-shell-scroll scrollbar-hide h-full w-full max-w-full rounded-3xl transition-colors duration-300",
+                isFullBleedPage(activeItem) ? "overflow-hidden p-4 sm:p-5" : "overflow-y-auto p-8",
                 isDark
                   ? "bg-[#101417] shadow-[0_8px_40px_0_rgba(75,226,119,0.04)]"
                   : "bg-[#ffffff] shadow-lg",
