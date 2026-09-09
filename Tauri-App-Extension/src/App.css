@@ -700,13 +700,13 @@ body {
   min-width: 0;
   overflow-y: auto;
   margin: 44px 14px 14px 0;
-  padding: 16px 20px;
+  padding: 14px 20px 16px;
   border-radius: 18px;
   background: var(--surface-high);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
 }
 
 .page-header {
@@ -3164,13 +3164,44 @@ select.modal-input {
    single-series radar: one axis per app, one vertex per axis at that
    app's share of the week. Square aspect-ratio is load-bearing here (not
    just styling) - the angle math assumes a uniform 0-100 coordinate space
-   in both directions, so a stretched box would skew every axis. */
+   in both directions, so a stretched box would skew every axis.
+
+   The whole card grows to fill whatever vertical space the main pane has
+   left over (see .project-detail-panel), and everything below rides that
+   down to the actual chart/image sizes - no fixed heights, no JS
+   measurement, just each level handing its resolved size to the next. */
+.project-detail-panel {
+  display: flex;
+  flex-direction: column;
+  /* Explicit 0% basis, not "auto" - "auto" makes the flex algorithm
+     measure this item's own (nested-flex, aspect-ratio-bearing) content
+     to find a starting size before growing it, and that content-based
+     pass resolves the aspect-ratio/percentage-height chain below against
+     an INDEFINITE height, producing a too-tall guess that stretch then
+     fails to correct. Starting from 0 skips that measurement entirely -
+     the final size is pure flex-grow division of the real leftover
+     space, so it can't disagree with what actually fits. */
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
 .project-detail-row {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  /* nowrap is load-bearing, not the default left in place: align-items:
+     stretch only stretches each item to the CONTAINER's cross size when
+     there's a single, container-wide flex line. With wrapping allowed,
+     the line's cross size is instead the max of its items' own
+     content-based hypothetical heights - and measuring that hypothetical
+     height sends .project-radar's height:100% chain below down a
+     fallback path (indefinite container -> resolve width first, then
+     aspect-ratio derives height from THAT), producing a taller box than
+     actually fits, which stretch then can't shrink back down. */
+  flex-wrap: nowrap;
+  align-items: stretch;
   gap: 14px;
-  margin-top: 6px;
+  margin-top: 4px;
+  flex: 1 1 0%;
+  min-height: 0;
 }
 
 .project-detail-row.no-badges {
@@ -3181,45 +3212,97 @@ select.modal-input {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1 1 190px;
-  max-width: 260px;
+  flex: 1 1 300px;
+  min-height: 0;
+  max-width: 460px;
 }
 
 .project-shots-card {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1 1 190px;
-  max-width: 230px;
+  flex: 1 1 170px;
+  min-height: 0;
+  max-width: 260px;
   min-width: 0;
+}
+
+/* Grows to fill the column (flex-grow resolves its height first, giving
+   it a definite size); centers whatever square actually fits inside it.
+   Splitting the "grow" and the "stay square" jobs across two elements is
+   what keeps aspect-ratio in charge of the shape - putting flex-grow
+   directly on the square would stretch its height independently of its
+   width the moment there's leftover space, skewing every axis. */
+.project-radar-frame {
+  /* Same 0%-basis reasoning as .project-detail-panel above - this is the
+     link in the chain that was actually causing the overflow: an "auto"
+     basis here let .project-radar's height:100% resolve against an
+     indefinite height during measurement, producing a too-tall square
+     that stretch downstream couldn't shrink back down. */
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .project-radar {
   position: relative;
-  width: 100%;
-  max-width: 170px;
+  /* Sized off the frame's resolved height; aspect-ratio derives width
+     from it, and max-width clamps that back down (recomputing height to
+     match, same as an <img>'s max-width:100%; height:auto does) once the
+     column is narrower than the frame is tall. */
+  height: 100%;
+  width: auto;
+  max-width: 100%;
   aspect-ratio: 1;
-  margin: 0 auto 10px 20px;
+}
+
+/* One row, up to three chips side by side - not stacked into a column -
+   kept as small as it can be so every pixel not spent here is a pixel
+   the preview below gets instead, which is the actual point of this
+   card. */
+.project-shots-card .shot-strip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.project-shots-card .shot-chip {
+  flex: 1 1 0%;
+  min-width: 0;
+  text-align: center;
+  padding: 3px 4px;
+  font-size: 9.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The shared shot-preview classes size themselves for the sidebar's wider
-   screenshots card - capped here so a tall capture can't stretch this
-   narrower card (and the main pane) past the window's own height. */
-.project-shots-card .shot-strip {
-  margin-top: 8px;
-}
-
+   screenshots card - here the preview is the point of the layout, so it
+   takes every pixel the column has left after the row list above and
+   shows the full frame (never cropped) rather than the small, cover-
+   cropped thumbnail this used to be. */
 .project-shots-card .shot-preview {
+  flex: 1 1 0%;
+  min-height: 0;
   margin-top: 8px;
+  display: flex;
 }
 
 .project-shots-card .shot-preview-img {
-  max-height: 80px;
-  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .project-shots-card .shot-preview-loading {
-  height: 80px;
+  flex: 1 1 0%;
+  height: auto;
 }
 
 .project-radar-svg {
@@ -3245,6 +3328,46 @@ select.modal-input {
   vector-effect: non-scaling-stroke;
 }
 
+/* ── Loading <-> loaded, both directions ──────────────────────────────
+   Driven by transitions rather than keyframes on purpose: the same rules
+   play forward when the new project's rows land and backward the moment
+   the next switch starts, so a switch reads as the old plate sinking out
+   and the new one rising in - no unmount/remount juggling to get an exit
+   animation out of React. */
+.project-radar-plate {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.project-radar.is-loading .project-radar-plate {
+  opacity: 0;
+  transform: scale(0.86) translateY(6px);
+}
+
+.project-radar-floor {
+  transition: opacity 0.3s ease;
+}
+
+/* The grid carries no data of its own, so it stays up (dimmed, pulsing)
+   as the thing that holds the chart's shape while the rows are in
+   flight - the skeleton IS the chart, rather than a grey box standing
+   in for one. */
+.project-radar.is-loading .project-radar-floor {
+  opacity: 0.45;
+  animation: radar-floor-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes radar-floor-pulse {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
 /* Positioned by percentage (left/top match the same 0-100 coordinate
    space the SVG's viewBox uses), centered on that coordinate, with a
    hit area well past the visible dot - a small marker is an easy miss
@@ -3261,6 +3384,18 @@ select.modal-input {
   z-index: 2;
 }
 
+/* The dot/label entrance animations below give every point its own
+   stacking context (any animation touching opacity or transform does,
+   permanently, once fill-mode keeps it in effect - same trap documented
+   on .page-clock). Without this the tooltip's own z-index would only
+   ever be compared INSIDE its point's context, leaving it painted under
+   whichever points come later in the DOM. Raising the whole point on
+   hover/focus makes its context outrank its siblings' instead. */
+.project-radar-point:hover,
+.project-radar-point:focus-within {
+  z-index: 6;
+}
+
 .project-radar-dot {
   width: 8px;
   height: 8px;
@@ -3268,12 +3403,27 @@ select.modal-input {
   background: rgb(var(--c-primary));
   /* Surface ring - keeps the dot legible over the filled shape or grid. */
   box-shadow: 0 0 0 2px var(--surface-high);
-  transition: transform 0.15s ease;
+  transition: transform 0.15s ease, opacity 0.3s ease;
+  /* Staggered off --i so the points land one after another around the
+     chart instead of all at once. */
+  transition-delay: calc(var(--i, 0) * 55ms);
+}
+
+.project-radar.is-loading .project-radar-dot {
+  opacity: 0;
+  transform: scale(0.2);
+}
+
+/* A faded-out point is still a hover target otherwise - and hovering one
+   would pop the outgoing project's numbers up in a tooltip. */
+.project-radar.is-loading .project-radar-point {
+  pointer-events: none;
 }
 
 .project-radar-point:hover .project-radar-dot,
 .project-radar-point:focus-visible .project-radar-dot {
   transform: scale(1.4);
+  transition-delay: 0s;
 }
 
 .project-radar-label {
@@ -3286,6 +3436,26 @@ select.modal-input {
   width: 68px;
   text-align: center;
   pointer-events: none;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  transition-delay: calc(var(--i, 0) * 55ms);
+}
+
+.project-radar.is-loading .project-radar-label {
+  opacity: 0;
+  transform: translate(-50%, calc(-50% + 6px));
+}
+
+/* Stand-ins for the chips themselves while the shot list is in flight -
+   same skeleton sweep the sidebar's lists already use. */
+.shot-chip-skeleton {
+  width: 74px;
+  height: 24px;
+  border-radius: 7px;
+}
+
+.project-shots-card .shot-chip {
+  animation: fade-slide-up 0.28s ease both;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }
 
 .project-app-tooltip {

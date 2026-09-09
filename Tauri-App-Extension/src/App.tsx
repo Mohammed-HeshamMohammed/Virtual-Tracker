@@ -69,6 +69,11 @@ const RECAP_MIN_SECONDS = 5 * 60;
 
 const OFFLINE_NOTICE_DELAY_MS = 30_000;
 
+/** ProjectDetailPanel's "Recent screenshots" is a small rolling window,
+ *  not the full browsable archive ScreenshotsCard covers elsewhere - kept
+ *  to a handful so the card in the main pane stays a glance, not a list. */
+const PROJECT_SHOTS_LIMIT = 3;
+
 function animateWorkedTodayRewind(
   from: number,
   to: number,
@@ -154,6 +159,7 @@ function MainApp() {
   const [projectScreenshotImages, setProjectScreenshotImages] = useState<Record<string, string>>({});
   const [selectedProjectScreenshotId, setSelectedProjectScreenshotId] = useState<string | null>(null);
   const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppTime[]>([]);
+  const [projectStatsLoading, setProjectStatsLoading] = useState(false);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
@@ -625,24 +631,60 @@ function MainApp() {
       setProjectScreenshots([]);
       setProjectAppBreakdown([]);
       setSelectedProjectScreenshotId(null);
+      setProjectStatsLoading(false);
       return;
     }
     let cancelled = false;
-    void invoke<ScreenshotRef[]>("get_my_screenshots", { limit: 6, projectId: selectedProjectId })
+    // The rows already in state deliberately stay put across the switch:
+    // ProjectDetailPanel hides every value behind the loading fade and
+    // keeps only the radar's axis count from them, so the chart holds its
+    // shape while the new ones land instead of collapsing and snapping
+    // the whole page's height. A failed fetch still clears them - the one
+    // thing that must never happen is the previous project's numbers
+    // reading as if they were this one's.
+    setProjectStatsLoading(true);
+    setSelectedProjectScreenshotId(null);
+    // The card only ever shows the newest PROJECT_SHOTS_LIMIT (a small
+    // rolling window, not a browsable archive - ScreenshotsCard covers
+    // that) - the backend already returns newest-first, so capping the
+    // fetch itself means a later one landing pushes the oldest out for
+    // free, with nothing to reconcile client-side.
+    const shotsDone = invoke<ScreenshotRef[]>("get_my_screenshots", {
+      limit: PROJECT_SHOTS_LIMIT,
+      projectId: selectedProjectId,
+    })
       .then((shots) => {
-        if (!cancelled) setProjectScreenshots(shots);
+        if (cancelled) return;
+        setProjectScreenshots(shots);
+        // Auto-select the latest one so the preview area underneath is
+        // never left blank waiting for a click - that's the whole point
+        // of giving it more room to show the image large.
+        const latest = shots[0];
+        if (!latest) return;
+        setSelectedProjectScreenshotId(latest.id);
+        void invoke<string>("get_screenshot_image", { screenshotId: latest.id })
+          .then((dataUrl) => {
+            if (!cancelled && dataUrl) {
+              setProjectScreenshotImages((prev) => ({ ...prev, [latest.id]: dataUrl }));
+            }
+          })
+          .catch(() => {
+            /* Leaves the placeholder in place - see ScreenshotsCard. */
+          });
       })
       .catch(() => {
         if (!cancelled) setProjectScreenshots([]);
       });
-    void invoke<ProjectAppTime[]>("get_project_app_breakdown", { projectId: selectedProjectId })
+    const appsDone = invoke<ProjectAppTime[]>("get_project_app_breakdown", { projectId: selectedProjectId })
       .then((rows) => {
         if (!cancelled) setProjectAppBreakdown(rows);
       })
       .catch(() => {
         if (!cancelled) setProjectAppBreakdown([]);
       });
-    setSelectedProjectScreenshotId(null);
+    void Promise.all([shotsDone, appsDone]).then(() => {
+      if (!cancelled) setProjectStatsLoading(false);
+    });
     return () => {
       cancelled = true;
     };
@@ -2020,6 +2062,7 @@ function MainApp() {
                     screenshots={projectScreenshots}
                     screenshotImages={projectScreenshotImages}
                     selectedScreenshotId={selectedProjectScreenshotId}
+                    loading={projectStatsLoading}
                     onSelectScreenshot={handleSelectProjectScreenshot}
                   />
                 ) : (
