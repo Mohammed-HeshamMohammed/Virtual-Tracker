@@ -1956,7 +1956,11 @@ function MainApp() {
                 />
 
                 {taskLessSession ? (
-                  <ProjectDetailPanel project={selectedProject} />
+                  <ProjectDetailPanel
+                    project={selectedProject}
+                    projectBudget={projectBudget}
+                    recentProjects={dashboardSummary?.recentProjects ?? []}
+                  />
                 ) : (
                   <TaskDetailPanel detail={taskDetail} />
                 )}
