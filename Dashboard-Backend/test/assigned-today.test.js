@@ -248,3 +248,102 @@ test("total: task-less (calling/support) project memberships count too, not just
   stub.budgetsByProject = {};
   stub.trackedSecondsByProject = {};
 });
+
+test("an exhausted project budget caps both today's due amount and the total remaining to 0", async () => {
+  // The exact case reported: one task, 10m12s expected, 44s worked - 9m28s
+  // outstanding by schedule alone - but the project's own per-person
+  // budget is already fully spent, so there is nothing left to assign.
+  stub.rows = [
+    {
+      project_id: "p1",
+      expected_seconds: 10 * 60 + 12,
+      worked_seconds: 44,
+      project_type: "normal",
+      duration_hours_per_day: 0,
+    },
+  ];
+  stub.budgetsByProject = {
+    p1: { type: "Hours based", scope: "per_person", cost: (10 * 60 + 12) / 3600 },
+  };
+  stub.trackedSecondsByProject = { p1: 10 * 60 + 12 };
+
+  const result = await computeAssignedTodayDemand("member-1");
+  assert.equal(result.demandSeconds, 0);
+  assert.equal(result.total.remainingSeconds, 0);
+  // The schedule facts themselves are untouched by the budget wall - only
+  // "how much is still realistically owed" is.
+  assert.equal(result.total.assignedSeconds, 10 * 60 + 12);
+  assert.equal(result.total.workedSeconds, 44);
+
+  stub.budgetsByProject = {};
+  stub.trackedSecondsByProject = {};
+});
+
+test("a partially-spent project budget caps the outstanding amount, not just zeroes it", async () => {
+  stub.rows = [
+    { project_id: "p1", expected_seconds: 4 * HOUR, worked_seconds: 0, project_type: "normal", duration_hours_per_day: 0 },
+  ];
+  // 4h outstanding by schedule, but only 1h of budget left to spend on it.
+  stub.budgetsByProject = { p1: { type: "Hours based", scope: "per_person", cost: 1 } };
+  stub.trackedSecondsByProject = {};
+
+  const result = await computeAssignedTodayDemand("member-1");
+  assert.equal(result.demandSeconds, 1 * HOUR);
+  assert.equal(result.total.remainingSeconds, 1 * HOUR);
+
+  stub.budgetsByProject = {};
+});
+
+test("a project with no per-person budget stays fully uncapped, exactly as before", async () => {
+  stub.rows = [
+    { project_id: "p1", expected_seconds: 4 * HOUR, worked_seconds: 0, project_type: "normal", duration_hours_per_day: 0 },
+  ];
+  const result = await computeAssignedTodayDemand("member-1");
+  assert.equal(result.demandSeconds, 4 * HOUR);
+  assert.equal(result.total.remainingSeconds, 4 * HOUR);
+});
+
+test("a shared project budget is left uncapped - only a per-person one gates an individual member", async () => {
+  stub.rows = [
+    { project_id: "p1", expected_seconds: 4 * HOUR, worked_seconds: 0, project_type: "normal", duration_hours_per_day: 0 },
+  ];
+  stub.budgetsByProject = { p1: { type: "Hours based", scope: "per_project", cost: 0 } };
+
+  const result = await computeAssignedTodayDemand("member-1");
+  assert.equal(result.demandSeconds, 4 * HOUR);
+  assert.equal(result.total.remainingSeconds, 4 * HOUR);
+
+  stub.budgetsByProject = {};
+});
+
+test("two tasks sharing one tight project budget: the one due sooner claims it first", async () => {
+  stub.rows = [
+    // Due further out, but listed first - fetch order must not decide this.
+    {
+      project_id: "p1",
+      expected_seconds: 3 * HOUR,
+      worked_seconds: 0,
+      project_type: "normal",
+      duration_hours_per_day: 0,
+      due_date: "2999-06-01",
+    },
+    // Due sooner - should claim the budget ahead of the one above.
+    {
+      project_id: "p1",
+      expected_seconds: 3 * HOUR,
+      worked_seconds: 0,
+      project_type: "normal",
+      duration_hours_per_day: 0,
+      due_date: "2999-01-01",
+    },
+  ];
+  // Only 4h of the project's budget is left for 6h of combined outstanding.
+  stub.budgetsByProject = { p1: { type: "Hours based", scope: "per_person", cost: 4 } };
+
+  const { total } = await computeAssignedTodayDemand("member-1");
+  // The sooner-due task gets its full 3h; the later one gets whatever's
+  // left (1h), not an even split and not zero for either.
+  assert.equal(total.remainingSeconds, 4 * HOUR);
+
+  stub.budgetsByProject = {};
+});
