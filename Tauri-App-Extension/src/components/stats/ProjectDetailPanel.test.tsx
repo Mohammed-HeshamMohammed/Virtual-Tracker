@@ -167,18 +167,16 @@ describe("ProjectDetailPanel", () => {
     expect(render(baseProject)).not.toContain("Recent screenshots");
   });
 
-  it("never shows more than the newest 3 screenshots, even if handed more", () => {
-    // Belt-and-suspenders: App.tsx already fetches only 3, but the row
-    // list is built for exactly 3 rows - a longer list must still be cut
+  it("never shows more than the newest 12 screenshots, even if handed more", () => {
+    // Belt-and-suspenders: App.tsx already fetches 12, and the card is
+    // built for up to 12 chips (4 rows of 3) - a longer list must still be cut
     // down here rather than relying solely on the caller.
-    const shots: ScreenshotRef[] = [
-      { id: "s1", capturedAt: "2024-01-01T12:00:00Z" },
-      { id: "s2", capturedAt: "2024-01-01T13:00:00Z" },
-      { id: "s3", capturedAt: "2024-01-01T14:00:00Z" },
-      { id: "s4", capturedAt: "2024-01-01T15:00:00Z" },
-    ];
+    const shots: ScreenshotRef[] = Array.from({ length: 15 }, (_, i) => ({
+      id: `s${i + 1}`,
+      capturedAt: `2024-01-01T12:${String(i).padStart(2, "0")}:00Z`,
+    }));
     const html = render(baseProject, { screenshots: shots, selectedScreenshotId: "s1" });
-    expect((html.match(/class="shot-chip/g) ?? []).length).toBe(3);
+    expect((html.match(/class="shot-chip/g) ?? []).length).toBe(12);
   });
 
   it("shows a screenshot strip and the selected image once loaded", () => {

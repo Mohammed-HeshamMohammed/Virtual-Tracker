@@ -285,6 +285,7 @@ body {
   from {
     transform: rotate(0deg);
   }
+
   to {
     transform: rotate(360deg);
   }
@@ -416,6 +417,7 @@ body {
 .viz-bar:nth-child(3n) {
   background: rgb(var(--c-primary) / 0.65);
 }
+
 .viz-bar:nth-child(6) {
   background: rgb(var(--c-primary) / 0.8);
 }
@@ -799,6 +801,7 @@ body {
 }
 
 @media (max-width: 880px) {
+
   /* The label is the first thing that can go - the value alone still
      answers "how much", and the icon plus tooltip cover the rest. */
   .assigned-today-badge-label {
@@ -875,12 +878,11 @@ body {
   gap: 14px;
   padding: 16px 20px;
   border-radius: 14px;
-  background: linear-gradient(
-    160deg,
-    rgb(var(--c-surface-highest) / 0.9),
-    rgb(var(--c-surface-low) / 0.95)
-  );
-  border: 1px solid rgb(var(--c-line) / 0.12);
+  background: linear-gradient(160deg,
+      rgb(var(--c-surface-highest) / 0.9),
+      rgb(var(--c-surface-low) / 0.95));
+  border: 1px solid rgb(var(--c-line) / 0.18);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgb(var(--c-overlay) / 0.05);
 }
 
 .page-clock-value {
@@ -940,8 +942,20 @@ body {
 .stat-panel {
   padding: 13px 15px 15px;
   border-radius: 14px;
-  background: rgb(var(--c-surface-high) / 0.7);
-  border: 1px solid rgb(var(--c-line) / 0.13);
+  background: linear-gradient(
+    160deg,
+    rgb(var(--c-surface-highest) / 0.82) 0%,
+    rgb(var(--c-surface-low) / 0.92) 100%
+  );
+  border: 1px solid rgb(var(--c-line) / 0.18);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgb(var(--c-overlay) / 0.05);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-panel:hover {
+  border-color: rgb(var(--c-line) / 0.28);
+  box-shadow: 0 6px 20px -2px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgb(var(--c-overlay) / 0.07);
 }
 
 .stat-panel-head {
@@ -1108,8 +1122,20 @@ body {
   flex-direction: column;
   padding: 11px 13px;
   border-radius: 12px;
-  background: rgb(var(--c-surface-highest) / 0.55);
-  border: 1px solid rgb(var(--c-line) / 0.1);
+  background: linear-gradient(
+    160deg,
+    rgb(var(--c-surface-highest) / 0.88) 0%,
+    rgb(var(--c-surface-low) / 0.95) 100%
+  );
+  border: 1px solid rgb(var(--c-line) / 0.16);
+  box-shadow: 0 3px 12px -2px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgb(var(--c-overlay) / 0.04);
+  backdrop-filter: blur(8px);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.stat-tile:hover {
+  border-color: rgb(var(--c-primary) / 0.35);
+  box-shadow: 0 5px 16px -2px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgb(var(--c-overlay) / 0.06);
 }
 
 .stat-tile-head {
@@ -1948,11 +1974,9 @@ body {
   gap: 12px;
   padding: 14px 16px;
   border-radius: 14px;
-  background: linear-gradient(
-    160deg,
-    rgb(var(--c-surface-highest) / 0.9),
-    rgb(var(--c-surface-low) / 0.95)
-  );
+  background: linear-gradient(160deg,
+      rgb(var(--c-surface-highest) / 0.9),
+      rgb(var(--c-surface-low) / 0.95));
   border: 1px solid rgb(var(--c-line) / 0.12);
 }
 
@@ -2000,12 +2024,10 @@ body {
 .skeleton-bar {
   height: 40px;
   border-radius: 10px;
-  background: linear-gradient(
-    90deg,
-    rgb(var(--c-line) / 0.08) 25%,
-    rgb(var(--c-line) / 0.18) 37%,
-    rgb(var(--c-line) / 0.08) 63%
-  );
+  background: linear-gradient(90deg,
+      rgb(var(--c-line) / 0.08) 25%,
+      rgb(var(--c-line) / 0.18) 37%,
+      rgb(var(--c-line) / 0.08) 63%);
   background-size: 400% 100%;
   animation: skeleton-sweep 1.4s ease infinite;
 }
@@ -2044,10 +2066,48 @@ body {
   height: 92px;
 }
 
+.page-clock-skeleton {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.page-clock-skel-val {
+  width: 140px;
+  height: 38px;
+  border-radius: 8px;
+}
+
+.page-clock-skel-sub {
+  width: 90px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.activity-ring-skeleton-circle {
+  animation: radar-floor-pulse 1.4s ease-in-out infinite;
+}
+
+.activity-ring-skeleton-val {
+  position: absolute;
+  width: 28px;
+  height: 12px;
+  border-radius: 4px;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.stat-panel.is-loading,
+.stat-tile.is-loading {
+  pointer-events: none;
+}
+
 @keyframes skeleton-sweep {
   0% {
     background-position: 100% 50%;
   }
+
   100% {
     background-position: 0 50%;
   }
@@ -2061,6 +2121,7 @@ body {
     opacity: 0;
     transform: translateX(20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -2072,6 +2133,7 @@ body {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -2083,6 +2145,7 @@ body {
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -2391,14 +2454,30 @@ body {
   opacity: 0.5;
 }
 
-.vt-toast-card.error .vt-toast-progress span { background: rgb(var(--c-bad)); }
-.vt-toast-card.success .vt-toast-progress span { background: rgb(var(--c-good)); }
-.vt-toast-card.warning .vt-toast-progress span { background: rgb(var(--c-warn)); }
-.vt-toast-card.message .vt-toast-progress span { background: rgb(var(--c-primary)); }
+.vt-toast-card.error .vt-toast-progress span {
+  background: rgb(var(--c-bad));
+}
+
+.vt-toast-card.success .vt-toast-progress span {
+  background: rgb(var(--c-good));
+}
+
+.vt-toast-card.warning .vt-toast-progress span {
+  background: rgb(var(--c-warn));
+}
+
+.vt-toast-card.message .vt-toast-progress span {
+  background: rgb(var(--c-primary));
+}
 
 @keyframes vt-toast-countdown {
-  from { transform: scaleX(1); }
-  to { transform: scaleX(0); }
+  from {
+    transform: scaleX(1);
+  }
+
+  to {
+    transform: scaleX(0);
+  }
 }
 
 .vt-toast-title {
@@ -2515,7 +2594,7 @@ body {
   justify-content: space-between;
   padding: 24px 30px;
   background: linear-gradient(155deg, rgb(var(--c-surface-high) / 0.95), rgb(var(--c-surface-low) / 0.98)),
-              radial-gradient(circle at 0% 0%, rgb(var(--c-primary) / 0.25), transparent 60%);
+    radial-gradient(circle at 0% 0%, rgb(var(--c-primary) / 0.25), transparent 60%);
   border-right: 1px solid rgb(var(--c-line) / 0.15);
   position: relative;
   overflow: hidden;
@@ -2673,9 +2752,20 @@ body {
 }
 
 @keyframes auth-bar-pulse {
-  0% { height: 15%; opacity: 0.4; }
-  50% { height: 75%; opacity: 0.9; }
-  100% { height: 35%; opacity: 0.6; }
+  0% {
+    height: 15%;
+    opacity: 0.4;
+  }
+
+  50% {
+    height: 75%;
+    opacity: 0.9;
+  }
+
+  100% {
+    height: 35%;
+    opacity: 0.6;
+  }
 }
 
 .auth-form-panel {
@@ -2827,7 +2917,8 @@ body {
   background: radial-gradient(circle at 50% 40%, rgb(var(--c-primary) / 0.12), transparent 70%);
 }
 
-.reconnect-card, .notice-card {
+.reconnect-card,
+.notice-card {
   width: 100%;
   max-width: 440px;
   background: rgb(var(--c-surface-high) / 0.85);
@@ -2910,6 +3001,7 @@ body {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -2930,25 +3022,64 @@ body {
   animation: auth-item-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.auth-form-view .auth-form-head { animation-delay: 0.02s; }
-.auth-form-view .auth-back-row { animation-delay: 0.03s; }
-.auth-form-view .input-field-group:nth-of-type(1) { animation-delay: 0.04s; }
-.auth-form-view .input-field-group:nth-of-type(2) { animation-delay: 0.06s; }
-.auth-form-view .input-field-group:nth-of-type(3) { animation-delay: 0.08s; }
-.auth-form-view .input-field-group:nth-of-type(4) { animation-delay: 0.10s; }
-.auth-form-view .input-field-group:nth-of-type(5) { animation-delay: 0.12s; }
-.auth-form-view .input-field-group:nth-of-type(6) { animation-delay: 0.14s; }
-.auth-form-view .btn-primary { animation-delay: 0.16s; }
-.auth-form-view .signin-divider { animation-delay: 0.18s; }
-.auth-form-view .social-row { animation-delay: 0.20s; }
-.auth-form-view .btn-secondary { animation-delay: 0.22s; }
-.auth-form-view .signin-links { animation-delay: 0.24s; }
+.auth-form-view .auth-form-head {
+  animation-delay: 0.02s;
+}
+
+.auth-form-view .auth-back-row {
+  animation-delay: 0.03s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(1) {
+  animation-delay: 0.04s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(2) {
+  animation-delay: 0.06s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(3) {
+  animation-delay: 0.08s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(4) {
+  animation-delay: 0.10s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(5) {
+  animation-delay: 0.12s;
+}
+
+.auth-form-view .input-field-group:nth-of-type(6) {
+  animation-delay: 0.14s;
+}
+
+.auth-form-view .btn-primary {
+  animation-delay: 0.16s;
+}
+
+.auth-form-view .signin-divider {
+  animation-delay: 0.18s;
+}
+
+.auth-form-view .social-row {
+  animation-delay: 0.20s;
+}
+
+.auth-form-view .btn-secondary {
+  animation-delay: 0.22s;
+}
+
+.auth-form-view .signin-links {
+  animation-delay: 0.24s;
+}
 
 @keyframes auth-item-in {
   0% {
     opacity: 0;
     transform: translateY(6px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0);
@@ -3258,20 +3389,20 @@ select.modal-input {
   aspect-ratio: 1;
 }
 
-/* One row, up to three chips side by side - not stacked into a column -
-   kept as small as it can be so every pixel not spent here is a pixel
-   the preview below gets instead, which is the actual point of this
-   card. */
+/* Two rows of three chips - flex-wrap lets the strip grow taller instead
+   of squeezing all six into one unreadable line. Each chip claims ~33% of
+   the row width (minus gaps) so exactly three land per line. */
 .project-shots-card .shot-strip {
   flex: 0 0 auto;
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 4px;
   margin-top: 6px;
 }
 
 .project-shots-card .shot-chip {
-  flex: 1 1 0%;
+  flex: 1 1 calc(33% - 4px);
   min-width: 0;
   text-align: center;
   padding: 3px 4px;
@@ -3290,7 +3421,7 @@ select.modal-input {
 .project-shots-card .shot-preview {
   flex: 1 1 0%;
   min-height: 0;
-  margin-top: 8px;
+  margin-top: 10px;
   display: flex;
 }
 
@@ -3302,7 +3433,9 @@ select.modal-input {
 
 .project-shots-card .shot-preview-loading {
   flex: 1 1 0%;
-  height: auto;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .project-radar-svg {
@@ -3328,6 +3461,36 @@ select.modal-input {
   vector-effect: non-scaling-stroke;
 }
 
+/* Screenshot preview skeleton - the shimmer background fills the flex
+   space, and the camera icon centered inside makes it immediately obvious
+   an image will appear here rather than reading as a generic loading bar. */
+.project-shots-card .shot-preview-skeleton {
+  flex: 1 1 0%;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--c-line) / 0.07) 25%,
+    rgb(var(--c-line) / 0.15) 37%,
+    rgb(var(--c-line) / 0.07) 63%
+  );
+  background-size: 400% 100%;
+  animation: skeleton-sweep 1.6s ease infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgb(var(--c-line) / 0.3);
+  border-radius: 10px;
+}
+
+.shot-preview-skeleton-icon {
+  width: 32px;
+  height: 32px;
+  opacity: 0.2;
+  color: var(--on-surface);
+}
+
 /* ── Loading <-> loaded, both directions ──────────────────────────────
    Driven by transitions rather than keyframes on purpose: the same rules
    play forward when the new project's rows land and backward the moment
@@ -3338,6 +3501,27 @@ select.modal-input {
   transform-box: fill-box;
   transform-origin: center;
   transition: opacity 0.32s ease, transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Skeleton polygon - only visible while loading, hidden once real data
+   lands. Uses the same pulsing opacity as the grid floor so the whole
+   chart breathes together. */
+.project-radar-skeleton-shape {
+  fill: rgb(var(--c-primary) / 0.08);
+  stroke: rgb(var(--c-primary) / 0.2);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition: opacity 0.3s ease;
+}
+
+.project-radar-skeleton {
+  animation: radar-floor-pulse 1.4s ease-in-out infinite;
+}
+
+/* Hide the skeleton shape once real data is loaded */
+.project-radar:not(.is-loading) .project-radar-skeleton {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .project-radar.is-loading .project-radar-plate {
@@ -3359,10 +3543,12 @@ select.modal-input {
 }
 
 @keyframes radar-floor-pulse {
+
   0%,
   100% {
     opacity: 0.28;
   }
+
   50% {
     opacity: 0.6;
   }
@@ -3453,6 +3639,50 @@ select.modal-input {
   border-radius: 7px;
 }
 
+.project-shots-card .shot-chip-skeleton {
+  flex: 1 1 calc(33% - 4px);
+  min-width: 0;
+  height: 21px;
+  border-radius: 7px;
+}
+
+.project-radar-skeleton-frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.project-radar-label.is-skeleton {
+  opacity: 1 !important;
+  transform: translate(-50%, -50%) !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.project-radar-skel-name {
+  width: 44px;
+  height: 9px;
+  border-radius: 4px;
+}
+
+.project-radar-skel-time {
+  width: 28px;
+  height: 8px;
+  border-radius: 4px;
+}
+
+.project-radar-point.is-skeleton {
+  pointer-events: none;
+}
+
+.project-radar-point.is-skeleton .skeleton-dot {
+  opacity: 0.6;
+  transform: scale(0.9);
+  animation: radar-floor-pulse 1.4s ease-in-out infinite;
+}
+
 .project-shots-card .shot-chip {
   animation: fade-slide-up 0.28s ease both;
   animation-delay: calc(var(--i, 0) * 45ms);
@@ -3491,6 +3721,16 @@ select.modal-input {
 .project-app-tooltip-sub {
   color: var(--on-surface-variant);
   font-size: 10px;
+}
+
+.project-app-tooltip-name {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--on-surface);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--outline-variant);
+  padding-bottom: 4px;
+  margin-bottom: 1px;
 }
 
 .project-app-name {
@@ -4209,18 +4449,34 @@ select.modal-input {
   transition: width 0.25s ease, background 0.25s ease;
 }
 
-.pw-strength-fill.bad { background: rgb(var(--c-bad)); }
-.pw-strength-fill.warn { background: rgb(var(--c-warn)); }
-.pw-strength-fill.good { background: rgb(var(--c-good)); }
+.pw-strength-fill.bad {
+  background: rgb(var(--c-bad));
+}
+
+.pw-strength-fill.warn {
+  background: rgb(var(--c-warn));
+}
+
+.pw-strength-fill.good {
+  background: rgb(var(--c-good));
+}
 
 .pw-strength-word {
   font-size: 10.5px;
   font-weight: 700;
 }
 
-.pw-strength-word.bad { color: rgb(var(--c-bad)); }
-.pw-strength-word.warn { color: rgb(var(--c-warn)); }
-.pw-strength-word.good { color: rgb(var(--c-good)); }
+.pw-strength-word.bad {
+  color: rgb(var(--c-bad));
+}
+
+.pw-strength-word.warn {
+  color: rgb(var(--c-warn));
+}
+
+.pw-strength-word.good {
+  color: rgb(var(--c-good));
+}
 
 .pw-rule-list {
   list-style: none;

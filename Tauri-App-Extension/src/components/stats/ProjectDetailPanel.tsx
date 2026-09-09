@@ -9,8 +9,8 @@ const RADAR_GRID_RINGS = [1 / 3, 2 / 3, 1];
 const RADAR_SKELETON_AXES = 6;
 /** The card only ever shows the newest few - App.tsx already fetches
  *  exactly this many, this is just the belt-and-suspenders cap so the
- *  layout (built for a 3-row list) can't be handed a longer one. */
-const MAX_VISIBLE_SHOTS = 3;
+ *  layout can't be handed a longer one. */
+const MAX_VISIBLE_SHOTS = 12;
 
 /** Where axis `index` of `count` total sits at `radius` from center, in the
  *  chart's 0-100 square coordinate space. Axes start at the top (12
@@ -24,6 +24,15 @@ function radarPoint(index: number, count: number, radius: number): { x: number; 
 function radarPolygon(count: number, radius: number): string {
   return Array.from({ length: count }, (_, i) => {
     const { x, y } = radarPoint(i, count, radius);
+    return `${x},${y}`;
+  }).join(" ");
+}
+
+const SKELETON_RADIUS_FACTORS = [0.85, 0.55, 0.75, 0.45, 0.9, 0.6];
+function radarSkeletonPolygon(count: number): string {
+  return Array.from({ length: count }, (_, i) => {
+    const r = RADAR_MAX_RADIUS * SKELETON_RADIUS_FACTORS[i % SKELETON_RADIUS_FACTORS.length];
+    const { x, y } = radarPoint(i, count, r);
     return `${x},${y}`;
   }).join(" ");
 }
@@ -143,6 +152,17 @@ export function ProjectDetailPanel({
                     })}
                   </g>
 
+                  {/* Skeleton shape - visible only while loading, fades out
+                      when the real plate arrives. Uses varied radii matching
+                      a realistic app-breakdown profile so it fills the chart
+                      proportionally. */}
+                  <g className="project-radar-skeleton" aria-hidden="true">
+                    <polygon
+                      points={radarSkeletonPolygon(axisCount)}
+                      className="project-radar-skeleton-shape"
+                    />
+                  </g>
+
                   {appBreakdown.length > 0 ? (
                     <g className="project-radar-plate">
                       <polygon
@@ -161,6 +181,33 @@ export function ProjectDetailPanel({
                     </g>
                   ) : null}
                 </svg>
+
+                {loading ? (
+                  <div className="project-radar-skeleton-frame" aria-hidden="true">
+                    {Array.from({ length: axisCount }, (_, i) => {
+                      const label = radarPoint(i, axisCount, RADAR_LABEL_RADIUS);
+                      const r = RADAR_MAX_RADIUS * SKELETON_RADIUS_FACTORS[i % SKELETON_RADIUS_FACTORS.length];
+                      const dot = radarPoint(i, axisCount, r);
+                      return (
+                        <div key={i} style={{ "--i": i } as React.CSSProperties}>
+                          <div
+                            className="project-radar-point is-skeleton"
+                            style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                          >
+                            <span className="project-radar-dot skeleton-dot" />
+                          </div>
+                          <div
+                            className="project-radar-label is-skeleton"
+                            style={{ left: `${label.x}%`, top: `${label.y}%` }}
+                          >
+                            <span className="skeleton-bar project-radar-skel-name" />
+                            <span className="skeleton-bar project-radar-skel-time" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
                 {appBreakdown.map((app, i) => {
                   const dot = radarPoint(
@@ -192,6 +239,7 @@ export function ProjectDetailPanel({
                       >
                         <span className="project-radar-dot" aria-hidden="true" />
                         <div className="project-app-tooltip" role="tooltip">
+                          <span className="project-app-tooltip-name">{app.appName}</span>
                           <strong>{fmtHours(app.totalSeconds)}</strong>
                           <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
                         </div>
@@ -261,13 +309,26 @@ export function ProjectDetailPanel({
                     <span className="skeleton-bar shot-chip-skeleton" />
                     <span className="skeleton-bar shot-chip-skeleton" />
                     <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
+                    <span className="skeleton-bar shot-chip-skeleton" />
                   </div>
                   {/* Without this, the row list's small skeletons leave the
                       rest of the column - the space the big preview image
                       will fill in - sitting empty during the load, which
                       reads as broken rather than loading. */}
                   <div className="shot-preview">
-                    <span className="skeleton-bar shot-preview-loading" aria-hidden="true" />
+                    <div className="shot-preview-skeleton shot-preview-loading" aria-hidden="true">
+                      <svg className="shot-preview-skeleton-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="currentColor" d="M20 5h-3.17L15 3H9L7.17 5H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm-8 13a5 5 0 1 1 0-10 5 5 0 0 1 0 10zm0-8a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>
+                      </svg>
+                    </div>
                   </div>
                 </>
               )}

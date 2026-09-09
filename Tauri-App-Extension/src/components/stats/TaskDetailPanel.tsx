@@ -1,6 +1,30 @@
 import type { TaskDetail } from "../../types";
 
-export function TaskDetailPanel({ detail }: { detail: TaskDetail | null }) {
+export function TaskDetailPanel({ detail, loading }: { detail: TaskDetail | null; loading?: boolean }) {
+  if (loading) {
+    return (
+      <section className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.05s" }} aria-busy="true">
+        <div className="stat-panel-head">
+          <h3 className="stat-panel-title">This task</h3>
+          <span className="skeleton-bar" style={{ width: 50, height: 14, borderRadius: 999 }} />
+        </div>
+        <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+          <span className="skeleton-bar" style={{ width: "85%", height: 13, borderRadius: 4 }} />
+          <span className="skeleton-bar" style={{ width: "65%", height: 13, borderRadius: 4 }} />
+        </div>
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="skeleton-bar" style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0 }} />
+            <span className="skeleton-bar" style={{ width: "70%", height: 12, borderRadius: 4 }} />
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="skeleton-bar" style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0 }} />
+            <span className="skeleton-bar" style={{ width: "50%", height: 12, borderRadius: 4 }} />
+          </div>
+        </div>
+      </section>
+    );
+  }
   if (!detail) return null;
   const done = detail.subtasks.filter((s) => s.completed).length;
   const hasBody = Boolean(detail.description) || detail.subtasks.length > 0;

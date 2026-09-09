@@ -33,7 +33,7 @@ export function AssignedTodayBadge({
           d="M9 2a1 1 0 0 0-1 1v1H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2V3a1 1 0 1 0-2 0v1H9V3a1 1 0 0 0-1-1Zm-3 6h12v11H6V8Z"
         />
       </svg>
-      <span className="assigned-today-badge-label">Assigned today</span>
+      <span className="assigned-today-badge-label">Assigned tasks today</span>
       <span className="assigned-today-badge-value">{assignedTodayLabel}</span>
     </div>
   );

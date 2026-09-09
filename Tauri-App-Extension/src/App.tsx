@@ -72,7 +72,7 @@ const OFFLINE_NOTICE_DELAY_MS = 30_000;
 /** ProjectDetailPanel's "Recent screenshots" is a small rolling window,
  *  not the full browsable archive ScreenshotsCard covers elsewhere - kept
  *  to a handful so the card in the main pane stays a glance, not a list. */
-const PROJECT_SHOTS_LIMIT = 3;
+const PROJECT_SHOTS_LIMIT = 12;
 
 function animateWorkedTodayRewind(
   from: number,
@@ -161,6 +161,7 @@ function MainApp() {
   const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppTime[]>([]);
   const [projectStatsLoading, setProjectStatsLoading] = useState(false);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
+  const [taskDetailLoading, setTaskDetailLoading] = useState(false);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
   const [newTaskProject, setNewTaskProject] = useState<ProjectInfo | null>(null);
@@ -596,15 +597,20 @@ function MainApp() {
   useEffect(() => {
     if (!signedIn || !selectedTaskId) {
       setTaskDetail(null);
+      setTaskDetailLoading(false);
       return;
     }
     let cancelled = false;
+    setTaskDetailLoading(true);
     void invoke<TaskDetail | null>("get_task_detail", { taskId: selectedTaskId })
       .then((detail) => {
         if (!cancelled) setTaskDetail(detail);
       })
       .catch(() => {
         if (!cancelled) setTaskDetail(null);
+      })
+      .finally(() => {
+        if (!cancelled) setTaskDetailLoading(false);
       });
     return () => {
       cancelled = true;
@@ -1631,6 +1637,7 @@ function MainApp() {
 
   const todayPanel = (
     <TodayPanel
+      loading={!dashboardLoaded}
       dayHint={dayHint}
       memberLimits={memberLimits}
       workedTodayLabel={workedTodayLabel}
@@ -1645,6 +1652,7 @@ function MainApp() {
 
   const activityTile = (
     <ActivityTile
+      loading={!dashboardLoaded}
       activityDash={activityDash}
       activityLabel={activityLabel}
       activityPercent={activityPercent}
@@ -1654,6 +1662,7 @@ function MainApp() {
 
   const weekTile = (
     <WeekTile
+      loading={!dashboardLoaded}
       weekWorkedLabel={weekWorkedLabel}
       weekOfLabel={weekOfLabel}
       weeklyCapSeconds={weeklyCapSeconds}
@@ -1662,8 +1671,9 @@ function MainApp() {
     />
   );
 
-  const projectBudgetTile = projectBudget ? (
+  const projectBudgetTile = (projectBudget || !dashboardLoaded) ? (
     <ProjectBudgetTile
+      loading={!dashboardLoaded}
       projectBudget={projectBudget}
       projectBudgetReached={projectBudgetReached}
       projectBudgetPercent={projectBudgetPercent}
@@ -2043,6 +2053,7 @@ function MainApp() {
                 {hoursTodayCards}
 
                 <TaskProgressPanel
+                  loading={!taskTracking && Boolean(selectedTaskId)}
                   taskLessSession={taskLessSession}
                   taskTracking={taskTracking}
                   taskPriority={taskDetail?.priority ?? ""}
@@ -2066,7 +2077,7 @@ function MainApp() {
                     onSelectScreenshot={handleSelectProjectScreenshot}
                   />
                 ) : (
-                  <TaskDetailPanel detail={taskDetail} />
+                  <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
                 )}
 
                 {idleStage >= 3 ? (
@@ -2083,12 +2094,44 @@ function MainApp() {
               </>
             ) : !projectsLoaded || !assignedTasksLoaded ? (
               <div className="page-skeleton page-content-swap" aria-hidden="true">
-                <span className="skeleton-bar skeleton-bar-clock" />
-                <span className="skeleton-bar skeleton-bar-panel" />
-                <div className="page-skeleton-row">
-                  <span className="skeleton-bar" />
-                  <span className="skeleton-bar" />
-                  <span className="skeleton-bar" />
+                <div className="page-clock page-clock-skeleton">
+                  <span className="skeleton-bar page-clock-skel-val" />
+                  <span className="skeleton-bar page-clock-skel-sub" />
+                </div>
+                <TodayPanel
+                  loading={true}
+                  dayHint=""
+                  memberLimits={null}
+                  workedTodayLabel=""
+                  dailyCapSeconds={0}
+                  dailyCapLabel=""
+                  projectedCapTimeLabel=""
+                  dailyCapLeftLabel=""
+                  dayUsedPercent={0}
+                  dayOverPercent={0}
+                />
+                <div className="stat-row-3">
+                  <ActivityTile
+                    loading={true}
+                    activityDash={0}
+                    activityLabel=""
+                    activityPercent={null}
+                    activityToday={undefined}
+                  />
+                  <WeekTile
+                    loading={true}
+                    weekWorkedLabel=""
+                    weekOfLabel=""
+                    weeklyCapSeconds={0}
+                    weekUsedPercent={0}
+                    weekFootLabel=""
+                  />
+                  <ProjectBudgetTile
+                    loading={true}
+                    projectBudget={null}
+                    projectBudgetReached={false}
+                    projectBudgetPercent={0}
+                  />
                 </div>
               </div>
             ) : (
