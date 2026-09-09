@@ -126,6 +126,14 @@ pub const URL_SCRIPT_TIMEOUT_SEC: u64 = 8;
 /// seconds later on that one tick.
 pub const URL_CAPTURE_TICK_BUDGET_SEC: u64 = 7;
 
+/// App-icon extraction subprocess ceiling. Runs off the tracker tick on its
+/// own thread (see capture/events.rs), once per distinct app per process, so
+/// a generous bound here costs nothing on the hot path.
+pub const APP_ICON_SCRIPT_TIMEOUT_SEC: u64 = 10;
+/// A 32x32 PNG icon is ~1-6 KB; anything past this is not an icon and is
+/// dropped rather than sent.
+pub const MAX_APP_ICON_LEN: usize = 65_536;
+
 pub const MAX_SCREENSHOT_WIDTH: u32 = 1280;
 pub const JPEG_QUALITY: u8 = 72;
 pub const MAX_APP_NAME_LEN: usize = 200;

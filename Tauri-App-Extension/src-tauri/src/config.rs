@@ -20,6 +20,7 @@ pub struct Settings {
     pub log_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
+    pub app_icon_script_path: PathBuf,
 }
 
 impl Settings {
@@ -44,6 +45,7 @@ impl Settings {
 
         let url_script_path = resolve_script(&project_root, "get-browser-url.ps1");
         let macos_url_script_path = resolve_script(&project_root, "get-browser-url-macos.applescript");
+        let app_icon_script_path = resolve_script(&project_root, "get-app-icon.ps1");
         log::info!(
             "URL script resolved to {} (exists: {})",
             url_script_path.display(),
@@ -73,6 +75,7 @@ impl Settings {
             log_path,
             url_script_path,
             macos_url_script_path,
+            app_icon_script_path,
         }
     }
 

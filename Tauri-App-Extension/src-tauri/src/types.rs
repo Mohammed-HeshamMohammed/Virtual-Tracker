@@ -47,6 +47,10 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "durationSeconds")]
         duration_seconds: u64,
+        /// A `data:image/png;base64,…` icon for this app, sent at most once
+        /// per distinct app per agent run. Omitted the rest of the time.
+        #[serde(rename = "appIcon", skip_serializing_if = "Option::is_none")]
+        app_icon: Option<String>,
         #[serde(flatten)]
         signal: ActivitySignal,
     },

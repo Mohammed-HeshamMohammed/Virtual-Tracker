@@ -50,7 +50,8 @@
     ],
     "resources": [
       "../scripts/get-browser-url.ps1",
-      "../scripts/get-browser-url-macos.applescript"
+      "../scripts/get-browser-url-macos.applescript",
+      "../scripts/get-app-icon.ps1"
     ],
     "windows": {
       "digestAlgorithm": "sha256",

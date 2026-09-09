@@ -94,6 +94,41 @@ async function resolveAppId(name) {
   return result?.rows?.[0]?.id ?? null;
 }
 
+/** Store the agent-reported icon for an app. Only overwrites when there is no
+ *  icon yet or the stored one is over a day old, so a steady stream of app
+ *  logs doesn't rewrite the same bytes every 15s. */
+export async function setAppIconPg(name, dataUrl) {
+  const trimmed = String(name ?? "").trim().slice(0, 200);
+  if (!trimmed || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/")) return;
+  await pgQuery(
+    `INSERT INTO apps (name, icon_data_url, icon_updated_at)
+     VALUES ($1, $2, now())
+     ON CONFLICT (name) DO UPDATE SET
+       icon_data_url = EXCLUDED.icon_data_url,
+       icon_updated_at = now()
+     WHERE apps.icon_data_url IS NULL
+        OR apps.icon_updated_at IS NULL
+        OR apps.icon_updated_at < now() - interval '1 day'`,
+    [trimmed, dataUrl.slice(0, 20000)],
+  );
+}
+
+/** app name (lowercased) -> icon data URL, for the names that have one. */
+export async function getAppIconsByNamesPg(names) {
+  const list = [...new Set((names ?? []).map((n) => String(n ?? "").trim().toLowerCase()).filter(Boolean))];
+  if (list.length === 0) return new Map();
+  const result = await pgQuery(
+    `SELECT name, icon_data_url FROM apps
+     WHERE icon_data_url IS NOT NULL AND lower(name) = ANY($1::text[])`,
+    [list],
+  );
+  const map = new Map();
+  for (const r of result?.rows ?? []) {
+    if (r.icon_data_url) map.set(String(r.name).toLowerCase(), r.icon_data_url);
+  }
+  return map;
+}
+
 export async function insertActivityAppLog(row) {
   const memberId = parseProgressUuid(String(row.memberId ?? ""));
   if (!memberId) return;

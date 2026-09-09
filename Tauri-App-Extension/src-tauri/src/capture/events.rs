@@ -9,6 +9,7 @@ use parking_lot::Mutex;
 use rand::Rng;
 
 use crate::capture::activity::ActivityMeter;
+use crate::capture::app_icon::read_app_icon;
 use crate::capture::screen::ScreenCapture;
 use crate::capture::classification_cache;
 use crate::capture::window::{read_browser_url, ForegroundWindow};
@@ -50,7 +51,28 @@ pub struct EventBuilder {
     /// Where the display-name map is persisted, so a cold start with no
     /// network still resolves real app names instead of raw exe names.
     cache_path: PathBuf,
+    /// `get-app-icon.ps1` (Windows). Empty/missing elsewhere - icon extraction
+    /// is then a no-op and the UI keeps its letter tiles.
+    app_icon_script_path: PathBuf,
+    /// App-icon send state, keyed by lowercased resolved app name. Shared with
+    /// the detached extraction threads. See `take_app_icon`.
+    app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
 }
+
+/// One app's icon lifecycle. An app with no entry has never been looked at.
+enum IconSlot {
+    /// Extraction thread is running.
+    Pending,
+    /// Extracted and waiting to ride the next app slice for this app.
+    Ready(String),
+    /// Sent already, or extraction produced nothing - never touched again.
+    Done,
+}
+
+/// Stop spawning extraction threads once this many distinct apps have been
+/// seen in one run. ponytail: a flat cap, not an LRU - a session touching 500
+/// distinct executables is not a real workflow.
+const MAX_TRACKED_APP_ICONS: usize = 500;
 
 impl EventBuilder {
     pub fn new(
@@ -58,6 +80,7 @@ impl EventBuilder {
         url_script_path: PathBuf,
         macos_url_script_path: PathBuf,
         cache_path: PathBuf,
+        app_icon_script_path: PathBuf,
     ) -> Self {
         // Seed from disk before the first server refresh - that refresh is up
         // to DISPLAY_NAME_REFRESH_INTERVAL_SEC away, and may never arrive if
@@ -73,6 +96,49 @@ impl EventBuilder {
             screenshot_max_delay_sec: AtomicU64::new(SCREENSHOT_MAX_DELAY_SEC),
             last_url: Mutex::new(None),
             cache_path,
+            app_icon_script_path,
+            app_icons: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// The icon to attach to this app slice, if one is ready.
+    ///
+    /// First sight of an app spawns a detached extraction thread and returns
+    /// `None`; a later slice for the same app picks up the result and sends it
+    /// exactly once. Non-Windows (or an unreadable exe path) never gets past
+    /// the first guard, so this is inert there.
+    fn take_app_icon(&self, app_name: &str, exe_path: &str) -> Option<String> {
+        if exe_path.is_empty() {
+            return None;
+        }
+        let key = app_name.trim().to_lowercase();
+        if key.is_empty() {
+            return None;
+        }
+        let mut map = self.app_icons.lock();
+        match map.get(&key) {
+            Some(IconSlot::Ready(_)) => match map.insert(key, IconSlot::Done) {
+                Some(IconSlot::Ready(icon)) => Some(icon),
+                _ => None,
+            },
+            Some(_) => None,
+            None => {
+                if map.len() >= MAX_TRACKED_APP_ICONS {
+                    return None;
+                }
+                map.insert(key.clone(), IconSlot::Pending);
+                let slots = Arc::clone(&self.app_icons);
+                let script = self.app_icon_script_path.clone();
+                let exe = exe_path.to_string();
+                let _ = thread::Builder::new().name("vt-app-icon".into()).spawn(move || {
+                    let slot = match read_app_icon(&script, &exe) {
+                        Some(icon) => IconSlot::Ready(icon),
+                        None => IconSlot::Done,
+                    };
+                    slots.lock().insert(key, slot);
+                });
+                None
+            }
         }
     }
 
@@ -149,10 +215,13 @@ impl EventBuilder {
     }
 
     pub fn app_slice(&self, window: &ForegroundWindow) -> ActivityEvent {
+        let app_name = truncate(&self.resolve_app_name(window), MAX_APP_NAME_LEN);
+        let app_icon = self.take_app_icon(&app_name, &window.exe_path);
         ActivityEvent::App {
-            app_name: truncate(&self.resolve_app_name(window), MAX_APP_NAME_LEN),
+            app_name,
             page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
             duration_seconds: APP_LOG_INTERVAL_SEC,
+            app_icon,
             signal: self.activity.signal_snapshot(),
         }
     }
@@ -242,6 +311,7 @@ mod tests {
             PathBuf::new(),
             PathBuf::new(),
             std::env::temp_dir().join(format!("vt-eventbuilder-test-{unique}.json")),
+            PathBuf::new(),
         )
     }
 
@@ -250,6 +320,7 @@ mod tests {
             app_name: app_name.to_string(),
             title: "Some Title".to_string(),
             process_name: process_name.to_string(),
+            exe_path: String::new(),
             hwnd: 0,
             is_browser: false,
             browser_hint: String::new(),
@@ -318,6 +389,7 @@ mod tests {
             app_name: "Google Chrome".to_string(),
             title: "Some page".to_string(),
             process_name: "chrome.exe".to_string(),
+            exe_path: String::new(),
             hwnd: 0,
             is_browser: true,
             browser_hint: "chrome".to_string(),
@@ -333,6 +405,33 @@ mod tests {
     fn no_url_on_a_screenshot_when_nothing_has_been_captured() {
         let builder = builder();
         assert_eq!(builder.recent_url(&browser_window()), None);
+    }
+
+    #[test]
+    fn an_app_slice_carries_no_icon_without_an_executable_path() {
+        // window() leaves exe_path empty (the non-Windows / unreadable case),
+        // so extraction never even starts.
+        let builder = builder();
+        match builder.app_slice(&window("code.exe", "VS Code")) {
+            ActivityEvent::App { app_icon, .. } => assert_eq!(app_icon, None),
+            other => panic!("expected App, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_missing_icon_script_settles_to_done_and_never_blocks_the_slice() {
+        // builder() passes an empty (non-existent) script path; the first
+        // slice spawns a thread that resolves to nothing, and no slice ever
+        // returns an icon or panics.
+        let builder = builder();
+        let mut win = window("code.exe", "VS Code");
+        win.exe_path = "C:\\does\\not\\exist\\code.exe".to_string();
+        for _ in 0..3 {
+            match builder.app_slice(&win) {
+                ActivityEvent::App { app_icon, .. } => assert_eq!(app_icon, None),
+                other => panic!("expected App, got {other:?}"),
+            }
+        }
     }
 
     #[test]

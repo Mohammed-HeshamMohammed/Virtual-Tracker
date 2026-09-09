@@ -72,6 +72,10 @@ pub struct ForegroundWindow {
     pub app_name: String,
     pub title: String,
     pub process_name: String,
+    /// Full path to the executable. Windows-only; empty elsewhere and on the
+    /// paths where the process image name can't be read. Used for app-icon
+    /// extraction (capture/app_icon.rs).
+    pub exe_path: String,
     // Read back only inside read_browser_url's #[cfg(windows)] branch -
     // always constructed (every get_foreground_window_* branch sets them,
     // hwnd to 0 where there's no such concept), just never read on whatever
@@ -98,6 +102,7 @@ pub fn get_foreground_window() -> ForegroundWindow {
             app_name: "Unknown".into(),
             title: "Unknown".into(),
             process_name: String::new(),
+            exe_path: String::new(),
             hwnd: 0,
             is_browser: false,
             browser_hint: String::new(),
@@ -125,6 +130,7 @@ fn get_foreground_window_macos() -> ForegroundWindow {
         app_name: "Unknown".into(),
         title: "Unknown".into(),
         process_name: String::new(),
+        exe_path: String::new(),
         hwnd: 0,
         is_browser: false,
         browser_hint: String::new(),
@@ -157,6 +163,9 @@ fn get_foreground_window_macos() -> ForegroundWindow {
         app_name,
         title,
         process_name,
+        // App-icon extraction is Windows-only (capture/app_icon.rs); xcap
+        // gives no executable path on macOS anyway.
+        exe_path: String::new(),
         // HWND is a Windows-specific concept with no macOS equivalent; the
         // only consumer of this field is #[cfg(windows)]-gated, so 0 here is
         // inert, not a placeholder standing in for something unfetched.
@@ -199,6 +208,7 @@ fn get_foreground_window_win() -> ForegroundWindow {
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
         let mut process_name = String::from("Unknown");
+        let mut exe_path = String::new();
         if pid != 0 {
             if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
                 let mut buf = [0u16; MAX_PATH as usize];
@@ -215,6 +225,7 @@ fn get_foreground_window_win() -> ForegroundWindow {
                     if let Some(name) = PathBuf::from(full_path.as_str()).file_name() {
                         process_name = name.to_string_lossy().to_string();
                     }
+                    exe_path = full_path;
                 }
                 let _ = windows::Win32::Foundation::CloseHandle(handle);
             }
@@ -229,6 +240,7 @@ fn get_foreground_window_win() -> ForegroundWindow {
             app_name,
             title,
             process_name,
+            exe_path,
             hwnd: hwnd_val,
             is_browser,
             browser_hint,
@@ -302,9 +314,9 @@ fn browser_hint_from_exe(exe: &str) -> String {
     }
 }
 
-// Only reachable via read_browser_url's windows/macos branches.
+// Reachable via read_browser_url's windows/macos branches and app_icon.rs.
 #[allow(dead_code)]
-fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String> {
+pub(crate) fn run_command_timeout(mut command: Command, timeout: Duration) -> Option<String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command.spawn().ok()?;
     let deadline = Instant::now() + timeout;

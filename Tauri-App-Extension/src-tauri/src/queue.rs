@@ -159,6 +159,7 @@ mod tests {
             app_name: "Test App".into(),
             page_title: "Test".into(),
             duration_seconds: 15,
+            app_icon: None,
             signal: crate::types::ActivitySignal::default(),
         }]
     }

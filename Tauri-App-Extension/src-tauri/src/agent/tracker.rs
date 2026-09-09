@@ -199,6 +199,7 @@ impl ActivityTracker {
             settings.url_script_path.clone(),
             settings.macos_url_script_path.clone(),
             settings.classification_cache_path.clone(),
+            settings.app_icon_script_path.clone(),
         );
         Self {
             api,
@@ -1286,6 +1287,7 @@ mod tests {
             log_path: dir.join("agent.log"),
             url_script_path: dir.join("missing-get-browser-url.ps1"),
             macos_url_script_path: dir.join("missing-get-browser-url.applescript"),
+            app_icon_script_path: dir.join("missing-get-app-icon.ps1"),
         }
     }
 

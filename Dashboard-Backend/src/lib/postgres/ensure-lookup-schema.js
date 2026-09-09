@@ -810,6 +810,10 @@ GROUP BY task_id`,
   name       VARCHAR(200) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // Icon reported by the desktop agent (data:image/png;base64,…, ~1-6 KB).
+  // One per app name; refreshed when the agent sends a newer one.
+  `ALTER TABLE apps ADD COLUMN IF NOT EXISTS icon_data_url TEXT`,
+  `ALTER TABLE apps ADD COLUMN IF NOT EXISTS icon_updated_at TIMESTAMPTZ`,
   `CREATE TABLE IF NOT EXISTS activity_app_logs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   member_id        UUID NOT NULL,
@@ -985,6 +989,12 @@ GROUP BY task_id`,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // "window_title" match type: 12 chars, and not in the original CHECK. Widen
+  // the column and swap the constraint (idempotent - runs every boot).
+  `ALTER TABLE activity_categories ALTER COLUMN match_type TYPE VARCHAR(20)`,
+  `ALTER TABLE activity_categories ALTER COLUMN pattern TYPE VARCHAR(500)`,
+  `ALTER TABLE activity_categories DROP CONSTRAINT IF EXISTS activity_categories_match_type_check`,
+  `ALTER TABLE activity_categories ADD CONSTRAINT activity_categories_match_type_check CHECK (match_type IN ('app', 'domain', 'window_title'))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_categories_unique ON activity_categories (match_type, lower(pattern))`,
   `CREATE INDEX IF NOT EXISTS idx_activity_categories_category ON activity_categories (category)`,
   `INSERT INTO activity_categories (match_type, pattern, category, display_name, is_global_default) VALUES
