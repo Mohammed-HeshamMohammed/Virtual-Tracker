@@ -1,8 +1,3 @@
-/**
- * Reject JSON keys outside the allowlist.
- * @param {unknown} body
- * @param {string[]} allowedKeys
- */
 export function rejectUnknownFields(body, allowedKeys) {
   if (body === null || body === undefined) return;
   if (typeof body !== "object" || Array.isArray(body)) {
@@ -16,11 +11,6 @@ export function rejectUnknownFields(body, allowedKeys) {
   }
 }
 
-/**
- * @param {unknown} value
- * @param {number} maxLen
- * @param {string} fieldName
- */
 export function assertMaxLength(value, maxLen, fieldName) {
   if (typeof value !== "string") return;
   if (value.length > maxLen) {

@@ -1,10 +1,5 @@
-/** Maximum JSON body size accepted by the API (256 KiB — form submissions only). */
 export const MAX_JSON_BODY_BYTES = 256 * 1024;
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {number} [maxBytes]
- */
 export async function readJsonBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
   const chunks = [];
   let totalBytes = 0;

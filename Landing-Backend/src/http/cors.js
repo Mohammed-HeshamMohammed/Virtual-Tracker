@@ -1,6 +1,5 @@
 import { getEnv } from "../config/env.js";
 
-// Root domain for credentialed session-proxy routes; contact/health stay wildcard CORS.
 function getCredentialedRootDomain() {
   try {
     const frontend = getEnv().urls.frontendOrigin || getEnv().urls.appPublicUrl;
@@ -26,7 +25,6 @@ export function isCredentialedOriginAllowed(origin) {
   }
 }
 
-/** Wildcard CORS for contact/health; session proxy needs credentials + explicit origin. */
 export function corsHeaders(origin, opts = {}) {
   if (opts.credentials && isCredentialedOriginAllowed(origin)) {
     return {

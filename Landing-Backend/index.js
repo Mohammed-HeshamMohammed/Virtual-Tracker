@@ -1,4 +1,3 @@
-// Landing-Backend entry: contact form + session-status proxy for the landing page.
 import { getEnv, initConfig } from "./src/config/env.js";
 
 initConfig();

@@ -1,11 +1,5 @@
-// HTTP client for Notify-Backend (contact form, etc.).
 import { getEnv } from "../config/env.js";
 
-/**
- * @param {string} path
- * @param {Record<string, unknown>} body
- * @returns {Promise<{ response: Response; payload: Record<string, unknown> | null }>}
- */
 export async function notifyRequest(path, body) {
   const env = getEnv();
   const baseUrl = env.notify.backendUrl.replace(/\/+$/, "");

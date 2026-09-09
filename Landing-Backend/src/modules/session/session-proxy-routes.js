@@ -3,14 +3,6 @@ import { corsHeaders } from "../../http/cors.js";
 import { getSecurityHeaders } from "../../http/security-headers.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
-/**
- * @param {import("node:http").ServerResponse} res
- * @param {import("node:http").IncomingMessage} req
- * @param {string|undefined} origin
- * @param {number} status
- * @param {unknown} payload
- * @param {Record<string,string>} [extraHeaders]
- */
 function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = {}) {
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -21,7 +13,6 @@ function sendCredentialedJson(res, req, origin, status, payload, extraHeaders = 
   res.end(JSON.stringify(payload));
 }
 
-/** Session cookie proxy to Dashboard-Backend (Landing-Web never calls it directly). */
 export async function routeSessionProxy(req, res, url, origin) {
   const dashboardUrl = getEnv().dashboard.backendUrl.replace(/\/+$/, "");
 
