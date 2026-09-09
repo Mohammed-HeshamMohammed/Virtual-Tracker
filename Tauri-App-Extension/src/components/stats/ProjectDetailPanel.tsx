@@ -1,6 +1,27 @@
 import { fmtCapturedAt, fmtHours, taskStatusLabel } from "../../utils/formatters";
 import type { ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
 
+const RADAR_CENTER = 50;
+const RADAR_MAX_RADIUS = 32;
+const RADAR_LABEL_RADIUS = 41;
+const RADAR_GRID_RINGS = [1 / 3, 2 / 3, 1];
+
+/** Where axis `index` of `count` total sits at `radius` from center, in the
+ *  chart's 0-100 square coordinate space. Axes start at the top (12
+ *  o'clock) and go clockwise - screen y grows downward, so a plain
+ *  increasing angle with cos/sin already reads clockwise on screen. */
+function radarPoint(index: number, count: number, radius: number): { x: number; y: number } {
+  const angle = -Math.PI / 2 + (index / count) * 2 * Math.PI;
+  return { x: RADAR_CENTER + radius * Math.cos(angle), y: RADAR_CENTER + radius * Math.sin(angle) };
+}
+
+function radarPolygon(count: number, radius: number): string {
+  return Array.from({ length: count }, (_, i) => {
+    const { x, y } = radarPoint(i, count, radius);
+    return `${x},${y}`;
+  }).join(" ");
+}
+
 type ProjectDetailPanelProps = {
   project: ProjectInfo | null;
   appBreakdown: ProjectAppTime[];
@@ -60,56 +81,68 @@ export function ProjectDetailPanel({
       {appBreakdown.length > 0 ? (
         <div className="project-app-chart">
           <span className="stat-tile-label">This week's top apps</span>
-          <div className="project-app-plot">
-            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="project-app-plot-svg" aria-hidden="true">
-              <line x1="0" y1="90" x2="100" y2="90" className="project-app-plot-axis" />
-              <polyline
+          <div className="project-radar">
+            <svg viewBox="0 0 100 100" className="project-radar-svg" aria-hidden="true">
+              {RADAR_GRID_RINGS.map((step) => (
+                <polygon
+                  key={step}
+                  points={radarPolygon(appBreakdown.length, RADAR_MAX_RADIUS * step)}
+                  className="project-radar-grid"
+                />
+              ))}
+              {appBreakdown.map((_, i) => {
+                const { x, y } = radarPoint(i, appBreakdown.length, RADAR_MAX_RADIUS);
+                return (
+                  <line
+                    key={i}
+                    x1={RADAR_CENTER}
+                    y1={RADAR_CENTER}
+                    x2={x}
+                    y2={y}
+                    className="project-radar-grid"
+                  />
+                );
+              })}
+              <polygon
                 points={appBreakdown
                   .map((app, i) => {
-                    const x = ((i + 0.5) / appBreakdown.length) * 100;
-                    const y = 90 - (app.totalSeconds / maxAppSeconds) * 70;
+                    const { x, y } = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
                     return `${x},${y}`;
                   })
                   .join(" ")}
-                className="project-app-plot-line"
+                className="project-radar-shape"
               />
             </svg>
             {appBreakdown.map((app, i) => {
-              const x = ((i + 0.5) / appBreakdown.length) * 100;
-              const y = 90 - (app.totalSeconds / maxAppSeconds) * 70;
+              const dot = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
+              const label = radarPoint(i, appBreakdown.length, RADAR_LABEL_RADIUS);
               const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
               return (
-                // The dot is the actual mark this app is plotted as - the
-                // line just traces the rank order (apps arrive sorted by
-                // time, most to least). Focusable so the tooltip is
-                // reachable by keyboard, not only on hover.
-                <div
-                  key={app.appName}
-                  className="project-app-point"
-                  style={{ left: `${x}%`, top: `${y}%` }}
-                  tabIndex={0}
-                  role="img"
-                  aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
-                >
-                  <span className="project-app-point-dot" aria-hidden="true" />
-                  <div className="project-app-tooltip" role="tooltip">
-                    <strong>{fmtHours(app.totalSeconds)}</strong>
-                    <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
+                <div key={app.appName}>
+                  {/* The dot is the actual mark this app is plotted as -
+                      one point per axis, at that app's own share of the
+                      week. Focusable so the tooltip is reachable by
+                      keyboard, not only on hover. */}
+                  <div
+                    className="project-radar-point"
+                    style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                    tabIndex={0}
+                    role="img"
+                    aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
+                  >
+                    <span className="project-radar-dot" aria-hidden="true" />
+                    <div className="project-app-tooltip" role="tooltip">
+                      <strong>{fmtHours(app.totalSeconds)}</strong>
+                      <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
+                    </div>
+                  </div>
+                  <div className="project-radar-label" style={{ left: `${label.x}%`, top: `${label.y}%` }}>
+                    <span className="project-app-name">{app.appName}</span>
+                    <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
                   </div>
                 </div>
               );
             })}
-          </div>
-          <div
-            className="project-app-plot-labels"
-            style={{ gridTemplateColumns: `repeat(${appBreakdown.length}, 1fr)` }}
-          >
-            {appBreakdown.map((app) => (
-              <div className="project-app-plot-label" key={app.appName}>
-                <span className="project-app-name">{app.appName}</span>
-                <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
-              </div>
-            ))}
           </div>
         </div>
       ) : null}

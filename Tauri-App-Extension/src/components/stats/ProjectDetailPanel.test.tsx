@@ -81,25 +81,34 @@ describe("ProjectDetailPanel", () => {
     expect(render(baseProject)).not.toContain("top apps");
   });
 
-  it("plots one point per app, connected by a line tracing rank order", () => {
+  it("plots one point per app around a radar, one axis per app", () => {
     const html = render(baseProject, {
       appBreakdown: [
         { appName: "Zoom", totalSeconds: 3600 },
-        { appName: "Browser", totalSeconds: 1800 },
+        { appName: "Browser", totalSeconds: 3600 },
+        { appName: "Notepad", totalSeconds: 1800 },
       ],
     });
     expect(html).toContain("Zoom");
     expect(html).toContain("Browser");
-    expect(html).toContain("project-app-plot-svg");
-    expect(html).toContain("project-app-plot-line");
-    // One point (dot) per app.
-    expect((html.match(/project-app-point-dot/g) ?? []).length).toBe(2);
-    // Points render in appBreakdown order (Zoom, then Browser). The
-    // higher-time app plots closer to the top - a smaller `top` percent in
-    // the chart's 0-100 coordinate space - than the lower one.
-    const tops = [...html.matchAll(/top:([\d.]+)%/g)].map((m) => Number(m[1]));
-    expect(tops.length).toBe(2);
-    expect(tops[0]).toBeLessThan(tops[1]);
+    expect(html).toContain("Notepad");
+    expect(html).toContain("project-radar-svg");
+    expect(html).toContain("project-radar-shape");
+    // 3 grid rings x 3 axes (spokes) = 9 grid polygons/lines, plus one
+    // dot per app.
+    expect((html.match(/project-radar-dot/g) ?? []).length).toBe(3);
+
+    // Zoom and Browser share the max value, so they plot at the same
+    // distance from center - the two highest points in the shape.
+    const points = [...html.matchAll(/class="project-radar-point" style="left:([\d.]+)%;top:([\d.]+)%"/g)].map(
+      (m) => ({ x: Number(m[1]), y: Number(m[2]) }),
+    );
+    expect(points.length).toBe(3);
+    const dist = (p: { x: number; y: number }) => Math.hypot(p.x - 50, p.y - 50);
+    // Notepad (half the time) sits closer to the center than either
+    // full-value app.
+    expect(dist(points[2])).toBeLessThan(dist(points[0]));
+    expect(dist(points[2])).toBeLessThan(dist(points[1]));
   });
 
   it("shows each app's time as a direct label, focusable for a keyboard-reachable tooltip", () => {

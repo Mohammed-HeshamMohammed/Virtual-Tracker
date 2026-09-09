@@ -3160,10 +3160,11 @@ select.modal-input {
   border-radius: 0;
 }
 
-/* This project's top-apps breakdown (main pane, task-less session) - an
-   actual plotted line/point chart, not styled progress bars. Apps arrive
-   sorted by time (most to least), so the line traces that rank order
-   rather than implying an unrelated continuous axis. */
+/* This project's top-apps breakdown (main pane, task-less session) - a
+   single-series radar: one axis per app, one vertex per axis at that
+   app's share of the week. Square aspect-ratio is load-bearing here (not
+   just styling) - the angle math assumes a uniform 0-100 coordinate space
+   in both directions, so a stretched box would skew every axis. */
 .project-app-chart {
   display: flex;
   flex-direction: column;
@@ -3171,12 +3172,15 @@ select.modal-input {
   margin-top: 14px;
 }
 
-.project-app-plot {
+.project-radar {
   position: relative;
-  height: 84px;
+  width: 100%;
+  max-width: 260px;
+  aspect-ratio: 1;
+  margin: 8px auto 30px;
 }
 
-.project-app-plot-svg {
+.project-radar-svg {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -3184,18 +3188,18 @@ select.modal-input {
   overflow: visible;
 }
 
-.project-app-plot-axis {
-  stroke: rgb(var(--c-line) / 0.25);
+.project-radar-grid {
+  fill: none;
+  stroke: rgb(var(--c-line) / 0.55);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
-.project-app-plot-line {
-  fill: none;
+.project-radar-shape {
+  fill: rgb(var(--c-primary) / 0.22);
   stroke: rgb(var(--c-primary));
-  stroke-width: 2;
+  stroke-width: 1.5;
   stroke-linejoin: round;
-  stroke-linecap: round;
   vector-effect: non-scaling-stroke;
 }
 
@@ -3203,7 +3207,7 @@ select.modal-input {
    space the SVG's viewBox uses), centered on that coordinate, with a
    hit area well past the visible dot - a small marker is an easy miss
    otherwise. */
-.project-app-point {
+.project-radar-point {
   position: absolute;
   width: 28px;
   height: 28px;
@@ -3212,21 +3216,34 @@ select.modal-input {
   place-items: center;
   outline: none;
   cursor: default;
+  z-index: 2;
 }
 
-.project-app-point-dot {
-  width: 9px;
-  height: 9px;
+.project-radar-dot {
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: rgb(var(--c-primary));
-  /* Surface ring - keeps the dot legible crossing the line or the axis. */
+  /* Surface ring - keeps the dot legible over the filled shape or grid. */
   box-shadow: 0 0 0 2px var(--surface-high);
   transition: transform 0.15s ease;
 }
 
-.project-app-point:hover .project-app-point-dot,
-.project-app-point:focus-visible .project-app-point-dot {
+.project-radar-point:hover .project-radar-dot,
+.project-radar-point:focus-visible .project-radar-dot {
   transform: scale(1.4);
+}
+
+.project-radar-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 68px;
+  text-align: center;
+  pointer-events: none;
 }
 
 .project-app-tooltip {
@@ -3252,8 +3269,8 @@ select.modal-input {
   z-index: 5;
 }
 
-.project-app-point:hover .project-app-tooltip,
-.project-app-point:focus-visible .project-app-tooltip {
+.project-radar-point:hover .project-app-tooltip,
+.project-radar-point:focus-visible .project-app-tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
@@ -3262,20 +3279,6 @@ select.modal-input {
 .project-app-tooltip-sub {
   color: var(--on-surface-variant);
   font-size: 10px;
-}
-
-.project-app-plot-labels {
-  display: grid;
-  gap: 4px;
-}
-
-.project-app-plot-label {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
-  min-width: 0;
-  text-align: center;
 }
 
 .project-app-name {
