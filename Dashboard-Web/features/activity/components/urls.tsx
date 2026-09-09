@@ -6,7 +6,7 @@ import { ActivityMemberAvatar } from "@/features/activity/components/activity-me
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity, canManageActivityData } from "@/features/auth"
 import { motion } from "framer-motion"
 import { Clock, Globe, ExternalLink, TrendingUp, TrendingDown, Eye } from "lucide-react"
@@ -61,6 +61,17 @@ type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
 const getCategoryColor = activityCategoryColor
 const getCategoryBadge = activityCategoryBadgeClass
 
+/** Where the row's open-link button should go, or null when there's nothing
+ *  to open (window-title rows, or a domain that isn't a real host). Handles
+ *  domain-only privacy mode, where `url` is just "example.com" with no
+ *  scheme. */
+function openHrefFor(row: { url: string; domain: string; sourceKind?: "url" | "window" }): string | null {
+  if (/^https?:\/\//i.test(row.url)) return row.url
+  if (row.sourceKind === "window") return null
+  const host = row.domain.trim().toLowerCase().replace(/^www\./, "")
+  return /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host) ? `https://${host}` : null
+}
+
 /** Site favicon with a Globe fallback. Uses Google's public favicon service —
  *  the visited domain is sent to google.com to fetch the icon. */
 function SiteFavicon({ domain, category }: { domain: string; category: ActivityCategory }) {
@@ -94,6 +105,7 @@ function SiteFavicon({ domain, category }: { domain: string; category: ActivityC
 
 export function ActivityURLsContent() {
   const { memberRole } = useAuth()
+  const { isDark } = useTheme()
   const canExport = canExportActivity(memberRole)
   const canManage = canManageActivityData(memberRole)
   const canClassify = canClassifyActivity(memberRole)
@@ -396,13 +408,24 @@ export function ActivityURLsContent() {
                               <SiteFavicon domain={url.domain} category={url.category} />
                             )}
                             <div className="min-w-0">
-                              <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{url.domain}</p>
-                              <p className="truncate text-xs text-slate-500 dark:text-slate-400 max-w-[320px]">{url.url}</p>
                               {url.sourceKind === "window" ? (
-                                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
-                                  Window title
-                                </p>
-                              ) : null}
+                                <>
+                                  {/* No URL was readable - the window title is
+                                      the identity, the browser is the context. */}
+                                  <p className="truncate text-sm font-medium text-slate-800 dark:text-slate-100 max-w-[360px]">
+                                    {url.url}
+                                  </p>
+                                  <p className="truncate text-xs text-slate-500 dark:text-slate-400">{url.domain}</p>
+                                  <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                                    Window title
+                                  </p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{url.domain}</p>
+                                  <p className="truncate text-xs text-slate-500 dark:text-slate-400 max-w-[320px]">{url.url}</p>
+                                </>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -424,21 +447,23 @@ export function ActivityURLsContent() {
                         {canManage ? (
                           <td className="px-5 py-4">
                             <div className="flex items-center justify-end gap-1">
-                              {url.sourceKind !== "window" && /^https?:\/\//i.test(url.url) ? (
-                                <a
-                                  href={url.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <ExternalLink className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                                </a>
-                              ) : (
-                                <button type="button" className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" disabled>
-                                  <ExternalLink className="h-4 w-4 text-slate-300 dark:text-slate-700" />
-                                </button>
-                              )}
+                              {(() => {
+                                const href = openHrefFor(url)
+                                return href ? (
+                                  <a
+                                    href={href}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title={`Open ${href}`}
+                                    className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <ExternalLink className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                                  </a>
+                                ) : (
+                                  <span className="text-xs text-slate-400 dark:text-slate-600">—</span>
+                                )
+                              })()}
                             </div>
                           </td>
                         ) : null}
@@ -453,6 +478,7 @@ export function ActivityURLsContent() {
                   totalItems={filteredURLs.length}
                   rowsPerPage={rowsPerPage}
                   onPageChange={setCurrentPage}
+                  isDark={isDark}
                 />
               ) : null}
             </motion.div>
@@ -507,6 +533,7 @@ export function ActivityURLsContent() {
                     totalItems={membersSource.length}
                     rowsPerPage={memberRowsPerPage}
                     onPageChange={setMemberPage}
+                    isDark={isDark}
                   />
                 ) : null}
               </motion.div>

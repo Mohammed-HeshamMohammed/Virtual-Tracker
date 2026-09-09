@@ -5,7 +5,7 @@ import { createPortal } from "react-dom"
 import { useActivityFeed } from "@/features/activity/hooks/use-activity-feed"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { canClassifyActivity, canExportActivity } from "@/features/auth"
 import { motion } from "framer-motion"
 import { Clock, Monitor, TrendingUp, TrendingDown, Minus } from "lucide-react"
@@ -105,6 +105,7 @@ type AppsFeed = { apps: AppUsage[]; members: MemberAppUsage[] }
 
 export function ActivityAppsContent() {
   const { memberRole } = useAuth()
+  const { isDark } = useTheme()
   const canExport = canExportActivity(memberRole)
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
@@ -430,6 +431,7 @@ export function ActivityAppsContent() {
                   totalItems={filteredApps.length}
                   rowsPerPage={rowsPerPage}
                   onPageChange={setCurrentPage}
+                  isDark={isDark}
                 />
               ) : null}
             </motion.div>
@@ -487,6 +489,7 @@ export function ActivityAppsContent() {
                     totalItems={membersSource.length}
                     rowsPerPage={memberRowsPerPage}
                     onPageChange={setMemberPage}
+                    isDark={isDark}
                   />
                 ) : null}
               </motion.div>

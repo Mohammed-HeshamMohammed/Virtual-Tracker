@@ -27,7 +27,7 @@ import { formatActivityAppName } from "@/features/activity/utils/display-names"
 import { ActivityMemberAvatar } from "@/features/activity/components/activity-member-avatar"
 import { normalizeActivityCategory } from "@/features/activity/utils/activity-categories"
 import { useActivityShell, useActivityShellRegistration } from "@/features/activity/components/activity-shell-context"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { canManageActivityData } from "@/features/auth"
 import { motion, AnimatePresence } from "framer-motion"
 import {
@@ -400,6 +400,7 @@ const insightCards = [
 
 export function ActivityScreenshots() {
   const { memberRole } = useAuth()
+  const { isDark } = useTheme()
   const canManage = canManageActivityData(memberRole)
   const {
     day,
@@ -702,6 +703,7 @@ export function ActivityScreenshots() {
               totalItems={displayScreenshots.length}
               rowsPerPage={rowsPerPage}
               onPageChange={setCurrentPage}
+              isDark={isDark}
             />
           ) : null}
         </div>
@@ -781,6 +783,7 @@ export function ActivityScreenshots() {
             totalItems={displayScreenshots.length}
             rowsPerPage={rowsPerPage}
             onPageChange={setCurrentPage}
+            isDark={isDark}
           />
         ) : null}
         </div>
