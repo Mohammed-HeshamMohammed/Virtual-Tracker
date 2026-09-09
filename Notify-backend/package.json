@@ -15,7 +15,7 @@
     "libphonenumber-js": "^1.13.7",
     "nodemailer": "^9.1.1",
     "pg": "^8.13.3",
-    "zod": "^3.25.76"
+    "zod": "^4.5.4"
   },
   "overrides": {
     "uuid": "11.1.1",
