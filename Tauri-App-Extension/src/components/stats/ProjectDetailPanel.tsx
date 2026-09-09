@@ -63,17 +63,20 @@ export function ProjectDetailPanel({
 
   const hasChart = appBreakdown.length > 0;
   const hasShots = screenshots.length > 0;
+  const hasBadges = project.requireStopNote || project.budgetExhausted || canAddTask;
 
   return (
     <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
-      <div className="badge-row">
-        {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
-        {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
-        {canAddTask ? <span className="badge neutral">You can add tasks here</span> : null}
-      </div>
+      {hasBadges ? (
+        <div className="badge-row">
+          {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
+          {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
+          {canAddTask ? <span className="badge neutral">You can add tasks here</span> : null}
+        </div>
+      ) : null}
 
       {hasChart || hasShots ? (
-        <div className="project-detail-row">
+        <div className={`project-detail-row${hasBadges ? "" : " no-badges"}`}>
           {hasChart ? (
             <div className="project-app-chart">
               <span className="stat-tile-label">This week's top apps</span>

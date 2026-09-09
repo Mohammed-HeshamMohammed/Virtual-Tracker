@@ -3170,7 +3170,11 @@ select.modal-input {
   flex-wrap: wrap;
   align-items: flex-start;
   gap: 20px;
-  margin-top: 14px;
+  margin-top: 10px;
+}
+
+.project-detail-row.no-badges {
+  margin-top: 0;
 }
 
 .project-app-chart {
@@ -3193,7 +3197,7 @@ select.modal-input {
   width: 100%;
   max-width: 260px;
   aspect-ratio: 1;
-  margin: 8px auto 30px;
+  margin: 0 auto 30px 42px;
 }
 
 .project-radar-svg {
