@@ -43,12 +43,6 @@ describe("ProjectDetailPanel", () => {
     expect(render(null)).toBe("");
   });
 
-  it("shows the project type as the hint", () => {
-    const html = render(baseProject);
-    expect(html).toContain("Calling");
-    expect(html).toContain("This project");
-  });
-
   it("flags a required stop note and an exhausted budget", () => {
     const html = render({ ...baseProject, requireStopNote: true, budgetExhausted: true });
     expect(html).toContain("Stop note required");

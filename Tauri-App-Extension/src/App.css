@@ -3165,11 +3165,27 @@ select.modal-input {
    app's share of the week. Square aspect-ratio is load-bearing here (not
    just styling) - the angle math assumes a uniform 0-100 coordinate space
    in both directions, so a stretched box would skew every axis. */
+.project-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+  margin-top: 14px;
+}
+
 .project-app-chart {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 14px;
+  flex: 1 1 260px;
+}
+
+.project-shots-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 220px;
+  min-width: 0;
 }
 
 .project-radar {

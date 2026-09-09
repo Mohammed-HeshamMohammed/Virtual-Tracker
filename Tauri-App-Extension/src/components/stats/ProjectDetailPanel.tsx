@@ -1,4 +1,4 @@
-import { fmtCapturedAt, fmtHours, taskStatusLabel } from "../../utils/formatters";
+import { fmtCapturedAt, fmtHours } from "../../utils/formatters";
 import type { ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
 
 const RADAR_CENTER = 50;
@@ -61,115 +61,113 @@ export function ProjectDetailPanel({
   const totalAppSeconds = appBreakdown.reduce((sum, a) => sum + a.totalSeconds, 0) || 1;
   const selectedImage = selectedScreenshotId ? screenshotImages[selectedScreenshotId] : "";
 
+  const hasChart = appBreakdown.length > 0;
+  const hasShots = screenshots.length > 0;
+
   return (
     <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
-      <div className="stat-panel-head">
-        <h3 className="stat-panel-title">This project</h3>
-        <span className="stat-panel-hint">{taskStatusLabel(project.projectType)}</span>
-      </div>
-
-      <div className="badge-row" style={{ marginTop: 10 }}>
+      <div className="badge-row">
         {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
         {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
         {canAddTask ? <span className="badge neutral">You can add tasks here</span> : null}
       </div>
 
-      <p className="task-detail-text" style={{ marginTop: 10 }}>
-        Tracked directly against the project — no task selection needed.
-      </p>
-
-      {appBreakdown.length > 0 ? (
-        <div className="project-app-chart">
-          <span className="stat-tile-label">This week's top apps</span>
-          <div className="project-radar">
-            <svg viewBox="0 0 100 100" className="project-radar-svg" aria-hidden="true">
-              {RADAR_GRID_RINGS.map((step) => (
-                <polygon
-                  key={step}
-                  points={radarPolygon(appBreakdown.length, RADAR_MAX_RADIUS * step)}
-                  className="project-radar-grid"
-                />
-              ))}
-              {appBreakdown.map((_, i) => {
-                const { x, y } = radarPoint(i, appBreakdown.length, RADAR_MAX_RADIUS);
-                return (
-                  <line
-                    key={i}
-                    x1={RADAR_CENTER}
-                    y1={RADAR_CENTER}
-                    x2={x}
-                    y2={y}
-                    className="project-radar-grid"
+      {hasChart || hasShots ? (
+        <div className="project-detail-row">
+          {hasChart ? (
+            <div className="project-app-chart">
+              <span className="stat-tile-label">This week's top apps</span>
+              <div className="project-radar">
+                <svg viewBox="0 0 100 100" className="project-radar-svg" aria-hidden="true">
+                  {RADAR_GRID_RINGS.map((step) => (
+                    <polygon
+                      key={step}
+                      points={radarPolygon(appBreakdown.length, RADAR_MAX_RADIUS * step)}
+                      className="project-radar-grid"
+                    />
+                  ))}
+                  {appBreakdown.map((_, i) => {
+                    const { x, y } = radarPoint(i, appBreakdown.length, RADAR_MAX_RADIUS);
+                    return (
+                      <line
+                        key={i}
+                        x1={RADAR_CENTER}
+                        y1={RADAR_CENTER}
+                        x2={x}
+                        y2={y}
+                        className="project-radar-grid"
+                      />
+                    );
+                  })}
+                  <polygon
+                    points={appBreakdown
+                      .map((app, i) => {
+                        const { x, y } = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
+                        return `${x},${y}`;
+                      })
+                      .join(" ")}
+                    className="project-radar-shape"
                   />
-                );
-              })}
-              <polygon
-                points={appBreakdown
-                  .map((app, i) => {
-                    const { x, y } = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
-                    return `${x},${y}`;
-                  })
-                  .join(" ")}
-                className="project-radar-shape"
-              />
-            </svg>
-            {appBreakdown.map((app, i) => {
-              const dot = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
-              const label = radarPoint(i, appBreakdown.length, RADAR_LABEL_RADIUS);
-              const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
-              return (
-                <div key={app.appName}>
-                  {/* The dot is the actual mark this app is plotted as -
-                      one point per axis, at that app's own share of the
-                      week. Focusable so the tooltip is reachable by
-                      keyboard, not only on hover. */}
-                  <div
-                    className="project-radar-point"
-                    style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
-                    tabIndex={0}
-                    role="img"
-                    aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
-                  >
-                    <span className="project-radar-dot" aria-hidden="true" />
-                    <div className="project-app-tooltip" role="tooltip">
-                      <strong>{fmtHours(app.totalSeconds)}</strong>
-                      <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
+                </svg>
+                {appBreakdown.map((app, i) => {
+                  const dot = radarPoint(i, appBreakdown.length, (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS);
+                  const label = radarPoint(i, appBreakdown.length, RADAR_LABEL_RADIUS);
+                  const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
+                  return (
+                    <div key={app.appName}>
+                      {/* The dot is the actual mark this app is plotted as -
+                          one point per axis, at that app's own share of the
+                          week. Focusable so the tooltip is reachable by
+                          keyboard, not only on hover. */}
+                      <div
+                        className="project-radar-point"
+                        style={{ left: `${dot.x}%`, top: `${dot.y}%` }}
+                        tabIndex={0}
+                        role="img"
+                        aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
+                      >
+                        <span className="project-radar-dot" aria-hidden="true" />
+                        <div className="project-app-tooltip" role="tooltip">
+                          <strong>{fmtHours(app.totalSeconds)}</strong>
+                          <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
+                        </div>
+                      </div>
+                      <div className="project-radar-label" style={{ left: `${label.x}%`, top: `${label.y}%` }}>
+                        <span className="project-app-name">{app.appName}</span>
+                        <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="project-radar-label" style={{ left: `${label.x}%`, top: `${label.y}%` }}>
-                    <span className="project-app-name">{app.appName}</span>
-                    <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
 
-      {screenshots.length > 0 ? (
-        <div style={{ marginTop: 14 }}>
-          <span className="stat-tile-label">Recent screenshots</span>
-          <div className="shot-strip">
-            {screenshots.map((shot) => (
-              <button
-                key={shot.id}
-                type="button"
-                className={`shot-chip${shot.id === selectedScreenshotId ? " active" : ""}`}
-                onClick={() => onSelectScreenshot(shot.id)}
-                title={fmtCapturedAt(shot.capturedAt) || "Screenshot"}
-              >
-                {fmtCapturedAt(shot.capturedAt) || "—"}
-              </button>
-            ))}
-          </div>
-          {selectedScreenshotId ? (
-            <div className="shot-preview">
-              {selectedImage ? (
-                <img className="shot-preview-img" src={selectedImage} alt="Screenshot from this project" draggable={false} />
-              ) : (
-                <span className="skeleton-bar shot-preview-loading" />
-              )}
+          {hasShots ? (
+            <div className="project-shots-card">
+              <span className="stat-tile-label">Recent screenshots</span>
+              <div className="shot-strip">
+                {screenshots.map((shot) => (
+                  <button
+                    key={shot.id}
+                    type="button"
+                    className={`shot-chip${shot.id === selectedScreenshotId ? " active" : ""}`}
+                    onClick={() => onSelectScreenshot(shot.id)}
+                    title={fmtCapturedAt(shot.capturedAt) || "Screenshot"}
+                  >
+                    {fmtCapturedAt(shot.capturedAt) || "—"}
+                  </button>
+                ))}
+              </div>
+              {selectedScreenshotId ? (
+                <div className="shot-preview">
+                  {selectedImage ? (
+                    <img className="shot-preview-img" src={selectedImage} alt="Screenshot from this project" draggable={false} />
+                  ) : (
+                    <span className="skeleton-bar shot-preview-loading" />
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
