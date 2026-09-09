@@ -1474,6 +1474,10 @@ mod tests {
         assert!(state.current_session.is_empty());
     }
 
+    // Windows-only, same as the sibling above: tick_idle_escalation short-
+    // circuits on `!ActivityMeter::HOOKS_SUPPORTED` off Windows, so `stopped`
+    // is always false there and the rewind never runs.
+    #[cfg(windows)]
     #[test]
     fn idle_escalation_folds_the_reversed_active_chunk_into_idle_instead_of_discarding_it() {
         let base_url = fake_server(|request| match request.method() {
