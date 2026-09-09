@@ -157,7 +157,7 @@ function ActivityShellStickyBar() {
   }, [triggerRefresh, refreshTeamMemberIds])
 
   return (
-    <div className="sticky top-0 z-30 -mx-1 shrink-0 overflow-visible bg-white/95 dark:bg-slate-900/95 px-1 pb-3 pt-0 backdrop-blur-md supports-backdrop-filter:bg-white/80 dark:supports-backdrop-filter:bg-slate-900/80">
+    <div className="sticky top-0 z-30 -mx-1 shrink-0 overflow-visible bg-[#ffffff]/95 dark:bg-[#101417]/95 px-1 pb-3 pt-0 backdrop-blur-md supports-backdrop-filter:bg-[#ffffff]/80 dark:supports-backdrop-filter:bg-[#101417]/80">
       <ActivityControlBar
         pageId={pageId}
         selectedDay={day.selectedDay}

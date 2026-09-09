@@ -126,7 +126,7 @@ export function ActivitySegmentedControl<T extends string>({
 }) {
   return (
     <div
-      className="flex shrink-0 items-center rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-0.5 shadow-inner"
+      className="flex shrink-0 items-center rounded-xl border border-slate-200/80 dark:border-[#3d4a3d]/40 bg-slate-50/80 dark:bg-[#101417]/60 p-0.5 shadow-inner"
       role="group"
       aria-label={ariaLabel}
     >
@@ -143,7 +143,7 @@ export function ActivitySegmentedControl<T extends string>({
               "inline-flex items-center gap-1.5 rounded-lg font-semibold transition-all",
               size === "sm" ? "px-2 py-1 text-xs sm:px-2.5" : "px-2.5 py-1.5 text-sm",
               selected
-                ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+                ? "bg-white dark:bg-[#1b2233] text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-[#3d4a3d]/50"
                 : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200",
             )}
           >
@@ -173,7 +173,7 @@ export function ActivityCategoryFilter({
 }) {
   return (
     <div
-      className="flex shrink-0 flex-wrap items-center gap-1 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/60 p-0.5 shadow-inner"
+      className="flex shrink-0 flex-wrap items-center gap-1 rounded-xl border border-slate-200/80 dark:border-[#3d4a3d]/40 bg-slate-50/80 dark:bg-[#101417]/60 p-0.5 shadow-inner"
       role="group"
       aria-label="Activity category"
     >
@@ -186,7 +186,7 @@ export function ActivityCategoryFilter({
           className={cn(
             "inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold transition-all sm:px-2.5",
             value === cat.id
-              ? "bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-700"
+              ? "bg-white dark:bg-[#1b2233] text-slate-900 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-[#3d4a3d]/50"
               : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200",
           )}
         >

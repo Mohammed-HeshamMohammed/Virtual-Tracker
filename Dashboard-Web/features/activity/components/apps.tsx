@@ -76,17 +76,16 @@ function AppIcon({
 }) {
   const [failed, setFailed] = useState(false)
   if (iconDataUrl && !failed) {
+    // The icon is the icon - no tile, no ring around it.
     return (
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
-        <img
-          src={iconDataUrl}
-          alt=""
-          width={24}
-          height={24}
-          className="h-6 w-6 object-contain"
-          onError={() => setFailed(true)}
-        />
-      </div>
+      <img
+        src={iconDataUrl}
+        alt=""
+        width={36}
+        height={36}
+        className="h-9 w-9 shrink-0 rounded-lg object-contain"
+        onError={() => setFailed(true)}
+      />
     )
   }
   return (

@@ -61,27 +61,57 @@ type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
 const getCategoryColor = activityCategoryColor
 const getCategoryBadge = activityCategoryBadgeClass
 
-/** Best-guess hostname for a row: the recorded domain if it looks like one,
- *  else a bare one-word site name resolved to "<name>.com" ("Zillow" ->
- *  "zillow.com"). null when there's nothing host-shaped to work with. */
+/** Site names the agent reads from a window title that don't map to their own
+ *  second-level domain. Just the common ones - everything else falls through
+ *  to the "<first word>.com" guess. */
+const KNOWN_SITE_HOSTS: Record<string, string> = {
+  "google sheets": "sheets.google.com",
+  "google docs": "docs.google.com",
+  "google slides": "slides.google.com",
+  "google drive": "drive.google.com",
+  "google calendar": "calendar.google.com",
+  "google meet": "meet.google.com",
+  "google maps": "maps.google.com",
+  "google photos": "photos.google.com",
+  gmail: "mail.google.com",
+  "microsoft teams": "teams.microsoft.com",
+  "microsoft outlook": "outlook.com",
+  outlook: "outlook.com",
+  onedrive: "onedrive.live.com",
+  "google chrome": "google.com",
+}
+
+/** Best-guess hostname for a row: the recorded domain if it's already one,
+ *  a known product name, a bare one-word name resolved to "<name>.com"
+ *  ("Zillow" -> "zillow.com"), or the brand's first word for a multi-word
+ *  name ("Google Sheets" -> "google.com"). null only for a window-only row
+ *  whose title has nothing host-shaped in it. */
 function guessHost(domain: string, sourceKind?: "url" | "window"): string | null {
   const name = domain.trim().toLowerCase().replace(/^www\./, "")
+  if (!name) return null
   if (/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(name)) return name
-  if (sourceKind !== "window" && /^[a-z0-9][a-z0-9-]{1,40}$/.test(name)) return `${name}.com`
-  return null
+  if (KNOWN_SITE_HOSTS[name]) return KNOWN_SITE_HOSTS[name]
+  if (/^[a-z0-9][a-z0-9-]{1,40}$/.test(name)) return `${name}.com`
+  const firstWord = name.split(/[^a-z0-9]+/).find((w) => w.length >= 2)
+  return firstWord ? `${firstWord}.com` : null
+}
+
+function faviconUrl(host: string): string {
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=64`
 }
 
 /** Where the row's open-link button should go, or null when there's nothing
  *  sensible to open. A real captured URL wins; otherwise fall back to the
- *  guessed host (domain-only privacy mode, or a site name from the title). */
+ *  guessed host. */
 function openHrefFor(row: { url: string; domain: string; sourceKind?: "url" | "window" }): string | null {
   if (/^https?:\/\//i.test(row.url)) return row.url
   const host = guessHost(row.domain, row.sourceKind)
   return host ? `https://${host}` : null
 }
 
-/** Site favicon with a Globe fallback. Uses Google's public favicon service —
- *  the visited domain is sent to google.com to fetch the icon. */
+/** The site's favicon, shown as-is (no tile). Falls back to a category-
+ *  coloured square with a globe when there's no resolvable host or the
+ *  favicon fails to load. */
 function SiteFavicon({
   domain,
   category,
@@ -93,28 +123,30 @@ function SiteFavicon({
 }) {
   const [failed, setFailed] = useState(false)
   const host = guessHost(domain, sourceKind)
-  const canShow = !failed && !!host
+
+  if (host && !failed) {
+    return (
+      <img
+        src={faviconUrl(host)}
+        alt=""
+        width={32}
+        height={32}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        className="h-8 w-8 shrink-0 rounded-md object-contain"
+        onError={() => setFailed(true)}
+      />
+    )
+  }
+
   return (
     <div
       className={cn(
-        "flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg text-white",
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-white",
         getCategoryColor(category),
       )}
     >
-      {canShow ? (
-        <img
-          src={`https://www.google.com/s2/favicons?domain=${encodeURIComponent(host ?? "")}&sz=64`}
-          alt=""
-          width={16}
-          height={16}
-          loading="lazy"
-          referrerPolicy="no-referrer"
-          className="h-4 w-4"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <Globe className="h-4 w-4" />
-      )}
+      <Globe className="h-4 w-4" />
     </div>
   )
 }

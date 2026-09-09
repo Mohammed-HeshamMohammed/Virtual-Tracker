@@ -5,6 +5,7 @@ import { Users } from "lucide-react"
 import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field";
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
+import { useTheme } from "@/shared/providers/app"
 
 function MemberInitials({ initials }: { initials: string }) {
   return (
@@ -15,6 +16,7 @@ function MemberInitials({ initials }: { initials: string }) {
 }
 
 export function ActivityMemberSelect({ compact = false }: { compact?: boolean }) {
+  const { isDark } = useTheme()
   const { scope, selectedMemberId, setSelectedMemberId } = useActivityFeedContext()
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading } = usePeopleTeamScope()
 
@@ -68,6 +70,7 @@ export function ActivityMemberSelect({ compact = false }: { compact?: boolean })
 
   return (
     <SearchableSelectField
+      isDark={isDark}
       value={selectedMemberId}
       onChange={(value) => {
         if (value) setSelectedMemberId(value)
