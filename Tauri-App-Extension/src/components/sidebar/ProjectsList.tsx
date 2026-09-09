@@ -15,6 +15,7 @@ type ProjectsListProps = {
   sessionOpen: boolean;
   openTaskCountByProject: Map<string, number>;
   projectProgressById: Map<string, number>;
+  memberCountById: Map<string, number>;
   onSelectProject: (project: ProjectInfo) => void;
   onCreateTask?: (project: ProjectInfo) => void;
 };
@@ -28,6 +29,7 @@ export function ProjectsList({
   sessionOpen,
   openTaskCountByProject,
   projectProgressById,
+  memberCountById,
   onSelectProject,
   onCreateTask,
 }: ProjectsListProps) {
@@ -75,6 +77,7 @@ export function ProjectsList({
         {visible.map((project) => {
           const openCount = openTaskCountByProject.get(project.id) ?? 0;
           const progress = projectProgressById.get(project.id);
+          const memberCount = memberCountById.get(project.id);
           const canAddTask = Boolean(onCreateTask) && project.hasTasks && project.canCreateTasks;
           const rowDisabled = busy || sessionOpen || project.budgetExhausted;
           return (
@@ -104,7 +107,11 @@ export function ProjectsList({
                     </span>
                   ) : (
                     <span className="side-task-row-project">
-                      {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
+                      {project.hasTasks
+                        ? `${openCount} open task${openCount === 1 ? "" : "s"}`
+                        : memberCount != null
+                          ? `Calling project · ${memberCount} ${memberCount === 1 ? "member" : "members"}`
+                          : "Calling project"}
                     </span>
                   )}
                 </span>

@@ -1470,6 +1470,12 @@ function MainApp() {
       projectProgressById.set(project.id, project.budgetSpentPercent);
     }
   }
+  // recentProjects only covers whichever projects are "recent" by whatever
+  // that means server-side - a project not in it simply has no entry here,
+  // same tolerant-absence contract projectProgressById already has.
+  const memberCountById = new Map(
+    (dashboardSummary?.recentProjects ?? []).map((p) => [p.id, p.memberCount]),
+  );
 
   const projectSortRank = useMemo(() => {
     const rank = new Map<string, number>();
@@ -1700,6 +1706,7 @@ function MainApp() {
             sessionOpen={sessionOpen}
             openTaskCountByProject={openTaskCountByProject}
             projectProgressById={projectProgressById}
+            memberCountById={memberCountById}
             onSelectProject={jumpToProject}
             onCreateTask={handleOpenNewTask}
             /* Recently-touched first - see orderedProjects above. */
@@ -1956,11 +1963,7 @@ function MainApp() {
                 />
 
                 {taskLessSession ? (
-                  <ProjectDetailPanel
-                    project={selectedProject}
-                    projectBudget={projectBudget}
-                    recentProjects={dashboardSummary?.recentProjects ?? []}
-                  />
+                  <ProjectDetailPanel project={selectedProject} />
                 ) : (
                   <TaskDetailPanel detail={taskDetail} />
                 )}

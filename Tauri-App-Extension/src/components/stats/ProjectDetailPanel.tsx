@@ -1,19 +1,18 @@
 import { taskStatusLabel } from "../../utils/formatters";
-import type { ProjectBudgetStatus, ProjectInfo, RecentProjectSummary } from "../../types";
+import type { ProjectInfo } from "../../types";
 
 /** The task-less counterpart to TaskProgressPanel/TaskDetailPanel - a
  *  calling/support-type project has no task to show a "This task" card
  *  for, which otherwise left the main pane visibly shorter for that case
- *  than for a real task selection. */
-export function ProjectDetailPanel({
-  project,
-  projectBudget,
-  recentProjects,
-}: {
-  project: ProjectInfo | null;
-  projectBudget: ProjectBudgetStatus | null;
-  recentProjects: RecentProjectSummary[];
-}) {
+ *  than for a real task selection.
+ *
+ *  Budget scope (team vs. personal) and member count used to duplicate
+ *  here too - the former is already the ProjectBudgetTile's own "team"/
+ *  "yours" note right above this card (same projectBudget, same GET
+ *  /api/projects/:id/budget-status), and the latter moved to the
+ *  sidebar's project row instead, where it isn't competing with this
+ *  card for space. */
+export function ProjectDetailPanel({ project }: { project: ProjectInfo | null }) {
   if (!project) return null;
 
   // canCreateTasks is a role check alone (org role, project role, an
@@ -22,13 +21,6 @@ export function ProjectDetailPanel({
   // project even though there's no task flow for one to use it in.
   // ProjectsList's own "+ New task" button already gates the same way.
   const canAddTask = project.hasTasks && project.canCreateTasks;
-
-  // recentProjects.progress is a task-completion percentage - meaningless
-  // here for the same reason canCreateTasks is - but memberCount is a
-  // plain team-size fact, unrelated to tasks, so it's safe to borrow.
-  // "Recent" doesn't guarantee this project is in the list; render nothing
-  // rather than guess when it isn't.
-  const memberCount = recentProjects.find((p) => p.id === project.id)?.memberCount;
 
   return (
     <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
@@ -41,16 +33,6 @@ export function ProjectDetailPanel({
         {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
         {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
         {canAddTask ? <span className="badge neutral">You can add tasks here</span> : null}
-        {projectBudget ? (
-          <span className="badge neutral">
-            {projectBudget.scope === "per_person" ? "Personal budget" : "Team budget"}
-          </span>
-        ) : null}
-        {memberCount != null ? (
-          <span className="badge neutral">
-            {memberCount} {memberCount === 1 ? "member" : "members"}
-          </span>
-        ) : null}
       </div>
 
       <p className="task-detail-text" style={{ marginTop: 10 }}>

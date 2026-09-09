@@ -60,7 +60,7 @@ describe("ProjectsList", () => {
   it("renders nothing with an empty list", () => {
     expect(
       renderToStaticMarkup(
-        <ProjectsList signedIn loading={false} projects={[]} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+        <ProjectsList signedIn loading={false} projects={[]} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} memberCountById={new Map()} onSelectProject={noop} />,
       ),
     ).toBe("");
   });
@@ -76,6 +76,7 @@ describe("ProjectsList", () => {
         sessionOpen={false}
         openTaskCountByProject={new Map([["p1", 2]])}
         projectProgressById={new Map()}
+        memberCountById={new Map()}
         onSelectProject={noop}
       />,
     );
@@ -95,6 +96,7 @@ describe("ProjectsList", () => {
         sessionOpen={false}
         openTaskCountByProject={new Map()}
         projectProgressById={new Map([["p1", 55]])}
+        memberCountById={new Map()}
         onSelectProject={noop}
       />,
     );
@@ -102,9 +104,58 @@ describe("ProjectsList", () => {
     expect(html).not.toContain("open task");
   });
 
+  it("shows a calling project's member count when known, and falls back gracefully when it isn't", () => {
+    const callingProject: ProjectInfo = {
+      id: "p3",
+      name: "Support Line",
+      projectType: "calling",
+      hasTasks: false,
+      requireTaskToTrack: false,
+      requireStopNote: false,
+      budgetExhausted: false,
+      budgetSpentPercent: null,
+      canCreateTasks: false,
+    };
+
+    const withCount = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        loading={false}
+        projects={[callingProject]}
+        selectedProjectId=""
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        memberCountById={new Map([["p3", 3]])}
+        onSelectProject={noop}
+      />,
+    );
+    expect(withCount).toContain("Calling project · 3 members");
+
+    // "Recent" doesn't guarantee this project has an entry - absence must
+    // fall back to the plain label, not a broken "undefined members".
+    const withoutCount = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        loading={false}
+        projects={[callingProject]}
+        selectedProjectId=""
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        memberCountById={new Map()}
+        onSelectProject={noop}
+      />,
+    );
+    expect(withoutCount).toContain("Calling project");
+    expect(withoutCount).not.toContain("members");
+  });
+
   it("hides the filter box under the search threshold - .side-tasklist-body's own scroll area covers a short list", () => {
     const html = renderToStaticMarkup(
-      <ProjectsList signedIn loading={false} projects={projects} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+      <ProjectsList signedIn loading={false} projects={projects} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} memberCountById={new Map()} onSelectProject={noop} />,
     );
     expect(html).not.toContain("side-tasklist-search");
   });
@@ -122,7 +173,7 @@ describe("ProjectsList", () => {
       canCreateTasks: false,
     }));
     const html = renderToStaticMarkup(
-      <ProjectsList signedIn loading={false} projects={many} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} onSelectProject={noop} />,
+      <ProjectsList signedIn loading={false} projects={many} selectedProjectId="" busy={false} sessionOpen={false} openTaskCountByProject={new Map()} projectProgressById={new Map()} memberCountById={new Map()} onSelectProject={noop} />,
     );
     expect(html).toContain("side-tasklist-search");
     expect(html).toContain("Filter projects");
@@ -139,6 +190,7 @@ describe("ProjectsList", () => {
         sessionOpen={false}
         openTaskCountByProject={new Map()}
         projectProgressById={new Map()}
+        memberCountById={new Map()}
         onSelectProject={noop}
         onCreateTask={noop}
       />,
@@ -158,6 +210,7 @@ describe("ProjectsList", () => {
         sessionOpen={false}
         openTaskCountByProject={new Map()}
         projectProgressById={new Map()}
+        memberCountById={new Map()}
         onSelectProject={noop}
       />,
     );
@@ -539,6 +592,7 @@ describe("ProjectsList loading", () => {
         sessionOpen={false}
         openTaskCountByProject={new Map()}
         projectProgressById={new Map()}
+        memberCountById={new Map()}
         onSelectProject={() => {}}
       />,
     );
