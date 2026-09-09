@@ -3198,6 +3198,74 @@ select.modal-input {
   font-variant-numeric: tabular-nums;
 }
 
+/* The bar is the magnitude track; the dot at its tip is the actual mark -
+   "a point per app" - and the hoverable/focusable hit target. Vertical
+   padding widens the hit area past the thin 6px bar itself, and sits
+   outside .capacity-bar (which clips its own overflow) so the dot isn't
+   cropped where it overlaps the bar's edge. */
+.project-app-mark {
+  position: relative;
+  padding: 7px 0;
+  outline: none;
+  cursor: default;
+}
+
+.project-app-dot {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: rgb(var(--c-primary));
+  /* Surface ring - keeps the dot legible where it sits on/over the fill. */
+  box-shadow: 0 0 0 2px var(--surface-high);
+  transition: transform 0.15s ease;
+  pointer-events: none;
+}
+
+.project-app-mark:hover .project-app-dot,
+.project-app-mark:focus-visible .project-app-dot {
+  transform: scale(1.35);
+}
+
+.project-app-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface-high);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  color: var(--on-surface);
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.project-app-mark:hover .project-app-tooltip,
+.project-app-mark:focus-visible .project-app-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.project-app-tooltip-sub {
+  color: var(--on-surface-variant);
+  font-size: 10px;
+}
+
 /* Task detail (main pane). */
 .task-detail-text {
   font-size: 12.5px;

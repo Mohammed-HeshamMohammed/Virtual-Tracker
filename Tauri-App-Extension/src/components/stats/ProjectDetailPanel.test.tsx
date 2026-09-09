@@ -94,6 +94,23 @@ describe("ProjectDetailPanel", () => {
     expect(html).toMatch(/width:50%/); // Browser is half of Zoom's time
   });
 
+  it("plots each app as a point (a dot at the bar's tip), focusable for a keyboard-reachable tooltip", () => {
+    const html = render(baseProject, {
+      appBreakdown: [
+        { appName: "Zoom", totalSeconds: 3600 },
+        { appName: "Browser", totalSeconds: 1800 },
+      ],
+    });
+    // One dot per app, each on a focusable mark (tooltip must be reachable
+    // without a mouse, not hover-only).
+    expect((html.match(/project-app-dot/g) ?? []).length).toBe(2);
+    expect((html.match(/tabindex="0"/g) ?? []).length).toBe(2);
+    // Tooltip states the app's share of the apps actually shown (2/3 of the
+    // combined 5400s = 67%), not a claim about total tracked time overall.
+    expect(html).toContain("67% of the apps shown");
+    expect(html).toContain("33% of the apps shown");
+  });
+
   it("hides the screenshots section when there are none for this project", () => {
     expect(render(baseProject)).not.toContain("Recent screenshots");
   });

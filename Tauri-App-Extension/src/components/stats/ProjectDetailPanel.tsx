@@ -37,6 +37,7 @@ export function ProjectDetailPanel({
   // ProjectsList's own "+ New task" button already gates the same way.
   const canAddTask = project.hasTasks && project.canCreateTasks;
   const maxAppSeconds = Math.max(1, ...appBreakdown.map((a) => a.totalSeconds));
+  const totalAppSeconds = appBreakdown.reduce((sum, a) => sum + a.totalSeconds, 0) || 1;
   const selectedImage = selectedScreenshotId ? screenshotImages[selectedScreenshotId] : "";
 
   return (
@@ -59,20 +60,37 @@ export function ProjectDetailPanel({
       {appBreakdown.length > 0 ? (
         <div className="project-app-breakdown">
           <span className="stat-tile-label">This week's top apps</span>
-          {appBreakdown.map((app) => (
-            <div className="project-app-row" key={app.appName}>
-              <div className="project-app-row-head">
-                <span className="project-app-name">{app.appName}</span>
-                <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
-              </div>
-              <div className="capacity-bar slim">
+          {appBreakdown.map((app) => {
+            const widthPct = Math.round((app.totalSeconds / maxAppSeconds) * 100);
+            const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
+            return (
+              <div className="project-app-row" key={app.appName}>
+                <div className="project-app-row-head">
+                  <span className="project-app-name">{app.appName}</span>
+                  <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
+                </div>
+                {/* The dot is the point this app is plotted as - the bar
+                    behind it is just the same magnitude drawn as a track,
+                    not a separate encoding. Focusable so the tooltip is
+                    reachable by keyboard, not only on hover. */}
                 <div
-                  className="capacity-fill active"
-                  style={{ width: `${Math.round((app.totalSeconds / maxAppSeconds) * 100)}%` }}
-                />
+                  className="project-app-mark"
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
+                >
+                  <div className="capacity-bar slim">
+                    <div className="capacity-fill active" style={{ width: `${widthPct}%` }} />
+                  </div>
+                  <span className="project-app-dot" style={{ left: `${widthPct}%` }} aria-hidden="true" />
+                  <div className="project-app-tooltip" role="tooltip">
+                    <strong>{fmtHours(app.totalSeconds)}</strong>
+                    <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
 
