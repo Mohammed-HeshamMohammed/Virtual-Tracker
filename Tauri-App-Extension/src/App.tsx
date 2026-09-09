@@ -53,7 +53,7 @@ import { NewTaskModal } from "./components/NewTaskModal";
 import { LogTimeModal } from "./components/LogTimeModal";
 import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
 import { TaskDetailPanel } from "./components/stats/TaskDetailPanel";
-import { ProjectDetailModal } from "./components/stats/ProjectDetailModal";
+import { ProjectDetailPanel } from "./components/stats/ProjectDetailPanel";
 import { TitleBar } from "./components/common/TitleBar";
 import { TimezonePicker } from "./components/common/TimezonePicker";
 import { Icon } from "./components/common/Icon";
@@ -154,11 +154,6 @@ function MainApp() {
   const [projectScreenshotImages, setProjectScreenshotImages] = useState<Record<string, string>>({});
   const [selectedProjectScreenshotId, setSelectedProjectScreenshotId] = useState<string | null>(null);
   const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppTime[]>([]);
-  // Opens itself the moment a task-less project is selected (set alongside
-  // the fetch effect below, which fires exactly on that same transition);
-  // closing it manually doesn't reopen it until the next such transition -
-  // the (i) button next to the page title is the deliberate way back in.
-  const [projectDetailModalOpen, setProjectDetailModalOpen] = useState(false);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
@@ -630,7 +625,6 @@ function MainApp() {
       setProjectScreenshots([]);
       setProjectAppBreakdown([]);
       setSelectedProjectScreenshotId(null);
-      setProjectDetailModalOpen(false);
       return;
     }
     let cancelled = false;
@@ -649,10 +643,6 @@ function MainApp() {
         if (!cancelled) setProjectAppBreakdown([]);
       });
     setSelectedProjectScreenshotId(null);
-    // This effect only re-fires when one of its deps actually changes, so
-    // this is exactly "just entered a fresh task-less project" - the one
-    // moment the popup should open itself uninvited.
-    setProjectDetailModalOpen(true);
     return () => {
       cancelled = true;
     };
@@ -1914,17 +1904,6 @@ function MainApp() {
             onCreate={() => void handleCreateTask()}
           />
 
-          <ProjectDetailModal
-            open={projectDetailModalOpen}
-            project={selectedProject}
-            appBreakdown={projectAppBreakdown}
-            screenshots={projectScreenshots}
-            screenshotImages={projectScreenshotImages}
-            selectedScreenshotId={selectedProjectScreenshotId}
-            onSelectScreenshot={handleSelectProjectScreenshot}
-            onClose={() => setProjectDetailModalOpen(false)}
-          />
-
         </aside>
 
         {signedIn ? (
@@ -1935,20 +1914,7 @@ function MainApp() {
                   {fmtWallClock(wallClockNow, displayTimezone || undefined)}
                   <span className="page-header-date">{fmtWallDate(wallClockNow, displayTimezone || undefined)}</span>
                 </span>
-                <h2 className="page-title">
-                  {trackingLabel || "Time Tracking"}
-                  {taskLessSession && selectedProjectId ? (
-                    <button
-                      type="button"
-                      className="page-title-info"
-                      title="Project details"
-                      aria-label="Project details"
-                      onClick={() => setProjectDetailModalOpen(true)}
-                    >
-                      i
-                    </button>
-                  ) : null}
-                </h2>
+                <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
               <div className="page-header-actions">
                 <AssignedTodayBadge
@@ -2047,7 +2013,18 @@ function MainApp() {
                   taskBudgetRemainingLabel={taskBudgetRemainingLabel}
                 />
 
-                {taskLessSession ? null : <TaskDetailPanel detail={taskDetail} />}
+                {taskLessSession ? (
+                  <ProjectDetailPanel
+                    project={selectedProject}
+                    appBreakdown={projectAppBreakdown}
+                    screenshots={projectScreenshots}
+                    screenshotImages={projectScreenshotImages}
+                    selectedScreenshotId={selectedProjectScreenshotId}
+                    onSelectScreenshot={handleSelectProjectScreenshot}
+                  />
+                ) : (
+                  <TaskDetailPanel detail={taskDetail} />
+                )}
 
                 {idleStage >= 3 ? (
                   <p className={`page-idle-banner stage-${idleStage}`}>
