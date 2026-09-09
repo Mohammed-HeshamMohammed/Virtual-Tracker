@@ -96,6 +96,7 @@ import {
   insertActivityUrlLog,
   sumMemberActiveIdleSeconds,
   sumMemberActiveIdleSecondsForProject,
+  sumAppLogSecondsByAppNameForProjectPg,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
@@ -405,7 +406,8 @@ export async function routeActivity(req, res, url, origin) {
       }
       const rawLimit = Number.parseInt(url.searchParams.get("limit") ?? "", 10);
       const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, rawLimit)) : 12;
-      const rows = await fetchPgScreenshots([member.memberId], null, limit);
+      const projectId = (url.searchParams.get("projectId") || "").trim() || null;
+      const rows = await fetchPgScreenshots([member.memberId], null, limit, { projectId });
       sendJson(res, origin, 200, {
         success: true,
         data: rows.map((row) => ({
@@ -416,6 +418,42 @@ export async function routeActivity(req, res, url, origin) {
     } catch (e) {
       logSafeError("[activity/my-screenshots]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load screenshots." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/project-app-breakdown" && req.method === "GET") {
+    const idToken = readIdToken(req, url);
+    if (!idToken) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required" });
+      return true;
+    }
+    const projectId = (url.searchParams.get("projectId") || "").trim();
+    if (!projectId) {
+      sendJson(res, origin, 400, { success: false, error: "projectId is required" });
+      return true;
+    }
+    try {
+      const member = await resolveMember(db, req);
+      if (!member) {
+        sendJson(res, origin, 404, { success: false, error: "Member not found" });
+        return true;
+      }
+      const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(member.memberId));
+      const rows = await sumAppLogSecondsByAppNameForProjectPg(member.memberId, projectId, {
+        fromDay: weekStartDay,
+        toDay: todayDay,
+      });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: rows.map((row) => ({
+          appName: String(row.app_name ?? ""),
+          totalSeconds: Math.max(0, Math.floor(Number(row.total_seconds ?? 0))),
+        })),
+      });
+    } catch (e) {
+      logSafeError("[activity/project-app-breakdown]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load this project's app breakdown." });
     }
     return true;
   }

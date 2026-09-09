@@ -217,6 +217,14 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
     params.push(options.sinceDay);
     where += ` AND ${localDay("sc.captured_at")} >= $${params.length}::date`;
   }
+  if (options.projectId) {
+    // A screenshot's project comes from whichever of the two joins below
+    // actually resolves - the task's project for a task-based session, the
+    // session's own project for a task-less/calling one that never had a
+    // task at all.
+    params.push(options.projectId);
+    where += ` AND (t.project_id = $${params.length} OR s.project_id = $${params.length})`;
+  }
   params.push(limit);
   const result = await pgQuery(
     `SELECT sc.id, sc.member_id, sc.session_id, sc.task_id, sc.task_title, sc.screenshot_url,
@@ -310,6 +318,33 @@ export async function sumAppLogSecondsByAppNamePg(memberId, { fromDay, toDay }) 
      WHERE l.member_id = $1 AND l.started_at::date >= $2::date AND l.started_at::date <= $3::date
      GROUP BY a.name`,
     [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * Top apps by tracked time for one member on one project, most recent
+ * `fromDay..toDay` window. Same project resolution fetchPgScreenshots uses
+ * - a task-based session's project comes from its task, a task-less/
+ * calling one from the session itself - since a project's app logs can
+ * come from either kind of session over its lifetime.
+ */
+export async function sumAppLogSecondsByAppNameForProjectPg(memberId, projectId, { fromDay, toDay }, limit = 5) {
+  const id = parseProgressUuid(memberId);
+  if (!id || !projectId) return [];
+  const result = await pgQuery(
+    `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds
+     FROM activity_app_logs l
+     JOIN apps a ON a.id = l.app_id
+     LEFT JOIN tasks t ON t.id = l.task_id
+     LEFT JOIN activity_sessions s ON s.id::text = l.session_id
+     WHERE l.member_id = $1
+       AND l.started_at::date >= $2::date AND l.started_at::date <= $3::date
+       AND (t.project_id = $4 OR s.project_id = $4)
+     GROUP BY a.name
+     ORDER BY total_seconds DESC
+     LIMIT $5`,
+    [id, fromDay, toDay, projectId, limit],
   );
   return result?.rows ?? [];
 }
