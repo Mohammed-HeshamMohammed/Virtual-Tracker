@@ -68,6 +68,55 @@ async function fetchTaskLessProjectMembershipsForMember(memberId) {
 }
 
 /**
+ * A per-person Hours-based budget remainder for every distinct project id
+ * among `projectIds`, keyed by project id - `null` for a project with no
+ * such budget (per-project scope, Cost based, or unset), same convention
+ * loadPerPersonProjectBudgetTotals itself uses. One shared fetch so the two
+ * consumers below (today's due amount, and the un-scheduled total) don't
+ * each re-query the same handful of projects' budgets separately.
+ */
+async function loadPerPersonBudgetRemainderByProject(memberId, projectIds) {
+  const uniqueIds = [...new Set(projectIds)].filter(Boolean);
+  const entries = await Promise.all(
+    uniqueIds.map(async (projectId) => {
+      const totals = await loadPerPersonProjectBudgetTotals(projectId, memberId);
+      return [projectId, totals ? Math.max(0, totals.capSeconds - totals.spentSeconds) : null];
+    }),
+  );
+  return new Map(entries);
+}
+
+/**
+ * Charges `amount` against `projectId`'s remaining budget in `pool` (a
+ * live-mutated clone of loadPerPersonBudgetRemainderByProject's map),
+ * capping and decrementing in one step. A project with no per-person
+ * budget (`null` in the map) is uncapped, unchanged from before this
+ * existed. When several open tasks share one budgeted project, this must
+ * be called in a deliberate order across them (see the due-date sort
+ * below) - otherwise which task "wins" the last of a nearly-spent budget
+ * would depend on incidental fetch order instead of what's most pressing.
+ */
+function chargeProjectBudget(projectId, amount, pool) {
+  if (!projectId || !pool.has(projectId)) return amount;
+  const remaining = pool.get(projectId);
+  if (remaining == null) return amount;
+  const charged = Math.min(amount, remaining);
+  pool.set(projectId, remaining - charged);
+  return charged;
+}
+
+/** Earliest due date first (no due date sorts last) - the task closer to
+ *  being late claims a tight project budget before one that isn't due for
+ *  weeks, rather than whichever happened to come back from the query first. */
+function byDueDateAscending(rows) {
+  return [...rows].sort((a, b) => {
+    const at = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+    const bt = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+    return at - bt;
+  });
+}
+
+/**
  * Rolls those task-less memberships into the same shape accumulateTaskRowTotals
  * produces. Every project the member belongs to counts toward
  * `projectIds` (that's the membership fact this exists to surface) but
@@ -112,18 +161,27 @@ async function accumulateTaskLessProjectTotals(memberId, projectIds) {
  * overrun, and hiding that would make `assigned - worked` disagree with
  * `remaining`, which is computed per assignment so one overrun task cannot
  * eat another task's outstanding hours.
+ *
+ * `remainingSeconds` is additionally capped by each task's own project's
+ * remaining per-person budget, project by project (via `budgetPool`) - a
+ * task's schedule can say 9m 28s is still owed while the project it
+ * belongs to has 0s of budget left to spend on it, and "how much can I
+ * still realistically be assigned here" has to answer with the smaller of
+ * the two, not just repeat the schedule's number as if the budget wall
+ * didn't exist.
  */
-function accumulateTaskRowTotals(rows, projectIds) {
+function accumulateTaskRowTotals(rows, projectIds, budgetPool) {
   let assignedSeconds = 0;
   let workedSeconds = 0;
   let remainingSeconds = 0;
 
-  for (const row of rows) {
+  for (const row of byDueDateAscending(rows)) {
     const expected = Number(row.expected_seconds ?? estimateAssignmentSeconds(row) ?? 0) || 0;
     const worked = Number(row.worked_seconds ?? 0) || 0;
     assignedSeconds += expected;
     workedSeconds += worked;
-    remainingSeconds += Math.max(0, expected - worked);
+    const outstanding = Math.max(0, expected - worked);
+    remainingSeconds += chargeProjectBudget(row.project_id, outstanding, budgetPool);
     if (row.project_id) projectIds.add(row.project_id);
   }
 
@@ -133,19 +191,33 @@ function accumulateTaskRowTotals(rows, projectIds) {
 export async function computeAssignedTodayDemand(memberId) {
   const rows = await fetchOpenAssignmentRowsForMember(memberId);
   const today = new Date();
+
+  // Fetched once, then charged against independently below (a fresh clone
+  // per consumer) - "how much of today's schedule survives the budget" and
+  // "how much of the whole remaining schedule survives it" are different
+  // questions, each entitled to the project's full remaining budget, not a
+  // pool the other one already spent down first.
+  const budgetRemainderByProject = await loadPerPersonBudgetRemainderByProject(
+    memberId,
+    rows.map((r) => r.project_id),
+  );
+
   let demandSeconds = 0;
   let rolloverSeconds = 0;
   let taskCount = 0;
   const byProjectType = Object.fromEntries(PROJECT_TYPES.map((t) => [t, 0]));
 
-  for (const row of rows) {
+  const dueTodayBudgetPool = new Map(budgetRemainderByProject);
+  for (const row of byDueDateAscending(rows)) {
     const { due, rollover } = computeAssignmentDueToday(row, today);
     if (due <= 0) continue;
-    demandSeconds += due;
+    const cappedDue = chargeProjectBudget(row.project_id, due, dueTodayBudgetPool);
+    if (cappedDue <= 0) continue;
+    demandSeconds += cappedDue;
     rolloverSeconds += rollover;
     taskCount += 1;
     const bucket = PROJECT_TYPES.includes(row.project_type) ? row.project_type : "normal";
-    byProjectType[bucket] += due;
+    byProjectType[bucket] += cappedDue;
   }
 
   // "Assigned today" stays task_assignments-only above - task-less projects
@@ -153,7 +225,7 @@ export async function computeAssignedTodayDemand(memberId) {
   // is where they belong: every project this person can clock into, task
   // or no task.
   const projectIds = new Set();
-  const taskTotals = accumulateTaskRowTotals(rows, projectIds);
+  const taskTotals = accumulateTaskRowTotals(rows, projectIds, new Map(budgetRemainderByProject));
   const taskLessTotals = await accumulateTaskLessProjectTotals(memberId, projectIds);
 
   const total = {
