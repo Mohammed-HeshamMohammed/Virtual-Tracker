@@ -3151,6 +3151,44 @@ select.modal-input {
   border-radius: 0;
 }
 
+/* This project's top-apps breakdown (main pane, task-less session). */
+.project-app-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.project-app-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-app-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.project-app-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-app-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Task detail (main pane). */
 .task-detail-text {
   font-size: 12.5px;

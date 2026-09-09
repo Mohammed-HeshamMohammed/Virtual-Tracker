@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  fmtCapturedAt,
   fmtClock,
   fmtHours,
   fmtLimitHours,
@@ -11,6 +12,18 @@ import {
   taskStatusLabel,
   taskStatusTone,
 } from "./formatters";
+
+describe("fmtCapturedAt", () => {
+  it("formats a real timestamp as month, day, time", () => {
+    expect(fmtCapturedAt("2024-06-15T09:05:00Z")).toMatch(/Jun 1[45]/);
+  });
+
+  it("returns empty for a missing or unparseable timestamp, not a raw Invalid Date", () => {
+    expect(fmtCapturedAt(null)).toBe("");
+    expect(fmtCapturedAt("")).toBe("");
+    expect(fmtCapturedAt("not-a-date")).toBe("");
+  });
+});
 
 describe("fmtClock", () => {
   it("pads every field to two digits", () => {

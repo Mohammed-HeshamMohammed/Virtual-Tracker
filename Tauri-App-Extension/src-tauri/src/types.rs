@@ -513,6 +513,18 @@ pub struct ScreenshotRef {
     pub captured_at: Option<String>,
 }
 
+/// One app's share of this week's tracked time on a single project - the
+/// task-less counterpart to a task's progress bar: "what have I actually
+/// been doing here" instead of "how much of the estimate is left".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAppTime {
+    #[serde(default)]
+    pub app_name: String,
+    #[serde(default)]
+    pub total_seconds: u64,
+}
+
 /// The task's own detail, for showing what you're actually meant to be doing
 /// while tracking it.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

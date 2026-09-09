@@ -829,11 +829,24 @@ impl AgentController {
 
     /// Empty on any failure - the screenshots panel is a transparency
     /// surface, not something worth surfacing an error banner for.
-    pub fn get_my_screenshots(&self, limit: u32) -> Vec<crate::types::ScreenshotRef> {
-        match self.api.lock().fetch_my_screenshots(limit) {
+    pub fn get_my_screenshots(&self, limit: u32, project_id: Option<&str>) -> Vec<crate::types::ScreenshotRef> {
+        match self.api.lock().fetch_my_screenshots(limit, project_id) {
             Ok(shots) => shots,
             Err(e) => {
                 log::warn!("Could not load screenshots: {e}");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Empty on any failure or an older backend without the route - same
+    /// "transparency surface, not an error banner" reasoning as
+    /// get_my_screenshots above.
+    pub fn get_project_app_breakdown(&self, project_id: &str) -> Vec<crate::types::ProjectAppTime> {
+        match self.api.lock().fetch_project_app_breakdown(project_id) {
+            Ok(rows) => rows,
+            Err(e) => {
+                log::warn!("Could not load this project's app breakdown: {e}");
                 Vec::new()
             }
         }

@@ -1,3 +1,4 @@
+import { fmtCapturedAt } from "../../utils/formatters";
 import type { ScreenshotRef } from "../../types";
 
 type ScreenshotsCardProps = {
@@ -6,18 +7,6 @@ type ScreenshotsCardProps = {
   onSelect: (id: string) => void;
   selectedId: string | null;
 };
-
-function capturedLabel(capturedAt: string | null): string {
-  if (!capturedAt) return "";
-  const d = new Date(capturedAt);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
 
 export function ScreenshotsCard({ screenshots, images, onSelect, selectedId }: ScreenshotsCardProps) {
   if (screenshots.length === 0) return null;
@@ -37,9 +26,9 @@ export function ScreenshotsCard({ screenshots, images, onSelect, selectedId }: S
             type="button"
             className={`shot-chip${shot.id === selectedId ? " active" : ""}`}
             onClick={() => onSelect(shot.id)}
-            title={capturedLabel(shot.capturedAt) || "Screenshot"}
+            title={fmtCapturedAt(shot.capturedAt) || "Screenshot"}
           >
-            {capturedLabel(shot.capturedAt) || "—"}
+            {fmtCapturedAt(shot.capturedAt) || "—"}
           </button>
         ))}
       </div>

@@ -248,6 +248,11 @@ export type ScreenshotRef = {
   capturedAt: string | null;
 };
 
+export type ProjectAppTime = {
+  appName: string;
+  totalSeconds: number;
+};
+
 export type TaskSubtask = {
   id: string;
   title: string;

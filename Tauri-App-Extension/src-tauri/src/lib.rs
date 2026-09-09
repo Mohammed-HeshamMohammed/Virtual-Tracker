@@ -367,9 +367,19 @@ async fn request_time_off(
 async fn get_my_screenshots(
     state: tauri::State<'_, AppState>,
     limit: Option<u32>,
+    project_id: Option<String>,
 ) -> Result<Vec<crate::types::ScreenshotRef>, String> {
     let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_my_screenshots(limit.unwrap_or(12))).await)
+    Ok(run_blocking(move || controller.get_my_screenshots(limit.unwrap_or(12), project_id.as_deref())).await)
+}
+
+#[tauri::command]
+async fn get_project_app_breakdown(
+    state: tauri::State<'_, AppState>,
+    project_id: String,
+) -> Result<Vec<crate::types::ProjectAppTime>, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_project_app_breakdown(&project_id)).await)
 }
 
 #[tauri::command]
@@ -742,6 +752,7 @@ pub fn run() {
             submit_timesheet,
             request_time_off,
             get_my_screenshots,
+            get_project_app_breakdown,
             get_screenshot_image,
             get_task_detail,
             get_project_budget_status,

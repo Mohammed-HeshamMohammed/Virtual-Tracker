@@ -671,11 +671,19 @@ impl ApiClient {
         self.post_expecting_ok(&auth, url, &body, "Could not save the time entry")
     }
 
-    /// The viewer's own recent screenshots (ids + timestamps). Image bytes
-    /// come one at a time from fetch_screenshot_image.
-    pub fn fetch_my_screenshots(&mut self, limit: u32) -> Result<Vec<crate::types::ScreenshotRef>, ApiError> {
+    /// The viewer's own recent screenshots (ids + timestamps), optionally
+    /// narrowed to one project - image bytes come one at a time from
+    /// fetch_screenshot_image.
+    pub fn fetch_my_screenshots(
+        &mut self,
+        limit: u32,
+        project_id: Option<&str>,
+    ) -> Result<Vec<crate::types::ScreenshotRef>, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/activity/my-screenshots?limit={}", self.api_url, limit);
+        let mut url = format!("{}/api/activity/my-screenshots?limit={}", self.api_url, limit);
+        if let Some(pid) = project_id.filter(|p| !p.is_empty()) {
+            url.push_str(&format!("&projectId={}", urlencoding::encode(pid)));
+        }
         let res = self
             .client
             .get(url)
@@ -690,6 +698,43 @@ impl ApiClient {
             // Same reasoning as fetch_agent_workspace: keep the real status
             // instead of a bare ApiError::Network, so a 401/500 is
             // distinguishable from "not deployed yet" in the log.
+            let status = res.status();
+            let body: Value = res.json().unwrap_or_else(|_| json!({}));
+            let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
+            return Err(ApiError::Rejected(format!("HTTP {status}: {message}")));
+        }
+        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let list = body.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+        Ok(list
+            .into_iter()
+            .filter_map(|v| serde_json::from_value(v).ok())
+            .collect())
+    }
+
+    /// Top apps by tracked time on one project this week - the task-less
+    /// counterpart to a task's progress bar. `Ok(Vec::new())` on a 404 (older
+    /// backend without the route), same convention as fetch_project_budget_status.
+    pub fn fetch_project_app_breakdown(
+        &mut self,
+        project_id: &str,
+    ) -> Result<Vec<crate::types::ProjectAppTime>, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let url = format!(
+            "{}/api/activity/project-app-breakdown?projectId={}",
+            self.api_url,
+            urlencoding::encode(project_id)
+        );
+        let res = self
+            .client
+            .get(url)
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if res.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(Vec::new());
+        }
+        if !res.status().is_success() {
             let status = res.status();
             let body: Value = res.json().unwrap_or_else(|_| json!({}));
             let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
@@ -1114,7 +1159,7 @@ mod diagnostic_error_tests {
     fn screenshots_500_is_a_rejected_error_naming_its_status() {
         let url = fake_server(|_request| (500, r#"{"error": "Internal error"}"#.to_string()));
         let mut api = authed_client(url);
-        let err = api.fetch_my_screenshots(12).unwrap_err();
+        let err = api.fetch_my_screenshots(12, None).unwrap_err();
         match err {
             ApiError::Rejected(msg) => assert!(msg.contains("500"), "expected the status code, got: {msg}"),
             other => panic!("expected ApiError::Rejected, got {other:?}"),
@@ -1131,6 +1176,44 @@ mod diagnostic_error_tests {
         // implement PartialEq, and adding that derive just for a test that
         // never actually compares one isn't worth it.
         assert!(matches!(api.fetch_agent_workspace(), Ok(None)));
+    }
+
+    #[test]
+    fn fetch_my_screenshots_only_appends_project_id_when_one_is_given() {
+        use std::sync::{Arc, Mutex};
+        let seen_urls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&seen_urls);
+        let url = fake_server(move |request| {
+            seen.lock().unwrap().push(request.url().to_string());
+            (200, r#"{"data": []}"#.to_string())
+        });
+        let mut api = authed_client(url);
+
+        api.fetch_my_screenshots(6, None).expect("ok");
+        api.fetch_my_screenshots(6, Some("proj-1")).expect("ok");
+
+        let urls = seen_urls.lock().unwrap();
+        assert!(!urls[0].contains("projectId"), "no filter requested: {}", urls[0]);
+        assert!(urls[1].contains("projectId=proj-1"), "filter requested: {}", urls[1]);
+    }
+
+    #[test]
+    fn project_app_breakdown_404_is_ok_empty_not_an_error() {
+        let url = fake_server(|_request| (404, "not found".to_string()));
+        let mut api = authed_client(url);
+        assert_eq!(api.fetch_project_app_breakdown("proj-1"), Ok(Vec::new()));
+    }
+
+    #[test]
+    fn project_app_breakdown_parses_app_name_and_seconds() {
+        let url = fake_server(|_request| {
+            (200, r#"{"data": [{"appName": "Zoom", "totalSeconds": 1800}]}"#.to_string())
+        });
+        let mut api = authed_client(url);
+        let rows = api.fetch_project_app_breakdown("proj-1").expect("ok");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].app_name, "Zoom");
+        assert_eq!(rows[0].total_seconds, 1800);
     }
 }
 

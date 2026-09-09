@@ -23,6 +23,7 @@ import type {
   MemberProfile,
   MonitoringNoticeView,
   ProfileInfo,
+  ProjectAppTime,
   ProjectBudgetStatus,
   ProjectInfo,
   ReconnectResult,
@@ -146,6 +147,13 @@ function MainApp() {
   const [screenshots, setScreenshots] = useState<ScreenshotRef[]>([]);
   const [screenshotImages, setScreenshotImages] = useState<Record<string, string>>({});
   const [selectedScreenshotId, setSelectedScreenshotId] = useState<string | null>(null);
+  // "This project" card's own screenshots/app-time - separate state from the
+  // profile view's above, so switching projects doesn't fight over the same
+  // arrays with a different scope, and neither has to clear the other's.
+  const [projectScreenshots, setProjectScreenshots] = useState<ScreenshotRef[]>([]);
+  const [projectScreenshotImages, setProjectScreenshotImages] = useState<Record<string, string>>({});
+  const [selectedProjectScreenshotId, setSelectedProjectScreenshotId] = useState<string | null>(null);
+  const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppTime[]>([]);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [stopNoteOpen, setStopNoteOpen] = useState(false);
   const [stopNoteDraft, setStopNoteDraft] = useState("");
@@ -611,6 +619,49 @@ function MainApp() {
       cancelled = true;
     };
   }, [signedIn, view]);
+
+  useEffect(() => {
+    if (!signedIn || !taskLessSession || !selectedProjectId) {
+      setProjectScreenshots([]);
+      setProjectAppBreakdown([]);
+      setSelectedProjectScreenshotId(null);
+      return;
+    }
+    let cancelled = false;
+    void invoke<ScreenshotRef[]>("get_my_screenshots", { limit: 6, projectId: selectedProjectId })
+      .then((shots) => {
+        if (!cancelled) setProjectScreenshots(shots);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectScreenshots([]);
+      });
+    void invoke<ProjectAppTime[]>("get_project_app_breakdown", { projectId: selectedProjectId })
+      .then((rows) => {
+        if (!cancelled) setProjectAppBreakdown(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setProjectAppBreakdown([]);
+      });
+    setSelectedProjectScreenshotId(null);
+    return () => {
+      cancelled = true;
+    };
+  }, [signedIn, taskLessSession, selectedProjectId]);
+
+  const handleSelectProjectScreenshot = useCallback((id: string) => {
+    setSelectedProjectScreenshotId(id);
+    setProjectScreenshotImages((current) => {
+      if (current[id]) return current;
+      void invoke<string>("get_screenshot_image", { screenshotId: id })
+        .then((dataUrl) => {
+          if (dataUrl) setProjectScreenshotImages((prev) => ({ ...prev, [id]: dataUrl }));
+        })
+        .catch(() => {
+          /* Leaves the placeholder in place - see ScreenshotsCard. */
+        });
+      return current;
+    });
+  }, []);
 
   const handleSelectScreenshot = useCallback(
     (id: string) => {
@@ -1963,7 +2014,14 @@ function MainApp() {
                 />
 
                 {taskLessSession ? (
-                  <ProjectDetailPanel project={selectedProject} />
+                  <ProjectDetailPanel
+                    project={selectedProject}
+                    appBreakdown={projectAppBreakdown}
+                    screenshots={projectScreenshots}
+                    screenshotImages={projectScreenshotImages}
+                    selectedScreenshotId={selectedProjectScreenshotId}
+                    onSelectScreenshot={handleSelectProjectScreenshot}
+                  />
                 ) : (
                   <TaskDetailPanel detail={taskDetail} />
                 )}

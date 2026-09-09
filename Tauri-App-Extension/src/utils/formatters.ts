@@ -1,3 +1,18 @@
+/** "Sep 9, 2:02 PM" for a screenshot's captured-at timestamp, or "" for a
+ *  missing/unparseable one - callers show a plain dash for that case rather
+ *  than a raw "Invalid Date". */
+export function fmtCapturedAt(capturedAt: string | null): string {
+  if (!capturedAt) return "";
+  const d = new Date(capturedAt);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function fmtClock(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
   const h = Math.floor(s / 3600);
