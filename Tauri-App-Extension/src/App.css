@@ -700,13 +700,13 @@ body {
   min-width: 0;
   overflow-y: auto;
   margin: 44px 14px 14px 0;
-  padding: 20px 24px;
+  padding: 16px 20px;
   border-radius: 18px;
   background: var(--surface-high);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
 }
 
 .page-header {
@@ -3169,8 +3169,8 @@ select.modal-input {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  gap: 20px;
-  margin-top: 10px;
+  gap: 14px;
+  margin-top: 6px;
 }
 
 .project-detail-row.no-badges {
@@ -3180,24 +3180,46 @@ select.modal-input {
 .project-app-chart {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1 1 260px;
+  gap: 4px;
+  flex: 1 1 190px;
+  max-width: 260px;
 }
 
 .project-shots-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  flex: 1 1 220px;
+  gap: 4px;
+  flex: 1 1 190px;
+  max-width: 230px;
   min-width: 0;
 }
 
 .project-radar {
   position: relative;
   width: 100%;
-  max-width: 260px;
+  max-width: 170px;
   aspect-ratio: 1;
-  margin: 0 auto 30px 42px;
+  margin: 0 auto 10px 20px;
+}
+
+/* The shared shot-preview classes size themselves for the sidebar's wider
+   screenshots card - capped here so a tall capture can't stretch this
+   narrower card (and the main pane) past the window's own height. */
+.project-shots-card .shot-strip {
+  margin-top: 8px;
+}
+
+.project-shots-card .shot-preview {
+  margin-top: 8px;
+}
+
+.project-shots-card .shot-preview-img {
+  max-height: 80px;
+  object-fit: cover;
+}
+
+.project-shots-card .shot-preview-loading {
+  height: 80px;
 }
 
 .project-radar-svg {
