@@ -104,7 +104,7 @@ describe("ProjectsList", () => {
     expect(html).not.toContain("open task");
   });
 
-  it("shows a calling project's member count when known, and falls back gracefully when it isn't", () => {
+  it("shows the selected project's member count in the section header when known", () => {
     const callingProject: ProjectInfo = {
       id: "p3",
       name: "Support Line",
@@ -117,7 +117,44 @@ describe("ProjectsList", () => {
       canCreateTasks: false,
     };
 
-    const withCount = renderToStaticMarkup(
+    const withSelectionAndCount = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        loading={false}
+        projects={[callingProject]}
+        selectedProjectId="p3"
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        memberCountById={new Map([["p3", 3]])}
+        onSelectProject={noop}
+      />,
+    );
+    expect(withSelectionAndCount).toContain("3 members");
+    // Not on the row itself - just the header, and only once.
+    expect((withSelectionAndCount.match(/members/g) ?? []).length).toBe(1);
+
+    // "Recent" doesn't guarantee the selected project has an entry - absence
+    // must not print a broken "undefined members".
+    const selectedButNoCount = renderToStaticMarkup(
+      <ProjectsList
+        signedIn
+        loading={false}
+        projects={[callingProject]}
+        selectedProjectId="p3"
+        busy={false}
+        sessionOpen={false}
+        openTaskCountByProject={new Map()}
+        projectProgressById={new Map()}
+        memberCountById={new Map()}
+        onSelectProject={noop}
+      />,
+    );
+    expect(selectedButNoCount).not.toContain("members");
+
+    // Nothing selected at all - no project's count applies.
+    const nothingSelected = renderToStaticMarkup(
       <ProjectsList
         signedIn
         loading={false}
@@ -131,26 +168,7 @@ describe("ProjectsList", () => {
         onSelectProject={noop}
       />,
     );
-    expect(withCount).toContain("Calling project · 3 members");
-
-    // "Recent" doesn't guarantee this project has an entry - absence must
-    // fall back to the plain label, not a broken "undefined members".
-    const withoutCount = renderToStaticMarkup(
-      <ProjectsList
-        signedIn
-        loading={false}
-        projects={[callingProject]}
-        selectedProjectId=""
-        busy={false}
-        sessionOpen={false}
-        openTaskCountByProject={new Map()}
-        projectProgressById={new Map()}
-        memberCountById={new Map()}
-        onSelectProject={noop}
-      />,
-    );
-    expect(withoutCount).toContain("Calling project");
-    expect(withoutCount).not.toContain("members");
+    expect(nothingSelected).not.toContain("members");
   });
 
   it("hides the filter box under the search threshold - .side-tasklist-body's own scroll area covers a short list", () => {

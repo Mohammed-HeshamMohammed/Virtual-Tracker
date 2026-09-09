@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ProjectDetailPanel } from "./ProjectDetailPanel";
+import { ProjectDetailModal } from "./ProjectDetailModal";
 import type { ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
 
 const baseProject: ProjectInfo = {
@@ -20,6 +20,7 @@ const noop = () => {};
 function render(
   project: ProjectInfo | null,
   overrides: Partial<{
+    open: boolean;
     appBreakdown: ProjectAppTime[];
     screenshots: ScreenshotRef[];
     screenshotImages: Record<string, string>;
@@ -27,26 +28,30 @@ function render(
   }> = {},
 ) {
   return renderToStaticMarkup(
-    <ProjectDetailPanel
+    <ProjectDetailModal
+      open={overrides.open ?? true}
       project={project}
       appBreakdown={overrides.appBreakdown ?? []}
       screenshots={overrides.screenshots ?? []}
       screenshotImages={overrides.screenshotImages ?? {}}
       selectedScreenshotId={overrides.selectedScreenshotId ?? null}
       onSelectScreenshot={noop}
+      onClose={noop}
     />,
   );
 }
 
-describe("ProjectDetailPanel", () => {
-  it("renders nothing without a project", () => {
+describe("ProjectDetailModal", () => {
+  it("renders nothing without a project, or while closed", () => {
     expect(render(null)).toBe("");
+    expect(render(baseProject, { open: false })).toBe("");
   });
 
-  it("shows the project type as the hint", () => {
+  it("shows the project name as the title and its type as the subtitle", () => {
     const html = render(baseProject);
+    expect(html).toContain("Support Line");
     expect(html).toContain("Calling");
-    expect(html).toContain("This project");
+    expect(html).toContain("modal-backdrop");
   });
 
   it("flags a required stop note and an exhausted budget", () => {
@@ -56,10 +61,6 @@ describe("ProjectDetailPanel", () => {
   });
 
   it("never claims a task-less project type supports adding tasks, even if the viewer's role would allow it", () => {
-    // The exact bug this guards: canCreateTasks is a pure role check with no
-    // idea whether the project TYPE has tasks at all, so a manager on a
-    // calling project gets canCreateTasks: true from the backend despite
-    // there being no task flow on a calling project to use it in.
     const html = render({ ...baseProject, hasTasks: false, canCreateTasks: true });
     expect(html).not.toContain("You can add tasks here");
   });
@@ -70,15 +71,11 @@ describe("ProjectDetailPanel", () => {
     expect(render({ ...baseProject, hasTasks: true, canCreateTasks: false })).not.toContain("You can add tasks here");
   });
 
-  it("no longer duplicates budget scope or member count - those moved to ProjectBudgetTile and the sidebar row", () => {
+  it("no longer duplicates budget scope or member count - those live in ProjectBudgetTile and the sidebar header", () => {
     const html = render(baseProject);
     expect(html).not.toContain("Team budget");
     expect(html).not.toContain("Personal budget");
     expect(html).not.toContain("members");
-  });
-
-  it("hides the top-apps section when there is nothing tracked yet", () => {
-    expect(render(baseProject)).not.toContain("top apps");
   });
 
   it("shows each app's time, and sizes its bar relative to the largest one", () => {
@@ -90,12 +87,8 @@ describe("ProjectDetailPanel", () => {
     });
     expect(html).toContain("Zoom");
     expect(html).toContain("Browser");
-    expect(html).toMatch(/width:100%/); // Zoom, the largest, fills the bar
-    expect(html).toMatch(/width:50%/); // Browser is half of Zoom's time
-  });
-
-  it("hides the screenshots section when there are none for this project", () => {
-    expect(render(baseProject)).not.toContain("Recent screenshots");
+    expect(html).toMatch(/width:100%/);
+    expect(html).toMatch(/width:50%/);
   });
 
   it("shows a screenshot strip and the selected image once loaded", () => {
@@ -111,5 +104,9 @@ describe("ProjectDetailPanel", () => {
     });
     expect(withImage).toContain("data:image/png;base64,abc");
     expect(withImage).not.toContain("shot-preview-loading");
+  });
+
+  it("says there's nothing tracked yet when both sections are empty", () => {
+    expect(render(baseProject)).toContain("Nothing tracked here yet this week.");
   });
 });

@@ -52,10 +52,19 @@ export function ProjectsList({
   }
   const trimmed = query.trim().toLowerCase();
   const visible = trimmed ? projects.filter((p) => p.name.toLowerCase().includes(trimmed)) : projects;
+  // "Recent" doesn't guarantee the selected project has an entry - absence
+  // just means this stays hidden, same tolerant-absence contract every
+  // other recentProjects-sourced value in this app already has.
+  const selectedMemberCount = selectedProjectId ? memberCountById.get(selectedProjectId) : undefined;
   return (
     <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
       <div className="side-tasklist-head">
         <span className="stat-tile-label">Your projects</span>
+        {selectedMemberCount != null ? (
+          <span className="side-tasklist-member-count">
+            {selectedMemberCount} {selectedMemberCount === 1 ? "member" : "members"}
+          </span>
+        ) : null}
         <span className="side-tasklist-count">{projects.length}</span>
       </div>
       {projects.length > SEARCH_THRESHOLD ? (
@@ -77,7 +86,6 @@ export function ProjectsList({
         {visible.map((project) => {
           const openCount = openTaskCountByProject.get(project.id) ?? 0;
           const progress = projectProgressById.get(project.id);
-          const memberCount = memberCountById.get(project.id);
           const canAddTask = Boolean(onCreateTask) && project.hasTasks && project.canCreateTasks;
           const rowDisabled = busy || sessionOpen || project.budgetExhausted;
           return (
@@ -107,11 +115,7 @@ export function ProjectsList({
                     </span>
                   ) : (
                     <span className="side-task-row-project">
-                      {project.hasTasks
-                        ? `${openCount} open task${openCount === 1 ? "" : "s"}`
-                        : memberCount != null
-                          ? `Calling project · ${memberCount} ${memberCount === 1 ? "member" : "members"}`
-                          : "Calling project"}
+                      {project.hasTasks ? `${openCount} open task${openCount === 1 ? "" : "s"}` : "Calling project"}
                     </span>
                   )}
                 </span>
