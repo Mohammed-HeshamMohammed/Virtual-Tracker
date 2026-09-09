@@ -8,7 +8,7 @@ import { usePeopleTeamScope } from "@/features/members/context/people-team-scope
 
 function MemberInitials({ initials }: { initials: string }) {
   return (
-    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600">
+    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-200">
       {initials}
     </div>
   )
