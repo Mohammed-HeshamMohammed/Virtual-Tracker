@@ -99,7 +99,7 @@ export function ActivityURLsContent() {
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, showBlocked, resetPageFilters, summarySlotEl } = useActivityShell()
-  const { setSelectedMemberId } = useActivityFeedContext()
+  const { setSelectedMemberId, clearAllCache } = useActivityFeedContext()
   const { data: feed, loading, reload, classificationsUpdatedAt } = useActivityFeed<UrlsFeed>("urls", { day: day.dayKey })
   const membersSource = feed?.members ?? []
   // Summary is a standing overview, not a reflection of whatever single day
@@ -243,6 +243,7 @@ export function ActivityURLsContent() {
 
   useActivityShellRegistration({
     onRefresh: () => {
+      clearAllCache()
       void reload({ force: true })
       void reloadAllTime({ force: true })
     },
