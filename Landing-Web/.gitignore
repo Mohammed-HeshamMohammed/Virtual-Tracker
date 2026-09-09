@@ -1,0 +1,9 @@
+# Everything else (node_modules, .env, build output) is covered by the repo
+# root .gitignore - only the rule that is specific to this app lives here.
+#
+# Agent installers are distributed from GitHub Releases via Landing-Backend's
+# /api/download, never committed - four stale v0.4.0 binaries were being
+# served publicly from public/downloads/ long after the agent reached 0.4.21.
+public/downloads/*.exe
+public/downloads/*.dmg
+public/downloads/*.AppImage

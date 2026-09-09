@@ -70,7 +70,6 @@ export default function SolutionsPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-12">
-          {/* Segment selectors */}
           <div className="flex flex-wrap justify-center gap-2">
             {segments.map((segment) => (
               <button
@@ -87,7 +86,6 @@ export default function SolutionsPage() {
             ))}
           </div>
 
-          {/* Interactive display board */}
           <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm grid gap-8 lg:grid-cols-[1.2fr_0.8fr] items-center min-h-[380px]">
             <div className="space-y-6">
               <div className="flex items-center gap-3">
@@ -113,7 +111,6 @@ export default function SolutionsPage() {
               </div>
             </div>
 
-            {/* Metrics column */}
             <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-6 md:p-8 space-y-6">
               <span className="text-[10px] font-bold text-violet-600 bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
                 Operational Metrics

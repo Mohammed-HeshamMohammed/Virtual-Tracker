@@ -12,7 +12,6 @@ import {
 import { signInWithGoogleAccount } from "@/lib/auth/google-sign-in"
 import { errorCodeOf, formatAuthError } from "@/lib/auth/format-auth-error"
 
-/** Firebase often returns these for "wrong password", "no user", or "OAuth-only account" (enumeration-safe). */
 function isAmbiguousEmailPasswordFailureCode(code: string): boolean {
   return (
     code === "auth/invalid-credential" ||
@@ -22,7 +21,6 @@ function isAmbiguousEmailPasswordFailureCode(code: string): boolean {
   )
 }
 
-/** Note: verify + session-bootstrap + shared-cookie sync happen centrally in `useCurrentUser`. */
 export async function signInWithEmailPassword(email: string, password: string, rememberMe = true): Promise<void> {
   const trimmed = email.trim()
   await initFirebase()
@@ -57,7 +55,7 @@ export async function signInWithGoogle(rememberMe = true): Promise<void> {
       throw new Error(await messageForAccountExistsWithDifferentCredential(auth, err))
     }
     const message = formatAuthError(err)
-    if (!message) return // benign cancellation (user closed the popup)
+    if (!message) return
     throw new Error(message)
   }
 }

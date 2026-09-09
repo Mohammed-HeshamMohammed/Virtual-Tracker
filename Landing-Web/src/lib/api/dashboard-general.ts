@@ -13,11 +13,6 @@ export type MyActivitySummary = {
   topApps: Array<{ name: string; totalSeconds: number; percent: number }>
 }
 
-/**
- * Personal activity summary — GET /api/dashboard/general's `me` branch, the
- * same per-viewer data Dashboard-Web's general dashboard page renders.
- * Bearer-token authenticated, wildcard CORS — called directly.
- */
 export async function fetchMyActivitySummary(): Promise<MyActivitySummary | null> {
   const res = await apiFetch("/api/dashboard/general", { method: "GET" })
   const data: unknown = await res.json().catch(() => null)

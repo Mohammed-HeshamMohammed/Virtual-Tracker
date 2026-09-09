@@ -37,7 +37,6 @@ export default function ProfilePage() {
     <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-10 shadow-sm space-y-6">
       <div className="flex items-center gap-4">
         {user?.photoURL ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={user.photoURL} alt="" className="h-16 w-16 rounded-full object-cover" />
         ) : (
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-violet-100 text-lg font-bold text-violet-700">

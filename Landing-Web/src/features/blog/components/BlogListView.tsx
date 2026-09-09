@@ -54,7 +54,6 @@ export function BlogListView() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-12">
-          {/* Filters and Search Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex flex-wrap gap-2">
               {categories.map((cat) => (
@@ -86,7 +85,6 @@ export function BlogListView() {
             </div>
           </div>
 
-          {/* Posts Grid */}
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
             {filteredPosts.map((post) => (
               <article

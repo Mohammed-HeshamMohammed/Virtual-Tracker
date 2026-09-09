@@ -2,7 +2,6 @@ import { apiPath } from "@/lib/api/url"
 import { getFirebaseAuthClient } from "@/lib/firebase-client"
 
 type ApiFetchOptions = {
-  /** Default true — attaches a Firebase Bearer token. Set false for public endpoints. */
   requireAuth?: boolean
   forceRefresh?: boolean
 }
@@ -31,7 +30,6 @@ async function authHeaders(init: RequestInit, options: ApiFetchOptions): Promise
   return headers
 }
 
-/** `fetch` against Auth-Backend/Dashboard-Backend with an optional Firebase Bearer token. */
 export async function apiFetch(path: string, init: RequestInit = {}, options: ApiFetchOptions = {}): Promise<Response> {
   const url = apiPath(path)
   const requireAuth = options.requireAuth !== false

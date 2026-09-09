@@ -19,12 +19,11 @@ function HeroTitleContent() {
       setTimeout(() => {
         setIndex((i) => (i + 1) % HERO_CYCLING_WORDS.length)
         setPhase("ENTERING")
-        // Short tick to allow DOM to apply entering state before transition
         setTimeout(() => {
           setPhase("ENTERED")
         }, 50)
-      }, 500) // Duration of exit animation
-    }, 4000) // Total time per word
+      }, 500)
+    }, 4000)
 
     return () => clearInterval(timer)
   }, [])

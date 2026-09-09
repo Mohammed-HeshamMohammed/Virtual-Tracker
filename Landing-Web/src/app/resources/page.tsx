@@ -71,7 +71,6 @@ export default function ResourcesPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-12">
-          {/* Filters and Search Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex flex-wrap gap-2">
               {categories.map((cat) => (
@@ -103,7 +102,6 @@ export default function ResourcesPage() {
             </div>
           </div>
 
-          {/* Documentation Catalog */}
           <div className="grid gap-6 md:grid-cols-2">
             {filteredResources.map((resource) => (
               <div key={resource.title} className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between animate-fadeIn">

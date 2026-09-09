@@ -1,4 +1,3 @@
-/** Bounds-safe helpers for array access and links. */
 
 export function clampIndex(index: number, length: number): number {
   if (length <= 0) return 0

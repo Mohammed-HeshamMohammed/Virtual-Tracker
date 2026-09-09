@@ -1,16 +1,8 @@
-/**
- * Auth-Backend vs Dashboard-Backend base URL resolution for Landing-Web's
- * authenticated account area. Both are Bearer-token APIs with wildcard CORS
- * (see Auth-Backend/src/http/cors.js, Dashboard-Backend/src/http/cors.js) —
- * Landing-Web calls them directly, the same way Dashboard-Web does.
- */
 
-// Local-dev-only fallbacks — never used in a production build (guarded below).
 const AUTH_DEV_PORT = 5712
 const DASHBOARD_DEV_PORT = 5713
 const isProductionBuild = process.env.NODE_ENV === "production"
 
-/** Paths routed to Auth-Backend (kept in sync with Auth-Backend/src/modules/auth/routes.js). */
 const AUTHN_EXACT = new Set([
   "/api/auth/firebase-config",
   "/api/auth/readiness",
@@ -58,7 +50,6 @@ export function getDashboardApiBaseUrl(): string {
   return `http://127.0.0.1:${DASHBOARD_DEV_PORT}`
 }
 
-/** Full URL for an Auth-Backend/Dashboard-Backend API path — routes automatically. */
 export function apiPath(path: string): string {
   const normalized = path.startsWith("/") ? path : `/${path}`
   const base = isAuthBackendApiPath(normalized) ? getAuthApiBaseUrl() : getDashboardApiBaseUrl()

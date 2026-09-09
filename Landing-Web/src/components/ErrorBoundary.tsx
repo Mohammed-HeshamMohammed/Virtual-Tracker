@@ -5,7 +5,6 @@ import Link from "next/link"
 
 type ErrorBoundaryProps = {
   children: ReactNode
-  /** Short label shown in the fallback (e.g. "navigation", "hero"). */
   section?: string
   fallback?: ReactNode
 }

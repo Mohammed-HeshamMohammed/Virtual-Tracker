@@ -7,7 +7,6 @@ export type PatchProfileSettingsPayload = {
   phone?: string
 }
 
-/** Merges editable profile fields into Firestore `User_profiles/{uid}` (Dashboard-Backend). */
 export async function patchProfileSettingsWithBackend(payload: PatchProfileSettingsPayload): Promise<AuthProfileSnapshot | undefined> {
   const res = await apiFetch("/api/auth/profile", { method: "POST", body: JSON.stringify(payload) })
   const data: unknown = await res.json().catch(() => ({}))
@@ -24,7 +23,3 @@ export async function patchProfileSettingsWithBackend(payload: PatchProfileSetti
   return parseAuthProfileSnapshot((data as { profile?: unknown }).profile)
 }
 
-// Note: there is no GET /api/auth/profile — Dashboard-Backend only exposes the
-// PATCH-style POST above. Reading the current profile is done via the `profile`
-// field already returned by session-bootstrap (see verify-session.ts /
-// use-current-user.ts), not a separate fetch.

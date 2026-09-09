@@ -7,7 +7,6 @@ let authInstance: Auth | null = null
 let initPromise: Promise<FirebaseApp> | null = null
 let cachedConfig: FirebaseOptions | null = null
 
-/** Auth-Backend's public Firebase web config (not embedded in the client bundle). */
 async function fetchFirebaseWebConfig(): Promise<FirebaseOptions> {
   if (cachedConfig) return cachedConfig
 
@@ -31,7 +30,6 @@ async function fetchFirebaseWebConfig(): Promise<FirebaseOptions> {
   return cachedConfig
 }
 
-/** Initializes Firebase from Auth-Backend's public config. Safe to call repeatedly. */
 export async function initFirebase(): Promise<FirebaseApp> {
   if (app) return app
   if (initPromise) return initPromise

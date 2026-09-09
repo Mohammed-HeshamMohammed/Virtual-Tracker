@@ -18,7 +18,6 @@ export default function CookieConsentBanner() {
   }
 
   return (
-    // bottom-20: clears the fixed mobile/tablet bottom nav (hidden at lg and up).
     <div className="fixed inset-x-0 bottom-20 z-40 border-t border-slate-800 bg-slate-900/95 px-4 py-4 shadow-lg backdrop-blur lg:bottom-0">
       <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-300">

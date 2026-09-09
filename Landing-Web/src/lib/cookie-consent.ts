@@ -3,7 +3,6 @@ const CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365
 
 export type CookieConsentValue = "accepted" | "declined"
 
-/** Consent cookie domain — shared across subdomains; host-only on localhost. */
 function getCookieDomain(): string | undefined {
   if (typeof window === "undefined") return undefined
   const host = window.location.hostname

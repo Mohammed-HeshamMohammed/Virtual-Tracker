@@ -23,9 +23,6 @@ function initialsOf(name: string | null): string {
 }
 
 export default function AuthNavAction({ isTransparent, btnBg }: AuthNavActionProps) {
-  // Local Firebase session (this device signed in directly on Landing-Web) — has full
-  // account-area access. Falls back to the passive cross-domain cookie check for a
-  // visitor who's only ever signed in on Dashboard-Web.
   const { user: localUser, profile } = useCurrentUser()
   const [cookieStatus, setCookieStatus] = useState<SessionStatus | null>(null)
   const [open, setOpen] = useState(false)
@@ -84,9 +81,6 @@ export default function AuthNavAction({ isTransparent, btnBg }: AuthNavActionPro
     } else {
       await logoutSharedSession()
     }
-    // Clear regardless of which path ran — cookieStatus is fetched once at mount
-    // (before the local Firebase session resolves) and never re-checked, so it
-    // would otherwise still say "signed in" until the next full page load.
     setCookieStatus({ signedIn: false, displayName: null, avatarUrl: null })
   }
 
@@ -102,7 +96,6 @@ export default function AuthNavAction({ isTransparent, btnBg }: AuthNavActionPro
           aria-expanded={open}
         >
           {avatarUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
           ) : (
             <span className={`flex h-full w-full items-center justify-center text-sm font-semibold ${isTransparent ? "bg-white/20 text-white" : "bg-violet-100 text-violet-700"}`}>

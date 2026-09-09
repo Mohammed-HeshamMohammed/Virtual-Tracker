@@ -19,7 +19,6 @@ const PLANS = [
   },
 ]
 
-/** Static plans reference — no billing/entitlement backend exists yet. */
 export default function SubscriptionPage() {
   return (
     <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm space-y-6">

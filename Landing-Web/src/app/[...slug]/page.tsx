@@ -19,7 +19,6 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
   const path = Array.isArray(resolvedParams.slug) ? resolvedParams.slug.filter(Boolean).join("/") : ""
   const page = (path && SLUG_PAGES[path]) || DEFAULT_PAGE
 
-  // Time-tracking stopwatch state
   const [time, setTime] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
 
@@ -40,10 +39,8 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
     return `${hrs}:${mins}:${secs}`
   }
 
-  // Desktop agent tab state
   const [terminalTab, setTerminalTab] = useState<"install" | "run" | "logs">("install")
 
-  // Kanban task state
   const [tasks, setTasks] = useState([
     { id: 1, text: "Refactor database permission gates", status: "todo" },
     { id: 2, text: "Verify Python OpenCV screen capturing", status: "progress" },
@@ -60,7 +57,6 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
     }))
   }
 
-  // Department presence state
   const [activeDept, setActiveDept] = useState<"dev" | "design">("dev")
 
   return (
@@ -73,7 +69,6 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-16">
-          {/* Bullets Grid */}
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {page.bullets.map((bullet) => (
               <div key={bullet} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition-all duration-300 flex items-start gap-4">
@@ -92,7 +87,6 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
             ))}
           </div>
 
-          {/* Interactive Feature Slot Simulators */}
           {path === "time-tracking" && (
             <section className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm text-center max-w-xl mx-auto space-y-6">
               <h3 className="text-lg font-bold text-slate-900">Task Timer Sandbox</h3>
@@ -246,7 +240,6 @@ export default function CatchAllPage({ params }: { params: React.Usable<{ slug?:
             </section>
           )}
 
-          {/* Feature CTA */}
           <div className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm text-center relative overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-r from-violet-50/50 via-slate-50/30 to-blue-50/50 -z-10" />
             <h3 className="text-xl font-extrabold text-slate-900 mb-2">Test this feature live</h3>

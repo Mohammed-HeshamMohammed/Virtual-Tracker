@@ -8,7 +8,6 @@ type PageIntroProps = {
 export default function PageIntro({ eyebrow, title, description, children }: PageIntroProps) {
   return (
     <div className="relative overflow-hidden bg-slate-50/40 border-b border-slate-100/80">
-      {/* Visual grid pattern and mesh gradients */}
       <div className="pointer-events-none absolute inset-0 select-none overflow-hidden">
         <div className="absolute inset-0 bg-[linear-gradient(to_right,#e2e8f0_1px,transparent_1px),linear-gradient(to_bottom,#e2e8f0_1px,transparent_1px)] bg-[size:3rem_3rem] [mask-image:radial-gradient(ellipse_80%_60%_at_50%_0%,#000_80%,transparent_100%)] opacity-[0.5]" />
         <div className="absolute -top-48 -right-48 w-[400px] h-[400px] rounded-full bg-violet-400/20 blur-[120px] animate-pulse duration-10000" />

@@ -72,7 +72,6 @@ export default function PricingPage() {
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-20">
-          {/* Billing Toggle */}
           <div className="flex justify-center">
             <div className="relative flex items-center bg-white border border-slate-200 p-1.5 rounded-full shadow-sm">
               <button
@@ -97,7 +96,6 @@ export default function PricingPage() {
             </div>
           </div>
 
-          {/* Pricing Grid */}
           <div className="grid gap-8 lg:grid-cols-3">
             {plans.map((plan) => (
               <div
@@ -156,7 +154,6 @@ export default function PricingPage() {
             ))}
           </div>
 
-          {/* Pricing FAQ Section */}
           <section className="rounded-3xl border border-slate-200 bg-white p-8 md:p-12 shadow-sm max-w-4xl mx-auto">
             <h3 className="text-xl md:text-2xl font-extrabold text-slate-900 mb-6 text-center">Frequently Asked Questions</h3>
             <div className="space-y-4">

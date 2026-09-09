@@ -37,10 +37,6 @@ export type VerifyIdTokenResult =
 
 const verifyInFlightByUid = new Map<string, Promise<VerifyIdTokenResult>>()
 
-/**
- * Verifies the ID token (Auth-Backend) then bootstraps the session (Dashboard-Backend).
- * Coalesces overlapping calls for the same Firebase uid.
- */
 export async function verifyIdTokenWithBackend(user: User): Promise<VerifyIdTokenResult> {
   const uid = user.uid?.trim()
   if (uid) {
