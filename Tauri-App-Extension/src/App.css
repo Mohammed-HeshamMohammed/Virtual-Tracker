@@ -3160,81 +3160,80 @@ select.modal-input {
   border-radius: 0;
 }
 
-/* This project's top-apps breakdown (main pane, task-less session). */
-.project-app-breakdown {
+/* This project's top-apps breakdown (main pane, task-less session) - an
+   actual plotted line/point chart, not styled progress bars. Apps arrive
+   sorted by time (most to least), so the line traces that rank order
+   rather than implying an unrelated continuous axis. */
+.project-app-chart {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   margin-top: 14px;
 }
 
-.project-app-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.project-app-row-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.project-app-name {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--on-surface);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-app-time {
-  flex-shrink: 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--on-surface-variant);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The bar is the magnitude track; the dot at its tip is the actual mark -
-   "a point per app" - and the hoverable/focusable hit target. Vertical
-   padding widens the hit area past the thin 6px bar itself, and sits
-   outside .capacity-bar (which clips its own overflow) so the dot isn't
-   cropped where it overlaps the bar's edge. */
-.project-app-mark {
+.project-app-plot {
   position: relative;
-  padding: 7px 0;
+  height: 84px;
+}
+
+.project-app-plot-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.project-app-plot-axis {
+  stroke: rgb(var(--c-line) / 0.25);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.project-app-plot-line {
+  fill: none;
+  stroke: rgb(var(--c-primary));
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Positioned by percentage (left/top match the same 0-100 coordinate
+   space the SVG's viewBox uses), centered on that coordinate, with a
+   hit area well past the visible dot - a small marker is an easy miss
+   otherwise. */
+.project-app-point {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
   outline: none;
   cursor: default;
 }
 
-.project-app-dot {
-  position: absolute;
-  top: 50%;
-  width: 10px;
-  height: 10px;
-  margin-top: -5px;
-  margin-left: -5px;
+.project-app-point-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: rgb(var(--c-primary));
-  /* Surface ring - keeps the dot legible where it sits on/over the fill. */
+  /* Surface ring - keeps the dot legible crossing the line or the axis. */
   box-shadow: 0 0 0 2px var(--surface-high);
   transition: transform 0.15s ease;
-  pointer-events: none;
 }
 
-.project-app-mark:hover .project-app-dot,
-.project-app-mark:focus-visible .project-app-dot {
-  transform: scale(1.35);
+.project-app-point:hover .project-app-point-dot,
+.project-app-point:focus-visible .project-app-point-dot {
+  transform: scale(1.4);
 }
 
 .project-app-tooltip {
   position: absolute;
-  left: 0;
-  bottom: 100%;
-  margin-bottom: 6px;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%) translateY(2px);
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3248,22 +3247,52 @@ select.modal-input {
   white-space: nowrap;
   opacity: 0;
   visibility: hidden;
-  transform: translateY(2px);
   transition: opacity 0.12s ease, transform 0.12s ease;
   pointer-events: none;
   z-index: 5;
 }
 
-.project-app-mark:hover .project-app-tooltip,
-.project-app-mark:focus-visible .project-app-tooltip {
+.project-app-point:hover .project-app-tooltip,
+.project-app-point:focus-visible .project-app-tooltip {
   opacity: 1;
   visibility: visible;
-  transform: translateY(0);
+  transform: translateX(-50%) translateY(0);
 }
 
 .project-app-tooltip-sub {
   color: var(--on-surface-variant);
   font-size: 10px;
+}
+
+.project-app-plot-labels {
+  display: grid;
+  gap: 4px;
+}
+
+.project-app-plot-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  min-width: 0;
+  text-align: center;
+}
+
+.project-app-name {
+  max-width: 100%;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-app-time {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Task detail (main pane). */

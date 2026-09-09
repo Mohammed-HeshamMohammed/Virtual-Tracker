@@ -58,39 +58,59 @@ export function ProjectDetailPanel({
       </p>
 
       {appBreakdown.length > 0 ? (
-        <div className="project-app-breakdown">
+        <div className="project-app-chart">
           <span className="stat-tile-label">This week's top apps</span>
-          {appBreakdown.map((app) => {
-            const widthPct = Math.round((app.totalSeconds / maxAppSeconds) * 100);
-            const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
-            return (
-              <div className="project-app-row" key={app.appName}>
-                <div className="project-app-row-head">
-                  <span className="project-app-name">{app.appName}</span>
-                  <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
-                </div>
-                {/* The dot is the point this app is plotted as - the bar
-                    behind it is just the same magnitude drawn as a track,
-                    not a separate encoding. Focusable so the tooltip is
-                    reachable by keyboard, not only on hover. */}
+          <div className="project-app-plot">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="project-app-plot-svg" aria-hidden="true">
+              <line x1="0" y1="90" x2="100" y2="90" className="project-app-plot-axis" />
+              <polyline
+                points={appBreakdown
+                  .map((app, i) => {
+                    const x = ((i + 0.5) / appBreakdown.length) * 100;
+                    const y = 90 - (app.totalSeconds / maxAppSeconds) * 70;
+                    return `${x},${y}`;
+                  })
+                  .join(" ")}
+                className="project-app-plot-line"
+              />
+            </svg>
+            {appBreakdown.map((app, i) => {
+              const x = ((i + 0.5) / appBreakdown.length) * 100;
+              const y = 90 - (app.totalSeconds / maxAppSeconds) * 70;
+              const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
+              return (
+                // The dot is the actual mark this app is plotted as - the
+                // line just traces the rank order (apps arrive sorted by
+                // time, most to least). Focusable so the tooltip is
+                // reachable by keyboard, not only on hover.
                 <div
-                  className="project-app-mark"
+                  key={app.appName}
+                  className="project-app-point"
+                  style={{ left: `${x}%`, top: `${y}%` }}
                   tabIndex={0}
                   role="img"
                   aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
                 >
-                  <div className="capacity-bar slim">
-                    <div className="capacity-fill active" style={{ width: `${widthPct}%` }} />
-                  </div>
-                  <span className="project-app-dot" style={{ left: `${widthPct}%` }} aria-hidden="true" />
+                  <span className="project-app-point-dot" aria-hidden="true" />
                   <div className="project-app-tooltip" role="tooltip">
                     <strong>{fmtHours(app.totalSeconds)}</strong>
                     <span className="project-app-tooltip-sub">{sharePct}% of the apps shown</span>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+          <div
+            className="project-app-plot-labels"
+            style={{ gridTemplateColumns: `repeat(${appBreakdown.length}, 1fr)` }}
+          >
+            {appBreakdown.map((app) => (
+              <div className="project-app-plot-label" key={app.appName}>
+                <span className="project-app-name">{app.appName}</span>
+                <span className="project-app-time">{fmtHours(app.totalSeconds)}</span>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
       ) : null}
 

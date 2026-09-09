@@ -81,7 +81,7 @@ describe("ProjectDetailPanel", () => {
     expect(render(baseProject)).not.toContain("top apps");
   });
 
-  it("shows each app's time, and sizes its bar relative to the largest one", () => {
+  it("plots one point per app, connected by a line tracing rank order", () => {
     const html = render(baseProject, {
       appBreakdown: [
         { appName: "Zoom", totalSeconds: 3600 },
@@ -90,20 +90,30 @@ describe("ProjectDetailPanel", () => {
     });
     expect(html).toContain("Zoom");
     expect(html).toContain("Browser");
-    expect(html).toMatch(/width:100%/); // Zoom, the largest, fills the bar
-    expect(html).toMatch(/width:50%/); // Browser is half of Zoom's time
+    expect(html).toContain("project-app-plot-svg");
+    expect(html).toContain("project-app-plot-line");
+    // One point (dot) per app.
+    expect((html.match(/project-app-point-dot/g) ?? []).length).toBe(2);
+    // Points render in appBreakdown order (Zoom, then Browser). The
+    // higher-time app plots closer to the top - a smaller `top` percent in
+    // the chart's 0-100 coordinate space - than the lower one.
+    const tops = [...html.matchAll(/top:([\d.]+)%/g)].map((m) => Number(m[1]));
+    expect(tops.length).toBe(2);
+    expect(tops[0]).toBeLessThan(tops[1]);
   });
 
-  it("plots each app as a point (a dot at the bar's tip), focusable for a keyboard-reachable tooltip", () => {
+  it("shows each app's time as a direct label, focusable for a keyboard-reachable tooltip", () => {
     const html = render(baseProject, {
       appBreakdown: [
         { appName: "Zoom", totalSeconds: 3600 },
         { appName: "Browser", totalSeconds: 1800 },
       ],
     });
-    // One dot per app, each on a focusable mark (tooltip must be reachable
-    // without a mouse, not hover-only).
-    expect((html.match(/project-app-dot/g) ?? []).length).toBe(2);
+    // Duration is always visible as a label under the chart - the tooltip
+    // only adds the share percentage on top of it, never gates the value.
+    expect(html).toContain("1h 0s");
+    expect(html).toContain("30m 0s");
+    // Every point is focusable (tooltip must be reachable without a mouse).
     expect((html.match(/tabindex="0"/g) ?? []).length).toBe(2);
     // Tooltip states the app's share of the apps actually shown (2/3 of the
     // combined 5400s = 67%), not a claim about total tracked time overall.
