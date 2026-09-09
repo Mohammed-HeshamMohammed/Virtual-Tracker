@@ -1,10 +1,5 @@
-/** Baseline security headers (HSTS in production over HTTPS). */
-
 import { getEnv } from "../config/env.js";
 
-/**
- * @param {import("node:http").IncomingMessage} [req]
- */
 export function getSecurityHeaders(req) {
   const headers = {
     "X-Content-Type-Options": "nosniff",

@@ -1,9 +1,5 @@
 import { sendJson } from "./response.js";
 
-/**
- * @param {number} status
- * @param {string} [message]
- */
 export function inferErrorCode(status, message = "") {
   const lower = message.toLowerCase();
   if (status === 401) return "UNAUTHORIZED";
@@ -18,12 +14,11 @@ export function inferErrorCode(status, message = "") {
   return "REQUEST_FAILED";
 }
 
-/** Add errorDetail to legacy `{ success: false, error }` responses. */
 export function enrichErrorPayload(status, payload) {
-  if (!payload || typeof payload !== "object" || /** @type {{ success?: boolean }} */ (payload).success !== false) {
+  if (!payload || typeof payload !== "object" || payload.success !== false) {
     return payload;
   }
-  const body = /** @type {{ error?: string, errorDetail?: { code?: string, message?: string } }} */ (payload);
+  const body = payload;
   if (typeof body.error !== "string" || !body.error.trim()) return payload;
   if (body.errorDetail && typeof body.errorDetail === "object" && body.errorDetail.code) return payload;
   return {
@@ -35,7 +30,6 @@ export function enrichErrorPayload(status, payload) {
   };
 }
 
-/** Standard error envelope — keeps legacy top-level `error` string. */
 export function sendApiError(res, origin, status, code, message, req) {
   sendJson(
     res,

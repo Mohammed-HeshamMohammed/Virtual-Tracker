@@ -1,8 +1,3 @@
-/**
- * Auth-Backend env config. Use getEnv() — lint blocks direct process.env reads.
- * @see Auth-Backend/.env.example
- */
-
 import { loadEnvFile } from "node:process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,12 +9,8 @@ const BACKEND_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 try {
   loadEnvFile(path.join(BACKEND_ROOT, ".env"));
 } catch {
-  // Optional — npm scripts also pass --env-file-if-exists=.env
 }
 
-/** @typedef {ReturnType<typeof buildEnv>} AppEnv */
-
-/** @param {NodeJS.ProcessEnv} source */
 function readString(source, key, fallback = "") {
   const raw = source[key];
   if (typeof raw !== "string") return fallback;
@@ -27,7 +18,6 @@ function readString(source, key, fallback = "") {
   return trimmed || fallback;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
 function readInt(source, key, fallback) {
   const raw = readString(source, key, "");
   if (!raw) return fallback;
@@ -35,13 +25,11 @@ function readInt(source, key, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
 function readPositiveInt(source, key, fallback) {
   const parsed = readInt(source, key, fallback);
   return parsed > 0 ? parsed : fallback;
 }
 
-/** @param {NodeJS.ProcessEnv} source */
 function readBool(source, key, defaultWhenUnset) {
   const raw = readString(source, key, "");
   if (!raw) return defaultWhenUnset;
@@ -51,7 +39,6 @@ function readBool(source, key, defaultWhenUnset) {
   return defaultWhenUnset;
 }
 
-/** Parse + validate env into frozen AppEnv. */
 export function buildEnv(source = process.env) {
   const skipValidation =
     readString(source, "SKIP_ENV_VALIDATION", "") === "1" ||
@@ -77,7 +64,6 @@ export function buildEnv(source = process.env) {
 
     security: Object.freeze({
       allowInsecureHttp: readBool(source, "ALLOW_INSECURE_HTTP", false),
-      /** Dev-only TLS workaround for Firebase on Windows (applied in index.js bootstrap). */
       // Requires an explicit opt-in as well as a non-production NODE_ENV.
       // It used to be `!isProduction` alone, which fails *open*: an unset or
       // misspelled NODE_ENV in a container silently turned off certificate
@@ -89,29 +75,14 @@ export function buildEnv(source = process.env) {
     urls: Object.freeze({
       frontendOrigin: readString(source, "FRONTEND_ORIGIN", "http://localhost:3000"),
       appPublicUrl: readString(source, "APP_PUBLIC_URL", ""),
-      /** Dashboard-Backend base URL — used only to complete a desktop-agent
-       * link session server-to-server after a Google OAuth callback (see
-       * modules/auth/google-oauth.js). Not needed for any other route. */
       dashboardApiUrl: readString(source, "DASHBOARD_API_URL", ""),
     }),
 
-    /** Desktop-agent "sign in with Google" authorization-code flow (see
-     * modules/auth/google-oauth.js). All empty by default — /api/auth/google/start
-     * responds with agentLinkError=not_configured until these are set. */
     googleOAuth: Object.freeze({
       clientId: readString(source, "GOOGLE_OAUTH_CLIENT_ID"),
       clientSecret: readString(source, "GOOGLE_OAUTH_CLIENT_SECRET"),
       redirectUri: readString(source, "GOOGLE_OAUTH_REDIRECT_URI"),
       stateSecret: readString(source, "GOOGLE_OAUTH_STATE_SECRET"),
-      /** Optional dedicated Firebase Web API key for the server-to-server
-       * accounts:signInWithIdp call in google-oauth.js. Falls back to
-       * FIREBASE_API_KEY (below) when unset. Needs its own key, distinct
-       * from FIREBASE_API_KEY, only if that one has an HTTP-referrer
-       * (Websites) application restriction in Google Cloud Console — a
-       * plain server-to-server fetch() never carries a Referer header, so a
-       * referrer-restricted key always 403s this specific call regardless
-       * of who's asking. Application restrictions: None; API restrictions:
-       * Identity Toolkit API is enough. */
       serverApiKey: readString(source, "GOOGLE_OAUTH_SERVER_API_KEY"),
     }),
 
@@ -177,15 +148,12 @@ export function buildEnv(source = process.env) {
   });
 }
 
-/** @type {AppEnv | null} */
 let cached = null;
 
-/** Eager init — same as getEnv(). */
 export function initConfig() {
   return getEnv();
 }
 
-/** Cached env snapshot (validates on first call). @returns {AppEnv} */
 export function getEnv() {
   if (!cached) {
     cached = buildEnv(process.env);
@@ -193,15 +161,12 @@ export function getEnv() {
   return cached;
 }
 
-/** Redacted env for logs / health (no secrets). */
 export function getPublicEnv() {
   return toPublicEnv(getEnv());
 }
 
-/** @internal Tests only — re-read process.env after mutations. */
 export function __resetEnvForTests() {
   cached = null;
 }
 
-/** @type {typeof getEnv} */
 export const env = getEnv;

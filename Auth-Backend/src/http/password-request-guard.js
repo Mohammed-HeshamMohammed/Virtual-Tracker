@@ -1,7 +1,6 @@
 import { PASSWORD_POLICY } from "../config/password-policy/index.js";
 import { isSensitiveFieldName } from "./sensitive-fields.js";
 
-/** Block passwords and other secrets in query strings (SSE token param exempt). */
 export function rejectSensitiveQueryParams(url) {
   const isSsePath = url.pathname === "/api/presence/events" || url.pathname === "/api/v1/presence/events";
   for (const key of url.searchParams.keys()) {
@@ -15,10 +14,6 @@ export function rejectSensitiveQueryParams(url) {
   return null;
 }
 
-/**
- * @param {unknown} password
- * @returns {string | null}
- */
 export function normalizePasswordInput(password) {
   if (typeof password !== "string" || password.length === 0) {
     return "Password is required.";

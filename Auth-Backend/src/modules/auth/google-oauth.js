@@ -4,19 +4,8 @@ import { readFirebaseWebConfigFromEnv } from "../../config/firebase.js";
 import { getSecurityHeaders } from "../../http/security-headers.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
-// Kept inside agent_link_sessions' 15-minute TTL (agent-link-sessions.js,
-// Dashboard-Backend) so a state token never outlives the link session it's
-// tied to.
 const STATE_TTL_MS = 10 * 60 * 1000;
 
-/**
- * Stateless CSRF-state token for the OAuth round trip: Auth-Backend has no
- * database of its own to hold a server-side nonce in (see agent_link_sessions
- * for the DB-backed equivalent this deliberately avoids needing), so the
- * `linkToken` + expiry are carried in the state itself, HMAC-signed so
- * Google's redirect can't be replayed with a forged/expired payload.
- * @param {string} linkToken
- */
 function signState(linkToken) {
   const payload = JSON.stringify({ linkToken, exp: Date.now() + STATE_TTL_MS });
   const payloadB64 = Buffer.from(payload, "utf8").toString("base64url");
@@ -24,10 +13,6 @@ function signState(linkToken) {
   return `${payloadB64}.${sig.toString("base64url")}`;
 }
 
-/**
- * @param {string} state
- * @returns {{ linkToken: string } | null}
- */
 function verifyState(state) {
   if (typeof state !== "string" || !state) return null;
   const dot = state.indexOf(".");
@@ -58,23 +43,11 @@ function verifyState(state) {
   return { linkToken: payload.linkToken };
 }
 
-/**
- * @param {import("node:http").ServerResponse} res
- * @param {import("node:http").IncomingMessage} req
- * @param {string} location
- */
 function redirect(res, req, location) {
   res.writeHead(302, { Location: location, ...getSecurityHeaders(req) });
   res.end();
 }
 
-/**
- * Exchange a Google authorization `code` for a Firebase ID token, via the
- * Identity Toolkit REST API directly (same pattern as
- * Dashboard-Backend's verifyCurrentPasswordWithFirebaseWebApi) — no Firebase
- * client SDK involved, this runs entirely server-side.
- * @param {string} code
- */
 async function exchangeGoogleCodeForFirebaseTokens(code) {
   const { clientId, clientSecret, redirectUri } = getEnv().googleOAuth;
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -97,10 +70,6 @@ async function exchangeGoogleCodeForFirebaseTokens(code) {
     throw new Error("google_token_exchange_missing_id_token");
   }
 
-  // Deliberately not `web.apiKey` alone: that key backs Dashboard-Web's
-  // browser-side SDK too and may carry an HTTP-referrer (Websites)
-  // restriction, which a server-to-server fetch() (no Referer header) always
-  // fails against — see the `serverApiKey` doc comment in config/env.js.
   const serverApiKey = getEnv().googleOAuth.serverApiKey || readFirebaseWebConfigFromEnv().apiKey;
   if (!serverApiKey) {
     throw new Error("firebase_web_api_key_not_configured");
@@ -129,17 +98,6 @@ async function exchangeGoogleCodeForFirebaseTokens(code) {
   return { idToken, refreshToken };
 }
 
-/**
- * Completes the same desktop-agent link session the browser-driven flow
- * completes in Dashboard-Web's agent-link-flow.tsx (`completeAgentLink` →
- * `POST /api/activity/agent/link/complete`) — server-to-server here instead
- * of from the browser tab. That endpoint verifies the Bearer ID token itself
- * and doesn't care whether it was minted by the Firebase client SDK or, as
- * here, by the Identity Toolkit REST API.
- * @param {string} linkToken
- * @param {string} idToken
- * @param {string} refreshToken
- */
 async function completeDesktopAgentLink(linkToken, idToken, refreshToken) {
   const dashboardApiUrl = getEnv().urls.dashboardApiUrl;
   if (!dashboardApiUrl) {
@@ -158,7 +116,6 @@ async function completeDesktopAgentLink(linkToken, idToken, refreshToken) {
   }
 }
 
-/** `/api/auth/google/*` routes — the desktop agent's direct-to-Google sign-in. @returns {Promise<boolean>} */
 export async function routeGoogleOAuth(req, res, url) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
   const frontendOrigin = getEnv().urls.frontendOrigin.replace(/\/$/, "");
@@ -212,5 +169,4 @@ export async function routeGoogleOAuth(req, res, url) {
   return false;
 }
 
-/** @internal exported for tests only */
 export const __test__ = { signState, verifyState };

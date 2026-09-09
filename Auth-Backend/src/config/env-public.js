@@ -1,4 +1,3 @@
-/** Redacted env for logs/health. @param {import("./env.js").AppEnv} config */
 export function toPublicEnv(config) {
   const emailConfigured = Boolean(
     config.email.resendApiKey || (config.email.smtpHost && config.email.smtpUser && config.email.smtpPass),

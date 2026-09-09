@@ -4,7 +4,6 @@ import {
   PASSWORD_POLICY_VERSION,
 } from "./definition.js";
 
-// Password policy for UI — no blacklists or scoring internals.
 export function getPublicPasswordPolicyResponse() {
   return {
     version: PASSWORD_POLICY_VERSION,

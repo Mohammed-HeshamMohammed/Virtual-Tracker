@@ -1,13 +1,6 @@
-/** Maximum JSON body size accepted by the API (1 MiB). */
 export const MAX_JSON_BODY_BYTES = 1024 * 1024;
-
-/** Avatar body limit — base64 JSON is ~4/3× file size. */
 export const MAX_AVATAR_JSON_BODY_BYTES = 768 * 1024;
 
-/**
- * @param {import("node:http").IncomingMessage} req
- * @param {number} [maxBytes]
- */
 export async function readJsonBody(req, maxBytes = MAX_JSON_BODY_BYTES) {
   const chunks = [];
   let totalBytes = 0;
