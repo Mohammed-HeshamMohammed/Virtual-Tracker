@@ -109,7 +109,7 @@ export function ActivityAppsContent() {
   const canClassify = canClassifyActivity(memberRole)
   const [classifyOpen, setClassifyOpen] = useState(false)
   const { day, searchQuery, selectedCategory, resetPageFilters, summarySlotEl } = useActivityShell()
-  const { setSelectedMemberId } = useActivityFeedContext()
+  const { setSelectedMemberId, clearAllCache } = useActivityFeedContext()
   const { data: feed, loading, reload, classificationsUpdatedAt } = useActivityFeed<AppsFeed>("apps", { day: day.dayKey })
   // Summary is a standing overview, not a reflection of whatever single day
   // the table below happens to be drilled into - fetched independently
@@ -255,6 +255,7 @@ export function ActivityAppsContent() {
 
   useActivityShellRegistration({
     onRefresh: () => {
+      clearAllCache()
       void reload({ force: true })
       void reloadAllTime({ force: true })
     },
