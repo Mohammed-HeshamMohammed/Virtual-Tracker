@@ -29,6 +29,7 @@ import { cleanupCallingProjectTasks } from "./src/modules/projects/calling-proje
 import { scheduleTeamWeeklyReports } from "./src/modules/teams/team-weekly-report.service.js";
 import { scheduleAbandonedSessionSweep } from "./src/modules/activity/abandoned-session-sweep.service.js";
 import { scheduleReportDeliveries } from "./src/modules/reports/report-schedule-runner.js";
+import { scheduleCurrencyRateRefresh } from "./src/lib/currency/rate-fetcher.js";
 import { scheduleDataRetentionSweep } from "./src/modules/compliance/data-retention-sweep.service.js";
 import { scheduleIntegritySweep } from "./src/modules/activity/integrity-sweep.service.js";
 import { scheduleCounterReconciliationSweep } from "./src/modules/activity/counter-reconciliation-sweep.service.js";
@@ -105,6 +106,7 @@ export async function startServer(port = getEnv().server.port) {
     scheduleTeamWeeklyReports(db);
     scheduleAbandonedSessionSweep();
     scheduleReportDeliveries(db);
+    scheduleCurrencyRateRefresh();
     scheduleDataRetentionSweep();
     scheduleIntegritySweep();
     scheduleCounterReconciliationSweep();

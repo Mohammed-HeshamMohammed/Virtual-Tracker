@@ -438,16 +438,26 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
       const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(member.memberId));
-      const rows = await sumAppLogSecondsByAppNameForProjectPg(member.memberId, projectId, {
-        fromDay: weekStartDay,
-        toDay: todayDay,
-      });
+      const { apps, totalSeconds, appCount } = await sumAppLogSecondsByAppNameForProjectPg(
+        member.memberId,
+        projectId,
+        { fromDay: weekStartDay, toDay: todayDay },
+      );
+      const shown = apps.map((row) => ({
+        appName: String(row.app_name ?? ""),
+        totalSeconds: Math.max(0, Math.floor(Number(row.total_seconds ?? 0))),
+      }));
       sendJson(res, origin, 200, {
         success: true,
-        data: rows.map((row) => ({
-          appName: String(row.app_name ?? ""),
-          totalSeconds: Math.max(0, Math.floor(Number(row.total_seconds ?? 0))),
-        })),
+        // The panel shows a handful of apps; without the totals it had no way
+        // to say so, and the times it did show visibly failed to add up to the
+        // week beside them.
+        data: {
+          apps: shown,
+          totalSeconds,
+          appCount,
+          shownSeconds: shown.reduce((sum, app) => sum + app.totalSeconds, 0),
+        },
       });
     } catch (e) {
       logSafeError("[activity/project-app-breakdown]", e);

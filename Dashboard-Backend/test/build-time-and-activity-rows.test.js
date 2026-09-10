@@ -53,6 +53,11 @@ test("a single session on one project produces one entry carrying its client/tea
     manualSeconds: 0,
     spentAmount: 0,
     currency: "USD",
+    // Every money row now carries what it was actually earned in as well as
+    // what it is being shown in, so a converted figure can always be traced
+    // back. With no rate book passed the two are the same.
+    originalAmount: 0,
+    originalCurrency: "USD",
   });
 });
 

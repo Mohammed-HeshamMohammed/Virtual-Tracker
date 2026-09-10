@@ -15,6 +15,15 @@ import { getMemberTimezone, getMemberTimezones } from "./member-timezones.js";
 import { buildWorkSessionRows } from "./build-work-session-rows.js";
 import { summarizeAppsAndUrls } from "./build-apps-urls-rows.js";
 import { buildLimitUsageRows, summarizeLimitUsage } from "./build-limit-usage-rows.js";
+import { currencyMeta, resolveReportCurrency } from "./report-currency.js";
+import {
+  getDisplayCurrencyPg,
+  getLatestRateDayPg,
+  isValidCurrencyCode,
+  listKnownCurrenciesPg,
+  setDisplayCurrencyPg,
+} from "../../lib/postgres/currency-rates.service.js";
+import { convertAmount } from "../../lib/currency/convert.js";
 import { getAllCategories } from "../classification/activity-categories.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
@@ -211,7 +220,7 @@ async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
   return permitted.length > 0 ? permitted : ["00000000-0000-0000-0000-000000000000"];
 }
 
-export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null) {
+export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null, currency = null) {
   const [rawRows, manualRows] = await Promise.all([
     getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
     getManualTimeEntryRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
@@ -228,16 +237,29 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
       rateMap = await buildHistoricalRateMap(visibleRateMemberIds);
     }
   }
-  return buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows);
+  const payload = buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows, currency);
+  return currency ? { ...payload, currency: currencyMeta(currency, oldestRateUsed(payload)) } : payload;
 }
 
-async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, requestedMemberIds, from, to, requestedProjectIds }) {
+/** The day of the staler rate any converted row leaned on, so the UI can say
+ *  when the figures are running on an old rate rather than today's. */
+function oldestRateUsed(payload) {
+  let oldest = null;
+  for (const day of payload.days ?? []) {
+    for (const member of day.members ?? []) {
+      if (member.rateAsOf && (!oldest || member.rateAsOf < oldest)) oldest = member.rateAsOf;
+    }
+  }
+  return oldest;
+}
+
+async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, requestedMemberIds, from, to, requestedProjectIds, currency }) {
   const memberIds =
     requestedMemberIds && requestedMemberIds.length > 0
       ? await resolveMemberIdsMultiFilter(db, viewer, requestedMemberIds)
       : await resolveMemberIdsFilter(db, viewer, requestedMemberId);
   const projectIds = await filterProjectIdsForViewer(db, viewer, requestedProjectIds);
-  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer, projectIds);
+  return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer, projectIds, currency);
 }
 
 function rangeLabel(from, to) {
@@ -298,6 +320,66 @@ export async function routeReports(req, res, url, origin) {
     } catch (e) {
       logSafeError("[reports/filter-options]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load filter options." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/reports/currency" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const [orgCurrency, currencies, latestRateDay] = await Promise.all([
+        getDisplayCurrencyPg(),
+        listKnownCurrenciesPg(),
+        getLatestRateDayPg(),
+      ]);
+      sendJson(res, origin, 200, {
+        success: true,
+        // `currencies` is what the client may ask for: the viewer's locale can
+        // name anything, and a currency with no rate would put the mixed
+        // multi-currency totals straight back.
+        data: { orgCurrency, currencies, latestRateDay, canEdit: isManagementRole(viewer.roleName) },
+      });
+    } catch (e) {
+      logSafeError("[reports/currency]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load currency settings." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/reports/currency" && req.method === "PUT") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Management role required." });
+      return true;
+    }
+    try {
+      const body = (await readJsonBody(req)) || {};
+      const requested = String(body.displayCurrency ?? "").trim().toUpperCase();
+      if (!isValidCurrencyCode(requested)) {
+        sendJson(res, origin, 400, { success: false, error: "A three-letter currency code is required." });
+        return true;
+      }
+      // Refuse a currency we hold no rate for rather than accepting it and
+      // silently converting nothing.
+      const currencies = await listKnownCurrenciesPg();
+      if (!currencies.includes(requested)) {
+        sendJson(res, origin, 400, {
+          success: false,
+          error: `No exchange rate is available for ${requested}.`,
+        });
+        return true;
+      }
+      const saved = await setDisplayCurrencyPg(requested, viewer.memberId);
+      sendJson(res, origin, 200, { success: true, data: { orgCurrency: saved } });
+    } catch (e) {
+      if (e?.status) {
+        sendJson(res, origin, e.status, { success: false, error: e.message });
+        return true;
+      }
+      logSafeError("[reports/currency update]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to save currency setting." });
     }
     return true;
   }
@@ -379,6 +461,7 @@ export async function routeReports(req, res, url, origin) {
         requestedProjectIds,
         from,
         to,
+        currency: await resolveReportCurrency(url, { fromDay: from, toDay: to }),
       });
       sendJson(res, origin, 200, { success: true, data: payload });
     } catch (e) {
@@ -556,27 +639,50 @@ export async function routeReports(req, res, url, origin) {
       );
       const rows = await getMemberDailyAmountRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
+      const currency = await resolveReportCurrency(url, { fromDay: from, toDay: to });
 
+      let oldestRate = null;
       const byDay = new Map();
       for (const row of rows) {
         if (!byDay.has(row.day)) byDay.set(row.day, []);
         const hours = row.activeSeconds / 3600;
+        // Converted at the rate for the day the money was earned, so a closed
+        // period keeps the value it had when it closed.
+        const spent = convertAmount(currency.rateBook, {
+          amount: Math.round(hours * row.rate * 100) / 100,
+          currency: row.currency,
+          day: row.day,
+          to: currency.displayCurrency,
+        });
+        // The pay rate itself is a rate in the member's own currency, so it is
+        // converted too - showing "EGP 120/hr" beside a dollar total would
+        // read as a contradiction.
+        const payRate = convertAmount(currency.rateBook, {
+          amount: row.rate,
+          currency: row.currency,
+          day: row.day,
+          to: currency.displayCurrency,
+        });
+        if (spent.rateAsOf && (!oldestRate || spent.rateAsOf < oldestRate)) oldestRate = spent.rateAsOf;
         byDay.get(row.day).push({
           memberId: row.memberId,
           name: nameMap.get(row.memberId)?.name ?? "Unknown",
           avatarUrl: nameMap.get(row.memberId)?.avatarUrl ?? null,
           activeSeconds: row.activeSeconds,
-          rate: row.rate,
+          rate: payRate.amount,
           rateType: row.rateType,
-          currency: row.currency,
-          amount: Math.round(hours * row.rate * 100) / 100,
+          currency: spent.currency,
+          amount: spent.amount,
+          originalAmount: spent.originalAmount,
+          originalRate: row.rate,
+          originalCurrency: spent.originalCurrency,
         });
       }
       const days = [...byDay.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([date, members]) => ({ date, members }));
 
-      sendJson(res, origin, 200, { success: true, data: { days } });
+      sendJson(res, origin, 200, { success: true, data: { days, currency: currencyMeta(currency, oldestRate) } });
     } catch (e) {
       logSafeError("[reports/amounts-owed]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -808,9 +914,21 @@ export async function routeReports(req, res, url, origin) {
       const truncated = fetched.length > EXPENSE_LIMIT;
       const expenses = fetched.slice(0, EXPENSE_LIMIT);
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(expenses.map((e) => String(e.member_id)))]);
-      const rows = expenses.map((e) => ({
+      const currency = await resolveReportCurrency(url, { fromDay: from, toDay: to });
+      let oldestRate = null;
+      const rows = expenses.map((e) => {
+        const day = e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10);
+        // An expense converts at the rate for the day it was incurred.
+        const money = convertAmount(currency.rateBook, {
+          amount: Number(e.amount) || 0,
+          currency: e.currency || "USD",
+          day,
+          to: currency.displayCurrency,
+        });
+        if (money.rateAsOf && (!oldestRate || money.rateAsOf < oldestRate)) oldestRate = money.rateAsOf;
+        return {
         id: String(e.id),
-        day: e.date instanceof Date ? e.date.toISOString().slice(0, 10) : String(e.date).slice(0, 10),
+        day,
         memberId: String(e.member_id),
         memberName: nameMap.get(String(e.member_id))?.name ?? "Unknown",
         memberAvatarUrl: nameMap.get(String(e.member_id))?.avatarUrl ?? null,
@@ -818,12 +936,18 @@ export async function routeReports(req, res, url, origin) {
         clientName: e.client_name || "",
         category: e.category || "other",
         description: e.description || "",
-        amount: Number(e.amount) || 0,
-        currency: e.currency || "USD",
+        amount: money.amount,
+        currency: money.currency,
+        originalAmount: money.originalAmount,
+        originalCurrency: money.originalCurrency,
         billable: e.billable === true,
         status: e.status || "pending",
-      }));
-      sendJson(res, origin, 200, { success: true, data: { rows, truncated } });
+        };
+      });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { rows, truncated, currency: currencyMeta(currency, oldestRate) },
+      });
     } catch (e) {
       logSafeError("[reports/expenses]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -919,14 +1043,36 @@ export async function routeReports(req, res, url, origin) {
           getDb(),
           [...new Set(rows.map((r) => r.memberId).filter(Boolean))],
         );
+        const currency = await resolveReportCurrency(url, { fromDay: from || to, toDay: to });
+        let oldestRate = null;
+        // An invoice is converted at the rate on its issue date - the day the
+        // amount was agreed - so re-running an aging report next month does not
+        // change what a customer was billed.
+        const money = (amount, invoice) => {
+          const result = convertAmount(currency.rateBook, {
+            amount,
+            currency: invoice.currency,
+            day: invoice.issueDate,
+            to: currency.displayCurrency,
+          });
+          if (result.rateAsOf && (!oldestRate || result.rateAsOf < oldestRate)) oldestRate = result.rateAsOf;
+          return result;
+        };
         sendJson(res, origin, 200, {
           success: true,
           data: {
             rows: rows.map((r) => ({
               ...r,
+              total: money(r.total, r).amount,
+              paidAmount: money(r.paidAmount, r).amount,
+              dueAmount: money(r.dueAmount, r).amount,
+              currency: money(r.total, r).currency,
+              originalTotal: r.total,
+              originalCurrency: r.currency,
               memberName: r.memberId ? (nameMap.get(r.memberId)?.name ?? "Unknown") : "",
             })),
             asOf: to,
+            currency: currencyMeta(currency, oldestRate),
           },
         });
       } catch (e) {
@@ -960,11 +1106,27 @@ export async function routeReports(req, res, url, origin) {
         getDb(),
         [...new Set(payments.map((p) => p.memberId).filter(Boolean))],
       );
-      const rows = payments.map((p) => ({
-        ...p,
-        memberName: p.memberId ? (nameMap.get(p.memberId)?.name ?? "Unknown") : "",
-      }));
-      sendJson(res, origin, 200, { success: true, data: { rows } });
+      const currency = await resolveReportCurrency(url, { fromDay: from, toDay: to });
+      let oldestRate = null;
+      const rows = payments.map((p) => {
+        // A payment converts at the rate on the day it was actually paid.
+        const money = convertAmount(currency.rateBook, {
+          amount: p.amount,
+          currency: p.currency,
+          day: p.paidOn,
+          to: currency.displayCurrency,
+        });
+        if (money.rateAsOf && (!oldestRate || money.rateAsOf < oldestRate)) oldestRate = money.rateAsOf;
+        return {
+          ...p,
+          amount: money.amount,
+          currency: money.currency,
+          originalAmount: money.originalAmount,
+          originalCurrency: money.originalCurrency,
+          memberName: p.memberId ? (nameMap.get(p.memberId)?.name ?? "Unknown") : "",
+        };
+      });
+      sendJson(res, origin, 200, { success: true, data: { rows, currency: currencyMeta(currency, oldestRate) } });
     } catch (e) {
       logSafeError("[reports/payments]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });

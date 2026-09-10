@@ -352,24 +352,56 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit, options = {}) 
  * calling one from the session itself - since a project's app logs can
  * come from either kind of session over its lifetime.
  */
+/**
+ * The week's top apps for a project, plus the total they were drawn from.
+ *
+ * Two things were wrong here and they compounded each other.
+ *
+ * 1. **The day was UTC.** The caller works out the week in the *member's*
+ *    timezone and then this cast `started_at::date`, which is the database
+ *    session's - effectively UTC. For a member at UTC+3 that shifted the
+ *    window by three hours at each end, so the panel's "this week" and the
+ *    week card above it were measuring different weeks.
+ *
+ * 2. **The total was never returned.** Only the top five rows came back, so
+ *    the panel had no way to say what it was showing five *of* - the app
+ *    times visibly failed to add up to the tracked hours beside them, with
+ *    nothing on screen explaining the gap.
+ */
 export async function sumAppLogSecondsByAppNameForProjectPg(memberId, projectId, { fromDay, toDay }, limit = 5) {
   const id = parseProgressUuid(memberId);
-  if (!id || !projectId) return [];
+  if (!id || !projectId) return { apps: [], totalSeconds: 0, appCount: 0 };
   const result = await pgQuery(
-    `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds
-     FROM activity_app_logs l
-     JOIN apps a ON a.id = l.app_id
-     LEFT JOIN tasks t ON t.id = l.task_id
-     LEFT JOIN activity_sessions s ON s.id::text = l.session_id
-     WHERE l.member_id = $1
-       AND l.started_at::date >= $2::date AND l.started_at::date <= $3::date
-       AND (t.project_id = $4 OR s.project_id = $4)
-     GROUP BY a.name
+    `WITH scoped AS (
+       SELECT a.name AS app_name, l.duration_seconds
+       FROM activity_app_logs l
+       JOIN apps a ON a.id = l.app_id
+       LEFT JOIN members m_tz ON m_tz.id = l.member_id
+       LEFT JOIN tasks t ON t.id = l.task_id
+       LEFT JOIN activity_sessions s ON s.id::text = l.session_id
+       WHERE l.member_id = $1
+         AND ${localDay("l.started_at")} >= $2::date
+         AND ${localDay("l.started_at")} <= $3::date
+         AND (t.project_id = $4 OR s.project_id = $4)
+     ),
+     by_app AS (
+       SELECT app_name, SUM(duration_seconds)::bigint AS total_seconds
+       FROM scoped GROUP BY app_name
+     )
+     SELECT app_name, total_seconds,
+            (SELECT COALESCE(SUM(total_seconds), 0) FROM by_app) AS all_apps_seconds,
+            (SELECT COUNT(*) FROM by_app) AS app_count
+     FROM by_app
      ORDER BY total_seconds DESC
      LIMIT $5`,
     [id, fromDay, toDay, projectId, limit],
   );
-  return result?.rows ?? [];
+  const rows = result?.rows ?? [];
+  return {
+    apps: rows,
+    totalSeconds: Math.max(0, Number(rows[0]?.all_apps_seconds ?? 0)),
+    appCount: Math.max(0, Number(rows[0]?.app_count ?? 0)),
+  };
 }
 
 
