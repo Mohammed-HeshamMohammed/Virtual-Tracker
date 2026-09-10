@@ -1,4 +1,5 @@
 pub mod activity;
+pub mod browsers;
 pub mod app_icon;
 pub mod classification_cache;
 pub mod events;

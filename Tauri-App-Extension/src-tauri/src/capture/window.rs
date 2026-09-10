@@ -20,7 +20,7 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-// This whole cluster (through BROWSER_EXES below) backs Windows's own
+// This cluster backs Windows's own
 // get_foreground_window_win/resolve_display_name path specifically - macOS
 // gets its display name straight from xcap's app_name instead (see
 // get_foreground_window_macos's own comment), and Linux has no window-
@@ -52,20 +52,9 @@ fn overrides() -> &'static HashMap<&'static str, &'static str> {
     })
 }
 
-#[allow(dead_code)]
-const BROWSER_EXES: &[&str] = &[
-    "chrome.exe",
-    "msedge.exe",
-    "firefox.exe",
-    "brave.exe",
-    "opera.exe",
-    "operagx.exe",
-    "vivaldi.exe",
-    "waterfox.exe",
-    "chromium.exe",
-    "iexplore.exe",
-    "zen.exe",
-];
+// Browser detection and naming now come from capture/browsers.rs - one table
+// instead of a list here, another in the PowerShell script, and a third in
+// uia_url.rs, each of which had drifted to a different set.
 
 #[derive(Debug, Clone)]
 pub struct ForegroundWindow {
@@ -232,7 +221,7 @@ fn get_foreground_window_win() -> ForegroundWindow {
         }
 
         let exe_lower = process_name.to_lowercase();
-        let is_browser = BROWSER_EXES.iter().any(|b| *b == exe_lower);
+        let is_browser = crate::capture::browsers::is_browser(&exe_lower);
         let browser_hint = browser_hint_from_exe(&exe_lower);
         let app_name = resolve_display_name(&process_name, &title);
 
@@ -289,29 +278,13 @@ fn resolve_display_name(process_name: &str, title: &str) -> String {
 // #[allow] is only for the plain non-test lib build, where its real callers
 // (get_foreground_window_win/_macos, both #[cfg]-gated) leave it unreachable
 // on whichever platform isn't Windows or macOS.
+/// Resolves to the browser's UI Automation pane name ("Google Chrome",
+/// "Mozilla Firefox", ...), which is what get-browser-url.ps1 wants in order
+/// to try the right pane first. Takes a Windows exe name or a macOS display
+/// name - `browsers::lookup` handles both.
 #[allow(dead_code)]
 fn browser_hint_from_exe(exe: &str) -> String {
-    // "safari" only ever matches a macOS app_name ("Safari"); harmless no-op
-    // on Windows, where no process name contains that substring. Kept in this
-    // one shared function rather than a second macOS-only copy - CQ-4's
-    // "two sources of truth" trap, avoided before it exists.
-    if exe.contains("safari") {
-        "safari".into()
-    } else if exe.contains("chrome") {
-        "chrome".into()
-    } else if exe.contains("msedge") || exe.contains("edge") {
-        "edge".into()
-    } else if exe.contains("firefox") {
-        "firefox".into()
-    } else if exe.contains("brave") {
-        "brave".into()
-    } else if exe.contains("opera") {
-        "opera".into()
-    } else if exe.contains("vivaldi") {
-        "vivaldi".into()
-    } else {
-        String::new()
-    }
+    crate::capture::browsers::browser_hint(exe)
 }
 
 // Reachable via read_browser_url's windows/macos branches and app_icon.rs.
@@ -466,33 +439,38 @@ pub fn read_browser_url(
 mod tests {
     use super::*;
 
-    // browser_hint_from_exe is shared between the Windows path (.exe names)
-    // and MAC-2's macOS path (app_name display strings, e.g. "Google
-    // Chrome") - both compile and run on this platform since the function
-    // itself has no #[cfg], only its callers do. Guards MAC-2's "safari"
-    // addition and that it doesn't disturb the existing Windows mappings.
+    // browser_hint_from_exe now delegates to capture/browsers.rs and returns
+    // the browser's UI Automation pane name rather than a short vendor tag -
+    // that's what get-browser-url.ps1 actually wants. These guard the
+    // delegation itself; the table's own coverage is tested in browsers.rs.
 
     #[test]
     fn recognizes_macos_app_display_names() {
-        assert_eq!(browser_hint_from_exe("safari"), "safari");
-        assert_eq!(browser_hint_from_exe("google chrome"), "chrome");
-        assert_eq!(browser_hint_from_exe("microsoft edge"), "edge");
-        assert_eq!(browser_hint_from_exe("brave browser"), "brave");
+        assert_eq!(browser_hint_from_exe("safari"), "Safari");
+        assert_eq!(browser_hint_from_exe("google chrome"), "Google Chrome");
+        assert_eq!(browser_hint_from_exe("microsoft edge"), "Microsoft Edge");
+        assert_eq!(browser_hint_from_exe("brave browser"), "Brave");
+        assert_eq!(browser_hint_from_exe("firefox"), "Mozilla Firefox");
     }
 
     #[test]
-    fn still_recognizes_windows_exe_names_unchanged() {
-        assert_eq!(browser_hint_from_exe("chrome.exe"), "chrome");
-        assert_eq!(browser_hint_from_exe("msedge.exe"), "edge");
-        assert_eq!(browser_hint_from_exe("firefox.exe"), "firefox");
-        assert_eq!(browser_hint_from_exe("vivaldi.exe"), "vivaldi");
+    fn still_recognizes_windows_exe_names() {
+        assert_eq!(browser_hint_from_exe("chrome.exe"), "Google Chrome");
+        assert_eq!(browser_hint_from_exe("msedge.exe"), "Microsoft Edge");
+        assert_eq!(browser_hint_from_exe("firefox.exe"), "Mozilla Firefox");
+        assert_eq!(browser_hint_from_exe("vivaldi.exe"), "Vivaldi");
+        // Browsers the old hardcoded list never covered.
+        assert_eq!(browser_hint_from_exe("librewolf.exe"), "LibreWolf");
+        assert_eq!(browser_hint_from_exe("arc.exe"), "Arc");
+        // The hint is the UIA *pane* name, which isn't always the display
+        // name - Whale's window pane is just "Whale".
+        assert_eq!(browser_hint_from_exe("whale.exe"), "Whale");
     }
 
     #[test]
-    fn a_non_browser_process_never_matches_safari_by_accident() {
-        // "safari" is a substring-only check - confirm it doesn't fire on
-        // unrelated names that happen to share letters with real browsers.
-        assert_eq!(browser_hint_from_exe("notepad.exe"), "");
-        assert_eq!(browser_hint_from_exe("slack.exe"), "");
+    fn a_non_browser_process_never_matches_by_accident() {
+        for exe in ["notepad.exe", "slack.exe", "search.exe", "monarch.exe"] {
+            assert_eq!(browser_hint_from_exe(exe), "", "{exe} is not a browser");
+        }
     }
 }

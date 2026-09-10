@@ -117,13 +117,18 @@ function Test-ReadByAutomationId($root, [string[]]$autoIds) {
 function Test-ReadByAddressBarName($root) {
     $scope = [System.Windows.Automation.TreeScope]::Descendants
     $addressBarNames = @(
+        # SOURCE OF TRUTH: browsers.rs omnibox_names() (all engines).
         "Address and search bar",
+        "Address bar",
         "Search or enter web address",
         "Search or type a URL",
+        "Search or enter an address",
+        "Location",
         "Search with Google or enter address",
+        "Search with DuckDuckGo or enter address",
+        "Search with Bing or enter address",
         "Enter search or web address",
-        "Address bar",
-        "Location"
+        "Search or enter address"
     )
     $nameConds = foreach ($barName in $addressBarNames) {
         New-Object System.Windows.Automation.PropertyCondition(
@@ -234,15 +239,24 @@ $editType = [System.Windows.Automation.ControlType]::Edit
 $comboType = [System.Windows.Automation.ControlType]::ComboBox
 
 $browserPaneNames = @(
+    # SOURCE OF TRUTH: src-tauri/src/capture/browsers.rs (BROWSERS[].pane_name).
+    # A Rust test (script_pane_names_match_the_registry) fails if these drift.
     "Google Chrome",
     "Microsoft Edge",
     "Brave",
-    "Opera",
-    "Opera GX",
-    "Opera Internet Browser",
     "Vivaldi",
     "Chromium",
-    "Mozilla Firefox"
+    "Opera",
+    "Opera GX",
+    "Arc",
+    "Yandex",
+    "Whale",
+    "Mozilla Firefox",
+    "Waterfox",
+    "LibreWolf",
+    "Zen Browser",
+    "Internet Explorer",
+    "Safari"
 )
 if (-not [string]::IsNullOrWhiteSpace($BrowserHint)) {
     $browserPaneNames = @($BrowserHint) + $browserPaneNames | Select-Object -Unique
@@ -250,16 +264,18 @@ if (-not [string]::IsNullOrWhiteSpace($BrowserHint)) {
 
 # 1) Known automation ids (Chromium / Edge / Firefox / Opera variants)
 $knownIds = @(
-    "addressEditBox",
-    "urlbar-input",
+    # SOURCE OF TRUTH: browsers.rs omnibox_automation_ids() (all engines).
     "Omnibox",
     "OmniboxViewViews",
+    "addressEditBox",
+    "addressbarEdit",
     "view_1012",
     "view_1011",
     "searchbox",
     "search_box",
-    "addressbarEdit",
-    "edit_2"
+    "edit_2",
+    "urlbar-input",
+    "urlbar"
 )
 if (Test-ReadByAutomationId $root $knownIds) { exit 0 }
 

@@ -131,33 +131,6 @@ mod imp {
         UIA_NamePropertyId, UIA_ValuePatternId,
     };
 
-    /// Automation ids the address bar is known by across Chromium forks and
-    /// Firefox. Matched as one OR condition - see the module docs.
-    const OMNIBOX_IDS: &[&str] = &[
-        "addressEditBox",
-        "urlbar-input",
-        "Omnibox",
-        "OmniboxViewViews",
-        "view_1012",
-        "view_1011",
-        "searchbox",
-        "search_box",
-        "addressbarEdit",
-        "edit_2",
-    ];
-
-    /// Accessible names for the same control, for builds that expose no usable
-    /// automation id.
-    const OMNIBOX_NAMES: &[&str] = &[
-        "Address and search bar",
-        "Search or enter web address",
-        "Search or type a URL",
-        "Search with Google or enter address",
-        "Enter search or web address",
-        "Address bar",
-        "Location",
-    ];
-
     /// How long the worker gives one UIA search before abandoning it. The
     /// caller has its own (shorter) deadline; this only bounds how long the
     /// worker itself stays stuck on a pathological window.
@@ -337,18 +310,21 @@ mod imp {
                 })
                 .collect();
 
+        // Union across every engine in capture/browsers.rs: one condition
+        // that finds Chromium's omnibox and Firefox's urlbar alike, so a
+        // single prebuilt search serves whatever browser the member opens.
         let mut identity_conditions: Vec<Option<IUIAutomationCondition>> = Vec::new();
-        for id in OMNIBOX_IDS {
+        for id in crate::capture::browsers::all_omnibox_automation_ids() {
             identity_conditions.push(
                 automation
-                    .CreatePropertyCondition(UIA_AutomationIdPropertyId, &VARIANT::from(*id))
+                    .CreatePropertyCondition(UIA_AutomationIdPropertyId, &VARIANT::from(id))
                     .ok(),
             );
         }
-        for name in OMNIBOX_NAMES {
+        for name in crate::capture::browsers::all_omnibox_names() {
             identity_conditions.push(
                 automation
-                    .CreatePropertyCondition(UIA_NamePropertyId, &VARIANT::from(*name))
+                    .CreatePropertyCondition(UIA_NamePropertyId, &VARIANT::from(name))
                     .ok(),
             );
         }
