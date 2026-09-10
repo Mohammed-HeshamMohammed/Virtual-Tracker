@@ -32,6 +32,35 @@ const URL_MATCH_TOLERANCE_MS = 15_000;
  *  if sessions ever carry deeply overlapping URL rows. */
 const MAX_INTERVAL_PROBE = 8;
 
+/**
+ * Turns the category rows into the `(matchType, pattern) => category` function
+ * every feed resolves through.
+ *
+ * `roleName` applies that role's override where one exists, which is what the
+ * dashboard shows and what focused time has always done. Callers with no role
+ * in hand (the shared Activity feed) pass nothing and get the base category.
+ *
+ * This lives beside the resolver because it is half of the same contract: a
+ * lookup built with different rules than the resolver expects reintroduces
+ * exactly the divergence this module exists to prevent. There were three
+ * private copies of this before.
+ */
+export function buildCategoryLookup(categories, roleName = "") {
+  const roleKey = String(roleName || "").trim().toLowerCase();
+  const byKey = new Map();
+  for (const category of categories ?? []) {
+    const pattern = typeof category.pattern === "string" ? category.pattern.trim().toLowerCase() : "";
+    if (!pattern) continue;
+    const override = roleKey ? category.roleOverride?.[roleKey] : undefined;
+    byKey.set(`${category.matchType}:${pattern}`, override ?? category.category ?? "unclassified");
+  }
+  return (matchType, pattern) => {
+    const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
+    if (!key) return "unclassified";
+    return byKey.get(`${matchType}:${key}`) ?? "unclassified";
+  };
+}
+
 export function parseDomain(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, "");

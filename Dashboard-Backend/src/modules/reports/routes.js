@@ -13,6 +13,9 @@ import {
 import { buildTimeAndActivityReportPayload } from "./build-time-and-activity-rows.js";
 import { getMemberTimezone, getMemberTimezones } from "./member-timezones.js";
 import { buildWorkSessionRows } from "./build-work-session-rows.js";
+import { summarizeAppsAndUrls } from "./build-apps-urls-rows.js";
+import { buildLimitUsageRows, summarizeLimitUsage } from "./build-limit-usage-rows.js";
+import { getAllCategories } from "../classification/activity-categories.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
@@ -29,8 +32,8 @@ import {
   getAuditLogRowsPg,
   getLimitsUsageRowsPg,
   getTimesheetApprovalRowsPg,
-  getAppUsageRowsPg,
-  getUrlUsageRowsPg,
+  getAppLogSlicesPg,
+  getUrlLogSlicesPg,
   getManualTimeEditRowsPg,
   getWorkBreakRowsPg,
   getShiftAttendanceRowsPg,
@@ -90,6 +93,10 @@ const SAVEABLE_REPORT_PAGE_IDS = new Set([
   "reports-daily",
   "reports-budgets",
 ]);
+/** Foreground slices are ~15s each, so a month for one member is roughly 40k.
+ *  Past this the range is wider than a usage summary can answer and the
+ *  response says it was cut rather than quietly under-reporting. */
+const APPS_URLS_SLICE_LIMIT = 50_000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const VALID_FREQUENCIES = new Set(["Daily", "Weekly", "Bi-weekly", "Monthly"]);
 
@@ -595,7 +602,7 @@ export async function routeReports(req, res, url, origin) {
         viewer,
         parseUuidListParam(url.searchParams.get("projectIds")),
       );
-      const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
+      const { rows: sessions, truncated } = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
       const sessionMemberIds = [...new Set(sessions.map((s) => s.memberId))];
       const [nameMap, tzMap] = await Promise.all([
         buildMemberMetaMap(getDb(), sessionMemberIds),
@@ -603,7 +610,7 @@ export async function routeReports(req, res, url, origin) {
       ]);
 
       const rows = buildWorkSessionRows(sessions, nameMap, tzMap, from, to);
-      sendJson(res, origin, 200, { success: true, data: { sessions: rows } });
+      sendJson(res, origin, 200, { success: true, data: { sessions: rows, truncated } });
     } catch (e) {
       logSafeError("[reports/work-sessions]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -684,8 +691,11 @@ export async function routeReports(req, res, url, origin) {
     }
 
     try {
-      const rows = await getAuditLogRowsPg({ fromDay: from, toDay: to });
-      sendJson(res, origin, 200, { success: true, data: { rows } });
+      // Scoped like every other report: a manager's audit view covers the
+      // members they can see, not the whole organisation.
+      const memberIds = await resolveReportVisibleIds(getDb(), viewer);
+      const { rows, truncated } = await getAuditLogRowsPg({ fromDay: from, toDay: to, memberIds });
+      sendJson(res, origin, 200, { success: true, data: { rows, truncated } });
     } catch (e) {
       logSafeError("[reports/audit-log]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -711,7 +721,7 @@ export async function routeReports(req, res, url, origin) {
         viewer,
         parseUuidListParam(url.searchParams.get("projectIds")),
       );
-      const entries = await getManualTimeEditRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
+      const { rows: entries, truncated } = await getManualTimeEditRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
 
       const ids = new Set();
       for (const e of entries) {
@@ -729,7 +739,7 @@ export async function routeReports(req, res, url, origin) {
         editedByName: nameOf(e.updatedBy) || nameOf(e.createdBy),
         hours: Math.round((e.durationSeconds / 3600) * 100) / 100,
       }));
-      sendJson(res, origin, 200, { success: true, data: { rows } });
+      sendJson(res, origin, 200, { success: true, data: { rows, truncated } });
     } catch (e) {
       logSafeError("[reports/manual-time-edits]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -752,7 +762,7 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
-      const breaks = await getWorkBreakRowsPg({ memberIds, fromDay: from, toDay: to, minGapMinutes });
+      const { rows: breaks, truncated } = await getWorkBreakRowsPg({ memberIds, fromDay: from, toDay: to, minGapMinutes });
       const breakMemberIds = [...new Set(breaks.map((b) => String(b.memberId)))];
       const [nameMap, tzMap] = await Promise.all([
         buildMemberMetaMap(getDb(), breakMemberIds),
@@ -767,7 +777,7 @@ export async function routeReports(req, res, url, origin) {
         memberAvatarUrl: nameMap.get(String(b.memberId))?.avatarUrl ?? null,
         memberTimezone: tzMap.get(String(b.memberId)) ?? "UTC",
       }));
-      sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
+      sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes, truncated } });
     } catch (e) {
       logSafeError("[reports/work-breaks]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -793,7 +803,10 @@ export async function routeReports(req, res, url, origin) {
         viewer,
         parseUuidListParam(url.searchParams.get("projectIds")),
       );
-      const expenses = await listExpensesPg({ memberIds, projectIds, fromDay: from, toDay: to, limit: 2000 });
+      const EXPENSE_LIMIT = 2000;
+      const fetched = await listExpensesPg({ memberIds, projectIds, fromDay: from, toDay: to, limit: EXPENSE_LIMIT + 1 });
+      const truncated = fetched.length > EXPENSE_LIMIT;
+      const expenses = fetched.slice(0, EXPENSE_LIMIT);
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(expenses.map((e) => String(e.member_id)))]);
       const rows = expenses.map((e) => ({
         id: String(e.id),
@@ -810,7 +823,7 @@ export async function routeReports(req, res, url, origin) {
         billable: e.billable === true,
         status: e.status || "pending",
       }));
-      sendJson(res, origin, 200, { success: true, data: { rows } });
+      sendJson(res, origin, 200, { success: true, data: { rows, truncated } });
     } catch (e) {
       logSafeError("[reports/expenses]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -972,14 +985,14 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
-      const attendance = await getShiftAttendanceRowsPg({ memberIds, fromDay: from, toDay: to });
+      const { rows: attendance, truncated } = await getShiftAttendanceRowsPg({ memberIds, fromDay: from, toDay: to });
       const nameMap = await buildMemberMetaMap(getDb(), [...new Set(attendance.map((a) => a.memberId))]);
       const rows = attendance.map((a) => ({
         ...a,
         memberName: nameMap.get(a.memberId)?.name ?? "Unknown",
         memberAvatarUrl: nameMap.get(a.memberId)?.avatarUrl ?? null,
       }));
-      sendJson(res, origin, 200, { success: true, data: { rows } });
+      sendJson(res, origin, 200, { success: true, data: { rows, truncated } });
     } catch (e) {
       logSafeError("[reports/shift-attendance]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -1147,22 +1160,30 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
-      const rows = await getLimitsUsageRowsPg({ memberIds, fromDay: from, toDay: to });
-      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(rows.map((r) => r.memberId))]);
+      const { limitRows, usageRows } = await getLimitsUsageRowsPg({ memberIds, fromDay: from, toDay: to });
+      const kind = pn === "/api/reports/weekly-limits" ? "weekly" : "daily";
 
-      const isWeekly = pn === "/api/reports/weekly-limits";
-      const shaped = rows.map((r) => {
-        const limitHours = isWeekly ? r.weeklyLimitHours : r.dailyLimitHours;
-        const periodHours = r.periodSeconds / 3600;
-        return {
-          memberId: r.memberId,
-          name: nameMap.get(r.memberId)?.name ?? "Unknown",
-          limitHours,
-          trackedHours: Math.round(periodHours * 100) / 100,
-          pctUsed: limitHours > 0 ? Math.min(100, Math.round((periodHours / limitHours) * 100)) : 0,
-        };
+      // One row per member per period, because that is the span a limit is a
+      // statement about - not per member per arbitrary date range.
+      const periods = buildLimitUsageRows({ usageRows, limitRows, kind, fromDay: from, toDay: to });
+      const summaries = summarizeLimitUsage(periods);
+
+      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(summaries.map((s) => s.memberId))]);
+      const nameOf = (memberId) => nameMap.get(memberId)?.name ?? "Unknown";
+
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          kind,
+          rows: summaries.map((summary) => ({
+            ...summary,
+            name: nameOf(summary.memberId),
+            periodRows: periods
+              .filter((period) => period.memberId === summary.memberId)
+              .map(({ memberId: _ignored, ...period }) => period),
+          })),
+        },
       });
-      sendJson(res, origin, 200, { success: true, data: { rows: shaped } });
     } catch (e) {
       logSafeError("[reports/limits]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -1183,7 +1204,7 @@ export async function routeReports(req, res, url, origin) {
 
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
-      const rows = await getTimesheetApprovalRowsPg({ memberIds, fromDay: from, toDay: to });
+      const { rows, truncated } = await getTimesheetApprovalRowsPg({ memberIds, fromDay: from, toDay: to });
       const ids = new Set(rows.map((r) => r.memberId));
       for (const r of rows) if (r.approvedBy) ids.add(r.approvedBy);
       const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
@@ -1193,7 +1214,7 @@ export async function routeReports(req, res, url, origin) {
         memberName: nameMap.get(r.memberId)?.name ?? "Unknown",
         approvedByName: r.approvedBy ? (nameMap.get(r.approvedBy)?.name ?? "Unknown") : null,
       }));
-      sendJson(res, origin, 200, { success: true, data: { rows: shaped } });
+      sendJson(res, origin, 200, { success: true, data: { rows: shaped, truncated } });
     } catch (e) {
       logSafeError("[reports/timesheet-approvals]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });
@@ -1219,16 +1240,36 @@ export async function routeReports(req, res, url, origin) {
         viewer,
         parseUuidListParam(url.searchParams.get("projectIds")),
       );
-      const [apps, urls] = await Promise.all([
-        getAppUsageRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
-        getUrlUsageRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
+      const [appSlices, urlSlices, categories] = await Promise.all([
+        getAppLogSlicesPg({ memberIds, fromDay: from, toDay: to, projectIds, limit: APPS_URLS_SLICE_LIMIT }),
+        getUrlLogSlicesPg({ memberIds, fromDay: from, toDay: to, projectIds, limit: APPS_URLS_SLICE_LIMIT }),
+        getAllCategories(),
       ]);
+
+      // The viewer's role, not each member's: a report is one person's view of
+      // the data, and role overrides are what that person's dashboard shows.
+      const { apps, urls } = summarizeAppsAndUrls({
+        appSlices,
+        urlSlices,
+        categories,
+        roleName: viewer.roleName,
+      });
+
       const ids = new Set([...apps.map((a) => a.memberId), ...urls.map((u) => u.memberId)]);
       const nameMap = await buildMemberMetaMap(getDb(), [...ids]);
+      const named = (row) => ({ ...row, memberName: nameMap.get(row.memberId)?.name ?? "Unknown" });
 
-      const shapedApps = apps.map((a) => ({ ...a, memberName: nameMap.get(a.memberId)?.name ?? "Unknown" }));
-      const shapedUrls = urls.map((u) => ({ ...u, memberName: nameMap.get(u.memberId)?.name ?? "Unknown" }));
-      sendJson(res, origin, 200, { success: true, data: { apps: shapedApps, urls: shapedUrls } });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          apps: apps.map(named),
+          urls: urls.map(named),
+          // Both queries cap at the same limit; either one hitting it means
+          // the range is wider than the report can answer honestly, and the
+          // UI says so rather than showing a quietly short total.
+          truncated: appSlices.length >= APPS_URLS_SLICE_LIMIT || urlSlices.length >= APPS_URLS_SLICE_LIMIT,
+        },
+      });
     } catch (e) {
       logSafeError("[reports/apps-urls]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load report." });

@@ -1,7 +1,7 @@
 import { getDb } from "../../config/firebase.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getAllCategories } from "./activity-categories.js";
-import { buildUrlIndex, resolveActivityCategory } from "../activity/category-resolver.js";
+import { buildCategoryLookup, buildUrlIndex, resolveActivityCategory } from "../activity/category-resolver.js";
 import {
   fetchAppLogRowsForRangePg,
   fetchUrlLogRowsForRangePg,
@@ -38,30 +38,12 @@ import {
  *  and the caller should narrow it. */
 const MAX_ROWS = 50_000;
 
-function buildLookup(categories, roleName) {
-  const roleKey = String(roleName || "").trim().toLowerCase();
-  const byKey = new Map();
-  for (const category of categories) {
-    const pattern = typeof category.pattern === "string" ? category.pattern.trim().toLowerCase() : "";
-    if (!pattern) continue;
-    // A role override wins over the base category, matching what the previous
-    // implementation did and what the dashboard shows.
-    const override = roleKey ? category.roleOverride?.[roleKey] : undefined;
-    byKey.set(`${category.matchType}:${pattern}`, override ?? category.category ?? "unclassified");
-  }
-  return (matchType, pattern) => {
-    const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
-    if (!key) return "unclassified";
-    return byKey.get(`${matchType}:${key}`) ?? "unclassified";
-  };
-}
-
 /**
  * The whole computation, with no database in it, so the rules above can be
  * tested directly rather than inferred from a mocked query layer.
  */
 export function summarizeFocusedTime({ appRows, urlRows, categories, roleName }) {
-  const lookup = buildLookup(categories, roleName);
+  const lookup = buildCategoryLookup(categories, roleName);
   const urlIndex = buildUrlIndex(urlRows);
 
   const totals = { productive: 0, neutral: 0, distracting: 0, unclassified: 0 };

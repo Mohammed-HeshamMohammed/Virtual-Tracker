@@ -87,7 +87,8 @@ export async function listExpensesPg(filters = {}) {
     status = null,
     limit = 1000,
   } = filters;
-  const safeLimit = Math.min(Math.max(limit, 1), 2000);
+  // Callers over-fetch by one to detect truncation, so the ceiling allows it.
+  const safeLimit = Math.min(Math.max(limit, 1), 2001);
 
   const rows = await query(
     `SELECT e.*,

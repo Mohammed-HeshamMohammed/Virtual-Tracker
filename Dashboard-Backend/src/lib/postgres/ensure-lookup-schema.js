@@ -239,16 +239,30 @@ $$ LANGUAGE plpgsql STABLE`,
 )`,
   "CREATE INDEX IF NOT EXISTS idx_audit_table_record ON audit_logs (table_name, record_id)",
   "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs (created_at DESC)",
+  "CREATE INDEX IF NOT EXISTS idx_audit_performed_by ON audit_logs (performed_by)",
   `CREATE OR REPLACE FUNCTION fn_audit_log_trigger()
 RETURNS TRIGGER AS $$
+DECLARE
+  actor UUID;
 BEGIN
-  INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data)
+  -- The application publishes the authenticated member on the connection
+  -- before a write (lib/postgres/audit-actor.js). NULL is a legitimate answer
+  -- for schema bootstrap, migrations and the background schedulers, and the
+  -- report renders those as "System".
+  BEGIN
+    actor := NULLIF(current_setting('app.actor_id', true), '')::uuid;
+  EXCEPTION WHEN others THEN
+    actor := NULL;
+  END;
+
+  INSERT INTO audit_logs (table_name, record_id, action, old_data, new_data, performed_by)
   VALUES (
     TG_TABLE_NAME,
     COALESCE(NEW.id, OLD.id),
     TG_OP,
     CASE WHEN TG_OP IN ('UPDATE', 'DELETE') THEN to_jsonb(OLD) ELSE NULL END,
-    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END
+    CASE WHEN TG_OP IN ('INSERT', 'UPDATE') THEN to_jsonb(NEW) ELSE NULL END,
+    actor
   );
   RETURN NEW;
 END;
