@@ -16,7 +16,7 @@ use crate::capture::window::{read_browser_url, ForegroundWindow};
 use crate::constants::{
     APP_LOG_INTERVAL_SEC, MAX_APP_NAME_LEN, MAX_PAGE_TITLE_LEN, MAX_URL_LEN,
     SCREENSHOT_MAX_DELAY_SEC, SCREENSHOT_MIN_DELAY_SEC, URL_CACHE_MAX_AGE_SEC,
-    URL_CAPTURE_TICK_BUDGET_SEC,
+    URL_CAPTURE_BACKOFF_SEC, URL_CAPTURE_MAX_FAILURES, URL_CAPTURE_TICK_BUDGET_SEC,
 };
 use crate::types::ActivityEvent;
 use crate::util::truncate;
@@ -54,6 +54,11 @@ pub struct EventBuilder {
     /// `get-app-icon.ps1` (Windows). Empty/missing elsewhere - icon extraction
     /// is then a no-op and the UI keeps its letter tiles.
     app_icon_script_path: PathBuf,
+    /// Per-browser-window URL-capture health, keyed by HWND (process name off
+    /// Windows). `(consecutive failures, skip probing until)`. Guards against
+    /// hammering a page whose accessibility tree makes the read spike or
+    /// crash the browser - see URL_CAPTURE_MAX_FAILURES.
+    url_backoff: Mutex<HashMap<String, (u32, Option<Instant>)>>,
     /// App-icon send state, keyed by lowercased resolved app name. Shared with
     /// the detached extraction threads. See `take_app_icon`.
     app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
@@ -98,6 +103,7 @@ impl EventBuilder {
             cache_path,
             app_icon_script_path,
             app_icons: Arc::new(Mutex::new(HashMap::new())),
+            url_backoff: Mutex::new(HashMap::new()),
         }
     }
 
@@ -252,6 +258,15 @@ impl EventBuilder {
         if !window.is_browser {
             return None;
         }
+        let backoff_key = if window.hwnd != 0 {
+            window.hwnd.to_string()
+        } else {
+            window.process_name.clone()
+        };
+        if self.url_capture_backed_off(&backoff_key) {
+            return None;
+        }
+
         let script_path = self.url_script_path.clone();
         let macos_script_path = self.macos_url_script_path.clone();
         let process_name = window.process_name.clone();
@@ -267,7 +282,7 @@ impl EventBuilder {
         if !spawned {
             return None;
         }
-        match rx.recv_timeout(Duration::from_secs(URL_CAPTURE_TICK_BUDGET_SEC)) {
+        let result = match rx.recv_timeout(Duration::from_secs(URL_CAPTURE_TICK_BUDGET_SEC)) {
             Ok(result) => result,
             Err(_) => {
                 // Distinct from read_browser_url's own "failed or timed out"
@@ -283,6 +298,39 @@ impl EventBuilder {
                 );
                 None
             }
+        };
+        self.record_url_capture_outcome(&backoff_key, result.is_some());
+        result
+    }
+
+    /// True when this window is in a URL-capture backoff window - don't even
+    /// spawn the reader.
+    fn url_capture_backed_off(&self, key: &str) -> bool {
+        let map = self.url_backoff.lock();
+        matches!(map.get(key), Some((_, Some(until))) if Instant::now() < *until)
+    }
+
+    /// Fold one attempt's outcome into the per-window failure count. A success
+    /// clears the entry; URL_CAPTURE_MAX_FAILURES in a row arms a backoff.
+    fn record_url_capture_outcome(&self, key: &str, ok: bool) {
+        let mut map = self.url_backoff.lock();
+        if ok {
+            map.remove(key);
+            return;
+        }
+        if map.len() > 128 {
+            // HWNDs are recycled by the OS and this is only a heuristic - a
+            // rare full reset just means a few windows get re-learned.
+            map.clear();
+        }
+        let entry = map.entry(key.to_string()).or_insert((0, None));
+        entry.0 += 1;
+        if entry.0 >= URL_CAPTURE_MAX_FAILURES {
+            entry.1 = Some(Instant::now() + Duration::from_secs(URL_CAPTURE_BACKOFF_SEC));
+            entry.0 = 0;
+            log::warn!(
+                "URL capture: backing off browser window {key} for {URL_CAPTURE_BACKOFF_SEC}s after {URL_CAPTURE_MAX_FAILURES} failed reads in a row (heavy page - dialer / large SPA?)"
+            );
         }
     }
 }
@@ -432,6 +480,25 @@ mod tests {
                 other => panic!("expected App, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn url_capture_backs_off_after_repeated_failures_and_a_success_clears_it() {
+        let builder = builder();
+        assert!(!builder.url_capture_backed_off("hwnd-1"), "clean window is not backed off");
+
+        for _ in 0..(URL_CAPTURE_MAX_FAILURES - 1) {
+            builder.record_url_capture_outcome("hwnd-1", false);
+            assert!(!builder.url_capture_backed_off("hwnd-1"), "not yet at the failure threshold");
+        }
+        builder.record_url_capture_outcome("hwnd-1", false);
+        assert!(builder.url_capture_backed_off("hwnd-1"), "threshold reached - now backed off");
+
+        // A different window is unaffected.
+        assert!(!builder.url_capture_backed_off("hwnd-2"));
+
+        builder.record_url_capture_outcome("hwnd-1", true);
+        assert!(!builder.url_capture_backed_off("hwnd-1"), "a success clears the backoff");
     }
 
     #[test]

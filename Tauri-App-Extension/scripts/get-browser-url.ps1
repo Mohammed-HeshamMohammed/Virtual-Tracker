@@ -203,6 +203,17 @@ if ($hwnd -eq [IntPtr]::Zero) { exit 0 }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
+# Heavy single-page apps (call-centre dialers especially) have huge
+# accessibility trees. A broad FindAll on the browser root forces the whole
+# renderer a11y tree to be realised, which on those pages spikes CPU and can
+# crash the tab. The targeted strategies (1-3) below stop at the first match
+# and are cheap on a normal page; if they've already burned this much wall
+# time the page is heavy, so skip the broad fallback walk entirely and let
+# the caller fall back to the window title (and, after a few misses in a row,
+# stop probing this window - see URL_CAPTURE_MAX_FAILURES in the agent).
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$BROAD_WALK_BUDGET_MS = 2500
+
 $root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
 if ($null -eq $root) { exit 0 }
 
@@ -243,32 +254,30 @@ if (Test-ReadByAutomationId $root $knownIds) { exit 0 }
 # 2) Named address bar controls (Chromium / Edge / Opera / Opera GX)
 if (Test-ReadByAddressBarName $root) { exit 0 }
 
-# 3) Browser toolbar panes — address bar lives here, not in the page document
-if (Test-ReadBrowserPanes $root $browserPaneNames) { exit 0 }
-
-# 4) Class / name hints for omnibox variants
-$trueCond = [System.Windows.Automation.Condition]::TrueCondition
-$all = $root.FindAll($scope, $trueCond)
-foreach ($el in $all) {
-    try {
-        $className = $el.Current.ClassName
-        $name = $el.Current.Name
-        $autoId = $el.Current.AutomationId
-        $hint = "$className $name $autoId".ToLowerInvariant()
-        if ($hint -notmatch 'omnibox|address|urlbar|searchbox|search box|location bar') { continue }
-        if (Test-EditCandidate $el) { exit 0 }
-    } catch {}
+# 3) Browser toolbar panes — address bar lives here, not in the page document.
+# Pane-scoped, but the pane can still contain the renderer, so honour the
+# same heavy-page budget as the broad walks below.
+if ($sw.ElapsedMilliseconds -le ($BROAD_WALK_BUDGET_MS * 2)) {
+    if (Test-ReadBrowserPanes $root $browserPaneNames) { exit 0 }
 }
 
-# 5) Any edit/combo outside the web document (skip in-page search boxes when possible)
+# The targeted strategies missed. Anything past here is a broad descendant
+# walk that realises the full renderer a11y tree - only worth it on a page
+# light enough that we got here quickly. On a heavy page, bail now.
+if ($sw.ElapsedMilliseconds -gt $BROAD_WALK_BUDGET_MS) { exit 0 }
+
+# 4) Any edit/combo outside the web document (skip in-page search boxes when possible)
 $editCond = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
     $editType
 )
 $edits = $root.FindAll($scope, $editCond)
 foreach ($edit in $edits) {
+    if ($sw.ElapsedMilliseconds -gt ($BROAD_WALK_BUDGET_MS * 2)) { exit 0 }
     if (Test-EditCandidate $edit) { exit 0 }
 }
+
+if ($sw.ElapsedMilliseconds -gt $BROAD_WALK_BUDGET_MS) { exit 0 }
 
 $comboCond = New-Object System.Windows.Automation.PropertyCondition(
     [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
@@ -276,6 +285,7 @@ $comboCond = New-Object System.Windows.Automation.PropertyCondition(
 )
 $combos = $root.FindAll($scope, $comboCond)
 foreach ($combo in $combos) {
+    if ($sw.ElapsedMilliseconds -gt ($BROAD_WALK_BUDGET_MS * 2)) { exit 0 }
     if (Test-InWebDocument $combo) { continue }
     if (Test-ElementUrl $combo) { exit 0 }
 }

@@ -126,6 +126,18 @@ pub const URL_SCRIPT_TIMEOUT_SEC: u64 = 8;
 /// seconds later on that one tick.
 pub const URL_CAPTURE_TICK_BUDGET_SEC: u64 = 7;
 
+/// After this many consecutive failed URL reads for one browser window, stop
+/// probing it for URL_CAPTURE_BACKOFF_SEC. Heavy single-page apps - call-
+/// centre dialers (ReadyMode and the like) especially - have enormous
+/// accessibility trees; the UI Automation walk `get-browser-url.ps1` does to
+/// find the address bar can spike the browser's CPU or crash its renderer on
+/// those pages. Once a window has failed a few times in a row (a real URL
+/// read succeeds fast or not at all), backing off bounds the damage to a
+/// handful of probes instead of one every APP_LOG_INTERVAL_SEC forever. A
+/// later success on that window clears the backoff immediately.
+pub const URL_CAPTURE_MAX_FAILURES: u32 = 3;
+pub const URL_CAPTURE_BACKOFF_SEC: u64 = 300;
+
 /// App-icon extraction subprocess ceiling. Runs off the tracker tick on its
 /// own thread (see capture/events.rs), once per distinct app per process, so
 /// a generous bound here costs nothing on the hot path.
