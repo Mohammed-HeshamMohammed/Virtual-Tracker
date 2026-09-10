@@ -1,6 +1,6 @@
 [package]
 name = "virtual-tracker-agent"
-version = "1.0.2"
+version = "1.0.1"
 description = "Virtual Tracker Agent — desktop time tracking: screenshots, apps, URLs"
 authors = ["Virtual Tracker"]
 edition = "2021"
