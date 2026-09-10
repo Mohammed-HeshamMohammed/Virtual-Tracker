@@ -125,6 +125,31 @@ interface RawWorkSession {
   endedAt: string | null
   activeSeconds: number
   idleSeconds: number
+  /** IANA zone of the member who worked the shift. */
+  memberTimezone?: string
+  /** The day the shift belongs to in that zone, resolved server-side so this
+   *  report and Time & Activity can never disagree about it. */
+  localDay?: string
+}
+
+/** Clock face in the worker's own timezone, not the reader's. A shift that
+ *  started at 8pm for the member reads 8pm to everyone looking at it. */
+function clockIn(iso: string, timeZone?: string): string {
+  return new Date(iso).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  })
+}
+
+/** Short zone label ("CDT", "EET") so a time is never ambiguous about which
+ *  clock it is on. */
+function zoneAbbreviation(iso: string, timeZone?: string): string {
+  if (!timeZone) return ""
+  const part = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "short" })
+    .formatToParts(new Date(iso))
+    .find((p) => p.type === "timeZoneName")
+  return part?.value ?? ""
 }
 
 const PROJECT_COLORS = ["#3b82f6", "#8b5cf6", "#ec4899", "#f97316", "#22c55e", "#06b6d4", "#ef4444", "#eab308"]
@@ -140,13 +165,13 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
   const data = await getJson<{ sessions: RawWorkSession[] }>(`/api/reports/work-sessions?${params.toString()}`)
   if (!data) return []
   return data.sessions.map((s) => {
-    const started = new Date(s.startedAt)
-    const ended = s.endedAt ? new Date(s.endedAt) : null
     const totalSeconds = s.activeSeconds + s.idleSeconds
     const projectName = s.projectName || "No project"
     return {
       id: s.id,
-      date: s.startedAt.slice(0, 10),
+      // Server-resolved member-local day. The old `startedAt.slice(0, 10)`
+      // was the UTC date, which put an evening shift on tomorrow.
+      date: s.localDay ?? s.startedAt.slice(0, 10),
       client: "",
       projectName,
       projectLetter: (projectName[0] ?? "?").toUpperCase(),
@@ -157,8 +182,9 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
       memberAvatarUrl: s.memberAvatarUrl,
       todoJob: s.taskTitle || "",
       manualPct: 0,
-      startedLabel: started.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      stoppedLabel: ended ? ended.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "In progress",
+      startedLabel: clockIn(s.startedAt, s.memberTimezone),
+      stoppedLabel: s.endedAt ? clockIn(s.endedAt, s.memberTimezone) : "In progress",
+      timezoneLabel: zoneAbbreviation(s.startedAt, s.memberTimezone),
       durationHms: formatHms(totalSeconds),
       activityPct: totalSeconds > 0 ? Math.round((s.activeSeconds / totalSeconds) * 100) : 0,
     }
@@ -430,6 +456,9 @@ export interface WorkBreakRow {
   startedAt: string | null
   endedAt: string | null
   durationSeconds: number
+  /** IANA zone of the member the break belongs to. `day` is already bucketed
+   *  in it server-side; this lets the start/end clock match. */
+  memberTimezone?: string
 }
 
 export async function fetchWorkBreaksReport(

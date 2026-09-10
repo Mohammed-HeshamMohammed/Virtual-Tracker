@@ -546,7 +546,17 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                                 <td className="px-4 py-3 text-center text-sm tabular-nums text-slate-700 dark:text-[#dce1fb]">{r.manualPct}%</td>
                               ) : null}
                               {columnVisibility.started ? (
-                                <td className="px-4 py-3 text-sm text-slate-600 dark:text-[#bccbb9]">{r.startedLabel}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600 dark:text-[#bccbb9]">
+                                  {r.startedLabel}
+                                  {r.timezoneLabel ? (
+                                    <span
+                                      className="ml-1 text-[10px] uppercase tracking-wide text-slate-400 dark:text-slate-500"
+                                      title="Shown in the member's own timezone"
+                                    >
+                                      {r.timezoneLabel}
+                                    </span>
+                                  ) : null}
+                                </td>
                               ) : null}
                               {columnVisibility.stopped ? (
                                 <td className="px-4 py-3 text-sm text-slate-600 dark:text-[#bccbb9]">{r.stoppedLabel}</td>
