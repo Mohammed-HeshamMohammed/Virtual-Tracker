@@ -360,6 +360,25 @@ pub fn read_browser_url(
     #[cfg(windows)]
     {
         let _ = macos_script_path;
+
+        // Preferred path: in-process UI Automation against a cached address-bar
+        // element. No subprocess, and on every tick after the first for a given
+        // window, no tree walk either - see capture/uia_url.rs.
+        if crate::capture::uia_url::healthy() {
+            let url = crate::capture::uia_url::read_url(window.hwnd, timeout);
+            if let Some(url) = url {
+                return Some(url.chars().take(MAX_URL_LEN).collect());
+            }
+            // Trust the reader's "no URL here" and skip the subprocess - that
+            // is the whole point on a page heavy enough to be a problem.
+            if crate::capture::uia_url::healthy() {
+                return None;
+            }
+            log::warn!(
+                "URL capture: in-process UIA reader produced nothing in its trial window; falling back to get-browser-url.ps1"
+            );
+        }
+
         if !script_path.exists() {
             if WARNED_MISSING_SCRIPT.set(()).is_ok() {
                 log::warn!(

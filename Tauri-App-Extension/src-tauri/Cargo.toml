@@ -79,4 +79,9 @@ windows = { version = "0.58", features = [
   "Win32_Security_Cryptography",
   # Locked/secure-desktop check before capturing a screenshot (screen.rs).
   "Win32_System_StationsAndDesktops",
+  # In-process UI Automation for reading the browser address bar
+  # (capture/uia_url.rs) - replaces the per-tick PowerShell subprocess.
+  "Win32_UI_Accessibility",
+  "Win32_System_Com",
+  "Win32_System_Variant",
 ] }
