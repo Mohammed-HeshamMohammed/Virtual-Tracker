@@ -842,12 +842,12 @@ impl AgentController {
     /// Empty on any failure or an older backend without the route - same
     /// "transparency surface, not an error banner" reasoning as
     /// get_my_screenshots above.
-    pub fn get_project_app_breakdown(&self, project_id: &str) -> Vec<crate::types::ProjectAppTime> {
+    pub fn get_project_app_breakdown(&self, project_id: &str) -> crate::types::ProjectAppBreakdown {
         match self.api.lock().fetch_project_app_breakdown(project_id) {
-            Ok(rows) => rows,
+            Ok(breakdown) => breakdown,
             Err(e) => {
                 log::warn!("Could not load this project's app breakdown: {e}");
-                Vec::new()
+                crate::types::ProjectAppBreakdown::default()
             }
         }
     }

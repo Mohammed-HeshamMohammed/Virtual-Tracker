@@ -529,6 +529,27 @@ pub struct ProjectAppTime {
     pub total_seconds: u64,
 }
 
+/// The week's top apps together with what they were drawn from.
+///
+/// The endpoint returns only a handful of apps. Without the totals the panel
+/// could not say what it was showing a handful *of*, so its times visibly
+/// failed to add up to the tracked week shown beside them and read as a bug.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectAppBreakdown {
+    #[serde(default)]
+    pub apps: Vec<ProjectAppTime>,
+    /// Every app in the week, not just the ones listed.
+    #[serde(default)]
+    pub total_seconds: u64,
+    /// How many distinct apps that total covers.
+    #[serde(default)]
+    pub app_count: u32,
+    /// The sum of `apps` alone, so the gap is stated rather than inferred.
+    #[serde(default)]
+    pub shown_seconds: u64,
+}
+
 /// The task's own detail, for showing what you're actually meant to be doing
 /// while tracking it.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

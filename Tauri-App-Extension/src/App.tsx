@@ -23,7 +23,7 @@ import type {
   MemberProfile,
   MonitoringNoticeView,
   ProfileInfo,
-  ProjectAppTime,
+  ProjectAppBreakdown,
   ProjectBudgetStatus,
   ProjectInfo,
   ReconnectResult,
@@ -64,6 +64,10 @@ import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
 import { SignInPanel } from "./components/views/SignInPanel";
+
+/** Stable empty value, so a reset never hands the panel a fresh object and
+ *  re-renders the chart for no change. */
+const EMPTY_APP_BREAKDOWN: ProjectAppBreakdown = { apps: [], totalSeconds: 0, appCount: 0, shownSeconds: 0 };
 
 const RECAP_MIN_SECONDS = 5 * 60;
 
@@ -158,7 +162,7 @@ function MainApp() {
   const [projectScreenshots, setProjectScreenshots] = useState<ScreenshotRef[]>([]);
   const [projectScreenshotImages, setProjectScreenshotImages] = useState<Record<string, string>>({});
   const [selectedProjectScreenshotId, setSelectedProjectScreenshotId] = useState<string | null>(null);
-  const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppTime[]>([]);
+  const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppBreakdown>(EMPTY_APP_BREAKDOWN);
   const [projectStatsLoading, setProjectStatsLoading] = useState(false);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [taskDetailLoading, setTaskDetailLoading] = useState(false);
@@ -635,7 +639,7 @@ function MainApp() {
   useEffect(() => {
     if (!signedIn || !taskLessSession || !selectedProjectId) {
       setProjectScreenshots([]);
-      setProjectAppBreakdown([]);
+      setProjectAppBreakdown(EMPTY_APP_BREAKDOWN);
       setSelectedProjectScreenshotId(null);
       setProjectStatsLoading(false);
       return;
@@ -681,12 +685,12 @@ function MainApp() {
       .catch(() => {
         if (!cancelled) setProjectScreenshots([]);
       });
-    const appsDone = invoke<ProjectAppTime[]>("get_project_app_breakdown", { projectId: selectedProjectId })
-      .then((rows) => {
-        if (!cancelled) setProjectAppBreakdown(rows);
+    const appsDone = invoke<ProjectAppBreakdown>("get_project_app_breakdown", { projectId: selectedProjectId })
+      .then((breakdown) => {
+        if (!cancelled) setProjectAppBreakdown(breakdown ?? EMPTY_APP_BREAKDOWN);
       })
       .catch(() => {
-        if (!cancelled) setProjectAppBreakdown([]);
+        if (!cancelled) setProjectAppBreakdown(EMPTY_APP_BREAKDOWN);
       });
     void Promise.all([shotsDone, appsDone]).then(() => {
       if (!cancelled) setProjectStatsLoading(false);
@@ -2069,7 +2073,7 @@ function MainApp() {
                 {taskLessSession ? (
                   <ProjectDetailPanel
                     project={selectedProject}
-                    appBreakdown={projectAppBreakdown}
+                    breakdown={projectAppBreakdown}
                     screenshots={projectScreenshots}
                     screenshotImages={projectScreenshotImages}
                     selectedScreenshotId={selectedProjectScreenshotId}

@@ -377,7 +377,7 @@ async fn get_my_screenshots(
 async fn get_project_app_breakdown(
     state: tauri::State<'_, AppState>,
     project_id: String,
-) -> Result<Vec<crate::types::ProjectAppTime>, String> {
+) -> Result<crate::types::ProjectAppBreakdown, String> {
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.get_project_app_breakdown(&project_id)).await)
 }

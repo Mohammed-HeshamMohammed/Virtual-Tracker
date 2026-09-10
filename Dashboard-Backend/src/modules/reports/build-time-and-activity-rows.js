@@ -1,4 +1,5 @@
 import { localDayFor } from "./timezone-utils.js";
+import { convertAmount } from "../../lib/currency/convert.js";
 
 /**
  * A session's hours belong to the day it started - all of them.
@@ -63,7 +64,36 @@ export function buildTimeAndActivityReportPayload(
   toDay,
   memberRates = new Map(),
   manualRows = [],
+  currency = null,
 ) {
+  /**
+   * Money is earned in the member's own currency and reported in one. The
+   * conversion happens here, at the row, rather than in the client: the day a
+   * row belongs to is what picks the rate, and the client no longer knows that
+   * once the rows are grouped. It also keeps the on-screen figure, the CSV and
+   * the emailed PDF reading from one implementation.
+   *
+   * `originalAmount`/`originalCurrency` ride along on every row - a converted
+   * figure is derived, and derived money is what people query.
+   */
+  const spend = (amount, earnedIn, day) => {
+    if (!currency?.rateBook) {
+      return { spentAmount: amount, currency: earnedIn, originalAmount: amount, originalCurrency: earnedIn };
+    }
+    const converted = convertAmount(currency.rateBook, {
+      amount,
+      currency: earnedIn,
+      day,
+      to: currency.displayCurrency,
+    });
+    return {
+      spentAmount: converted.amount,
+      currency: converted.currency,
+      originalAmount: converted.originalAmount,
+      originalCurrency: converted.originalCurrency,
+      rateAsOf: converted.rateAsOf,
+    };
+  };
   const byDay = new Map();
   const byDayMemberProject = new Map();
 
@@ -155,10 +185,13 @@ export function buildTimeAndActivityReportPayload(
         activeSeconds: entry.activeSeconds,
         idleSeconds: entry.idleSeconds,
         manualSeconds: entry.manualSeconds ?? 0,
-        spentAmount: round2(
-          ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * resolveRateForDay(memberRates, memberId, date),
+        ...spend(
+          round2(
+            ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * resolveRateForDay(memberRates, memberId, date),
+          ),
+          resolveCurrencyForDay(memberRates, memberId, date),
+          date,
         ),
-        currency: resolveCurrencyForDay(memberRates, memberId, date),
         projectNames: [...entry.projectNames],
       })),
     }));
@@ -176,11 +209,14 @@ export function buildTimeAndActivityReportPayload(
       activeSeconds: entry.activeSeconds,
       idleSeconds: entry.idleSeconds,
       manualSeconds: entry.manualSeconds ?? 0,
-      spentAmount: round2(
-        ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) *
-          resolveRateForDay(memberRates, entry.memberId, entry.date),
+      ...spend(
+        round2(
+          ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) *
+            resolveRateForDay(memberRates, entry.memberId, entry.date),
+        ),
+        resolveCurrencyForDay(memberRates, entry.memberId, entry.date),
+        entry.date,
       ),
-      currency: resolveCurrencyForDay(memberRates, entry.memberId, entry.date),
     }));
 
   return { days, entries };

@@ -76,6 +76,38 @@ pub struct ForegroundWindow {
     pub browser_hint: String,
 }
 
+/// The name used when the foreground window could not be identified at all.
+/// Kept as one constant because it is both what this module writes and what
+/// callers must recognise; two spellings would silently stop matching.
+pub const UNIDENTIFIED: &str = "Unknown";
+
+impl ForegroundWindow {
+    /// Whether we actually know what the member was looking at.
+    ///
+    /// `GetForegroundWindow` returns something at all times - including when
+    /// there is nothing meaningful in front: the desktop between alt-tabs, a
+    /// UAC prompt or other elevated window this process may not open, the
+    /// lock screen, a window that closed mid-read. Every one of those left
+    /// `process_name` as the "Unknown" sentinel, and the tracker recorded it
+    /// as an app by that literal name. It then accumulated real dwell seconds
+    /// and turned up in Top Apps as "Unknown", which reads like a mysterious
+    /// program the member was using rather than what it is: a gap in what the
+    /// agent could see.
+    ///
+    /// A slice we cannot attribute is not tracked time. Callers skip it.
+    pub fn is_identified(&self) -> bool {
+        if self.hwnd == 0 && cfg!(windows) {
+            return false;
+        }
+        let process = self.process_name.trim();
+        if process.is_empty() || process.eq_ignore_ascii_case(UNIDENTIFIED) {
+            return false;
+        }
+        let app = self.app_name.trim();
+        !app.is_empty() && !app.eq_ignore_ascii_case(UNIDENTIFIED)
+    }
+}
+
 pub fn get_foreground_window() -> ForegroundWindow {
     #[cfg(windows)]
     {
@@ -475,6 +507,48 @@ mod tests {
         for exe in ["notepad.exe", "slack.exe", "search.exe", "monarch.exe"] {
             assert_eq!(browser_hint_from_exe(exe), "", "{exe} is not a browser");
         }
+    }
+
+    fn win(process_name: &str, app_name: &str, hwnd: usize) -> ForegroundWindow {
+        ForegroundWindow {
+            app_name: app_name.into(),
+            title: "some title".into(),
+            process_name: process_name.into(),
+            exe_path: String::new(),
+            hwnd,
+            is_browser: false,
+            browser_hint: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_real_window_is_identified() {
+        assert!(win("code.exe", "VS Code", 42).is_identified());
+    }
+
+    // The bug this guards: an elevated or already-closed window leaves the
+    // "Unknown" sentinel, and the tracker used to upload it as an app by that
+    // name, where it collected real seconds in Top Apps.
+    #[test]
+    fn the_unknown_sentinel_is_not_an_app() {
+        assert!(!win("Unknown", "Unknown", 42).is_identified());
+        assert!(!win("unknown", "Unknown", 42).is_identified());
+        assert!(!win("Unknown", "Some App", 42).is_identified());
+        assert!(!win("code.exe", "Unknown", 42).is_identified());
+    }
+
+    #[test]
+    fn a_process_we_could_not_name_is_not_an_app() {
+        assert!(!win("", "", 42).is_identified());
+        assert!(!win("   ", "VS Code", 42).is_identified());
+    }
+
+    // No foreground window at all - the desktop between alt-tabs, or the lock
+    // screen. Windows always hands back a handle, so zero is the only signal.
+    #[cfg(windows)]
+    #[test]
+    fn no_foreground_window_is_not_an_app() {
+        assert!(!win("code.exe", "VS Code", 0).is_identified());
     }
 }
 

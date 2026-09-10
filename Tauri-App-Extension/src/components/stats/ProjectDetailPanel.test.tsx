@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ProjectDetailPanel } from "./ProjectDetailPanel";
-import type { ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
+import { ProjectDetailPanel, radarRadius } from "./ProjectDetailPanel";
+import type { ProjectAppBreakdown, ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
 
 const baseProject: ProjectInfo = {
   id: "p1",
@@ -17,10 +17,18 @@ const baseProject: ProjectInfo = {
 
 const noop = () => {};
 
+/** Most cases only care about which apps are plotted, so they keep passing a
+ *  plain list and this fills in the totals the panel now also receives. */
+function breakdownOf(apps: ProjectAppTime[]): ProjectAppBreakdown {
+  const shown = apps.reduce((sum, a) => sum + a.totalSeconds, 0);
+  return { apps, totalSeconds: shown, appCount: apps.length, shownSeconds: shown };
+}
+
 function render(
   project: ProjectInfo | null,
   overrides: Partial<{
     appBreakdown: ProjectAppTime[];
+    breakdown: ProjectAppBreakdown;
     screenshots: ScreenshotRef[];
     screenshotImages: Record<string, string>;
     selectedScreenshotId: string | null;
@@ -30,7 +38,9 @@ function render(
   return renderToStaticMarkup(
     <ProjectDetailPanel
       project={project}
-      appBreakdown={overrides.appBreakdown ?? []}
+      breakdown={
+        overrides.breakdown ?? breakdownOf(overrides.appBreakdown ?? [])
+      }
       screenshots={overrides.screenshots ?? []}
       screenshotImages={overrides.screenshotImages ?? {}}
       selectedScreenshotId={overrides.selectedScreenshotId ?? null}
@@ -192,5 +202,56 @@ describe("ProjectDetailPanel", () => {
     });
     expect(withImage).toContain("data:image/png;base64,abc");
     expect(withImage).not.toContain("shot-preview-loading");
+  });
+});
+
+describe("radar scale", () => {
+  // The bug in the screenshot: Chrome at 6h alongside File Explorer at 30s.
+  // A linear radius put the second app 0.05px from the centre, so the chart
+  // rendered as a single dot while the labels clearly listed five apps.
+  it("keeps a tiny app visibly off the centre next to a dominant one", () => {
+    const dominant = radarRadius(6 * 3600, 6 * 3600);
+    const tiny = radarRadius(30, 6 * 3600);
+    expect(dominant).toBeCloseTo(35, 5);
+    expect(tiny).toBeGreaterThan(4);
+    // Linear scaling gave 35 * (30 / 21600) = 0.049 - indistinguishable from
+    // the origin, and from every other small app.
+    expect(tiny).toBeGreaterThan(35 * (30 / (6 * 3600)) * 10);
+  });
+
+  it("still orders marks by time, so the shape reads correctly", () => {
+    const max = 3600;
+    const radii = [3600, 1800, 600, 60].map((s) => radarRadius(s, max));
+    for (let i = 1; i < radii.length; i++) {
+      expect(radii[i]).toBeLessThan(radii[i - 1]!);
+    }
+  });
+
+  it("never plots outside the chart or exactly on the origin", () => {
+    expect(radarRadius(0, 3600)).toBe(4);
+    expect(radarRadius(7200, 3600)).toBeLessThanOrEqual(35);
+    expect(radarRadius(100, 0)).toBe(4);
+  });
+
+  it("says it is a top-N when the week holds more apps than are plotted", () => {
+    const html = render(baseProject, {
+      breakdown: {
+        apps: [
+          { appName: "Google Chrome", totalSeconds: 21720 },
+          { appName: "Telegram", totalSeconds: 420 },
+        ],
+        totalSeconds: 50760,
+        appCount: 9,
+        shownSeconds: 22140,
+      },
+    });
+    expect(html).toContain("Top 2 of 9 apps");
+  });
+
+  it("says nothing extra when every app in the week is plotted", () => {
+    const html = render(baseProject, {
+      appBreakdown: [{ appName: "Google Chrome", totalSeconds: 600 }],
+    });
+    expect(html).not.toContain("of 1 apps");
   });
 });

@@ -26,7 +26,7 @@ import { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-o
 import { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amounts-owed/amounts-owed-table-columns-menu"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
-import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
+import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions, type ReportCurrencyMeta } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
 import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
@@ -233,6 +233,7 @@ export function AmountsOwedReport() {
   const [sendDialogOpen, setSendDialogOpen] = useComponentState(false)
   const [scheduleDialogOpen, setScheduleDialogOpen] = useComponentState(false)
   const [groups, setGroups] = useComponentState<AmountsOwedDayGroup[]>([])
+  const [currency, setCurrency] = useComponentState<ReportCurrencyMeta | null>(null)
   const [loading, setLoading] = useComponentState(true)
   const [error, setError] = useComponentState<string | null>(null)
   const [reloadKey, setReloadKey] = useComponentState(0)
@@ -268,7 +269,10 @@ export function AmountsOwedReport() {
       projectIds: [...selectedProjectIds],
     })
       .then((data) => {
-        if (!cancelled) setGroups(data)
+        if (!cancelled) {
+          setGroups(data.days)
+          setCurrency(data.currency)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")

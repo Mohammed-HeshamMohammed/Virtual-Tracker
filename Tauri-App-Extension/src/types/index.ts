@@ -253,6 +253,18 @@ export type ProjectAppTime = {
   totalSeconds: number;
 };
 
+/** The week's top apps plus what they were drawn from, so the panel can say
+ *  it is showing a few of many instead of leaving its times looking like they
+ *  should add up to the tracked week and failing to. */
+export type ProjectAppBreakdown = {
+  apps: ProjectAppTime[];
+  /** Every app in the week, not only the ones listed. */
+  totalSeconds: number;
+  appCount: number;
+  /** The sum of `apps` alone. */
+  shownSeconds: number;
+};
+
 export type TaskSubtask = {
   id: string;
   title: string;

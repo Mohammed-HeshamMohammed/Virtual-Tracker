@@ -1223,6 +1223,16 @@ impl ActivityTracker {
         session_id: &str,
         window: &crate::capture::window::ForegroundWindow,
     ) {
+        // A window we could not identify is a gap in what the agent can see,
+        // not an app called "Unknown". Uploading it anyway put that literal
+        // name in Top Apps with real seconds against it - see
+        // ForegroundWindow::is_identified. The session still runs; only this
+        // tick's attribution is dropped.
+        if !window.is_identified() {
+            log::debug!("skipping app slice: foreground window could not be identified");
+            return;
+        }
+
         let app_event = self.events.app_slice(window);
         let app_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&app_event));
         if !app_ok {

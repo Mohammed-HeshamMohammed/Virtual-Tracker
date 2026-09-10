@@ -5,6 +5,8 @@ import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityMemberSubRow, T
 import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
+import { formatCurrency, resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
+
 interface RawMemberDay {
   memberId: string
   name: string
@@ -79,7 +81,7 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
       : 0,
     idlePct: pctString(member.idleSeconds, member.activeSeconds),
     idleHr: formatSecondsAsHMS(member.idleSeconds),
-    totalSpent: formatMoney(member.spentAmount ?? 0, member.currency),
+    totalSpent: formatCurrency(member.spentAmount ?? 0, member.currency ?? "USD"),
     trackedHours: member.activeSeconds / 3600,
     manualHours: manualSeconds / 3600,
     projectNames: member.projectNames,
@@ -108,6 +110,9 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
     idlePct: pctString(totalIdle, totalActive),
     idleHr: formatSecondsAsHMS(totalIdle),
+    // Every member's amount is already in the report's display currency, so
+    // this is a plain sum. It used to be a per-currency concatenation, which
+    // is what produced "$0.00 + EGP 6.08" in a mixed-currency team.
     totalSpent: sumMoneyByCurrency(day.members.map((m) => ({ amount: m.spentAmount ?? 0, currency: m.currency }))),
     trackedHours: totalActive / 3600,
     manualHours: totalManual / 3600,
@@ -189,6 +194,10 @@ export async function fetchTimeAndActivityReport(range: {
 }): Promise<TimeActivityReportData> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
   if (range.memberId) params.set("memberId", range.memberId)
+  // The server converts every amount into one currency; this asks for the
+  // viewer's own and falls back to the workspace default when there is no rate.
+  const viewerCurrency = resolveViewerCurrency()
+  if (viewerCurrency) params.set("displayCurrency", viewerCurrency)
   const res = await apiFetch(apiPath(`/api/reports/time-and-activity?${params.toString()}`))
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null

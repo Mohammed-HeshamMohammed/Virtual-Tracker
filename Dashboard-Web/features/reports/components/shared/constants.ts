@@ -118,7 +118,11 @@ export interface AmountsOwedMemberLine {
   avatarUrl?: string | null
   rateLabel: string
   hours: string
+  /** Already formatted in the report's display currency. */
   amount: string
+  /** What the member was actually paid, when that differs from the currency
+   *  shown - null when no conversion happened. */
+  originalAmount?: string | null
 }
 
 export interface AmountsOwedDayGroup {

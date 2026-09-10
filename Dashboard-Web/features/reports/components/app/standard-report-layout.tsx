@@ -205,20 +205,14 @@ export function StandardReportLayout({
         <div className="relative mx-auto min-h-0 max-w-[1400px] space-y-5 px-0 py-0">
 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-            <div className="min-w-0 max-w-xl">
-              <h1
-                className={cn(
-                  "truncate text-2xl font-semibold tracking-tight",
-                  isDark ? "text-[#dce1fb]" : "text-slate-900"
-                )}
-              >
-                {title}
-              </h1>
-              {resolvedSubtitle ? (
-                <p className={cn("mt-1 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-500")}>{resolvedSubtitle}</p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-1">
+            {/* The report's name and blurb are already on the card that got
+                you here and in the nav, so on the page itself they were two
+                lines of chrome pushing the actual data below the fold. The
+                heading stays in the accessibility tree - a page still needs
+                one - it just isn't painted. */}
+            <h1 className="sr-only">{title}</h1>
+            {resolvedSubtitle ? <p className="sr-only">{resolvedSubtitle}</p> : null}
+            <div className="flex min-w-0 flex-1 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-1">
               {showDateRange ? (
                 <>
               <button

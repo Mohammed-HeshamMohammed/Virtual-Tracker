@@ -1,10 +1,33 @@
 import { fmtCapturedAt, fmtHours } from "../../utils/formatters";
-import type { ProjectAppTime, ProjectInfo, ScreenshotRef } from "../../types";
+import type { ProjectAppBreakdown, ProjectInfo, ScreenshotRef } from "../../types";
 
 const RADAR_CENTER = 50;
 const RADAR_MAX_RADIUS = 35;
 const RADAR_LABEL_RADIUS = 44;
 const RADAR_GRID_RINGS = [1 / 3, 2 / 3, 1];
+/** No mark sits exactly on the origin. A linear radius against the largest app
+ *  put everything else there: with Chrome at 6h and File Explorer at 30s, the
+ *  second dot landed 0.05px from the centre, so the chart read as a single
+ *  point while the labels around it clearly listed five apps. The floor keeps
+ *  every app it lists visible as its own vertex. */
+const RADAR_MIN_RADIUS = 4;
+
+/**
+ * Where an app's mark sits on its axis.
+ *
+ * Square-rooted rather than linear, because the eye reads a radial mark by the
+ * area it sweeps, not by its distance from the centre - the same reason bubble
+ * charts scale by area. Linear radius makes a 1% share indistinguishable from
+ * zero, which is exactly the failure this chart had; sqrt lifts it to 10% of
+ * the way out, where it can be seen and compared. The exact time is on the
+ * label beside every mark, so the shape only has to be readable, not
+ * measurable.
+ */
+export function radarRadius(seconds: number, maxSeconds: number): number {
+  if (maxSeconds <= 0 || seconds <= 0) return RADAR_MIN_RADIUS;
+  const share = Math.min(1, seconds / maxSeconds);
+  return RADAR_MIN_RADIUS + Math.sqrt(share) * (RADAR_MAX_RADIUS - RADAR_MIN_RADIUS);
+}
 /** Axis count for the loading grid, before any breakdown has arrived. */
 const RADAR_SKELETON_AXES = 6;
 /** The card only ever shows the newest few - App.tsx already fetches
@@ -39,7 +62,7 @@ function radarSkeletonPolygon(count: number): string {
 
 type ProjectDetailPanelProps = {
   project: ProjectInfo | null;
-  appBreakdown: ProjectAppTime[];
+  breakdown: ProjectAppBreakdown;
   screenshots: ScreenshotRef[];
   screenshotImages: Record<string, string>;
   selectedScreenshotId: string | null;
@@ -64,7 +87,7 @@ type ProjectDetailPanelProps = {
  *  lives in the sidebar's "YOUR PROJECTS" header instead of here. */
 export function ProjectDetailPanel({
   project,
-  appBreakdown,
+  breakdown,
   screenshots,
   screenshotImages,
   selectedScreenshotId,
@@ -79,8 +102,13 @@ export function ProjectDetailPanel({
   // project even though there's no task flow for one to use it in.
   // ProjectsList's own "+ New task" button already gates the same way.
   const canAddTask = project.hasTasks && project.canCreateTasks;
+  const appBreakdown = breakdown.apps;
   const maxAppSeconds = Math.max(1, ...appBreakdown.map((a) => a.totalSeconds));
-  const totalAppSeconds = appBreakdown.reduce((sum, a) => sum + a.totalSeconds, 0) || 1;
+  // Share is of the whole week's apps, not just the handful plotted - saying
+  // "62% of the apps shown" when five of nineteen are shown is a percentage of
+  // nothing anyone asked about.
+  const totalAppSeconds = breakdown.totalSeconds || appBreakdown.reduce((sum, a) => sum + a.totalSeconds, 0) || 1;
+  const hiddenAppCount = Math.max(0, breakdown.appCount - appBreakdown.length);
   const selectedImage = selectedScreenshotId ? screenshotImages[selectedScreenshotId] : "";
 
   const hasBadges = project.requireStopNote || project.budgetExhausted || canAddTask;
@@ -119,6 +147,16 @@ export function ProjectDetailPanel({
           {showChart ? (
             <div className="project-app-chart">
               <span className="stat-tile-label">This week's top apps</span>
+              {/* The chart plots a handful of apps, but the week card beside
+                  it counts every tracked hour. Without this the two visibly
+                  disagreed and the difference looked like a bug rather than
+                  what it is - a top-N list. */}
+              {!loading && hiddenAppCount > 0 ? (
+                <span className="project-radar-caption">
+                  Top {appBreakdown.length} of {breakdown.appCount} apps &middot; {fmtHours(breakdown.shownSeconds)} of{" "}
+                  {fmtHours(breakdown.totalSeconds)}
+                </span>
+              ) : null}
               {/* The frame is what actually grows to fill the column - a
                   plain flex-grow on .project-radar itself would stretch it
                   into a non-square rectangle the moment there's leftover
@@ -171,7 +209,7 @@ export function ProjectDetailPanel({
                             const { x, y } = radarPoint(
                               i,
                               appBreakdown.length,
-                              (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS,
+                              radarRadius(app.totalSeconds, maxAppSeconds),
                             );
                             return `${x},${y}`;
                           })
@@ -210,11 +248,7 @@ export function ProjectDetailPanel({
                 ) : null}
 
                 {appBreakdown.map((app, i) => {
-                  const dot = radarPoint(
-                    i,
-                    appBreakdown.length,
-                    (app.totalSeconds / maxAppSeconds) * RADAR_MAX_RADIUS,
-                  );
+                  const dot = radarPoint(i, appBreakdown.length, radarRadius(app.totalSeconds, maxAppSeconds));
                   const label = radarPoint(i, appBreakdown.length, RADAR_LABEL_RADIUS);
                   const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
                   return (
@@ -235,7 +269,7 @@ export function ProjectDetailPanel({
                         tabIndex={loading ? -1 : 0}
                         aria-hidden={loading || undefined}
                         role="img"
-                        aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of the apps shown`}
+                        aria-label={`${app.appName}: ${fmtHours(app.totalSeconds)}, ${sharePct}% of this week's app time`}
                       >
                         <span className="project-radar-dot" aria-hidden="true" />
                         <div className="project-app-tooltip" role="tooltip">

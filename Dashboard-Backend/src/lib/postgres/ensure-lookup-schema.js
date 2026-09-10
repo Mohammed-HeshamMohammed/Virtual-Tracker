@@ -1722,6 +1722,23 @@ $$ LANGUAGE plpgsql`,
   `CREATE TRIGGER trg_expenses_updated_at
   BEFORE UPDATE ON expenses
   FOR EACH ROW EXECUTE FUNCTION set_updated_at()`,
+  `CREATE TABLE IF NOT EXISTS currency_rates (
+  day        DATE          NOT NULL,
+  base       VARCHAR(3)    NOT NULL DEFAULT 'USD',
+  quote      VARCHAR(3)    NOT NULL,
+  rate       NUMERIC(20,10) NOT NULL CHECK (rate > 0),
+  source     VARCHAR(20)   NOT NULL DEFAULT 'api',
+  fetched_at TIMESTAMPTZ   NOT NULL DEFAULT now(),
+  PRIMARY KEY (day, base, quote)
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_currency_rates_lookup ON currency_rates (base, quote, day DESC)",
+  `CREATE TABLE IF NOT EXISTS currency_settings (
+  id               SMALLINT    PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  display_currency VARCHAR(3)  NOT NULL DEFAULT 'USD',
+  updated_by       UUID,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  "INSERT INTO currency_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING",
   `CREATE TABLE IF NOT EXISTS report_schedules (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   report_type     VARCHAR(64) NOT NULL DEFAULT 'time-and-activity',

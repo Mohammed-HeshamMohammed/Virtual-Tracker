@@ -717,7 +717,7 @@ impl ApiClient {
     pub fn fetch_project_app_breakdown(
         &mut self,
         project_id: &str,
-    ) -> Result<Vec<crate::types::ProjectAppTime>, ApiError> {
+    ) -> Result<crate::types::ProjectAppBreakdown, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!(
             "{}/api/activity/project-app-breakdown?projectId={}",
@@ -732,7 +732,7 @@ impl ApiClient {
             .send()
             .map_err(|_| ApiError::Network)?;
         if res.status() == reqwest::StatusCode::NOT_FOUND {
-            return Ok(Vec::new());
+            return Ok(crate::types::ProjectAppBreakdown::default());
         }
         if !res.status().is_success() {
             let status = res.status();
@@ -741,11 +741,21 @@ impl ApiClient {
             return Err(ApiError::Rejected(format!("HTTP {status}: {message}")));
         }
         let body: Value = res.json().map_err(|_| ApiError::Network)?;
-        let list = body.get("data").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-        Ok(list
-            .into_iter()
-            .filter_map(|v| serde_json::from_value(v).ok())
-            .collect())
+        let data = body.get("data").cloned().unwrap_or_else(|| json!({}));
+        // An older server returns a bare array here; read that as the app list
+        // with no totals rather than failing the whole panel.
+        if let Some(list) = data.as_array() {
+            let apps: Vec<crate::types::ProjectAppTime> =
+                list.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect();
+            let shown = apps.iter().map(|a| a.total_seconds).sum();
+            return Ok(crate::types::ProjectAppBreakdown {
+                app_count: apps.len() as u32,
+                shown_seconds: shown,
+                total_seconds: shown,
+                apps,
+            });
+        }
+        Ok(serde_json::from_value(data).unwrap_or_default())
     }
 
     /// One screenshot as a `data:` URL. The endpoint already returns it in

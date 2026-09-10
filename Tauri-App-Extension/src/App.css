@@ -4736,3 +4736,12 @@ select.modal-input {
   line-height: 1.35;
   opacity: 0.6;
 }
+/* Sits under "This week's top apps" to say the chart is a top-N, not the
+   whole week - see the note in ProjectDetailPanel.tsx. */
+.project-radar-caption {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.3;
+  opacity: 0.55;
+}
