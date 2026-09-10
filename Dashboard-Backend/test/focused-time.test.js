@@ -3,11 +3,11 @@
 // override resolved for the *tracked* member (not the viewer).
 //
 // Rewritten to drive `summarizeFocusedTime` directly instead of mocking four
-// modules to reach it. The mocked version could not run at all on Node 22+
-// (`mock.module` was removed), and — because every case it fed used a
-// non-browser app — it never exercised the path where the same seconds arrive
-// as both an app slice and a URL slice, which is exactly where focused time
-// was double-counting.
+// modules to reach one pure calculation. Two of the functions it mocked
+// (sumAppLogSecondsByAppNamePg, sumUrlLogSecondsByDomainPg) no longer exist,
+// and — because every case it fed used a non-browser app — it never exercised
+// the path where the same seconds arrive as both an app slice and a URL
+// slice, which is exactly where focused time was double-counting.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { summarizeFocusedTime } from "../src/modules/classification/focused-time.js";

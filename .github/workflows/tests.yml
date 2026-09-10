@@ -1,0 +1,56 @@
+name: tests
+
+# Dashboard-Backend has 579 tests that, until this existed, only ran when
+# somebody remembered to type `npm test` in that directory. The release
+# workflow gates on the Tauri agent's tests but nothing gated on these, so a
+# regression in reporting, limits or classification could reach production
+# with the suite that covers it sitting green and unexecuted on a laptop.
+#
+# Unlike security.yml (deliberately report-only), this one is meant to fail a
+# build - that is the entire point of it.
+#
+# Cheap on purpose: one ubuntu runner (1x minute multiplier), nine direct
+# dependencies, no matrix. Roughly a minute a run.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Dashboard-Backend/**"
+      - ".github/workflows/tests.yml"
+  pull_request:
+    paths:
+      - "Dashboard-Backend/**"
+      - ".github/workflows/tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: Dashboard-Backend/package-lock.json
+
+      - name: install
+        working-directory: Dashboard-Backend
+        run: npm ci
+
+      # `npm test` carries --experimental-test-module-mocks. Several suites
+      # use mock.module, which is silently undefined without it - running
+      # `node --test` directly reports "mock.module is not a function" and
+      # looks like dozens of broken files rather than a missing flag.
+      - name: test
+        working-directory: Dashboard-Backend
+        run: npm test
