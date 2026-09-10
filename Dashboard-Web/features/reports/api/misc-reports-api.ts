@@ -5,10 +5,11 @@ import type { AuditLogRow } from "@/features/reports/models/audit-log"
 import type { WorkSessionRow } from "@/features/reports/models/work-sessions"
 import type { ProjectBudgetSection, ProjectBudgetRow } from "@/features/reports/models/project-budgets"
 import type { ClientBudgetRow } from "@/features/reports/models/client-budgets"
-import type { LimitUsageRow } from "@/features/reports/models/limits"
+import type { LimitPeriodRow, LimitUsageRow } from "@/features/reports/models/limits"
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
-import type { AppUsageRow, UrlUsageRow } from "@/features/reports/models/apps-urls"
+import type { AppsUrlsReportData, UsageCategory } from "@/features/reports/models/apps-urls"
 import { formatMoney } from "@/features/reports/utils/money"
+import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -160,11 +161,15 @@ function colorForProject(name: string): string {
   return PROJECT_COLORS[hash % PROJECT_COLORS.length]!
 }
 
-export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkSessionRow[]> {
+export async function fetchWorkSessionsReport(
+  range: ReportQuery
+): Promise<{ rows: WorkSessionRow[]; truncated: boolean }> {
   const params = reportParams(range)
-  const data = await getJson<{ sessions: RawWorkSession[] }>(`/api/reports/work-sessions?${params.toString()}`)
-  if (!data) return []
-  return data.sessions.map((s) => {
+  const data = await getJson<{ sessions: RawWorkSession[]; truncated?: boolean }>(
+    `/api/reports/work-sessions?${params.toString()}`
+  )
+  if (!data) return { rows: [], truncated: false }
+  const rows = data.sessions.map((s) => {
     const totalSeconds = s.activeSeconds + s.idleSeconds
     const projectName = s.projectName || "No project"
     return {
@@ -189,6 +194,7 @@ export async function fetchWorkSessionsReport(range: ReportQuery): Promise<WorkS
       activityPct: totalSeconds > 0 ? Math.round((s.activeSeconds / totalSeconds) * 100) : 0,
     }
   })
+  return { rows, truncated: data.truncated === true }
 }
 
 export async function deleteWorkSession(id: string): Promise<void> {
@@ -200,12 +206,20 @@ export async function deleteWorkSession(id: string): Promise<void> {
 }
 
 
+interface RawAuditChange {
+  field: string
+  from: string | null
+  to: string | null
+}
+
 interface RawAuditRow {
   id: string
   tableName: string
   recordId: string
   action: string
   performedByName: string
+  subjectName: string
+  changes: RawAuditChange[]
   createdAt: string
 }
 
@@ -216,28 +230,54 @@ const AUDIT_ACTION_KIND: Record<string, AuditLogRow["actionKind"]> = {
 }
 
 function humanizeTableName(tableName: string): string {
-  return tableName.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  return tableName.replace(/_/g, " ").replace(/\w/g, (c) => c.toUpperCase())
 }
 
-export async function fetchAuditLogReport(range: ReportQuery): Promise<AuditLogRow[]> {
+function humanizeFieldName(field: string): string {
+  return field.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())
+}
+
+/** "Role: Employee -> Manager, Status: active -> banned" - what the row is
+ *  for. The server sends the changed fields already redacted and capped; this
+ *  only phrases them. */
+function describeChanges(action: string, changes: RawAuditChange[]): string {
+  if (!changes?.length) return action === "DELETE" ? "Record removed" : "No field changes recorded"
+  return changes
+    .map((c) => {
+      const label = humanizeFieldName(c.field)
+      if (action === "INSERT") return `${label}: ${c.to ?? "—"}`
+      if (action === "DELETE") return `${label}: ${c.from ?? "—"}`
+      return `${label}: ${c.from ?? "—"} → ${c.to ?? "—"}`
+    })
+    .join(", ")
+}
+
+export async function fetchAuditLogReport(range: ReportQuery): Promise<{ rows: AuditLogRow[]; truncated: boolean }> {
   const params = reportParams(range)
-  const data = await getJson<{ rows: RawAuditRow[] }>(`/api/reports/audit-log?${params.toString()}`)
-  if (!data) return []
-  return data.rows.map((r) => {
-    const created = new Date(r.createdAt)
-    const actionKind = AUDIT_ACTION_KIND[r.action] ?? "archived"
-    return {
-      id: r.id,
-      date: r.createdAt.slice(0, 10),
-      author: r.performedByName,
-      timeLabel: created.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
-      action: actionKind === "created" ? "Created" : actionKind === "updated" ? "Updated" : actionKind === "deleted" ? "Deleted" : r.action,
-      actionKind,
-      object: humanizeTableName(r.tableName),
-      member: "—",
-      detail: `${humanizeTableName(r.tableName)} record ${r.recordId.slice(0, 8)}`,
-    }
-  })
+  const data = await getJson<{ rows: RawAuditRow[]; truncated?: boolean }>(`/api/reports/audit-log?${params.toString()}`)
+  if (!data) return { rows: [], truncated: false }
+  return {
+    truncated: data.truncated === true,
+    rows: data.rows.map((r) => {
+      const created = new Date(r.createdAt)
+      const actionKind = AUDIT_ACTION_KIND[r.action] ?? "archived"
+      return {
+        id: r.id,
+        // Date and time are both read on the viewer's clock. They used to
+        // disagree: the date was sliced off the UTC ISO string while the time
+        // was localised, so from New York a 02:00Z event read "Sep 10, 10:00 PM".
+        date: toDateParam(created),
+        author: r.performedByName,
+        timeLabel: created.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+        action:
+          actionKind === "created" ? "Created" : actionKind === "updated" ? "Updated" : actionKind === "deleted" ? "Deleted" : r.action,
+        actionKind,
+        object: humanizeTableName(r.tableName),
+        member: r.subjectName || "—",
+        detail: describeChanges(r.action, r.changes ?? []),
+      }
+    }),
+  }
 }
 
 
@@ -324,8 +364,11 @@ interface RawLimitRow {
   memberId: string
   name: string
   limitHours: number
-  trackedHours: number
-  pctUsed: number
+  totalTrackedHours: number
+  periods: number
+  periodsOverLimit: number
+  peakPctUsed: number
+  periodRows: LimitPeriodRow[]
 }
 
 async function fetchLimitsReport(kind: "weekly-limits" | "daily-limits", range: ReportQuery): Promise<LimitUsageRow[]> {
@@ -337,8 +380,11 @@ async function fetchLimitsReport(kind: "weekly-limits" | "daily-limits", range: 
     name: row.name,
     initials: initialsFor(row.name),
     limitHours: row.limitHours,
-    trackedHours: row.trackedHours,
-    pctUsed: row.pctUsed,
+    totalTrackedHours: row.totalTrackedHours,
+    periods: row.periods,
+    periodsOverLimit: row.periodsOverLimit,
+    peakPctUsed: row.peakPctUsed,
+    periodRows: row.periodRows ?? [],
   }))
 }
 
@@ -365,11 +411,15 @@ interface RawTimesheetRow {
   approvedByName: string | null
 }
 
-export async function fetchTimesheetApprovalsReport(range: ReportQuery): Promise<TimesheetApprovalRow[]> {
+export async function fetchTimesheetApprovalsReport(
+  range: ReportQuery
+): Promise<{ rows: TimesheetApprovalRow[]; truncated: boolean }> {
   const params = reportParams(range)
-  const data = await getJson<{ rows: RawTimesheetRow[] }>(`/api/reports/timesheet-approvals?${params.toString()}`)
-  if (!data) return []
-  return data.rows.map((row) => ({
+  const data = await getJson<{ rows: RawTimesheetRow[]; truncated?: boolean }>(
+    `/api/reports/timesheet-approvals?${params.toString()}`
+  )
+  if (!data) return { rows: [], truncated: false }
+  const rows = data.rows.map((row) => ({
     id: row.id,
     memberId: row.memberId,
     memberName: row.memberName,
@@ -383,6 +433,7 @@ export async function fetchTimesheetApprovalsReport(range: ReportQuery): Promise
     approvedAt: row.approvedAt,
     approvedByName: row.approvedByName,
   }))
+  return { rows, truncated: data.truncated === true }
 }
 
 
@@ -390,26 +441,30 @@ interface RawAppUsageRow {
   memberId: string
   memberName: string
   appName: string
+  category: UsageCategory
   totalSeconds: number
 }
 interface RawUrlUsageRow {
   memberId: string
   memberName: string
   domain: string
+  category: UsageCategory
+  identifiedBy: string
   totalSeconds: number
 }
 
-export async function fetchAppsUrlsReport(
-  range: ReportQuery
-): Promise<{ apps: AppUsageRow[]; urls: UrlUsageRow[] }> {
+export async function fetchAppsUrlsReport(range: ReportQuery): Promise<AppsUrlsReportData> {
   const params = reportParams(range)
-  const data = await getJson<{ apps: RawAppUsageRow[]; urls: RawUrlUsageRow[] }>(`/api/reports/apps-urls?${params.toString()}`)
-  if (!data) return { apps: [], urls: [] }
+  const data = await getJson<{ apps: RawAppUsageRow[]; urls: RawUrlUsageRow[]; truncated?: boolean }>(
+    `/api/reports/apps-urls?${params.toString()}`
+  )
+  if (!data) return { apps: [], urls: [], truncated: false }
   return {
     apps: data.apps.map((a) => ({
       memberId: a.memberId,
       memberName: a.memberName,
       appName: a.appName,
+      category: a.category ?? "unclassified",
       durationHms: formatHms(a.totalSeconds),
       totalSeconds: a.totalSeconds,
     })),
@@ -417,9 +472,12 @@ export async function fetchAppsUrlsReport(
       memberId: u.memberId,
       memberName: u.memberName,
       domain: u.domain,
+      category: u.category ?? "unclassified",
+      identifiedBy: u.identifiedBy ?? "address bar",
       durationHms: formatHms(u.totalSeconds),
       totalSeconds: u.totalSeconds,
     })),
+    truncated: data.truncated === true,
   }
 }
 
@@ -440,11 +498,13 @@ export interface ManualTimeEditRow {
   editedAt: string | null
 }
 
-export async function fetchManualTimeEditsReport(range: ReportQuery): Promise<ManualTimeEditRow[]> {
-  const data = await getJson<{ rows: ManualTimeEditRow[] }>(
+export async function fetchManualTimeEditsReport(
+  range: ReportQuery
+): Promise<{ rows: ManualTimeEditRow[]; truncated: boolean }> {
+  const data = await getJson<{ rows: ManualTimeEditRow[]; truncated?: boolean }>(
     `/api/reports/manual-time-edits?${reportParams(range).toString()}`
   )
-  return data?.rows ?? []
+  return { rows: data?.rows ?? [], truncated: data?.truncated === true }
 }
 
 
@@ -463,13 +523,17 @@ export interface WorkBreakRow {
 
 export async function fetchWorkBreaksReport(
   range: ReportQuery & { minGapMinutes?: number }
-): Promise<{ rows: WorkBreakRow[]; minGapMinutes: number }> {
+): Promise<{ rows: WorkBreakRow[]; minGapMinutes: number; truncated: boolean }> {
   const params = reportParams(range)
   if (range.minGapMinutes) params.set("minGapMinutes", String(range.minGapMinutes))
-  const data = await getJson<{ rows: WorkBreakRow[]; minGapMinutes: number }>(
+  const data = await getJson<{ rows: WorkBreakRow[]; minGapMinutes: number; truncated?: boolean }>(
     `/api/reports/work-breaks?${params.toString()}`
   )
-  return { rows: data?.rows ?? [], minGapMinutes: data?.minGapMinutes ?? 5 }
+  return {
+    rows: data?.rows ?? [],
+    minGapMinutes: data?.minGapMinutes ?? 5,
+    truncated: data?.truncated === true,
+  }
 }
 
 
@@ -489,9 +553,13 @@ export interface ExpenseReportRow {
   status: string
 }
 
-export async function fetchExpensesReport(range: ReportQuery): Promise<ExpenseReportRow[]> {
-  const data = await getJson<{ rows: ExpenseReportRow[] }>(`/api/reports/expenses?${reportParams(range).toString()}`)
-  return data?.rows ?? []
+export async function fetchExpensesReport(
+  range: ReportQuery
+): Promise<{ rows: ExpenseReportRow[]; truncated: boolean }> {
+  const data = await getJson<{ rows: ExpenseReportRow[]; truncated?: boolean }>(
+    `/api/reports/expenses?${reportParams(range).toString()}`
+  )
+  return { rows: data?.rows ?? [], truncated: data?.truncated === true }
 }
 
 
@@ -600,19 +668,26 @@ export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<P
 }
 
 
+export type ShiftAttendanceStatus = "worked" | "missed" | "excused" | "time-off" | "unscheduled"
+
 export interface ShiftAttendanceRow {
   memberId: string
   memberName: string
   memberAvatarUrl?: string | null
   day: string
   scheduled: boolean
+  /** A day agreed to cover an earlier missed one - expected work, even though
+   *  it falls outside the member's usual working days. */
+  makeupDay: boolean
   activeSeconds: number
-  status: "worked" | "missed" | "unscheduled"
+  status: ShiftAttendanceStatus
 }
 
-export async function fetchShiftAttendanceReport(range: ReportQuery): Promise<ShiftAttendanceRow[]> {
-  const data = await getJson<{ rows: ShiftAttendanceRow[] }>(
+export async function fetchShiftAttendanceReport(
+  range: ReportQuery
+): Promise<{ rows: ShiftAttendanceRow[]; truncated: boolean }> {
+  const data = await getJson<{ rows: ShiftAttendanceRow[]; truncated?: boolean }>(
     `/api/reports/shift-attendance?${reportParams(range).toString()}`
   )
-  return data?.rows ?? []
+  return { rows: data?.rows ?? [], truncated: data?.truncated === true }
 }

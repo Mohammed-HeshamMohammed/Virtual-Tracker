@@ -126,3 +126,23 @@ export function ReportOrgLine({ org, timezone }: { org: string; timezone: string
     </div>
   )
 }
+
+/**
+ * Every report caps how many rows it will read, and until now each one hit
+ * that cap silently: the table simply showed a shorter total with nothing
+ * saying so, which is worse than an error because it looks like an answer.
+ */
+export function ReportTruncationNotice({ what = "activity" }: { what?: string }) {
+  return (
+    <div
+      className={cn(
+        "rounded-lg border px-4 py-3 text-sm",
+        "border-amber-200 bg-amber-50 text-amber-800",
+        "dark:border-amber-400/25 dark:bg-amber-400/8 dark:text-amber-200"
+      )}
+    >
+      This range holds more {what} than the report will read, so these results are incomplete. Narrow the dates or the
+      filters for a full picture.
+    </div>
+  )
+}

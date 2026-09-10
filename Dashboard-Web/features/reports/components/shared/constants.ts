@@ -9,6 +9,30 @@ export const SHIFT_STYLE_HUB_REPORTS: Record<
 
 const DEFAULT_ORG_LABEL = "TVC"
 
+/**
+ * What calendar the dates in a report are on.
+ *
+ * Every report used to stamp its header with the *viewer's* browser timezone,
+ * which was wrong for almost all of them. A manager in Cairo exporting a US
+ * member's Time & Activity got a PDF headed "Africa/Cairo" while every day
+ * inside it had been bucketed in the member's own zone - the label contradicted
+ * the numbers under it. For reports built from plain calendar dates (invoices,
+ * expenses, time off) it was worse than wrong, because it implied a timezone
+ * conversion that never happened.
+ *
+ * Three honest answers, one per kind of report:
+ */
+
+/** Days resolved in the zone of the member the row is about - Time & Activity,
+ *  Work Sessions, Work Breaks, Apps & URLs, limits, attendance, amounts owed. */
+export const MEMBER_TIMEZONE_LABEL = "Each member's own timezone"
+
+/** Records dated by hand or by a calendar field, with no zone involved -
+ *  invoices, payments, expenses, manual entries, time off, timesheets. */
+export const CALENDAR_DATE_LABEL = "Calendar dates"
+
+/** Genuinely rendered on the reader's clock, because the row is an instant in
+ *  time rather than a working day. */
 export function resolveReportTimezoneLabel(): string {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -26,6 +50,30 @@ const REPORT_GROUP_BY_OPTIONS: { value: string; label: string }[] = [
 ]
 
 export const STANDARD_REPORT_ORG_LABEL = DEFAULT_ORG_LABEL
+/** Reports whose days are resolved in the member's own zone, rather than being
+ *  plain calendar dates. Everything not listed reads as a calendar date. */
+const MEMBER_TIMEZONE_PAGE_IDS = new Set([
+  "reports-time",
+  "reports-daily",
+  "reports-amounts",
+  "reports-work-sessions",
+  "reports-work-breaks",
+  "reports-apps-urls",
+  "reports-shift-attendance",
+  "reports-weekly-limits",
+  "reports-daily-limits",
+])
+
+/** The right calendar label for a report page. The audit log is the one report
+ *  whose rows really are instants on the reader's clock. */
+export function reportTimezoneLabelFor(pageId?: string): string {
+  if (pageId === "reports-audit") return resolveReportTimezoneLabel()
+  return pageId && MEMBER_TIMEZONE_PAGE_IDS.has(pageId) ? MEMBER_TIMEZONE_LABEL : CALENDAR_DATE_LABEL
+}
+
+/** @deprecated Pick the label that matches the report: MEMBER_TIMEZONE_LABEL,
+ *  CALENDAR_DATE_LABEL, or resolveReportTimezoneLabel() for instant-in-time
+ *  rows. Kept only so nothing is left pointing at nothing. */
 export const STANDARD_REPORT_TIMEZONE_LABEL = resolveReportTimezoneLabel()
 export const STANDARD_REPORT_GROUP_BY_OPTIONS = REPORT_GROUP_BY_OPTIONS
 

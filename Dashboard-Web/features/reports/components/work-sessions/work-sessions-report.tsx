@@ -43,6 +43,7 @@ import {
   ReportOrgLine,
   ReportPageHeading,
   ReportTableSkeleton,
+  ReportTruncationNotice,
 } from "@/features/reports/components/shared/report-ui"
 
 const COLUMN_META: { key: WorkSessionColumnKey; label: string }[] = [
@@ -231,6 +232,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     deletingId,
     deleteError,
     deleteSession,
+    truncated,
   } = useWorkSessionsReport()
 
   const visibleCols = COLUMN_META.filter((c) => columnVisibility[c.key])
@@ -452,6 +454,8 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
               {deleteError}
             </div>
           ) : null}
+
+          {truncated ? <ReportTruncationNotice what="work sessions" /> : null}
 
           {loading ? (
             <ReportTableSkeleton rows={8} columns={6} />

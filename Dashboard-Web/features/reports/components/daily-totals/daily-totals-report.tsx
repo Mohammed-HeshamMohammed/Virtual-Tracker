@@ -19,7 +19,7 @@ import {
 } from "@/features/reports/components/shared/constants"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
-import { formatRangeLabel, formatSecondsAsHMS, parseTimeToSeconds, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { formatRangeLabel, formatSecondsAsHMS, parseTimeToSeconds, startOfDay, endOfDay, toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { cn } from "@/shared/utils/utils"
 import { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-owed/amounts-owed-filters-panel"
@@ -30,7 +30,7 @@ import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOpti
 import { useAuth } from "@/shared/providers/app"
 import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { STANDARD_REPORT_ORG_LABEL, MEMBER_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 import { sumMoneyStrings } from "@/features/reports/utils/money"
 
 function sumHoursStrings(hmsList: string[]): string {
@@ -52,7 +52,7 @@ function downloadDailyTotalsCsv(groups: AmountsOwedDayGroup[]): void {
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `daily-totals-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `daily-totals-${todayDateParam()}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -71,7 +71,7 @@ function downloadDailyTotalsPdf(groups: AmountsOwedDayGroup[], dateLabel: string
     title: "Daily Totals Report",
     subtitle: "Daily hours and totals across members.",
     orgLabel: STANDARD_REPORT_ORG_LABEL,
-    timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+    timezoneLabel: MEMBER_TIMEZONE_LABEL,
     rangeLabel: dateLabel,
     summary: [
       { label: "Hours", value: sumHoursStrings(allHours) },
@@ -259,8 +259,8 @@ export function DailyTotalsReport() {
 
   useEffect(() => {
     let cancelled = false
-    const from = rangeStart.toISOString().slice(0, 10)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const from = toDateParam(rangeStart)
+    const to = toDateParam(rangeEnd)
     setLoading(true)
     setError(null)
     fetchAmountsOwedReport({ from, to, memberId: scope === "me" ? memberId ?? null : null,

@@ -18,8 +18,9 @@ import {
 import { cn } from "@/shared/utils/utils"
 import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
-import { STANDARD_REPORT_ORG_LABEL, STANDARD_REPORT_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
+import { STANDARD_REPORT_ORG_LABEL, CALENDAR_DATE_LABEL } from "@/features/reports/components/shared/constants"
 
+import { todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function budgetSpentDisplay(row: ProjectBudgetRow): string {
   return row.budgetType === "cost" ? formatMoney(row.spentAmount) : formatDurationHms(row.spentSeconds)
 }
@@ -85,7 +86,7 @@ function exportProjectBudgetsCsv(rows: { section: string; row: ProjectBudgetRow 
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `project-budgets-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `project-budgets-${todayDateParam()}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }
@@ -152,7 +153,7 @@ function ProjectBudgetsTable({ filters }: { filters: ReportFilterState }) {
         title: "Project Budgets Report",
         subtitle: "How much of each project's budget has been spent.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         charts:
           withBudget.length > 0
             ? [

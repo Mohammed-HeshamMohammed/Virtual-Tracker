@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 
+import { todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 export type ReportPdfAlign = "left" | "right" | "center"
 
 export interface ReportPdfColumn {
@@ -373,5 +374,5 @@ export function downloadReportPdf(spec: ReportPdfSpec): void {
     })
   }
 
-  doc.save(`${spec.filename}-${new Date().toISOString().slice(0, 10)}.pdf`)
+  doc.save(`${spec.filename}-${todayDateParam()}.pdf`)
 }

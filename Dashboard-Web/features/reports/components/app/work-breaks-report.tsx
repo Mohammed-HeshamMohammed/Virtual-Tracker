@@ -17,14 +17,14 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
-import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   DATE_MEMBER_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  MEMBER_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
-import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
+import { formatDecimalHoursClock, toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
 function initialsFor(name: string): string {
@@ -80,6 +80,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<WorkBreakRow[]>([])
   const [minGapMinutes, setMinGapMinutes] = useState(5)
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const toggleGroupCollapsed = (key: string) =>
@@ -96,13 +97,16 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
     setLoading(true)
     setError(null)
     fetchWorkBreaksReport({
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
       minGapMinutes,
     })
       .then((data) => {
-        if (!cancelled) setRows(data.rows)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -128,7 +132,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `work-breaks-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `work-breaks-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -163,7 +167,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
         title: "Work Breaks Report",
         subtitle: "How many breaks team members are taking, derived from the gaps between tracked sessions.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: MEMBER_TIMEZONE_LABEL,
         rangeLabel: dateLabel,
         summary: [
           { label: "Breaks", value: String(summary.count) },
@@ -208,6 +212,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
 
   return (
     <div className="space-y-5">
+      {truncated ? <ReportTruncationNotice what="breaks" /> : null}
       <div className="flex flex-wrap items-center gap-3">
         <label
           className={cn("text-xs font-semibold uppercase tracking-wider", isDark ? "text-white/40" : "text-slate-400")}

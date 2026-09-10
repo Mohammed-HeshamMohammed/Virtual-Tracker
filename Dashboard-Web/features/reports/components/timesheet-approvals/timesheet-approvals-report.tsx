@@ -13,15 +13,16 @@ import {
 } from "@/features/reports/components/shared/report-filters-panel"
 import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/models/timesheet-approvals"
 import { cn } from "@/shared/utils/utils"
-import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
   TIMESHEET_APPROVALS_GROUP_BY_OPTIONS,
 } from "@/features/reports/components/shared/constants"
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function groupTimesheetRows(
   rows: TimesheetApprovalRow[],
   groupBy: string
@@ -96,6 +97,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   })
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<TimesheetApprovalRow[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -111,13 +113,16 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
 
   useEffect(() => {
     let cancelled = false
-    const from = rangeStart.toISOString().slice(0, 10)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const from = toDateParam(rangeStart)
+    const to = toDateParam(rangeEnd)
     setLoading(true)
     setError(null)
     fetchTimesheetApprovalsReport({ from, to, memberIds: [...filters.memberIds] })
       .then((data) => {
-        if (!cancelled) setRows(data)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -151,7 +156,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `timesheet-approvals-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `timesheet-approvals-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     }
@@ -166,7 +171,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
       downloadReportPdf({
         title: "Timesheet Approvals Report",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         rangeLabel: dateLabel,
         charts:
           byStatus.size > 0
@@ -240,7 +245,9 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
   }
 
   return (
-    <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10" : "border-slate-200")}>
+    <div className="space-y-4">
+      {truncated ? <ReportTruncationNotice what="timesheets" /> : null}
+      <div className={cn("overflow-hidden rounded-xl border", isDark ? "border-white/10" : "border-slate-200")}>
       <div ref={tableWidthRef} className="overflow-x-auto custom-scrollbar-x">
         <table className="w-full border-collapse text-sm">
           <thead>
@@ -316,6 +323,7 @@ function TimesheetApprovalsTable({ filters }: { filters: ReportFilterState }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

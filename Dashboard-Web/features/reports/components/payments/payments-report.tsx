@@ -21,8 +21,9 @@ import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   PAYMENTS_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
 } from "@/features/reports/components/shared/constants"
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 
 function groupPaymentRows(
   rows: PaymentReportRow[],
@@ -91,8 +92,8 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
     setLoading(true)
     setError(null)
     fetchPaymentsRecordedReport({
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
     })
       .then((data) => {
@@ -130,7 +131,7 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `payments-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `payments-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -155,7 +156,7 @@ function PaymentsTable({ filters }: { filters: ReportFilterState }) {
         title: "Payments Report",
         subtitle: "Money actually recorded against an invoice.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         rangeLabel: dateLabel,
         summary: !summary.mixed
           ? [
