@@ -92,6 +92,72 @@ pub struct ActivityMeter {
     hook_thread_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
+/// Seconds since the last input the OS itself recorded for this session, or
+/// `None` where there is no such query (non-Windows, or the call failed).
+///
+/// `GetLastInputInfo` reports a tick count, which wraps roughly every 49.7
+/// days of uptime. `GetTickCount64` does not, so the subtraction is done in
+/// 64-bit and the 32-bit reading is widened against it - otherwise a machine
+/// up longer than that would report a nonsense idle time exactly once per wrap
+/// and stop a session for no reason.
+/// Tests need to simulate a machine nobody is touching, which the real query
+/// cannot do - the machine running the suite is, by definition, in use.
+///
+/// Thread-local, not a static: `cargo test` runs tests in parallel, and a
+/// process-wide override let one test's simulated idle leak into another that
+/// wanted the real reading. Each test thread now gets its own answer.
+#[cfg(test)]
+thread_local! {
+    static TEST_IDLE_OVERRIDE_SEC: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+}
+
+/// Pretend the OS reports this many seconds of idle on this thread. `None`
+/// restores the real query. Test-only.
+#[cfg(test)]
+pub fn override_system_idle_for_test(seconds: Option<u64>) {
+    TEST_IDLE_OVERRIDE_SEC.with(|cell| cell.set(seconds));
+}
+
+#[cfg(test)]
+fn test_idle_override() -> Option<u64> {
+    TEST_IDLE_OVERRIDE_SEC.with(|cell| cell.get())
+}
+
+#[cfg(windows)]
+fn system_idle_seconds() -> Option<u64> {
+    #[cfg(test)]
+    if let Some(seconds) = test_idle_override() {
+        return Some(seconds);
+    }
+
+    use windows::Win32::System::SystemInformation::GetTickCount64;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetLastInputInfo, LASTINPUTINFO};
+
+    let mut info = LASTINPUTINFO {
+        cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
+        dwTime: 0,
+    };
+    // SAFETY: `info` is a correctly sized, fully initialised LASTINPUTINFO,
+    // and the call only writes `dwTime`.
+    if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
+        return None;
+    }
+    let now = unsafe { GetTickCount64() };
+    // Widen the 32-bit reading into the same era as `now`.
+    let last = (now & !0xFFFF_FFFF) | u64::from(info.dwTime);
+    let last = if last > now { last - 0x1_0000_0000 } else { last };
+    Some(now.saturating_sub(last) / 1000)
+}
+
+#[cfg(not(windows))]
+fn system_idle_seconds() -> Option<u64> {
+    #[cfg(test)]
+    if let Some(seconds) = test_idle_override() {
+        return Some(seconds);
+    }
+    None
+}
+
 impl ActivityMeter {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
@@ -135,6 +201,31 @@ impl ActivityMeter {
         {
             *self.hook_thread_handle.lock() = Some(handle);
         }
+    }
+
+    /// ID-5: reinstall the input hooks if Windows has removed them behind our
+    /// back.
+    ///
+    /// Idle time no longer depends on the hooks (see `idle_seconds`), so a
+    /// dead hook can no longer stop a session - but it does flatten the
+    /// activity *score*, which is built from per-event counts the OS-level
+    /// query cannot provide. A member typing normally would score at the floor
+    /// and look disengaged. Tearing the thread down and starting it again
+    /// re-runs `SetWindowsHookExW`.
+    ///
+    /// Cheap enough to call on a schedule: the check is two atomic loads and
+    /// one `GetLastInputInfo`, and it does nothing at all unless the two
+    /// disagree.
+    pub fn restart_hooks_if_dead(self: &Arc<Self>) -> bool {
+        if !Self::HOOKS_SUPPORTED || !self.hooks_look_dead() {
+            return false;
+        }
+        log::warn!(
+            "Input hooks stopped reporting while the OS still sees input - Windows most likely              dropped them for missing LowLevelHooksTimeout. Reinstalling; idle time was unaffected."
+        );
+        self.stop();
+        self.start();
+        true
     }
 
     /// CQ-1: unregisters the OS-level hooks and blocks (bounded) until the
@@ -312,13 +403,61 @@ impl ActivityMeter {
         self.note_input(injected);
     }
 
-    /// Seconds since the last observed mouse/keyboard input. On platforms
-    /// with no input hook wired yet (non-Windows - see run_listeners above)
-    /// this only grows from process start and never resets, same limitation
-    /// `score` already has there.
+    /// Seconds since the last real mouse/keyboard input.
+    ///
+    /// ID-5: this used to read only `last_input_ms`, which is fed exclusively
+    /// by the two `WH_*_LL` hooks installed in `run_listeners`. Those hooks can
+    /// stop delivering without any error and without notifying this process:
+    ///
+    ///  - Windows **silently removes** a low-level hook whose callback misses
+    ///    `LowLevelHooksTimeout` (`HKCU\Control Panel\Desktop`, 300ms by
+    ///    default). Nothing is returned, nothing is logged, the hook is simply
+    ///    gone. A machine under load - exactly the machines people report lag
+    ///    on - is where this happens.
+    ///  - UIPI stops low-level hooks seeing input aimed at a
+    ///    higher-integrity-level process, so anyone working in an elevated app
+    ///    reads as idle for as long as they stay there.
+    ///  - Anything that stalls the hook thread's message pump stops delivery
+    ///    for as long as the stall lasts.
+    ///
+    /// Any one of those froze `last_input_ms`, so idle time grew without bound
+    /// and `tick_idle_escalation` stopped the session and rewound the clock
+    /// while the member was actively typing. That is the "unexpected pausing"
+    /// in the field reports.
+    ///
+    /// `GetLastInputInfo` is the authority instead. It is a kernel-level query
+    /// answered from the session's own input record: it needs no hook, cannot
+    /// be silently removed, and never stalls. The hooks stay - the activity
+    /// *score* genuinely needs per-event counts, which this cannot give - but
+    /// they no longer decide whether someone is present.
+    ///
+    /// The smaller of the two wins, so either source seeing input is enough.
     pub fn idle_seconds(&self) -> u64 {
-        let last = self.last_input_ms.load(Ordering::Relaxed);
-        now_ms().saturating_sub(last) / 1000
+        let from_hooks = {
+            let last = self.last_input_ms.load(Ordering::Relaxed);
+            now_ms().saturating_sub(last) / 1000
+        };
+        match system_idle_seconds() {
+            Some(from_os) => from_os.min(from_hooks),
+            None => from_hooks,
+        }
+    }
+
+    /// Whether the hooks have gone quiet while the OS still sees input - the
+    /// signature of a hook Windows removed behind our back. Callers log it and
+    /// reinstall; nothing about idle depends on the answer.
+    #[allow(dead_code)]
+    pub fn hooks_look_dead(&self) -> bool {
+        let Some(from_os) = system_idle_seconds() else {
+            return false;
+        };
+        let from_hooks = {
+            let last = self.last_input_ms.load(Ordering::Relaxed);
+            now_ms().saturating_sub(last) / 1000
+        };
+        // The OS saw input recently and the hooks did not. One tick of skew is
+        // normal; half a minute is not.
+        from_os <= 2 && from_hooks > 30
     }
 
     /// Whether real OS input-hook tracking is actually running on this
@@ -786,6 +925,79 @@ mod tests {
         assert_eq!(signal.keystroke_count, 2);
         assert_eq!(signal.distinct_key_count, 2);
         assert_eq!(signal.injected_event_count, 1);
+    }
+
+    // ID-5: idle used to read only the hook-fed timestamp, so a hook Windows
+    // silently removed froze it and the session stopped and rewound while the
+    // member was typing. These pin the OS-level cross-check that replaced it.
+    // No assumption that anyone is at the machine - this runs on CI too. What
+    // it checks is that the query answers at all on Windows, and that the
+    // tick-count wrap handling never yields an absurd reading.
+    #[test]
+    fn the_os_idle_query_answers_on_windows_and_is_absent_elsewhere() {
+        let answer = system_idle_seconds();
+        if ActivityMeter::HOOKS_SUPPORTED {
+            let seconds = answer.expect("GetLastInputInfo must answer on Windows");
+            assert!(seconds < 60 * 60 * 24 * 365, "implausible idle reading: {seconds}s");
+        } else {
+            assert_eq!(answer, None);
+        }
+    }
+
+    #[test]
+    fn a_frozen_hook_timestamp_cannot_by_itself_report_idle() {
+        let meter = ActivityMeter::new();
+        // The hooks last saw input an hour ago - the state Windows leaves
+        // behind when it drops a slow low-level hook without telling anyone.
+        meter
+            .last_input_ms
+            .store(now_ms().saturating_sub(60 * 60 * 1000), Ordering::Relaxed);
+        // ...while the OS knows somebody typed two seconds ago.
+        override_system_idle_for_test(Some(2));
+
+        assert_eq!(
+            meter.idle_seconds(),
+            2,
+            "the OS reading must win; a dead hook used to stop the session and rewind the clock",
+        );
+        assert!(meter.hooks_look_dead(), "and the disagreement is detectable");
+
+        override_system_idle_for_test(None);
+    }
+
+    #[test]
+    fn a_genuinely_idle_machine_still_reports_idle() {
+        let meter = ActivityMeter::new();
+        meter
+            .last_input_ms
+            .store(now_ms().saturating_sub(600 * 1000), Ordering::Relaxed);
+        override_system_idle_for_test(Some(600));
+
+        assert_eq!(meter.idle_seconds(), 600, "both sources agree nobody is here");
+        assert!(!meter.hooks_look_dead(), "agreeing sources are not a dead hook");
+
+        override_system_idle_for_test(None);
+    }
+
+    // Either source seeing input is enough - the smaller reading wins.
+    #[test]
+    fn live_hooks_win_when_the_os_reading_is_the_staler_one() {
+        let meter = ActivityMeter::new();
+        meter.last_input_ms.store(now_ms(), Ordering::Relaxed);
+        override_system_idle_for_test(Some(300));
+
+        assert!(meter.idle_seconds() <= 1);
+
+        override_system_idle_for_test(None);
+    }
+
+    #[test]
+    fn hooks_reporting_normally_are_not_flagged_as_dead() {
+        let meter = ActivityMeter::new();
+        meter.last_input_ms.store(now_ms(), Ordering::Relaxed);
+        override_system_idle_for_test(Some(0));
+        assert!(!meter.hooks_look_dead());
+        override_system_idle_for_test(None);
     }
 
     #[test]

@@ -19,6 +19,35 @@ use crate::queue::EventQueue;
 
 pub type StatusCallback = Arc<dyn Fn(String) + Send + Sync>;
 
+/// Consecutive failed session fetches before the UI is told the numbers are
+/// unconfirmed. At SESSION_POLL_SEC (5s) this is one minute - long enough that
+/// an ordinary blip never shows a warning, short enough that a real outage
+/// does not go unmentioned for a whole shift.
+const DEGRADED_TICKS: u32 = 12;
+
+/// LAG-1: how many ticks between session polls.
+///
+/// `fetch_session` used to run on *every* tick - once every 5 seconds - and it
+/// takes the one `ApiClient` mutex that all 46 UI commands also queue on, held
+/// for the entire HTTP round trip (up to HTTP_TIMEOUT_SEC, doubled when a token
+/// refresh piggybacks inside it). On a slow connection that made the whole UI
+/// unresponsive in bursts, every five seconds, for as long as tracking ran.
+///
+/// Nothing in the session state changes fast enough to need 5s polling, and
+/// live-sync already pushes the changes that matter. Three ticks cuts the lock
+/// acquisitions by two thirds for no loss of freshness.
+const SESSION_FETCH_EVERY_N_TICKS: u32 = 3;
+
+/// LAG-1: how long the tracker waits for the shared client before giving up on
+/// this tick's poll.
+///
+/// The tracker is a background heartbeat; a person clicking a button is not.
+/// When the UI holds the lock the tracker now yields rather than queueing
+/// behind it - and skipping a poll costs nothing, because `last_tick_at` is
+/// only advanced by what was actually credited (see `consumed_span`), so the
+/// elapsed time is credited by whichever tick runs next.
+const SESSION_FETCH_LOCK_WAIT: Duration = Duration::from_millis(750);
+
 /// How often to retry the offline queue while ticking every SESSION_POLL_SEC —
 /// no point hammering a dead connection every 5s.
 const QUEUE_FLUSH_INTERVAL_SEC: u64 = 30;
@@ -150,6 +179,14 @@ struct TickState {
     /// ACT-3: same immediate-then-periodic schedule, see
     /// maybe_refresh_activity_scoring.
     next_scoring_refresh_at: Instant,
+    /// LAG-1: ticks since the last session poll, see SESSION_FETCH_EVERY_N_TICKS.
+    ticks_since_session_fetch: u32,
+    /// TC-8: consecutive failed `fetch_session` calls. Keeping the clock
+    /// running through a blip is deliberate - nothing is lost, it queues and
+    /// catches up - but it used to be *silent*, so a member could be looking
+    /// at a number nothing had confirmed for an hour with no way to tell.
+    /// Past DEGRADED_TICKS the status line says so.
+    failed_session_fetches: u32,
 }
 
 impl TickState {
@@ -173,6 +210,8 @@ impl TickState {
             next_sync_at: now,
             idle_watch: IdleWatch::default(),
             last_tick_at: now,
+            ticks_since_session_fetch: u32::MAX,
+            failed_session_fetches: 0,
             next_display_name_refresh_at: now,
             next_scoring_refresh_at: now,
         }
@@ -427,7 +466,69 @@ impl ActivityTracker {
         }
     }
 
+    /// LAG-1: the part of a tick that needs no network and no shared lock -
+    /// crediting elapsed time and checking idle escalation.
+    ///
+    /// Run on the ticks that skip the session poll, so deferring a poll never
+    /// defers the clock. Without this, a tick that yielded the lock would also
+    /// skip `tick_progress`, and the elapsed time would pile up until the
+    /// sleep/hibernate clamp threw it away.
+    fn tick_local_progress(&self, state: &mut TickState) {
+        if !state.was_active || state.current_session.is_empty() {
+            return;
+        }
+        let idle_now = self.tick_progress(
+            &state.task_id,
+            &mut state.last_tick_at,
+            &state.active_baseline,
+            &mut state.active_elapsed,
+            &state.idle_baseline,
+            &mut state.idle_elapsed,
+            state.idle_time_disabled,
+            state.idle_threshold_sec_for_project,
+        );
+        let _ = idle_now;
+
+        // Idle escalation must not wait on a poll either: it is the thing that
+        // stops a session nobody is at, and delaying it would credit active
+        // time to an empty chair.
+        let stopped = self.tick_idle_escalation(
+            &mut state.idle_watch,
+            &state.task_id,
+            &state.last_project_id,
+            &state.active_baseline,
+            &state.active_elapsed,
+            &state.idle_baseline,
+            &state.idle_elapsed,
+            state.idle_time_disabled,
+            state.idle_threshold_sec_for_project,
+        );
+        if stopped {
+            // Exactly what the polling path does on an idle stop (see the
+            // sibling call in `tick`) - the session is over the same way
+            // whichever tick happened to notice.
+            state.was_active = false;
+            state.current_session = String::new();
+            *self.session_id.lock() = None;
+            self.reset_task_progress(
+                &mut state.task_id,
+                &mut state.last_tick_at,
+                &mut state.active_baseline,
+                &mut state.active_elapsed,
+                &mut state.idle_baseline,
+                &mut state.idle_elapsed,
+                &mut state.idle_time_disabled,
+                &mut state.idle_threshold_sec_for_project,
+            );
+        }
+    }
+
     fn tick(&self, state: &mut TickState) {
+        // ID-5: cheap no-op unless the hooks have gone quiet while the OS is
+        // still seeing input. Idle time does not depend on them any more, but
+        // the activity score does.
+        self.activity.restart_hooks_if_dead();
+
         self.maybe_flush_queue(&mut state.next_flush_at);
         self.maybe_refresh_display_names(&mut state.next_display_name_refresh_at);
         self.maybe_refresh_activity_scoring(&mut state.next_scoring_refresh_at);
@@ -463,10 +564,38 @@ impl ActivityTracker {
         // Never triggered before because this branch had zero test coverage
         // until Suggestion #14 added it - the deadlock showed up immediately
         // once the branch was actually exercised end to end.
-        let fetched = self.api.lock().fetch_session();
+        // LAG-1: poll on a schedule, and only if the shared client is free.
+        // A skipped poll is not a failed one - it must not count toward the
+        // offline warning, and it costs no tracked time.
+        state.ticks_since_session_fetch = state.ticks_since_session_fetch.saturating_add(1);
+        if state.ticks_since_session_fetch < SESSION_FETCH_EVERY_N_TICKS {
+            self.tick_local_progress(state);
+            return;
+        }
+        let Some(client) = self.api.try_lock_for(SESSION_FETCH_LOCK_WAIT) else {
+            log::debug!("session poll skipped: the API client is busy serving the UI");
+            self.tick_local_progress(state);
+            return;
+        };
+        state.ticks_since_session_fetch = 0;
+        let fetched = { client }.fetch_session();
         let session = match fetched {
-            Ok(session) => session,
+            Ok(session) => {
+                if state.failed_session_fetches >= DEGRADED_TICKS {
+                    self.emit_status("Reconnected — your time is confirmed");
+                }
+                state.failed_session_fetches = 0;
+                session
+            }
             Err(_) => {
+                state.failed_session_fetches = state.failed_session_fetches.saturating_add(1);
+                // TC-8: past a minute of silence, say so. The clock keeps
+                // running on purpose, but "still counting" and "confirmed by
+                // the server" are different claims and the member is entitled
+                // to know which one they are looking at.
+                if state.failed_session_fetches == DEGRADED_TICKS {
+                    self.emit_status("Offline — still counting, not yet synced");
+                }
                 // Backend unreachable. If we were mid-session, keep capturing under
                 // it — nothing gets lost, it just queues locally (and keeps ticking
                 // active/idle seconds) until reconnected, when the next sync catches up.
@@ -988,6 +1117,30 @@ impl ActivityTracker {
         elapsed.as_secs().min(SESSION_POLL_SEC * 4)
     }
 
+    /// The part of `elapsed` that was credited, so the caller can roll the
+    /// remainder into the next tick instead of dropping it.
+    ///
+    /// TC-7: `credited_seconds` truncates to whole seconds and the caller used
+    /// to set `last_tick_at = now`, which threw the fraction away. A tick is
+    /// always `SESSION_POLL_SEC` plus however long `tick()` took - and `tick()`
+    /// does real network I/O every time - so that fraction was never zero and
+    /// the error only ever ran one way: the clock could only lose time. At
+    /// 120ms of work per tick it is 11 minutes of an eight-hour shift; at 800ms
+    /// on a struggling machine it is over an hour. The laggier the machine, the
+    /// more it lost, which is why the lag reports and the short-hours reports
+    /// came from the same people.
+    ///
+    /// When the clamp bites - a sleep/hibernate gap - there is no remainder to
+    /// carry: that time must not be banked at all, so the whole gap is
+    /// consumed and idle escalation takes over from there.
+    fn consumed_span(elapsed: Duration, credited: u64) -> Duration {
+        let cap = Duration::from_secs(SESSION_POLL_SEC * 4);
+        if elapsed > cap {
+            return elapsed;
+        }
+        Duration::from_secs(credited)
+    }
+
     /// Counts the credited seconds as idle rather than active if there's been
     /// no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session
     /// sitting untouched shouldn't silently rack up "active" hours.
@@ -1011,8 +1164,11 @@ impl ActivityTracker {
         idle_threshold_sec: u64,
     ) -> bool {
         let now = Instant::now();
-        let delta = Self::credited_seconds(now.duration_since(*last_tick_at));
-        *last_tick_at = now;
+        let elapsed = now.duration_since(*last_tick_at);
+        let delta = Self::credited_seconds(elapsed);
+        // Not `now`: the sub-second remainder stays owed and is credited by the
+        // next tick that pushes the total past a whole second. See consumed_span.
+        *last_tick_at = now - (elapsed - Self::consumed_span(elapsed, delta));
 
         // ID-3: a project with idle time disabled never splits into idle at
         // all - everything is credited active. Otherwise use this session's
@@ -1276,6 +1432,26 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
+    /// Makes `idle_seconds()` report a machine nobody is touching, and puts
+    /// the real OS query back on drop so one test cannot leak into another.
+    /// ID-5: idle takes the smaller of the hook clock and the OS's own
+    /// GetLastInputInfo, and the machine running this suite is in use by
+    /// definition - so "nobody is here" has to be simulated for both sources.
+    struct SimulatedOsIdle;
+
+    impl SimulatedOsIdle {
+        fn seconds(seconds: u64) -> Self {
+            crate::capture::activity::override_system_idle_for_test(Some(seconds));
+            Self
+        }
+    }
+
+    impl Drop for SimulatedOsIdle {
+        fn drop(&mut self) {
+            crate::capture::activity::override_system_idle_for_test(None);
+        }
+    }
+
     use super::{valid_idle_threshold, ActivityTracker, IdleWatch, PendingStop, TickState};
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
@@ -1492,6 +1668,12 @@ mod tests {
         tracker.apply_idle_thresholds(1);
         let mut state = TickState::new();
 
+        // ID-5: idle now takes the smaller of the hook clock and the OS's own
+        // GetLastInputInfo. The machine running this suite is in use by
+        // definition, so "nobody is here" has to be simulated for both sources
+        // or the escalation can never fire.
+        let _os_idle = SimulatedOsIdle::seconds(9_999);
+
         // Starts the session. ActivityMeter's last-input clock is set at
         // construction and nothing in this test ever feeds it real input, so
         // idle_seconds() grows with real wall-clock time from here exactly
@@ -1518,6 +1700,9 @@ mod tests {
         });
         let tracker = test_tracker(base_url);
         tracker.apply_idle_thresholds(1);
+
+        // ID-5: as above, both idle sources have to say nobody is here.
+        let _os_idle = SimulatedOsIdle::seconds(9_999);
 
         // Real idle_seconds() growing from construction, same technique the
         // test above uses - nothing here ever feeds ActivityMeter real input.
@@ -1693,7 +1878,53 @@ mod tests {
     /// tests that signal directly, at the level where the active/idle split
     /// itself is decided, rather than the network side effect three calls
     /// away.
+    // TC-7: a tick period is never a whole number of seconds - it is the sleep
+    // plus however long the tick's network I/O took. Truncating and resetting
+    // last_tick_at to `now` discarded that fraction every single tick, so the
+    // clock could only ever run slow.
     #[test]
+    fn a_tick_carries_its_sub_second_remainder_into_the_next_one() {
+        // 5.4s of real time credits 5s now and leaves 0.4s owed.
+        let elapsed = Duration::from_millis(5_400);
+        let credited = ActivityTracker::credited_seconds(elapsed);
+        assert_eq!(credited, 5);
+        let consumed = ActivityTracker::consumed_span(elapsed, credited);
+        assert_eq!(elapsed - consumed, Duration::from_millis(400));
+    }
+
+    #[test]
+    fn carried_remainders_eventually_credit_a_whole_second() {
+        // Three 5.4s ticks are 16.2s of real time. Truncating each in
+        // isolation credits 15s and loses 1.2s; carrying credits 16s.
+        let mut owed = Duration::ZERO;
+        let mut total = 0u64;
+        for _ in 0..3 {
+            let elapsed = Duration::from_millis(5_400) + owed;
+            let credited = ActivityTracker::credited_seconds(elapsed);
+            owed = elapsed - ActivityTracker::consumed_span(elapsed, credited);
+            total += credited;
+        }
+        assert_eq!(total, 16, "16.2s of real time must credit 16s, not 15");
+        assert_eq!(owed, Duration::from_millis(200));
+    }
+
+    // A resumed laptop must not bank the whole suspend as active work, and
+    // must not keep owing it either - the gap is consumed and dropped.
+    #[test]
+    fn a_sleep_gap_is_clamped_and_leaves_nothing_owed() {
+        let elapsed = Duration::from_secs(3_600);
+        let credited = ActivityTracker::credited_seconds(elapsed);
+        assert_eq!(credited, crate::constants::SESSION_POLL_SEC * 4);
+        assert_eq!(elapsed - ActivityTracker::consumed_span(elapsed, credited), Duration::ZERO);
+    }
+
+    #[test]
+    fn an_exact_whole_second_tick_owes_nothing() {
+        let elapsed = Duration::from_secs(5);
+        let credited = ActivityTracker::credited_seconds(elapsed);
+        assert_eq!(elapsed - ActivityTracker::consumed_span(elapsed, credited), Duration::ZERO);
+    }
+
     fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
         let tracker = test_tracker(base_url);

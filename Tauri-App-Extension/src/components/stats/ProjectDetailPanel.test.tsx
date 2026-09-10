@@ -83,8 +83,13 @@ describe("ProjectDetailPanel", () => {
     expect(html).not.toContain("members");
   });
 
-  it("hides the top-apps section when there is nothing tracked yet", () => {
-    expect(render(baseProject)).not.toContain("top apps");
+  // This used to hide the whole section when there was nothing to plot, which
+  // reads as a missing feature rather than an empty week - people asked where
+  // the top-apps card had gone. It stays and says what it knows.
+  it("keeps the top-apps section and explains the absence when nothing is tracked", () => {
+    const html = render(baseProject);
+    expect(html).toContain("top apps");
+    expect(html).toContain("No app activity recorded for this project this week yet");
   });
 
   it("plots one point per app around a radar, one axis per app", () => {
@@ -148,10 +153,14 @@ describe("ProjectDetailPanel", () => {
     expect(html).not.toContain("shot-chip ");
   });
 
-  it("never leaves a stale value on screen once loading finishes with nothing", () => {
+  it("never leaves a stale value or a skeleton on screen once loading finishes with nothing", () => {
     const html = render(baseProject, { loading: false });
-    expect(html).not.toContain("project-radar");
+    // The chart markup is present but hidden; what must not survive is any
+    // number from a previous project, or a skeleton implying work in flight.
+    expect(html).toContain("project-radar-empty");
+    expect(html).not.toContain("project-radar-skeleton");
     expect(html).not.toContain("shot-chip-skeleton");
+    expect(html).not.toContain("project-radar-label");
   });
 
   it("shows each app's time as a direct label, focusable for a keyboard-reachable tooltip", () => {

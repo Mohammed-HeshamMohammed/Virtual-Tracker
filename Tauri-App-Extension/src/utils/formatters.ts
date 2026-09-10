@@ -1,7 +1,21 @@
 /** "Sep 9, 2:02 PM" for a screenshot's captured-at timestamp, or "" for a
  *  missing/unparseable one - callers show a plain dash for that case rather
  *  than a raw "Invalid Date". */
-export function fmtCapturedAt(capturedAt: string | null): string {
+/**
+ * When a screenshot was taken, on the member's own clock.
+ *
+ * This used to pass `undefined` as the locale, which means the machine's
+ * timezone - while the header clock right above it renders the member's
+ * configured zone. For anyone whose machine and profile disagree the two
+ * contradicted each other on screen: a member configured as New York, working
+ * from Cairo, saw screenshots stamped "7:48 PM" under a header reading
+ * "12:52 PM NEW YORK". Seven hours in the future, from a capture taken four
+ * minutes ago.
+ *
+ * The member's zone is the right one: it is the calendar their day, their
+ * limits and every report are booked against.
+ */
+export function fmtCapturedAt(capturedAt: string | null, timeZone?: string): string {
   if (!capturedAt) return "";
   const d = new Date(capturedAt);
   if (Number.isNaN(d.getTime())) return "";
@@ -10,6 +24,7 @@ export function fmtCapturedAt(capturedAt: string | null): string {
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   });
 }
 

@@ -1211,19 +1211,44 @@ mod diagnostic_error_tests {
     fn project_app_breakdown_404_is_ok_empty_not_an_error() {
         let url = fake_server(|_request| (404, "not found".to_string()));
         let mut api = authed_client(url);
-        assert_eq!(api.fetch_project_app_breakdown("proj-1"), Ok(Vec::new()));
+        let breakdown = api.fetch_project_app_breakdown("proj-1").expect("ok");
+        assert!(breakdown.apps.is_empty());
+        assert_eq!(breakdown.total_seconds, 0);
     }
 
     #[test]
-    fn project_app_breakdown_parses_app_name_and_seconds() {
+    fn project_app_breakdown_parses_apps_and_the_totals_they_came_from() {
+        let url = fake_server(|_request| {
+            (
+                200,
+                r#"{"data": {"apps": [{"appName": "Zoom", "totalSeconds": 1800}],
+                             "totalSeconds": 5400, "appCount": 9, "shownSeconds": 1800}}"#
+                    .to_string(),
+            )
+        });
+        let mut api = authed_client(url);
+        let breakdown = api.fetch_project_app_breakdown("proj-1").expect("ok");
+        assert_eq!(breakdown.apps.len(), 1);
+        assert_eq!(breakdown.apps[0].app_name, "Zoom");
+        assert_eq!(breakdown.apps[0].total_seconds, 1800);
+        // The panel needs these to say it is showing a few of many.
+        assert_eq!(breakdown.total_seconds, 5400);
+        assert_eq!(breakdown.app_count, 9);
+    }
+
+    // A server on the previous release still returns a bare array here. Read
+    // it as the app list rather than failing the whole panel.
+    #[test]
+    fn project_app_breakdown_accepts_an_older_servers_bare_array() {
         let url = fake_server(|_request| {
             (200, r#"{"data": [{"appName": "Zoom", "totalSeconds": 1800}]}"#.to_string())
         });
         let mut api = authed_client(url);
-        let rows = api.fetch_project_app_breakdown("proj-1").expect("ok");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].app_name, "Zoom");
-        assert_eq!(rows[0].total_seconds, 1800);
+        let breakdown = api.fetch_project_app_breakdown("proj-1").expect("ok");
+        assert_eq!(breakdown.apps.len(), 1);
+        assert_eq!(breakdown.apps[0].app_name, "Zoom");
+        assert_eq!(breakdown.total_seconds, 1800);
+        assert_eq!(breakdown.app_count, 1);
     }
 }
 

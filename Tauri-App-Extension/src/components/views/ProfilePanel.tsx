@@ -67,6 +67,7 @@ export function ProfilePanel({
   screenshots,
   screenshotImages,
   selectedScreenshotId,
+  screenshotTimeZone,
   onSelectScreenshot,
   onRequestTimeOff,
   onSubmitTimesheet,
@@ -82,6 +83,9 @@ export function ProfilePanel({
   screenshots: ScreenshotRef[];
   screenshotImages: Record<string, string>;
   selectedScreenshotId: string | null;
+  /** The member's own zone, so a capture time never contradicts the header
+   *  clock - see fmtCapturedAt. */
+  screenshotTimeZone?: string;
   onSelectScreenshot: (id: string) => void;
   onRequestTimeOff: () => void;
   onSubmitTimesheet: () => void;
@@ -276,6 +280,7 @@ export function ProfilePanel({
           screenshots={screenshots}
           images={screenshotImages}
           selectedId={selectedScreenshotId}
+          timeZone={screenshotTimeZone}
           onSelect={onSelectScreenshot}
         />
 

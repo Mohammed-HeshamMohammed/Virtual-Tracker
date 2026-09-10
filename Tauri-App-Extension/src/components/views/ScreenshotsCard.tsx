@@ -6,9 +6,12 @@ type ScreenshotsCardProps = {
   images: Record<string, string>;
   onSelect: (id: string) => void;
   selectedId: string | null;
+  /** The member's own zone, so a capture time never contradicts the clock in
+   *  the header - see fmtCapturedAt. */
+  timeZone?: string;
 };
 
-export function ScreenshotsCard({ screenshots, images, onSelect, selectedId }: ScreenshotsCardProps) {
+export function ScreenshotsCard({ screenshots, images, onSelect, selectedId, timeZone }: ScreenshotsCardProps) {
   if (screenshots.length === 0) return null;
   const selected = selectedId ? images[selectedId] : "";
 
@@ -26,9 +29,9 @@ export function ScreenshotsCard({ screenshots, images, onSelect, selectedId }: S
             type="button"
             className={`shot-chip${shot.id === selectedId ? " active" : ""}`}
             onClick={() => onSelect(shot.id)}
-            title={fmtCapturedAt(shot.capturedAt) || "Screenshot"}
+            title={fmtCapturedAt(shot.capturedAt, timeZone) || "Screenshot"}
           >
-            {fmtCapturedAt(shot.capturedAt) || "—"}
+            {fmtCapturedAt(shot.capturedAt, timeZone) || "—"}
           </button>
         ))}
       </div>

@@ -4,6 +4,9 @@ import { invoke } from "@tauri-apps/api/core";
 import App from "./App";
 import type { AppSettingsView } from "./types";
 import { applyTheme, isThemePreference } from "./utils/theme";
+import { AppErrorBoundary, installGlobalErrorLogging } from "./components/common/AppErrorBoundary";
+
+installGlobalErrorLogging();
 
 void invoke<AppSettingsView>("get_app_settings")
   .then((settings) => {
@@ -16,6 +19,8 @@ void invoke<AppSettingsView>("get_app_settings")
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
   </React.StrictMode>,
 );

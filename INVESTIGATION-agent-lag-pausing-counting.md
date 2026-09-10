@@ -4,8 +4,9 @@ Investigation of the Tauri agent against five recurring field complaints. Every
 finding below is traced to a specific line, and each one is a distinct defect —
 they are not five symptoms of one cause, though several make each other worse.
 
-**Status:** diagnosis only. Nothing here is fixed yet.
-**Codebase as of:** `718c8382` (agent v1.0.1 + unreleased fixes on `main`).
+**Status:** all six fixed on `main`, plus two more found while fixing them.
+Not yet released — none of this reaches users before v1.0.2.
+**Diagnosed against:** `718c8382` (agent v1.0.1 + unreleased fixes on `main`).
 
 ---
 
@@ -278,20 +279,31 @@ able to see that the number in front of them is unverified.
 
 ---
 
-## Priority
+## What was done
 
-| # | Defect | Impact | Effort |
-|---|---|---|---|
-| F5 | Sub-second truncation | Everyone's hours run 1–14 % short | **Trivial** — 3 lines |
-| F4 | Idle rests on removable hooks | Unexplained stops with time taken back | Small — `GetLastInputInfo` cross-check |
-| F3 | One mutex across all I/O | Lag, and the root of F2 | Medium — real refactor |
-| F2 | Refresh latches disabled | Refresh dies until restart | Small — timeouts |
-| F1 | Unbounded screenshot cache | Blank window, needs restart | Small — LRU + boundary |
-| F6 | Silent degraded counting | Untrustworthy numbers, invisible | Small |
+| # | Defect | Fix |
+|---|---|---|
+| F5 | Sub-second truncation | `consumed_span` carries the remainder into the next tick instead of discarding it. The clamp still swallows a sleep/hibernate gap, which must not be banked. |
+| F4 | Idle rests on removable hooks | `GetLastInputInfo` is now the authority for idle — kernel-level, unkillable. Hooks stay for the activity score and are reinstalled when they go quiet while the OS still sees input. |
+| F3 | One mutex across all I/O | Session polling moved from every tick to every third, and the tracker now yields the lock to the UI (`try_lock_for`) instead of queueing ahead of it. Deferring a poll costs no tracked time — F5's carry is what makes that safe. |
+| F2 | Refresh latches disabled | Every command from the main screen has a 25s deadline, and the latch clears on a timer regardless of what the promises do. |
+| F1 | Unbounded screenshot cache | Capped at 16, and the bytes moved out of the JS heap into Blobs behind object URLs that are revoked on eviction. Plus an error boundary and global error logging, so a crash offers a reload rather than a blank rectangle. |
+| F6 | Silent degraded counting | After a minute of failed session polls the status line says "Offline — still counting, not yet synced", and says so again when it reconnects. |
 
-F5 and F4 are the two worth doing first: they are the ones actually corrupting
-recorded time, and both are small. F3 is the largest change and fixes the most
-complaints at once.
+Two more found while fixing the above:
+
+**F7 — screenshot times were on the wrong clock.** `fmtCapturedAt` passed
+`undefined` as the locale, which means the *machine's* timezone, while the
+header clock right above it renders the *member's* configured zone. A member
+configured as New York working from Cairo saw captures stamped "7:48 PM" under
+a header reading "12:52 PM NEW YORK" — seven hours in the future, from a
+screenshot taken four minutes earlier. Same bug family as the report ones fixed
+in `c94d76b`.
+
+**F8 — the top-apps card vanished when there was no data.** `showChart` was
+`appBreakdown.length > 0 || loading`, so a project with no app time this week
+simply had no card, which reads as a missing feature rather than an empty week.
+It now stays and says what it knows.
 
 ---
 

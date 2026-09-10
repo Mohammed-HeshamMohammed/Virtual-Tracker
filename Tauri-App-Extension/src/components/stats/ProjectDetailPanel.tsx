@@ -72,6 +72,8 @@ type ProjectDetailPanelProps = {
    *  until the swap, so no stale number reads as if it were this
    *  project's. */
   loading: boolean;
+  /** The member's own zone - see fmtCapturedAt. */
+  timeZone?: string;
   onSelectScreenshot: (id: string) => void;
 };
 
@@ -92,6 +94,7 @@ export function ProjectDetailPanel({
   screenshotImages,
   selectedScreenshotId,
   loading,
+  timeZone,
   onSelectScreenshot,
 }: ProjectDetailPanelProps) {
   if (!project) return null;
@@ -114,7 +117,11 @@ export function ProjectDetailPanel({
   const hasBadges = project.requireStopNote || project.budgetExhausted || canAddTask;
   // While loading, both halves hold their space with a skeleton rather than
   // collapsing the card and snapping the whole page's height around.
-  const showChart = appBreakdown.length > 0 || loading;
+  // The card used to disappear whenever there were no apps to plot, which
+  // reads as a missing feature rather than an absence of data - "where is this
+  // week's top apps?". It stays put and says what it knows instead.
+  const showChart = true;
+  const hasApps = appBreakdown.length > 0;
   const showShots = screenshots.length > 0 || loading;
   const axisCount = appBreakdown.length || RADAR_SKELETON_AXES;
   // Newest-first from the backend already - slicing keeps only the most
@@ -164,6 +171,15 @@ export function ProjectDetailPanel({
                   in a grown frame and sizing it off height (aspect-ratio
                   deriving width, clamped by max-width) keeps it square at
                   whatever size actually fits. */}
+              {!loading && !hasApps ? (
+                <div className="project-radar-empty">
+                  <p>No app activity recorded for this project this week yet.</p>
+                  <p className="project-radar-empty-hint">
+                    Apps appear here about a minute after tracking starts.
+                  </p>
+                </div>
+              ) : null}
+              {loading || hasApps ? (
               <div className="project-radar-frame">
                 <div className={`project-radar${loading ? " is-loading" : ""}`}>
                 <svg viewBox="0 0 100 100" className="project-radar-svg" aria-hidden="true">
@@ -287,6 +303,7 @@ export function ProjectDetailPanel({
                 })}
                 </div>
               </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -312,9 +329,9 @@ export function ProjectDetailPanel({
                         className={`shot-chip${shot.id === selectedScreenshotId ? " active" : ""}`}
                         style={{ "--i": i } as React.CSSProperties}
                         onClick={() => onSelectScreenshot(shot.id)}
-                        title={fmtCapturedAt(shot.capturedAt) || "Screenshot"}
+                        title={fmtCapturedAt(shot.capturedAt, timeZone) || "Screenshot"}
                       >
-                        {fmtCapturedAt(shot.capturedAt) || "—"}
+                        {fmtCapturedAt(shot.capturedAt, timeZone) || "—"}
                       </button>
                     ))}
                   </div>

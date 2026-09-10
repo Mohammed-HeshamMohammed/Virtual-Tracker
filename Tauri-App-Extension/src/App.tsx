@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+// Every command from this screen goes through a deadline. They all funnel
+// into one mutex the tracker locks every five seconds across a whole HTTP
+// round trip, so "slow" is normal and "never returns" was possible - and a
+// promise that never settles is what left the refresh button permanently
+// disabled. `sign_in` is the exception below: it waits on a browser round
+// trip and is given its own, much longer, allowance.
+import {
+  invokeWithTimeout as invoke,
+  DEFAULT_INVOKE_TIMEOUT_MS,
+  InvokeTimeoutError,
+} from "./utils/invoke-timeout";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
@@ -64,6 +74,7 @@ import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
 import { SignInPanel } from "./components/views/SignInPanel";
+import { EMPTY_IMAGE_CACHE, putImage, type ImageCache } from "./utils/image-cache";
 
 /** Stable empty value, so a reset never hands the panel a fresh object and
  *  re-renders the chart for no change. */
@@ -154,13 +165,13 @@ function MainApp() {
   const [timeOffError, setTimeOffError] = useState<string | null>(null);
   const [submittingTimesheet, setSubmittingTimesheet] = useState(false);
   const [screenshots, setScreenshots] = useState<ScreenshotRef[]>([]);
-  const [screenshotImages, setScreenshotImages] = useState<Record<string, string>>({});
+  const [screenshotImages, setScreenshotImages] = useState<ImageCache>(EMPTY_IMAGE_CACHE);
   const [selectedScreenshotId, setSelectedScreenshotId] = useState<string | null>(null);
   // "This project" card's own screenshots/app-time - separate state from the
   // profile view's above, so switching projects doesn't fight over the same
   // arrays with a different scope, and neither has to clear the other's.
   const [projectScreenshots, setProjectScreenshots] = useState<ScreenshotRef[]>([]);
-  const [projectScreenshotImages, setProjectScreenshotImages] = useState<Record<string, string>>({});
+  const [projectScreenshotImages, setProjectScreenshotImages] = useState<ImageCache>(EMPTY_IMAGE_CACHE);
   const [selectedProjectScreenshotId, setSelectedProjectScreenshotId] = useState<string | null>(null);
   const [projectAppBreakdown, setProjectAppBreakdown] = useState<ProjectAppBreakdown>(EMPTY_APP_BREAKDOWN);
   const [projectStatsLoading, setProjectStatsLoading] = useState(false);
@@ -480,12 +491,27 @@ function MainApp() {
   const handleManualRefresh = async () => {
     if (refreshingData) return;
     setRefreshingData(true);
+
+    // The latch that disables the button is cleared in the `finally` below,
+    // which only runs if the promise settles. If one of these three never did
+    // - queued behind the tracker's mutex on a wedged request - the button
+    // stayed disabled forever and the guard above swallowed every later click.
+    // This clears it regardless of what the promises do.
+    const latchTimer = window.setTimeout(() => {
+      setRefreshingData(false);
+    }, DEFAULT_INVOKE_TIMEOUT_MS + 2_000);
+
     try {
       await Promise.all([refresh(), refreshProjects(), refreshAssignedTasks()]);
     } catch (err) {
       console.error("manual refresh failed", err);
-      toast.error("Couldn't refresh — check your connection.");
+      toast.error(
+        err instanceof InvokeTimeoutError
+          ? "Refresh timed out — the agent is busy or offline. Try again in a moment."
+          : "Couldn't refresh — check your connection.",
+      );
     } finally {
+      window.clearTimeout(latchTimer);
       setRefreshingData(false);
     }
   };
@@ -675,7 +701,7 @@ function MainApp() {
         void invoke<string>("get_screenshot_image", { screenshotId: latest.id })
           .then((dataUrl) => {
             if (!cancelled && dataUrl) {
-              setProjectScreenshotImages((prev) => ({ ...prev, [latest.id]: dataUrl }));
+              setProjectScreenshotImages((prev) => putImage(prev, latest.id, dataUrl, [latest.id]));
             }
           })
           .catch(() => {
@@ -703,10 +729,10 @@ function MainApp() {
   const handleSelectProjectScreenshot = useCallback((id: string) => {
     setSelectedProjectScreenshotId(id);
     setProjectScreenshotImages((current) => {
-      if (current[id]) return current;
+      if (current.urls[id]) return current;
       void invoke<string>("get_screenshot_image", { screenshotId: id })
         .then((dataUrl) => {
-          if (dataUrl) setProjectScreenshotImages((prev) => ({ ...prev, [id]: dataUrl }));
+          if (dataUrl) setProjectScreenshotImages((prev) => putImage(prev, id, dataUrl, [id]));
         })
         .catch(() => {
           /* Leaves the placeholder in place - see ScreenshotsCard. */
@@ -719,10 +745,10 @@ function MainApp() {
     (id: string) => {
       setSelectedScreenshotId(id);
       setScreenshotImages((current) => {
-        if (current[id]) return current;
+        if (current.urls[id]) return current;
         void invoke<string>("get_screenshot_image", { screenshotId: id })
           .then((dataUrl) => {
-            if (dataUrl) setScreenshotImages((prev) => ({ ...prev, [id]: dataUrl }));
+            if (dataUrl) setScreenshotImages((prev) => putImage(prev, id, dataUrl, [id]));
           })
           .catch(() => {
             /* Leaves the placeholder in place - see ScreenshotsCard. */
@@ -1773,8 +1799,9 @@ function MainApp() {
           memberLimits={memberLimits}
           workspace={workspace}
           screenshots={screenshots}
-          screenshotImages={screenshotImages}
+          screenshotImages={screenshotImages.urls}
           selectedScreenshotId={selectedScreenshotId}
+          screenshotTimeZone={displayTimezone}
           onSelectScreenshot={handleSelectScreenshot}
           onRequestTimeOff={openTimeOff}
           onSubmitTimesheet={() => void handleSubmitTimesheet()}
@@ -2075,7 +2102,8 @@ function MainApp() {
                     project={selectedProject}
                     breakdown={projectAppBreakdown}
                     screenshots={projectScreenshots}
-                    screenshotImages={projectScreenshotImages}
+                    screenshotImages={projectScreenshotImages.urls}
+                    timeZone={displayTimezone}
                     selectedScreenshotId={selectedProjectScreenshotId}
                     loading={projectStatsLoading}
                     onSelectScreenshot={handleSelectProjectScreenshot}
