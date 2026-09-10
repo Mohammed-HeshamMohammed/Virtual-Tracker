@@ -343,9 +343,12 @@ pub fn read_browser_url(
                 return Some(url.chars().take(MAX_URL_LEN).collect());
             }
             // Trust the reader's "no URL here" and skip the subprocess - that
-            // is the whole point on a page heavy enough to be a problem.
+            // is the whole point on a page heavy enough to be a problem. The
+            // history lookup is still worth a try: it costs no browser work
+            // at all, and it is exactly the case (address bar unreadable)
+            // that used to leave a bare window title behind.
             if crate::capture::uia_url::healthy() {
-                return None;
+                return url_from_history(window);
             }
             log::warn!(
                 "URL capture: in-process UIA reader produced nothing in its trial window; falling back to get-browser-url.ps1"
@@ -359,7 +362,7 @@ pub fn read_browser_url(
                     script_path.display()
                 );
             }
-            return None;
+            return url_from_history(window);
         }
         let mut cmd = Command::new("powershell");
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -384,14 +387,14 @@ pub fn read_browser_url(
         }
         let Some(stdout) = run_command_timeout(cmd, timeout) else {
             log::warn!("URL capture: get-browser-url.ps1 failed or timed out for {}", window.process_name);
-            return None;
+            return url_from_history(window);
         };
         let url = stdout.lines().next().unwrap_or("").trim();
         if url.starts_with("http://") || url.starts_with("https://") {
             return Some(url.chars().take(MAX_URL_LEN).collect());
         }
         log::warn!("URL capture: no URL in script output for {} ({:?})", window.process_name, url);
-        None
+        url_from_history(window)
     }
     #[cfg(target_os = "macos")]
     {
@@ -473,4 +476,18 @@ mod tests {
             assert_eq!(browser_hint_from_exe(exe), "", "{exe} is not a browser");
         }
     }
+}
+
+/// Last resort when nothing could read the address bar live: ask the browser's
+/// own history what URL it recorded for the page title we can see. See
+/// capture/history.rs for why this is scoped to a single title lookup rather
+/// than reading history generally.
+#[cfg(windows)]
+fn url_from_history(window: &ForegroundWindow) -> Option<String> {
+    let url = crate::capture::history::lookup_url_by_title(&window.process_name, &window.title)?;
+    log::debug!(
+        "URL capture: resolved {} from browser history by page title",
+        window.process_name
+    );
+    Some(url.chars().take(MAX_URL_LEN).collect())
 }

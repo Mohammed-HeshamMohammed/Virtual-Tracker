@@ -53,6 +53,9 @@ parking_lot = "0.12"
 # dependency honest. Never used for timestamps: the server still stamps every
 # session itself, so a wrong clock here cannot move tracked time.
 iana-time-zone = "0.1"
+# Reading browser history databases as a URL fallback (capture/history.rs).
+# `bundled` so we never depend on a system sqlite being present.
+rusqlite = { version = "0.32", features = ["bundled"] }
 dirs = "6"
 log = "0.4"
 env_logger = "0.11"
