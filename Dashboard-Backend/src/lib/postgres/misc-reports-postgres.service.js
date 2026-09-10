@@ -56,9 +56,16 @@ export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, pr
 }
 
 export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
+  // Widened by a day either side, exactly like the Time & Activity query:
+  // a session belongs to the local day it started in the MEMBER's zone, and
+  // that day can sit outside the same dates expressed in UTC. A member at
+  // UTC-6 starting 8pm on the 9th is 02:00 UTC on the 10th - a UTC-exact
+  // window dropped their evening entirely. The caller re-filters on the
+  // member-local day, so over-fetching here is what makes that possible.
   const from = new Date(`${fromDay}T00:00:00.000Z`);
+  from.setUTCDate(from.getUTCDate() - 1);
   const to = new Date(`${toDay}T00:00:00.000Z`);
-  to.setUTCDate(to.getUTCDate() + 1);
+  to.setUTCDate(to.getUTCDate() + 2);
 
   const rows = await query(
     `SELECT s.id, s.member_id, s.task_id, s.project_id,

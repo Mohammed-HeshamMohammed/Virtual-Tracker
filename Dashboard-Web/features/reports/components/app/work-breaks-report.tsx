@@ -45,10 +45,17 @@ function formatDuration(seconds: number): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`
 }
 
-function formatClock(iso: string | null): string {
+/** The break's clock face in the member's own timezone, not the reader's -
+ *  a break taken at 2pm reads 2pm whoever opens the report. */
+function formatClock(iso: string | null, timeZone?: string): string {
   if (!iso) return "—"
   const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+  if (Number.isNaN(d.getTime())) return "—"
+  return d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
+  })
 }
 
 function formatDay(day: string): string {
@@ -112,7 +119,7 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
     registerExportHandler(() => {
       const header = ["Date", "Member", "Break start", "Break end", "Duration (min)"]
       const lines = rows.map((r) =>
-        [r.day, r.memberName, formatClock(r.startedAt), formatClock(r.endedAt), Math.round(r.durationSeconds / 60)]
+        [r.day, r.memberName, formatClock(r.startedAt, r.memberTimezone), formatClock(r.endedAt, r.memberTimezone), Math.round(r.durationSeconds / 60)]
           .map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`)
           .join(",")
       )
@@ -186,8 +193,8 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
           rows: rows.map((r) => ({
             date: formatDay(r.day),
             member: r.memberName,
-            start: formatClock(r.startedAt),
-            end: formatClock(r.endedAt),
+            start: formatClock(r.startedAt, r.memberTimezone),
+            end: formatClock(r.endedAt, r.memberTimezone),
             duration: formatDuration(r.durationSeconds),
           })),
           emptyMessage: "No breaks in this range.",
@@ -346,10 +353,10 @@ function WorkBreaksTable({ filters }: { filters: ReportFilterState }) {
                                 </div>
                               </td>
                               <td className={cn("px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                                {formatClock(r.startedAt)}
+                                {formatClock(r.startedAt, r.memberTimezone)}
                               </td>
                               <td className={cn("px-4 py-3 text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-                                {formatClock(r.endedAt)}
+                                {formatClock(r.endedAt, r.memberTimezone)}
                               </td>
                               <td
                                 className={cn(

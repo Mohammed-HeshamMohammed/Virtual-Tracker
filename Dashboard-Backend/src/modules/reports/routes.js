@@ -12,6 +12,7 @@ import {
 } from "../../lib/postgres/time-and-activity-report-postgres.service.js";
 import { buildTimeAndActivityReportPayload } from "./build-time-and-activity-rows.js";
 import { getMemberTimezone, getMemberTimezones } from "./member-timezones.js";
+import { buildWorkSessionRows } from "./build-work-session-rows.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
@@ -595,13 +596,13 @@ export async function routeReports(req, res, url, origin) {
         parseUuidListParam(url.searchParams.get("projectIds")),
       );
       const sessions = await getWorkSessionRowsPg({ memberIds, fromDay: from, toDay: to, projectIds });
-      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(sessions.map((s) => s.memberId))]);
+      const sessionMemberIds = [...new Set(sessions.map((s) => s.memberId))];
+      const [nameMap, tzMap] = await Promise.all([
+        buildMemberMetaMap(getDb(), sessionMemberIds),
+        getMemberTimezones(getDb(), sessionMemberIds),
+      ]);
 
-      const rows = sessions.map((s) => ({
-        ...s,
-        memberName: nameMap.get(s.memberId)?.name ?? "Unknown",
-        memberAvatarUrl: nameMap.get(s.memberId)?.avatarUrl ?? null,
-      }));
+      const rows = buildWorkSessionRows(sessions, nameMap, tzMap, from, to);
       sendJson(res, origin, 200, { success: true, data: { sessions: rows } });
     } catch (e) {
       logSafeError("[reports/work-sessions]", e);
@@ -752,11 +753,19 @@ export async function routeReports(req, res, url, origin) {
     try {
       const memberIds = await resolveReportMemberScope(getDb(), viewer, url);
       const breaks = await getWorkBreakRowsPg({ memberIds, fromDay: from, toDay: to, minGapMinutes });
-      const nameMap = await buildMemberMetaMap(getDb(), [...new Set(breaks.map((b) => String(b.memberId)))]);
+      const breakMemberIds = [...new Set(breaks.map((b) => String(b.memberId)))];
+      const [nameMap, tzMap] = await Promise.all([
+        buildMemberMetaMap(getDb(), breakMemberIds),
+        getMemberTimezones(getDb(), breakMemberIds),
+      ]);
+      // `day` is already the member's local day (the query buckets with
+      // AT TIME ZONE); the zone goes out too so the break's start and end
+      // times render on the same clock rather than the viewer's.
       const rows = breaks.map((b) => ({
         ...b,
         memberName: nameMap.get(String(b.memberId))?.name ?? "Unknown",
         memberAvatarUrl: nameMap.get(String(b.memberId))?.avatarUrl ?? null,
+        memberTimezone: tzMap.get(String(b.memberId)) ?? "UTC",
       }));
       sendJson(res, origin, 200, { success: true, data: { rows, minGapMinutes } });
     } catch (e) {
