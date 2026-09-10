@@ -291,20 +291,6 @@ pub fn browser_hint(process_or_app_name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// Every pane name, most-likely-first when a hint is supplied.
-pub fn pane_names(hint: &str) -> Vec<&'static str> {
-    let mut names: Vec<&'static str> = Vec::with_capacity(BROWSERS.len());
-    if let Some(browser) = lookup(hint) {
-        names.push(browser.pane_name);
-    }
-    for browser in BROWSERS {
-        if !names.contains(&browser.pane_name) {
-            names.push(browser.pane_name);
-        }
-    }
-    names
-}
-
 /// Profile directories that may contain a history database for this browser,
 /// newest-looking first. Empty when the browser keeps nothing readable, or off
 /// Windows.
@@ -450,54 +436,6 @@ mod tests {
         assert!(all_omnibox_automation_ids().contains(&"urlbar-input"));
         assert!(all_omnibox_automation_ids().contains(&"Omnibox"));
         assert!(all_omnibox_names().iter().any(|n| n.contains("Google")));
-    }
-
-    #[test]
-    fn a_hint_puts_its_own_pane_first_without_dropping_the_rest() {
-        let names = pane_names("firefox.exe");
-        assert_eq!(names[0], "Mozilla Firefox");
-        assert!(names.contains(&"Google Chrome"));
-        assert_eq!(
-            names.len(),
-            names.iter().collect::<std::collections::HashSet<_>>().len(),
-            "no duplicate pane names"
-        );
-        // An unknown hint still yields the full list.
-        assert!(pane_names("notabrowser.exe").contains(&"Mozilla Firefox"));
-    }
-
-    /// get-browser-url.ps1 is standalone PowerShell and can't import this
-    /// table, so it carries its own copy. This is the thing that stops the two
-    /// drifting apart again - adding a browser here and forgetting the script
-    /// is exactly how the lists ended up different in the first place.
-    #[test]
-    fn script_pane_names_match_the_registry() {
-        let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("..")
-            .join("scripts")
-            .join("get-browser-url.ps1");
-        let text = std::fs::read_to_string(&script)
-            .unwrap_or_else(|e| panic!("read {}: {e}", script.display()));
-
-        for browser in BROWSERS {
-            assert!(
-                text.contains(&format!("\"{}\"", browser.pane_name)),
-                "get-browser-url.ps1 is missing pane name {:?} - add it to $browserPaneNames",
-                browser.pane_name
-            );
-        }
-        for id in all_omnibox_automation_ids() {
-            assert!(
-                text.contains(&format!("\"{id}\"")),
-                "get-browser-url.ps1 is missing automation id {id:?} - add it to $knownIds"
-            );
-        }
-        for name in all_omnibox_names() {
-            assert!(
-                text.contains(&format!("\"{name}\"")),
-                "get-browser-url.ps1 is missing address-bar name {name:?} - add it to $addressBarNames"
-            );
-        }
     }
 
     #[test]
