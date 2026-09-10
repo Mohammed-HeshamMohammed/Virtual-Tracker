@@ -73,10 +73,13 @@ function Test-EditCandidate($element) {
     return Test-ElementUrl $element
 }
 
+# Every hop here is a cross-process COM round-trip into the browser, and this
+# runs per candidate - so keep the ceiling tight. Page content sits under a
+# Document within a few levels; the omnibox never does.
 function Test-InWebDocument($element) {
     $parent = $element
     $depth = 0
-    while ($null -ne $parent -and $depth -lt 24) {
+    while ($null -ne $parent -and $depth -lt 10) {
         try {
             $typeName = $parent.Current.ControlType.ProgrammaticName
             if ($typeName -eq "ControlType.Document") { return $true }
@@ -89,23 +92,30 @@ function Test-InWebDocument($element) {
     return $false
 }
 
+function New-OrCondition([System.Windows.Automation.Condition[]]$conditions) {
+    if ($conditions.Count -eq 1) { return $conditions[0] }
+    return [System.Windows.Automation.OrCondition]::new($conditions)
+}
+
+# ONE tree walk, not one per id. A FindFirst that matches nothing has to
+# enumerate the whole tree, and on a Chromium window that means forcing the
+# renderer to realise its entire accessibility tree - so ten ids used to mean
+# ten full realisations of a dialer's enormous DOM before we'd even given up.
 function Test-ReadByAutomationId($root, [string[]]$autoIds) {
     $scope = [System.Windows.Automation.TreeScope]::Descendants
-    foreach ($autoId in $autoIds) {
-        $idCond = New-Object System.Windows.Automation.PropertyCondition(
+    $conds = foreach ($autoId in $autoIds) {
+        New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::AutomationIdProperty,
             $autoId
         )
-        $match = $root.FindFirst($scope, $idCond)
-        if (Test-EditCandidate $match) { return $true }
     }
-    return $false
+    $match = $root.FindFirst($scope, (New-OrCondition $conds))
+    return (Test-EditCandidate $match)
 }
 
+# Same collapse: one walk for (Edit OR ComboBox) AND (any known bar name).
 function Test-ReadByAddressBarName($root) {
     $scope = [System.Windows.Automation.TreeScope]::Descendants
-    $editType = [System.Windows.Automation.ControlType]::Edit
-    $comboType = [System.Windows.Automation.ControlType]::ComboBox
     $addressBarNames = @(
         "Address and search bar",
         "Search or enter web address",
@@ -115,61 +125,63 @@ function Test-ReadByAddressBarName($root) {
         "Address bar",
         "Location"
     )
-    foreach ($barName in $addressBarNames) {
-        $nameCond = New-Object System.Windows.Automation.PropertyCondition(
+    $nameConds = foreach ($barName in $addressBarNames) {
+        New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::NameProperty,
             $barName
         )
-        foreach ($controlType in @($editType, $comboType)) {
-            $typeCond = New-Object System.Windows.Automation.PropertyCondition(
-                [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-                $controlType
-            )
-            $andCond = New-Object System.Windows.Automation.AndCondition($typeCond, $nameCond)
-            $match = $root.FindFirst($scope, $andCond)
-            if (Test-EditCandidate $match) { return $true }
-        }
     }
-    return $false
+    $typeConds = foreach ($controlType in @(
+        [System.Windows.Automation.ControlType]::Edit,
+        [System.Windows.Automation.ControlType]::ComboBox
+    )) {
+        New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+            $controlType
+        )
+    }
+    $andCond = New-Object System.Windows.Automation.AndCondition(
+        (New-OrCondition $typeConds),
+        (New-OrCondition $nameConds)
+    )
+    $match = $root.FindFirst($scope, $andCond)
+    return (Test-EditCandidate $match)
 }
 
+# One walk to find the browser's own pane (any of the known names), then the
+# edit/combo search is scoped to that pane instead of the whole window.
 function Test-ReadBrowserPanes($root, [string[]]$paneNames) {
     $scope = [System.Windows.Automation.TreeScope]::Descendants
     $editType = [System.Windows.Automation.ControlType]::Edit
     $comboType = [System.Windows.Automation.ControlType]::ComboBox
     $paneType = [System.Windows.Automation.ControlType]::Pane
 
-    foreach ($paneName in $paneNames) {
-        $nameCond = New-Object System.Windows.Automation.PropertyCondition(
+    $nameConds = foreach ($paneName in $paneNames) {
+        New-Object System.Windows.Automation.PropertyCondition(
             [System.Windows.Automation.AutomationElement]::NameProperty,
             $paneName
         )
-        $paneCond = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            $paneType
-        )
-        $andCond = New-Object System.Windows.Automation.AndCondition($paneCond, $nameCond)
-        $pane = $root.FindFirst($scope, $andCond)
-        if ($null -eq $pane) { continue }
+    }
+    $paneCond = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        $paneType
+    )
+    $andCond = New-Object System.Windows.Automation.AndCondition(
+        $paneCond,
+        (New-OrCondition $nameConds)
+    )
+    $pane = $root.FindFirst($scope, $andCond)
+    if ($null -eq $pane) { return $false }
 
-        $editCond = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            $editType
-        )
-        $edits = $pane.FindAll($scope, $editCond)
-        foreach ($edit in $edits) {
-            if (Test-EditCandidate $edit) { return $true }
-        }
-
-        $comboCond = New-Object System.Windows.Automation.PropertyCondition(
-            [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-            $comboType
-        )
-        $combos = $pane.FindAll($scope, $comboCond)
-        foreach ($combo in $combos) {
-            if (Test-InWebDocument $combo) { continue }
-            if (Test-ElementUrl $combo) { return $true }
-        }
+    $typeCond = New-OrCondition @(
+        (New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $editType)),
+        (New-Object System.Windows.Automation.PropertyCondition(
+            [System.Windows.Automation.AutomationElement]::ControlTypeProperty, $comboType))
+    )
+    $candidates = $pane.FindAll($scope, $typeCond)
+    foreach ($candidate in $candidates) {
+        if (Test-EditCandidate $candidate) { return $true }
     }
     return $false
 }
