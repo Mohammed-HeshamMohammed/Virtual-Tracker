@@ -10,6 +10,7 @@ import type { TimesheetApprovalRow, TimesheetStatus } from "@/features/reports/m
 import type { AppsUrlsReportData, UsageCategory } from "@/features/reports/models/apps-urls"
 import { formatMoney } from "@/features/reports/utils/money"
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
+import { formatCurrency, resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
 
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -60,6 +61,9 @@ interface RawAmountMember {
   rateType: string
   currency: string
   amount: number
+  originalAmount: number
+  originalRate: number
+  originalCurrency: string
 }
 interface RawAmountsDay {
   date: string
@@ -74,9 +78,15 @@ function mapAmountsDays(days: RawAmountsDay[]): AmountsOwedDayGroup[] {
       name: m.name,
       initials: initialsFor(m.name),
       avatarUrl: m.avatarUrl,
-      rateLabel: m.rate > 0 ? `${m.currency} ${m.rate.toFixed(2)}/hr` : "No rate set",
+      rateLabel: m.rate > 0 ? `${formatCurrency(m.rate, m.currency)}/hr` : "No rate set",
       hours: formatHms(m.activeSeconds),
-      amount: formatMoney(m.amount, m.currency),
+      amount: formatCurrency(m.amount, m.currency),
+      // What the member was actually paid, kept for the row's tooltip and the
+      // CSV: the figure above is converted, and converted money gets queried.
+      originalAmount:
+        m.originalCurrency && m.originalCurrency !== m.currency
+          ? formatCurrency(m.originalAmount, m.originalCurrency)
+          : null,
     })),
   }))
 }
@@ -92,7 +102,57 @@ function reportParams(q: ReportQuery): URLSearchParams {
   const params = new URLSearchParams({ from: q.from, to: q.to })
   if (q.memberIds?.length) params.set("memberIds", q.memberIds.join(","))
   if (q.projectIds?.length) params.set("projectIds", q.projectIds.join(","))
+  // Ask for the viewer's own currency. The server converts, and falls back to
+  // the workspace currency if it holds no rate for it - so this is a request,
+  // never an assertion about what will come back.
+  const viewerCurrency = resolveViewerCurrency()
+  if (viewerCurrency) params.set("displayCurrency", viewerCurrency)
   return params
+}
+
+/** What currency a report actually came back in, and how fresh the rate was. */
+export interface ReportCurrencyMeta {
+  displayCurrency: string
+  orgCurrency: string
+  requestedUnavailable: boolean
+  /** The day of the oldest rate any figure leaned on; null when nothing needed
+   *  converting. Shown when it trails the period being reported. */
+  rateAsOf: string | null
+}
+
+const DEFAULT_CURRENCY_META: ReportCurrencyMeta = {
+  displayCurrency: "USD",
+  orgCurrency: "USD",
+  requestedUnavailable: false,
+  rateAsOf: null,
+}
+
+export interface OrgCurrencySettings {
+  orgCurrency: string
+  currencies: string[]
+  latestRateDay: string | null
+  canEdit: boolean
+}
+
+export async function fetchOrgCurrencySettings(): Promise<OrgCurrencySettings> {
+  const data = await getJson<OrgCurrencySettings>("/api/reports/currency")
+  return {
+    orgCurrency: data?.orgCurrency ?? "USD",
+    currencies: data?.currencies ?? ["USD"],
+    latestRateDay: data?.latestRateDay ?? null,
+    canEdit: data?.canEdit === true,
+  }
+}
+
+export async function updateOrgCurrency(displayCurrency: string): Promise<string> {
+  const res = await apiFetch(apiPath("/api/reports/currency"), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ displayCurrency }),
+  })
+  const body = (await res.json().catch(() => null)) as { data?: { orgCurrency?: string }; error?: string } | null
+  if (!res.ok) throw new Error(body?.error || `Failed to update currency (${res.status}).`)
+  return body?.data?.orgCurrency ?? displayCurrency
 }
 
 export interface ReportFilterOptions {
@@ -107,11 +167,16 @@ export async function fetchReportFilterOptions(): Promise<ReportFilterOptions> {
 
 export async function fetchAmountsOwedReport(
   range: ReportQuery & { memberId?: string | null }
-): Promise<AmountsOwedDayGroup[]> {
+): Promise<{ days: AmountsOwedDayGroup[]; currency: ReportCurrencyMeta }> {
   const params = reportParams(range)
   if (range.memberId) params.set("memberId", range.memberId)
-  const data = await getJson<{ days: RawAmountsDay[] }>(`/api/reports/amounts-owed?${params.toString()}`)
-  return data ? mapAmountsDays(data.days) : []
+  const data = await getJson<{ days: RawAmountsDay[]; currency?: ReportCurrencyMeta }>(
+    `/api/reports/amounts-owed?${params.toString()}`
+  )
+  return {
+    days: data ? mapAmountsDays(data.days) : [],
+    currency: data?.currency ?? DEFAULT_CURRENCY_META,
+  }
 }
 
 

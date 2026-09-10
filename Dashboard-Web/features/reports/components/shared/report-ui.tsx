@@ -110,10 +110,12 @@ export function ReportPageHeading({
   className?: string
 }) {
   const line = subtitle ?? (pageId ? reportCardFor(pageId)?.description : undefined)
+  // Not painted - see the note in standard-report-layout.tsx. Kept in the
+  // accessibility tree so each report page still has a heading.
   return (
-    <div className={cn("min-w-0 max-w-xl", className)}>
-      <h1 className="truncate text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#dce1fb]">{title}</h1>
-      {line ? <p className="mt-1 text-sm text-slate-500 dark:text-[#bccbb9]">{line}</p> : null}
+    <div className={cn("sr-only", className)}>
+      <h1>{title}</h1>
+      {line ? <p>{line}</p> : null}
     </div>
   )
 }
