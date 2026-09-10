@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc};
@@ -59,6 +59,9 @@ pub struct EventBuilder {
     /// hammering a page whose accessibility tree makes the read spike or
     /// crash the browser - see URL_CAPTURE_MAX_FAILURES.
     url_backoff: Mutex<HashMap<String, (u32, Option<Instant>)>>,
+    /// Lowercased app patterns the org excluded from capture. Nothing is
+    /// recorded or even probed while one of these is focused.
+    excluded_apps: Mutex<HashSet<String>>,
     /// App-icon send state, keyed by lowercased resolved app name. Shared with
     /// the detached extraction threads. See `take_app_icon`.
     app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
@@ -104,7 +107,37 @@ impl EventBuilder {
             app_icon_script_path,
             app_icons: Arc::new(Mutex::new(HashMap::new())),
             url_backoff: Mutex::new(HashMap::new()),
+            excluded_apps: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Replaces the excluded-app list wholesale, so an exclusion the org
+    /// removed actually stops applying. Only called with a successful fetch -
+    /// a failed one leaves the previous list in place.
+    pub fn apply_capture_exclusions(&self, patterns: Vec<String>) {
+        *self.excluded_apps.lock() = patterns.into_iter().collect();
+    }
+
+    /// True when the focused window belongs to an app the org excluded from
+    /// capture. Matched against both the resolved display name and the raw
+    /// process name, since an admin may have typed either ("Slack" or
+    /// "slack.exe"). Same trim+lowercase comparison the backend uses.
+    pub fn is_capture_excluded(&self, window: &ForegroundWindow) -> bool {
+        if self.excluded_apps.lock().is_empty() {
+            return false;
+        }
+        // Resolved outside the excluded_apps lock - resolve_app_name takes the
+        // display-name lock, and nesting the two invites a future deadlock.
+        let candidates = [
+            self.resolve_app_name(window),
+            window.app_name.clone(),
+            window.process_name.clone(),
+        ];
+        let excluded = self.excluded_apps.lock();
+        candidates.iter().any(|name| {
+            let key = name.trim().to_lowercase();
+            !key.is_empty() && excluded.contains(&key)
+        })
     }
 
     /// The icon to attach to this app slice, if one is ready.
@@ -480,6 +513,28 @@ mod tests {
                 other => panic!("expected App, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn capture_exclusions_match_display_name_or_process_name() {
+        let builder = builder();
+        let win = window("slack.exe", "Slack");
+        assert!(!builder.is_capture_excluded(&win), "nothing excluded by default");
+
+        builder.apply_capture_exclusions(vec!["slack".to_string()]);
+        assert!(builder.is_capture_excluded(&win), "matches the display name");
+
+        builder.apply_capture_exclusions(vec!["slack.exe".to_string()]);
+        assert!(builder.is_capture_excluded(&win), "matches the process name");
+
+        builder.apply_capture_exclusions(vec!["notepad.exe".to_string()]);
+        assert!(!builder.is_capture_excluded(&win), "an unrelated exclusion does not match");
+
+        // A refresh that drops the pattern must actually stop excluding.
+        builder.apply_capture_exclusions(vec!["slack".to_string()]);
+        assert!(builder.is_capture_excluded(&win));
+        builder.apply_capture_exclusions(vec![]);
+        assert!(!builder.is_capture_excluded(&win), "cleared list stops excluding");
     }
 
     #[test]

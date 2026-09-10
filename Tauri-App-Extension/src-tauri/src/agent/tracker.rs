@@ -400,6 +400,12 @@ impl ActivityTracker {
         if let Ok(entries) = self.api.lock().fetch_app_display_names() {
             self.events.apply_display_names(entries);
         }
+        // Same schedule, same best-effort contract: a failed fetch keeps the
+        // exclusions already in force rather than clearing them, so a network
+        // blip can never start capturing an app the org excluded.
+        if let Ok(patterns) = self.api.lock().fetch_capture_exclusions() {
+            self.events.apply_capture_exclusions(patterns);
+        }
     }
 
     /// ACT-3: pulls server-tunable scoring calibration into the running
@@ -742,14 +748,21 @@ impl ActivityTracker {
         // No screenshots while idle - see tick_progress's doc comment.
         // next_screenshot_at is left untouched so the very next active tick
         // captures immediately instead of waiting out the rest of a cadence
+        // An app the org excluded from capture is skipped here, not filtered
+        // out server-side after the fact: nothing about it - title, URL or
+        // pixels - should leave the machine, and we must not pay the UI
+        // Automation probe for it either. Time still accrues; only the
+        // content capture stops.
+        let capture_excluded = self.events.is_capture_excluded(&window);
+
         // that elapsed while nobody was there to be captured.
-        if !idle_now && now >= state.next_screenshot_at {
+        if !idle_now && !capture_excluded && now >= state.next_screenshot_at {
             self.upload_screenshot(&session_id, &window);
             state.next_screenshot_at =
                 now + Duration::from_secs(self.events.random_screenshot_delay_sec());
         }
 
-        if now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
+        if !capture_excluded && now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
             self.upload_app_slice(&session_id, &window);
             state.last_app_log_at = now;
         }
