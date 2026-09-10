@@ -1232,13 +1232,18 @@ impl ActivityTracker {
         // Was true unconditionally whenever no URL was captured at all (not a
         // browser, or the capture script came back empty) — every non-browser
         // app log line was claiming "+ URL" it never had.
-        let mut url_sent = false;
-        if let Some(url_event) = self.events.url_slice(window) {
-            let url_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&url_event));
+        // One event per URL actually visited this tick - the address-bar
+        // subscription reports every navigation, so a member moving quickly
+        // through pages no longer collapses into whichever one the poll
+        // happened to land on.
+        let mut url_sent = 0usize;
+        let url_events = self.events.url_slices(window);
+        if !url_events.is_empty() {
+            let url_ok = self.api.lock().post_events(session_id, &url_events);
             if url_ok {
-                url_sent = true;
+                url_sent = url_events.len();
             } else {
-                self.queue.enqueue(session_id, &[url_event]);
+                self.queue.enqueue(session_id, &url_events);
             }
         }
 
@@ -1247,7 +1252,11 @@ impl ActivityTracker {
             log::info!(
                 "Logged app slice: {}{}",
                 window.app_name,
-                if url_sent { " + URL" } else { "" }
+                match url_sent {
+                    0 => String::new(),
+                    1 => " + URL".to_string(),
+                    n => format!(" + {n} URLs"),
+                }
             );
         } else {
             log::warn!("App/URL upload failed for session {session_id}, queued for retry");

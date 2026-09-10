@@ -20,7 +20,33 @@
 //! timeout, exactly like the old subprocess path.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
+
+/// One address-bar change, as it happened. Polling every APP_LOG_INTERVAL_SEC
+/// only ever sees whatever page a member happened to be on at the sample
+/// instant - someone moving through five records in a dialer in fifteen
+/// seconds got one of them recorded. Subscribing to the omnibox's value
+/// instead means every navigation is seen, with the timestamp it occurred at,
+/// so real dwell can be attributed per URL.
+#[derive(Debug, Clone)]
+pub struct UrlObservation {
+    pub hwnd: usize,
+    pub url: String,
+    pub at: Instant,
+}
+
+/// Everything the event handler has recorded since the last call. Ordered
+/// oldest-first; consecutive duplicates for one window are already collapsed.
+pub fn drain_url_changes() -> Vec<UrlObservation> {
+    #[cfg(windows)]
+    {
+        imp::drain_observations()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
 
 /// Attempts allowed before a reader that has never once produced a URL is
 /// written off as broken (see `healthy`). Generously more than the handful of
@@ -113,11 +139,12 @@ pub fn normalize_url(raw: &str) -> Option<String> {
 #[cfg(windows)]
 mod imp {
     use super::normalize_url;
+    use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::sync::mpsc::{sync_channel, SyncSender};
     use std::sync::OnceLock;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use windows::core::VARIANT;
     use windows::Win32::Foundation::HWND;
@@ -126,10 +153,71 @@ mod imp {
     };
     use windows::Win32::UI::Accessibility::{
         CUIAutomation, IUIAutomation, IUIAutomationCondition, IUIAutomationElement,
-        IUIAutomationValuePattern, TreeScope_Descendants, UIA_AutomationIdPropertyId,
-        UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId, UIA_EditControlTypeId,
-        UIA_NamePropertyId, UIA_ValuePatternId,
+        IUIAutomationPropertyChangedEventHandler, IUIAutomationPropertyChangedEventHandler_Impl,
+        IUIAutomationValuePattern, TreeScope_Descendants, TreeScope_Element,
+        UIA_AutomationIdPropertyId, UIA_ComboBoxControlTypeId, UIA_ControlTypePropertyId,
+        UIA_EditControlTypeId, UIA_NamePropertyId, UIA_PROPERTY_ID, UIA_ValuePatternId,
+        UIA_ValueValuePropertyId,
     };
+
+    /// Value-changed events we've been handed but not yet reported. Bounded:
+    /// the tracker drains this every app-slice tick, so anything past this is
+    /// a runaway page redirecting in a loop, not real browsing.
+    const MAX_PENDING_OBSERVATIONS: usize = 256;
+
+    static OBSERVATIONS: Mutex<Vec<super::UrlObservation>> = Mutex::new(Vec::new());
+
+    /// Records one address-bar change. Called on a UIA-owned thread, so it
+    /// does the absolute minimum: parse, push, return. Anything slow here
+    /// back-pressures the browser's own event delivery.
+    fn observe(hwnd: usize, raw: &str) {
+        let Some(url) = super::normalize_url(raw) else {
+            return;
+        };
+        let mut pending = OBSERVATIONS.lock();
+        if pending.last().is_some_and(|last: &super::UrlObservation| {
+            last.hwnd == hwnd && last.url == url
+        }) {
+            // Chromium fires several value-changed events per navigation as
+            // the omnibox settles; only the distinct URL matters.
+            return;
+        }
+        if pending.len() >= MAX_PENDING_OBSERVATIONS {
+            pending.remove(0);
+        }
+        pending.push(super::UrlObservation {
+            hwnd,
+            url,
+            at: Instant::now(),
+        });
+    }
+
+    pub fn drain_observations() -> Vec<super::UrlObservation> {
+        std::mem::take(&mut *OBSERVATIONS.lock())
+    }
+
+    /// COM callback subscribed to one omnibox element's value. `hwnd` is baked
+    /// in because the event gives us the element, not the window.
+    #[windows::core::implement(IUIAutomationPropertyChangedEventHandler)]
+    struct ValueChangeHandler {
+        hwnd: usize,
+    }
+
+    impl IUIAutomationPropertyChangedEventHandler_Impl for ValueChangeHandler_Impl {
+        fn HandlePropertyChangedEvent(
+            &self,
+            _sender: Option<&IUIAutomationElement>,
+            propertyid: UIA_PROPERTY_ID,
+            newvalue: &VARIANT,
+        ) -> windows::core::Result<()> {
+            if propertyid == UIA_ValueValuePropertyId {
+                if let Ok(text) = windows::core::BSTR::try_from(newvalue) {
+                    observe(self.hwnd, &text.to_string());
+                }
+            }
+            Ok(())
+        }
+    }
 
     /// How long the worker gives one UIA search before abandoning it. The
     /// caller has its own (shorter) deadline; this only bounds how long the
@@ -216,6 +304,9 @@ mod imp {
         /// Windows a search has already failed on, so we don't re-walk their
         /// tree every tick. Cleared whenever the cache is trimmed.
         misses: HashMap<usize, u32>,
+        /// Live value-changed subscriptions, kept so they can be removed
+        /// again - UIA holds the handler alive until we do.
+        handlers: HashMap<usize, (IUIAutomationElement, IUIAutomationPropertyChangedEventHandler)>,
     }
 
     impl Reader {
@@ -228,6 +319,7 @@ mod imp {
                 omnibox,
                 cache: HashMap::new(),
                 misses: HashMap::new(),
+                handlers: HashMap::new(),
             })
         }
 
@@ -240,6 +332,7 @@ mod imp {
                         // Window closed, or the element went stale. Fall
                         // through and search once more.
                         self.cache.remove(&hwnd);
+                        self.unsubscribe(hwnd);
                     }
                 }
             }
@@ -269,11 +362,57 @@ mod imp {
             if self.cache.len() > 64 {
                 // Browser windows come and go; a periodic reset just means a
                 // few of them pay for one more search.
+                self.unsubscribe_all();
                 self.cache.clear();
                 self.misses.clear();
             }
             self.cache.insert(hwnd, element.clone());
+            self.subscribe(hwnd, &element);
             read_value(&element).ok().and_then(|v| normalize_url(&v))
+        }
+
+        /// Subscribe to this omnibox's value so navigations are seen as they
+        /// happen rather than sampled once a tick. Scoped to the single
+        /// element and the single property - the cheapest subscription UIA
+        /// offers, and nothing like walking the tree.
+        unsafe fn subscribe(&mut self, hwnd: usize, element: &IUIAutomationElement) {
+            if self.handlers.contains_key(&hwnd) {
+                return;
+            }
+            let handler: IUIAutomationPropertyChangedEventHandler =
+                ValueChangeHandler { hwnd }.into();
+            let registered = self.automation.AddPropertyChangedEventHandlerNativeArray(
+                element,
+                TreeScope_Element,
+                None,
+                &handler,
+                &[UIA_ValueValuePropertyId],
+            );
+            match registered {
+                Ok(()) => {
+                    self.handlers.insert(hwnd, (element.clone(), handler));
+                }
+                Err(err) => {
+                    // Not fatal - polling still works, we just miss
+                    // navigations between ticks for this window.
+                    log::debug!("URL capture: could not subscribe to window {hwnd}: {err}");
+                }
+            }
+        }
+
+        unsafe fn unsubscribe(&mut self, hwnd: usize) {
+            if let Some((element, handler)) = self.handlers.remove(&hwnd) {
+                let _ = self
+                    .automation
+                    .RemovePropertyChangedEventHandler(&element, &handler);
+            }
+        }
+
+        unsafe fn unsubscribe_all(&mut self) {
+            let keys: Vec<usize> = self.handlers.keys().copied().collect();
+            for hwnd in keys {
+                self.unsubscribe(hwnd);
+            }
         }
 
         unsafe fn find(&self, hwnd: usize) -> Option<IUIAutomationElement> {
@@ -448,6 +587,31 @@ mod tests {
             last
         });
 
+        // Solution C: the first read subscribes to the omnibox, so navigating
+        // now should surface without anyone polling for it.
+        let mut observed: Vec<String> = Vec::new();
+        if result.is_some() {
+            let _ = super::drain_url_changes(); // discard the initial settle
+            let _ = Command::new(chrome)
+                .args([
+                    &format!("--user-data-dir={}", profile.display()),
+                    "https://example.net/",
+                ])
+                .spawn()
+                .map(|mut c| {
+                    let _ = c.wait();
+                });
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while Instant::now() < deadline && observed.is_empty() {
+                std::thread::sleep(Duration::from_millis(500));
+                observed = super::drain_url_changes()
+                    .into_iter()
+                    .map(|o| o.url)
+                    .collect();
+            }
+            eprintln!("event-driven observations: {observed:?}");
+        }
+
         let _ = child.kill();
         let _ = child.wait();
         let _ = Command::new("taskkill").args(["/F", "/IM", "chrome.exe"]).output();
@@ -458,6 +622,10 @@ mod tests {
         assert!(
             url.starts_with("https://example.com"),
             "expected example.com, got {url}"
+        );
+        assert!(
+            observed.iter().any(|u| u.contains("example.net")),
+            "value-changed subscription never reported the navigation; saw {observed:?}"
         );
     }
 }

@@ -69,7 +69,12 @@ tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
 tauri = { version = "2", features = ["tray-icon"] }
 
 [target.'cfg(windows)'.dependencies]
+# The #[implement] macro expands to absolute ::windows_core paths, so the
+# crate has to be in scope by that name as well as via windows::core.
+windows-core = "0.58"
 windows = { version = "0.58", features = [
+  # COM callback for UIA value-changed events (capture/uia_url.rs).
+  "implement",
   "Win32_Foundation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",

@@ -67,6 +67,45 @@ pub struct EventBuilder {
     app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
 }
 
+/// Credits each observed URL from when it appeared until the next one did
+/// (the last runs to `now`), then trims the total back to one tick's worth.
+///
+/// Split out from `observed_urls_for` purely so the arithmetic is testable
+/// without a live browser driving the COM subscription.
+fn attribute_dwell(
+    observations: &[crate::capture::uia_url::UrlObservation],
+    now: Instant,
+) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = Vec::with_capacity(observations.len());
+    for (index, observation) in observations.iter().enumerate() {
+        let until = observations
+            .get(index + 1)
+            .map(|next| next.at)
+            .unwrap_or(now);
+        // A page open for under a second still gets one, so a fast
+        // click-through isn't recorded as zero time.
+        let seconds = until
+            .saturating_duration_since(observation.at)
+            .as_secs()
+            .clamp(1, APP_LOG_INTERVAL_SEC);
+        out.push((observation.url.clone(), seconds));
+    }
+
+    // Never hand out more than the tick actually covered - trim from the
+    // oldest, which is the entry most likely to have started before it. Every
+    // URL keeps at least a second, so nothing disappears entirely.
+    let mut total: u64 = out.iter().map(|(_, s)| *s).sum();
+    let mut index = 0;
+    while total > APP_LOG_INTERVAL_SEC && index < out.len() {
+        let over = total - APP_LOG_INTERVAL_SEC;
+        let trim = over.min(out[index].1.saturating_sub(1));
+        out[index].1 -= trim;
+        total -= trim;
+        index += 1;
+    }
+    out
+}
+
 /// One app's icon lifecycle. An app with no entry has never been looked at.
 enum IconSlot {
     /// Extraction thread is running.
@@ -265,14 +304,61 @@ impl EventBuilder {
         }
     }
 
-    pub fn url_slice(&self, window: &ForegroundWindow) -> Option<ActivityEvent> {
-        let url = self.capture_url_bounded(window)?;
+    /// Every URL the member actually visited this tick, not just whichever
+    /// one they happened to be on at the sample instant.
+    ///
+    /// The address-bar subscription (capture/uia_url.rs) reports navigations
+    /// as they happen, so a member who moved through four records in a dialer
+    /// in fifteen seconds gets four rows with their real dwell instead of one.
+    /// When there were no events - nothing navigated, or the subscription
+    /// isn't available - this falls back to a single polled read, which is the
+    /// old behaviour exactly.
+    pub fn url_slices(&self, window: &ForegroundWindow) -> Vec<ActivityEvent> {
+        let observed = self.observed_urls_for(window);
+        if !observed.is_empty() {
+            if let Some((url, _)) = observed.last() {
+                *self.last_url.lock() = Some((url.clone(), Instant::now()));
+            }
+            return observed
+                .into_iter()
+                .map(|(url, duration_seconds)| ActivityEvent::Url {
+                    url: truncate(&url, MAX_URL_LEN),
+                    page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
+                    duration_seconds,
+                })
+                .collect();
+        }
+
+        let Some(url) = self.capture_url_bounded(window) else {
+            return Vec::new();
+        };
         *self.last_url.lock() = Some((url.clone(), Instant::now()));
-        Some(ActivityEvent::Url {
+        vec![ActivityEvent::Url {
             url: truncate(&url, MAX_URL_LEN),
             page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
             duration_seconds: APP_LOG_INTERVAL_SEC,
-        })
+        }]
+    }
+
+    /// Drains the subscription buffer and turns this window's navigations into
+    /// `(url, seconds)`, each URL credited from when it appeared until the
+    /// next one did (the last runs to now). Observations belonging to other
+    /// browser windows are discarded rather than credited - only the focused
+    /// window's time is this tick's to give away.
+    fn observed_urls_for(&self, window: &ForegroundWindow) -> Vec<(String, u64)> {
+        let drained = crate::capture::uia_url::drain_url_changes();
+        if drained.is_empty() {
+            return Vec::new();
+        }
+        let mine: Vec<_> = drained
+            .into_iter()
+            .filter(|o| o.hwnd == window.hwnd)
+            .collect();
+        if mine.is_empty() {
+            return Vec::new();
+        }
+
+        attribute_dwell(&mine, Instant::now())
     }
 
     /// Suggestion #7: `read_browser_url` spawns a subprocess (PowerShell on
@@ -513,6 +599,53 @@ mod tests {
                 other => panic!("expected App, got {other:?}"),
             }
         }
+    }
+
+    fn observation(url: &str, secs_ago: u64) -> crate::capture::uia_url::UrlObservation {
+        crate::capture::uia_url::UrlObservation {
+            hwnd: 1,
+            url: url.to_string(),
+            at: Instant::now() - Duration::from_secs(secs_ago),
+        }
+    }
+
+    #[test]
+    fn dwell_is_credited_from_one_navigation_to_the_next() {
+        // Visited a, then b five seconds later, then c four after that; c is
+        // still open with three seconds gone. `now` is taken after the
+        // observations exist, or the last gap rounds down by a hair.
+        let observed = [observation("a", 12), observation("b", 7), observation("c", 3)];
+        let out = attribute_dwell(&observed, Instant::now());
+        let secs: Vec<u64> = out.iter().map(|(_, s)| *s).collect();
+        assert_eq!(out.iter().map(|(u, _)| u.as_str()).collect::<Vec<_>>(), ["a", "b", "c"]);
+        assert_eq!(secs, [5, 4, 3], "each URL keeps the gap until the next one");
+        assert!(secs.iter().sum::<u64>() <= APP_LOG_INTERVAL_SEC);
+    }
+
+    #[test]
+    fn a_single_navigation_gets_the_time_since_it_happened() {
+        let out = attribute_dwell(&[observation("only", 6)], Instant::now());
+        assert_eq!(out, vec![("only".to_string(), 6)]);
+    }
+
+    #[test]
+    fn a_fast_click_through_still_counts_as_a_second() {
+        // Three navigations inside the same second must not record as zero.
+        let observed = [observation("a", 1), observation("b", 1), observation("c", 1)];
+        let out = attribute_dwell(&observed, Instant::now());
+        assert_eq!(out.iter().map(|(_, s)| *s).collect::<Vec<_>>(), [1, 1, 1]);
+    }
+
+    #[test]
+    fn the_tick_never_gives_away_more_time_than_it_covered() {
+        // Stale observations that together exceed one interval get trimmed
+        // from the oldest, and nothing is dropped entirely.
+        let observed = [observation("a", 600), observation("b", 300), observation("c", 30)];
+        let out = attribute_dwell(&observed, Instant::now());
+        let total: u64 = out.iter().map(|(_, s)| *s).sum();
+        assert_eq!(out.len(), 3, "every URL is still reported");
+        assert!(total <= APP_LOG_INTERVAL_SEC, "total {total} exceeds a tick");
+        assert!(out.iter().all(|(_, s)| *s >= 1), "no URL is credited zero");
     }
 
     #[test]
