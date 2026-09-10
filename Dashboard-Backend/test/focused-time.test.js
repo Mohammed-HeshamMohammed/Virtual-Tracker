@@ -1,174 +1,167 @@
-// Guards CLS-2: activity minutes bucketed into productive/neutral/
+// Guards CLS-2: activity seconds bucketed into productive/neutral/
 // distracting/unclassified using CLS-1's classification map, with role
 // override resolved for the *tracked* member (not the viewer).
-import test, { mock } from "node:test";
+//
+// Rewritten to drive `summarizeFocusedTime` directly instead of mocking four
+// modules to reach it. The mocked version could not run at all on Node 22+
+// (`mock.module` was removed), and — because every case it fed used a
+// non-browser app — it never exercised the path where the same seconds arrive
+// as both an app slice and a URL slice, which is exactly where focused time
+// was double-counting.
+import test from "node:test";
 import assert from "node:assert/strict";
+import { summarizeFocusedTime } from "../src/modules/classification/focused-time.js";
 
-let appRows;
-let domainRows;
-let categoryRows;
-let memberRole;
+const AT = "2026-01-01T10:00:00.000Z";
 
-mock.module("../src/config/firebase.js", {
-  namedExports: { getDb: () => ({}),
-    __resetTestDb: async () => null,
-    __setTestAuth: async () => null,
-    __setTestDb: async () => null,
-    defaultFirebaseDatabaseUrl: async () => null,
-    formatStorageSetupError: async () => null,
-    getAuthAdmin: async () => null,
-    getFirebaseStatus: async () => null,
-    getStorageBucket: async () => null,
-    getStorageBucketAsync: async () => null,
-    readFirebaseWebConfigFromEnv: async () => null,
-    resolveFirebaseDatabaseUrl: async () => null,
-    resolveStorageBucketCandidates: async () => null,
-    resolveStorageBucketName: async () => null,
-    warnIfDatabaseUrlMismatch: async () => null,
-  },
-});
-mock.module("../src/modules/activity/activity-scope.js", {
-  namedExports: { resolveMemberRoleName: async () => memberRole,
-    buildMemberMetaMap: async () => null,
-    getProjectScopedMemberIds: async () => [],
-    memberOptionsFromMeta: async () => null,
-    resolveActivityFeedScope: async () => null,
-  },
-});
-mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
-  namedExports: {
-    sumAppLogSecondsByAppNamePg: async () => appRows,
-    sumUrlLogSecondsByDomainPg: async () => domainRows,
-    // Unused by focused-time.js itself, but activity-categories.js (imported
-    // transitively) needs the full export surface satisfied against this
-    // same mocked module.
-    findUnclassifiedAppsPg: async () => [],
-    findUnclassifiedDomainsPg: async () => [],
-    createPgSession: async () => null,
-    fetchAllOpenPgSessions: async () => null,
-    fetchLatestPgScreenshot: async () => null,
-    fetchPgAppLogs: async () => null,
-    fetchPgScreenshotById: async () => null,
-    fetchPgScreenshots: async () => null,
-    fetchPgSessionsForDashboard: async () => null,
-    fetchPgUrlLogs: async () => null,
-    findOpenPgSession: async () => null,
-    getPgSessionById: async () => null,
-    insertActivityAppLog: async () => null,
-    insertActivityScreenshot: async () => null,
-    insertActivityUrlLog: async () => null,
-    reassignPgActivityMemberId: async () => null,
-    recordPgAlertSent: async () => null,
-    sumDailyMemberActiveSeconds: async () => null,
-    sumDailyMemberTaskActiveSeconds: async () => null,
-    sumDailyMemberTaskActiveSecondsRange: async () => null,
-    updatePgSession: async () => null,
-    wasPgAlertSentRecently: async () => null,
-  },
-});
-mock.module("../src/lib/postgres/classification-postgres.service.js", {
-  namedExports: {
-    getAllCategoriesPg: async () => categoryRows,
-    getCategoryPg: async () => null,
-    upsertCategoryPg: async () => null,
-    deleteCategoryPg: async () => {},
-  },
+const category = (matchType, pattern, cat, roleOverride) => ({
+  matchType,
+  pattern,
+  category: cat,
+  ...(roleOverride ? { roleOverride } : {}),
 });
 
-const { getFocusedTimeSummary } = await import("../src/modules/classification/focused-time.js");
-const { invalidateCategoryCache } = await import("../src/modules/classification/activity-categories.js");
-
-function categoryRow(matchType, pattern, category, roleOverride = {}) {
-  return {
-    id: `${matchType}-${pattern}`,
-    match_type: matchType,
-    pattern,
-    category,
-    display_name: null,
-    role_override: roleOverride,
-    is_global_default: true,
-    created_by: null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-  };
-}
-
-function reset() {
-  // getAllCategories() memoises for 15s (see activity-categories.js). Each
-  // test here swaps categoryRows underneath it, so the cache has to be
-  // cleared or a test reads the previous test's classifications.
-  invalidateCategoryCache();
-  memberRole = "Employee";
-  categoryRows = [
-    categoryRow("app", "code.exe", "productive"),
-    categoryRow("domain", "youtube.com", "distracting"),
-    categoryRow("domain", "slack.com", "neutral"),
-  ];
-  appRows = [];
-  domainRows = [];
-}
-
-test("buckets known app and domain seconds into the right categories", async () => {
-  reset();
-  appRows = [{ app_name: "code.exe", total_seconds: "3600" }];
-  domainRows = [
-    { domain: "youtube.com", total_seconds: "600" },
-    { domain: "slack.com", total_seconds: "300" },
-  ];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.productiveSeconds, 3600);
-  assert.equal(summary.distractingSeconds, 600);
-  assert.equal(summary.neutralSeconds, 300);
-  assert.equal(summary.unclassifiedSeconds, 0);
-  assert.equal(summary.totalSeconds, 4500);
+const appRow = (app_name, duration_seconds, page_title = "", started_at = AT) => ({
+  session_id: "s1",
+  app_name,
+  page_title,
+  started_at,
+  duration_seconds,
 });
 
-test("an app/domain with no classification row buckets as unclassified, not dropped", async () => {
-  reset();
-  appRows = [{ app_name: "some-new-tool.exe", total_seconds: "120" }];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.unclassifiedSeconds, 120);
-  assert.equal(summary.totalSeconds, 120);
+const urlRow = (domain, duration_seconds, visited_at = AT) => ({
+  session_id: "s1",
+  domain,
+  visited_at,
+  duration_seconds,
 });
 
-test("app/domain lookup is case-insensitive", async () => {
-  reset();
-  appRows = [{ app_name: "CODE.EXE", total_seconds: "60" }];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.productiveSeconds, 60);
+const BASE = [
+  category("app", "code.exe", "productive"),
+  category("domain", "youtube.com", "distracting"),
+  category("domain", "slack.com", "neutral"),
+];
+
+const summarize = (appRows, urlRows = [], categories = BASE, roleName = "Employee") =>
+  summarizeFocusedTime({ appRows, urlRows, categories, roleName });
+
+test("buckets known app and domain seconds into the right categories", () => {
+  const out = summarize(
+    [
+      appRow("code.exe", 3600),
+      appRow("Google Chrome", 600, "", "2026-01-01T11:00:00.000Z"),
+      appRow("Google Chrome", 300, "", "2026-01-01T12:00:00.000Z"),
+    ],
+    [
+      urlRow("youtube.com", 600, "2026-01-01T11:00:00.000Z"),
+      urlRow("slack.com", 300, "2026-01-01T12:00:00.000Z"),
+    ],
+  );
+  assert.equal(out.productiveSeconds, 3600);
+  assert.equal(out.distractingSeconds, 600);
+  assert.equal(out.neutralSeconds, 300);
+  assert.equal(out.unclassifiedSeconds, 0);
+  assert.equal(out.totalSeconds, 4500);
 });
 
-test("a role override reclassifies for the tracked member's own role", async () => {
-  reset();
-  categoryRows = [categoryRow("domain", "youtube.com", "distracting", { "video editor": "productive" })];
-  memberRole = "Video Editor";
-  domainRows = [{ domain: "youtube.com", total_seconds: "600" }];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.productiveSeconds, 600);
-  assert.equal(summary.distractingSeconds, 0);
+test("browser seconds are counted once, under the site - not twice", () => {
+  // The agent emits an app slice and a URL slice for the SAME 15 seconds.
+  // Summing both tables reported 30. This is the bug this rewrite fixes.
+  const out = summarize([appRow("Google Chrome", 15)], [urlRow("youtube.com", 15)]);
+  assert.equal(out.totalSeconds, 15, "15 real seconds must not report as 30");
+  assert.equal(out.distractingSeconds, 15, "credited to the site that was open");
+  assert.equal(out.unclassifiedSeconds, 0, "the browser itself adds nothing extra");
+  assert.deepEqual(out.breakdown.map((b) => b.pattern), ["youtube.com"]);
 });
 
-test("no role override for this member's role falls back to the base category", async () => {
-  reset();
-  categoryRows = [categoryRow("domain", "youtube.com", "distracting", { "video editor": "productive" })];
-  memberRole = "Employee";
-  domainRows = [{ domain: "youtube.com", total_seconds: "600" }];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.distractingSeconds, 600);
+test("a window-title classification reaches this report", () => {
+  // No URL was readable, so the page is only known by its window title.
+  const out = summarize(
+    [appRow("Google Chrome", 20, "Lead Submission Form")],
+    [],
+    [category("window_title", "Lead Submission Form", "productive")],
+  );
+  assert.equal(out.productiveSeconds, 20);
+  assert.equal(out.totalSeconds, 20);
 });
 
-test("the breakdown is sorted by seconds descending", async () => {
-  reset();
-  appRows = [{ app_name: "code.exe", total_seconds: "60" }];
-  domainRows = [{ domain: "youtube.com", total_seconds: "600" }];
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.breakdown[0].pattern, "youtube.com");
-  assert.equal(summary.breakdown[1].pattern, "code.exe");
+test("an app or site with no classification row buckets as unclassified, not dropped", () => {
+  const out = summarize([appRow("some-new-tool.exe", 120)]);
+  assert.equal(out.unclassifiedSeconds, 120);
+  assert.equal(out.totalSeconds, 120);
 });
 
-test("zero activity in the range returns all-zero totals, not an error", async () => {
-  reset();
-  const summary = await getFocusedTimeSummary("member-1", { fromDay: "2026-01-01", toDay: "2026-01-01" });
-  assert.equal(summary.totalSeconds, 0);
-  assert.deepEqual(summary.breakdown, []);
+test("an unlabelled browser window is still reported, just unattributed", () => {
+  const out = summarize([appRow("Google Chrome", 20, "Live Caption")]);
+  assert.equal(out.unclassifiedSeconds, 20);
+  assert.equal(out.totalSeconds, 20);
+});
+
+test("lookup is case-insensitive", () => {
+  assert.equal(summarize([appRow("CODE.EXE", 60)]).productiveSeconds, 60);
+  const browser = summarize([appRow("Google Chrome", 60)], [urlRow("YouTube.com", 60)]);
+  assert.equal(browser.distractingSeconds, 60);
+});
+
+test("a role override reclassifies for the tracked member's own role", () => {
+  const out = summarize(
+    [appRow("Google Chrome", 600)],
+    [urlRow("youtube.com", 600)],
+    [category("domain", "youtube.com", "distracting", { "video editor": "productive" })],
+    "Video Editor",
+  );
+  assert.equal(out.productiveSeconds, 600);
+  assert.equal(out.distractingSeconds, 0);
+});
+
+test("no role override for this member's role falls back to the base category", () => {
+  const out = summarize(
+    [appRow("Google Chrome", 600)],
+    [urlRow("youtube.com", 600)],
+    [category("domain", "youtube.com", "distracting", { "video editor": "productive" })],
+    "Employee",
+  );
+  assert.equal(out.distractingSeconds, 600);
+});
+
+test("non-browser apps are categorised by the app", () => {
+  const out = summarize(
+    [appRow("Slack", 30), appRow("Steam", 45)],
+    [],
+    [category("app", "Slack", "productive"), category("app", "Steam", "distracting")],
+  );
+  assert.equal(out.productiveSeconds, 30);
+  assert.equal(out.distractingSeconds, 45);
+  assert.equal(out.totalSeconds, 75);
+});
+
+test("the breakdown is sorted by seconds descending", () => {
+  const out = summarize(
+    [appRow("code.exe", 60), appRow("Google Chrome", 600, "", "2026-01-01T11:00:00.000Z")],
+    [urlRow("youtube.com", 600, "2026-01-01T11:00:00.000Z")],
+  );
+  assert.equal(out.breakdown[0].pattern, "youtube.com");
+  assert.equal(out.breakdown[1].pattern, "code.exe");
+});
+
+test("repeat visits to one site accumulate into a single breakdown row", () => {
+  const out = summarize(
+    [
+      appRow("Google Chrome", 60, "", "2026-01-01T10:00:00.000Z"),
+      appRow("Google Chrome", 90, "", "2026-01-01T11:00:00.000Z"),
+    ],
+    [
+      urlRow("youtube.com", 60, "2026-01-01T10:00:00.000Z"),
+      urlRow("youtube.com", 90, "2026-01-01T11:00:00.000Z"),
+    ],
+  );
+  assert.equal(out.breakdown.length, 1);
+  assert.deepEqual(out.breakdown[0].seconds, 150);
+  assert.equal(out.totalSeconds, 150);
+});
+
+test("zero activity in the range returns all-zero totals, not an error", () => {
+  const out = summarize([]);
+  assert.equal(out.totalSeconds, 0);
+  assert.deepEqual(out.breakdown, []);
 });
