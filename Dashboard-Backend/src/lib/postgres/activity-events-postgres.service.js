@@ -344,18 +344,6 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit, options = {}) 
   return result?.rows ?? [];
 }
 
-export async function sumAppLogSecondsByAppNamePg(memberId, { fromDay, toDay }) {
-  const id = parseProgressUuid(memberId);
-  if (!id) return [];
-  const result = await pgQuery(
-    `SELECT a.name AS app_name, SUM(l.duration_seconds)::bigint AS total_seconds
-     FROM activity_app_logs l JOIN apps a ON a.id = l.app_id
-     WHERE l.member_id = $1 AND l.started_at::date >= $2::date AND l.started_at::date <= $3::date
-     GROUP BY a.name`,
-    [id, fromDay, toDay],
-  );
-  return result?.rows ?? [];
-}
 
 /**
  * Top apps by tracked time for one member on one project, most recent
@@ -384,19 +372,6 @@ export async function sumAppLogSecondsByAppNameForProjectPg(memberId, projectId,
   return result?.rows ?? [];
 }
 
-export async function sumUrlLogSecondsByDomainPg(memberId, { fromDay, toDay }) {
-  const id = parseProgressUuid(memberId);
-  if (!id) return [];
-  const result = await pgQuery(
-    `SELECT domain, SUM(duration_seconds)::bigint AS total_seconds
-     FROM activity_url_logs
-     WHERE member_id = $1 AND visited_at::date >= $2::date AND visited_at::date <= $3::date
-       AND domain IS NOT NULL AND domain != ''
-     GROUP BY domain`,
-    [id, fromDay, toDay],
-  );
-  return result?.rows ?? [];
-}
 
 export async function findUnclassifiedAppsPg(sinceDays = 30, limit = 20) {
   const result = await pgQuery(
@@ -856,4 +831,52 @@ export async function reassignPgActivityMemberId(fromId, toId) {
   for (const { table, column } of REASSIGNABLE_TABLES) {
     await pgQuery(`UPDATE ${table} SET ${column} = $2 WHERE ${column} = $1`, [from, to]);
   }
+}
+
+/**
+ * Raw app-log rows for one member over a day range, in the member's own
+ * timezone. Focused time needs rows rather than a GROUP BY sum: a browser
+ * row's category depends on which site was open at that moment, which is a
+ * per-row question the resolver answers with the URL index below.
+ */
+export async function fetchAppLogRowsForRangePg(memberId, { fromDay, toDay }, limit = 50000) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT l.session_id, a.name AS app_name, l.page_title, l.started_at, l.duration_seconds
+     FROM activity_app_logs l
+     JOIN apps a ON a.id = l.app_id
+     LEFT JOIN members m_tz ON m_tz.id = l.member_id
+     WHERE l.member_id = $1
+       AND ${localDay("l.started_at")} >= $2::date
+       AND ${localDay("l.started_at")} <= $3::date
+     ORDER BY l.started_at
+     LIMIT $4`,
+    [id, fromDay, toDay, limit],
+  );
+  return result?.rows ?? [];
+}
+
+/**
+ * URL-log rows over the same range. Used only to build the session/time index
+ * that says which site a browser row was showing - never summed, because the
+ * agent emits an app slice and a URL slice for the same seconds and adding
+ * both counts browsing twice.
+ */
+export async function fetchUrlLogRowsForRangePg(memberId, { fromDay, toDay }, limit = 50000) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT l.session_id, l.domain, l.visited_at, l.duration_seconds
+     FROM activity_url_logs l
+     LEFT JOIN members m_tz ON m_tz.id = l.member_id
+     WHERE l.member_id = $1
+       AND l.domain IS NOT NULL AND l.domain <> ''
+       AND ${localDay("l.visited_at")} >= $2::date
+       AND ${localDay("l.visited_at")} <= $3::date
+     ORDER BY l.visited_at
+     LIMIT $4`,
+    [id, fromDay, toDay, limit],
+  );
+  return result?.rows ?? [];
 }

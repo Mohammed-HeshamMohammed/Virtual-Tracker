@@ -1,62 +1,126 @@
 import { getDb } from "../../config/firebase.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getAllCategories } from "./activity-categories.js";
+import { buildUrlIndex, resolveActivityCategory } from "../activity/category-resolver.js";
 import {
-  sumAppLogSecondsByAppNamePg,
-  sumUrlLogSecondsByDomainPg,
+  fetchAppLogRowsForRangePg,
+  fetchUrlLogRowsForRangePg,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 
-export async function getFocusedTimeSummary(memberId, range) {
-  const db = getDb();
-  const [categories, roleName, appSeconds, domainSeconds] = await Promise.all([
-    getAllCategories(),
-    db ? resolveMemberRoleName(db, memberId) : Promise.resolve(""),
-    sumAppLogSecondsByAppNamePg(memberId, range),
-    sumUrlLogSecondsByDomainPg(memberId, range),
-  ]);
+/**
+ * Focused time is now resolved through `category-resolver.js`, the same module
+ * the Screenshots, Apps and URLs feeds use. It used to be a fourth, private
+ * copy of the classification rules, and it was wrong in two ways because of
+ * it.
+ *
+ * 1. It double-counted browsing. It summed `activity_app_logs` (which
+ *    includes "Google Chrome") *and* `activity_url_logs`, but the agent emits
+ *    an app slice and a URL slice for the *same* seconds - so every browsing
+ *    second landed in the total twice, once as an unclassifiable browser and
+ *    once as its domain. A member who browsed all day reported roughly double
+ *    their tracked time.
+ *
+ * 2. It ignored `window_title` classifications. Its category maps were built
+ *    from `matchType === "app"` and `"domain"` only, so labelling a page the
+ *    agent could only read as a window title changed the Activity tab and
+ *    nothing else.
+ *
+ * The fix for both is the same: seconds come from `activity_app_logs` alone -
+ * that is the authoritative record of what was in the foreground - and URL
+ * logs are consulted purely as an index of which site was open at a given
+ * moment. Nothing is summed twice, and every match type the resolver knows
+ * about is honoured, because there is only one implementation of the rules
+ * left.
+ */
 
-  const appMap = new Map(
-    categories.filter((c) => c.matchType === "app").map((c) => [c.pattern.toLowerCase(), c]),
-  );
-  const domainMap = new Map(
-    categories.filter((c) => c.matchType === "domain").map((c) => [c.pattern.toLowerCase(), c]),
-  );
+/** Rows to pull before giving up on precision. A month of 15s slices for one
+ *  member is roughly 40k; beyond this the range is unreasonable for a summary
+ *  and the caller should narrow it. */
+const MAX_ROWS = 50_000;
+
+function buildLookup(categories, roleName) {
   const roleKey = String(roleName || "").trim().toLowerCase();
+  const byKey = new Map();
+  for (const category of categories) {
+    const pattern = typeof category.pattern === "string" ? category.pattern.trim().toLowerCase() : "";
+    if (!pattern) continue;
+    // A role override wins over the base category, matching what the previous
+    // implementation did and what the dashboard shows.
+    const override = roleKey ? category.roleOverride?.[roleKey] : undefined;
+    byKey.set(`${category.matchType}:${pattern}`, override ?? category.category ?? "unclassified");
+  }
+  return (matchType, pattern) => {
+    const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
+    if (!key) return "unclassified";
+    return byKey.get(`${matchType}:${key}`) ?? "unclassified";
+  };
+}
+
+/**
+ * The whole computation, with no database in it, so the rules above can be
+ * tested directly rather than inferred from a mocked query layer.
+ */
+export function summarizeFocusedTime({ appRows, urlRows, categories, roleName }) {
+  const lookup = buildLookup(categories, roleName);
+  const urlIndex = buildUrlIndex(urlRows);
 
   const totals = { productive: 0, neutral: 0, distracting: 0, unclassified: 0 };
-  const breakdown = [];
+  const byPattern = new Map();
 
-  const resolveCategory = (entry) => {
-    if (!entry) return "unclassified";
-    const override = roleKey ? entry.roleOverride?.[roleKey] : undefined;
-    return override ?? entry.category;
-  };
+  for (const row of appRows) {
+    const appName = String(row.app_name ?? "");
+    const seconds = Math.max(0, Number(row.duration_seconds) || 0);
+    if (seconds === 0) continue;
 
-  for (const row of appSeconds) {
-    const entry = appMap.get(String(row.app_name ?? "").toLowerCase());
-    const category = resolveCategory(entry);
-    const seconds = Number(row.total_seconds ?? 0);
-    totals[category] += seconds;
-    breakdown.push({ pattern: row.app_name, matchType: "app", category, seconds });
+    const resolved = resolveActivityCategory(lookup, {
+      appName,
+      pageTitle: row.page_title || "",
+      at: row.started_at,
+      sessionId: row.session_id,
+      urlIndex,
+    });
+
+    const category = resolved.category ?? "unclassified";
+    totals[category] = (totals[category] ?? 0) + seconds;
+
+    // Report browsing under the site it resolved to, everything else under
+    // the app - the same thing the Activity tab shows for these seconds.
+    const pattern = resolved.domain || appName;
+    const matchType = resolved.source === "app" ? "app" : "domain";
+    const key = `${matchType}:${pattern.toLowerCase()}`;
+    const existing = byPattern.get(key);
+    if (existing) {
+      existing.seconds += seconds;
+    } else {
+      byPattern.set(key, { pattern, matchType, category, seconds });
+    }
   }
-  for (const row of domainSeconds) {
-    const entry = domainMap.get(String(row.domain ?? "").toLowerCase());
-    const category = resolveCategory(entry);
-    const seconds = Number(row.total_seconds ?? 0);
-    totals[category] += seconds;
-    breakdown.push({ pattern: row.domain, matchType: "domain", category, seconds });
-  }
 
-  const totalSeconds = totals.productive + totals.neutral + totals.distracting + totals.unclassified;
+  const totalSeconds =
+    totals.productive + totals.neutral + totals.distracting + totals.unclassified;
+
   return {
-    memberId,
-    fromDay: range.fromDay,
-    toDay: range.toDay,
     totalSeconds,
     productiveSeconds: totals.productive,
     neutralSeconds: totals.neutral,
     distractingSeconds: totals.distracting,
     unclassifiedSeconds: totals.unclassified,
-    breakdown: breakdown.sort((a, b) => b.seconds - a.seconds),
+    breakdown: [...byPattern.values()].sort((a, b) => b.seconds - a.seconds),
+  };
+}
+
+export async function getFocusedTimeSummary(memberId, range) {
+  const db = getDb();
+  const [categories, roleName, appRows, urlRows] = await Promise.all([
+    getAllCategories(),
+    db ? resolveMemberRoleName(db, memberId) : Promise.resolve(""),
+    fetchAppLogRowsForRangePg(memberId, range, MAX_ROWS),
+    fetchUrlLogRowsForRangePg(memberId, range, MAX_ROWS),
+  ]);
+  return {
+    memberId,
+    fromDay: range.fromDay,
+    toDay: range.toDay,
+    ...summarizeFocusedTime({ appRows, urlRows, categories, roleName }),
   };
 }
