@@ -633,10 +633,12 @@ impl ActivityTracker {
         };
         let Some(session) = session else {
             // TC-X: the server can close a session out from under the agent
-            // (abandoned-session sweep, ~90s of missed syncs - see
-            // Dashboard-Backend's agent-heartbeat.js) after a brief
-            // auth/network hiccup that has nothing to do with the user
-            // actually stopping. tick_progress runs off wall-clock, not the
+            // (abandoned-session sweep - five minutes without the session row
+            // being touched, see Dashboard-Backend's agent-heartbeat.js) after
+            // an auth/network outage that has nothing to do with the user
+            // actually stopping. A healthy agent no longer trips this at all:
+            // its session poll marks the row as watched. What still reaches
+            // here is a genuine outage longer than five minutes. tick_progress runs off wall-clock, not the
             // network, so the local counters kept climbing the whole time -
             // discarding them here (the old behavior) silently threw away
             // real, worked, tracked time. Try to resume with the local total
@@ -1236,8 +1238,12 @@ impl ActivityTracker {
     /// stretch out of both totals, which is what "not tracked" actually means.
     fn tick_paused(&self, state: &mut TickState) {
         let now = Instant::now();
-        let delta = Self::credited_seconds(now.duration_since(state.last_tick_at));
-        state.last_tick_at = now;
+        // TC-7: same carry as tick_progress - a break's seconds are counted the
+        // same way worked ones are, so the remainder is owed here too rather
+        // than thrown away on every tick of a long break.
+        let elapsed = now.duration_since(state.last_tick_at);
+        let delta = Self::credited_seconds(elapsed);
+        state.last_tick_at = now - (elapsed - Self::consumed_span(elapsed, delta));
         if !state.idle_time_disabled {
             state.idle_elapsed += delta;
         }
