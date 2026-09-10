@@ -8,8 +8,12 @@ const APP_EXE_DISPLAY_NAMES = {
   "vivaldi.exe": "Vivaldi",
   "chromium.exe": "Chromium",
   "iexplore.exe": "Internet Explorer",
-  "zen.exe": "Zen",
+  "zen.exe": "Zen Browser",
   "waterfox.exe": "Waterfox",
+  "librewolf.exe": "LibreWolf",
+  "arc.exe": "Arc",
+  "whale.exe": "Naver Whale",
+  "yandex.exe": "Yandex Browser",
   "cursor.exe": "Cursor",
   "code.exe": "VS Code",
   "devenv.exe": "Visual Studio",
@@ -42,8 +46,16 @@ function isInvalidAppName(name) {
   return lower.includes("://") || lower.includes("media-stream") || lower.startsWith("current-web-contents");
 }
 
+/**
+ * Mirrors the agent's browser table (Tauri-App-Extension/src-tauri/src/capture/
+ * browsers.rs). Word-anchored on purpose: a bare substring match turned
+ * "Research" and "Monarch" into browsers via "arc", and "Operator" via "opera".
+ */
+const BROWSER_NAME_PATTERN =
+  /(^|[^a-z])(chrome|chromium|firefox|edge|msedge|opera|operagx|brave|safari|vivaldi|arc|yandex|whale|waterfox|librewolf|zen|browser)([^a-z]|$)/i;
+
 export function isBrowserAppName(name) {
-  return /chrome|firefox|edge|opera|brave|safari|vivaldi|browser|chromium/i.test(String(name || ""));
+  return BROWSER_NAME_PATTERN.test(String(name || ""));
 }
 
 export function normalizeAppName(raw) {

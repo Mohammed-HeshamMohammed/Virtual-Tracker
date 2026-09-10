@@ -210,6 +210,29 @@ export async function routeCompliance(req, res, url, origin) {
     return true;
   }
 
+  // Patterns only, readable by any signed-in member - the desktop agent needs
+  // them to skip excluded apps locally instead of capturing and uploading
+  // material the ingest would only throw away. Deliberately no ids, authors or
+  // timestamps; that metadata stays management-only on the route below.
+  if (pn === "/api/compliance/capture-exclusions/effective" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const rows = await getCaptureExclusions();
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          apps: rows.filter((r) => r.matchType === "app").map((r) => r.pattern),
+          domains: rows.filter((r) => r.matchType === "domain").map((r) => r.pattern),
+        },
+      });
+    } catch (e) {
+      logSafeError("[compliance/capture-exclusions effective GET]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load capture exclusions." });
+    }
+    return true;
+  }
+
   if (pn === "/api/compliance/capture-exclusions" && req.method === "GET") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
