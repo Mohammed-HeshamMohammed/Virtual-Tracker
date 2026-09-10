@@ -597,6 +597,39 @@ export async function createPgSession(row) {
   return result?.rows?.[0] ?? null;
 }
 
+/**
+ * Marks a session as still being watched by a live agent.
+ *
+ * The abandoned-session sweep closes any agent session whose `updated_at` is
+ * more than five minutes old (agent-heartbeat.js). `updated_at` only moves on
+ * a *sync* POST, which the agent sends roughly every twenty seconds and only
+ * for sessions carrying a task or a project - while its session poll, which
+ * runs every few seconds for every session, moved nothing at all. A live agent
+ * whose syncs stopped landing for five minutes therefore had its session
+ * closed underneath it, and the timer stopped on its own: no idle, no warning,
+ * 100% activity and a stopped clock.
+ *
+ * The poll is the most current evidence there is that an agent is alive and
+ * still asking about this session, so it now says so. Deliberately *not* routed
+ * through the Redis heartbeat: `isSessionAbandoned` used to depend on that and
+ * a Redis blip was then indistinguishable from "the employee stopped working",
+ * closing every active session at once (TC-1, guarded by
+ * test/session-abandonment.test.js). A column write has no such failure mode.
+ *
+ * Touches nothing but the timestamp, and only for a session that is still open,
+ * so it can never revive one that was legitimately closed.
+ */
+export async function touchPgSessionActivity(sessionId) {
+  const id = parseProgressUuid(sessionId);
+  if (!id) return false;
+  const result = await pgQuery(
+    `UPDATE activity_sessions SET updated_at = now()
+     WHERE id = $1 AND status IN ('active', 'idle')`,
+    [id],
+  );
+  return (result?.rowCount ?? 0) > 0;
+}
+
 export async function updatePgSession(sessionId, patch, options = {}) {
   const allowDecrease = options.allowDecrease === true;
   const wantsActive = patch.activeSeconds !== undefined;
