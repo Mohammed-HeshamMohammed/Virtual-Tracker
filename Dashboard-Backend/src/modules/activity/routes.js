@@ -100,6 +100,7 @@ import {
   sumMemberActiveIdleSeconds,
   sumMemberActiveIdleSecondsForProject,
   sumAppLogSecondsByAppNameForProjectPg,
+  touchPgSessionActivity,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
 import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
@@ -293,6 +294,13 @@ export async function routeActivity(req, res, url, origin) {
       }
       if (!origin) void touchAgentHeartbeat(member.memberId);
       const open = await findOpenSession(member.memberId);
+      // The agent polling for its own session is the freshest proof it is
+      // still there. Without this the only thing moving `updated_at` was a
+      // sync POST, and the abandoned-session sweep closed sessions out from
+      // under agents that were plainly alive - see touchPgSessionActivity.
+      // Agent requests only (`!origin`): a dashboard tab watching the same
+      // member must not keep a genuinely dead session open.
+      if (!origin && open?.id) void touchPgSessionActivity(open.id);
       sendJson(res, origin, 200, {
         success: true,
         data: open ? await normalizeSession(open.id, open) : null,
