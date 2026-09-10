@@ -28,7 +28,7 @@ import { useTheme } from "@/shared/providers/app"
 import {
   STANDARD_REPORT_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  reportTimezoneLabelFor,
 } from "@/features/reports/components/shared/constants"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
 import { reportCardFor } from "@/features/reports/catalog"
@@ -346,7 +346,7 @@ export function StandardReportLayout({
                   {STANDARD_REPORT_ORG_LABEL}
                 </span>
                 <span className={cn("text-sm", isDark ? "text-white/45" : "text-slate-400")}>
-                  {STANDARD_REPORT_TIMEZONE_LABEL}
+                  {reportTimezoneLabelFor(pageId)}
                 </span>
               </div>
               {showGroupBy ? (

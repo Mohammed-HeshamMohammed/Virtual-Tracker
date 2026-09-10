@@ -9,7 +9,7 @@ import {
   StandardReportLayout,
   useStandardReportLayout,
 } from "@/features/reports/components/app/standard-report-layout"
-import { fetchShiftAttendanceReport, type ShiftAttendanceRow } from "@/features/reports/api/misc-reports-api"
+import { fetchShiftAttendanceReport, type ShiftAttendanceRow, type ShiftAttendanceStatus } from "@/features/reports/api/misc-reports-api"
 import {
   ReportFiltersPanel,
   emptyReportFilters,
@@ -17,15 +17,16 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
-import { ReportErrorState, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   DATE_MEMBER_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  MEMBER_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function initialsFor(name: string): string {
   return (
     name
@@ -52,14 +53,18 @@ function formatDay(day: string): string {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  worked: "bg-emerald-50 text-emerald-600",
-  missed: "bg-red-50 text-red-600",
-  unscheduled: "bg-amber-50 text-amber-600",
+  worked: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
+  missed: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300",
+  excused: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
+  "time-off": "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300",
+  unscheduled: "bg-amber-50 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300",
 }
 
 const STATUS_LABEL: Record<string, string> = {
   worked: "Worked",
   missed: "Missed",
+  excused: "Excused",
+  "time-off": "Time off",
   unscheduled: "Unscheduled",
 }
 
@@ -87,19 +92,23 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
     })
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
-  const [statusFilter, setStatusFilter] = useState<"all" | "worked" | "missed" | "unscheduled">("all")
+  const [statusFilter, setStatusFilter] = useState<"all" | ShiftAttendanceStatus>("all")
+  const [truncated, setTruncated] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     fetchShiftAttendanceReport({
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
     })
       .then((data) => {
-        if (!cancelled) setRows(data)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -135,7 +144,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `shift-attendance-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `shift-attendance-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -145,11 +154,15 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
   const summary = useMemo(() => {
     const worked = rows.filter((r) => r.status === "worked").length
     const missed = rows.filter((r) => r.status === "missed").length
+    const excused = rows.filter((r) => r.status === "excused" || r.status === "time-off").length
     const unscheduled = rows.filter((r) => r.status === "unscheduled").length
+    // Excused days are neither kept nor broken, so they are left out of the
+    // rate rather than counted against the member.
     const scheduled = worked + missed
     return {
       worked,
       missed,
+      excused,
       unscheduled,
       rate: scheduled > 0 ? Math.round((worked / scheduled) * 100) : 0,
     }
@@ -161,11 +174,12 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
         title: "Shift Attendance Report",
         subtitle: "Configured working days against days actually tracked, in each member's own timezone.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: MEMBER_TIMEZONE_LABEL,
         rangeLabel: dateLabel,
         summary: [
           { label: "Worked", value: String(summary.worked) },
           { label: "Missed", value: String(summary.missed) },
+          { label: "Excused", value: String(summary.excused) },
           { label: "Unscheduled", value: String(summary.unscheduled) },
           { label: "Attendance", value: `${summary.rate}%` },
         ],
@@ -176,6 +190,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
             data: [
               { label: "Worked", value: summary.worked },
               { label: "Missed", value: summary.missed },
+              { label: "Excused", value: summary.excused },
               { label: "Unscheduled", value: summary.unscheduled },
             ],
           },
@@ -208,9 +223,12 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
     <div className="space-y-5">
       <p className={cn("text-xs", isDark ? "text-white/40" : "text-slate-400")}>
         Attendance compares each member&apos;s configured working days against the days they actually tracked time,
-        in their own timezone. No shift start times are configured anywhere in this workspace, so lateness is not
-        reported.
+        in their own timezone. Approved leave and days with an agreed makeup are shown as excused rather than missed,
+        and an agreed makeup day counts as expected work. No shift start times exist in this workspace, so lateness
+        and abandoned shifts are not reported.
       </p>
+
+      {truncated ? <ReportTruncationNotice what="scheduled days" /> : null}
 
       {error ? (
         <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -223,10 +241,11 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
         />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {[
               ["Worked", String(summary.worked)],
               ["Missed", String(summary.missed)],
+              ["Excused", String(summary.excused)],
               ["Unscheduled", String(summary.unscheduled)],
               ["Attendance", `${summary.rate}%`],
             ].map(([label, value]) => (
@@ -248,7 +267,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
           </div>
 
           <div className="flex flex-wrap gap-1">
-            {(["all", "worked", "missed", "unscheduled"] as const).map((s) => (
+            {(["all", "worked", "missed", "excused", "time-off", "unscheduled"] as const).map((s) => (
               <button
                 key={s}
                 type="button"

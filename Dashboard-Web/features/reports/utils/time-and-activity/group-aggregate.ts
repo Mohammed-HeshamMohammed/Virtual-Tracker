@@ -23,6 +23,7 @@ function isoWeekStart(day: string): string {
   const dow = d.getUTCDay()
   const mondayOffset = dow === 0 ? -6 : 1 - dow
   d.setUTCDate(d.getUTCDate() + mondayOffset)
+  // UTC in, UTC out: `day` is already a calendar string, not a local moment.
   return d.toISOString().slice(0, 10)
 }
 

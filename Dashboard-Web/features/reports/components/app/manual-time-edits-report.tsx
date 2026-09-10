@@ -19,15 +19,16 @@ import {
   type ReportFilterState,
 } from "@/features/reports/components/shared/report-filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
-import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
   WORK_SESSIONS_GROUP_BY_OPTIONS,
 } from "@/features/reports/components/shared/constants"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function initialsFor(name: string): string {
   return (
     name
@@ -76,6 +77,7 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   const { memberId, memberRole } = useAuth()
   const { rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ManualTimeEditRow[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set())
   const toggleGroupCollapsed = (key: string) =>
@@ -116,13 +118,16 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
     setLoading(true)
     setError(null)
     fetchManualTimeEditsReport({
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
       projectIds: [...filters.projectIds],
     })
       .then((data) => {
-        if (!cancelled) setRows(data)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -158,7 +163,7 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `manual-time-edits-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `manual-time-edits-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -180,7 +185,7 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
         title: "Manual Time Edits Report",
         subtitle: "Time entered by hand instead of tracked.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         rangeLabel: dateLabel,
         summary: [
           { label: "Entries", value: String(rows.length) },
@@ -245,12 +250,14 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
   }
 
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border shadow-sm",
-        isDark ? "border-white/10 bg-[#151b2d]" : "border-slate-100 bg-white"
-      )}
-    >
+    <div className="space-y-4">
+      {truncated ? <ReportTruncationNotice what="manual time entries" /> : null}
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border shadow-sm",
+          isDark ? "border-white/10 bg-[#151b2d]" : "border-slate-100 bg-white"
+        )}
+      >
       <div className="overflow-x-auto custom-scrollbar-x">
         <table className="w-full min-w-[900px] table-fixed">
           <thead>
@@ -411,6 +418,7 @@ function ManualTimeEditsTable({ filters }: { filters: ReportFilterState }) {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

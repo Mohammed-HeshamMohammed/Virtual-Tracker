@@ -84,3 +84,29 @@ export function isBetween(d: Date, start: Date | null, end: Date | null): boolea
   const t = d.getTime()
   return t > Math.min(start.getTime(), end.getTime()) && t < Math.max(start.getTime(), end.getTime())
 }
+
+/**
+ * The calendar date a `Date` falls on **in the viewer's own zone**, as the
+ * `YYYY-MM-DD` string the report APIs take.
+ *
+ * Every report used to build its range with `startOfDay(d).toISOString().slice(0, 10)`.
+ * `startOfDay` sets *local* midnight; `toISOString` then renders it in UTC. The
+ * two disagree for every viewer whose offset isn't zero, so the range silently
+ * grew by a day. In Cairo (UTC+3), picking "Today" on 10 Sep sent
+ * `from=2026-09-09&to=2026-09-10` - two days of data behind a one-day label.
+ * West of UTC the extra day lands on the other end instead.
+ *
+ * Reading the local parts back off the Date keeps the string on the same
+ * calendar the user picked it from.
+ */
+export function toDateParam(d: Date): string {
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
+/** Today's local date, for stamping export filenames. */
+export function todayDateParam(): string {
+  return toDateParam(new Date())
+}

@@ -22,12 +22,12 @@ import {
   groupAuditRows,
   type AuditLogGroupBy,
 } from "@/features/reports/utils/audit-log"
-import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { formatRangeLabel, startOfDay, endOfDay, toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity"
 import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
 import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/audit-log"
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
-import { ReportErrorState, ReportOrgLine, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportOrgLine, ReportPageHeading, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 
 const COLUMN_DEFS: { key: AuditLogColumnKey; label: string }[] = [
@@ -140,18 +140,22 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   const [groupBy, setGroupBy] = useComponentState<AuditLogGroupBy>("date")
   const [columns, setColumns] = useComponentState<Record<AuditLogColumnKey, boolean>>({ ...DEFAULT_COLS })
   const [collapsed, setCollapsed] = useComponentState<Set<string>>(() => new Set())
+  const [truncated, setTruncated] = useComponentState(false)
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
 
   useEffect(() => {
     let cancelled = false
-    const from = rangeStart.toISOString().slice(0, 10)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const from = toDateParam(rangeStart)
+    const to = toDateParam(rangeEnd)
     setLoading(true)
     setError(null)
     fetchAuditLogReport({ from, to })
       .then((data) => {
-        if (!cancelled) setRows(data)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -195,7 +199,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `audit-log-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `audit-log-${todayDateParam()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -277,6 +281,8 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
       </div>
 
       <ReportOrgLine org={AUDIT_LOG_ORG_LABEL} timezone={AUDIT_LOG_TIMEZONE_LABEL} />
+
+      {truncated ? <ReportTruncationNotice what="audited changes" /> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative z-40">

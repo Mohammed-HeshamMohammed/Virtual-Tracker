@@ -28,10 +28,11 @@ import {
   DATE_MEMBER_GROUP_BY_OPTIONS,
   MEMBER_ONLY_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
 } from "@/features/reports/components/shared/constants"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function initialsFor(name: string): string {
   return (
     name
@@ -82,7 +83,7 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
     let cancelled = false
     setLoading(true)
     setError(null)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const to = toDateParam(rangeEnd)
     fetchTimeOffBalancesReport({ from: to, to, memberIds: [...filters.memberIds] })
       .then((data) => {
         if (cancelled) return
@@ -115,7 +116,7 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `time-off-balances-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `time-off-balances-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -128,7 +129,7 @@ function BalancesTable({ filters }: { filters: ReportFilterState }) {
         title: "Time Off Balances Report",
         subtitle: asOf ? `Balances as of ${formatDay(asOf)}.` : undefined,
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         charts:
           rows.length > 0
             ? [
@@ -355,8 +356,8 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
     setLoading(true)
     setError(null)
     fetchTimeOffTransactionsReport({
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
     })
       .then((data) => {
@@ -386,7 +387,7 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `time-off-transactions-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `time-off-transactions-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -408,7 +409,7 @@ function TransactionsTable({ filters }: { filters: ReportFilterState }) {
         title: "Time Off Transactions Report",
         subtitle: "Accruals, approved leave, and manual adjustments.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         rangeLabel: dateLabel,
         summary: [{ label: "Net change", value: net > 0 ? `+${days(net)}` : days(net) }],
         charts:

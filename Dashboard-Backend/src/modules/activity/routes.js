@@ -42,6 +42,7 @@ import { assertMemberNotBanned } from "../members/services/member-ban-service.js
 import { isBrowserAppName, normalizeAppName } from "./app-name.js";
 import { runContaining } from "./screenshot-run.js";
 import {
+  buildCategoryLookup as buildSharedCategoryLookup,
   buildUrlIndex,
   extractHttpUrl,
   parseDomain,
@@ -173,31 +174,26 @@ function dominantCategory(categorySeconds) {
 }
 
 async function buildCategoryLookup() {
-  const byKey = new Map();
   // Categories resolve at read time, so re-classifying an app changes what
   // past periods report. That is correct - a classification is a statement
   // about what something *is* - but it is surprising when two exports of the
   // same period disagree with nothing explaining why. Reporting when the
   // classifications last changed lets the UI say so instead of silently
   // moving the numbers.
+  let rows = [];
   let updatedAt = null;
   try {
-    for (const row of await getAllCategories()) {
-      const pattern = typeof row.pattern === "string" ? row.pattern.trim().toLowerCase() : "";
-      if (!pattern) continue;
-      byKey.set(`${row.matchType}:${pattern}`, row.category || "unclassified");
+    rows = await getAllCategories();
+    for (const row of rows) {
       const rowUpdated = toIso(row.updatedAt);
       if (rowUpdated && (!updatedAt || rowUpdated > updatedAt)) updatedAt = rowUpdated;
     }
   } catch (err) {
     logSafeWarn("[activity/feed] classification lookup failed", err);
   }
-  const lookup = (matchType, pattern) => {
-    const key = typeof pattern === "string" ? pattern.trim().toLowerCase() : "";
-    if (!key) return "unclassified";
-    return byKey.get(`${matchType}:${key}`) ?? "unclassified";
-  };
-  return { lookup, updatedAt };
+  // No role passed: this feed is shared across viewers, so it resolves the
+  // base category rather than any one role's override.
+  return { lookup: buildSharedCategoryLookup(rows), updatedAt };
 }
 
 // These four moved to category-resolver.js so the resolver and the feeds

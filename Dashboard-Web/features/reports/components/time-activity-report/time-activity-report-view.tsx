@@ -48,7 +48,7 @@ import { ReportSimpleDropdown } from "@/features/reports/components/time-activit
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  MEMBER_TIMEZONE_LABEL,
   TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
   TIME_ACTIVITY_TABLE_COL_MIN_WIDTH,
   TIME_ACTIVITY_TABLE_FIXED_WIDTH,
@@ -158,7 +158,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
       title: "Time & Activity Report",
       subtitle: "Time worked, activity levels, and amounts earned per project or to-do.",
       orgLabel: STANDARD_REPORT_ORG_LABEL,
-      timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+      timezoneLabel: MEMBER_TIMEZONE_LABEL,
       rangeLabel: dateLabel,
       summary: [
         { label: "Total time", value: totals.time },

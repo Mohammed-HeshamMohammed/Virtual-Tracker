@@ -204,7 +204,12 @@ export async function getTimeOffBalanceRowsPg({ memberIds = null, asOf }) {
        AND m.status <> 'banned'
        AND ($1::uuid[] IS NULL OR m.id = ANY($1::uuid[]))
      GROUP BY m.id, p.id, p.name, p.days_per_year
-     HAVING COALESCE(SUM(t.days), 0) <> 0 OR p.days_per_year > 0
+     -- Filtered by the same "as of" date as the columns above. It used to sum
+     -- every transaction ever, so a member's row could appear or vanish on the
+     -- strength of activity that had not happened yet at the date being asked
+     -- about.
+     HAVING COALESCE(SUM(t.days) FILTER (WHERE t.effective_on <= $2::date), 0) <> 0
+         OR p.days_per_year > 0
      ORDER BY p.name ASC
      LIMIT 2000`,
     [memberIds, asOf],

@@ -4,6 +4,7 @@ import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/r
 import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityMemberSubRow, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
+import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 interface RawMemberDay {
   memberId: string
   name: string
@@ -151,6 +152,9 @@ function zeroDayRow(date: string): TimeActivityDayRow {
   }
 }
 
+/** Walks a `YYYY-MM-DD` string forward n days. The Date here is a calendar
+ *  cursor anchored at UTC midnight, not a local moment, so it is read back in
+ *  UTC - `toDateParam` (which reads local parts) would be wrong. */
 function addDays(date: string, n: number): string {
   const d = new Date(`${date}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + n)

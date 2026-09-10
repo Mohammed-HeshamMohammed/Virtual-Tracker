@@ -26,11 +26,12 @@ import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   CLIENT_INVOICE_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
   TEAM_INVOICE_GROUP_BY_OPTIONS,
 } from "@/features/reports/components/shared/constants"
 import { groupReportRows } from "@/features/reports/utils/report-grouping"
 
+import { toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 type InvoiceKind = "client" | "team"
 
 function money(amount: number, currency: string): string {
@@ -107,8 +108,8 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
     setLoading(true)
     setError(null)
     fetchInvoicesReport(kind, {
-      from: rangeStart.toISOString().slice(0, 10),
-      to: rangeEnd.toISOString().slice(0, 10),
+      from: toDateParam(rangeStart),
+      to: toDateParam(rangeEnd),
       memberIds: [...filters.memberIds],
     })
       .then((data) => {
@@ -147,7 +148,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `${kind}-invoices-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `${kind}-invoices-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -175,7 +176,7 @@ function InvoicesTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFi
       downloadReportPdf({
         title: `${kind === "client" ? "Client" : "Team"} Invoices Report`,
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         rangeLabel: dateLabel,
         summary: !mixed
           ? [
@@ -406,7 +407,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
     let cancelled = false
     setLoading(true)
     setError(null)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const to = toDateParam(rangeEnd)
     fetchInvoiceAgingReport(kind, { from: to, to, memberIds: [...filters.memberIds] })
       .then((data) => {
         if (cancelled) return
@@ -437,7 +438,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `${kind}-invoices-aging-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `${kind}-invoices-aging-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     })
@@ -463,7 +464,7 @@ function AgingTable({ kind, filters }: { kind: InvoiceKind; filters: ReportFilte
         title: `${kind === "client" ? "Client" : "Team"} Invoices Aging Report`,
         subtitle: asOf ? `Aged as of ${formatDay(asOf)}.` : undefined,
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         charts:
           !mixed && rows.length > 0
             ? [

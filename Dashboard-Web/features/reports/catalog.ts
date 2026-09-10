@@ -142,7 +142,10 @@ export const REPORT_CATALOG: ReportCatalogCard[] = [
   {
     pageId: "reports-shift-attendance",
     title: "Shift attendance",
-    description: "See team members' completed, late, abandoned, and missed shifts.",
+    // There are no shift start/end times in this schema, so lateness and
+    // abandonment are not knowable. This says what the report can actually
+    // answer instead of what a scheduling product would.
+    description: "See which scheduled days each team member worked, missed, or had excused.",
     section: "Schedule",
   },
 ]

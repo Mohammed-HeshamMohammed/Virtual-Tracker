@@ -11,7 +11,7 @@ import {
   filterWorkSessions,
   groupWorkSessions,
 } from "@/features/reports/utils/work-sessions"
-import { formatRangeLabel, startOfDay, endOfDay, formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
+import { formatRangeLabel, startOfDay, endOfDay, formatDecimalHoursClock, toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity"
 import { deleteWorkSession, fetchWorkSessionsReport } from "@/features/reports/api/misc-reports-api"
 import { getMembers } from "@/features/members/api/member-api"
 import type {
@@ -53,6 +53,7 @@ export function useWorkSessionsReport() {
   })
   const [rangeEnd, setRangeEnd] = useState(() => endOfDay(new Date()))
   const [rows, setRows] = useState<WorkSessionRow[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
@@ -74,13 +75,16 @@ export function useWorkSessionsReport() {
 
   useEffect(() => {
     let cancelled = false
-    const from = rangeStart.toISOString().slice(0, 10)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const from = toDateParam(rangeStart)
+    const to = toDateParam(rangeEnd)
     setLoading(true)
     setError(null)
     fetchWorkSessionsReport({ from, to })
       .then((data) => {
-        if (!cancelled) setRows(data)
+        if (!cancelled) {
+          setRows(data.rows)
+          setTruncated(data.truncated)
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Request failed")
@@ -196,7 +200,7 @@ export function useWorkSessionsReport() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `work-sessions-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `work-sessions-${todayDateParam()}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }, [filteredRows])
@@ -312,6 +316,7 @@ export function useWorkSessionsReport() {
   return {
     loading,
     error,
+    truncated,
     retry: () => setReloadKey((k) => k + 1),
     scope,
     setScope,

@@ -1,5 +1,6 @@
 import type { TimeActivityDayRow } from "@/features/reports/models/time-and-activity"
 
+import { todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 function escapeCsvCell(value: string): string {
   return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value
 }
@@ -24,7 +25,7 @@ export function downloadTimeActivityCsv(days: TimeActivityDayRow[], filename = "
   const url = URL.createObjectURL(blob)
   const a = document.createElement("a")
   a.href = url
-  a.download = `${filename}-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = `${filename}-${todayDateParam()}.csv`
   a.click()
   URL.revokeObjectURL(url)
 }

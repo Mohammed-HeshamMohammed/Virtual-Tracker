@@ -4,9 +4,13 @@ import { sanitizePathForLog } from "../http/sanitize-log.js";
 import { quotaErrorHttpResponse } from "../http/quota-error.js";
 import { sendJson } from "../http/response.js";
 import { logRequest, logResponse, logError } from "./logger.js";
+import { runWithAuditActor } from "../lib/postgres/audit-actor.js";
 
 export function createServer() {
-  const server = createNodeServer(async (req, res) => {
+  // Every request runs inside its own audit-actor scope, so a write made
+  // while handling it can be attributed to whoever authenticated - without an
+  // actor argument threaded through every service function.
+  const server = createNodeServer((req, res) => runWithAuditActor(async () => {
     let url;
     logRequest(req);
     try {
@@ -32,6 +36,6 @@ export function createServer() {
     } finally {
       logResponse(req, res, url);
     }
-  });
+  }));
   return server;
 }

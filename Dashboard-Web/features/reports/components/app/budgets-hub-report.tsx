@@ -14,6 +14,7 @@ import {
 import { ReportCard } from "@/features/reports/components/shared/report-ui"
 import { budgetPercentUsed } from "@/features/reports/components/project-budgets/project-budgets-report"
 
+import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 interface Tile {
   id: string
   title: string
@@ -30,8 +31,8 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
 
   useEffect(() => {
     let cancelled = false
-    const from = rangeStart.toISOString().slice(0, 10)
-    const to = rangeEnd.toISOString().slice(0, 10)
+    const from = toDateParam(rangeStart)
+    const to = toDateParam(rangeEnd)
 
     const failed = { project: false, client: false, weekly: false, daily: false }
     void Promise.all([
@@ -57,8 +58,11 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
       const projectRows = projectSections.flatMap((s) => s.rows).filter((r) => r.budgetType !== null)
       const projectsOver = projectRows.filter((r) => budgetPercentUsed(r) >= 100).length
       const clientsOver = clientRows.filter((r) => r.pctUsed >= 100).length
-      const weeklyOver = weekly.filter((r) => r.pctUsed >= 100).length
-      const dailyOver = daily.filter((r) => r.pctUsed >= 100).length
+      // "Over limit" now means a member broke the limit in at least one of the
+      // periods in range - not that a whole month's hours exceeded one week's
+      // allowance, which was true of almost everyone.
+      const weeklyOver = weekly.filter((r) => r.periodsOverLimit > 0).length
+      const dailyOver = daily.filter((r) => r.periodsOverLimit > 0).length
 
       setTiles([
         {
@@ -82,7 +86,7 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
           title: "Weekly limits",
           description: "Weekly hour limits and how close people are to them.",
           headline: failed.weekly ? "Unavailable" : `${weekly.length} tracked`,
-          detail: failed.weekly ? "This report could not be loaded." : weeklyOver > 0 ? `${weeklyOver} at or over limit` : "None over limit",
+          detail: failed.weekly ? "This report could not be loaded." : weeklyOver > 0 ? `${weeklyOver} over limit at some point` : "None over limit",
           failed: failed.weekly,
         },
         {
@@ -90,7 +94,7 @@ function BudgetsHubContent({ onNavigate }: { onNavigate?: (id: string) => void }
           title: "Daily limits",
           description: "Daily hour limits and how close people are to them.",
           headline: failed.daily ? "Unavailable" : `${daily.length} tracked`,
-          detail: failed.daily ? "This report could not be loaded." : dailyOver > 0 ? `${dailyOver} at or over limit` : "None over limit",
+          detail: failed.daily ? "This report could not be loaded." : dailyOver > 0 ? `${dailyOver} over limit at some point` : "None over limit",
           failed: failed.daily,
         },
       ])

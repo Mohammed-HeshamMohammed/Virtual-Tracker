@@ -12,8 +12,9 @@ import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   CLIENT_BUDGETS_GROUP_BY_OPTIONS,
   STANDARD_REPORT_ORG_LABEL,
-  STANDARD_REPORT_TIMEZONE_LABEL,
+  CALENDAR_DATE_LABEL,
 } from "@/features/reports/components/shared/constants"
+import { todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 
 function formatUsd(value: number): string {
   return `$${value.toFixed(2)}`
@@ -91,7 +92,7 @@ function ClientBudgetsTable() {
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
-      a.download = `client-budgets-${new Date().toISOString().slice(0, 10)}.csv`
+      a.download = `client-budgets-${todayDateParam()}.csv`
       a.click()
       URL.revokeObjectURL(url)
     }
@@ -106,7 +107,7 @@ function ClientBudgetsTable() {
         title: "Client Budgets Report",
         subtitle: "How much of each client's budget has been spent.",
         orgLabel: STANDARD_REPORT_ORG_LABEL,
-        timezoneLabel: STANDARD_REPORT_TIMEZONE_LABEL,
+        timezoneLabel: CALENDAR_DATE_LABEL,
         charts:
           withBudget.length > 0
             ? [

@@ -17,7 +17,7 @@ import {
 } from "@/features/reports/components/time-activity-report"
 import type { TimeActivityReportData } from "@/features/reports/models/time-and-activity"
 import { fetchTimeAndActivityReport } from "@/features/reports/api/time-and-activity-api"
-import { startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
+import { startOfDay, endOfDay, toDateParam } from "@/features/reports/utils/time-and-activity"
 import { ReportErrorState, ReportSkeleton } from "@/features/reports/components/shared/report-ui"
 
 export { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
@@ -40,10 +40,6 @@ export {
 
 export function buildDefaultTimeActivityReportData(): TimeActivityReportData {
   return { days: [], memberRows: {}, entries: [] }
-}
-
-function toDateParam(d: Date): string {
-  return d.toISOString().slice(0, 10)
 }
 
 function defaultRange(): { start: Date; end: Date } {
