@@ -4,9 +4,6 @@
 //! back to a coloured letter tile, exactly as before this existed.
 
 use std::path::Path;
-use std::time::Duration;
-
-use crate::constants::{APP_ICON_SCRIPT_TIMEOUT_SEC, MAX_APP_ICON_LEN};
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -22,6 +19,9 @@ pub fn read_app_icon(script_path: &Path, exe_path: &str) -> Option<String> {
     {
         use std::os::windows::process::CommandExt;
         use std::process::{Command, Stdio};
+        use std::time::Duration;
+
+        use crate::constants::{APP_ICON_SCRIPT_TIMEOUT_SEC, MAX_APP_ICON_LEN};
 
         if !script_path.exists() {
             return None;

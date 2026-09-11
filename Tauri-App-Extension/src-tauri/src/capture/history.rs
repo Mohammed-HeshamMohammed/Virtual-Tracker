@@ -18,6 +18,11 @@
 //! consented to (the focused window during tracked time) rather than turning
 //! the agent into a history harvester, which is a materially different thing
 //! and would need its own disclosure.
+//!
+//! Windows-only in practice: the lookup is only reached from the Windows URL
+//! path in window.rs. The module still compiles everywhere so its tests run on
+//! the Linux CI box.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

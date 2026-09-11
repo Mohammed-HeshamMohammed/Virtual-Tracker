@@ -10,6 +10,10 @@
 //! Everything browser-shaped now resolves from `BROWSERS`: foreground
 //! detection, the display name, the UI Automation pane name, which omnibox
 //! selectors to try, and where the history database lives.
+//!
+//! Most of the table is read only by the Windows URL capture (uia_url.rs,
+//! history.rs), so on other platforms much of it goes unused.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::PathBuf;
 

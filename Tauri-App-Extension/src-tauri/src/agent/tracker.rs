@@ -2052,6 +2052,7 @@ mod tests {
         assert_eq!(elapsed - ActivityTracker::consumed_span(elapsed, credited), Duration::ZERO);
     }
 
+    #[test]
     fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
         let tracker = test_tracker(base_url);

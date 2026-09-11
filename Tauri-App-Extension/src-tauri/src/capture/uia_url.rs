@@ -18,6 +18,10 @@
 //! apartment and the cache, so nothing has to be marshalled between threads.
 //! Callers get a plain `Option<String>` back over a channel with their own
 //! timeout, exactly like the old subprocess path.
+//!
+//! Windows-only in practice: every caller is behind `#[cfg(windows)]`. The
+//! module still compiles everywhere so its tests run on the Linux CI box.
+#![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};

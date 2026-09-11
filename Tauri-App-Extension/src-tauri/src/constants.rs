@@ -140,10 +140,13 @@ pub const URL_CAPTURE_BACKOFF_SEC: u64 = 300;
 
 /// App-icon extraction subprocess ceiling. Runs off the tracker tick on its
 /// own thread (see capture/events.rs), once per distinct app per process, so
-/// a generous bound here costs nothing on the hot path.
+/// a generous bound here costs nothing on the hot path. Windows-only, like
+/// the extraction itself (capture/app_icon.rs).
+#[cfg(windows)]
 pub const APP_ICON_SCRIPT_TIMEOUT_SEC: u64 = 10;
 /// A 32x32 PNG icon is ~1-6 KB; anything past this is not an icon and is
 /// dropped rather than sent.
+#[cfg(windows)]
 pub const MAX_APP_ICON_LEN: usize = 65_536;
 
 pub const MAX_SCREENSHOT_WIDTH: u32 = 1280;

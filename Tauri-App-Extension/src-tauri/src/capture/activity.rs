@@ -92,20 +92,12 @@ pub struct ActivityMeter {
     hook_thread_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
-/// Seconds since the last input the OS itself recorded for this session, or
-/// `None` where there is no such query (non-Windows, or the call failed).
-///
-/// `GetLastInputInfo` reports a tick count, which wraps roughly every 49.7
-/// days of uptime. `GetTickCount64` does not, so the subtraction is done in
-/// 64-bit and the 32-bit reading is widened against it - otherwise a machine
-/// up longer than that would report a nonsense idle time exactly once per wrap
-/// and stop a session for no reason.
-/// Tests need to simulate a machine nobody is touching, which the real query
-/// cannot do - the machine running the suite is, by definition, in use.
-///
-/// Thread-local, not a static: `cargo test` runs tests in parallel, and a
-/// process-wide override let one test's simulated idle leak into another that
-/// wanted the real reading. Each test thread now gets its own answer.
+// Tests need to simulate a machine nobody is touching, which the real query
+// cannot do - the machine running the suite is, by definition, in use.
+//
+// Thread-local, not a static: `cargo test` runs tests in parallel, and a
+// process-wide override let one test's simulated idle leak into another that
+// wanted the real reading. Each test thread now gets its own answer.
 #[cfg(test)]
 thread_local! {
     static TEST_IDLE_OVERRIDE_SEC: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
@@ -123,6 +115,14 @@ fn test_idle_override() -> Option<u64> {
     TEST_IDLE_OVERRIDE_SEC.with(|cell| cell.get())
 }
 
+/// Seconds since the last input the OS itself recorded for this session, or
+/// `None` where there is no such query (non-Windows, or the call failed).
+///
+/// `GetLastInputInfo` reports a tick count, which wraps roughly every 49.7
+/// days of uptime. `GetTickCount64` does not, so the subtraction is done in
+/// 64-bit and the 32-bit reading is widened against it - otherwise a machine
+/// up longer than that would report a nonsense idle time exactly once per wrap
+/// and stop a session for no reason.
 #[cfg(windows)]
 fn system_idle_seconds() -> Option<u64> {
     #[cfg(test)]
