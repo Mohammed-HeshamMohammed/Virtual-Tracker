@@ -3,14 +3,16 @@
 import { Skeleton } from "@/shared/ui/skeleton"
 import { cn } from "@/shared/utils/utils"
 import { TASK_PANEL_HEIGHT_CLASS } from "@/features/projects/constants/project-constants"
+import { overviewTheme } from "@/features/projects/components/overview/overview-theme"
 
 interface OverviewSkeletonProps {
   isDark?: boolean
 }
 
 export function OverviewSkeleton({ isDark = false }: OverviewSkeletonProps) {
-  const bone = isDark ? "bg-[#2e3447]" : "bg-slate-200"
-  const border = isDark ? "border-[#3d4a3d]/40" : "border-slate-100"
+  const t = overviewTheme(isDark)
+  const bone = t.bone
+  const border = t.border
   const panelBg = isDark ? "bg-[#0c1324]" : "bg-white"
 
   return (
@@ -45,7 +47,7 @@ export function OverviewSkeleton({ isDark = false }: OverviewSkeletonProps) {
             </div>
             <div className="min-h-0 flex-1 overflow-hidden">
               <table className="w-full">
-                <thead className="border-b border-slate-50 bg-slate-50/50">
+                <thead className={cn("border-b", t.border, t.tableHead)}>
                   <tr>
                     {["Project", "Health", "Progress", "Budget", "Members"].map((label) => (
                       <th key={label} className="px-4 py-2.5 text-left first:px-6">
@@ -54,7 +56,7 @@ export function OverviewSkeleton({ isDark = false }: OverviewSkeletonProps) {
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-50">
+                <tbody className={cn("divide-y", t.divide)}>
                   {Array.from({ length: 5 }).map((_, i) => (
                     <tr key={i}>
                       <td className="px-6 py-3.5">
@@ -158,7 +160,7 @@ export function OverviewSkeleton({ isDark = false }: OverviewSkeletonProps) {
               </div>
               <Skeleton className={cn("h-3 w-16 rounded", bone)} />
             </div>
-            <div className="divide-y divide-slate-50">
+            <div className={cn("divide-y", t.divide)}>
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="px-6 py-4">
                   <div className="mb-2.5 flex items-start justify-between">

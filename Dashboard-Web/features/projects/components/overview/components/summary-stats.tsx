@@ -5,6 +5,7 @@ import { Folder, CheckCircle2, DollarSign, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { ProjectOverviewCore } from "@/features/projects/api/project-overview-api"
 import { fmt$ } from "@/features/projects/components/overview/components/budget-bar"
+import { overviewTheme } from "@/features/projects/components/overview/overview-theme"
 
 interface SummaryStatsProps {
   summary: ProjectOverviewCore["summary"]
@@ -14,6 +15,7 @@ interface SummaryStatsProps {
 
 export function SummaryStats({ summary, isDark = false, onNavigate }: SummaryStatsProps) {
   const { activeProjects, onTrack, tasksDone, tasksTotal, budgetSpent, budgetTotal, teamMembers } = summary
+  const t = overviewTheme(isDark)
 
   const stats = [
     {
@@ -68,8 +70,9 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
             }
           }}
           className={cn(
-            "rounded-2xl p-5 border shadow-sm cursor-pointer transition-shadow hover:shadow-md",
-            isDark ? "bg-[#0c1324] border-[#3d4a3d]/40" : "bg-white border-slate-100",
+            "rounded-2xl p-5 border shadow-sm cursor-pointer outline-none transition-shadow hover:shadow-md",
+            t.card,
+            t.focusRing,
           )}
         >
           <div className="flex items-start justify-between mb-3">
@@ -77,9 +80,9 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
               {s.icon}
             </div>
           </div>
-          <p className="text-2xl font-bold text-slate-800">{s.value}</p>
-          <p className="text-sm text-slate-500 mt-0.5">{s.label}</p>
-          <p className="text-xs text-slate-400 mt-1">{s.sub}</p>
+          <p className={cn("text-2xl font-bold tabular-nums", t.title)}>{s.value}</p>
+          <p className={cn("text-sm mt-0.5", t.secondary)}>{s.label}</p>
+          <p className={cn("text-xs mt-1", t.muted)}>{s.sub}</p>
         </motion.div>
       ))}
     </div>
