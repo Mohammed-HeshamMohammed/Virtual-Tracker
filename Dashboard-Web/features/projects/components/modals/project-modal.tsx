@@ -44,7 +44,20 @@ import { Toggle } from "@/shared/ui/forms/toggle"
 import { AddProjectDynamicFields } from "@/features/projects/components/add-project-dynamic-fields"
 import { ProjectNamesPreviewButton } from "@/features/projects/components/project-names-preview-button"
 import { ProjectModalSkeleton } from "@/features/projects/components/skeletons/project-modal-skeleton"
-import { getProjectBudgetFieldErrors, validateProjectBudgetFields, validateProjectNames, type ProjectBudgetFieldErrors } from "@/shared/validation/project-form"
+import {
+  getProjectBudgetFieldErrors,
+  IDLE_TIME_MIN_MINUTES,
+  validateIdleTimeMinutes,
+  validateProjectBudgetFields,
+  validateProjectNames,
+  type ProjectBudgetFieldErrors,
+} from "@/shared/validation/project-form"
+import {
+  describeIdleTimeLimit,
+  describeMemberIdleLimit,
+  useIdleTimeLimit,
+} from "@/features/projects/hooks/use-idle-time-limit"
+import { formatMinutesAsDuration } from "@/shared/utils/hours-minutes"
 import { filterProjectFormMemberIds } from "@/features/projects/utils/project-form-member-filter"
 import { decimalHoursToParts, partsToDecimalHours } from "@/shared/utils/hours-minutes"
 import { syncProjectMembersFromTeams } from "@/features/projects/utils/sync-members-from-teams"
@@ -111,6 +124,21 @@ const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6
  * and the save-time floor can't drift apart.
  */
 const DEFAULT_IDLE_TIME_SECONDS = 450
+
+/** Suggested idle times, in minutes; only those within the project's limit are offered. */
+const IDLE_TIME_PRESETS = [1, 5, 7.5, 10, 15, 30, 60, 120, 240, 480]
+
+/**
+ * The form's minutes as seconds, never under a minute. The upper limit is
+ * half the project's budget (useIdleTimeLimit): save is blocked past it while
+ * idle time is on, and the backend applies it again whenever it hands idle
+ * time to the agent - so a later budget cut can't leave idle eating the budget.
+ */
+function idleTimeMinutesToSeconds(value: string): number {
+  const minutes = Number(value)
+  if (!value.trim() || !Number.isFinite(minutes) || minutes <= 0) return DEFAULT_IDLE_TIME_SECONDS
+  return Math.round(Math.max(IDLE_TIME_MIN_MINUTES, minutes) * 60)
+}
 export const MEMBERS_TEAMS_TAB_KEY = "members-teams"
 export const LIMITS_TAB_KEY = "limits"
 export const MANAGEMENT_TAB_KEY = "management"
@@ -313,9 +341,8 @@ function formStateToPayload(
     // ID-4: a cleared field used to floor to 0, which the agent reads as an
     // idle allowance that can never be satisfied - it stops and rewinds the
     // session on the first tick, so the project cannot be tracked at all.
-    // Fall back to the same 450s default an unset project already gets rather
-    // than sending a value that bricks tracking.
-    idleTimeSeconds: Math.round((Number(addForm.idleTimeMinutes) || 0) * 60) || DEFAULT_IDLE_TIME_SECONDS,
+    // Never under a minute; the budget limit is checked on save and in tracking.
+    idleTimeSeconds: idleTimeMinutesToSeconds(addForm.idleTimeMinutes),
     endDate: addForm.endDate,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
@@ -910,6 +937,57 @@ export function ProjectModal({
     })
   }, [allTeamMembers, memberRoleById])
 
+  // Member limits are only for people assigned to the project: its managers
+  // and users (picking a team adds its people to those).
+  const projectTrackerIds = useMemo(
+    () => new Set([...addForm.managers, ...addForm.users]),
+    [addForm.managers, addForm.users],
+  )
+  const memberLimitOptions = useMemo(
+    () => (formConfig?.options.members ?? []).filter((member) => projectTrackerIds.has(member.id)),
+    [formConfig?.options.members, projectTrackerIds],
+  )
+
+  // Someone taken off the project loses their member limit with them.
+  useEffect(() => {
+    setAddForm((prev) => {
+      const onProject = new Set([...prev.managers, ...prev.users])
+      if (prev.memberLimitMembers.every((id) => onProject.has(id))) return prev
+      const memberLimitRows = { ...prev.memberLimitRows }
+      for (const id of prev.memberLimitMembers) {
+        if (!onProject.has(id)) delete memberLimitRows[id]
+      }
+      return {
+        ...prev,
+        memberLimitMembers: prev.memberLimitMembers.filter((id) => onProject.has(id)),
+        memberLimitRows,
+      }
+    })
+  }, [addForm.managers, addForm.users])
+
+  // The most idle time this project allows - half its budget in hours - and
+  // each member's own, which their own limit on the project can lower further.
+  const idleLimit = useIdleTimeLimit(
+    {
+      budgetType: addForm.budgetType,
+      budgetBasedOn: addForm.budgetBasedOn,
+      budgetScope: addForm.budgetScope,
+      budgetTotal: addForm.budgetTotal,
+      memberIds: [...addForm.managers, ...addForm.users],
+      clientIds: addForm.clientIds,
+      // Same shape the save sends (formStateToPayload).
+      memberLimits: addForm.memberLimitMembers.map((memberId) => ({
+        memberId,
+        type: derivedLimitType(addForm.budgetType),
+        basedOn: derivedBasedOn(addForm.budgetType, addForm.budgetBasedOn),
+        cost: addForm.memberLimitRows[memberId]?.cost ?? "",
+        startDate: addForm.memberLimitRows[memberId]?.startDate ?? "",
+      })),
+    },
+    !readOnly && !addForm.disableIdleTime,
+  )
+  const idleLimitMinutes = idleLimit ? idleLimit.maxSeconds / 60 : null
+
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (readOnly) return
@@ -923,7 +1001,15 @@ export function ProjectModal({
         setAddProjectTab("budget")
       }
     }
-    const validationError = namesError ?? budgetError
+    // Only while idle time is on - switched off, the value is unused, and
+    // tracking holds it to the budget limit regardless.
+    const idleError = addForm.disableIdleTime
+      ? null
+      : validateIdleTimeMinutes(addForm.idleTimeMinutes, idleLimitMinutes)
+    if (idleError && addProjectTab !== "general") {
+      setAddProjectTab("general")
+    }
+    const validationError = namesError ?? idleError ?? budgetError
     if (validationError) {
       setSubmitError(validationError)
       return
@@ -939,8 +1025,9 @@ export function ProjectModal({
             managers: addForm.managers.filter((id) => formConfig.options.members.some((m) => m.id === id)),
             users: addForm.users.filter((id) => formConfig.options.members.some((m) => m.id === id)),
             viewers: addForm.viewers.filter((id) => formConfig.options.members.some((m) => m.id === id)),
-            memberLimitMembers: addForm.memberLimitMembers.filter((id) =>
-              formConfig.options.members.some((m) => m.id === id),
+            // Only members assigned to the project keep a limit.
+            memberLimitMembers: addForm.memberLimitMembers.filter(
+              (id) => formConfig.options.members.some((m) => m.id === id) && projectTrackerIds.has(id),
             ),
           }
         : addForm
@@ -1149,63 +1236,81 @@ export function ProjectModal({
                 />
                 <ExpandCollapse show={!addForm.disableIdleTime}>
                   {(() => {
-                    const totalMinutes = Number(addForm.idleTimeMinutes) || 0
-                    const hours = Math.floor(totalMinutes / 60)
-                    const minutes = totalMinutes - hours * 60
+                    // One minutes field: the old hours box is how 160 h got in.
+                    const idleError = validateIdleTimeMinutes(addForm.idleTimeMinutes, idleLimitMinutes)
                     return (
                       <FormField
                         label="Idle time"
-                        hint="How long without activity before time on this project is marked idle."
+                        hint={describeIdleTimeLimit(idleLimit)}
+                        error={idleError}
                         className="pt-1"
                       >
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min={0}
-                              value={hours}
-                              onChange={(e) =>
-                                setAddForm((p) => ({
-                                  ...p,
-                                  idleTimeMinutes: String((Number(e.target.value) || 0) * 60 + minutes),
-                                }))
-                              }
-                              className={cn(formTheme.control, "pr-7")}
-                            />
-                            <span
-                              className={cn(
-                                "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
-                                formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                              )}
-                            >
-                              h
-                            </span>
-                          </div>
-                          <div className="relative flex-1">
-                            <input
-                              type="number"
-                              min={0}
-                              max={59}
-                              step={0.5}
-                              value={minutes}
-                              onChange={(e) =>
-                                setAddForm((p) => ({
-                                  ...p,
-                                  idleTimeMinutes: String(hours * 60 + (Number(e.target.value) || 0)),
-                                }))
-                              }
-                              className={cn(formTheme.control, "pr-7")}
-                            />
-                            <span
-                              className={cn(
-                                "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
-                                formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                              )}
-                            >
-                              m
-                            </span>
-                          </div>
+                        <div className="relative">
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min={IDLE_TIME_MIN_MINUTES}
+                            max={idleLimitMinutes ?? undefined}
+                            step={0.5}
+                            value={addForm.idleTimeMinutes}
+                            onChange={(e) => setAddForm((p) => ({ ...p, idleTimeMinutes: e.target.value }))}
+                            aria-label="Idle time in minutes"
+                            aria-invalid={idleError ? true : undefined}
+                            className={cn(formTheme.control, "pr-12", idleError && "border-red-500 focus:border-red-500")}
+                          />
+                          <span
+                            className={cn(
+                              "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                            )}
+                          >
+                            min
+                          </span>
                         </div>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested idle times">
+                          {IDLE_TIME_PRESETS.filter((preset) => idleLimitMinutes === null || preset <= idleLimitMinutes).map((preset) => {
+                            const selected = Number(addForm.idleTimeMinutes) === preset
+                            return (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setAddForm((p) => ({ ...p, idleTimeMinutes: String(preset) }))}
+                                aria-pressed={selected}
+                                className={cn(
+                                  "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
+                                  selected
+                                    ? formTheme.isDark
+                                      ? "border-[#4be277]/60 bg-[#4be277]/10 text-[#4be277]"
+                                      : "border-[#6b38d4]/50 bg-[#6b38d4]/10 text-[#6b38d4]"
+                                    : formTheme.isDark
+                                      ? "border-[#3d4a3d]/60 text-[#bccbb9] hover:bg-white/5"
+                                      : "border-slate-200 text-slate-500 hover:bg-slate-50",
+                                )}
+                              >
+                                {formatMinutesAsDuration(preset)}
+                              </button>
+                            )
+                          })}
+                        </div>
+                        {(() => {
+                          // Members whose own limit holds them below this setting -
+                          // tracking applies it to them automatically.
+                          const setSeconds = Number(addForm.idleTimeMinutes) * 60
+                          const heldLower = (idleLimit?.members ?? []).filter((m) => m.maxSeconds < setSeconds)
+                          if (idleError || heldLower.length === 0) return null
+                          const nameOf = (id: string) =>
+                            formConfig?.options.members.find((m) => m.id === id)?.label ?? "A member"
+                          return (
+                            <ul className={cn("space-y-0.5 text-xs", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-500")}>
+                              <li className="font-semibold">Held lower for:</li>
+                              {heldLower.map((m) => (
+                                <li key={m.memberId}>
+                                  {nameOf(m.memberId)}: up to {formatMinutesAsDuration(m.maxSeconds / 60)}, {describeMemberIdleLimit(m)}.
+                                </li>
+                              ))}
+                            </ul>
+                          )
+                        })()}
                       </FormField>
                     )
                   })()}
@@ -1589,6 +1694,11 @@ export function ProjectModal({
                     Member limits aim to stop time tracking at the set amount. While uncommon,
                     technical factors such as network connectivity may occasionally cause a slight overrun.
                   </p>
+                  <p className={formTheme.mutedText}>
+                    {memberLimitOptions.length > 0
+                      ? "Only members assigned to this project in Members & Teams can have a limit."
+                      : "Add managers or users in Members & Teams first - only members assigned to this project can have a limit."}
+                  </p>
 
                   <FormField label="Notify at" className="max-w-xs" error={budgetFieldErrors.memberLimitNotifyAt}>
                     <div className="relative">
@@ -1623,7 +1733,7 @@ export function ProjectModal({
                       onChange={handleProjectFormChange}
                       onClientAdded={handleClientAdded}
                       clientOptions={formConfig.options.clients}
-                      memberOptions={formConfig.options.members}
+                      memberOptions={memberLimitOptions}
                       availableTeams={teamPickerOptions}
                       teamsLoading={teamsLoading}
                       teamsLoadError={teamsLoadError}
