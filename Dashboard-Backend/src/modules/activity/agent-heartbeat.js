@@ -3,7 +3,24 @@ import { updatePgSession } from "../../lib/postgres/activity-events-postgres.ser
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 
-const HEARTBEAT_TTL_SEC = 15;
+/**
+ * How long one heartbeat keeps an agent reading as "online".
+ *
+ * This has to comfortably outlast the longest gap between the agent's writes,
+ * or a healthy agent reads as offline between them. It was 15s when the agent
+ * polled its session every 5s. Agent v1.0.2 moved that poll to every third tick
+ * (LAG-1, to stop it holding the client lock every five seconds), so writes came
+ * at least 15s apart - the key now expired before every refresh. The dashboard,
+ * which checks every 5s and paused the timer on the first "offline" answer,
+ * would then pause a timer whose agent was running perfectly well.
+ *
+ * The widest real gap: a poll every 3 ticks (~15-17s), one more tick when a poll
+ * yields to the UI, and a request that takes up to the 15s HTTP timeout - about
+ * 35s. Sixty leaves room. The cost is that an agent that genuinely quits keeps
+ * reading as online for up to a minute; the abandoned-session sweep (5 min) is
+ * what actually closes its session, so nothing depends on this being faster.
+ */
+export const HEARTBEAT_TTL_SEC = 60;
 
 const SESSION_STALE_MS = 5 * 60_000;
 
