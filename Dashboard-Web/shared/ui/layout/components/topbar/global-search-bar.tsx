@@ -110,7 +110,7 @@ export function GlobalSearchBar({ onNavigate, memberRole, activePageId }: Global
 
   return (
     <motion.div ref={rootRef} layout="position" className="relative w-72">
-      <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-xl w-full transition-all", t.searchWrap)}>
+      <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-xl w-full border transition-all", t.searchWrap)}>
         <Search className={cn("w-4 h-4 shrink-0", t.searchIcon)} />
         <input
           ref={inputRef}
