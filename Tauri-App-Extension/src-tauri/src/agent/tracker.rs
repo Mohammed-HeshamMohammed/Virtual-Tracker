@@ -1481,8 +1481,11 @@ mod tests {
     /// ID-5: idle takes the smaller of the hook clock and the OS's own
     /// GetLastInputInfo, and the machine running this suite is in use by
     /// definition - so "nobody is here" has to be simulated for both sources.
+    /// Only the Windows-only idle-escalation tests need it.
+    #[cfg(windows)]
     struct SimulatedOsIdle;
 
+    #[cfg(windows)]
     impl SimulatedOsIdle {
         fn seconds(seconds: u64) -> Self {
             crate::capture::activity::override_system_idle_for_test(Some(seconds));
@@ -1490,13 +1493,16 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
     impl Drop for SimulatedOsIdle {
         fn drop(&mut self) {
             crate::capture::activity::override_system_idle_for_test(None);
         }
     }
 
-    use super::{valid_idle_threshold, ActivityTracker, IdleWatch, PendingStop, TickState};
+    #[cfg(windows)]
+    use super::IdleWatch;
+    use super::{valid_idle_threshold, ActivityTracker, PendingStop, TickState};
     use std::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
     use std::thread;
     use std::time::{Duration, Instant};
