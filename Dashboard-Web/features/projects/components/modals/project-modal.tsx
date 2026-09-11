@@ -1236,8 +1236,23 @@ export function ProjectModal({
                 />
                 <ExpandCollapse show={!addForm.disableIdleTime}>
                   {(() => {
-                    // One minutes field: the old hours box is how 160 h got in.
+                    // Hours and minutes, held together as one total so the
+                    // budget limit, presets and error all see the same value.
+                    // Minutes past 59 roll over into hours.
                     const idleError = validateIdleTimeMinutes(addForm.idleTimeMinutes, idleLimitMinutes)
+                    const totalMinutes = Math.max(0, Number(addForm.idleTimeMinutes) || 0)
+                    const idleHours = Math.floor(totalMinutes / 60)
+                    const idleMinutes = Math.round((totalMinutes - idleHours * 60) * 2) / 2
+                    const setIdle = (hours: number, minutes: number) =>
+                      setAddForm((p) => ({
+                        ...p,
+                        idleTimeMinutes: String(Math.max(0, hours) * 60 + Math.max(0, minutes)),
+                      }))
+                    const invalidClass = idleError ? "border-red-500 focus:border-red-500" : ""
+                    const unitClass = cn(
+                      "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                      formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                    )
                     return (
                       <FormField
                         label="Idle time"
@@ -1245,27 +1260,37 @@ export function ProjectModal({
                         error={idleError}
                         className="pt-1"
                       >
-                        <div className="relative">
-                          <input
-                            type="number"
-                            inputMode="decimal"
-                            min={IDLE_TIME_MIN_MINUTES}
-                            max={idleLimitMinutes ?? undefined}
-                            step={0.5}
-                            value={addForm.idleTimeMinutes}
-                            onChange={(e) => setAddForm((p) => ({ ...p, idleTimeMinutes: e.target.value }))}
-                            aria-label="Idle time in minutes"
-                            aria-invalid={idleError ? true : undefined}
-                            className={cn(formTheme.control, "pr-12", idleError && "border-red-500 focus:border-red-500")}
-                          />
-                          <span
-                            className={cn(
-                              "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
-                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
-                            )}
-                          >
-                            min
-                          </span>
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min={0}
+                              max={idleLimitMinutes === null ? undefined : Math.floor(idleLimitMinutes / 60)}
+                              step={1}
+                              value={idleHours}
+                              onChange={(e) => setIdle(Math.floor(Number(e.target.value) || 0), idleMinutes)}
+                              aria-label="Idle time hours"
+                              aria-invalid={idleError ? true : undefined}
+                              className={cn(formTheme.control, "pr-7", invalidClass)}
+                            />
+                            <span className={unitClass}>h</span>
+                          </div>
+                          <div className="relative flex-1">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              max={59.5}
+                              step={0.5}
+                              value={idleMinutes}
+                              onChange={(e) => setIdle(idleHours, Number(e.target.value) || 0)}
+                              aria-label="Idle time minutes"
+                              aria-invalid={idleError ? true : undefined}
+                              className={cn(formTheme.control, "pr-12", invalidClass)}
+                            />
+                            <span className={unitClass}>min</span>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested idle times">
                           {IDLE_TIME_PRESETS.filter((preset) => idleLimitMinutes === null || preset <= idleLimitMinutes).map((preset) => {
