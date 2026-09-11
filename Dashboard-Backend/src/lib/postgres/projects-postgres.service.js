@@ -5,6 +5,7 @@ import { getSingleByMemberId } from "./member-data-store.js";
 import { getClientBudgetPg } from "./clients-postgres.service.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
 import { syncManagementParentsOfProject } from "../../modules/projects/management-rollup.service.js";
+import { toStoredIdleTimeSeconds } from "../../modules/projects/idle-time.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -41,7 +42,7 @@ export async function createProjectPg(data) {
       data.disableActivity ?? false,
       data.allowProjectTracking ?? true,
       data.disableIdleTime ?? false,
-      Number.isFinite(data.idleTimeSeconds) ? Math.max(0, Math.floor(data.idleTimeSeconds)) : 450,
+      toStoredIdleTimeSeconds(data.idleTimeSeconds),
       uuidOrNull(data.clientId),
       data.managersNotes ?? null,
       data.usersNotes ?? null,
@@ -97,7 +98,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
         : key === "endDate"
           ? dateOrNull(patch[key])
           : key === "idleTimeSeconds"
-            ? Math.max(0, Math.floor(Number(patch[key]) || 0))
+            ? toStoredIdleTimeSeconds(patch[key])
             : key === "clientCanManage" || key === "clientCanTrack"
               ? patch[key] === true
               : patch[key],
@@ -178,8 +179,26 @@ export async function addProjectMemberPg(projectId, memberId, options = {}) {
 
 export async function removeProjectMemberPg(projectId, memberId, actorId) {
   await query("DELETE FROM project_members WHERE project_id = $1 AND member_id = $2", [projectId, memberId]);
+  // A member limit only means something for someone on the project.
+  await query("DELETE FROM project_member_limits WHERE project_id = $1 AND member_id = $2", [projectId, memberId]);
   void publishChange("project-members", projectId, "updated", uuidOrNull(actorId) ?? undefined);
   void syncManagementParentsOfProject(projectId, uuidOrNull(actorId));
+}
+
+/**
+ * Whether `memberId` is assigned to `projectId` as someone who tracks time on
+ * it - a manager or user. Viewers can't track, so they can't have a member
+ * limit either. Rows from before project roles existed have no role and count.
+ */
+export async function isProjectTrackerPg(projectId, memberId) {
+  if (!projectId || !memberId) return false;
+  const rows = await query(
+    `SELECT 1 FROM project_members
+     WHERE project_id = $1 AND member_id = $2 AND COALESCE(LOWER(project_role), '') <> 'viewer'
+     LIMIT 1`,
+    [projectId, memberId],
+  );
+  return rows.length > 0;
 }
 
 export async function listProjectMembersPg(projectId) {
@@ -371,6 +390,15 @@ export async function deleteProjectMemberLimitPg(projectId, memberId) {
 }
 
 export async function upsertProjectMemberLimitPg(projectId, memberId, data, actorId) {
+  // The one door every member limit comes through (the project routes and the
+  // generic entity CRUD both call this): limits are only for members assigned
+  // to the project.
+  if (!(await isProjectTrackerPg(projectId, memberId))) {
+    throw Object.assign(
+      new Error("Only members assigned to this project (as a manager or user) can have a member limit."),
+      { status: 400, code: "MEMBER_NOT_ON_PROJECT" },
+    );
+  }
   const id = crypto.randomUUID();
   const rows = await query(
     `INSERT INTO project_member_limits (

@@ -14,6 +14,7 @@ import {
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { computeTimerAllowance, enforceTimerAllowanceOnSync } from "./timer-limit.service.js";
+import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
 import {
   getTrackingRowPg,
   getTaskTrackingRowsPg,
@@ -260,7 +261,9 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   const projectId = taskData.project_id ?? taskData.projectId ?? null;
   const project = projectId ? await getProjectPg(projectId) : null;
   const disableIdleTime = Boolean(project?.disable_idle_time ?? false);
-  const idleTimeSeconds = Number(project?.idle_time_seconds ?? 450);
+  // What the agent enforces for this member: the project's setting, held to
+  // half the budget and half their own limit on the project.
+  const idleTimeSeconds = await effectiveIdleTimeSeconds(project, userId);
 
   let memberContributions = null;
   if (includeMemberBreakdown) {

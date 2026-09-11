@@ -63,6 +63,8 @@ import { computeMinimumProjectDaysPg, computeMinimumEndDate } from "./services/p
 import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
 import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
+import { validateIdleTimeSeconds } from "./idle-time.js";
+import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 
 function validateProjectDomainBody(entityKey, body, isUpdate) {
   const entity = schemaByKey.get(entityKey);
@@ -456,6 +458,53 @@ export async function routeProjects(req, res, url, db, origin) {
     return true;
   }
 
+  // The most idle time the project form's budget allows (idle-time.js). Takes
+  // the form's current budget, members and clients, since they are saved
+  // together with the idle time rather than before it.
+  if (pn === "/api/projects/idle-time-limit" && req.method === "POST") {
+    if (!assertManagementRole(req, res, origin)) return true;
+    try {
+      const body = await readJsonBody(req);
+      const input = body?.budget ?? null;
+      const type = String(input?.type ?? "").trim();
+      const budget = type
+        ? {
+            type,
+            based_on: input.basedOn ?? input.based_on ?? null,
+            scope: input.scope === "per_person" ? "per_person" : "per_project",
+            cost: Number(input.total ?? input.cost),
+          }
+        : null;
+      const isUuid = (id) =>
+        typeof id === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      const uuids = (value) => (Array.isArray(value) ? value.filter(isUuid).slice(0, 500) : []);
+      // Each member's own limit on the project, as the form holds them.
+      const memberLimits = Array.isArray(body?.memberLimits)
+        ? body.memberLimits
+            .filter((limit) => limit && isUuid(limit.memberId))
+            .slice(0, 500)
+            .map((limit) => ({
+              member_id: limit.memberId,
+              type: String(limit.type ?? ""),
+              based_on: limit.basedOn ?? null,
+              cost: Number(limit.cost),
+              start_date: limit.startDate || null,
+            }))
+        : [];
+      const data = await resolveIdleTimeLimit({
+        budget,
+        memberIds: uuids(body?.memberIds),
+        clientIds: uuids(body?.clientIds),
+        memberLimits,
+      });
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      logSafeError("[projects/idle-time-limit]", e);
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to work out the idle time limit" });
+    }
+    return true;
+  }
+
   if (pn === "/api/projects/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
@@ -662,6 +711,12 @@ export async function routeProjects(req, res, url, db, origin) {
       if (!viewer) return true;
       const body = await readJsonBody(req);
       validateProjectDomainBody("projects", body, false);
+      const newIdleTimeSeconds = body.idle_time_seconds ?? body.idleTimeSeconds;
+      const newIdleTimeError = newIdleTimeSeconds === undefined ? null : validateIdleTimeSeconds(newIdleTimeSeconds);
+      if (newIdleTimeError) {
+        sendJson(res, origin, 400, { success: false, error: newIdleTimeError });
+        return true;
+      }
       const project = await createProjectPg({
         name: body.name,
         status: body.status,
@@ -772,6 +827,13 @@ export async function routeProjects(req, res, url, db, origin) {
         };
         for (const key of Object.keys(patch)) {
           if (patch[key] === undefined) delete patch[key];
+        }
+        if ("idleTimeSeconds" in patch) {
+          const idleTimeError = validateIdleTimeSeconds(patch.idleTimeSeconds);
+          if (idleTimeError) {
+            sendJson(res, origin, 400, { success: false, error: idleTimeError });
+            return true;
+          }
         }
         const archivedAtRaw = body.archived_at ?? body.archivedAt;
         const archivedByRaw = body.archived_by ?? body.archivedBy;

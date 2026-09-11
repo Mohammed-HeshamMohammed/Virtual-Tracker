@@ -3,6 +3,7 @@ import {
   getActivityScoringSettingsPg,
   setActivityScoringSettingsPg,
 } from "../../lib/postgres/activity-scoring-postgres.service.js";
+import { clampIdleTimeSeconds, IDLE_TIME_FALLBACK_MAX_SEC, IDLE_TIME_MIN_SEC } from "../projects/idle-time.js";
 
 const FIELDS = [
   { key: "saturationEvents", pg: "saturationEvents", code: "INVALID_SATURATION_EVENTS" },
@@ -21,7 +22,9 @@ function normalize(row) {
     windowMs: row.window_ms,
     screenshotMinDelaySec: row.screenshot_min_delay_sec,
     screenshotMaxDelaySec: row.screenshot_max_delay_sec,
-    idleThresholdSec: row.idle_threshold_sec,
+    // The org-wide fallback for projects with no idle time of their own - the
+    // same 1-60 minute range applies, including to a value stored before it.
+    idleThresholdSec: clampIdleTimeSeconds(row.idle_threshold_sec, IDLE_TIME_FALLBACK_MAX_SEC, IDLE_TIME_MIN_SEC),
     idleWarnSec: row.idle_warn_sec,
     idleAlertSec: row.idle_alert_sec,
     idleStopSec: row.idle_stop_sec,
@@ -42,6 +45,15 @@ export async function setActivityScoringSettings(input, actor) {
       err.code = field.code;
       throw err;
     }
+  }
+
+  const idle = input.idleThresholdSec;
+  if (idle !== undefined && (idle < IDLE_TIME_MIN_SEC || idle > IDLE_TIME_FALLBACK_MAX_SEC)) {
+    const err = new Error(
+      `idleThresholdSec must be between ${IDLE_TIME_MIN_SEC} and ${IDLE_TIME_FALLBACK_MAX_SEC} seconds (1 to 60 minutes).`,
+    );
+    err.code = "INVALID_IDLE_THRESHOLD_SEC";
+    throw err;
   }
 
   const current = await getActivityScoringSettings();

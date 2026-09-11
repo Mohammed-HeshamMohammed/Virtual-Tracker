@@ -231,6 +231,8 @@ export async function cascadeDeleteMemberRelations(db, memberId) {
   await Promise.all([
     pgQuery("DELETE FROM team_members WHERE member_id = $1", [memberId]),
     pgQuery("DELETE FROM project_members WHERE member_id = $1", [memberId]),
+    // A member limit only means something for someone on the project.
+    pgQuery("DELETE FROM project_member_limits WHERE member_id = $1", [memberId]),
   ]);
 }
 

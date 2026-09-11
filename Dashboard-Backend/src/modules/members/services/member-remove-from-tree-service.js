@@ -43,6 +43,8 @@ export async function removeMemberFromTree(db, input) {
 
   const teamRes = await pgQuery("DELETE FROM team_members WHERE member_id = $1 RETURNING id", [memberId]);
   const projectRes = await pgQuery("DELETE FROM project_members WHERE member_id = $1 RETURNING id", [memberId]);
+  // Their member limits went with the projects they were on.
+  await pgQuery("DELETE FROM project_member_limits WHERE member_id = $1", [memberId]);
   const teamLinksRemoved = teamRes.length;
   const projectLinksRemoved = projectRes.length;
 
