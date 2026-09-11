@@ -196,6 +196,8 @@ interface RawWorkSession {
   /** The day the shift belongs to in that zone, resolved server-side so this
    *  report and Time & Activity can never disagree about it. */
   localDay?: string
+  /** Why it ended, already in words (PLAN-timer-stop-resilience.md D5). */
+  stoppedBy?: string | null
 }
 
 /** Clock face in the worker's own timezone, not the reader's. A shift that
@@ -254,6 +256,7 @@ export async function fetchWorkSessionsReport(
       manualPct: 0,
       startedLabel: clockIn(s.startedAt, s.memberTimezone),
       stoppedLabel: s.endedAt ? clockIn(s.endedAt, s.memberTimezone) : "In progress",
+      stoppedBy: s.stoppedBy ?? null,
       timezoneLabel: zoneAbbreviation(s.startedAt, s.memberTimezone),
       durationHms: formatHms(totalSeconds),
       activityPct: totalSeconds > 0 ? Math.round((s.activeSeconds / totalSeconds) * 100) : 0,

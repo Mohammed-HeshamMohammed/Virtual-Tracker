@@ -129,7 +129,12 @@ export interface AgentStatus {
   linkedAt: string | null
   agentSource: string | null
   authPort: number
-  agentOnline: boolean
+  /** `null` when the server could not tell (e.g. Redis unreachable). Never
+   *  read that as "offline" - see PLAN-timer-stop-resilience.md, R1. */
+  agentOnline: boolean | null
+  /** Tri-state presence. Absent from servers that predate it. */
+  agentPresence?: "online" | "offline" | "unknown"
+  agentLastSeenAt?: string | null
 }
 
 export async function fetchAgentStatus(): Promise<AgentStatus | null> {

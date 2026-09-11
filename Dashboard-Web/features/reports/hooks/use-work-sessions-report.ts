@@ -262,7 +262,7 @@ export function useWorkSessionsReport() {
           member: r.memberName,
           todo: r.todoJob,
           started: r.startedLabel,
-          stopped: r.stoppedLabel,
+          stopped: r.stoppedBy ? `${r.stoppedLabel} (${r.stoppedBy})` : r.stoppedLabel,
           duration: r.durationHms,
           activity: `${r.activityPct}%`,
         })),
