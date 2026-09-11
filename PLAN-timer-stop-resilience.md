@@ -44,7 +44,7 @@ enforces it.
 | New: task deletion stops its timer | **Done** — server-side in `deleteTaskPg`, recorded as `task_deleted`. This replaces the dashboard handler that only ran when its runtime happened to be on |
 | E1 counts by reason | **Done via D3**: reasons are queryable; the reap still records its security event |
 | E2 false-pause metric | **Moot** — no dashboard pauses to count |
-| E3 heartbeat-gap log | **Deferred** — needs either Redis ≥ 6.2's `SET … GET` or an extra round trip on every poll |
+| E3 heartbeat-gap log | **Done** — every check-in measures the gap since the last one in the same round trip (`SET … GET` on Redis ≥ 6.2; `MULTI GETSET + EXPIRE` on older, detected once). A gap over half the TTL (30s) is logged and recorded as `agent_heartbeat_gap` |
 | F1 web tests | **Done** — dependency-free `node --test` contract suite (`npm test`) |
 | F2 backend tests | **Done** — reasons, ownership, presence, history, task deletion |
 | F3 agent tests | **Done** — pause keeps session, resume credits no pause, reason and version sent |
