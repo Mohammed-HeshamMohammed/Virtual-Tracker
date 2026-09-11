@@ -7,6 +7,7 @@ import type { OverviewTaskCard, ProjectActivityRow, OverviewClientRow } from "@/
 import { TasksBreakdown } from "@/features/projects/components/overview/components/tasks-breakdown"
 import { ActivitySummary } from "@/features/projects/components/overview/components/activity-summary"
 import { ClientBudgets } from "@/features/projects/components/overview/components/client-budgets"
+import { overviewTheme } from "@/features/projects/components/overview/overview-theme"
 
 interface BelowFoldPanelsProps {
   isDark: boolean
@@ -37,11 +38,13 @@ export function BelowFoldPanels({
   clients,
   showClientBudgets,
 }: BelowFoldPanelsProps) {
+  const t = overviewTheme(isDark)
+
   if (!hasPanels && !panelsError) {
     return (
       <section ref={belowFoldRef} className="mt-6 flex flex-col items-center justify-center gap-3 py-16">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-        <p className={cn("text-sm", isDark ? "text-[#dce1fb]/70" : "text-slate-500")}>Loading details…</p>
+        <Loader2 className={cn("h-8 w-8 animate-spin", t.icon)} />
+        <p className={cn("text-sm", t.secondary)}>Loading details…</p>
       </section>
     )
   }
@@ -49,8 +52,8 @@ export function BelowFoldPanels({
   if (panelsError && tasks.length === 0) {
     return (
       <section ref={belowFoldRef} className="mt-6 flex flex-col items-center gap-3 py-12">
-        <p className="text-sm text-red-500">{panelsError.message}</p>
-        <button type="button" onClick={onRetryPanels} className="text-xs font-semibold text-green-700 hover:underline">
+        <p className={cn("text-sm", t.danger)}>{panelsError.message}</p>
+        <button type="button" onClick={onRetryPanels} className={cn("text-xs font-semibold hover:underline", t.link)}>
           Retry
         </button>
       </section>

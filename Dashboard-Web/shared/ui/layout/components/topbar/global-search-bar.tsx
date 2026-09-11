@@ -171,7 +171,7 @@ export function GlobalSearchBar({ onNavigate, memberRole, activePageId }: Global
                     <span className="text-sm font-semibold">{entry.title}</span>
                     <span className={cn("text-xs", t.dropHeadLabel)}>{formatSearchEntryPath(entry)}</span>
                     {entry.description ? (
-                      <span className={cn("line-clamp-1 text-xs opacity-80", t.notifItemBody)}>
+                      <span className={cn("line-clamp-1 text-xs", t.notifItemBody)}>
                         {entry.description}
                       </span>
                     ) : null}
