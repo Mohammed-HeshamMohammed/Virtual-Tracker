@@ -14,6 +14,10 @@ import { fetchAgentStatus, type ActivityCaptureMode, type AgentStatus } from "@/
 import type { AgentTimerReadiness } from "@/features/activity/utils/agent-timer-gate"
 import { isBackendRateLimited } from "@/infrastructure/api/backend-connection-events"
 
+/** "unknown" means the check itself failed - which is not evidence the agent
+ *  is gone. See PLAN-timer-stop-resilience.md, A3. */
+export type AgentPresence = "online" | "offline" | "unknown"
+
 interface AgentStatusContextValue {
   captureMode: ActivityCaptureMode
   isAgentMode: boolean
@@ -24,6 +28,7 @@ interface AgentStatusContextValue {
   authPort: number
   linkedAt: string | null
   agentSource: string | null
+  agentPresence: AgentPresence
   canStartTimer: boolean
   refreshAgentStatus: () => Promise<AgentTimerReadiness>
 }
@@ -56,6 +61,17 @@ export function AgentStatusProvider({
   const agentIngestEnabled = remote?.agentIngestEnabled ?? false
   const isLocalAgentRunning = remote?.agentOnline === true
   const isLocalAgentAuthenticated = isLocalAgentRunning && isAgentLinked
+  // Servers that predate agentPresence still say agentOnline, which is now
+  // null (not false) when they cannot tell. No answer at all is "unknown" too.
+  const agentPresence: AgentPresence =
+    remote?.agentPresence ??
+    (remote == null
+      ? "unknown"
+      : remote.agentOnline === true
+        ? "online"
+        : remote.agentOnline === null
+          ? "unknown"
+          : "offline")
 
   const refreshAgentStatus = useCallback(async (): Promise<AgentTimerReadiness> => {
     if (!isLoggedIn) {
@@ -126,6 +142,7 @@ export function AgentStatusProvider({
       authPort,
       linkedAt: remote?.linkedAt ?? null,
       agentSource: remote?.agentSource ?? null,
+      agentPresence,
       canStartTimer,
       refreshAgentStatus,
     }),
@@ -139,6 +156,7 @@ export function AgentStatusProvider({
       authPort,
       remote?.linkedAt,
       remote?.agentSource,
+      agentPresence,
       canStartTimer,
       refreshAgentStatus,
     ],

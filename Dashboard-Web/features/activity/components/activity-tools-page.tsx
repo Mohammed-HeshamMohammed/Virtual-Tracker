@@ -1,6 +1,7 @@
 "use client"
 
-import { CheckCircle2, XCircle } from "lucide-react"
+import { useEffect } from "react"
+import { CheckCircle2, Loader2, XCircle } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { AgentDownloadChoices } from "@/shared/ui/agent-download-choices"
@@ -19,9 +20,18 @@ function agentLinkedAgo(linkedAt: string | null): string | null {
 }
 
 function AgentStatusCard({ isDark }: { isDark: boolean }) {
-  const { isLocalAgentRunning, isAgentLinked, linkedAt } = useAgentStatus()
+  const { isLocalAgentRunning, isAgentLinked, linkedAt, agentPresence, refreshAgentStatus } = useAgentStatus()
   const connected = isLocalAgentRunning && isAgentLinked
+  // A failed status check is not the agent being gone - say "checking" rather
+  // than "not running" (PLAN-timer-stop-resilience.md A3).
+  const checking = !connected && agentPresence === "unknown"
   const linkedAgo = agentLinkedAgo(linkedAt)
+
+  // The top-bar button used to fetch this on every page. It no longer touches
+  // the agent at all, so this page asks for itself.
+  useEffect(() => {
+    void refreshAgentStatus()
+  }, [refreshAgentStatus])
 
   return (
     <div
@@ -31,26 +41,34 @@ function AgentStatusCard({ isDark }: { isDark: boolean }) {
           ? isDark
             ? "border-emerald-900/60 bg-emerald-950/30"
             : "border-emerald-200 bg-emerald-50"
-          : isDark
-            ? "border-amber-900/60 bg-amber-950/30"
-            : "border-amber-200 bg-amber-50",
+          : checking
+            ? isDark
+              ? "border-slate-800 bg-slate-900/60"
+              : "border-slate-200 bg-slate-50"
+            : isDark
+              ? "border-amber-900/60 bg-amber-950/30"
+              : "border-amber-200 bg-amber-50",
       )}
     >
       {connected ? (
         <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+      ) : checking ? (
+        <Loader2 className="h-5 w-5 shrink-0 animate-spin text-slate-500 dark:text-slate-400" />
       ) : (
         <XCircle className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
       )}
       <div className="min-w-0">
         <p className={cn("text-sm font-semibold", isDark ? "text-slate-100" : "text-slate-900")}>
-          {connected ? "Agent connected" : "Agent not detected on this device"}
+          {connected ? "Agent connected" : checking ? "Checking the agent…" : "Agent not running"}
         </p>
         <p className={cn("mt-0.5 text-xs", isDark ? "text-slate-400" : "text-slate-600")}>
           {connected
             ? linkedAgo
               ? `Last linked ${linkedAgo}`
               : "Ready to track time"
-            : "Install it below, then sign in - the topbar timer stays disabled until it's running."}
+            : checking
+              ? "Couldn't confirm its status just now - checking again."
+              : "Install it below and sign in. Tracking starts and stops in the agent."}
         </p>
       </div>
     </div>
@@ -81,8 +99,8 @@ export function ActivityToolsPage() {
             Agent Tracker setup
           </h2>
           <p className={cn("mt-1 text-sm leading-relaxed", isDark ? "text-slate-400" : "text-slate-600")}>
-            The timer only starts once the Virtual Tracker Agent is running on this computer. Download the
-            installer for your OS, install it, sign in, then start tracking from the topbar.
+            Time is tracked by the Virtual Tracker Agent. Download the installer for your OS, install it, sign
+            in, then start and stop tracking from the agent.
           </p>
         </div>
 

@@ -314,7 +314,7 @@ impl ActivityTracker {
         let task_id = task_id.filter(|id| !id.is_empty());
         self.api
             .lock()
-            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds, None)?;
+            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds, None, Some("member_pause"))?;
         self.paused.store(true, Ordering::SeqCst);
         self.emit_status("Timer paused — on a break");
         Ok(())
@@ -325,7 +325,7 @@ impl ActivityTracker {
         let task_id = task_id.filter(|id| !id.is_empty());
         self.api
             .lock()
-            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds, None)?;
+            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds, None, Some("member_resume"))?;
         self.paused.store(false, Ordering::SeqCst);
         self.emit_status("Task session active");
         Ok(())
@@ -356,6 +356,7 @@ impl ActivityTracker {
                 pending.active_seconds,
                 pending.idle_seconds,
                 None,
+                Some("idle_escalation"),
             )
             .is_ok();
         if delivered {
@@ -475,6 +476,10 @@ impl ActivityTracker {
     /// sleep/hibernate clamp threw it away.
     fn tick_local_progress(&self, state: &mut TickState) {
         if !state.was_active || state.current_session.is_empty() {
+            // Not tracking - or paused by the server (C1). Nothing to credit,
+            // and the clock restarts, so the next tracked tick counts only its
+            // own span and never the time spent here.
+            state.last_tick_at = Instant::now();
             return;
         }
         let idle_now = self.tick_progress(
@@ -672,6 +677,24 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if status != "active" {
+            // C1: a pause is not the end of the session. This used to reset
+            // everything - task, baselines, session id - on any non-active
+            // status, so a pause coming from anywhere other than this agent
+            // (historically the dashboard, on a single "agent offline"
+            // reading) stopped capture outright and threw away the running
+            // totals. Keep them: when the server says "active" again for the
+            // same session, the active path below skips re-baselining and
+            // `was_active` comes back on, so counting picks up where it was.
+            if status == "idle" && !state.current_session.is_empty() {
+                if state.was_active {
+                    self.emit_status("Timer idle — capture paused");
+                }
+                state.was_active = false;
+                // Nothing is credited while paused. Restart the clock so the
+                // first tracked tick afterwards does not count the pause.
+                state.last_tick_at = Instant::now();
+                return;
+            }
             if status == "idle" {
                 self.emit_status("Timer idle — capture paused");
             } else if state.was_active {
@@ -821,6 +844,13 @@ impl ActivityTracker {
             state.next_sync_at = Instant::now();
         }
 
+        if !state.was_active {
+            // Coming back from a pause (C1), or starting: count from now. The
+            // clock last moved on the final not-tracking tick, up to a tick
+            // earlier, and that span was not work - without this the first
+            // tracked tick after a pause credited up to five seconds of it.
+            state.last_tick_at = Instant::now();
+        }
         state.was_active = true;
 
         let now = Instant::now();
@@ -908,6 +938,7 @@ impl ActivityTracker {
                 active_total,
                 idle_total,
                 None,
+                None,
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
 
@@ -917,12 +948,16 @@ impl ActivityTracker {
             // (budgetCapped) - stop here too, same shape as the idle-stop
             // path above, or the local clock keeps advancing past a number
             // the server has stopped recording.
-            let cap_message = match &sync_result {
-                Ok(info) if info.timer_capped => Some("Timer stopped — task's daily hour limit reached"),
-                Ok(info) if info.budget_capped => Some("Timer stopped — project's budget limit reached"),
+            let cap = match &sync_result {
+                Ok(info) if info.timer_capped => {
+                    Some(("Timer stopped — task's daily hour limit reached", "timer_cap"))
+                }
+                Ok(info) if info.budget_capped => {
+                    Some(("Timer stopped — project's budget limit reached", "budget_cap"))
+                }
                 _ => None,
             };
-            if let Some(message) = cap_message {
+            if let Some((message, reason)) = cap {
                 log::info!("{message} - stopping timer");
                 let _ = self.api.lock().post_session_action(
                     "stop",
@@ -931,6 +966,7 @@ impl ActivityTracker {
                     active_total,
                     idle_total,
                     None,
+                    Some(reason),
                 );
                 state.was_active = false;
                 state.current_session = String::new();
@@ -1076,6 +1112,7 @@ impl ActivityTracker {
                 rewound,
                 idle_total,
                 None,
+                Some("idle_escalation"),
             )
             .is_ok();
         if !delivered {
@@ -1262,6 +1299,7 @@ impl ActivityTracker {
                 state.active_baseline + state.active_elapsed,
                 state.idle_baseline + state.idle_elapsed,
                 None,
+                None,
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
         }
@@ -1293,7 +1331,7 @@ impl ActivityTracker {
         match self
             .api
             .lock()
-            .post_session_action("start", task_id, project_id, active_total, idle_total, None)
+            .post_session_action("start", task_id, project_id, active_total, idle_total, None, Some("recovered_after_reap"))
         {
             Ok(info) => {
                 log::warn!(
@@ -1547,6 +1585,89 @@ mod tests {
             }
         })
     }
+
+    // C1: the server says this session is paused - historically the dashboard,
+    // on a single "agent offline" reading. The agent used to reset everything
+    // and drop the session; it must keep it and its running totals.
+    #[test]
+    fn a_server_pause_keeps_the_session_and_its_totals() {
+        let tracker = test_tracker(session_test_server(IDLE_SESSION_WITH_TASK));
+        let mut state = TickState::new();
+        state.was_active = true;
+        state.current_session = "sess-1".to_string();
+        state.task_id = "task-1".to_string();
+        state.idle_settings_stale = false;
+        state.active_baseline = 100;
+        state.active_elapsed = 40;
+
+        tracker.tick(&mut state);
+
+        assert!(!state.was_active, "paused: nothing is being credited");
+        assert_eq!(state.current_session, "sess-1", "the session is kept");
+        assert_eq!(state.task_id, "task-1", "and its task");
+        assert_eq!(state.active_baseline, 100, "and its baseline");
+        assert_eq!(state.active_elapsed, 40, "and the time already worked - not thrown away");
+    }
+
+    #[test]
+    fn resuming_after_a_server_pause_carries_on_and_credits_none_of_the_pause() {
+        let paused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let paused_in_server = std::sync::Arc::clone(&paused);
+        let url = fake_server(move |request| {
+            let path = request.url().split('?').next().unwrap_or("").to_string();
+            match (request.method(), path.as_str()) {
+                (Method::Get, "/api/activity/session") => {
+                    let body = if paused_in_server.load(std::sync::atomic::Ordering::SeqCst) {
+                        IDLE_SESSION_WITH_TASK
+                    } else {
+                        ACTIVE_SESSION_WITH_TASK
+                    };
+                    (200, body.to_string())
+                }
+                (Method::Post, "/api/activity/events") => (200, r#"{"data": {"inserted": 1}}"#.to_string()),
+                _ => (404, "{}".to_string()),
+            }
+        });
+        let tracker = test_tracker(url);
+        let mut state = TickState::new();
+        state.was_active = true;
+        state.current_session = "sess-1".to_string();
+        state.task_id = "task-1".to_string();
+        state.idle_settings_stale = false;
+        state.active_baseline = 100;
+        state.active_elapsed = 40;
+
+        tracker.tick(&mut state); // paused
+        thread::sleep(Duration::from_millis(1_200)); // time that is not work
+
+        paused.store(false, std::sync::atomic::Ordering::SeqCst);
+        state.ticks_since_session_fetch = super::SESSION_FETCH_EVERY_N_TICKS; // due to poll
+        tracker.tick(&mut state); // resumed
+
+        assert!(state.was_active, "counting has resumed");
+        assert_eq!(state.current_session, "sess-1", "on the same session");
+        assert_eq!(state.active_baseline, 100, "no re-baseline for the same session and task");
+        assert_eq!(state.active_elapsed, 40, "the 1.2s spent paused is not credited as work");
+    }
+
+    #[test]
+    fn ticks_while_paused_by_the_server_count_nothing() {
+        let tracker = test_tracker(session_test_server(IDLE_SESSION_WITH_TASK));
+        let mut state = TickState::new();
+        state.was_active = false;
+        state.current_session = "sess-1".to_string();
+        state.task_id = "task-1".to_string();
+        state.active_elapsed = 40;
+
+        thread::sleep(Duration::from_millis(1_100));
+        tracker.tick_local_progress(&mut state);
+
+        assert_eq!(state.active_elapsed, 40);
+        assert_eq!(state.idle_elapsed, 0);
+        assert!(state.last_tick_at.elapsed() < Duration::from_millis(500), "the clock moved on");
+    }
+
+    const IDLE_SESSION_WITH_TASK: &str = r#"{"data": {"id": "sess-1", "status": "idle", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0}}"#;
 
     const ACTIVE_SESSION_WITH_TASK: &str = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0}}"#;
 

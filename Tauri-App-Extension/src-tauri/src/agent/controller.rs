@@ -142,6 +142,18 @@ impl AgentController {
     /// active/idle seconds (not 0s) before tearing it down — shared by a clean
     /// quit, sign-out, and re-link, so none of them silently leave the session
     /// "active" forever or drop the time already worked.
+    /// The server-side reason code for a local shutdown reason. These used to be
+    /// written only to the local log, so "the agent stopped my timer" could
+    /// never be told apart from any other stop.
+    fn stop_reason_for(reason: &str) -> &'static str {
+        match reason {
+            "quit" => "agent_quit",
+            "sign-out" => "agent_signout",
+            "re-link" => "agent_relink",
+            _ => "unspecified",
+        }
+    }
+
     fn flush_and_stop_tracker(&self, reason: &str) {
         if let Some(tracker) = self.tracker.lock().as_ref() {
             if let Some(session_id) = tracker.current_session_id() {
@@ -153,6 +165,7 @@ impl AgentController {
                     active_seconds,
                     idle_seconds,
                     None,
+                    Some(Self::stop_reason_for(reason)),
                 );
                 log::info!("Closed session {session_id} on {reason} ({active_seconds}s active)");
             }
@@ -984,6 +997,7 @@ impl AgentController {
             active_baseline,
             idle_baseline,
             None,
+            Some("member_start"),
         ) {
             Ok(session) => {
                 self.on_status_changed("Task session active".into());
@@ -1023,7 +1037,7 @@ impl AgentController {
         match self
             .api
             .lock()
-            .post_session_action("start", None, Some(project_id), 0, 0, None)
+            .post_session_action("start", None, Some(project_id), 0, 0, None, Some("member_start"))
         {
             Ok(session) => {
                 self.on_status_changed("Task session active".into());
@@ -1062,7 +1076,7 @@ impl AgentController {
         match self
             .api
             .lock()
-            .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds, stop_note)
+            .post_session_action("stop", task_id.as_deref(), None, active_seconds, idle_seconds, stop_note, Some("member_stop"))
         {
             Ok(session) => {
                 self.on_status_changed("Signed in — waiting for timer".into());

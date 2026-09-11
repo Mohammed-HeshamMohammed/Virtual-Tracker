@@ -563,7 +563,13 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                                 </td>
                               ) : null}
                               {columnVisibility.stopped ? (
-                                <td className="px-4 py-3 text-sm text-slate-600 dark:text-[#bccbb9]">{r.stoppedLabel}</td>
+                                <td className="px-4 py-3 text-sm text-slate-600 dark:text-[#bccbb9]">
+                                  {r.stoppedLabel}
+                                  {/* "It stopped on its own" answered on the row itself. */}
+                                  {r.stoppedBy ? (
+                                    <span className="block text-xs text-slate-400 dark:text-white/40">{r.stoppedBy}</span>
+                                  ) : null}
+                                </td>
                               ) : null}
                               {columnVisibility.duration ? (
                                 <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{r.durationHms}</td>

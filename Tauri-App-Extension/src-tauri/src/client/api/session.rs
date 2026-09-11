@@ -17,6 +17,49 @@ fn local_timezone() -> Option<String> {
         .filter(|tz| !tz.is_empty())
 }
 
+/// The body of a session action. Its own function so what the server is told
+/// can be tested without a live request (the test server cannot read bodies).
+#[allow(clippy::too_many_arguments)]
+fn session_action_payload(
+    action: &str,
+    task_id: Option<&str>,
+    project_id: Option<&str>,
+    active_seconds: u64,
+    idle_seconds: u64,
+    stop_note: Option<&str>,
+    reason: Option<&str>,
+    time_zone: Option<String>,
+) -> Value {
+    let mut payload = json!({
+        "action": action,
+        "activeSeconds": active_seconds,
+        "idleSeconds": idle_seconds,
+    });
+    // Which calendar day this member's hours belong to is decided from their
+    // timezone. Deliberately a zone *name*, never a timestamp: the server still
+    // stamps every session itself.
+    if let Some(tz) = time_zone {
+        payload["timeZone"] = json!(tz);
+    }
+    if let Some(tid) = task_id {
+        payload["taskId"] = json!(tid);
+    }
+    // Calling projects have no task, so this is the only thing tying the
+    // session to the project it belongs to.
+    if let Some(pid) = project_id {
+        payload["projectId"] = json!(pid);
+    }
+    // Only "stop" carries one, and only when the project asks for it.
+    if let Some(note) = stop_note.map(str::trim).filter(|n| !n.is_empty()) {
+        payload["stopNote"] = json!(note);
+    }
+    // Why this happened, recorded by the server (PLAN-timer-stop-resilience.md D2).
+    if let Some(reason) = reason.map(str::trim).filter(|r| !r.is_empty()) {
+        payload["reason"] = json!(reason);
+    }
+    payload
+}
+
 impl ApiClient {
     /// `Ok(None)` = reachable, genuinely no active session. `Err(_)` = could
     /// not reach the backend, or reached it but got a bad response — the
@@ -39,6 +82,7 @@ impl ApiClient {
         Ok(body.get("data").cloned())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn post_session_action(
         &mut self,
         action: &str,
@@ -47,42 +91,34 @@ impl ApiClient {
         active_seconds: u64,
         idle_seconds: u64,
         stop_note: Option<&str>,
+        // Why this happened ("member_pause", "idle_escalation", ...), so the
+        // server can record it (PLAN-timer-stop-resilience.md D2). `None` for
+        // syncs, which are not state changes.
+        reason: Option<&str>,
     ) -> Result<crate::types::SessionInfo, String> {
         let auth = self
             .authorized()
             .ok_or_else(|| "Not signed in".to_string())?;
         let url = format!("{}/api/activity/session", self.api_url);
-        let mut payload = json!({
-            "action": action,
-            "activeSeconds": active_seconds,
-            "idleSeconds": idle_seconds,
-        });
-        // Which calendar day this member's hours belong to is decided from
-        // their timezone, and until now nothing populated it for anyone who
-        // never opened the web profile - they silently fell back to UTC. The
-        // machine already knows the answer, so report it and let the backend
-        // decide whether to adopt it. Deliberately a zone *name*, never a
-        // timestamp: the server still stamps every session itself.
-        if let Some(tz) = local_timezone() {
-            payload["timeZone"] = json!(tz);
-        }
-        if let Some(tid) = task_id {
-            payload["taskId"] = json!(tid);
-        }
-        // Calling projects have no task, so this is the only thing tying the
-        // session to the project it belongs to.
-        if let Some(pid) = project_id {
-            payload["projectId"] = json!(pid);
-        }
-        // Only "stop" carries one, and only when the project asks for it.
-        if let Some(note) = stop_note.map(str::trim).filter(|n| !n.is_empty()) {
-            payload["stopNote"] = json!(note);
-        }
+        let payload = session_action_payload(
+            action,
+            task_id,
+            project_id,
+            active_seconds,
+            idle_seconds,
+            stop_note,
+            reason,
+            local_timezone(),
+        );
         let res = self
             .client
             .post(url)
             .header("Authorization", auth)
             .header("Content-Type", "application/json")
+            // Ties the server's session history to the build that wrote it
+            // (PLAN D4), so a report can be matched to a version without
+            // asking the member which one they have.
+            .header("X-Agent-Version", env!("CARGO_PKG_VERSION"))
             .json(&payload)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
@@ -158,5 +194,72 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
             .and_then(|d| d.get("budgetCapped"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+    use std::sync::{Arc, Mutex as StdMutex};
+
+    #[test]
+    fn a_state_change_tells_the_server_why() {
+        let body = session_action_payload("stop", Some("task-1"), None, 30, 5, None, Some("idle_escalation"), None);
+        assert_eq!(body["reason"], "idle_escalation");
+        assert_eq!(body["action"], "stop");
+        assert_eq!(body["taskId"], "task-1");
+    }
+
+    // Syncs are not state changes; a reason there would be noise in the history.
+    #[test]
+    fn a_sync_carries_no_reason() {
+        let body = session_action_payload("sync", None, Some("proj-1"), 30, 5, None, None, None);
+        assert!(body.get("reason").is_none());
+    }
+
+    #[test]
+    fn a_blank_reason_is_not_sent() {
+        let body = session_action_payload("idle", None, None, 0, 0, None, Some("   "), None);
+        assert!(body.get("reason").is_none());
+    }
+
+    #[test]
+    fn the_existing_fields_are_unchanged() {
+        let body = session_action_payload(
+            "stop",
+            None,
+            Some("proj-1"),
+            12,
+            3,
+            Some("  done for today "),
+            Some("member_stop"),
+            Some("Africa/Cairo".to_string()),
+        );
+        assert_eq!(body["projectId"], "proj-1");
+        assert_eq!(body["activeSeconds"], 12);
+        assert_eq!(body["idleSeconds"], 3);
+        assert_eq!(body["stopNote"], "done for today");
+        assert_eq!(body["timeZone"], "Africa/Cairo");
+    }
+
+    // Ties the server's session history to the build that wrote it (PLAN D4).
+    #[test]
+    fn every_session_action_names_the_agent_version() {
+        let seen: Arc<StdMutex<Option<String>>> = Arc::new(StdMutex::new(None));
+        let seen_in_server = Arc::clone(&seen);
+        let url = fake_server(move |request| {
+            let version = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("X-Agent-Version"))
+                .map(|h| h.value.as_str().to_string());
+            *seen_in_server.lock().unwrap() = version;
+            (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+        });
+        let mut api = ApiClient::new(url, "http://127.0.0.1:1".into()).expect("client builds");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        let _ = api.post_session_action("stop", None, None, 1, 0, None, Some("member_stop"));
+        assert_eq!(seen.lock().unwrap().as_deref(), Some(env!("CARGO_PKG_VERSION")));
     }
 }

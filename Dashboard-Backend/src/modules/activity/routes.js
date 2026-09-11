@@ -100,10 +100,18 @@ import {
   sumMemberActiveIdleSeconds,
   sumMemberActiveIdleSecondsForProject,
   sumAppLogSecondsByAppNameForProjectPg,
+  recordSessionEventPg,
   touchPgSessionActivity,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
-import { closeAbandonedSession, isAgentOnline, isSessionAbandoned, touchAgentHeartbeat } from "./agent-heartbeat.js";
+import {
+  closeAbandonedSession,
+  getAgentPresence,
+  HEARTBEAT_TTL_SEC,
+  isSessionAbandoned,
+  touchAgentHeartbeat,
+} from "./agent-heartbeat.js";
+import { isWebActionOnAgentSession, normalizeSessionReason } from "./session-reasons.js";
 
 async function getMemberTodayWorkStatus(db, memberId) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
@@ -264,9 +272,39 @@ async function normalizeSession(id, data) {
     taskId: data.task_id ?? null,
     projectId: data.project_id ?? null,
     updatedAt: toIso(data.updated_at),
+    // Who owns the session ("agent" or "web"), and why it last paused - so a
+    // client can tell a session it must leave alone from one it may drive.
+    source: data.source ?? null,
+    pauseReason: data.pause_reason ?? null,
     screenshotsEnabled: isActivityScreenshotsEnabled(),
     ...(disableIdleTime !== undefined ? { disableIdleTime, idleTimeSeconds } : {}),
   };
+}
+
+/**
+ * The agent's presence for the status endpoint: online, offline, or unknown.
+ *
+ * `agentOnline` stays for older dashboards, but is now `null` - not `false` -
+ * when we cannot tell. A dashboard that reads false pauses the timer, and
+ * "Redis cannot answer" is not evidence the agent has gone (R1 in
+ * PLAN-timer-stop-resilience.md). When Redis cannot answer, the session row is
+ * a second witness: the agent's poll and sync both touch it, so a recent
+ * `updated_at` on an agent session means the agent is there.
+ */
+async function describeAgentPresence(memberId) {
+  const { presence, lastSeenAt } = await getAgentPresence(memberId);
+  if (presence !== "unknown") {
+    return { agentOnline: presence === "online", agentPresence: presence, agentLastSeenAt: lastSeenAt };
+  }
+  const open = await findOpenPgSession(memberId).catch(() => null);
+  const source = String(open?.source ?? "").toLowerCase();
+  if (open?.updated_at && (source === "agent" || source === "desktop_agent")) {
+    const seen = new Date(open.updated_at).getTime();
+    if (Number.isFinite(seen) && Date.now() - seen <= HEARTBEAT_TTL_SEC * 1000) {
+      return { agentOnline: true, agentPresence: "online", agentLastSeenAt: new Date(seen).toISOString() };
+    }
+  }
+  return { agentOnline: null, agentPresence: "unknown", agentLastSeenAt: null };
 }
 
 export async function routeActivity(req, res, url, origin) {
@@ -543,6 +581,43 @@ export async function routeActivity(req, res, url, origin) {
       const now = new Date();
       let open = await findOpenSession(member.memberId);
 
+      // Every session action says why it happened, and from where
+      // (PLAN-timer-stop-resilience.md D2). Old agents send no reason; that is
+      // recorded as "unspecified", never rejected.
+      const fromWeb = Boolean(origin);
+      const sessionReason = normalizeSessionReason(body.reason);
+      const clientVersion =
+        typeof req.headers?.["x-agent-version"] === "string" ? req.headers["x-agent-version"].slice(0, 40) : null;
+      const sessionBefore = open;
+
+      // The agent owns an agent session. A dashboard tab - including one still
+      // running the old code, which paused on a single "offline" reading and
+      // stopped on sign-out - may not pause, stop, resume or overwrite it. The
+      // refusal is answered with the session as it stands (200, so old clients
+      // do not error) and recorded, so it shows up in the history.
+      if (open && isWebActionOnAgentSession({ sessionSource: open.source, requestFromWeb: fromWeb, action })) {
+        // Recorded for pause, stop and resume only. A tab on the old code also
+        // syncs every few seconds; a row per refused sync would drown the
+        // history the events table exists to make readable.
+        if (action !== "sync") {
+          void recordSessionEventPg({
+            sessionId: open.id,
+            action: "ignored",
+            reason: "web_on_agent_session",
+            actorId: member.memberId,
+            source: "web",
+            clientVersion,
+          });
+          logSafeWarn("[activity/session] refused a dashboard action on an agent-owned session", {
+            sessionId: open.id,
+            action,
+            requestedReason: sessionReason,
+          });
+        }
+        sendJson(res, origin, 200, { success: true, data: await normalizeSession(open.id, open) });
+        return true;
+      }
+
       let sessionProjectId = bodyProjectId || open?.project_id || null;
 
       if (action === "start" || action === "resume") {
@@ -722,6 +797,8 @@ export async function routeActivity(req, res, url, origin) {
           await updatePgSession(open.id, {
             status: "idle",
             updatedAt: now,
+            pauseReason: sessionReason,
+            pausedAt: now,
             ...(taskId ? { taskId } : {}),
             ...(sessionProjectId ? { projectId: sessionProjectId } : {}),
             ...(activeSeconds !== undefined ? { activeSeconds } : {}),
@@ -775,6 +852,8 @@ export async function routeActivity(req, res, url, origin) {
               status: "stopped",
               endedAt: now,
               updatedAt: now,
+              stopReason: sessionReason,
+              stoppedBy: member.memberId,
               ...(stopNote ? { stopNote } : {}),
               ...(activeSeconds !== undefined ? { activeSeconds } : {}),
               ...(idleSeconds !== undefined ? { idleSeconds } : {}),
@@ -791,6 +870,21 @@ export async function routeActivity(req, res, url, origin) {
           ...(activeSeconds !== undefined ? { activeSeconds } : {}),
           ...(idleSeconds !== undefined ? { idleSeconds } : {}),
         });
+      }
+
+      // History for every state change; syncs (every ~20s) would drown it.
+      if (action !== "sync") {
+        const eventSessionId = open?.id ?? sessionBefore?.id ?? null;
+        if (eventSessionId) {
+          void recordSessionEventPg({
+            sessionId: eventSessionId,
+            action,
+            reason: sessionReason,
+            actorId: member.memberId,
+            source: fromWeb ? "web" : "agent",
+            clientVersion,
+          });
+        }
       }
 
       const syncTaskId = taskId || open?.task_id || null;
@@ -1721,7 +1815,7 @@ export async function routeActivity(req, res, url, origin) {
           linkedAt: toIso(row.desktop_agent_linked_at),
           agentSource: typeof row.agent_source === "string" ? row.agent_source : null,
           authPort: getEnv().activity.vtAuthPort,
-          agentOnline: await isAgentOnline(member.memberId),
+          ...(await describeAgentPresence(member.memberId)),
         },
       });
     } catch (e) {

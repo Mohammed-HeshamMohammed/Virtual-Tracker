@@ -32,12 +32,49 @@ export async function touchAgentHeartbeat(memberId) {
   const redis = getRedisClient();
   if (!redis || !memberId) return;
   try {
-    await redis.set(key(memberId), "1", "EX", HEARTBEAT_TTL_SEC);
+    // The value is when we heard from it, so presence can report "last seen"
+    // rather than a bare yes/no.
+    await redis.set(key(memberId), String(Date.now()), "EX", HEARTBEAT_TTL_SEC);
   } catch {
     // Best-effort — a missed heartbeat write just means one status check reads stale.
   }
 }
 
+/**
+ * Whether the member's agent is checking in - and whether we could tell.
+ *
+ * `isAgentOnline` below answers false both when the agent is gone and when
+ * Redis cannot be asked. The dashboard read that false as "agent not running"
+ * and paused the timer, so a Redis restart or outage paused every active timer
+ * at once. That is the same confusion TC-1 fixed for the abandoned-session
+ * sweep, left alive on the dashboard's path. "unknown" is its own answer here:
+ * nothing may pause, stop or warn on it.
+ *
+ * @returns {{ presence: "online" | "offline" | "unknown", lastSeenAt: string | null }}
+ */
+export async function getAgentPresence(memberId) {
+  if (!memberId) return { presence: "offline", lastSeenAt: null };
+  let redis = null;
+  try {
+    redis = getRedisClient();
+  } catch {
+    redis = null;
+  }
+  if (!redis) return { presence: "unknown", lastSeenAt: null };
+  try {
+    const value = await redis.get(key(memberId));
+    if (value == null) return { presence: "offline", lastSeenAt: null };
+    const ms = Number(value);
+    return {
+      presence: "online",
+      lastSeenAt: Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null,
+    };
+  } catch {
+    return { presence: "unknown", lastSeenAt: null };
+  }
+}
+
+/** Kept for existing callers; prefer getAgentPresence, which can say "unknown". */
 export async function isAgentOnline(memberId) {
   const redis = getRedisClient();
   if (!redis || !memberId) return false;
@@ -59,7 +96,13 @@ export async function isSessionAbandoned(session) {
 
 export async function closeAbandonedSession(session) {
   const now = new Date();
-  await updatePgSession(session.id, { status: "stopped", endedAt: now, updatedAt: now });
+  await updatePgSession(session.id, {
+    status: "stopped",
+    endedAt: now,
+    updatedAt: now,
+    stopReason: "abandoned_reap",
+    event: { action: "stop", reason: "abandoned_reap", source: "server" },
+  });
   logSafeWarn("[agent-heartbeat] closed abandoned desktop-agent session", {
     sessionId: session.id,
     memberId: session.member_id,

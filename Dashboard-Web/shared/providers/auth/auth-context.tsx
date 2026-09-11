@@ -1120,8 +1120,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
       clearAllListCaches()
       const { setCurrentMemberId } = await import("@/infrastructure/api/change-events")
       setCurrentMemberId(null)
-      const { postActivitySession } = await import("@/features/activity/services/activity-api")
-      await postActivitySession("stop").catch(() => { })
+      // Signing out of the dashboard used to post "stop" here, ending the
+      // member's running timer - including from "Use a different account" on
+      // the agent-link page. The agent owns the timer; a browser tab signing
+      // out is not the member stopping work. (The server would now ignore it
+      // anyway - see PLAN-timer-stop-resilience.md, A5.)
       const { disconnectPresenceWebSocket } = await import("@/features/auth/services/presence-ws")
       const { closePresenceEventStream } = await import("@/features/auth/services/presence-events-sse")
       disconnectPresenceWebSocket()

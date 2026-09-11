@@ -1,9 +1,77 @@
 # Plan — Timers that stop when nobody asked: prevention, recovery, traceability
 
-**Status:** Proposed — nothing in Parts A–G is implemented yet. Fixes already shipped are listed
-separately so they are not redone.
+**Status:** **Implemented 2026-09-11**, with one architectural change that made several items
+unnecessary. See [Implementation status](#implementation-status) directly below. The agent-side
+items (C1, C3, D2, D4) need an agent release to reach users; everything else ships with the backend
+and web deploys.
 **Date:** 2026-09-11
 **Scope:** `Dashboard-Backend`, `Dashboard-Web`, `Tauri-App-Extension`
+
+## Implementation status
+
+### The change that reshaped the plan
+
+The top-bar **Start** button is now navigation only: it opens Tools and does nothing else. That
+button turned out to be the *only* caller of `requestActivityRuntime`, the one thing that ever
+switched on the dashboard's timer runtime ("adopt"). Every dashboard path that paused the agent's
+timer lived inside that runtime, or next to it (`ActivitySessionGuard`). With the button stripped
+and the guard deleted, **nothing in the dashboard can start, pause or stop a timer, and nothing can
+raise the "Start the Virtual Tracker Agent…" toast.** The agent owns the timer, and the server
+enforces it.
+
+### Item by item
+
+| Item | Outcome |
+|---|---|
+| A1 guard pauses on every load | **Done** — `ActivitySessionGuard` deleted |
+| A2 session poll re-pauses | **Moot** — lives in the runtime, which no longer mounts |
+| A3 three-state readiness | **Done** — server `getAgentPresence` (online / offline / unknown), `agentOnline: null` when Redis cannot answer, session row as a second witness; web `agentPresence` |
+| A4 60s absence window | **Moot for the dashboard**, which no longer pauses. Server presence TTL is 60s |
+| A5 sign-out stops the timer | **Done** — `logout()` no longer posts `stop`, and the server refuses it anyway |
+| A6 web idle watch on unknown mode | **Moot** — inside the dormant runtime |
+| A7 one decision point | **Done, stronger** — zero dashboard decision points |
+| A8 refreshes read-only | **Done** — `test/timer-stop-contract.test.mjs` fails if a page reaches the timer |
+| New: server ownership guard | **Done** — `routes.js` refuses dashboard `idle` / `stop` / `resume` / `sync` on agent sessions (`isWebActionOnAgentSession`). Covers tabs still on old code until they reload |
+| B1–B4 truthful toast | **Moot** — nothing dispatches it any more. The Tools page no longer says "on this device" or "start from the topbar", and shows "Checking…" when status is unknown |
+| C1 agent survives a pause | **Done** — keeps session, task and totals; paused ticks credit nothing; resuming credits none of the pause. *Needs agent release* |
+| C2 auto-resume | **Moot** — nothing issues `agent_absent` pauses: the dashboard can't, and the server refuses old tabs |
+| C3 recovery marked | **Done** — `recovered_after_reap`. *Needs agent release* |
+| D1 reason columns | **Done** — `stop_reason`, `stopped_by`, `pause_reason`, `paused_at` |
+| D2 reason on every action | **Done** — server validates and records it; agent sends it from all 12 call sites. *Agent part needs release* |
+| D3 session history | **Done** — `activity_session_events`, a row per start / pause / resume / stop / refused request |
+| D4 agent version | **Done** — `X-Agent-Version` on session actions. *Needs agent release* |
+| D5 show it | **Done** — Work Sessions shows the reason under the stop time, and in CSV / PDF exports |
+| New: task deletion stops its timer | **Done** — server-side in `deleteTaskPg`, recorded as `task_deleted`. This replaces the dashboard handler that only ran when its runtime happened to be on |
+| E1 counts by reason | **Done via D3**: reasons are queryable; the reap still records its security event |
+| E2 false-pause metric | **Moot** — no dashboard pauses to count |
+| E3 heartbeat-gap log | **Deferred** — needs either Redis ≥ 6.2's `SET … GET` or an extra round trip on every poll |
+| F1 web tests | **Done** — dependency-free `node --test` contract suite (`npm test`) |
+| F2 backend tests | **Done** — reasons, ownership, presence, history, task deletion |
+| F3 agent tests | **Done** — pause keeps session, resume credits no pause, reason and version sent |
+| F4 cadence contract | **Done** — the TTL test reads the agent's constants from its source when present |
+
+### Decisions (§5) as applied
+
+- **D-1:** A restriction never stopped the timer through the web; it signs out via `firebaseSignOut`
+  directly. The restricted account's agent stops once the server rejects its requests, and the stop
+  is recorded as `abandoned_reap`.
+- **D-2:** Not needed. C2 is moot.
+- **D-3:** 60s. That's the server's presence TTL. The dashboard no longer counts at all.
+- **D-4:** Yes — dashboard sign-out leaves the agent's timer running.
+
+### Reading a stop now
+
+```sql
+SELECT created_at, action, reason, source, client_version
+FROM activity_session_events
+WHERE member_id = $1 AND created_at BETWEEN $2 AND $3
+ORDER BY created_at;
+```
+
+`reason` answers "why did it stop". `source = 'web'` with `action = 'ignored'` marks a tab on old
+code that tried to drive the timer and was refused.
+
+---
 
 ## The situation
 

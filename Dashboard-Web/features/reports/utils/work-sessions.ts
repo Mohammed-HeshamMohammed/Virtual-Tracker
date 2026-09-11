@@ -210,7 +210,7 @@ export function exportWorkSessionsToCsv(rows: WorkSessionRow[]): string {
         r.todoJob,
         String(r.manualPct),
         r.startedLabel,
-        r.stoppedLabel,
+        r.stoppedBy ? `${r.stoppedLabel} (${r.stoppedBy})` : r.stoppedLabel,
         r.durationHms,
         String(r.activityPct),
       ]

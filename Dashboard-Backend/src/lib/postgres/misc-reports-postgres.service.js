@@ -84,7 +84,7 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
   const rows = await query(
     `SELECT s.id, s.member_id, s.task_id, s.project_id,
             COALESCE(t.title, '') AS task_title, COALESCE(p.name, '') AS project_name,
-            s.started_at, s.ended_at, s.active_seconds, s.idle_seconds, s.source
+            s.started_at, s.ended_at, s.active_seconds, s.idle_seconds, s.source, s.stop_reason
      FROM activity_sessions s
      LEFT JOIN tasks t ON t.id = s.task_id
      LEFT JOIN projects p ON p.id = s.project_id
@@ -110,6 +110,7 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
     activeSeconds: Math.max(0, Number(r.active_seconds) || 0),
     idleSeconds: Math.max(0, Number(r.idle_seconds) || 0),
     source: r.source,
+    stopReason: r.stop_reason ?? null,
     })),
   };
 }
