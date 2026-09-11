@@ -236,6 +236,23 @@ describe("radar scale", () => {
     }
   });
 
+  // The v1.0.2 scale square-rooted the share, which put an app with 5% of the
+  // top one's time a third of the way out - a six-fold exaggeration that made
+  // two-minute apps look substantial next to a 47-minute one. Above the floor,
+  // distance must be proportional to time.
+  it("plots distance above the floor in proportion to time, not inflated", () => {
+    const floor = radarRadius(0, 3600);
+    const span = radarRadius(3600, 3600) - floor;
+    expect(radarRadius(1800, 3600) - floor).toBeCloseTo(span * 0.5, 5);
+    expect(radarRadius(360, 3600) - floor).toBeCloseTo(span * 0.1, 5);
+
+    // The real week from the bug report: Telegram had 150s against 2820s.
+    const telegram = radarRadius(150, 2820);
+    const shareOfSpan = (telegram - floor) / span;
+    expect(shareOfSpan).toBeCloseTo(150 / 2820, 5);
+    expect(telegram / radarRadius(2820, 2820)).toBeLessThan(0.2);
+  });
+
   it("never plots outside the chart or exactly on the origin", () => {
     expect(radarRadius(0, 3600)).toBe(4);
     expect(radarRadius(7200, 3600)).toBeLessThanOrEqual(35);

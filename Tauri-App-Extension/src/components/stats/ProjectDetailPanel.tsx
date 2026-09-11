@@ -13,20 +13,26 @@ const RADAR_GRID_RINGS = [1 / 3, 2 / 3, 1];
 const RADAR_MIN_RADIUS = 4;
 
 /**
- * Where an app's mark sits on its axis.
+ * Where an app's mark sits on its axis: the floor, plus a distance
+ * proportional to its time.
  *
- * Square-rooted rather than linear, because the eye reads a radial mark by the
- * area it sweeps, not by its distance from the centre - the same reason bubble
- * charts scale by area. Linear radius makes a 1% share indistinguishable from
- * zero, which is exactly the failure this chart had; sqrt lifts it to 10% of
- * the way out, where it can be seen and compared. The exact time is on the
- * label beside every mark, so the shape only has to be readable, not
- * measurable.
+ * Linear, deliberately. v1.0.2 square-rooted this on the argument that the eye
+ * reads a radial mark by the area it sweeps - but that holds for bubbles, not
+ * here. Each app on a radar is one point on its own axis, and what the eye
+ * reads is how far out that point sits. Square-rooting inflated every small
+ * app: an app with 5% of the top one's time plotted a third of the way out, a
+ * six-fold exaggeration, so the shape claimed Telegram and VS Code were
+ * substantial when they were two minutes each against forty-seven.
+ *
+ * The floor is what actually fixes the original bug (a small app landing 0.05px
+ * from the centre, reading as no app at all). Above it, distance is proportional
+ * to time, so the shape tells the truth: when one app dominates the week, the
+ * chart is a spike, because the week was. Exact times are on every label.
  */
 export function radarRadius(seconds: number, maxSeconds: number): number {
   if (maxSeconds <= 0 || seconds <= 0) return RADAR_MIN_RADIUS;
   const share = Math.min(1, seconds / maxSeconds);
-  return RADAR_MIN_RADIUS + Math.sqrt(share) * (RADAR_MAX_RADIUS - RADAR_MIN_RADIUS);
+  return RADAR_MIN_RADIUS + share * (RADAR_MAX_RADIUS - RADAR_MIN_RADIUS);
 }
 /** Axis count for the loading grid, before any breakdown has arrived. */
 const RADAR_SKELETON_AXES = 6;
