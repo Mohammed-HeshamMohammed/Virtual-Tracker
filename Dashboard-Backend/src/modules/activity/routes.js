@@ -512,6 +512,12 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
+      // The agent's sync (every ~20s) is proof it is alive just as much as its
+      // session poll is. The poll used to be the heartbeat's only writer, so any
+      // gap in polling read as the agent going offline - see HEARTBEAT_TTL_SEC.
+      // Agent requests only: a dashboard tab starting a timer must not make an
+      // agent that is not running look online.
+      if (!origin) void touchAgentHeartbeat(member.memberId);
 
       if (
         (action === "start" || action === "resume") &&

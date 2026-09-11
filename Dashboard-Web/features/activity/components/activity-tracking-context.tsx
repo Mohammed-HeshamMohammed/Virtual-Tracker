@@ -64,7 +64,18 @@ const ActivityTrackingContext = createContext<ActivityTrackingContextValue | und
 const SYNC_MS = ACTIVITY_SESSION_SYNC_MS
 const SESSION_POLL_MS = 5_000
 const AGENT_CHECK_MS = 5_000
-const AGENT_FAIL_PAUSE_THRESHOLD = 1
+/**
+ * Consecutive "agent not running" checks before the timer is paused.
+ *
+ * This was 1, which switched off the streak counting below: a single check that
+ * came back "offline" paused the timer. A single check is not evidence - the
+ * agent's heartbeat could expire between its writes (fixed server-side, see
+ * HEARTBEAT_TTL_SEC), and one failed status request from this tab reads exactly
+ * the same. Either paused a timer whose agent was running fine. Three checks at
+ * AGENT_CHECK_MS is ~10-15s of the agent consistently absent, which a real quit
+ * produces and a blip does not.
+ */
+const AGENT_FAIL_PAUSE_THRESHOLD = 3
 const SESSION_MISS_STOP_THRESHOLD = 3
 const STORAGE_KEY = "vt-activity-session"
 const LIMIT_EVENT = "vt-task-timer-limit-reached"
@@ -347,15 +358,12 @@ export function ActivityTrackingProvider({
       /* ignore */
     }
     if (session.status === "active") {
-      const readiness = await refreshAgentStatus()
-      if (readiness.canStartTimer) applyPhase("active")
-      else {
-        await postActivitySession("idle", sessionCounters())
-        applyPhase("idle")
-        notifyAgentTimerBlocked(
-          `${getAgentTimerBlockMessage(readiness)} Timer paused until the agent reconnects.`,
-        )
-      }
+      // Restoring a session makes no pause decision of its own. It used to pause
+      // the server session on one "agent offline" reading, with no streak - so a
+      // reload landing in a heartbeat gap stopped a timer the agent was actively
+      // running. The agent check below (enforceAgentReady) starts the moment the
+      // phase goes active and pauses only on a sustained absence.
+      applyPhase("active")
     } else if (session.status === "idle") applyPhase("idle")
     else applyPhase("online")
   }, [applyPhase, loadTaskFromBackend, refreshAgentStatus, sessionCounters])
