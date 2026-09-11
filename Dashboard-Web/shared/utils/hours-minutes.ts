@@ -13,6 +13,16 @@ export function decimalHoursToParts(value: string): { hours: string; minutes: st
 /** Inverse of decimalHoursToParts - clamps minutes to 0-59 and hours to >=0,
  *  returning "" (not "0") when the result is zero so the field reads as
  *  unset rather than an explicit zero duration. */
+/** "45 min", "7.5 min", "1 h", "5 h 30 min" - a duration as people read it. */
+export function formatMinutesAsDuration(totalMinutes: number): string {
+  if (!Number.isFinite(totalMinutes) || totalMinutes <= 0) return "0 min"
+  const halfMinutes = Math.round(totalMinutes * 2) / 2
+  if (halfMinutes < 60) return `${halfMinutes} min`
+  const hours = Math.floor(halfMinutes / 60)
+  const minutes = Math.round(halfMinutes - hours * 60)
+  return minutes ? `${hours} h ${minutes} min` : `${hours} h`
+}
+
 export function partsToDecimalHours(hoursRaw: string, minutesRaw: string): string {
   const hours = Math.max(0, Number(hoursRaw) || 0)
   const minutes = Math.max(0, Math.min(59, Number(minutesRaw) || 0))

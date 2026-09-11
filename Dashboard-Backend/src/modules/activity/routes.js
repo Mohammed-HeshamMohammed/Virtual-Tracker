@@ -112,6 +112,7 @@ import {
   touchAgentHeartbeat,
 } from "./agent-heartbeat.js";
 import { isWebActionOnAgentSession, normalizeSessionReason } from "./session-reasons.js";
+import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
 
 async function getMemberTodayWorkStatus(db, memberId) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
@@ -259,7 +260,9 @@ async function normalizeSession(id, data) {
   if (!data.task_id && data.project_id) {
     const project = await getProjectPg(data.project_id).catch(() => null);
     disableIdleTime = Boolean(project?.disable_idle_time ?? false);
-    idleTimeSeconds = Number(project?.idle_time_seconds ?? 450);
+    // What the agent enforces for this member: the project's setting, held to
+    // half the budget and half their own limit on the project.
+    idleTimeSeconds = await effectiveIdleTimeSeconds(project, data.member_id ?? null);
   }
   return {
     id,

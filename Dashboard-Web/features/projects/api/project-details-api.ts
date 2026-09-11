@@ -687,6 +687,21 @@ export async function applyMemberLimitToProjects(input: {
   actorMemberId?: string
 }): Promise<BatchMemberLimitResult[]> {
   const { projectIds, memberIds, amount, actorMemberId } = input
+
+  // Member limits are only for members assigned to a project as a manager or
+  // user (the backend refuses anyone else), so work out who is on which
+  // project once. If that lookup comes back empty it may simply have failed -
+  // then every member is tried and the backend decides, rather than every
+  // project being skipped as if it had nobody on it.
+  const memberRows = await getProjectMemberRows().catch(() => [] as ProjectMemberRow[])
+  const trackersByProject = memberRows.length > 0 ? new Map<string, Set<string>>() : null
+  for (const row of memberRows) {
+    if (!trackersByProject || normalizeProjectRole(row.projectRole) === "viewer") continue
+    const onProject = trackersByProject.get(row.projectId) ?? new Set<string>()
+    onProject.add(row.memberId)
+    trackersByProject.set(row.projectId, onProject)
+  }
+
   return Promise.all(
     projectIds.map(async (projectId): Promise<BatchMemberLimitResult> => {
       try {
@@ -698,14 +713,19 @@ export async function applyMemberLimitToProjects(input: {
         if (!budget || !budget.type.trim()) {
           return { projectId, status: "skipped", reason: "This project has no budget to tighten." }
         }
+        const onProject = trackersByProject?.get(projectId)
+        const eligible = trackersByProject ? memberIds.filter((memberId) => onProject?.has(memberId)) : memberIds
+        if (eligible.length === 0) {
+          return { projectId, status: "skipped", reason: "None of the chosen members are assigned to this project." }
+        }
         const type = derivedLimitType(budget.type)
         const basedOn = derivedBasedOn(budget.type, budget.basedOn)
         const existingByMember = new Map(
           existingLimits.filter((row) => row.memberId).map((row) => [row.memberId as string, row]),
         )
 
-        await Promise.all(
-          memberIds.map((memberId) => {
+        const saved = await Promise.allSettled(
+          eligible.map((memberId) => {
             const existing = existingByMember.get(memberId)
             return createProjectMemberLimit({
               projectId,
@@ -721,7 +741,25 @@ export async function applyMemberLimitToProjects(input: {
             })
           }),
         )
-        return { projectId, status: "applied" }
+        const refused = saved.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        if (refused.length === eligible.length) {
+          const first = refused[0]?.reason
+          return {
+            projectId,
+            status: "error",
+            reason: first instanceof Error ? first.message : "Failed to apply the limit.",
+          }
+        }
+        const leftOut = memberIds.length - eligible.length + refused.length
+        return leftOut > 0
+          ? {
+              projectId,
+              status: "applied",
+              reason: `${leftOut} of the chosen members ${leftOut === 1 ? "isn't" : "aren't"} assigned to this project and ${
+                leftOut === 1 ? "was" : "were"
+              } skipped.`,
+            }
+          : { projectId, status: "applied" }
       } catch (err) {
         return {
           projectId,
@@ -777,12 +815,15 @@ export async function updateProjectWithDetails(
       ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
     }),
     syncClientLinks(projectId, clientIds, actorMemberId),
-    syncProjectMembers(projectId, memberPayload, actorMemberId),
+    // Member limits are only accepted for members on the project, so they are
+    // saved once the members are.
+    syncProjectMembers(projectId, memberPayload, actorMemberId).then(() =>
+      syncProjectMemberLimits(projectId, payload, actorMemberId),
+    ),
     syncTeamLinks(projectId, payload.teamIds, actorMemberId),
     shouldPersistBudget(payload)
       ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId, options?.expectedBudgetUpdatedAt)
       : Promise.resolve(),
-    syncProjectMemberLimits(projectId, payload, actorMemberId),
   ])
 
   return updated
@@ -854,9 +895,12 @@ export async function createProjectWithDetails(
         })
       : Promise.resolve(),
     linkClientsFast(created.id, clientIds, actorMemberId),
-    addProjectMembersFast(created.id, memberPayload, actorMemberId),
+    // Member limits are only accepted for members on the project, so they are
+    // saved once the members are.
+    addProjectMembersFast(created.id, memberPayload, actorMemberId).then(() =>
+      syncProjectMemberLimits(created.id, payload, actorMemberId),
+    ),
     linkTeamsFast(created.id, payload.teamIds, actorMemberId),
-    syncProjectMemberLimits(created.id, payload, actorMemberId),
   ])
 
   return created
