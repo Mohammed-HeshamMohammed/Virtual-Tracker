@@ -500,7 +500,8 @@ export async function fetchLatestPgScreenshot(memberId, sessionId) {
 }
 
 
-const SESSION_COLUMNS = "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at";
+const SESSION_COLUMNS =
+  "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at, stop_reason, pause_reason, paused_at";
 
 export async function findOpenPgSession(memberId) {
   const id = parseProgressUuid(memberId);
@@ -694,6 +695,11 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   if (patch.taskId !== undefined) add("task_id", patch.taskId ? parseProgressUuid(patch.taskId) : null);
   if (patch.projectId !== undefined) add("project_id", patch.projectId ? parseProgressUuid(patch.projectId) : null);
   if (patch.stopNote !== undefined) add("stop_note", patch.stopNote || null);
+  // Why the session stopped or paused, and who did it (PLAN-timer-stop-resilience.md D1).
+  if (patch.stopReason !== undefined) add("stop_reason", patch.stopReason || null);
+  if (patch.stoppedBy !== undefined) add("stopped_by", patch.stoppedBy ? parseProgressUuid(patch.stoppedBy) : null);
+  if (patch.pauseReason !== undefined) add("pause_reason", patch.pauseReason || null);
+  if (patch.pausedAt !== undefined) add("paused_at", patch.pausedAt);
   if (wantsActive) add("active_seconds", effectiveActive);
   if (wantsIdle) add("idle_seconds", effectiveIdle);
   add("updated_at", patch.updatedAt ?? new Date());
@@ -707,6 +713,52 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   }
 
   await pgQuery(`UPDATE activity_sessions SET ${sets.join(", ")} WHERE id = $1`, params);
+  if (patch.event) await recordSessionEventPg({ sessionId, ...patch.event });
+}
+
+/**
+ * One line in a session's history: what happened, why, who, and from where.
+ *
+ * "It stopped on its own" used to mean reading the code and guessing which of
+ * twenty paths fired. With a row per start, pause, resume and stop - and per
+ * dashboard request the server refused - it is a query instead
+ * (PLAN-timer-stop-resilience.md D3). The member is taken from the session row
+ * itself, so callers only need the session id.
+ *
+ * Best-effort by design: history must never be the reason a session action
+ * fails, so a write error is logged and swallowed.
+ */
+export async function recordSessionEventPg({
+  sessionId,
+  action,
+  reason = "unspecified",
+  actorId = null,
+  source = "server",
+  clientVersion = null,
+}) {
+  const id = parseProgressUuid(sessionId);
+  if (!id || !action) return;
+  try {
+    await pgQuery(
+      `INSERT INTO activity_session_events (session_id, member_id, action, reason, actor_id, source, client_version)
+       SELECT $1, member_id, $2, $3, $4, $5, $6 FROM activity_sessions WHERE id = $1`,
+      [
+        id,
+        String(action).slice(0, 20),
+        String(reason || "unspecified").slice(0, 40),
+        actorId ? parseProgressUuid(actorId) : null,
+        String(source || "server").slice(0, 20),
+        clientVersion ? String(clientVersion).slice(0, 40) : null,
+      ],
+    );
+  } catch (err) {
+    logSafeWarn("[activity-sessions] could not record a session event", {
+      sessionId: id,
+      action,
+      reason,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }
 
 /**

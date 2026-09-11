@@ -895,12 +895,33 @@ GROUP BY task_id`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS source VARCHAR(32) NOT NULL DEFAULT 'web' CHECK (source IN ('web', 'agent', 'desktop_agent'))`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS project_id UUID`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stop_note TEXT`,
+  // Why a session stopped or paused, and who did it (PLAN-timer-stop-resilience.md D1).
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stop_reason VARCHAR(40)`,
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stopped_by UUID`,
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS pause_reason VARCHAR(40)`,
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ`,
+  // A row per start, pause, resume and stop, and per refused dashboard
+  // request (D3). No foreign key: history must outlive a deleted session.
+  `CREATE TABLE IF NOT EXISTS activity_session_events (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id     UUID NOT NULL,
+  member_id      UUID,
+  action         VARCHAR(20) NOT NULL,
+  reason         VARCHAR(40) NOT NULL DEFAULT 'unspecified',
+  actor_id       UUID,
+  source         VARCHAR(20) NOT NULL DEFAULT 'server',
+  client_version VARCHAR(40),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_session_events_member_time ON activity_session_events (member_id, created_at DESC)",
+  "CREATE INDEX IF NOT EXISTS idx_session_events_session ON activity_session_events (session_id, created_at)",
   `CREATE INDEX IF NOT EXISTS idx_act_sess_project ON activity_sessions (project_id) WHERE project_id IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member ON activity_sessions (member_id)`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_open ON activity_sessions (member_id) WHERE ended_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_act_sess_member_started ON activity_sessions (member_id, started_at DESC)`,
   `UPDATE activity_sessions
-     SET status = 'stopped', ended_at = now(), updated_at = now()
+     SET status = 'stopped', ended_at = now(), updated_at = now(),
+         stop_reason = COALESCE(stop_reason, 'duplicate_close')
      WHERE ended_at IS NULL
        AND id NOT IN (
          SELECT DISTINCT ON (member_id) id

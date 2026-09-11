@@ -213,7 +213,27 @@ export async function updateTaskPg(id, payload, expectedUpdatedAt) {
   return rows[0] ? normalizeTaskRow(rows[0]) : null;
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function deleteTaskPg(id, actorId) {
+  // Stop any timer still running on this task, and say why. This used to be
+  // the dashboard's job (a "task deleted" handler in its timer runtime), which
+  // only ever ran if a dashboard tab happened to have that runtime switched
+  // on - so in practice a deleted task's timer kept running, its syncs failing
+  // task-access checks. The server owns it now (PLAN-timer-stop-resilience.md).
+  const actor = typeof actorId === "string" && UUID_RE.test(actorId) ? actorId : null;
+  await query(
+    `WITH stopped AS (
+       UPDATE activity_sessions
+          SET status = 'stopped', ended_at = now(), updated_at = now(),
+              stop_reason = 'task_deleted', stopped_by = $2
+        WHERE task_id = $1 AND ended_at IS NULL
+        RETURNING id, member_id
+     )
+     INSERT INTO activity_session_events (session_id, member_id, action, reason, actor_id, source)
+     SELECT id, member_id, 'stop', 'task_deleted', $2, 'server' FROM stopped`,
+    [id, actor],
+  );
   await query("DELETE FROM tasks WHERE id = $1", [id]);
   void publishChange("tasks", id, "deleted", actorId ?? undefined);
 }

@@ -1,4 +1,5 @@
 import { localDayFor } from "./timezone-utils.js";
+import { describeSessionReason } from "../activity/session-reasons.js";
 
 /**
  * Decorates raw work-session rows with the identity of the member who worked
@@ -31,6 +32,10 @@ export function buildWorkSessionRows(sessions, nameMap, tzMap, fromDay, toDay) {
         memberAvatarUrl: nameMap.get(session.memberId)?.avatarUrl ?? null,
         memberTimezone,
         localDay: localDayFor(new Date(session.startedAt), memberTimezone),
+        // "Why did this end?" in words - only for sessions that have ended,
+        // and only where something recorded a reason (PLAN D5). Sessions from
+        // before reasons existed stay blank rather than claiming "unspecified".
+        stoppedBy: session.endedAt && session.stopReason ? describeSessionReason(session.stopReason) : null,
       };
     })
     .filter((session) => session.localDay >= fromDay && session.localDay <= toDay);
