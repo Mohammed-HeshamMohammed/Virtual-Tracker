@@ -17,6 +17,7 @@ import {
   normalizeSeriesTo01,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityDayRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
+import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
 const BAR_COLORS: Record<TimeActivityMetric, string> = {
   total_hours: "rgb(56 189 248)",   // sky-400
@@ -40,6 +41,7 @@ export function ReportTimeActivityChart({
   onToggleMetric: (m: TimeActivityMetric) => void
 }) {
   const [hovered, setHovered] = useState<number | null>(null)
+  const currency = useWorkspaceCurrency()
   const svgRef = useRef<SVGSVGElement>(null)
 
   const activeMetrics = useMemo((): TimeActivityMetric[] => {
@@ -179,7 +181,7 @@ export function ReportTimeActivityChart({
                   <g key={t}>
                     <line x1={padL} x2={padL + plotW} y1={yy} y2={yy} stroke="#e2e8f0" strokeWidth={0.8} />
                     <text x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" fontSize={10}>
-                      {formatYTick(primaryMetric, t)}
+                      {formatYTick(primaryMetric, t, currency)}
                     </text>
                   </g>
                 )

@@ -1,4 +1,6 @@
 import { buildRateBook, normalizeCurrency } from "../../lib/currency/convert.js";
+import { refreshCurrencyRates } from "../../lib/currency/rate-fetcher.js";
+import { logSafeWarn } from "../../http/sanitize-error.js";
 import {
   getDisplayCurrencyPg,
   getRatesForRangePg,
@@ -19,11 +21,36 @@ import {
  * Otherwise the org default stands, because a currency we cannot convert into
  * would turn every figure back into the mixed list this replaced.
  */
+/** At most one catch-up fetch an hour, however many reports are opened. */
+const CATCH_UP_EVERY_MS = 60 * 60_000;
+let lastCatchUpAt = 0;
+
+/**
+ * The scheduled job fills currency_rates from the first boot onwards, so a
+ * workspace that has never had a successful fetch holds nothing and every
+ * amount stays in the currency it was earned in. One fetch here recovers
+ * that; a failure is logged and the report still renders.
+ */
+async function catchUpOnRates() {
+  if (Date.now() - lastCatchUpAt < CATCH_UP_EVERY_MS) return false;
+  lastCatchUpAt = Date.now();
+  try {
+    const result = await refreshCurrencyRates();
+    return Boolean(result?.stored);
+  } catch (err) {
+    logSafeWarn("[currency-rates] report could not fetch rates:", err);
+    return false;
+  }
+}
+
 export async function resolveReportCurrency(url, { fromDay, toDay }) {
   const requested = normalizeCurrency(url?.searchParams?.get("displayCurrency") ?? "");
   const orgCurrency = await getDisplayCurrencyPg();
 
-  const rateRows = await getRatesForRangePg({ fromDay, toDay });
+  let rateRows = await getRatesForRangePg({ fromDay, toDay });
+  if (rateRows.length === 0 && (await catchUpOnRates())) {
+    rateRows = await getRatesForRangePg({ fromDay, toDay });
+  }
   const rateBook = buildRateBook(rateRows);
 
   const wanted = isValidCurrencyCode(requested) ? requested : "";

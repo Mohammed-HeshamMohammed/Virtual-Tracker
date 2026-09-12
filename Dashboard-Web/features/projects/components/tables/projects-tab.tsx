@@ -35,6 +35,7 @@ import {
   TodoProgress,
 } from "@/features/projects/components/project-table-cells"
 import { ProjectRowMenu } from "@/features/projects/components/menus/project-row-menu"
+import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 import type { ProjectListItem } from "@/features/projects/models/list"
 
 export function ProjectsTab({
@@ -179,6 +180,7 @@ export function ProjectsTab({
     else setSelected(new Set(visibleRows.map((p) => p.id)))
   }
 
+  const currency = useWorkspaceCurrency()
   const rangeToggle = useRangeSelect()
   function toggleOne(id: string, shiftKey = false) {
     rangeToggle(id, shiftKey, visibleRows.map((p) => p.id), setSelected)
@@ -236,7 +238,7 @@ export function ProjectsTab({
                 />
               ) : (
                 <span className={cn("text-xs", t.tableCellMuted)}>
-                  {formatProjectBudget(project.budget.spent, project.budget.type)}
+                  {formatProjectBudget(project.budget.spent, project.budget.type, currency)}
                 </span>
               )
             ) : (
@@ -249,7 +251,7 @@ export function ProjectsTab({
           <td key="remaining" className={cellClass} style={cellStyle}>
             {project.budget?.total ? (
               <span className={cn("text-xs", t.tableCellMuted)}>
-                {formatProjectBudget(Math.max(0, project.budget.total - project.budget.spent), project.budget.type)}
+                {formatProjectBudget(Math.max(0, project.budget.total - project.budget.spent), project.budget.type, currency)}
               </span>
             ) : (
               <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>
@@ -261,7 +263,7 @@ export function ProjectsTab({
           <td key="spent" className={cellClass} style={cellStyle}>
             {project.budget ? (
               <span className={cn("text-xs", t.tableCellMuted)}>
-                {formatProjectBudget(project.budget.spent, project.budget.type)}
+                {formatProjectBudget(project.budget.spent, project.budget.type, currency)}
               </span>
             ) : (
               <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>

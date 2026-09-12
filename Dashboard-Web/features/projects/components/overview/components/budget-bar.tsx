@@ -2,14 +2,16 @@
 
 import { motion } from "framer-motion"
 import { cn } from "@/shared/utils/utils"
+import { formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
-export function fmt$(n: number) {
-  return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${n.toFixed(2)}`
+/** In the workspace's currency, which is what the figures are already in. */
+export function fmtMoney(n: number, currency?: string) {
+  return formatMoney(n, currency, { compact: true })
 }
 
-export function fmtBudget(n: number, type: "hours" | "cost" = "cost") {
+export function fmtBudget(n: number, type: "hours" | "cost" = "cost", currency?: string) {
   if (type === "hours") return Number.isInteger(n) ? `${n}h` : `${n.toFixed(1)}h`
-  return fmt$(n)
+  return fmtMoney(n, currency)
 }
 
 interface BudgetBarProps {
@@ -23,6 +25,7 @@ interface BudgetBarProps {
 // right wherever it is dropped. Colours match overview-theme.ts: the bar
 // fills meet 3:1 on both cards, the figures 4.5:1.
 export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBarProps) {
+  const currency = useWorkspaceCurrency()
   const pct = total > 0 ? Math.min(Math.round((used / total) * 100), 100) : 0
   const color =
     pct >= 100 ? "bg-red-500" : pct >= 85 ? "bg-amber-600 dark:bg-amber-500" : "bg-emerald-600 dark:bg-emerald-500"
@@ -39,8 +42,8 @@ export function BudgetBar({ used, total, type = "cost", mini = false }: BudgetBa
       </div>
       {!mini && (
         <span className="text-xs tabular-nums text-slate-700 dark:text-[#aeb7cf]">
-          {fmtBudget(used, type)}
-          <span className="text-slate-500 dark:text-[#8f98b8]">/{fmtBudget(total, type)}</span>
+          {fmtBudget(used, type, currency)}
+          <span className="text-slate-500 dark:text-[#8f98b8]">/{fmtBudget(total, type, currency)}</span>
         </span>
       )}
     </div>

@@ -1,6 +1,7 @@
 "use client"
 
 import { cn } from "@/shared/utils/utils"
+import { formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
 export function formatHoursLabel(totalHours: number): string {
   if (!(totalHours > 0)) return "0h"
@@ -12,10 +13,10 @@ export function formatHoursLabel(totalHours: number): string {
   return `${m}m`
 }
 
-export function formatProjectBudget(n: number, type: "hours" | "cost" = "cost") {
+/** Money is in the workspace's currency - the backend converted it there. */
+export function formatProjectBudget(n: number, type: "hours" | "cost" = "cost", currency?: string) {
   if (type === "hours") return formatHoursLabel(n)
-  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`
-  return `$${n.toFixed(2)}`
+  return formatMoney(n, currency, { compact: true })
 }
 
 export function BudgetBar({
@@ -29,6 +30,7 @@ export function BudgetBar({
   type?: "hours" | "cost"
   isDark?: boolean
 }) {
+  const currency = useWorkspaceCurrency()
   const pct = Math.min(Math.round((spent / total) * 100), 100)
   const color = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-emerald-400"
   const displaySpent = type === "hours" ? Math.min(spent, total) : spent
@@ -38,8 +40,8 @@ export function BudgetBar({
         <div className={cn("h-full rounded-full", color)} style={{ width: `${pct}%` }} />
       </div>
       <span className={cn("text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-        {formatProjectBudget(displaySpent, type)}
-        <span className={isDark ? "text-[#3d4a3d]" : "text-slate-300"}>/{formatProjectBudget(total, type)}</span>
+        {formatProjectBudget(displaySpent, type, currency)}
+        <span className={isDark ? "text-[#3d4a3d]" : "text-slate-300"}>/{formatProjectBudget(total, type, currency)}</span>
       </span>
     </div>
   )

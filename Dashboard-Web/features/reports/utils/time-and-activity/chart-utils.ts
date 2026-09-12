@@ -1,4 +1,5 @@
 import type { TimeActivityDayRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
+import { formatMoney } from "@/shared/utils/workspace-currency"
 
 export function buildYTicks(maxVal: number, metric: TimeActivityMetric): number[] {
   if (maxVal <= 0) return metric === "activity" ? [0, 25, 50, 75, 100] : [0, 1, 2, 3, 4]
@@ -12,9 +13,10 @@ export function buildYTicks(maxVal: number, metric: TimeActivityMetric): number[
   return ticks
 }
 
-export function formatYTick(metric: TimeActivityMetric, v: number): string {
+export function formatYTick(metric: TimeActivityMetric, v: number, currency?: string): string {
   if (metric === "activity") return `${Math.round(v)}%`
-  if (metric === "total_spent") return v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${v.toFixed(0)}`
+  // Spend is in the workspace's currency, not dollars.
+  if (metric === "total_spent") return formatMoney(v, currency, { compact: true })
   const h = Math.floor(v)
   const m = Math.round((v - h) * 60)
   return m > 0 ? `${h}:${String(m).padStart(2, "0")}` : `${h}:00`

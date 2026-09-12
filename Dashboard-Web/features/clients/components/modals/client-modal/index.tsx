@@ -25,6 +25,7 @@ import type { Client as ApiClient } from "@/features/clients/api/client-api"
 import { clientFormFromApi, emptyClient } from "@/features/clients/utils"
 import { validateClientForm } from "@/shared/validation/client-form"
 import { FORM_FIELD, FORM_GRID, FORM_STACK, useClientFormTheme } from "@/shared/ui/forms/form-styles"
+import { currencySymbol, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 import { FormField } from "@/shared/ui/forms/form-field";
 import { Input } from "@/shared/ui/forms/input";
 import { PreviewField } from "@/shared/ui/forms/preview-field";
@@ -269,6 +270,7 @@ export function ClientModal({
   }
 
   const theme = useClientFormTheme()
+  const workspaceCurrency = useWorkspaceCurrency()
 
   function renderTabButton(
     t: ClientModalTab,
@@ -600,7 +602,7 @@ export function ClientModal({
                   <div className={FORM_GRID}>
                     <FormField label="Cost" required>
                       <div className="relative">
-                        <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm", theme.isDark ? "text-[#bccbb9]" : "text-slate-400")}>$</span>
+                        <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm", theme.isDark ? "text-[#bccbb9]" : "text-slate-400")}>{currencySymbol(workspaceCurrency)}</span>
                         <input
                           type="number"
                           min={0}
@@ -729,7 +731,7 @@ export function ClientModal({
                             <ExpandCollapse show={form.invoicing.autoAmountBasis === "fixed"}>
                               <div className="mt-2 flex items-center gap-2">
                                 <div className="relative flex-1">
-                                  <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm", theme.isDark ? "text-[#bccbb9]" : "text-slate-400")}>$</span>
+                                  <span className={cn("absolute left-3 top-1/2 -translate-y-1/2 text-sm", theme.isDark ? "text-[#bccbb9]" : "text-slate-400")}>{currencySymbol(workspaceCurrency)}</span>
                                   <input
                                     type="number"
                                     min={0}
