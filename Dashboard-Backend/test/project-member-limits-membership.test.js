@@ -24,6 +24,7 @@ mock.module("../src/lib/postgres/client.js", {
       if (/INSERT INTO project_member_limits/.test(text)) return [{ project_id: params[1], member_id: params[2] }];
       return [];
     },
+    withTransaction: async (fn) => fn({ query: async () => ({ rows: [] }) }),
   },
 });
 mock.module("../src/lib/postgres/member-data-store.js", {
@@ -36,7 +37,10 @@ mock.module("../src/modules/realtime/change-bus.js", {
   namedExports: { publishChange: async () => {} },
 });
 mock.module("../src/modules/projects/management-rollup.service.js", {
-  namedExports: { syncManagementParentsOfProject: async () => {} },
+  namedExports: {
+    syncManagementParentsOfProject: async () => {},
+    syncManagementProjectMembers: async () => {},
+  },
 });
 
 const { isProjectTrackerPg, removeProjectMemberPg, upsertProjectMemberLimitPg } = await import(

@@ -874,7 +874,11 @@ export async function routeProjects(req, res, url, db, origin) {
       try {
         const viewer = await assertProjectDomainWrite(projectId, null);
         if (!viewer) return true;
-        await deleteProjectPg(projectId, viewer.memberId);
+        const deleted = await deleteProjectPg(projectId, viewer.memberId);
+        // Their project lists, tasks and timers change with it.
+        for (const memberId of deleted?.memberIds ?? []) {
+          sendToMember(memberId, { type: "scope-changed", reason: "project-access", at: Date.now() });
+        }
         sendJson(res, origin, 200, { success: true, data: { id: projectId } });
       } catch (e) {
         logSafeError("[projects/:id DELETE]", e);
