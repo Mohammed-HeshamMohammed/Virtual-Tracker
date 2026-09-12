@@ -25,6 +25,7 @@ import { apiPath } from "@/infrastructure/api/path"
 import { fetchJsonWithRetry, getApiAuthToken } from "@/infrastructure/api/http"
 import { clearCoalescedRequest, coalesceRequest } from "@/infrastructure/api/request-coalesce"
 import { changedEvent } from "@/infrastructure/api/change-events"
+import { NAV_SECTIONS } from "@/shared/ui/layout/config/nav-sections"
 
 export type NotificationItem = {
   id: string
@@ -35,6 +36,31 @@ export type NotificationItem = {
   link?: string
   read: boolean
   created_at: number | string | Date
+}
+
+/** Every page the shell can actually open. */
+const KNOWN_PAGE_IDS = new Set<string>(
+  NAV_SECTIONS.flatMap((section) => [
+    ...(section.pages ?? []).map((page) => page.id),
+    ...(section.subsections ?? []).flatMap((subsection) => subsection.items.map((item) => item.id)),
+  ]),
+)
+
+/**
+ * Notifications have stored their link in several shapes over time:
+ * "/?page=pm-tasks", "/people/members", "people-members",
+ * "pm-tasks?project=x". The link used to be handed to the navigator as if it
+ * were already a page id, so "/?page=activity-screenshots" opened a blank page
+ * by that name. Anything that resolves to a real page opens it; anything else
+ * (an old link, or one to something the app has no page for) opens nothing.
+ */
+export function notificationPageId(link: string | null | undefined): string | null {
+  const raw = (link ?? "").trim()
+  if (!raw || raw === "/") return null
+  const fromQuery = /[?&]page=([^&#]+)/.exec(raw)
+  const candidate = fromQuery ? decodeURIComponent(fromQuery[1]) : raw.split(/[?#]/)[0]
+  const pageId = candidate.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "-")
+  return pageId && KNOWN_PAGE_IDS.has(pageId) ? pageId : null
 }
 
 type NotificationsBellProps = {
@@ -543,9 +569,9 @@ export function NotificationsBellView({
 
   function openItem(item: NotificationItem) {
     if (!item.read) controller.markRead([item.id])
-    const link = item.link?.trim()
-    if (link && onNavigate) {
-      onNavigate(link)
+    const pageId = notificationPageId(item.link)
+    if (pageId && onNavigate) {
+      onNavigate(pageId)
       closePanel()
     }
   }

@@ -148,6 +148,7 @@ export function ProjectsPage() {
     user,
     memberId: currentMemberId,
     canManageProjects: canManage,
+    onError: (message) => setEntityGoneNotice(message),
   })
 
   function closeProjectModal() {

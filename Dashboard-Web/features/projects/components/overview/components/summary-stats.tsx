@@ -4,7 +4,8 @@ import { motion } from "framer-motion"
 import { Folder, CheckCircle2, DollarSign, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { ProjectOverviewCore } from "@/features/projects/api/project-overview-api"
-import { fmt$ } from "@/features/projects/components/overview/components/budget-bar"
+import { fmtMoney } from "@/features/projects/components/overview/components/budget-bar"
+import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 import { overviewTheme } from "@/features/projects/components/overview/overview-theme"
 
 interface SummaryStatsProps {
@@ -16,6 +17,7 @@ interface SummaryStatsProps {
 export function SummaryStats({ summary, isDark = false, onNavigate }: SummaryStatsProps) {
   const { activeProjects, onTrack, tasksDone, tasksTotal, budgetSpent, budgetTotal, teamMembers } = summary
   const t = overviewTheme(isDark)
+  const currency = useWorkspaceCurrency()
 
   const stats = [
     {
@@ -38,8 +40,8 @@ export function SummaryStats({ summary, isDark = false, onNavigate }: SummarySta
       icon: <DollarSign className="w-5 h-5" />,
       bg: "bg-amber-500",
       label: "Budget Used",
-      value: fmt$(budgetSpent),
-      sub: `of ${fmt$(budgetTotal)} total`,
+      value: fmtMoney(budgetSpent, currency),
+      sub: `of ${fmtMoney(budgetTotal, currency)} total`,
       target: "pm-projects",
     },
     {

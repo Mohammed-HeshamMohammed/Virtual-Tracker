@@ -10,6 +10,7 @@ import { FormField } from "@/shared/ui/forms/form-field"
 import { SelectField } from "@/shared/ui/forms/select-field"
 import type { ProjectMemberLimitEntry } from "@/features/projects/api/project-details-api"
 import { derivedBasedOn, derivedLimitType, isHoursLimit } from "@/features/projects/utils/member-limit-rules"
+import { currencySymbol, formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
 export { derivedBasedOn, derivedLimitType, isHoursLimit }
 
@@ -28,9 +29,9 @@ function ownLimitLabel(own: MemberOwnLimit | undefined): string {
     .join(" · ")
 }
 
-function summarize(row: ProjectMemberLimitEntry, hours: boolean): string {
+function summarize(row: ProjectMemberLimitEntry, hours: boolean, currency: string): string {
   if (!isLimitComplete(row)) return "Not capped"
-  const amount = hours ? `${row.cost}h` : `$${row.cost}`
+  const amount = hours ? `${row.cost}h` : formatMoney(Number(row.cost), currency)
   const resets = row.resets && row.resets !== "Never" ? ` · ${row.resets.toLowerCase()}` : ""
   return `${amount}${resets}`
 }
@@ -59,6 +60,7 @@ export function MemberLimitsEditor({
   onCopyToAll,
 }: MemberLimitsEditorProps) {
   const theme = useClientFormTheme()
+  const currency = useWorkspaceCurrency()
   const hours = budgetType === "Hours based"
   const basedOn = derivedBasedOn(budgetType, budgetBasedOn)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -145,7 +147,7 @@ export function MemberLimitsEditor({
                       {memberLabels[memberId] ?? "Member"}
                     </span>
                     <span className={cn("block truncate text-xs", theme.mutedText)}>
-                      {summarize(row, hours)} · own: {ownLimitLabel(ownLimits[memberId])}
+                      {summarize(row, hours, currency)} · own: {ownLimitLabel(ownLimits[memberId])}
                     </span>
                   </span>
                   <ChevronDown
@@ -189,7 +191,7 @@ export function MemberLimitsEditor({
                             theme.isDark ? "text-[#bccbb9]" : "text-slate-400",
                           )}
                         >
-                          {hours ? "h" : "$"}
+                          {hours ? "h" : currencySymbol(currency)}
                         </span>
                         <input
                           type="number"

@@ -15,9 +15,11 @@ import {
   CALENDAR_DATE_LABEL,
 } from "@/features/reports/components/shared/constants"
 import { todayDateParam } from "@/features/reports/utils/time-and-activity/date-range"
+import { formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
-function formatUsd(value: number): string {
-  return `$${value.toFixed(2)}`
+/** Caps and spend come back converted into the workspace's currency. */
+function formatAmount(value: number, currency?: string): string {
+  return formatMoney(value, currency)
 }
 
 function groupClientBudgetRows(
@@ -45,6 +47,7 @@ function groupClientBudgetRows(
 
 function ClientBudgetsTable() {
   const { isDark } = useTheme()
+  const currency = useWorkspaceCurrency()
   const { groupBy, registerExportHandler, registerPdfExportHandler } = useStandardReportLayout()
   const [rows, setRows] = useState<ClientBudgetRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -83,7 +86,7 @@ function ClientBudgetsTable() {
     const runExport = () => {
       const header = ["Client", "Budget type", "Spent", "Cap", "% used"]
       const lines = rows.map((r) =>
-        [r.clientName, r.budgetType ?? "No budget", formatUsd(r.spentAmount), r.hasBudget ? formatUsd(r.cap) : "-", `${r.pctUsed}%`]
+        [r.clientName, r.budgetType ?? "No budget", formatAmount(r.spentAmount), r.hasBudget ? formatAmount(r.cap) : "-", `${r.pctUsed}%`]
           .map((c) => `"${String(c).replace(/"/g, '""')}"`)
           .join(",")
       )
@@ -120,7 +123,7 @@ function ClientBudgetsTable() {
                     .map((r) => ({
                       label: r.clientName,
                       pct: r.pctUsed,
-                      sublabel: `${formatUsd(r.spentAmount)} of ${formatUsd(r.cap)}`,
+                      sublabel: `${formatAmount(r.spentAmount)} of ${formatAmount(r.cap)}`,
                     })),
                 },
               ]
@@ -136,8 +139,8 @@ function ClientBudgetsTable() {
           rows: rows.map((r) => ({
             client: r.clientName,
             type: r.budgetType ?? "No budget",
-            spent: formatUsd(r.spentAmount),
-            cap: r.hasBudget ? formatUsd(r.cap) : "—",
+            spent: formatAmount(r.spentAmount),
+            cap: r.hasBudget ? formatAmount(r.cap) : "—",
             pct: r.hasBudget ? `${r.pctUsed}%` : "—",
           })),
           emptyMessage: "No clients found.",
@@ -215,12 +218,12 @@ function ClientBudgetsTable() {
                       </div>
                     </td>
                     <td className={cn("px-4 py-3.5 tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>
-                      {formatUsd(row.spentAmount)}
+                      {formatAmount(row.spentAmount)}
                     </td>
                     <td className="px-4 py-3.5">
                       {row.hasBudget ? (
                         <div className="space-y-2">
-                          <div className={cn("tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{formatUsd(row.cap)}</div>
+                          <div className={cn("tabular-nums", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{formatAmount(row.cap)}</div>
                           <div className={cn("h-1.5 w-full overflow-hidden rounded-full", isDark ? "bg-white/10" : "bg-slate-200")}>
                             <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${Math.min(100, row.pctUsed)}%` }} />
                           </div>

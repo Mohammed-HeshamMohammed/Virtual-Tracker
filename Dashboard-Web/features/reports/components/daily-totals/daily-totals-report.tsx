@@ -32,6 +32,8 @@ import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/feat
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, MEMBER_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 import { sumMoneyStrings } from "@/features/reports/utils/money"
+import { parseMoneyLabel } from "@/features/reports/utils/money"
+import { formatMoney, getWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
 function sumHoursStrings(hmsList: string[]): string {
   const sec = hmsList.reduce((a, h) => a + parseTimeToSeconds(h), 0)
@@ -62,11 +64,20 @@ function parseMoney(label: string): number {
   return Number.isFinite(n) ? n : 0
 }
 
+/** The currency the rows came back in - the axis has to say the same thing the
+ *  amounts do, and the report is not always in dollars. */
+function rowsCurrency(labels: string[]): string {
+  const labelled = labels.find((label) => parseMoneyLabel(label).currency)
+  return labelled ? parseMoneyLabel(labelled).currency : getWorkspaceCurrency()
+}
+
 function downloadDailyTotalsPdf(groups: AmountsOwedDayGroup[], dateLabel: string): void {
   const byMember = new Map<string, number>()
   groups.forEach((g) => g.members.forEach((m) => byMember.set(m.name, (byMember.get(m.name) ?? 0) + parseMoney(m.amount))))
   const allHours = groups.flatMap((g) => g.members.map((m) => m.hours))
   const allAmounts = groups.flatMap((g) => g.members.map((m) => m.amount))
+  const currency = rowsCurrency(allAmounts)
+  const money = (v: number) => formatMoney(v, currency, { compact: true })
   downloadReportPdf({
     title: "Daily Totals Report",
     subtitle: "Daily hours and totals across members.",
@@ -87,7 +98,7 @@ function downloadDailyTotalsPdf(groups: AmountsOwedDayGroup[], dateLabel: string
                 label: g.dateLabel,
                 value: g.members.reduce((sum, m) => sum + parseMoney(m.amount), 0),
               })),
-              valueFormatter: (v: number) => `$${v.toFixed(0)}`,
+              valueFormatter: money,
             },
           ]
         : []),
@@ -99,7 +110,7 @@ function downloadDailyTotalsPdf(groups: AmountsOwedDayGroup[], dateLabel: string
               data: [...byMember.entries()]
                 .sort(([, a], [, b]) => b - a)
                 .map(([label, value]) => ({ label, value })),
-              valueFormatter: (v: number) => `$${v.toFixed(0)}`,
+              valueFormatter: money,
             },
           ]
         : []),

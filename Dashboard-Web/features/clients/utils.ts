@@ -1,5 +1,6 @@
 import type { Client as ApiClient } from "@/features/clients/api/client-api"
 import type { Client, ClientFormData } from "@/features/clients/models/client"
+import { formatMoney } from "@/shared/utils/workspace-currency"
 
 export function clientFormFromApi(data: ApiClient): ClientFormData {
   const base = emptyClient()
@@ -82,8 +83,8 @@ export async function exportClientsToExcel(
       : "—"
     const budgetCost = client.budget
       ? client.budget.type === "fixed"
-        ? `$${client.budget.cost.toLocaleString()}`
-        : `$${client.budget.cost}/h`
+        ? formatMoney(client.budget.cost)
+        : `${formatMoney(client.budget.cost)}/h`
       : "—"
     const budgetResets = client.budget ? client.budget.resets : "—"
     const projectsLabel =

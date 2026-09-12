@@ -4,7 +4,8 @@ import { motion } from "framer-motion"
 import { DollarSign, ExternalLink } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import type { OverviewClientRow } from "@/features/projects/mappers/project-mapper"
-import { fmt$ } from "@/features/projects/components/overview/components/budget-bar"
+import { fmtMoney } from "@/features/projects/components/overview/components/budget-bar"
+import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 import { budgetBarClass, overviewTheme, type Tone } from "@/features/projects/components/overview/overview-theme"
 
 const CLIENT_STATUS: Record<"active" | "archived", { label: string; tone: Tone }> = {
@@ -20,6 +21,7 @@ interface ClientBudgetsProps {
 
 export function ClientBudgets({ clients, isDark = false, onNavigate }: ClientBudgetsProps) {
   const t = overviewTheme(isDark)
+  const currency = useWorkspaceCurrency()
   const activeClients = clients.filter((c) => c.status === "active").slice(0, 6)
 
   return (
@@ -77,8 +79,8 @@ export function ClientBudgets({ clients, isDark = false, onNavigate }: ClientBud
                   </div>
                   {total > 0 && (
                     <div className="text-right">
-                      <p className={cn("text-sm font-bold tabular-nums", pct >= 100 ? t.danger : t.text)}>{fmt$(used)}</p>
-                      <p className={cn("text-xs tabular-nums", t.muted)}>of {fmt$(total)}</p>
+                      <p className={cn("text-sm font-bold tabular-nums", pct >= 100 ? t.danger : t.text)}>{fmtMoney(used, currency)}</p>
+                      <p className={cn("text-xs tabular-nums", t.muted)}>of {fmtMoney(total, currency)}</p>
                     </div>
                   )}
                 </div>
@@ -95,7 +97,7 @@ export function ClientBudgets({ clients, isDark = false, onNavigate }: ClientBud
                     <div className="flex justify-between mt-1.5">
                       <span className={cn("text-[10px] tabular-nums", t.muted)}>{pct}% used</span>
                       <span className={cn("text-[10px] tabular-nums", t.muted)}>
-                        {fmt$(total - used < 0 ? 0 : total - used)} remaining
+                        {fmtMoney(total - used < 0 ? 0 : total - used, currency)} remaining
                       </span>
                     </div>
                   </>

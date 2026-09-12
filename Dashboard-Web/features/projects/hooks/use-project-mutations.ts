@@ -59,6 +59,13 @@ interface UseProjectMutationsProps {
   user: any
   memberId?: string | null
   canManageProjects: boolean
+  /** Shown to the user when a change could not be saved. */
+  onError?: (message: string) => void
+}
+
+function errorText(err: unknown, fallback: string): string {
+  const message = err instanceof Error ? err.message.trim() : ""
+  return message || fallback
 }
 
 export function useProjectMutations({
@@ -69,6 +76,7 @@ export function useProjectMutations({
   user,
   memberId,
   canManageProjects,
+  onError,
 }: UseProjectMutationsProps) {
   const deletingIdsRef = useRef(new Set<string>())
 
@@ -87,6 +95,7 @@ export function useProjectMutations({
       })
     } catch (err) {
       console.error("Failed to archive project:", err)
+      onError?.(errorText(err, "Could not " + (nextArchived ? "archive" : "restore") + " " + project.name + "."))
     }
   }
 
@@ -99,6 +108,7 @@ export function useProjectMutations({
         if (!project) return Promise.resolve()
         return archiveProjectApi(id, project.status === "active", user?.uid).catch((err) => {
           console.error(`Failed to archive project ${id}:`, err)
+          onError?.(errorText(err, "Could not archive " + project.name + "."))
         })
       }),
     )
@@ -113,6 +123,7 @@ export function useProjectMutations({
   async function batchDelete(ids: string[]) {
     if (!canManageProjects || ids.length === 0) return
     const idSet = new Set(ids)
+    const nameById = new Map(data.map((p) => [p.id, p.name]))
     setProjects((prev) => prev.filter((p) => !idSet.has(p.id)))
     setSelected((prev) => {
       const s = new Set(prev)
@@ -124,6 +135,7 @@ export function useProjectMutations({
         ids.map((id) =>
           deleteProjectApi(id).catch((err) => {
             console.error(`Failed to delete project ${id}:`, err)
+            onError?.(errorText(err, "Could not delete " + (nameById.get(id) ?? "the project") + "."))
           }),
         ),
       )
@@ -149,6 +161,9 @@ export function useProjectMutations({
       await refetchProjects({ forceRefetch: true })
     } catch (err) {
       console.error("Failed to delete project:", err)
+      // The row comes back on the refetch, so say why rather than let it
+      // reappear with no explanation.
+      onError?.(errorText(err, "Could not delete " + (data.find((p) => p.id === id)?.name ?? "the project") + "."))
       await refetchProjects({ forceRefetch: true })
     } finally {
       deletingIdsRef.current.delete(id)
