@@ -1,11 +1,18 @@
 
 import crypto from "node:crypto";
-import { query } from "./client.js";
+import { query, withTransaction } from "./client.js";
 import { getSingleByMemberId } from "./member-data-store.js";
 import { getClientBudgetPg } from "./clients-postgres.service.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
-import { syncManagementParentsOfProject } from "../../modules/projects/management-rollup.service.js";
+import {
+  syncManagementParentsOfProject,
+  syncManagementProjectMembers,
+} from "../../modules/projects/management-rollup.service.js";
 import { toStoredIdleTimeSeconds } from "../../modules/projects/idle-time.js";
+import {
+  memberHourlyRateInDisplayCurrency,
+  memberHourlyRatesInDisplayCurrency,
+} from "../currency/member-rate.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -136,18 +143,102 @@ export async function archiveProjectPg(id, actorId, expectedUpdatedAt) {
   return project;
 }
 
+/**
+ * Deleting a project deletes everything that belongs to it, in one
+ * transaction - all of it or none of it: its tasks and everything under them,
+ * every work session on the project or its tasks along with their
+ * screenshots, app and URL logs, integrity flags, history and
+ * screenshot-access records, its time entries and progress, and its own links
+ * (members, member limits, budgets, clients, teams, sub-projects, invites).
+ * Children go first, and nothing relies on a database cascade: a database
+ * created by an older schema may not have them.
+ *
+ * What it keeps:
+ * - the apps and sites the project's work used, and their classifications
+ *   (apps, activity_categories). Those hold only an app or a site and what it
+ *   is - not how any project used it - so they stay for everyone else.
+ * - invoices and expenses: financial records in their own right. They stop
+ *   pointing at the project instead.
+ *
+ * Returns who was on the project, so their dashboards can be told.
+ */
 export async function deleteProjectPg(id, actorId) {
-  const sessions = await query("SELECT id FROM activity_sessions WHERE project_id = $1", [id]);
-  const sessionIds = sessions.map((row) => String(row.id));
-  if (sessionIds.length > 0) {
-    await Promise.all([
-      query("DELETE FROM activity_screenshots WHERE session_id = ANY($1::text[])", [sessionIds]),
-      query("DELETE FROM activity_app_logs WHERE session_id = ANY($1::text[])", [sessionIds]),
-      query("DELETE FROM activity_url_logs WHERE session_id = ANY($1::text[])", [sessionIds]),
-    ]);
-  }
-  await query("DELETE FROM projects WHERE id = $1", [id]);
+  const rowsOf = (result) => (Array.isArray(result) ? result : result?.rows ?? []);
+  const { memberIds, parentIds } = await withTransaction(async (tx) => {
+    const run = async (sql, params = []) => rowsOf(await tx.query(sql, params));
+    // Screenshots live in the database, so a busy project is a lot of rows -
+    // don't let a short default timeout abandon the delete part way.
+    await run("SET LOCAL statement_timeout = '300s'");
+
+    const memberIds = (await run("SELECT DISTINCT member_id FROM project_members WHERE project_id = $1", [id])).map(
+      (row) => String(row.member_id),
+    );
+    const parentIds = (
+      await run("SELECT parent_project_id FROM project_subprojects WHERE child_project_id = $1", [id])
+    ).map((row) => String(row.parent_project_id));
+    const taskIds = (await run("SELECT id FROM tasks WHERE project_id = $1", [id])).map((row) => String(row.id));
+    const sessionIds = (
+      await run("SELECT id FROM activity_sessions WHERE project_id = $1 OR task_id = ANY($2::uuid[])", [id, taskIds])
+    ).map((row) => String(row.id));
+
+    // What was captured while working on it. session_id is text on these
+    // tables, and a row can also be tied only to one of the project's tasks.
+    await run(
+      `DELETE FROM screenshot_access_log WHERE screenshot_id IN (
+         SELECT id FROM activity_screenshots WHERE session_id = ANY($1::text[]) OR task_id = ANY($2::uuid[])
+       )`,
+      [sessionIds, taskIds],
+    );
+    for (const table of ["activity_screenshots", "activity_app_logs", "activity_url_logs"]) {
+      await run(`DELETE FROM ${table} WHERE session_id = ANY($1::text[]) OR task_id = ANY($2::uuid[])`, [
+        sessionIds,
+        taskIds,
+      ]);
+    }
+    await run("DELETE FROM activity_integrity_flags WHERE session_id = ANY($1::text[])", [sessionIds]);
+    await run("DELETE FROM activity_session_events WHERE session_id = ANY($1::uuid[])", [sessionIds]);
+    await run("DELETE FROM activity_sessions WHERE id = ANY($1::uuid[])", [sessionIds]);
+
+    // Time and progress recorded against it.
+    await run("DELETE FROM time_entries WHERE project_id = $1 OR task_id = ANY($2::uuid[])", [id, taskIds]);
+    await run("DELETE FROM task_member_progress WHERE project_id = $1 OR task_id = ANY($2::uuid[])", [id, taskIds]);
+    await run("DELETE FROM daily_member_task_active_seconds WHERE task_id = ANY($1::uuid[])", [taskIds]);
+
+    // Its tasks, children first.
+    for (const table of ["task_assignments", "task_comments", "task_subtasks", "task_attachments", "task_hours"]) {
+      await run(`DELETE FROM ${table} WHERE task_id = ANY($1::uuid[])`, [taskIds]);
+    }
+    await run("DELETE FROM task_assignments WHERE project_id = $1", [id]);
+    await run("DELETE FROM tasks WHERE project_id = $1", [id]);
+
+    // Financial records stay, and stop pointing at the project.
+    await run("UPDATE invoice_line_items SET project_id = NULL WHERE project_id = $1", [id]);
+    await run("UPDATE expenses SET project_id = NULL WHERE project_id = $1", [id]);
+
+    // Its own links, then the project itself.
+    for (const table of [
+      "project_member_limits",
+      "project_members",
+      "project_budget_notify_state",
+      "project_budgets",
+      "client_projects",
+      "team_projects",
+      "invite_projects",
+      "pending_auth_projects",
+    ]) {
+      await run(`DELETE FROM ${table} WHERE project_id = $1`, [id]);
+    }
+    await run("DELETE FROM project_subprojects WHERE parent_project_id = $1 OR child_project_id = $1", [id]);
+    await run("DELETE FROM projects WHERE id = $1", [id]);
+    return { memberIds, parentIds };
+  });
+
   void publishChange("projects", id, "deleted", uuidOrNull(actorId) ?? undefined);
+  // A management project rolls its sub-projects' members up; it has one fewer now.
+  for (const parentId of parentIds) {
+    void syncManagementProjectMembers(parentId, uuidOrNull(actorId)).catch(() => {});
+  }
+  return { id, memberIds };
 }
 
 export async function listProjectsPg(options = {}) {
@@ -372,8 +463,9 @@ export async function getAllProjectMemberLimitsPg() {
 
 export async function resolveMemberHourlyRatePg(db, projectId, memberId, basedOn) {
   if (String(basedOn || "").toLowerCase().includes("pay")) {
-    const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
-    return Math.max(0, Number(payRate?.rate ?? 0));
+    // In the workspace currency: members are paid in their own, and a budget
+    // is one number.
+    return Math.max(0, await memberHourlyRateInDisplayCurrency(memberId, db));
   }
   const clientIds = await listClientIdsForProjectPg(projectId);
   if (!clientIds.length) return 0;
@@ -549,12 +641,15 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
        GROUP BY member_id`,
       params,
     );
+    const rateByMember = await memberHourlyRatesInDisplayCurrency(
+      rows.map((row) => row.member_id),
+      db,
+    );
     let total = 0;
     for (const row of rows) {
       const hours = Math.max(0, Number(row.secs ?? 0)) / 3600;
       if (hours <= 0) continue;
-      const payRate = await getSingleByMemberId(db, "pay_rates", row.member_id);
-      const rate = Number(payRate?.rate ?? 0);
+      const rate = rateByMember.get(String(row.member_id)) ?? 0;
       if (rate > 0) total += hours * rate;
     }
     return Math.round(total * 100) / 100;
@@ -665,13 +760,7 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
       [ids, includeFlags, startDates, endDates],
     );
     const distinctMemberIds = [...new Set(memberRows.map((r) => r.member_id))];
-    const rateEntries = await Promise.all(
-      distinctMemberIds.map(async (memberId) => {
-        const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
-        return [memberId, Number(payRate?.rate ?? 0)];
-      }),
-    );
-    const rateByMember = new Map(rateEntries);
+    const rateByMember = await memberHourlyRatesInDisplayCurrency(distinctMemberIds, db);
     const totalsByProject = new Map();
     for (const row of memberRows) {
       const rate = rateByMember.get(row.member_id) ?? 0;
@@ -745,13 +834,7 @@ export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
 
   if (payRateRows.length) {
     const distinctMemberIds = [...new Set(payRateRows.flatMap((r) => membersByProject.get(r.id) ?? []))];
-    const rateEntries = await Promise.all(
-      distinctMemberIds.map(async (memberId) => {
-        const payRate = await getSingleByMemberId(db, "pay_rates", memberId);
-        return [memberId, Number(payRate?.rate ?? 0)];
-      }),
-    );
-    const rateByMember = new Map(rateEntries);
+    const rateByMember = await memberHourlyRatesInDisplayCurrency(distinctMemberIds, db);
     for (const row of payRateRows) {
       const memberIds = membersByProject.get(row.id) ?? [];
       let total = 0;

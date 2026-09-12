@@ -78,11 +78,6 @@ test("an amount with no rate available is returned unconverted and flagged", () 
   assert.equal(result.amount, 20);
 });
 
-test("a day before any known rate does not borrow the earliest one", () => {
-  const result = convertAmount(book(), { amount: 10, currency: "USD", day: "2026-08-01", to: "EGP" });
-  assert.equal(result.converted, false, "no rate existed yet on that day");
-});
-
 test("currency codes are matched regardless of case or padding", () => {
   const result = convertAmount(book(), { amount: 10, currency: " usd ", day: "2026-09-05", to: "egp" });
   assert.equal(result.amount, 500);
@@ -160,6 +155,27 @@ test("malformed rate rows are ignored rather than poisoning the book", () => {
     { day: "2026-09-05", quote: "", rate: 50 },
     { day: "2026-09-06", quote: "EGP", rate: 50 },
   ]);
-  assert.equal(messy.rateOn("2026-09-05", "EGP"), null);
+  // Every bad row was dropped, so the only rate in the book is the 6th's -
+  // which a lookup for the 5th can only reach as the earliest one held.
+  assert.equal(messy.rateOn("2026-09-05", "EGP").asOf, "2026-09-06");
   assert.equal(messy.rateOn("2026-09-06", "EGP").rate, 50);
+  assert.equal(messy.rateOn("2026-09-06", "GBP"), null, "and a currency with no good row at all is still null");
+});
+
+// Rates are only stored from the day the workspace started fetching them, so
+// anything logged before that had no rate at all and used to convert to
+// nothing - a report that silently dropped every earlier day. The earliest
+// rate held is a far better answer than none, and `rateAsOf` still says the
+// figure is not from that day.
+test("a day before the first rate on record uses the earliest one held", () => {
+  const result = convertAmount(book(), { amount: 10, currency: "USD", day: "2026-08-01", to: "EGP" });
+  assert.equal(result.amount, 480);
+  assert.equal(result.rateAsOf, "2026-09-01");
+  assert.equal(result.converted, true);
+});
+
+test("a currency with no rate at all still converts nothing", () => {
+  const result = convertAmount(book(), { amount: 10, currency: "USD", day: "2026-09-05", to: "JPY" });
+  assert.equal(result.converted, false);
+  assert.equal(result.amount, 10, "and is handed back untouched rather than zeroed");
 });

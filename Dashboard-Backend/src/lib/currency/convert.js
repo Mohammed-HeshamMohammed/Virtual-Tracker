@@ -53,7 +53,9 @@ export function buildRateBook(rows, { base = "USD" } = {}) {
   /** USD -> `currency` on `day`, or null when nothing is known yet. */
   function rateOn(day, currency) {
     const code = normalizeCurrency(currency);
-    if (code === base) return { rate: 1, asOf: day };
+    // The base is worth one of itself on every day, so it is never stale -
+    // `exact` keeps that from being read as a rate published on `day`.
+    if (code === base) return { rate: 1, asOf: day, exact: true };
     const list = byQuote.get(code);
     if (!list?.length) return null;
 
@@ -70,9 +72,14 @@ export function buildRateBook(rows, { base = "USD" } = {}) {
         hi = mid - 1;
       }
     }
-    // Before the first rate we hold there is nothing honest to say, so the
-    // caller is told rather than handed the earliest rate as if it applied.
-    return found ? { rate: found.rate, asOf: found.day } : null;
+    if (found) return { rate: found.rate, asOf: found.day };
+    // Nothing on or before that day: rates only started being collected at
+    // some point, and a report covering the weeks before that would otherwise
+    // fall back to an unreadable per-currency list. The earliest rate we hold
+    // converts it, and `asOf` says which day it came from - visibly stale
+    // beats silently mixed.
+    const earliest = list[0];
+    return earliest ? { rate: earliest.rate, asOf: earliest.day } : null;
   }
 
   return {
@@ -81,6 +88,13 @@ export function buildRateBook(rows, { base = "USD" } = {}) {
     currencies: () => [base, ...byQuote.keys()],
     has: (currency) => normalizeCurrency(currency) === base || byQuote.has(normalizeCurrency(currency)),
   };
+}
+
+/** The staler of the two legs' rate days, ignoring the base's implicit 1. */
+function publishedAsOf(fromRate, toRate) {
+  const days = [fromRate, toRate].filter((leg) => leg && !leg.exact).map((leg) => leg.asOf);
+  if (!days.length) return null;
+  return days.reduce((oldest, day) => (day < oldest ? day : oldest));
 }
 
 export function normalizeCurrency(value) {
@@ -129,9 +143,11 @@ export function convertAmount(rateBook, { amount, currency, day, to }) {
     originalAmount: value,
     originalCurrency: from,
     rate: crossRate,
-    // The older of the two lookups: a cross rate is only as fresh as its
-    // staler leg.
-    rateAsOf: fromRate.asOf < toRate.asOf ? fromRate.asOf : toRate.asOf,
+    // The older of the two published lookups: a cross rate is only as fresh as
+    // its staler leg. The base leg is left out - it holds no rate of its own,
+    // and counting it would report `day` for a conversion that in fact used a
+    // rate from some other day.
+    rateAsOf: publishedAsOf(fromRate, toRate) ?? day,
     converted: true,
   };
 }

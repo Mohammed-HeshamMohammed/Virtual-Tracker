@@ -180,7 +180,7 @@ export async function createMemberTransferRequest(db, {
     type: "transfer_request_created",
     title: "Transfer request sent",
     message: `Your invitation to ${email} has been sent.`,
-    link: "/people/members",
+    link: "people-members",
   });
 
   await createNotification(db, {
@@ -237,7 +237,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
       type: "transfer_declined",
       title: "Transfer declined",
       message: "The member is already assigned to another hierarchy.",
-      link: "/people/members",
+      link: "people-members",
     });
     return { ok: false, httpStatus: 409, error: "You are already assigned to another hierarchy." };
   }
@@ -274,7 +274,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
     type: "transfer_completed",
     title: "Transfer completed",
     message: `${normalizedEmail} has joined your team.`,
-    link: "/people/members-tree",
+    link: "people-members-tree",
   });
 
   await createNotification(db, {
@@ -282,7 +282,7 @@ export async function acceptMemberTransferRequest(db, { token, acceptorMemberId,
     type: "transfer_completed",
     title: "Welcome to the team",
     message: `You are now part of ${requesterName}'s team.`,
-    link: "/people/members-tree",
+    link: "people-members-tree",
   });
 
   return { ok: true, requester_member_id: requesterId, target_member_id: acceptorMemberId };
@@ -310,7 +310,7 @@ export async function declineMemberTransferRequest(db, { token, declinerMemberId
     type: "transfer_declined",
     title: "Transfer declined",
     message: "Your team invitation was declined.",
-    link: "/people/members",
+    link: "people-members",
   });
 
   return { ok: true };

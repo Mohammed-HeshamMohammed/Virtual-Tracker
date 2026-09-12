@@ -1,6 +1,7 @@
-import { buildRateBook, convertAmount, normalizeCurrency } from "../../lib/currency/convert.js";
-import { getDisplayCurrencyPg, getRatesForRangePg } from "../../lib/postgres/currency-rates.service.js";
-import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
+import {
+  __resetCurrencyContextForTests,
+  memberHourlyRateInDisplayCurrency,
+} from "../../lib/currency/member-rate.js";
 import { getClientBudgetPg } from "../../lib/postgres/clients-postgres.service.js";
 import {
   getProjectBudgetPg,
@@ -16,58 +17,30 @@ const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 5000;
 const cache = new Map();
 
-/** Exchange rates move daily; an hour is plenty. */
-const CURRENCY_TTL_MS = 60 * 60_000;
-let currencyContext = null;
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function isPayBased(basedOn) {
   return String(basedOn ?? "").toLowerCase().includes("pay");
 }
 
 /** A whole-project money budget - the only kind that needs a rate. */
 function isMoneyBudget(budget) {
-  return Boolean(budget) && Number(budget.cost) > 0 && !isHoursBudget(budget);
+  return (
+    Boolean(budget) &&
+    Number(budget.cost) > 0 &&
+    String(budget.type) !== "Hours based" &&
+    budget.scope !== "per_person"
+  );
 }
 
 function isMoneyLimit(limit) {
   return Boolean(limit) && Number(limit.cost) > 0 && !isHoursLimit(limit);
 }
 
-async function loadCurrencyContext() {
-  if (currencyContext && currencyContext.expiresAt > Date.now()) return currencyContext;
-  const day = today();
-  const [display, rows] = await Promise.all([getDisplayCurrencyPg(), getRatesForRangePg({ fromDay: day, toDay: day })]);
-  currencyContext = { display: normalizeCurrency(display), book: buildRateBook(rows), day, expiresAt: Date.now() + CURRENCY_TTL_MS };
-  return currencyContext;
-}
-
-/**
- * A member's hourly pay in the org's currency, which budgets and limits are
- * kept in. A rate paid in another currency is converted at today's exchange
- * rate; with no exchange rate for it yet, it is used as it stands.
- */
-async function memberPayRate(memberId) {
-  let row;
-  try {
-    row = await getSingleByMemberId(null, "pay_rates", memberId);
-  } catch {
-    return 0;
-  }
-  const rate = Number(row?.rate ?? 0);
-  if (!(rate > 0)) return 0;
-  const currency = normalizeCurrency(row?.currency);
-  try {
-    const ctx = await loadCurrencyContext();
-    if (!currency || currency === ctx.display) return rate;
-    const converted = convertAmount(ctx.book, { amount: rate, currency, day: ctx.day, to: ctx.display });
-    return converted.converted && converted.amount > 0 ? converted.amount : rate;
-  } catch {
-    return rate;
-  }
+/** The most expensive member's pay rate - the rate at which idle costs most.
+ *  In the workspace currency, like the budget it is compared against. */
+async function highestPayRate(memberIds) {
+  const unique = [...new Set(memberIds.filter(Boolean).map(String))];
+  const rates = await Promise.all(unique.map((memberId) => memberHourlyRateInDisplayCurrency(memberId)));
+  return rates.reduce((max, rate) => (Number.isFinite(rate) && rate > max ? rate : max), 0);
 }
 
 /** A bill-rate budget or limit is charged at the client's rate - the rate
@@ -106,7 +79,11 @@ export async function resolveIdleTimeLimit({ budget = null, memberIds = [], clie
   const needBill = billBudget || moneyLimits.some((limit) => !isPayBased(limit.based_on));
 
   const payRates = new Map(
-    needPay ? await Promise.all(everyone.map(async (memberId) => [memberId, await memberPayRate(memberId)])) : [],
+    needPay
+      ? await Promise.all(
+          everyone.map(async (memberId) => [memberId, await memberHourlyRateInDisplayCurrency(memberId)]),
+        )
+      : [],
   );
   const billRate = needBill ? await clientBillRate(clientIds) : 0;
   const rateFor = (basedOn, memberId) => (isPayBased(basedOn) ? payRates.get(memberId) ?? 0 : billRate);
@@ -186,5 +163,6 @@ export async function effectiveIdleTimeSeconds(project, memberId = null) {
 
 export function __clearIdleTimeLimitCacheForTests() {
   cache.clear();
-  currencyContext = null;
+  // Rates are cached for an hour; a test that sets its own has to start clean.
+  __resetCurrencyContextForTests();
 }

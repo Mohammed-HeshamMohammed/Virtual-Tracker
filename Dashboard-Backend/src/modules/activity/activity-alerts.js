@@ -114,7 +114,7 @@ export async function maybeAlertMissingScreenshot(db, memberId, sessionId) {
     "activity_no_screenshot",
     "No recent activity capture",
     `${name} has had no screenshot in the last ${Math.round(NO_SCREENSHOT_MS / 60000)} minutes while the timer is active.`,
-    "/?page=activity-screenshots",
+    "activity-screenshots",
   );
 }
 
@@ -131,6 +131,6 @@ export async function maybeAlertLowActivity(db, memberId, sessionId, activityLev
     "activity_low_level",
     "Low activity detected",
     `${name} reported activity level ${activityLevel}% on the latest capture.`,
-    "/?page=activity-screenshots",
+    "activity-screenshots",
   );
 }

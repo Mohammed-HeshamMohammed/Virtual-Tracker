@@ -94,7 +94,7 @@ export async function maybeNotifyProjectBudget(db, projectId, budget, spent, cap
       type: NOTIFY_TYPE,
       title,
       message,
-      link: "/?page=pm-projects",
+      link: "pm-projects",
     });
   }
 
