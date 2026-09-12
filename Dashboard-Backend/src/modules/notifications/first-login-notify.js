@@ -102,7 +102,7 @@ export async function maybeNotifyTeamMemberFirstLogin(db, input) {
         type: "member_first_login",
         title: "New member joined",
         message: `${displayName} completed their first sign-in and is now active on the team.`,
-        link: "/people/members",
+        link: "people-members",
       });
     } catch (err) {
       logSafeWarn("[first-login-notify] failed to create notification:", err);
