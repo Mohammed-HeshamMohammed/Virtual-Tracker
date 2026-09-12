@@ -14,6 +14,8 @@ function key(matchType, pattern) {
 }
 
 /** @type {any[]} */
+let upsertInputs = [];
+/** @type {any[]} */
 let unclassifiedApps;
 /** @type {any[]} */
 let unclassifiedDomains;
@@ -52,6 +54,7 @@ mock.module("../src/lib/postgres/classification-postgres.service.js", {
     getAllCategoriesPg: async () => [...rows.values()],
     getCategoryPg: async (matchType, pattern) => rows.get(key(matchType, pattern)) ?? null,
     upsertCategoryPg: async (input) => {
+      upsertInputs.push(input);
       const k = key(input.matchType, input.pattern);
       const existing = rows.get(k);
       const row = {
@@ -62,7 +65,6 @@ mock.module("../src/lib/postgres/classification-postgres.service.js", {
         display_name: input.displayName ?? existing?.display_name ?? null,
         role_override: input.roleOverride ?? existing?.role_override ?? {},
         is_global_default: false,
-        created_by: input.createdBy ?? null,
         created_at: existing?.created_at ?? new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -92,6 +94,7 @@ const EMPLOYEE = { memberId: "employee-1", roleName: "Employee" };
 const MANAGER = { memberId: "manager-1", roleName: "Manager" };
 
 function reset() {
+  upsertInputs = [];
   unclassifiedApps = [];
   unclassifiedDomains = [];
   rows = new Map([
@@ -245,4 +248,36 @@ test("an empty review queue returns empty arrays, not an error", async () => {
   const queue = await getUnclassifiedReviewQueue();
   assert.deepEqual(queue.apps, []);
   assert.deepEqual(queue.domains, []);
+});
+
+// The classification tables hold content and what that content counts as, and
+// nothing else: no project, no session, no member whose activity introduced the
+// app. `created_by` was the one exception - written on every rule, read by
+// nothing, and a member id left behind in a table that outlives every project
+// it was learned from.
+test("a saved rule is content and classification, with no author on it", async () => {
+  reset();
+  const saved = await setCategory(
+    { matchType: "app", pattern: "figma.exe", category: "productive" },
+    ADMIN,
+  );
+  assert.deepEqual(Object.keys(saved).sort(), [
+    "category",
+    "createdAt",
+    "displayName",
+    "id",
+    "isGlobalDefault",
+    "matchType",
+    "pattern",
+    "roleOverride",
+    "updatedAt",
+  ]);
+  assert.equal(upsertInputs.at(-1).createdBy, undefined, "the actor is not passed down to be stored");
+});
+
+test("rules read back carry no author either", async () => {
+  reset();
+  for (const row of await getAllCategories(ADMIN)) {
+    assert.ok(!("createdBy" in row), `${row.pattern} still reports an author`);
+  }
 });

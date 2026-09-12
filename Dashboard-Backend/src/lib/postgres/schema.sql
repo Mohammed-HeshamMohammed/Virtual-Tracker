@@ -933,7 +933,8 @@ CREATE TABLE IF NOT EXISTS activity_categories (
   display_name       VARCHAR(120),
   role_override      JSONB NOT NULL DEFAULT '{}'::jsonb,
   is_global_default   BOOLEAN NOT NULL DEFAULT false,
-  created_by         UUID,
+  -- No author column: a rule is the content it matches and what that content
+  -- counts as. Who changed what is audit_logs' job.
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
