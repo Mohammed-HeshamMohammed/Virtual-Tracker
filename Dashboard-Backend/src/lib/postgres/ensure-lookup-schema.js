@@ -1031,6 +1031,12 @@ GROUP BY task_id`,
   `ALTER TABLE activity_categories DROP CONSTRAINT IF EXISTS activity_categories_match_type_check`,
   `ALTER TABLE activity_categories ADD CONSTRAINT activity_categories_match_type_check CHECK (match_type IN ('app', 'domain', 'window_title'))`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_activity_categories_unique ON activity_categories (match_type, lower(pattern))`,
+  // A classification rule is content and what that content counts as. `created_by`
+  // was neither: an author id stamped on every rule, written on insert, read by
+  // nothing, and left behind in a table that outlives every project and member
+  // its rules were learned from. Dropped - the audit trail for who changes what
+  // is audit_logs, not a column on a lookup table.
+  `ALTER TABLE activity_categories DROP COLUMN IF EXISTS created_by`,
   `CREATE INDEX IF NOT EXISTS idx_activity_categories_category ON activity_categories (category)`,
   `INSERT INTO activity_categories (match_type, pattern, category, display_name, is_global_default) VALUES
      ('app', 'code.exe', 'productive', 'VS Code', true),

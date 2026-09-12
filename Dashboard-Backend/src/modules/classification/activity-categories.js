@@ -34,7 +34,6 @@ function normalizeRow(row) {
     displayName: row.display_name ?? null,
     roleOverride: row.role_override ?? {},
     isGlobalDefault: row.is_global_default === true,
-    createdBy: row.created_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -90,7 +89,6 @@ export async function setCategory(input, actor) {
     category: input.category,
     displayName: input.displayName,
     roleOverride: input.roleOverride,
-    createdBy: actor.memberId,
   });
   // Without this a just-saved classification would take up to the TTL to show
   // in the feeds - indistinguishable from the bug this whole change fixes.
