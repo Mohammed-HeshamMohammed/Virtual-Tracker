@@ -1433,6 +1433,18 @@ impl ActivityTracker {
             return;
         }
 
+        // The Start menu, the search flyout, the lock screen and the frame
+        // host are Windows itself, not something the member opened. They used
+        // to reach Top Apps as "Searchhost", "Shellexperiencehost" and
+        // "Applicationframehost" with real seconds against them.
+        if window.is_shell_surface() {
+            log::debug!(
+                "skipping app slice: {} is a shell surface, not an app",
+                window.process_name
+            );
+            return;
+        }
+
         let app_event = self.events.app_slice(window);
         let app_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&app_event));
         if !app_ok {

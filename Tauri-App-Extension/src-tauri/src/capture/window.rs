@@ -48,6 +48,26 @@ fn overrides() -> &'static HashMap<&'static str, &'static str> {
             ("powerpnt.exe", "PowerPoint"),
             ("python.exe", "Python"),
             ("pythonw.exe", "Python"),
+            // Packaged (Store) apps, now that they resolve past
+            // ApplicationFrameHost: their executables are named for the
+            // package, which title-cases into things like "Calculatorapp".
+            ("calculatorapp.exe", "Calculator"),
+            ("calculator.exe", "Calculator"),
+            ("spotify.exe", "Spotify"),
+            ("whatsapp.exe", "WhatsApp"),
+            ("snippingtool.exe", "Snipping Tool"),
+            ("screenclippinghost.exe", "Snipping Tool"),
+            ("systemsettings.exe", "Settings"),
+            ("photos.exe", "Photos"),
+            ("hubstaffclient.exe", "Hubstaff"),
+            ("acrobat.exe", "Adobe Acrobat"),
+            ("acrord32.exe", "Adobe Acrobat Reader"),
+            ("teams.exe", "Microsoft Teams"),
+            ("ms-teams.exe", "Microsoft Teams"),
+            ("outlook.exe", "Microsoft Outlook"),
+            ("olk.exe", "Microsoft Outlook"),
+            ("notepad.exe", "Notepad"),
+            ("mspaint.exe", "Paint"),
         ])
     })
 }
@@ -81,6 +101,28 @@ pub struct ForegroundWindow {
 /// callers must recognise; two spellings would silently stop matching.
 pub const UNIDENTIFIED: &str = "Unknown";
 
+/// Windows' own shell surfaces, which are chrome rather than programs: the
+/// Start menu, the search flyout, the lock screen, the touch keyboard, the
+/// notification centre, and the frame host that draws packaged apps' title
+/// bars when its real occupant could not be resolved.
+///
+/// These reach `GetForegroundWindow` whenever someone opens the Start menu or
+/// clicks the search box, and were logged as apps called "Searchhost",
+/// "Shellexperiencehost" and "Applicationframehost", each with real seconds
+/// against it. Opening the Start menu is not using an application.
+const SHELL_SURFACES: &[&str] = &[
+    "applicationframehost.exe",
+    "lockapp.exe",
+    "searchapp.exe",
+    "searchhost.exe",
+    "searchui.exe",
+    "shellexperiencehost.exe",
+    "shellhost.exe",
+    "startmenuexperiencehost.exe",
+    "textinputhost.exe",
+    "windowsinternal.composableshell.experiences.textinput.inputapp.exe",
+];
+
 impl ForegroundWindow {
     /// Whether we actually know what the member was looking at.
     ///
@@ -105,6 +147,14 @@ impl ForegroundWindow {
         }
         let app = self.app_name.trim();
         !app.is_empty() && !app.eq_ignore_ascii_case(UNIDENTIFIED)
+    }
+
+    /// Whether this is one of Windows' own shell surfaces rather than an app
+    /// the member chose to use. Unlike `is_identified`, we know exactly what
+    /// this is - it just should not be counted as an application.
+    pub fn is_shell_surface(&self) -> bool {
+        let process = self.process_name.trim().to_lowercase();
+        SHELL_SURFACES.contains(&process.as_str())
     }
 }
 
@@ -196,13 +246,104 @@ fn get_foreground_window_macos() -> ForegroundWindow {
     }
 }
 
+/// The window class a packaged (Store/UWP) app's real window carries, inside
+/// the frame `ApplicationFrameHost.exe` draws around it.
 #[cfg(windows)]
-fn get_foreground_window_win() -> ForegroundWindow {
+const CORE_WINDOW_CLASS: &str = "Windows.UI.Core.CoreWindow";
+
+#[cfg(windows)]
+struct CoreWindowSearch {
+    host_pid: u32,
+    found_pid: u32,
+}
+
+/// Looks for the frame's real occupant: a CoreWindow child belonging to some
+/// other process. Returns FALSE to stop the enumeration once it has one.
+#[cfg(windows)]
+unsafe extern "system" fn core_window_probe(
+    child: windows::Win32::Foundation::HWND,
+    lparam: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::BOOL {
+    use windows::Win32::Foundation::BOOL;
+    use windows::Win32::UI::WindowsAndMessaging::{GetClassNameW, GetWindowThreadProcessId};
+
+    let search = &mut *(lparam.0 as *mut CoreWindowSearch);
+    let mut class = [0u16; 128];
+    let written = GetClassNameW(child, &mut class);
+    if written > 0 {
+        let name = String::from_utf16_lossy(&class[..written as usize]);
+        if name == CORE_WINDOW_CLASS {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(child, Some(&mut pid));
+            if pid != 0 && pid != search.host_pid {
+                search.found_pid = pid;
+                return BOOL(0);
+            }
+        }
+    }
+    BOOL(1)
+}
+
+/// The process actually behind a packaged app's window.
+///
+/// Calculator, Spotify, WhatsApp, Snipping Tool, Photos and Settings are all
+/// packaged apps: Windows draws them inside `ApplicationFrameHost.exe`, and
+/// `GetWindowThreadProcessId` on the foreground window returns the *host*.
+/// Every one of them was therefore logged as one app called
+/// "Applicationframehost" instead of by its own name. The real app owns a
+/// CoreWindow child of that frame, so ask the children.
+#[cfg(windows)]
+unsafe fn packaged_app_pid(host: windows::Win32::Foundation::HWND, host_pid: u32) -> Option<u32> {
+    use windows::Win32::Foundation::LPARAM;
+    use windows::Win32::UI::WindowsAndMessaging::EnumChildWindows;
+
+    let mut search = CoreWindowSearch {
+        host_pid,
+        found_pid: 0,
+    };
+    let _ = EnumChildWindows(
+        host,
+        Some(core_window_probe),
+        LPARAM(&mut search as *mut CoreWindowSearch as isize),
+    );
+    (search.found_pid != 0).then_some(search.found_pid)
+}
+
+/// `(file name, full path)` of a pid's executable.
+#[cfg(windows)]
+unsafe fn process_image_for_pid(pid: u32) -> Option<(String, String)> {
     use windows::Win32::Foundation::MAX_PATH;
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
         PROCESS_QUERY_LIMITED_INFORMATION,
     };
+
+    if pid == 0 {
+        return None;
+    }
+    let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+    let mut buf = [0u16; MAX_PATH as usize];
+    let mut size = buf.len() as u32;
+    let read = QueryFullProcessImageNameW(
+        handle,
+        PROCESS_NAME_FORMAT(0),
+        windows::core::PWSTR(buf.as_mut_ptr()),
+        &mut size,
+    )
+    .is_ok();
+    let _ = windows::Win32::Foundation::CloseHandle(handle);
+    if !read {
+        return None;
+    }
+    let full_path = String::from_utf16_lossy(&buf[..size as usize]);
+    let name = PathBuf::from(full_path.as_str())
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())?;
+    Some((name, full_path))
+}
+
+#[cfg(windows)]
+fn get_foreground_window_win() -> ForegroundWindow {
     use windows::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
     };
@@ -228,27 +369,23 @@ fn get_foreground_window_win() -> ForegroundWindow {
         let mut pid: u32 = 0;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
 
-        let mut process_name = String::from("Unknown");
+        let mut process_name = String::from(UNIDENTIFIED);
         let mut exe_path = String::new();
-        if pid != 0 {
-            if let Ok(handle) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) {
-                let mut buf = [0u16; MAX_PATH as usize];
-                let mut size = buf.len() as u32;
-                if QueryFullProcessImageNameW(
-                    handle,
-                    PROCESS_NAME_FORMAT(0),
-                    windows::core::PWSTR(buf.as_mut_ptr()),
-                    &mut size,
-                )
-                .is_ok()
-                {
-                    let full_path = String::from_utf16_lossy(&buf[..size as usize]);
-                    if let Some(name) = PathBuf::from(full_path.as_str()).file_name() {
-                        process_name = name.to_string_lossy().to_string();
-                    }
-                    exe_path = full_path;
+        if let Some((name, path)) = process_image_for_pid(pid) {
+            process_name = name;
+            exe_path = path;
+        }
+
+        // A packaged app hides behind the frame host that draws it; ask the
+        // frame's children who is really in there. If nothing answers, the
+        // frame host is left standing and `is_shell_surface` keeps it out of
+        // the app log rather than letting it pose as an app.
+        if process_name.eq_ignore_ascii_case("ApplicationFrameHost.exe") {
+            if let Some(real_pid) = packaged_app_pid(hwnd, pid) {
+                if let Some((name, path)) = process_image_for_pid(real_pid) {
+                    process_name = name;
+                    exe_path = path;
                 }
-                let _ = windows::Win32::Foundation::CloseHandle(handle);
             }
         }
 
@@ -519,6 +656,89 @@ mod tests {
             is_browser: false,
             browser_hint: String::new(),
         }
+    }
+
+    // Windows' own chrome kept turning up in Top Apps: opening the Start
+    // menu or clicking the search box puts one of these in front, and each was
+    // logged as an app by its executable's name with a tick's seconds on it.
+    #[test]
+    fn windows_own_shell_surfaces_are_not_apps() {
+        for exe in [
+            "SearchHost.exe",
+            "ShellExperienceHost.exe",
+            "StartMenuExperienceHost.exe",
+            "LockApp.exe",
+            "TextInputHost.exe",
+            "ShellHost.exe",
+        ] {
+            assert!(
+                win(exe, "Whatever", 42).is_shell_surface(),
+                "{exe} should not count as an app"
+            );
+        }
+    }
+
+    // The frame host is only ever a stand-in for the packaged app inside it.
+    // Resolved, the real app's name arrives instead; unresolved, the frame is
+    // not an app either and the tick goes unattributed.
+    #[test]
+    fn an_unresolved_frame_host_is_not_an_app() {
+        assert!(win("ApplicationFrameHost.exe", "Applicationframehost", 42).is_shell_surface());
+        assert!(!win("CalculatorApp.exe", "Calculator", 42).is_shell_surface());
+    }
+
+    #[test]
+    fn a_shell_surface_is_matched_whatever_its_case() {
+        assert!(win("searchhost.EXE", "Search", 42).is_shell_surface());
+        assert!(win("  LockApp.exe  ", "Lock", 42).is_shell_surface());
+    }
+
+    #[test]
+    fn real_apps_are_never_mistaken_for_shell_surfaces() {
+        for exe in [
+            "code.exe",
+            "chrome.exe",
+            "explorer.exe",
+            "spotify.exe",
+            "hubstaffclient.exe",
+        ] {
+            assert!(
+                !win(exe, "App", 42).is_shell_surface(),
+                "{exe} is a real app"
+            );
+        }
+    }
+
+    // Packaged apps resolve to executables named for their package, which the
+    // generic title-caser turns into "Calculatorapp" and "Snippingtool".
+    #[test]
+    fn packaged_apps_get_the_name_people_know_them_by() {
+        assert_eq!(
+            resolve_display_name("CalculatorApp.exe", "Calculator"),
+            "Calculator"
+        );
+        assert_eq!(
+            resolve_display_name("SnippingTool.exe", "Snip"),
+            "Snipping Tool"
+        );
+        assert_eq!(
+            resolve_display_name("HubstaffClient.exe", "Hubstaff"),
+            "Hubstaff"
+        );
+        assert_eq!(
+            resolve_display_name("Acrobat.exe", "Acrobat"),
+            "Adobe Acrobat"
+        );
+    }
+
+    // An executable nobody has an override for still reads as a name rather
+    // than a filename - that path is unchanged.
+    #[test]
+    fn an_unknown_executable_still_title_cases_its_own_name() {
+        assert_eq!(
+            resolve_display_name("some_new_tool.exe", "x"),
+            "Some New Tool"
+        );
     }
 
     #[test]
