@@ -245,7 +245,13 @@ export function ActivityAppsContent() {
   }, [canExport, classificationsUpdatedAt, day.dayKey, day.selectedDayLabel, filteredApps, membersSource, selectedCategory])
 
   const classifyItems = useMemo(
-    () => allTimeAppsSource.map((app) => ({ pattern: app.pattern, label: app.name, category: app.category })),
+    () =>
+      allTimeAppsSource.map((app) => ({
+        pattern: app.pattern,
+        label: app.name,
+        category: app.category,
+        iconUrl: app.iconDataUrl,
+      })),
     [allTimeAppsSource],
   )
 
