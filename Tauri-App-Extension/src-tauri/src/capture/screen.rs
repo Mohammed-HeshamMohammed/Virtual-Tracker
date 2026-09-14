@@ -4,6 +4,11 @@ use image::{ColorType, ImageEncoder};
 
 use crate::constants::{JPEG_QUALITY, MAX_SCREENSHOT_WIDTH};
 
+/// Strong enough that text and UI chrome are unreadable at this screenshot's
+/// resolution, while broad layout and colour stay visible - the screenshot
+/// still shows a messaging app was open, just not what was said in it.
+const SENSITIVE_BLUR_SIGMA: f32 = 24.0;
+
 pub struct ScreenCapture;
 
 impl ScreenCapture {
@@ -11,7 +16,11 @@ impl ScreenCapture {
         Self
     }
 
-    pub fn capture_jpeg_data_url(&self) -> Option<String> {
+    /// `blur` obscures the image for a personal messaging app/site
+    /// (capture/sensitive_apps.rs) - the screenshot is still taken and
+    /// uploaded, so time and app-name tracking are unaffected, but its
+    /// pixels are not a photo of the conversation.
+    pub fn capture_jpeg_data_url(&self, blur: bool) -> Option<String> {
         if is_session_locked() {
             log::info!("Screenshot skipped: session is locked");
             return None;
@@ -40,6 +49,10 @@ impl ScreenCapture {
                 new_h,
                 image::imageops::FilterType::Lanczos3,
             );
+        }
+
+        if blur {
+            rgba = image::imageops::blur(&rgba, SENSITIVE_BLUR_SIGMA);
         }
 
         // JPEG has no alpha channel — the encoder rejects Rgba8 outright ("does not

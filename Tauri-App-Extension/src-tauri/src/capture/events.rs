@@ -264,13 +264,22 @@ impl EventBuilder {
     }
 
     pub fn screenshot(&self, window: &ForegroundWindow) -> Option<ActivityEvent> {
-        let image_data = self.screen.capture_jpeg_data_url()?;
+        // Computed before capture, not after: the blur decision needs the
+        // same URL the event itself reports, so a browser tab that navigated
+        // to something else between capture and here can't blur against a
+        // page no longer on screen.
+        let url = self.recent_url(window);
+        let blur = crate::capture::sensitive_apps::is_messaging_target(
+            &window.process_name,
+            url.as_deref(),
+        );
+        let image_data = self.screen.capture_jpeg_data_url(blur)?;
         Some(ActivityEvent::Screenshot {
             image_data,
             app_name: truncate(&self.resolve_app_name(window), MAX_APP_NAME_LEN),
             page_title: truncate(&window.title, MAX_PAGE_TITLE_LEN),
             activity_level: self.activity.score(),
-            url: self.recent_url(window),
+            url,
             signal: self.activity.signal_snapshot(),
         })
     }

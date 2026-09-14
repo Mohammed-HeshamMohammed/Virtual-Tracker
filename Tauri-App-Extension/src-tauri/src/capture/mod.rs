@@ -5,6 +5,7 @@ pub mod classification_cache;
 pub mod events;
 pub mod history;
 pub mod screen;
+pub mod sensitive_apps;
 pub mod uia_url;
 pub mod vm_detect;
 pub mod window;
