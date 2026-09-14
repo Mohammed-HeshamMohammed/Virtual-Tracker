@@ -289,11 +289,19 @@ export function ActivityURLsContent() {
   // classify. Window-title rows (no URL) go in too, matched on the title text.
   const classifyItems = useMemo(
     () =>
-      allTimeUrls.map((url) =>
-        url.sourceKind === "window"
-          ? { pattern: url.url, label: url.url, category: url.category, matchType: "window_title" as const }
-          : { pattern: url.domain, label: url.domain, category: url.category },
-      ),
+      allTimeUrls.map((url) => {
+        if (url.sourceKind === "window") {
+          // No domain behind a window-title row, so no favicon to fetch.
+          return { pattern: url.url, label: url.url, category: url.category, matchType: "window_title" as const }
+        }
+        const host = guessHost(url.domain, url.sourceKind)
+        return {
+          pattern: url.domain,
+          label: url.domain,
+          category: url.category,
+          iconUrl: host ? faviconUrl(host) : null,
+        }
+      }),
     [allTimeUrls],
   )
 

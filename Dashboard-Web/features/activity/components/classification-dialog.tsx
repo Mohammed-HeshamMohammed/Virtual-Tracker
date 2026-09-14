@@ -1,9 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { AppWindow, Globe, Info, Loader2, Search, X } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { AppWindow, Globe, Info, Loader2, Search, ChevronDown, X } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/shared/ui/dialog"
+import { FLOATING_MENU_ATTR, FLOATING_MENU_Z_CLASS } from "@/shared/ui/forms/floating-menu"
+import { useFloatingMenuPosition } from "@/shared/ui/forms/use-floating-menu-position"
 import {
   ACTIVITY_CATEGORIES,
   ACTIVITY_CATEGORY_LABELS,
@@ -29,6 +32,9 @@ export interface ClassifiableItem {
   /** Overrides the dialog's `matchType` for this one row - used to mix
    *  window-title rows into the site list. */
   matchType?: MatchType
+  /** The app's own icon or the site's favicon, so the list reads the way the
+   *  Apps and Sites tables do instead of as a column of initials. */
+  iconUrl?: string | null
 }
 
 type Draft = { category: ActivityCategory; displayName: string }
@@ -67,6 +73,27 @@ const PRESET_GROUPS = ACTIVITY_CATEGORIES.map((category) => ({
   presets: CLASSIFY_PRESETS.filter((preset) => preset.category === category),
 })).filter((group) => group.presets.length > 0)
 
+/** The same groups, shaped for ClassifyMenu. */
+const PRESET_MENU_GROUPS = PRESET_GROUPS.map((group) => ({
+  label: ACTIVITY_CATEGORY_LABELS[group.category],
+  options: group.presets.map((preset) => ({
+    value: preset.id,
+    label: preset.label,
+    dot: CATEGORY_DOT[group.category],
+  })),
+}))
+
+/** One flat group: the four categories, each with its own colour dot. */
+const SET_ALL_MENU_GROUPS = [
+  {
+    options: ACTIVITY_CATEGORIES.map((category) => ({
+      value: category,
+      label: ACTIVITY_CATEGORY_LABELS[category],
+      dot: CATEGORY_DOT[category],
+    })),
+  },
+]
+
 const TRAY =
   "rounded-xl border border-slate-200/80 bg-slate-50/80 p-0.5 shadow-inner dark:border-[#3d4a3d]/40 dark:bg-[#101417]/60"
 
@@ -79,6 +106,169 @@ const FIELD =
 const ROW_GRID =
   "grid grid-cols-2 gap-2.5 @2xl:grid-cols-[minmax(0,1fr)_11rem_9rem] @2xl:items-center @2xl:gap-x-3"
 const WIDE_COLUMNS = "@5xl:grid-cols-[minmax(0,1fr)_27rem_11rem_9rem] @5xl:gap-x-4"
+
+/**
+ * The dialog's own dropdown, styled to match the dialog rather than the
+ * browser's native `<select>` (a different font, a different palette, and in
+ * dark mode a plain white list, right in the middle of a dialog that themes
+ * everything else itself). Positioning reuses the same floating-menu helpers
+ * every other menu in the app uses, so it flips and clamps at the viewport
+ * edge the same way.
+ *
+ * It picks an action rather than holding a value - choosing an entry applies
+ * it immediately and the trigger goes back to reading `placeholder`.
+ */
+function ClassifyMenu({
+  placeholder,
+  groups,
+  onPick,
+  disabled = false,
+  ariaLabel,
+  className,
+}: {
+  placeholder: string
+  groups: { label?: string; options: { value: string; label: string; dot?: string }[] }[]
+  onPick: (value: string) => void
+  disabled?: boolean
+  ariaLabel: string
+  className?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const rowCount = groups.reduce((count, group) => count + group.options.length + (group.label ? 1 : 0), 0)
+  const { style: menuStyle, syncPosition } = useFloatingMenuPosition(
+    triggerRef,
+    open,
+    Math.min(280, rowCount * 32 + 16),
+    rowCount,
+  )
+
+  useEffect(() => {
+    if (disabled) setOpen(false)
+  }, [disabled])
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation()
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+    document.addEventListener("keydown", onKeyDown, true)
+    return () => document.removeEventListener("keydown", onKeyDown, true)
+  }, [open])
+
+  return (
+    <div className={cn("relative", className)}>
+      <button
+        ref={triggerRef}
+        type="button"
+        disabled={disabled}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (triggerRef.current) syncPosition()
+          setOpen((v) => !v)
+        }}
+        className={cn(
+          FIELD,
+          "flex items-center justify-between gap-1.5 text-left font-medium hover:border-slate-300 dark:hover:border-slate-700",
+          open && "border-emerald-400 ring-2 ring-emerald-500/15 dark:border-emerald-600",
+          className,
+        )}
+      >
+        <span className="truncate text-slate-500 dark:text-slate-400">{placeholder}</span>
+        <ChevronDown
+          aria-hidden
+          className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-180")}
+        />
+      </button>
+
+      {open && menuStyle && typeof document !== "undefined"
+        ? createPortal(
+            <div className={cn("pointer-events-none fixed inset-0", FLOATING_MENU_Z_CLASS)}>
+              <div className="pointer-events-auto absolute inset-0" aria-hidden onMouseDown={() => setOpen(false)} />
+              <div
+                {...{ [FLOATING_MENU_ATTR]: "" }}
+                role="listbox"
+                aria-label={ariaLabel}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="custom-scrollbar pointer-events-auto fixed overflow-y-auto rounded-xl border border-slate-200/90 bg-white py-1 shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                style={{
+                  top: menuStyle.top,
+                  left: menuStyle.left,
+                  minWidth: menuStyle.width,
+                  width: menuStyle.width,
+                  maxHeight: menuStyle.maxHeight,
+                }}
+              >
+                {groups.map((group, index) => (
+                  <div key={group.label ?? `group-${index}`}>
+                    {group.label ? (
+                      <p className="px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                        {group.label}
+                      </p>
+                    ) : null}
+                    {group.options.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        role="option"
+                        aria-selected={false}
+                        onClick={() => {
+                          onPick(option.value)
+                          setOpen(false)
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-700 transition-colors hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                      >
+                        {option.dot ? (
+                          <span aria-hidden className={cn("h-1.5 w-1.5 shrink-0 rounded-full", option.dot)} />
+                        ) : null}
+                        <span className="truncate">{option.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  )
+}
+
+/** The app's icon or the site's favicon, falling back to the initial tile. A
+ *  remote favicon that fails to load falls back too, rather than showing a
+ *  broken image. */
+function RowIcon({ name, iconUrl }: { name: string; iconUrl?: string | null }) {
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [iconUrl])
+  if (iconUrl && !failed) {
+    return (
+      <img
+        src={iconUrl}
+        alt=""
+        width={32}
+        height={32}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="h-8 w-8 shrink-0 rounded-lg object-contain"
+      />
+    )
+  }
+  return (
+    <span
+      aria-hidden
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 bg-slate-50 text-xs font-bold uppercase text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300"
+    >
+      {name.trim().charAt(0)}
+    </span>
+  )
+}
 
 function CategoryPicker({
   value,
@@ -415,24 +605,14 @@ export function ClassificationDialog({
           </div>
 
           {visibleItems.length > 1 ? (
-            <select
-              value=""
+            <ClassifyMenu
+              placeholder={`Set all ${visibleItems.length} shown to…`}
+              ariaLabel={`Set the category of all ${visibleItems.length} shown ${noun}s`}
               disabled={loading}
-              onChange={(e) => {
-                if (e.target.value) setVisibleCategory(normalizeActivityCategory(e.target.value))
-              }}
-              aria-label={`Set the category of all ${visibleItems.length} shown ${noun}s`}
-              className={cn(FIELD, "h-9 w-full rounded-xl font-semibold lg:ml-auto lg:w-auto")}
-            >
-              <option value="" disabled>
-                Set all {visibleItems.length} shown to…
-              </option>
-              {ACTIVITY_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {ACTIVITY_CATEGORY_LABELS[category]}
-                </option>
-              ))}
-            </select>
+              groups={SET_ALL_MENU_GROUPS}
+              onPick={(category) => setVisibleCategory(normalizeActivityCategory(category))}
+              className="h-9 w-full rounded-xl font-semibold lg:ml-auto lg:w-64"
+            />
           ) : null}
         </div>
 
@@ -501,12 +681,7 @@ export function ClassificationDialog({
                       ) : null}
 
                       <div className="col-span-2 flex min-w-0 items-center gap-3 @2xl:col-span-1 @2xl:col-start-1 @2xl:row-start-1">
-                        <span
-                          aria-hidden
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200/80 bg-slate-50 text-xs font-bold uppercase text-slate-500 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300"
-                        >
-                          {name.trim().charAt(0)}
-                        </span>
+                        <RowIcon name={name} iconUrl={item.iconUrl} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100" title={item.pattern}>
                             {name}
@@ -548,32 +723,20 @@ export function ClassificationDialog({
                         className={cn(FIELD, "@2xl:col-start-2 @2xl:row-start-1 @5xl:col-start-3")}
                       />
 
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          const preset = CLASSIFY_PRESETS.find((p) => p.id === e.target.value)
+                      <ClassifyMenu
+                        placeholder="Quick set…"
+                        ariaLabel={`Quick set ${name}`}
+                        groups={PRESET_MENU_GROUPS}
+                        onPick={(id) => {
+                          const preset = CLASSIFY_PRESETS.find((p) => p.id === id)
                           if (!preset) return
                           setDraft(item.pattern, {
                             category: preset.category,
                             displayName: preset.suggestedLabel ?? draft.displayName,
                           })
                         }}
-                        aria-label={`Quick set ${name}`}
-                        className={cn(FIELD, "@2xl:col-start-3 @2xl:row-start-1 @5xl:col-start-4")}
-                      >
-                        <option value="" disabled>
-                          Quick set…
-                        </option>
-                        {PRESET_GROUPS.map((group) => (
-                          <optgroup key={group.category} label={ACTIVITY_CATEGORY_LABELS[group.category]}>
-                            {group.presets.map((preset) => (
-                              <option key={preset.id} value={preset.id}>
-                                {preset.label}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
+                        className="@2xl:col-start-3 @2xl:row-start-1 @5xl:col-start-4"
+                      />
                     </li>
                   )
                 })}
