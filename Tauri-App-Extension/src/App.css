@@ -4794,6 +4794,41 @@ select.modal-input {
 .project-radar-empty p { margin: 0; font-size: 12px; opacity: 0.6; line-height: 1.4; }
 .project-radar-empty .project-radar-empty-hint { opacity: 0.4; }
 
+/* The radar's fallback for one or two apps (RADAR_MIN_APPS) - a plain bar
+   per app, vertically centred in the same space the radar's frame would
+   otherwise fill. */
+.project-app-list {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 2px;
+}
+
+.project-app-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.project-app-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.project-app-row .project-app-name {
+  font-size: 12px;
+}
+
+.project-app-row .project-app-time {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
 /* ------------------------------------------------------------------------
    Window layouts (window_layout.rs sizes the window; Settings > Window layout
    picks one). The root carries .layout-standard / -wide / -compact / -focus.

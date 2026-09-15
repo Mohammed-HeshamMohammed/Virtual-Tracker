@@ -164,22 +164,69 @@ describe("ProjectDetailPanel", () => {
   });
 
   it("shows each app's time as a direct label, focusable for a keyboard-reachable tooltip", () => {
+    // Three apps, so this exercises the radar itself - see RADAR_MIN_APPS
+    // and the bar-list tests below for one or two.
     const html = render(baseProject, {
       appBreakdown: [
         { appName: "Zoom", totalSeconds: 3600 },
         { appName: "Browser", totalSeconds: 1800 },
+        { appName: "Notepad", totalSeconds: 600 },
       ],
     });
     // Duration is always visible as a label under the chart - the tooltip
     // only adds the share percentage on top of it, never gates the value.
     expect(html).toContain("1h 0s");
     expect(html).toContain("30m 0s");
+    expect(html).toContain("10m 0s");
     // Every point is focusable (tooltip must be reachable without a mouse).
-    expect((html.match(/tabindex="0"/g) ?? []).length).toBe(2);
-    // Tooltip states the app's share of the apps actually shown (2/3 of the
-    // combined 5400s = 67%), not a claim about total tracked time overall.
-    expect(html).toContain("67% of the apps shown");
-    expect(html).toContain("33% of the apps shown");
+    expect((html.match(/tabindex="0"/g) ?? []).length).toBe(3);
+    // Tooltip states the app's share of the apps actually shown (of the
+    // combined 6000s), not a claim about total tracked time overall.
+    expect(html).toContain("60% of the apps shown");
+    expect(html).toContain("30% of the apps shown");
+    expect(html).toContain("10% of the apps shown");
+  });
+
+  // Below RADAR_MIN_APPS, a radar reads as broken rather than as a shape: one
+  // axis is a lone point on its one spoke line, two is a flat line between
+  // them. Both fall back to a plain bar per app instead.
+  it("falls back to a bar per app when there's only one to plot", () => {
+    const html = render(baseProject, {
+      appBreakdown: [{ appName: "Google Chrome", totalSeconds: 3600 }],
+    });
+    expect(html).toContain("project-app-list");
+    expect(html).not.toContain("project-radar-svg");
+    expect(html).toContain("Google Chrome");
+    expect(html).toContain("1h 0s");
+    expect(html).toContain("100%");
+    expect((html.match(/capacity-fill/g) ?? []).length).toBe(1);
+  });
+
+  it("falls back to a bar per app when there are only two", () => {
+    const html = render(baseProject, {
+      appBreakdown: [
+        { appName: "Google Chrome", totalSeconds: 3600 },
+        { appName: "Virtual-tracker-agent", totalSeconds: 1 },
+      ],
+    });
+    expect(html).toContain("project-app-list");
+    expect(html).not.toContain("project-radar-svg");
+    expect((html.match(/capacity-fill/g) ?? []).length).toBe(2);
+    // A 1-second app next to a 1-hour one must still show as a bar, not a
+    // sliver that reads as zero (same floor reasoning as radarRadius).
+    expect(html).not.toMatch(/capacity-fill" style="width:0%"/);
+  });
+
+  // Mid-transition, the previous project's radar stays up under the loading
+  // shimmer rather than swapping layouts out from under it - even when that
+  // previous project had too few apps for the bar-list threshold.
+  it("keeps the radar (not the bar list) for a low app count while the next project loads", () => {
+    const html = render(baseProject, {
+      loading: true,
+      appBreakdown: [{ appName: "Zoom", totalSeconds: 3600 }],
+    });
+    expect(html).toContain("project-radar-svg");
+    expect(html).not.toContain("project-app-list");
   });
 
   it("hides the screenshots section when there are none for this project", () => {

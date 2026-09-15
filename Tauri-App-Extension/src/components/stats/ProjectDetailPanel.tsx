@@ -36,6 +36,12 @@ export function radarRadius(seconds: number, maxSeconds: number): number {
 }
 /** Axis count for the loading grid, before any breakdown has arrived. */
 const RADAR_SKELETON_AXES = 6;
+/** Below this many apps, a radar reads as broken rather than as a shape: one
+ *  axis is a single point with its one spoke line and nothing else, two axes
+ *  is a zero-area line between them - see radar_needs_at_least_three_apps_
+ *  or_it_falls_back_to_bars below. A plain bar per app carries the same
+ *  numbers without needing a polygon to read as anything. */
+const RADAR_MIN_APPS = 3;
 /** The card only ever shows the newest few - App.tsx already fetches
  *  exactly this many, this is just the belt-and-suspenders cap so the
  *  layout can't be handed a longer one. */
@@ -134,6 +140,12 @@ export function ProjectDetailPanel({
   // week's top apps?". It stays put and says what it knows instead.
   const showChart = true;
   const hasApps = appBreakdown.length > 0;
+  // A settled (not mid-transition) breakdown with too few apps for the radar
+  // to read as a shape falls back to a plain bar per app instead - see
+  // RADAR_MIN_APPS. Gated on `!loading` the same way the radar's own dots
+  // are: mid-transition, the previous project's shape stays up under the
+  // shimmer rather than swapping layouts out from under it.
+  const useBarList = !loading && hasApps && appBreakdown.length < RADAR_MIN_APPS;
   const showShots = screenshots.length > 0 || loading;
   const axisCount = appBreakdown.length || RADAR_SKELETON_AXES;
   // Newest-first from the backend already - slicing keeps only the most
@@ -209,7 +221,37 @@ export function ProjectDetailPanel({
                   </p>
                 </div>
               ) : null}
-              {loading || hasApps ? (
+              {useBarList ? (
+                // Too few apps for the radar to read as a shape (RADAR_MIN_APPS)
+                // - one axis is a lone point on its one spoke line, two is a
+                // flat line between them. A bar per app carries the same
+                // numbers without needing a polygon to read as anything.
+                <div className="project-app-list">
+                  {appBreakdown.map((app) => {
+                    const sharePct = Math.round((app.totalSeconds / totalAppSeconds) * 100);
+                    // Same floor reasoning as radarRadius: a tiny app next to
+                    // a dominant one must still show as a bar, not a sliver
+                    // that reads as zero.
+                    const barPct = Math.max(4, Math.round((app.totalSeconds / maxAppSeconds) * 100));
+                    return (
+                      <div className="project-app-row" key={app.appName}>
+                        <div className="project-app-row-head">
+                          <span className="project-app-name" title={app.appName}>
+                            {app.appName}
+                          </span>
+                          <span className="project-app-time">
+                            {fmtHours(app.totalSeconds)} &middot; {sharePct}%
+                          </span>
+                        </div>
+                        <div className="capacity-bar slim">
+                          <div className="capacity-fill" style={{ width: `${barPct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+              {!useBarList && (loading || hasApps) ? (
               <div className="project-radar-frame">
                 <div className={`project-radar${loading ? " is-loading" : ""}`}>
                 <svg viewBox="0 0 100 100" className="project-radar-svg" aria-hidden="true">
