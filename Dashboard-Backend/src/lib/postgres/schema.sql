@@ -1200,7 +1200,7 @@ CREATE TABLE IF NOT EXISTS agent_link_sessions (
   member_id                UUID,
   id_token                 TEXT,
   refresh_token            TEXT NOT NULL DEFAULT '',
-  agent_source             VARCHAR(20) NOT NULL DEFAULT 'electron' CHECK (agent_source IN ('electron', 'python')),
+  agent_source             VARCHAR(20) NOT NULL DEFAULT 'tauri' CHECK (agent_source IN ('tauri', 'electron', 'python')),
   expires_at               TIMESTAMPTZ NOT NULL,
   invalid_exchange_attempts INTEGER NOT NULL DEFAULT 0,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),

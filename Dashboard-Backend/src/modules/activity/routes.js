@@ -54,6 +54,7 @@ import {
   completeAgentLinkSession,
   createAgentLinkSession,
   exchangeAgentLinkSession,
+  normalizeAgentSource,
 } from "./agent-link-sessions.js";
 import { canAccessTask } from "../../http/task-access.js";
 import { logSafeError, logSafeWarn } from "../../http/sanitize-error.js";
@@ -1835,7 +1836,7 @@ export async function routeActivity(req, res, url, origin) {
       body = {};
     }
     const session = await createAgentLinkSession({
-      agentSource: body?.source === "python" ? "python" : "electron",
+      agentSource: normalizeAgentSource(body?.source),
     });
     sendJson(res, origin, 200, { success: true, data: session });
     return true;
@@ -1906,8 +1907,8 @@ export async function routeActivity(req, res, url, origin) {
     if (memberId) {
       await updateMemberPg(memberId, {
         desktop_agent_linked_at: new Date(),
-        agent_source: exchanged.data?.agentSource === "python" ? "python" : "electron",
-        updated_by: exchanged.data?.agentSource === "python" ? "python" : "agent",
+        agent_source: normalizeAgentSource(exchanged.data?.agentSource),
+        updated_by: normalizeAgentSource(exchanged.data?.agentSource) === "python" ? "python" : "agent",
       });
     }
     sendJson(res, origin, 200, { success: true, data: exchanged.data });
@@ -2054,8 +2055,8 @@ export async function routeActivity(req, res, url, origin) {
           ? { web_capture_linked_at: new Date(), updated_by: "web" }
           : {
               desktop_agent_linked_at: new Date(),
-              agent_source: body?.source === "python" ? "python" : "electron",
-              updated_by: body?.source === "python" ? "python" : "agent",
+              agent_source: normalizeAgentSource(body?.source),
+              updated_by: normalizeAgentSource(body?.source) === "python" ? "python" : "agent",
             }),
       });
       sendJson(res, origin, 200, { success: true, data: { memberId: member.memberId } });
