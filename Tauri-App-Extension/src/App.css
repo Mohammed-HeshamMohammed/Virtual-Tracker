@@ -3375,17 +3375,28 @@ select.modal-input {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Query container for .project-radar's cqw/cqh below - this box's own
+     size already comes entirely from the flex chain above it (the 0%-basis
+     trick), never from its content, so containment can't create the
+     zero-size loop it would on a content-sized box. */
+  container-type: size;
 }
 
 .project-radar {
   position: relative;
-  /* Sized off the frame's resolved height; aspect-ratio derives width
-     from it, and max-width clamps that back down (recomputing height to
-     match, same as an <img>'s max-width:100%; height:auto does) once the
-     column is narrower than the frame is tall. */
-  height: 100%;
-  width: auto;
-  max-width: 100%;
+  /* The old height:100%/width:auto/aspect-ratio pairing only self-corrects
+     into a square when max-width clamps the auto axis AND something re-
+     derives the other axis to match - which nothing here did, since height
+     was an explicit 100%, not auto. In the main pane that mostly went
+     unnoticed (the frame was already close to square), but the side column
+     (.side-column: ~300px wide, hundreds tall) clamped width hard while
+     height stayed at the frame's full height, stretching the whole chart -
+     dots, labels and all, since they're positioned by the same percentages
+     - into a tall sliver.
+     cqw/cqh read the frame's own width and height directly, so the smaller
+     of the two is always the side length: a true square in a wide frame
+     (old behaviour, unchanged) and in a tall one (the side column) alike. */
+  width: min(100cqw, 100cqh);
   aspect-ratio: 1;
 }
 
