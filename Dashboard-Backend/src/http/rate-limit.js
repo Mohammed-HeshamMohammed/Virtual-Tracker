@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { readBearerToken } from "./auth-token.js";
 
 const buckets = new Map();
 
@@ -34,7 +36,7 @@ function limitForBucket(url) {
   return DEFAULT_LIMIT;
 }
 
-function clientKey(req) {
+function ipKey(req) {
   const forwarded = req.headers["x-forwarded-for"];
   if (typeof forwarded === "string" && forwarded.trim()) {
     return forwarded.split(",")[0].trim();
@@ -42,8 +44,32 @@ function clientKey(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
+/**
+ * Who this request is rate-limited as: the signed-in member if we can tell
+ * who that is, the caller's IP otherwise.
+ *
+ * A request that carries a bearer token is keyed by that token (hashed - the
+ * key only needs to be stable and unguessable, not reversible) rather than
+ * the IP it arrived from. Every desktop agent, and every browser tab, in the
+ * same office or behind the same VPN or CGNAT otherwise shares one IP and so
+ * one bucket - the "activity" bucket the agent polls every few seconds while
+ * tracking, at 240 requests/min, saturates on background polling alone once
+ * a handful of people are tracking from the same network, and everyone on it
+ * starts seeing Start/Pause/Stop rejected with no relation to what they
+ * personally did. A pre-auth request (signing in, redeeming an invite) never
+ * carries a token yet, so those buckets are unaffected and still need IP
+ * keying - that's what actually stops a login brute-force.
+ */
+function clientKey(req) {
+  const token = readBearerToken(req);
+  if (token) {
+    return `member:${createHash("sha256").update(token).digest("hex").slice(0, 32)}`;
+  }
+  return ipKey(req);
+}
+
 function isLocalClient(req) {
-  const addr = clientKey(req);
+  const addr = ipKey(req);
   return (
     addr === "127.0.0.1" ||
     addr === "::1" ||
