@@ -10,6 +10,7 @@ mod queue;
 mod test_support;
 mod types;
 mod util;
+mod window_layout;
 
 use std::sync::Arc;
 
@@ -170,11 +171,6 @@ fn close_window(
     Ok(())
 }
 
-#[tauri::command]
-fn get_status(state: tauri::State<'_, AppState>) -> String {
-    state.controller.status()
-}
-
 /// Pushed from the frontend's own existing 5s session poll (App.tsx's
 /// refresh()) rather than driven by a second poller here - see
 /// TrayStatusItems's own doc comment for why. A no-op before the tray
@@ -223,6 +219,20 @@ fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSetti
     state.controller.get_app_settings()
 }
 
+/// The layout the window is using, so the frontend can arrange itself to
+/// match the size the window was given.
+#[tauri::command]
+fn get_window_layout(
+    app: AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> window_layout::WindowLayout {
+    let prefs = state.controller.get_app_settings().preferences;
+    match app.get_webview_window("main") {
+        Some(window) => window_layout::current(&window, &prefs.layout, prefs.show_insights),
+        None => window_layout::resolve(&prefs.layout, prefs.show_insights, None),
+    }
+}
+
 #[tauri::command]
 async fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let controller = Arc::clone(&state.controller);
@@ -235,7 +245,15 @@ fn save_preferences(
     state: tauri::State<'_, AppState>,
     preferences: UserPreferences,
 ) -> Result<crate::prefs::AppSettingsView, String> {
+    let previous = state.controller.get_app_settings().preferences;
     state.controller.save_preferences(preferences.clone())?;
+    // Only the two settings that decide the window's size move it - saving
+    // anything else must not resize it or snap it back to the centre.
+    if previous.layout != preferences.layout || previous.show_insights != preferences.show_insights {
+        if let Some(window) = app.get_webview_window("main") {
+            window_layout::apply(&window, &preferences.layout, preferences.show_insights);
+        }
+    }
     // Autostart registration is best-effort here, same as every other caller
     // of apply_autostart (see lines below) - a registry/OS failure must not
     // report the whole save as failed when the preference itself was already
@@ -733,12 +751,12 @@ pub fn run() {
             open_web_app,
             minimize_current,
             close_window,
-            get_status,
             get_version,
             set_tray_status,
             get_profile,
             get_link_status,
             get_app_settings,
+            get_window_layout,
             open_log_file,
             save_preferences,
             list_projects,
@@ -935,6 +953,19 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
+                // Sized before anything is drawn, so a small screen never
+                // shows the standard window running off its bottom edge.
+                let layout_prefs = controller.get_app_settings().preferences;
+                let layout = window_layout::apply(&window, &layout_prefs.layout, layout_prefs.show_insights);
+                log::info!(
+                    "Window layout: {:?} ({}x{}, side column {}, preference {})",
+                    layout.kind,
+                    layout.width,
+                    layout.height,
+                    layout.side_column,
+                    layout_prefs.layout
+                );
+
                 let win = window.clone();
                 let close_controller = Arc::clone(&controller);
                 window.on_window_event(move |event| {

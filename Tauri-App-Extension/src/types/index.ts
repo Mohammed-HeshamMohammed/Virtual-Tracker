@@ -44,6 +44,22 @@ export type ForgotState = {
 
 export type ThemePreference = "system" | "light" | "dark";
 
+/** A concrete arrangement of the window - see window_layout.rs. */
+export type LayoutKind = "standard" | "wide" | "compact" | "focus";
+
+/** Auto keeps Standard wherever it fits and picks Compact or Focus on
+ *  screens too short for it. */
+export type LayoutPreference = "auto" | LayoutKind;
+
+/** What get_window_layout reports: the layout the window was actually sized for. */
+export type WindowLayout = {
+  kind: LayoutKind;
+  /** Sized with the apps & screenshots column in it (Wide/Compact, setting on). */
+  sideColumn: boolean;
+  width: number;
+  height: number;
+};
+
 export type UserPreferences = {
   launchAtLogin: boolean;
   startHidden: boolean;
@@ -53,6 +69,9 @@ export type UserPreferences = {
   trayNoticeShown: boolean;
   theme: ThemePreference;
   memberTimezone: string;
+  layout: LayoutPreference;
+  /** The week's top apps and the screenshots, in Wide/Compact/Focus. */
+  showInsights: boolean;
 };
 
 export type AppSettingsView = {
@@ -94,6 +113,10 @@ export type SessionInfo = {
   idleStage?: number;
   activeSeconds?: number;
   idleSeconds?: number;
+  /** The server stopped counting against the task's daily cap on this sync. */
+  timerCapped?: boolean;
+  /** Same, for the project's budget stop-timer threshold. */
+  budgetCapped?: boolean;
 };
 
 export type MonitoringNoticeView = {
@@ -132,6 +155,10 @@ export type TaskTimeTracking = {
   limitReached: boolean;
   allowanceMessage?: string | null;
   sharedBudget?: boolean;
+  /** The project doesn't split time into active and idle at all. */
+  disableIdleTime?: boolean;
+  /** This member's idle threshold on the project, already held to its limit. */
+  idleTimeSeconds?: number;
 };
 
 export type ProjectBudgetStatus = {

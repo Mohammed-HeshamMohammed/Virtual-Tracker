@@ -653,6 +653,10 @@ impl ApiClient {
         };
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/time-entries", self.api_url);
+        // No "source": the time-entries schema doesn't accept it, and the
+        // backend rejected the whole entry for it ("Unexpected field:
+        // source"). The column defaults to 'manual', which is what this is -
+        // and a client able to set it could mark manual time as tracked.
         let mut body = json!({
             "member_id": resolved_member,
             "project_id": project_id,
@@ -660,7 +664,6 @@ impl ApiClient {
             "duration": duration_seconds,
             "description": description,
             "billable": true,
-            "source": "manual",
             "status": "pending",
             "start_time": serde_json::Value::Null,
             "end_time": serde_json::Value::Null,

@@ -49,10 +49,23 @@ pub struct UserPreferences {
     /// own zone.
     #[serde(default)]
     pub member_timezone: String,
+    /// "auto" | "standard" | "wide" | "compact" | "focus". Auto keeps the
+    /// standard window wherever it fits and picks compact or focus on screens
+    /// too short for it - see window_layout.rs.
+    #[serde(default = "default_layout")]
+    pub layout: String,
+    /// Whether the week's top apps and the screenshots are shown in the Wide,
+    /// Compact and Focus layouts. Standard always shows them.
+    #[serde(default = "default_true")]
+    pub show_insights: bool,
 }
 
 fn default_theme() -> String {
     "system".to_string()
+}
+
+fn default_layout() -> String {
+    "auto".to_string()
 }
 
 impl Default for UserPreferences {
@@ -66,6 +79,8 @@ impl Default for UserPreferences {
             tray_notice_shown: false,
             theme: default_theme(),
             member_timezone: String::new(),
+            layout: default_layout(),
+            show_insights: true,
         }
     }
 }
@@ -149,5 +164,17 @@ mod tests {
         let prefs: UserPreferences = serde_json::from_str(old).expect("old file must still parse");
         assert_eq!(prefs.theme, "dark");
         assert_eq!(prefs.member_timezone, "");
+    }
+
+    /// Every install predates the layout setting, so an old file has to load
+    /// with its other choices intact and the layout left to decide by screen.
+    #[test]
+    fn loads_preferences_written_before_layout_existed() {
+        let old = r#"{"closeToTray":false,"theme":"light","memberTimezone":"Africa/Cairo"}"#;
+        let prefs: UserPreferences = serde_json::from_str(old).expect("old file must still parse");
+        assert!(!prefs.close_to_tray);
+        assert_eq!(prefs.theme, "light");
+        assert_eq!(prefs.layout, "auto");
+        assert!(prefs.show_insights, "the apps & screenshots card starts switched on");
     }
 }

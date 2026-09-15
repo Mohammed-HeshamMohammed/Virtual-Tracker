@@ -1,5 +1,13 @@
 import type { TaskDetail } from "../../types";
 
+/** Whether TaskDetailPanel would render anything - the compact layout only
+ *  opens its side column for this card when there is something to put in it. */
+export function taskDetailHasContent(detail: TaskDetail | null, loading?: boolean): boolean {
+  if (loading) return true;
+  if (!detail) return false;
+  return Boolean(detail.description) || detail.subtasks.length > 0 || Boolean(detail.dueDate);
+}
+
 export function TaskDetailPanel({ detail, loading }: { detail: TaskDetail | null; loading?: boolean }) {
   if (loading) {
     return (

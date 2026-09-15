@@ -81,6 +81,11 @@ type ProjectDetailPanelProps = {
   /** The member's own zone - see fmtCapturedAt. */
   timeZone?: string;
   onSelectScreenshot: (id: string) => void;
+  /** Which part to render. The compact layout splits the card: the badges
+   *  stay in the main pane ("badges"), and the week's top apps and the
+   *  screenshots stack in the side column ("insights"). The standard layout
+   *  renders all of it in one card, as it always has. */
+  section?: "all" | "badges" | "insights";
 };
 
 /** The task-less counterpart to TaskProgressPanel/TaskDetailPanel - a
@@ -102,6 +107,7 @@ export function ProjectDetailPanel({
   loading,
   timeZone,
   onSelectScreenshot,
+  section = "all",
 }: ProjectDetailPanelProps) {
   if (!project) return null;
 
@@ -135,6 +141,22 @@ export function ProjectDetailPanel({
   // pushes the oldest one off the end rather than needing to reconcile
   // anything here.
   const visibleShots = screenshots.slice(0, MAX_VISIBLE_SHOTS);
+  const showBadges = hasBadges && section !== "insights";
+  const showInsights = (showChart || showShots) && section !== "badges";
+
+  if (section === "badges" && !showBadges) return null;
+
+  if (section === "badges") {
+    return (
+      <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
+        <div className="badge-row">
+          {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
+          {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
+          {canAddTask ? <span className="badge neutral">You can add tasks here</span> : null}
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
@@ -143,11 +165,11 @@ export function ProjectDetailPanel({
       // to its own class rather than the shared .stat-panel so Today/This
       // task's cards above (and TaskDetailPanel's own, in the non-calling
       // branch) keep their normal content-sized height.
-      className="stat-panel project-detail-panel page-content-swap"
+      className={`stat-panel project-detail-panel page-content-swap${section === "insights" ? " project-insights" : ""}`}
       style={{ animationDelay: "0.08s" }}
       aria-busy={loading}
     >
-      {hasBadges ? (
+      {showBadges ? (
         <div className="badge-row">
           {project.requireStopNote ? <span className="badge warn">Stop note required</span> : null}
           {project.budgetExhausted ? <span className="badge bad">Budget spent</span> : null}
@@ -155,8 +177,10 @@ export function ProjectDetailPanel({
         </div>
       ) : null}
 
-      {showChart || showShots ? (
-        <div className={`project-detail-row${hasBadges ? "" : " no-badges"}`}>
+      {showInsights ? (
+        <div
+          className={`project-detail-row${showBadges ? "" : " no-badges"}${section === "insights" ? " stacked" : ""}`}
+        >
           {showChart ? (
             <div className="project-app-chart">
               <span className="stat-tile-label">This week's top apps</span>

@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { AppSettingsView, ThemePreference, UserPreferences } from "../../types";
+import type {
+  AppSettingsView,
+  LayoutKind,
+  LayoutPreference,
+  ThemePreference,
+  UserPreferences,
+  WindowLayout,
+} from "../../types";
+import { LayoutPreview } from "../common/LayoutPreview";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { Switch } from "../common/Switch";
 import { Icon } from "../common/Icon";
@@ -29,14 +37,55 @@ const THEMES: { id: ThemePreference; label: string }[] = [
   { id: "dark", label: "Dark" },
 ];
 
-export function SettingsPanel({ onBack }: { onBack: () => void }) {
+const LAYOUTS: { id: LayoutPreference; label: string; forScreens: string }[] = [
+  { id: "auto", label: "Auto", forScreens: "Picks the best layout for this screen" },
+  { id: "standard", label: "Standard", forScreens: "Desktop monitors" },
+  { id: "wide", label: "Wide", forScreens: "Large monitors" },
+  { id: "compact", label: "Compact", forScreens: "Laptops - short, wide screens" },
+  { id: "focus", label: "Focus", forScreens: "Small laptops and high scaling" },
+];
+
+/** Each layout's window size on a screen with room for it - mirrors
+ *  preferred_size / side_column_width in window_layout.rs. Wide and Compact
+ *  lose their column's width when apps & screenshots is off. */
+function layoutSize(kind: LayoutKind, showInsights: boolean): string {
+  const sizes: Record<LayoutKind, [number, number, number]> = {
+    standard: [1100, 750, 0],
+    wide: [1420, 820, 374],
+    compact: [1320, 660, 310],
+    focus: [1040, 600, 0],
+  };
+  const [width, height, column] = sizes[kind];
+  return `${showInsights ? width : width - column} × ${height}`;
+}
+
+const LAYOUT_NAMES: Record<LayoutKind, string> = {
+  standard: "Standard",
+  wide: "Wide",
+  compact: "Compact",
+  focus: "Focus",
+};
+
+export function SettingsPanel({
+  onBack,
+  onLayoutChanged,
+  onShowInsightsChanged,
+}: {
+  onBack: () => void;
+  /** The window has been resized for a new layout; the app rearranges to match. */
+  onLayoutChanged?: (layout: WindowLayout) => void;
+  /** The apps & screenshots card was switched on or off. */
+  onShowInsightsChanged?: (show: boolean) => void;
+}) {
   const [settings, setSettings] = useState<AppSettingsView | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedKey, setSavedKey] = useState<keyof UserPreferences | null>(null);
+  const [windowLayout, setWindowLayout] = useState<WindowLayout | null>(null);
 
   const load = useCallback(async () => {
     const next = await invoke<AppSettingsView>("get_app_settings");
     setSettings(next);
+    setWindowLayout(await invoke<WindowLayout>("get_window_layout").catch(() => null));
   }, []);
 
   useEffect(() => {
@@ -53,6 +102,15 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
       setSettings(updated);
       setSavedKey(key);
       window.setTimeout(() => setSavedKey((cur) => (cur === key ? null : cur)), 1600);
+      if (key === "showInsights") onShowInsightsChanged?.(Boolean(value));
+      if (key === "layout" || key === "showInsights") {
+        // save_preferences has already resized the window - switching apps &
+        // screenshots off narrows Wide and Compact too. Ask what it settled
+        // on (Auto depends on the screen) so the app can match it.
+        const layout = await invoke<WindowLayout>("get_window_layout");
+        setWindowLayout(layout);
+        onLayoutChanged?.(layout);
+      }
     } catch {
       toast.error("Could not save this setting.");
     } finally {
@@ -128,6 +186,77 @@ export function SettingsPanel({ onBack }: { onBack: () => void }) {
                 </button>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="settings-card">
+          <h3 className="settings-section-label">Window layout</h3>
+          <div className="settings-row-copy">
+            <span className="settings-row-title">
+              Layout
+              {savedKey === "layout" ? (
+                <span className="settings-saved">
+                  <Icon name="check" /> Applied
+                </span>
+              ) : null}
+            </span>
+            <span className="settings-row-sub">
+              Every layout keeps the app at its normal size - smaller screens rearrange it instead of shrinking it.
+              {prefs?.layout === "auto" && windowLayout
+                ? ` Auto is using ${LAYOUT_NAMES[windowLayout.kind]} on this screen.`
+                : ""}
+            </span>
+          </div>
+
+          <Toggle
+            field="showInsights"
+            title="Show apps & screenshots"
+            sub={
+              prefs?.showInsights === false
+                ? "Off: Wide and Compact have no side column and a narrower window, and Focus leaves the card out. Standard always shows it."
+                : "This week's top apps and recent screenshots (the green blocks below). Turn off to remove the space they take in Wide, Compact and Focus."
+            }
+          />
+
+          <div className="layout-picker" role="radiogroup" aria-label="Window layout">
+            {LAYOUTS.map((l) => {
+              const active = (prefs?.layout ?? "auto") === l.id;
+              const insightsOn = prefs?.showInsights ?? true;
+              // Auto previews whatever it has picked for this screen.
+              const previewKind: LayoutKind =
+                l.id === "auto" ? (windowLayout?.kind ?? "standard") : l.id;
+              const sizeLabel =
+                l.id === "auto"
+                  ? windowLayout
+                    ? `${windowLayout.width} × ${windowLayout.height} here`
+                    : "Fits your screen"
+                  : layoutSize(previewKind, insightsOn);
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  className={`layout-option${active ? " active" : ""}`}
+                  disabled={saving || !prefs}
+                  onClick={() => {
+                    if (!active) void save("layout", l.id);
+                  }}
+                >
+                  <LayoutPreview
+                    kind={previewKind}
+                    showInsights={previewKind === "standard" || insightsOn}
+                    auto={l.id === "auto"}
+                  />
+                  <span className="layout-option-name">
+                    {l.label}
+                    {active ? <Icon name="check" /> : null}
+                  </span>
+                  <span className="layout-option-size">{sizeLabel}</span>
+                  <span className="layout-option-for">{l.forScreens}</span>
+                </button>
+              );
+            })}
           </div>
         </section>
 

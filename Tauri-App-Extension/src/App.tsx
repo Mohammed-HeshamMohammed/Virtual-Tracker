@@ -18,6 +18,8 @@ import { toast } from "./Toast";
 import type {
   AppSettingsView,
   ThemePreference,
+  LayoutKind,
+  WindowLayout,
   ActionResult,
   AgentTask,
   AgentWorkspace,
@@ -62,7 +64,7 @@ import { StopNoteModal } from "./components/StopNoteModal";
 import { NewTaskModal } from "./components/NewTaskModal";
 import { LogTimeModal } from "./components/LogTimeModal";
 import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
-import { TaskDetailPanel } from "./components/stats/TaskDetailPanel";
+import { TaskDetailPanel, taskDetailHasContent } from "./components/stats/TaskDetailPanel";
 import { ProjectDetailPanel } from "./components/stats/ProjectDetailPanel";
 import { TitleBar } from "./components/common/TitleBar";
 import { TimezonePicker } from "./components/common/TimezonePicker";
@@ -240,6 +242,16 @@ function MainApp() {
   });
   const [projectsFailCount, setProjectsFailCount] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>("system");
+  // Follows the size the window was actually given (window_layout.rs), so the
+  // arrangement always matches the space it has.
+  const [windowLayout, setWindowLayout] = useState<WindowLayout>({
+    kind: "standard",
+    sideColumn: false,
+    width: 1100,
+    height: 750,
+  });
+  const layoutKind: LayoutKind = windowLayout.kind;
+  const [showInsights, setShowInsights] = useState(true);
   const projectsFailed = projectsFailCount > 0;
   const assignedTasksFailed = assignedTasksFailCount > 0;
 
@@ -1022,9 +1034,17 @@ function MainApp() {
       .then((s) => {
         if (s?.preferences?.theme) setThemePref(s.preferences.theme);
         if (s?.preferences?.memberTimezone) setCachedTimezone(s.preferences.memberTimezone);
+        if (typeof s?.preferences?.showInsights === "boolean") setShowInsights(s.preferences.showInsights);
       })
       .catch(() => {
         /* Falls back to "system", which is also the stored default. */
+      });
+    void invoke<WindowLayout>("get_window_layout")
+      .then((layout) => {
+        if (layout?.kind) setWindowLayout(layout);
+      })
+      .catch(() => {
+        /* Keeps the standard arrangement the window starts with. */
       });
   }, []);
 
@@ -1098,7 +1118,7 @@ function MainApp() {
     }
     setSignUp((s) => ({ ...s, busy: true, error: null, success: null }));
     try {
-      const result = await invoke<SignInResult>("sign_up_with_password", {
+      const result = await invoke<SignInResult>("sign_up", {
         firstName: signUp.firstName,
         lastName: signUp.lastName,
         phone: signUp.phone,
@@ -1721,6 +1741,38 @@ function MainApp() {
     </div>
   );
 
+  const projectDetailProps = {
+    project: selectedProject,
+    breakdown: projectAppBreakdown,
+    screenshots: projectScreenshots,
+    screenshotImages: projectScreenshotImages.urls,
+    timeZone: displayTimezone,
+    selectedScreenshotId: selectedProjectScreenshotId,
+    loading: projectStatsLoading,
+    onSelectScreenshot: handleSelectProjectScreenshot,
+  };
+
+  // Wide and Compact move what sits at the bottom of the main pane into a
+  // column of their own; Standard and Focus keep it in the main pane. With
+  // apps & screenshots switched off, Wide and Compact have no column at all -
+  // the window was sized without one (window_layout.rs) - and a task's details
+  // go back into the main pane. The column itself only shows while there is a
+  // selection with something to put in it.
+  const layoutHasSideColumn = windowLayout.sideColumn;
+  // Standard always shows the apps & screenshots card; the other layouts
+  // follow Settings > Show apps & screenshots.
+  const insightsVisible = layoutKind === "standard" || showInsights;
+  const hasSelection = signedIn && Boolean(selectedTaskId || (taskLessSession && selectedProjectId));
+  const showSideColumn =
+    layoutHasSideColumn &&
+    hasSelection &&
+    (taskLessSession
+      ? insightsVisible && Boolean(selectedProject)
+      : taskDetailHasContent(taskDetail, taskDetailLoading));
+  // What the main pane's own project card shows: everything in Standard and
+  // Focus, just the badges where the column (or the setting) takes the rest.
+  const mainPaneProjectSection = layoutHasSideColumn || !insightsVisible ? "badges" : "all";
+
   if (signedIn && monitoringNotice?.requiresAcknowledgement) {
     return (
       <MonitoringNoticePanel
@@ -1776,7 +1828,7 @@ function MainApp() {
   const isPanelView = view === "settings" || view === "profile";
 
   return (
-    <main className="agent-tray">
+    <main className={`agent-tray layout-${layoutKind}${layoutHasSideColumn ? "" : " no-side-column"}`}>
       <TitleBar
         title={view === "settings" ? "Settings" : view === "profile" ? "Profile" : "Virtual Tracker"}
         onClose={() => void invoke("close_window")}
@@ -1791,7 +1843,11 @@ function MainApp() {
         className={`agent-view${isPanelView ? " settings-window view-settings" : " view-home"}`}
       >
       {view === "settings" ? (
-        <SettingsPanel onBack={() => setView("home")} />
+        <SettingsPanel
+          onBack={() => setView("home")}
+          onLayoutChanged={setWindowLayout}
+          onShowInsightsChanged={setShowInsights}
+        />
       ) : view === "profile" ? (
         <ProfilePanel
           profile={profile}
@@ -2099,16 +2155,10 @@ function MainApp() {
 
                 {taskLessSession ? (
                   <ProjectDetailPanel
-                    project={selectedProject}
-                    breakdown={projectAppBreakdown}
-                    screenshots={projectScreenshots}
-                    screenshotImages={projectScreenshotImages.urls}
-                    timeZone={displayTimezone}
-                    selectedScreenshotId={selectedProjectScreenshotId}
-                    loading={projectStatsLoading}
-                    onSelectScreenshot={handleSelectProjectScreenshot}
+                    {...projectDetailProps}
+                    section={mainPaneProjectSection}
                   />
-                ) : (
+                ) : showSideColumn ? null : (
                   <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
                 )}
 
@@ -2177,6 +2227,20 @@ function MainApp() {
 
             <span className="version-banner">v{version}</span>
           </section>
+        ) : null}
+
+        {/* Compact layout only: what sits at the bottom of the main pane in
+            the standard layout - the week's top apps over the screenshots,
+            or this task's details - gets a column of its own, so the window
+            can be shorter without shrinking anything. */}
+        {showSideColumn ? (
+          <aside className="side-column" aria-label={taskLessSession ? "This week's apps and screenshots" : "This task"}>
+            {taskLessSession ? (
+              <ProjectDetailPanel {...projectDetailProps} section="insights" />
+            ) : (
+              <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
+            )}
+          </aside>
         ) : null}
       </div>
       )}

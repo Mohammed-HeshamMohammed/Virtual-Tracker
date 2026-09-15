@@ -4793,3 +4793,215 @@ select.modal-input {
 }
 .project-radar-empty p { margin: 0; font-size: 12px; opacity: 0.6; line-height: 1.4; }
 .project-radar-empty .project-radar-empty-hint { opacity: 0.4; }
+
+/* ------------------------------------------------------------------------
+   Window layouts (window_layout.rs sizes the window; Settings > Window layout
+   picks one). The root carries .layout-standard / -wide / -compact / -focus.
+
+   Nothing here makes anything smaller. Wide and Compact move the week's top
+   apps and the screenshots (or a task's details) out of the bottom of the main
+   pane into .side-column; Compact and Focus show two rows of projects/tasks
+   before scrolling instead of three; Focus keeps everything in the main pane
+   and lets it scroll. Settings > Show apps & screenshots hides that card in
+   Wide, Compact and Focus.
+   ------------------------------------------------------------------------ */
+
+/* Two rows instead of three - the same 45px tallest row as the standard
+   cap above, two of them plus the one 4px gap between them. */
+.layout-compact .side-tasklist-body,
+.layout-focus .side-tasklist-body {
+  max-height: 94px;
+}
+
+/* A card of its own beside the main pane, built like .page-area so the
+   stat panel inside looks exactly as it does in the standard layout. */
+.side-column {
+  width: 296px;
+  flex-shrink: 0;
+  min-height: 0;
+  margin: 44px 14px 14px 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--surface-high);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+/* Fills the column, the same way it fills the leftover main-pane height in
+   the standard layout. */
+.side-column > .project-detail-panel {
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+/* Wide has the room for a bigger radar and screenshot. */
+.layout-wide .side-column {
+  width: 360px;
+}
+
+/* Focus: the window is shorter than the main pane's content, so the pane
+   scrolls rather than squeezing its cards. Each card keeps its natural
+   height, and the apps & screenshots card gets a fixed one - in the standard
+   layout it fills the leftover height, and in a scrolling pane there is none
+   to fill. */
+.layout-focus .page-area > *,
+.layout-wide.no-side-column .page-area > *,
+.layout-compact.no-side-column .page-area > * {
+  flex-shrink: 0;
+}
+
+.layout-focus .page-area > .project-detail-panel {
+  flex: 0 0 auto;
+  height: 300px;
+}
+
+/* Pinned to the pane's bottom corner elsewhere; in a pane that scrolls that
+   corner lands on top of the cards, so here it follows the content instead. */
+.layout-focus .page-area > .version-banner,
+.layout-wide.no-side-column .page-area > .version-banner,
+.layout-compact.no-side-column .page-area > .version-banner {
+  position: static;
+  align-self: flex-end;
+}
+
+/* Top apps over screenshots rather than side by side. Both halves share the
+   column's height; the radar still sizes off its frame and stays square. */
+.project-detail-row.stacked {
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 0;
+}
+
+.project-detail-row.stacked .project-app-chart,
+.project-detail-row.stacked .project-shots-card {
+  flex: 1 1 0%;
+  max-width: none;
+  min-width: 0;
+}
+
+/* ─── Settings: layout picker ─────────────────────────────────────────────── */
+
+.layout-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.layout-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px 10px 11px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--c-line) / 0.18);
+  background: rgb(var(--c-well) / 0.55);
+  color: var(--on-surface);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.layout-option:hover:not(:disabled) {
+  border-color: rgb(var(--c-primary) / 0.45);
+}
+
+.layout-option.active {
+  border-color: rgb(var(--c-primary) / 0.8);
+  background: rgb(var(--c-primary) / 0.08);
+  box-shadow: inset 0 0 0 1px rgb(var(--c-primary) / 0.35);
+}
+
+.layout-option:focus-visible {
+  outline: 2px solid rgb(var(--c-primary) / 0.7);
+  outline-offset: 2px;
+}
+
+.layout-option:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* A fixed-height stage, so every card's text lines up whatever the preview's
+   proportions; each preview is scaled to its own window's width inside it. */
+.layout-preview {
+  display: flex;
+  align-items: flex-end;
+  height: 74px;
+  margin-bottom: 8px;
+  align-self: center;
+  justify-content: center;
+}
+
+.layout-preview svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 74px;
+}
+
+.lp-window {
+  fill: rgb(var(--c-surface-low));
+  stroke: rgb(var(--c-line) / 0.45);
+  stroke-width: 1;
+}
+
+.lp-sidebar {
+  fill: rgb(var(--c-overlay) / 0.04);
+}
+
+.lp-pane {
+  fill: rgb(var(--c-surface-highest) / 0.9);
+}
+
+.lp-block,
+.lp-row {
+  fill: rgb(var(--c-overlay) / 0.16);
+}
+
+.lp-accent {
+  fill: rgb(var(--c-primary) / 0.75);
+}
+
+/* The part the "Show apps & screenshots" setting controls - tinted so it's
+   obvious which block comes and goes. */
+.lp-insights {
+  fill: rgb(var(--c-primary) / 0.32);
+}
+
+.layout-preview.is-auto svg {
+  opacity: 0.85;
+}
+
+.layout-option-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.layout-option-name .vt-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--primary);
+}
+
+.layout-option-size {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 10.5px;
+  color: var(--on-surface-variant);
+}
+
+.layout-option-for {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--on-surface-faint);
+}
