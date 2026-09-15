@@ -45,16 +45,16 @@ export type ForgotState = {
 export type ThemePreference = "system" | "light" | "dark";
 
 /** A concrete arrangement of the window - see window_layout.rs. */
-export type LayoutKind = "standard" | "wide" | "compact" | "focus";
+export type LayoutKind = "standard" | "wide" | "extended" | "focus";
 
-/** Auto keeps Standard wherever it fits and picks Compact or Focus on
- *  screens too short for it. */
+/** Auto keeps Standard wherever it fits and picks Focus on screens too small
+ *  even for that. */
 export type LayoutPreference = "auto" | LayoutKind;
 
 /** What get_window_layout reports: the layout the window was actually sized for. */
 export type WindowLayout = {
   kind: LayoutKind;
-  /** Sized with the apps & screenshots column in it (Wide/Compact, setting on). */
+  /** Sized with the apps & screenshots column in it (Standard/Wide, setting on). */
   sideColumn: boolean;
   width: number;
   height: number;
@@ -70,7 +70,7 @@ export type UserPreferences = {
   theme: ThemePreference;
   memberTimezone: string;
   layout: LayoutPreference;
-  /** The week's top apps and the screenshots, in Wide/Compact/Focus. */
+  /** The week's top apps and the screenshots, in Standard/Wide/Focus. */
   showInsights: boolean;
 };
 

@@ -1752,16 +1752,17 @@ function MainApp() {
     onSelectScreenshot: handleSelectProjectScreenshot,
   };
 
-  // Wide and Compact move what sits at the bottom of the main pane into a
-  // column of their own; Standard and Focus keep it in the main pane. With
-  // apps & screenshots switched off, Wide and Compact have no column at all -
+  // Wide and Standard move what sits at the bottom of the main pane into a
+  // column of their own; Extended and Focus keep it in the main pane. With
+  // apps & screenshots switched off, Wide and Standard have no column at all -
   // the window was sized without one (window_layout.rs) - and a task's details
   // go back into the main pane. The column itself only shows while there is a
   // selection with something to put in it.
   const layoutHasSideColumn = windowLayout.sideColumn;
-  // Standard always shows the apps & screenshots card; the other layouts
-  // follow Settings > Show apps & screenshots.
-  const insightsVisible = layoutKind === "standard" || showInsights;
+  // Extended always shows the apps & screenshots card - it's a fixed size, so
+  // hiding the card would just leave dead space instead of a narrower window.
+  // The other layouts follow Settings > Show apps & screenshots.
+  const insightsVisible = layoutKind === "extended" || showInsights;
   const hasSelection = signedIn && Boolean(selectedTaskId || (taskLessSession && selectedProjectId));
   const showSideColumn =
     layoutHasSideColumn &&
@@ -1769,7 +1770,7 @@ function MainApp() {
     (taskLessSession
       ? insightsVisible && Boolean(selectedProject)
       : taskDetailHasContent(taskDetail, taskDetailLoading));
-  // What the main pane's own project card shows: everything in Standard and
+  // What the main pane's own project card shows: everything in Extended and
   // Focus, just the badges where the column (or the setting) takes the rest.
   const mainPaneProjectSection = layoutHasSideColumn || !insightsVisible ? "badges" : "all";
 
@@ -2229,8 +2230,8 @@ function MainApp() {
           </section>
         ) : null}
 
-        {/* Compact layout only: what sits at the bottom of the main pane in
-            the standard layout - the week's top apps over the screenshots,
+        {/* Standard and Wide only: what sits at the bottom of the main pane in
+            Extended and Focus - the week's top apps over the screenshots,
             or this task's details - gets a column of its own, so the window
             can be shorter without shrinking anything. */}
         {showSideColumn ? (

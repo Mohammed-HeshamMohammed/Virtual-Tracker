@@ -49,14 +49,22 @@ pub struct UserPreferences {
     /// own zone.
     #[serde(default)]
     pub member_timezone: String,
-    /// "auto" | "standard" | "wide" | "compact" | "focus". Auto keeps the
-    /// standard window wherever it fits and picks compact or focus on screens
-    /// too short for it - see window_layout.rs.
+    /// "auto" | "standard" | "wide" | "extended" | "focus". Standard is the
+    /// default shape now (was "compact"): wider and shorter, so it fits a
+    /// laptop screen without the window running off the bottom. Extended is
+    /// the original 1100x750 window, for anyone who wants the room and has a
+    /// monitor for it. Auto picks Standard wherever it fits, Focus on
+    /// screens too small even for that, and never picks Wide or Extended on
+    /// its own - see window_layout.rs.
     #[serde(default = "default_layout")]
     pub layout: String,
-    /// Whether the week's top apps and the screenshots are shown in the Wide,
-    /// Compact and Focus layouts. Standard always shows them.
-    #[serde(default = "default_true")]
+    /// Whether the week's top apps and the screenshots are shown in Standard
+    /// and Wide - off by default, since most people open the app to track
+    /// time, not to browse last week's apps, and the column it would
+    /// otherwise reserve makes the default window that much wider for
+    /// nothing. Extended always shows it regardless (it doesn't shrink, so
+    /// hiding it would just leave dead space); Focus leaves it out.
+    #[serde(default)]
     pub show_insights: bool,
 }
 
@@ -80,7 +88,7 @@ impl Default for UserPreferences {
             theme: default_theme(),
             member_timezone: String::new(),
             layout: default_layout(),
-            show_insights: true,
+            show_insights: false,
         }
     }
 }
@@ -175,6 +183,6 @@ mod tests {
         assert!(!prefs.close_to_tray);
         assert_eq!(prefs.theme, "light");
         assert_eq!(prefs.layout, "auto");
-        assert!(prefs.show_insights, "the apps & screenshots card starts switched on");
+        assert!(!prefs.show_insights, "the apps & screenshots card starts switched off");
     }
 }

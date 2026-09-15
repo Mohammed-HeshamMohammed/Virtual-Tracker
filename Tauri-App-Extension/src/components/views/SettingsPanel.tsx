@@ -39,20 +39,20 @@ const THEMES: { id: ThemePreference; label: string }[] = [
 
 const LAYOUTS: { id: LayoutPreference; label: string; forScreens: string }[] = [
   { id: "auto", label: "Auto", forScreens: "Picks the best layout for this screen" },
-  { id: "standard", label: "Standard", forScreens: "Desktop monitors" },
+  { id: "standard", label: "Standard", forScreens: "Fits most laptops and monitors" },
   { id: "wide", label: "Wide", forScreens: "Large monitors" },
-  { id: "compact", label: "Compact", forScreens: "Laptops - short, wide screens" },
+  { id: "extended", label: "Extended", forScreens: "Desktop monitors, the original size" },
   { id: "focus", label: "Focus", forScreens: "Small laptops and high scaling" },
 ];
 
 /** Each layout's window size on a screen with room for it - mirrors
- *  preferred_size / side_column_width in window_layout.rs. Wide and Compact
+ *  preferred_size / side_column_width in window_layout.rs. Wide and Standard
  *  lose their column's width when apps & screenshots is off. */
 function layoutSize(kind: LayoutKind, showInsights: boolean): string {
   const sizes: Record<LayoutKind, [number, number, number]> = {
-    standard: [1100, 750, 0],
+    standard: [1320, 660, 310],
     wide: [1420, 820, 374],
-    compact: [1320, 660, 310],
+    extended: [1100, 750, 0],
     focus: [1040, 600, 0],
   };
   const [width, height, column] = sizes[kind];
@@ -62,7 +62,7 @@ function layoutSize(kind: LayoutKind, showInsights: boolean): string {
 const LAYOUT_NAMES: Record<LayoutKind, string> = {
   standard: "Standard",
   wide: "Wide",
-  compact: "Compact",
+  extended: "Extended",
   focus: "Focus",
 };
 
@@ -105,7 +105,7 @@ export function SettingsPanel({
       if (key === "showInsights") onShowInsightsChanged?.(Boolean(value));
       if (key === "layout" || key === "showInsights") {
         // save_preferences has already resized the window - switching apps &
-        // screenshots off narrows Wide and Compact too. Ask what it settled
+        // screenshots off narrows Wide and Standard too. Ask what it settled
         // on (Auto depends on the screen) so the app can match it.
         const layout = await invoke<WindowLayout>("get_window_layout");
         setWindowLayout(layout);
@@ -212,16 +212,16 @@ export function SettingsPanel({
             field="showInsights"
             title="Show apps & screenshots"
             sub={
-              prefs?.showInsights === false
-                ? "Off: Wide and Compact have no side column and a narrower window, and Focus leaves the card out. Standard always shows it."
-                : "This week's top apps and recent screenshots (the green blocks below). Turn off to remove the space they take in Wide, Compact and Focus."
+              prefs?.showInsights
+                ? "This week's top apps and recent screenshots (the green blocks below). Off narrows Standard and Wide instead of leaving the space empty."
+                : "Off by default: Standard and Wide have no side column and a narrower window, and Focus leaves the card out. Extended always shows it."
             }
           />
 
           <div className="layout-picker" role="radiogroup" aria-label="Window layout">
             {LAYOUTS.map((l) => {
               const active = (prefs?.layout ?? "auto") === l.id;
-              const insightsOn = prefs?.showInsights ?? true;
+              const insightsOn = prefs?.showInsights ?? false;
               // Auto previews whatever it has picked for this screen.
               const previewKind: LayoutKind =
                 l.id === "auto" ? (windowLayout?.kind ?? "standard") : l.id;
@@ -245,7 +245,7 @@ export function SettingsPanel({
                 >
                   <LayoutPreview
                     kind={previewKind}
-                    showInsights={previewKind === "standard" || insightsOn}
+                    showInsights={previewKind === "extended" || insightsOn}
                     auto={l.id === "auto"}
                   />
                   <span className="layout-option-name">

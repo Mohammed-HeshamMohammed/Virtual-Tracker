@@ -4842,25 +4842,28 @@ select.modal-input {
 
 /* ------------------------------------------------------------------------
    Window layouts (window_layout.rs sizes the window; Settings > Window layout
-   picks one). The root carries .layout-standard / -wide / -compact / -focus.
+   picks one). The root carries .layout-standard / -wide / -extended / -focus.
 
-   Nothing here makes anything smaller. Wide and Compact move the week's top
+   Nothing here makes anything smaller. Wide and Standard move the week's top
    apps and the screenshots (or a task's details) out of the bottom of the main
-   pane into .side-column; Compact and Focus show two rows of projects/tasks
+   pane into .side-column; Standard and Focus show two rows of projects/tasks
    before scrolling instead of three; Focus keeps everything in the main pane
    and lets it scroll. Settings > Show apps & screenshots hides that card in
-   Wide, Compact and Focus.
+   Standard, Wide and Focus - Extended always shows it (see .layout-focus and
+   .no-side-column below - Extended never carries .no-side-column since it
+   never has a column to lose).
    ------------------------------------------------------------------------ */
 
 /* Two rows instead of three - the same 45px tallest row as the standard
    cap above, two of them plus the one 4px gap between them. */
-.layout-compact .side-tasklist-body,
+.layout-standard .side-tasklist-body,
 .layout-focus .side-tasklist-body {
   max-height: 94px;
 }
 
 /* A card of its own beside the main pane, built like .page-area so the
-   stat panel inside looks exactly as it does in the standard layout. */
+   stat panel inside looks exactly as it does in the main pane (Extended,
+   Focus). */
 .side-column {
   width: 296px;
   flex-shrink: 0;
@@ -4876,8 +4879,8 @@ select.modal-input {
   overflow-y: auto;
 }
 
-/* Fills the column, the same way it fills the leftover main-pane height in
-   the standard layout. */
+/* Fills the column, the same way it fills the leftover main-pane height when
+   there is no column (Extended, Focus). */
 .side-column > .project-detail-panel {
   flex: 1 1 0%;
   min-height: 0;
@@ -4890,12 +4893,13 @@ select.modal-input {
 
 /* Focus: the window is shorter than the main pane's content, so the pane
    scrolls rather than squeezing its cards. Each card keeps its natural
-   height, and the apps & screenshots card gets a fixed one - in the standard
-   layout it fills the leftover height, and in a scrolling pane there is none
-   to fill. */
+   height, and the apps & screenshots card gets a fixed one - with a column
+   it fills the leftover height, and in a scrolling pane there is none to
+   fill. Standard/Wide need the same treatment only once their column is
+   switched off (.no-side-column) - with the column, they behave as usual. */
 .layout-focus .page-area > *,
-.layout-wide.no-side-column .page-area > *,
-.layout-compact.no-side-column .page-area > * {
+.layout-standard.no-side-column .page-area > *,
+.layout-wide.no-side-column .page-area > * {
   flex-shrink: 0;
 }
 
@@ -4907,8 +4911,8 @@ select.modal-input {
 /* Pinned to the pane's bottom corner elsewhere; in a pane that scrolls that
    corner lands on top of the cards, so here it follows the content instead. */
 .layout-focus .page-area > .version-banner,
-.layout-wide.no-side-column .page-area > .version-banner,
-.layout-compact.no-side-column .page-area > .version-banner {
+.layout-standard.no-side-column .page-area > .version-banner,
+.layout-wide.no-side-column .page-area > .version-banner {
   position: static;
   align-self: flex-end;
 }

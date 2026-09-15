@@ -4,9 +4,9 @@ import type { LayoutKind } from "../../types";
  *  reads wide and Focus reads small. In a 0-100 wide box; heights follow the
  *  window's own proportions. */
 const FRAMES: Record<LayoutKind, { width: number; height: number; column: number }> = {
-  standard: { width: 1100, height: 750, column: 0 },
+  standard: { width: 1320, height: 660, column: 310 },
   wide: { width: 1420, height: 820, column: 374 },
-  compact: { width: 1320, height: 660, column: 310 },
+  extended: { width: 1100, height: 750, column: 0 },
   focus: { width: 1040, height: 600, column: 0 },
 };
 
@@ -15,7 +15,7 @@ const LARGEST = 1420;
 /**
  * A miniature of a window layout: the sidebar, the main pane's stat cards, and
  * where the week's top apps and screenshots go - a column on the right in Wide
- * and Compact, the bottom of the main pane in Standard and Focus. The
+ * and Standard, the bottom of the main pane in Extended and Focus. The
  * apps & screenshots block disappears when that card is switched off.
  */
 export function LayoutPreview({
@@ -39,7 +39,7 @@ export function LayoutPreview({
   const sideW = (340 / frameWidth) * 100;
   // The column's own width, in the same 0-100 space (the gap is `pad`).
   const columnW = ((frame.column - 14) / frameWidth) * 100;
-  const listRows = kind === "compact" || kind === "focus" ? 2 : 3;
+  const listRows = kind === "standard" || kind === "focus" ? 2 : 3;
 
   const mainX = sideW + pad;
   const mainRight = hasColumn && showInsights ? w - pad - columnW - pad : w - pad;
