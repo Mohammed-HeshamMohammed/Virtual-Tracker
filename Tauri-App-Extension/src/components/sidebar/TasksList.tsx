@@ -9,7 +9,6 @@ type TasksListProps = {
   signedIn: boolean;
   loading: boolean;
   assignedTasks: AgentTask[];
-  assignedTasksFailed: boolean;
   selectedTaskId: string;
   busy: boolean;
   sessionOpen: boolean;
@@ -21,7 +20,6 @@ export function TasksList({
   signedIn,
   loading,
   assignedTasks,
-  assignedTasksFailed,
   selectedTaskId,
   busy,
   sessionOpen,
@@ -83,12 +81,10 @@ export function TasksList({
           <span className="skeleton-bar" />
           <span className="skeleton-bar" />
         </div>
-      ) : assignedTasksFailed ? (
-        <p className="side-tasklist-empty bad">
-          <Icon name="warn" />
-          Couldn't load your tasks
-        </p>
       ) : (
+        // Reads the same whether there really are no tasks or a poll is
+        // quietly failing and retrying in the background - see
+        // refreshAssignedTasks in App.tsx.
         <p className="side-tasklist-empty">
           <Icon name="info" />
           No tasks assigned to you. Pick a project that has tasks, or one you can track directly.

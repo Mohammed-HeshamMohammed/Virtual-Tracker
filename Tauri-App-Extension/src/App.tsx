@@ -107,6 +107,16 @@ function animateWorkedTodayRewind(
   requestAnimationFrame(step);
 }
 
+/** How long to wait before the next retry, given how many misses in a row -
+ *  quick at first, settling into a steady interval rather than either
+ *  hammering a struggling backend or ever actually stopping. Used by
+ *  refreshProjects/refreshAssignedTasks, which retry indefinitely and never
+ *  surface the miss to the member. */
+function retryDelayMs(failCount: number): number {
+  const steps = [3000, 3000, 5000, 8000];
+  return failCount <= steps.length ? steps[failCount - 1] : 15_000;
+}
+
 function usePolling(enabled: boolean, intervalMs: number, fn: () => Promise<void>) {
   const inFlight = useRef(false);
   useEffect(() => {
@@ -142,9 +152,6 @@ function MainApp() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
   const [assignedTasks, setAssignedTasks] = useState<AgentTask[]>([]);
-  // Consecutive failed rounds, not a bare flag: one failed poll must not
-  // repaint a working screen as broken (see refreshProjects/refreshAssignedTasks).
-  const [assignedTasksFailCount, setAssignedTasksFailCount] = useState(0);
   const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [assignedTasksLoaded, setAssignedTasksLoaded] = useState(false);
   const [dashboardSummary, setDashboardSummary] = useState<DashboardSummary | null>(null);
@@ -240,7 +247,6 @@ function MainApp() {
     error: null,
     success: null,
   });
-  const [projectsFailCount, setProjectsFailCount] = useState(0);
   const [themePref, setThemePref] = useState<ThemePreference>("system");
   // Follows the size the window was actually given (window_layout.rs), so the
   // arrangement always matches the space it has.
@@ -251,9 +257,7 @@ function MainApp() {
     height: 750,
   });
   const layoutKind: LayoutKind = windowLayout.kind;
-  const [showInsights, setShowInsights] = useState(true);
-  const projectsFailed = projectsFailCount > 0;
-  const assignedTasksFailed = assignedTasksFailCount > 0;
+  const [showInsights, setShowInsights] = useState(false);
 
   useEffect(() => {
     setAvatarError(false);
@@ -369,50 +373,47 @@ function MainApp() {
   // usePolling below fires the very first list_projects/list_tasks call the
   // instant these mount - squarely inside the app's cold-start auth/session
   // setup, where a single lost race is common and self-resolves in a couple
-  // seconds. Treating that first miss as final used to flip straight from
-  // skeleton to "Couldn't load your X" with nothing recovering it until the
-  // next 30s poll tick. These refs let a fail handler read the just-updated
-  // count synchronously (a setState updater running the retry as a side
-  // effect would get double-invoked under StrictMode) to decide: reveal the
-  // failure only on a second consecutive miss, and in between, retry fast
-  // instead of waiting out the full poll interval in silence.
+  // seconds.
+  //
+  // A dropped fetch here is never shown to the user as an error - the list
+  // already on screen is still the truest thing we know, so it stays exactly
+  // as it was, and the empty state (when there was never a list to begin
+  // with) reads the same as "nothing yet", not "something's wrong". What
+  // changes on a miss is purely internal: the retry keeps firing on its own,
+  // lengthening a little each time so a real outage isn't hammered forever,
+  // until a call actually succeeds. It never gives up and never needs the
+  // user to notice, let alone act.
   const projectsFailCountRef = useRef(0);
-  const projectsQuickRetryRef = useRef(false);
+  const projectsRetryTimerRef = useRef<number | null>(null);
   const assignedTasksFailCountRef = useRef(0);
-  const assignedTasksQuickRetryRef = useRef(false);
+  const assignedTasksRetryTimerRef = useRef<number | null>(null);
 
   const refreshProjects = useCallback(async () => {
     if (!signedIn) {
       setProjects([]);
       setSelectedProjectId("");
       projectsFailCountRef.current = 0;
-      setProjectsFailCount(0);
       return;
     }
     try {
       const next = await invoke<ProjectInfo[]>("list_projects");
       setProjects(next);
       projectsFailCountRef.current = 0;
-      setProjectsFailCount(0);
       setProjectsLoaded(true);
       setSelectedProjectId((current) =>
         current && next.some((p) => p.id === current && !p.budgetExhausted) ? current : "",
       );
     } catch {
-      // The list we already have is still the truest thing we know. Blanking it
-      // turned every dropped poll into an empty sidebar with a "Couldn't load"
-      // banner, which is exactly the flicker this avoids - the copy now only
-      // appears once loaded, and loaded only flips on success or a second miss.
       projectsFailCountRef.current += 1;
-      setProjectsFailCount(projectsFailCountRef.current);
-      if (projectsFailCountRef.current >= 2) {
-        setProjectsLoaded(true);
-      } else if (!projectsQuickRetryRef.current) {
-        projectsQuickRetryRef.current = true;
-        window.setTimeout(() => {
-          projectsQuickRetryRef.current = false;
+      // The skeleton still settles into the ordinary (not "failed") empty
+      // state after a couple of quick misses rather than spinning forever -
+      // only the retrying itself is unbounded.
+      if (projectsFailCountRef.current >= 2) setProjectsLoaded(true);
+      if (projectsRetryTimerRef.current == null) {
+        projectsRetryTimerRef.current = window.setTimeout(() => {
+          projectsRetryTimerRef.current = null;
           void refreshProjects();
-        }, 3000);
+        }, retryDelayMs(projectsFailCountRef.current));
       }
     }
   }, [signedIn]);
@@ -421,26 +422,21 @@ function MainApp() {
     if (!signedIn) {
       setAssignedTasks([]);
       assignedTasksFailCountRef.current = 0;
-      setAssignedTasksFailCount(0);
       return;
     }
     try {
       const next = await invoke<AgentTask[]>("list_tasks", { projectId: null });
       setAssignedTasks(next);
       assignedTasksFailCountRef.current = 0;
-      setAssignedTasksFailCount(0);
       setAssignedTasksLoaded(true);
     } catch {
       assignedTasksFailCountRef.current += 1;
-      setAssignedTasksFailCount(assignedTasksFailCountRef.current);
-      if (assignedTasksFailCountRef.current >= 2) {
-        setAssignedTasksLoaded(true);
-      } else if (!assignedTasksQuickRetryRef.current) {
-        assignedTasksQuickRetryRef.current = true;
-        window.setTimeout(() => {
-          assignedTasksQuickRetryRef.current = false;
+      if (assignedTasksFailCountRef.current >= 2) setAssignedTasksLoaded(true);
+      if (assignedTasksRetryTimerRef.current == null) {
+        assignedTasksRetryTimerRef.current = window.setTimeout(() => {
+          assignedTasksRetryTimerRef.current = null;
           void refreshAssignedTasks();
-        }, 3000);
+        }, retryDelayMs(assignedTasksFailCountRef.current));
       }
     }
   }, [signedIn]);
@@ -461,15 +457,13 @@ function MainApp() {
     }
   }, [signedIn]);
 
-  useEffect(() => {
-    if (!signedIn) return;
-    if (!projectsLoaded || !assignedTasksLoaded) return;
-    // Two consecutive failed rounds on both feeds, not one: a single dropped
-    // request used to swap the whole window for the reconnect screen.
-    if (projectsFailCount >= 2 && assignedTasksFailCount >= 2) {
-      setConnection("disconnected");
-    }
-  }, [signedIn, projectsLoaded, assignedTasksLoaded, projectsFailCount, assignedTasksFailCount]);
+  // A dropped projects/tasks poll no longer escalates to the reconnect
+  // screen on its own - refreshProjects/refreshAssignedTasks now retry
+  // indefinitely in the background instead of giving up, so there is no
+  // "gave up twice" moment left to escalate from. Real disconnection is
+  // still caught independently by get_connection_state (see `connection`
+  // above), which is what actually knows whether the agent can reach the
+  // server at all.
 
   const refreshWorkspace = useCallback(async () => {
     if (!signedIn) {
@@ -1907,7 +1901,6 @@ function MainApp() {
             signedIn={signedIn}
             loading={!assignedTasksLoaded}
             assignedTasks={assignedTasks}
-            assignedTasksFailed={assignedTasksFailed}
             selectedTaskId={selectedTaskId}
             busy={busy}
             sessionOpen={sessionOpen}
@@ -1926,11 +1919,14 @@ function MainApp() {
             <>
               {/* The placeholder for this list lives in ProjectsList itself,
                   where the rows actually appear - it used to sit down here
-                  next to the Start button, nowhere near what it stood in for. */}
+                  next to the Start button, nowhere near what it stood in for.
+                  Reads the same whether there really is nothing to show or a
+                  poll is quietly failing and retrying in the background - see
+                  refreshProjects. */}
               {projects.length === 0 && projectsLoaded ? (
-                <p className={`side-tasklist-empty side-panel-swap${projectsFailed ? " bad" : ""}`}>
-                  <Icon name={projectsFailed ? "warn" : "info"} />
-                  {projectsFailed ? "Couldn't load your projects" : "No projects to track against yet"}
+                <p className="side-tasklist-empty side-panel-swap">
+                  <Icon name="info" />
+                  No projects to track against yet
                 </p>
               ) : null}
 

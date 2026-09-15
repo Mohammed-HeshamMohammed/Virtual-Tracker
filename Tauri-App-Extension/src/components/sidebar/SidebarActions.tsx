@@ -35,9 +35,14 @@ export function SidebarActions({
   return (
     <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
       {paused ? (
-        <button className="btn btn-primary" type="button" disabled={busy} onClick={onResume}>
-          Resume tracking
-        </button>
+        <div className="action-pair">
+          <button className="btn btn-primary" type="button" disabled={busy} onClick={onResume}>
+            Resume tracking
+          </button>
+          <button className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={onStopClick}>
+            Stop
+          </button>
+        </div>
       ) : tracking ? (
         <div className="action-pair">
           <button className="btn btn-secondary" type="button" disabled={busy} onClick={onPause}>
