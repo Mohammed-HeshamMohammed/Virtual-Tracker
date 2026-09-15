@@ -28,12 +28,27 @@ async function deleteSession(linkToken) {
   await query("DELETE FROM agent_link_sessions WHERE link_token = $1", [linkToken]).catch(() => {});
 }
 
+const AGENT_SOURCES = new Set(["tauri", "electron", "python"]);
+
+/**
+ * Which desktop agent a request came from, as it says itself.
+ *
+ * Everything that wasn't "python" used to be recorded as "electron" - so the
+ * Tauri agent, which sends "tauri" and is the only agent in use, was stored
+ * as an app that no longer exists. Unknown or missing values are the Tauri
+ * agent too, since it is the one talking to this API.
+ */
+export function normalizeAgentSource(value) {
+  const source = String(value ?? "").trim().toLowerCase();
+  return AGENT_SOURCES.has(source) ? source : "tauri";
+}
+
 export async function createAgentLinkSession(options = {}) {
   const linkToken = randomToken();
   const agentSecret = randomToken();
   const now = Date.now();
   const expiresAt = now + TTL_MS;
-  const agentSource = options.agentSource === "python" ? "python" : "electron";
+  const agentSource = normalizeAgentSource(options.agentSource);
   await query(
     `INSERT INTO agent_link_sessions (link_token, agent_secret, agent_source, expires_at)
      VALUES ($1, $2, $3, $4)`,

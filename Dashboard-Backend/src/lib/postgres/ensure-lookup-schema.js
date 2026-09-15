@@ -1372,12 +1372,18 @@ END $$`,
   member_id                UUID,
   id_token                 TEXT,
   refresh_token            TEXT NOT NULL DEFAULT '',
-  agent_source             VARCHAR(20) NOT NULL DEFAULT 'electron' CHECK (agent_source IN ('electron', 'python')),
+  agent_source             VARCHAR(20) NOT NULL DEFAULT 'tauri' CHECK (agent_source IN ('tauri', 'electron', 'python')),
   expires_at               TIMESTAMPTZ NOT NULL,
   invalid_exchange_attempts INTEGER NOT NULL DEFAULT 0,
   created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at               TIMESTAMPTZ
 )`,
+  // The Tauri agent sends "tauri", which the original CHECK didn't allow - so
+  // every link session was stored as "electron". Widened in place for tables
+  // created before (idempotent: runs every boot).
+  `ALTER TABLE agent_link_sessions DROP CONSTRAINT IF EXISTS agent_link_sessions_agent_source_check`,
+  `ALTER TABLE agent_link_sessions ADD CONSTRAINT agent_link_sessions_agent_source_check CHECK (agent_source IN ('tauri', 'electron', 'python'))`,
+  `ALTER TABLE agent_link_sessions ALTER COLUMN agent_source SET DEFAULT 'tauri'`,
   `CREATE TABLE IF NOT EXISTS agent_devices (
   device_id       UUID PRIMARY KEY,
   member_id       UUID NOT NULL,
