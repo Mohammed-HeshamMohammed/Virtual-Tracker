@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Virtual Tracker Agent",
+  "productName": "My Virtual Tracker",
   "version": "1.0.17",
   "identifier": "com.virtualtracker.agent",
   "build": {
@@ -58,6 +58,7 @@
       "timestampUrl": "http://timestamp.digicert.com",
       "nsis": {
         "installMode": "perMachine",
+        "installerHooks": "./windows/installer-hooks.nsh",
         "displayLanguageSelector": false
       }
     },

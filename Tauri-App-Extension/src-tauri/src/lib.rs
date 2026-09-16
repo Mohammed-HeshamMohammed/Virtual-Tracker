@@ -510,6 +510,34 @@ async fn is_session_paused(state: tauri::State<'_, AppState>) -> Result<bool, St
     Ok(run_blocking(move || controller.is_session_paused()).await)
 }
 
+/// What the app was called before it became My Virtual Tracker. The autostart
+/// plugin names its start-at-login entry after the product name, so the old
+/// entry would keep launching the app a second time at login.
+const LEGACY_PRODUCT_NAME: &str = "Virtual Tracker Agent";
+
+/// Removes the start-at-login entry registered under the old product name. The
+/// Windows installer removes it too, but only for the account that ran the
+/// installer - this covers every other user (and macOS, which has no installer
+/// step). A missing entry is the normal case after the first run.
+fn remove_legacy_autostart(app: &AppHandle) {
+    if app.package_info().name == LEGACY_PRODUCT_NAME {
+        return;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut builder = auto_launch::AutoLaunchBuilder::new();
+    builder.set_app_name(LEGACY_PRODUCT_NAME);
+    builder.set_app_path(&exe.display().to_string());
+    #[cfg(target_os = "macos")]
+    builder.set_use_launch_agent(true);
+    if let Ok(entry) = builder.build() {
+        if entry.disable().is_ok() {
+            log::info!("Removed the start-at-login entry left under the name {LEGACY_PRODUCT_NAME}");
+        }
+    }
+}
+
 fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
@@ -863,6 +891,7 @@ pub fn run() {
                 }
             }));
 
+            remove_legacy_autostart(app.handle());
             let _ = apply_autostart(app.handle(), launch_at_login);
 
             controller.start();

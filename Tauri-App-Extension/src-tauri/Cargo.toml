@@ -28,6 +28,9 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-autostart = "2"
+# Same crate the autostart plugin wraps - used directly only to remove the
+# start-at-login entry left under the pre-rename product name.
+auto-launch = "0.5"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
 tauri-plugin-notification = "2"
