@@ -5212,6 +5212,21 @@ select.modal-input {
   width: 270px;
 }
 
+/* The tasks live in their own column in Focus, so the project list takes the
+   sidebar height they left behind instead of stopping at three rows. The
+   floor keeps three rows visible when the cards above it are tall - the
+   sidebar scrolls then, same as before. */
+.layout-focus .side-panel .side-tasklist {
+  flex: 1 1 0%;
+  min-height: 180px;
+}
+
+.layout-focus .side-panel .side-tasklist-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
 /* Same card as .side-column, on the other side of the main pane - Focus's
    tasks live here so the sidebar only has to hold the projects. */
 .tasks-column {
