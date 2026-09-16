@@ -40,7 +40,7 @@ export default function Image() {
             />
           )}
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 54, fontWeight: 800, letterSpacing: "-0.02em" }}>Virtual Tracker</div>
+            <div style={{ fontSize: 54, fontWeight: 800, letterSpacing: "-0.02em" }}>My Virtual Tracker</div>
             <div style={{ fontSize: 24, color: "#38bdf8", fontWeight: 500, marginTop: 4 }}>Workforce Productivity Platform</div>
           </div>
         </div>

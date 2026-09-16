@@ -44,7 +44,7 @@ export default function DemoPage() {
               project: task.projectName,
             }))
           : [
-              { task: "Designing landing page subpages", time: "2 hrs 40 mins", status: "Approved", project: "Virtual Tracker Web" },
+              { task: "Designing landing page subpages", time: "2 hrs 40 mins", status: "Approved", project: "My Virtual Tracker Web" },
               { task: "Implementing active window process logging", time: "3 hrs 15 mins", status: "Pending", project: "Python Desktop Extension" },
               { task: "Refactoring Firestore security rule constraints", time: "1 hr 10 mins", status: "Approved", project: "Database Security" }
             ]

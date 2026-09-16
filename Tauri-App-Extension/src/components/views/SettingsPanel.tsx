@@ -300,7 +300,7 @@ export function SettingsPanel({
         </section>
 
         <p className="settings-version">
-          Virtual Tracker Agent <span className="settings-version-pill">v{settings?.version || "—"}</span>
+          My Virtual Tracker <span className="settings-version-pill">v{settings?.version || "—"}</span>
         </p>
         <p className="settings-credit">Soft Fix &middot; Virtual Callers</p>
         <div className="settings-credit-links">

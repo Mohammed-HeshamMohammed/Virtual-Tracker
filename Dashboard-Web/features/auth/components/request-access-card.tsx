@@ -140,7 +140,7 @@ export function RequestAccessCard({ isDark, isActive, onBackToLogin }: RequestAc
         </AuthStaggerItem>
         <AuthStaggerItem>
           <p className={cn("shrink-0 text-center text-sm leading-relaxed sm:text-base", u.body)}>
-            Share your details so we can follow up about Virtual Tracker.
+            Share your details so we can follow up about My Virtual Tracker.
             <br />
             <span className={cn("text-xs sm:text-sm", u.bodySub)}>
               Submitted to your workspace once it's set up and reachable.

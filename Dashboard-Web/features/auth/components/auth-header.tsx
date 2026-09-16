@@ -23,7 +23,7 @@ export function AuthHeader({ isDark, onRequestAccess }: AuthHeaderProps) {
         <div className="relative h-9 w-9 shrink-0">
           <Image
             src={isDark ? "/stopwatch-green.png" : "/stopwatch-black.png"}
-            alt="Virtual Tracker"
+            alt="My Virtual Tracker"
             className="h-9 w-9 object-contain"
             width={36}
             height={36}
@@ -31,7 +31,7 @@ export function AuthHeader({ isDark, onRequestAccess }: AuthHeaderProps) {
         </div>
         <div>
           <h1 className={cn("text-[1.1rem] font-black leading-none tracking-tight", u.brandTitle)}>
-            Virtual Tracker
+            My Virtual Tracker
           </h1>
           <button
             type="button"

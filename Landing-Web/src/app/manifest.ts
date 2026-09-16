@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next"
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Virtual Tracker",
-    short_name: "Virtual Tracker",
+    name: "My Virtual Tracker",
+    short_name: "My Virtual Tracker",
     description: "Precise time tracking and workforce productivity suite for modern teams.",
     start_url: "/",
     display: "standalone",

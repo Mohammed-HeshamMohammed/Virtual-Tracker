@@ -3,7 +3,7 @@ export const PRODUCT_TAGLINE =
   "Work tracking and utilization monitoring for distributed teams."
 
 export const PRODUCT_DESCRIPTION =
-  "Virtual Tracker combines task-linked time tracking, desktop activity capture, project management, and org hierarchy — backed by Firebase with backend-enforced permissions."
+  "My Virtual Tracker combines task-linked time tracking, desktop activity capture, project management, and org hierarchy — backed by Firebase with backend-enforced permissions."
 
 export const HERO_CYCLING_WORDS = ["distributed", "remote", "operations", "project", "growing"] as const
 
@@ -292,7 +292,7 @@ export const PRICING_PLANS = [
   {
     name: "Team",
     price: "Contact us",
-    description: "For teams deploying Virtual Tracker on their Firebase project.",
+    description: "For teams deploying My Virtual Tracker on their Firebase project.",
     features: ["Role-based visibility", "Member invites & transfers", "Presence & notifications", "Engineering support for setup"],
   },
   {
@@ -306,7 +306,7 @@ export const PRICING_PLANS = [
 export const BLOG_POSTS = [
   {
     slug: "desktop-agent-setup",
-    title: "Setting up the Virtual Tracker desktop agent",
+    title: "Setting up the My Virtual Tracker desktop app",
     excerpt: "Link the Windows or macOS Python agent to your workspace and start ingesting activity while the timer runs.",
     date: "June 2026",
   },
@@ -362,7 +362,7 @@ export const SLUG_PAGES: Record<string, { title: string; description: string; bu
   },
   faq: {
     title: "FAQ",
-    description: "Common questions about what Virtual Tracker ships today versus what is on the roadmap.",
+    description: "Common questions about what My Virtual Tracker ships today versus what is on the roadmap.",
     bullets: [
       "Does it process payroll? No — budgets and pay rates are metadata only.",
       "Are Slack/Jira connected? Not yet — integrations are planned UI.",

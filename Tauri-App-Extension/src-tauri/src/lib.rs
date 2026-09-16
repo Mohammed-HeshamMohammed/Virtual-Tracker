@@ -585,9 +585,9 @@ fn show_startup_error(message: &str) {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
     let text = to_wide(&format!(
-        "Virtual Tracker could not start:\n\n{message}\n\nCheck the agent log for details."
+        "My Virtual Tracker could not start:\n\n{message}\n\nCheck the agent log for details."
     ));
-    let caption = to_wide("Virtual Tracker");
+    let caption = to_wide("My Virtual Tracker");
     unsafe {
         let _ = MessageBoxW(None, PCWSTR(text.as_ptr()), PCWSTR(caption.as_ptr()), MB_OK | MB_ICONERROR);
     }
@@ -610,8 +610,8 @@ fn show_tray_hidden_notice() {
     fn to_wide(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
     }
-    let text = to_wide("Virtual Tracker is still running.\n\nClick the tray icon to reopen it.");
-    let caption = to_wide("Virtual Tracker");
+    let text = to_wide("My Virtual Tracker is still running.\n\nClick the tray icon to reopen it.");
+    let caption = to_wide("My Virtual Tracker");
     unsafe {
         let _ = MessageBoxW(None, PCWSTR(text.as_ptr()), PCWSTR(caption.as_ptr()), MB_OK | MB_ICONINFORMATION);
     }
@@ -661,7 +661,7 @@ fn notify_shortcut_action(app: &AppHandle, action: &str) {
     let _ = app
         .notification()
         .builder()
-        .title("Virtual Tracker")
+        .title("My Virtual Tracker")
         .body(format!("{action} tracking"))
         .show();
 }
@@ -889,7 +889,7 @@ pub fn run() {
                 let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
                 let sign_in_i = MenuItem::with_id(app, "sign_in", "Sign in", true, None::<&str>)?;
                 let open_i =
-                    MenuItem::with_id(app, "open", "Open Virtual Tracker", true, None::<&str>)?;
+                    MenuItem::with_id(app, "open", "Open My Virtual Tracker", true, None::<&str>)?;
                 let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(
                     app,
@@ -909,7 +909,7 @@ pub fn run() {
                 let tray_controller = Arc::clone(&controller);
                 let mut tray_builder = TrayIconBuilder::new()
                     .menu(&menu)
-                    .tooltip("Virtual Tracker Agent")
+                    .tooltip("My Virtual Tracker")
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "show" => show_main_window(app),
                         "sign_in" => {

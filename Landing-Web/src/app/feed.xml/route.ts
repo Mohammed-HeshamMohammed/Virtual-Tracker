@@ -6,9 +6,9 @@ export async function GET() {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
   <channel>
-    <title>Virtual Tracker Blog</title>
+    <title>My Virtual Tracker Blog</title>
     <link>https://virtualtracker.com/blog</link>
-    <description>Updates and insights from Virtual Tracker.</description>
+    <description>Updates and insights from My Virtual Tracker.</description>
     <item>
       <title>How modern teams are improving accountability with better time tracking</title>
       <link>https://virtualtracker.com/blog</link>

@@ -4,8 +4,8 @@ import { AuthSessionLoader } from "@/features/auth"
 import AuthActionPage from "@/features/auth/pages/auth-action-page"
 
 export const metadata: Metadata = {
-  title: "Verify email — Virtual Tracker",
-  description: "Complete email verification for your Virtual Tracker account.",
+  title: "Verify email — My Virtual Tracker",
+  description: "Complete email verification for your account on My Virtual Tracker.",
 }
 
 export default function EmailActionRoutePage() {

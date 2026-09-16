@@ -22,7 +22,7 @@ export function DashboardStatusBrand({ isDark }: { isDark: boolean }) {
         className={cn("text-[24px] leading-none tracking-tight", t.title)}
         style={{ fontFamily: "'Exo 2', system-ui, sans-serif", fontWeight: 500 }}
       >
-        Virtual Tracker <span className="text-base font-semibold">OS</span>
+        My Virtual Tracker <span className="text-base font-semibold">OS</span>
       </h1>
       <p className={cn("mt-1 text-[9px] font-medium uppercase tracking-widest", t.bodySub)}>
         Productivity Suite

@@ -122,7 +122,7 @@ export function SignInPanel({
         <section className="auth-brand" aria-hidden="true" data-tauri-drag-region>
           <div className="auth-brand-mark" data-tauri-drag-region>
             <img src="/app-icon.ico" width={36} height={36} alt="" draggable={false} />
-            <span data-tauri-drag-region>Virtual Tracker</span>
+            <span data-tauri-drag-region>My Virtual Tracker</span>
           </div>
 
           <div className="auth-brand-copy">
@@ -173,7 +173,7 @@ export function SignInPanel({
               <div key="signup" className="auth-form-view">
                 <div className="auth-form-head">
                   <h1>Create account</h1>
-                  <p>Set up a new Virtual Tracker account</p>
+                  <p>Set up a new account on My Virtual Tracker</p>
                 </div>
                 <form
                   className="signin-form"

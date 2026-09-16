@@ -47,7 +47,7 @@ export function AppInitializationScreen() {
 
             <h1 className="text-xl font-bold tracking-tight">Setting up {displayName}</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              We&apos;re loading everything you need before opening Virtual Tracker.
+              We&apos;re loading everything you need before opening My Virtual Tracker.
             </p>
 
             <div className="mt-8 w-full">

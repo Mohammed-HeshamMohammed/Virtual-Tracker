@@ -70,9 +70,9 @@ export default function AboutPage() {
     <PageShell>
       <main className="bg-slate-50/50 text-slate-900 pb-24">
         <PageIntro
-          eyebrow="About Virtual Tracker"
+          eyebrow="About My Virtual Tracker"
           title={PRODUCT_TAGLINE}
-          description="Virtual Tracker models a secure distributed tracking infrastructure, combining desktop activity agents with Firebase web interfaces."
+          description="My Virtual Tracker models a secure distributed tracking infrastructure, combining desktop activity agents with Firebase web interfaces."
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-16 space-y-20">
@@ -94,7 +94,7 @@ export default function AboutPage() {
             <div className="absolute top-0 right-0 w-64 h-64 bg-violet-100/50 rounded-full blur-3xl -z-10" />
             <h2 className="text-2xl md:text-3xl font-extrabold text-slate-900 mb-2">Technical Architecture</h2>
             <p className="text-slate-500 text-xs md:text-sm max-w-2xl font-light mb-12">
-              Explore the functional components of the Virtual Tracker stack. Click on any architecture layer below to inspect its role and target code files.
+              Explore the functional components of the My Virtual Tracker stack. Click on any architecture layer below to inspect its role and target code files.
             </p>
 
             <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr] items-start">

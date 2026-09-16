@@ -18,7 +18,7 @@ export default function CtaDemoSection() {
         }} />
         <div className="relative flex flex-col md:flex-row items-center gap-8 p-8 md:p-12">
           <div className="flex-1">
-            <h2 className="text-3xl font-extrabold text-white mb-4">See Virtual Tracker in action</h2>
+            <h2 className="text-3xl font-extrabold text-white mb-4">See My Virtual Tracker in action</h2>
             <p className="text-white/75 mb-6 leading-relaxed">
               Discover how our time tracking software brings together productivity insights, automated payments, and more — try our interactive demo or start a trial today!
             </p>

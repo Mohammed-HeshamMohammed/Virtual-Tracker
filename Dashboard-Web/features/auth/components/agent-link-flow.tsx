@@ -22,7 +22,7 @@ import { AgentDownloadChoices } from "@/shared/ui/agent-download-choices"
 type LinkState = "confirm" | "linking" | "success" | "error" | "invalid"
 
 const INVALID_LINK_MESSAGE =
-  "This linking session is invalid or expired. Open Virtual Tracker Agent and click Sign In again."
+  "This linking session is invalid or expired. Open My Virtual Tracker and click Sign In again."
 
 function assertAgentApiHostMatches(health: LocalAgentHealth): void {
   const expectedHost = new URL(getDashboardApiBaseUrl()).host
@@ -35,7 +35,7 @@ function assertAgentApiHostMatches(health: LocalAgentHealth): void {
   }
   if (agentHost && agentHost !== expectedHost) {
     throw new Error(
-      `Desktop agent API (${agentHost}) does not match dashboard API (${expectedHost}). Rebuild Virtual Tracker Agent with VT_API_URL=${getDashboardApiBaseUrl()}, then click Sign In again.`,
+      `Desktop agent API (${agentHost}) does not match dashboard API (${expectedHost}). Rebuild My Virtual Tracker with VT_API_URL=${getDashboardApiBaseUrl()}, then click Sign In again.`,
     )
   }
 }
@@ -44,7 +44,7 @@ async function assertAgentReadyForLink(linkToken: string): Promise<void> {
   const health = await fetchLocalAgentHealth()
   if (!health?.ok) {
     throw new Error(
-      "Virtual Tracker Agent is not running on this PC. Open the agent, click Sign In, then return here.",
+      "My Virtual Tracker is not running on this PC. Open the agent, click Sign In, then return here.",
     )
   }
   assertAgentApiHostMatches(health)
@@ -131,7 +131,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
           if (!health?.authenticated) {
             if (!health?.ok) {
               throw new Error(
-                "Link was approved, but Virtual Tracker Agent is not reachable on this PC. Keep the agent open, then Try again.",
+                "Link was approved, but My Virtual Tracker is not reachable on this PC. Keep the agent open, then Try again.",
               )
             }
             if (!health.linkPending) {
@@ -179,7 +179,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/15">
           <Monitor className="h-7 w-7 text-emerald-400" />
         </div>
-        <h1 className="text-xl font-bold text-white">Link Virtual Tracker Agent</h1>
+        <h1 className="text-xl font-bold text-white">Link My Virtual Tracker</h1>
         <p className="mt-2 text-sm text-slate-400">
           After signing in, confirm linking below. The desktop agent will connect automatically once you approve.
         </p>
@@ -225,8 +225,8 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
               <p className="text-sm text-slate-300 font-medium">Agent linked successfully</p>
               <p className="text-sm text-slate-400">
                 {showConnectFallback
-                  ? "This tab didn't close on its own. Click below to open Virtual Tracker Agent."
-                  : "Connecting to Virtual Tracker Agent and closing this tab…"}
+                  ? "This tab didn't close on its own. Click below to open My Virtual Tracker."
+                  : "Connecting to My Virtual Tracker and closing this tab…"}
               </p>
               {showConnectFallback ? (
                 <button
@@ -241,7 +241,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
                   }}
                   className="mt-2 w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
                 >
-                  Connect to Virtual Tracker Agent
+                  Connect to My Virtual Tracker
                 </button>
               ) : null}
               <button
@@ -277,7 +277,7 @@ export function AgentLinkFlow({ linkToken }: { linkToken: string }) {
                 Try again
               </button>
               <div className="mt-6 pt-6 border-t border-slate-800 w-full text-left">
-                <p className="text-xs font-semibold text-slate-400 mb-3">Don't have Virtual Tracker Agent installed?</p>
+                <p className="text-xs font-semibold text-slate-400 mb-3">Don't have My Virtual Tracker installed?</p>
                 <AgentDownloadChoices compact />
               </div>
             </>

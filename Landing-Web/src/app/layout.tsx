@@ -12,10 +12,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   metadataBase: new URL("https://virtualtracker.com"),
   title: {
-    default: "Virtual Tracker - Precise Time Tracking & Workforce Productivity Suite",
-    template: "%s | Virtual Tracker",
+    default: "My Virtual Tracker - Precise Time Tracking & Workforce Productivity Suite",
+    template: "%s | My Virtual Tracker",
   },
-  description: "Track hours, optimize workflows, and manage distributed teams transparently with Virtual Tracker.",
+  description: "Track hours, optimize workflows, and manage distributed teams transparently with My Virtual Tracker.",
   keywords: [
     "time tracking",
     "workforce productivity",
@@ -24,15 +24,15 @@ export const metadata: Metadata = {
     "remote team management",
     "project tracking",
   ],
-  applicationName: "Virtual Tracker",
+  applicationName: "My Virtual Tracker",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Virtual Tracker - Precise Time Tracking & Workforce Productivity Suite",
-    description: "Track hours, optimize workflows, and manage distributed teams transparently with Virtual Tracker.",
+    title: "My Virtual Tracker - Precise Time Tracking & Workforce Productivity Suite",
+    description: "Track hours, optimize workflows, and manage distributed teams transparently with My Virtual Tracker.",
     url: "https://virtualtracker.com",
-    siteName: "Virtual Tracker",
+    siteName: "My Virtual Tracker",
     locale: "en_US",
     type: "website",
     images: [
@@ -40,14 +40,14 @@ export const metadata: Metadata = {
         url: "/stopwatch-green.png",
         width: 512,
         height: 512,
-        alt: "Virtual Tracker",
+        alt: "My Virtual Tracker",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "Virtual Tracker",
-    description: "Track hours, optimize workflows, and manage distributed teams transparently with Virtual Tracker.",
+    title: "My Virtual Tracker",
+    description: "Track hours, optimize workflows, and manage distributed teams transparently with My Virtual Tracker.",
     images: ["/stopwatch-green.png"],
   },
   robots: {

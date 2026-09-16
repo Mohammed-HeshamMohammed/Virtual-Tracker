@@ -12,7 +12,7 @@ export default function GlobalError({
       <body className="bg-white text-slate-900 antialiased">
         <main className="flex min-h-screen items-center justify-center px-6 py-20">
           <div className="max-w-xl text-center">
-            <h1 className="text-3xl font-semibold">Virtual Tracker</h1>
+            <h1 className="text-3xl font-semibold">My Virtual Tracker</h1>
             <p className="mt-4 text-slate-600">Something went wrong loading this page.</p>
             <button
               type="button"

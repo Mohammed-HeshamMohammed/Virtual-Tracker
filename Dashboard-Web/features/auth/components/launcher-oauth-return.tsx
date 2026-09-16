@@ -26,7 +26,7 @@ export function LauncherOAuthReturn() {
       <div className="launcher-oauth-return-card">
         <p className="launcher-oauth-return-title">Google sign-in complete</p>
         <p className="launcher-oauth-return-body">
-          Close this browser tab and return to the Virtual Tracker app window. If the app does not update
+          Close this browser tab and return to the My Virtual Tracker app window. If the app does not update
           automatically, click <strong>Sign in with Google</strong> once more in the app.
         </p>
       </div>

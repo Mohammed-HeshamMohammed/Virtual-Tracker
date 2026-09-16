@@ -27,7 +27,7 @@ export function WelcomeBackPanel({
 
   return (
     <main className="agent-tray view-home">
-      <TitleBar title="Virtual Tracker" onClose={() => void invoke("close_window")} />
+      <TitleBar title="My Virtual Tracker" onClose={() => void invoke("close_window")} />
       <div className="reconnect-body">
         <div className="reconnect-card">
           <div className="avatar-wrap reconnect-avatar">

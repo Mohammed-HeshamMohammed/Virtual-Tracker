@@ -769,7 +769,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               (provider) => provider.providerId === "google.com" || provider.providerId === "apple.com",
             )
             const msg = usedOAuth
-              ? "No Virtual Tracker account is linked to this sign-in. Ask your administrator for access, or use Request Now on the sign-in page."
+              ? "This sign-in isn't linked to an account on My Virtual Tracker. Ask your administrator for access, or use Request Now on the sign-in page."
               : e.message
             setSessionAuthorized(false)
             skipNextAuthStateSyncRef.current = true

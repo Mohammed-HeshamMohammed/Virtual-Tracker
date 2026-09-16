@@ -13,7 +13,7 @@ export function MonitoringNoticePanel({
 }) {
   return (
     <main className="agent-tray view-home">
-      <TitleBar title="Virtual Tracker" onClose={() => void invoke("close_window")} />
+      <TitleBar title="My Virtual Tracker" onClose={() => void invoke("close_window")} />
       <div className="reconnect-body">
         <div className="notice-card">
           <h1 className="reconnect-name">Before you start tracking</h1>

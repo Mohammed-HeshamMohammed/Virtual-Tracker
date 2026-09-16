@@ -1,4 +1,4 @@
-# Build Virtual Tracker Tauri agent for Windows (production).
+# Build My Virtual Tracker Tauri agent for Windows (production).
 param(
   [string]$ApiUrl = "https://appapi.myvirtualtracker.com",
   [string]$WebUrl = "https://app.myvirtualtracker.com"

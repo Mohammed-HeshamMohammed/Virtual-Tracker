@@ -12,8 +12,8 @@ const inter = Inter({
 })
 
 export const metadata: Metadata = {
-  title: "Virtual Tracker - Time Tracking & Productivity",
-  description: "Track time, monitor productivity, and manage your remote team with Virtual Tracker.",
+  title: "My Virtual Tracker - Time Tracking & Productivity",
+  description: "Track time, monitor productivity, and manage your remote team with My Virtual Tracker.",
   icons: {
     icon: [
       {

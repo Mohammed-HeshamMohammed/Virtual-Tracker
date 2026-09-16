@@ -74,7 +74,7 @@ export default function SignInPage() {
         <div className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 md:p-10 shadow-lg z-10 space-y-6">
           <div className="text-center space-y-2">
             <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1 text-xs font-bold text-violet-700 uppercase tracking-wider">
-              Virtual Tracker
+              My Virtual Tracker
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight sm:text-3xl">
               {mode === "register" ? "Create your account" : "Welcome back"}
@@ -193,7 +193,7 @@ export default function SignInPage() {
               </>
             ) : (
               <>
-                New to Virtual Tracker?{" "}
+                New to My Virtual Tracker?{" "}
                 <button type="button" onClick={() => setMode("register")} className="font-semibold text-violet-600 hover:text-violet-800">
                   Create an account
                 </button>

@@ -92,7 +92,7 @@ export default function HeroSlides({ activeTab }: HeroSlidesProps) {
             <div className="w-3 h-3 rounded-full bg-red-500/80" />
             <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
             <div className="w-3 h-3 rounded-full bg-green-500/80" />
-            <span className="text-[10px] text-white/40 ml-2 font-mono">Virtual Tracker dashboard</span>
+            <span className="text-[10px] text-white/40 ml-2 font-mono">My Virtual Tracker dashboard</span>
           </div>
           <span className="text-[10px] text-white/30 font-mono">{tab.label}</span>
         </div>

@@ -35,7 +35,7 @@ export default function ResetPasswordPage() {
         <div className="relative w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 md:p-10 shadow-lg space-y-6">
           <div className="text-center space-y-2">
             <span className="inline-flex rounded-full border border-violet-200 bg-violet-50 px-3.5 py-1 text-xs font-bold text-violet-700 uppercase tracking-wider">
-              Virtual Tracker
+              My Virtual Tracker
             </span>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight sm:text-3xl">Reset your password</h1>
           </div>

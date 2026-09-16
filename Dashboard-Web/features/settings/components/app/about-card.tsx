@@ -25,7 +25,7 @@ function GithubMark() {
 export function AboutCard() {
   return (
     <section className="mt-6 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 p-6">
-      <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">About Virtual Tracker</h4>
+      <h4 className="text-base font-bold text-slate-900 dark:text-slate-100">About My Virtual Tracker</h4>
       <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
         Owned and operated by <span className="font-semibold text-slate-700 dark:text-slate-200">Soft Fix</span> and{" "}
         <span className="font-semibold text-slate-700 dark:text-slate-200">Virtual Callers</span>.

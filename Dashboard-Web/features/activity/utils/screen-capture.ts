@@ -142,9 +142,9 @@ function isInvalidCaptureLabel(label: string): boolean {
 }
 
 export function captureAppName(): string {
-  if (!isScreenCaptureActive()) return "Browser · Virtual Tracker"
+  if (!isScreenCaptureActive()) return "Browser · My Virtual Tracker"
   const label = captureLabel.trim()
-  if (!label || isInvalidCaptureLabel(label)) return "Browser · Virtual Tracker"
+  if (!label || isInvalidCaptureLabel(label)) return "Browser · My Virtual Tracker"
   if (/virtual tracker/i.test(label)) return `Browser · ${label}`
   if (/chrome|edge|firefox|safari|browser|tab/i.test(label)) return `Browser · ${label}`
   return label

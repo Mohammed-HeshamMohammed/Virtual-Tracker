@@ -46,7 +46,7 @@ export default function ContactPage() {
         <PageIntro
           eyebrow="Contact Us"
           title="Talk to a product specialist"
-          description="Let us know what you want to achieve with Virtual Tracker and we will help you map out a trial deployment roadmap."
+          description="Let us know what you want to achieve with My Virtual Tracker and we will help you map out a trial deployment roadmap."
         />
 
         <section className="mx-auto max-w-7xl px-6 lg:px-8 mt-16 grid gap-12 lg:grid-cols-[1.2fr_0.8fr]">
@@ -167,7 +167,7 @@ export default function ContactPage() {
             <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
               <h3 className="text-lg font-bold text-slate-900 mb-4">Book a Walkthrough</h3>
               <p className="text-xs leading-relaxed text-slate-500 font-light mb-6">
-                We'll walk you through how Virtual Tracker organizes team hierarchy, runs the desktop screenshot agent, and handles Firebase database scopes.
+                We'll walk you through how My Virtual Tracker organizes team hierarchy, runs the desktop screenshot agent, and handles Firebase database scopes.
               </p>
               <div className="space-y-4">
                 <div className="rounded-xl border border-slate-100 bg-slate-50 p-4 flex gap-3.5 items-start">

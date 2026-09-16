@@ -1876,7 +1876,7 @@ function MainApp() {
   return (
     <main className={`agent-tray layout-${layoutKind}${layoutHasSideColumn ? "" : " no-side-column"}`}>
       <TitleBar
-        title={view === "settings" ? "Settings" : view === "profile" ? "Profile" : "Virtual Tracker"}
+        title={view === "settings" ? "Settings" : view === "profile" ? "Profile" : "My Virtual Tracker"}
         onClose={() => void invoke("close_window")}
         onCheckUpdate={() => void checkForUpdate(true)}
         checkingUpdate={checkingUpdate}

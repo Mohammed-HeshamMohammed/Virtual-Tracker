@@ -67,7 +67,7 @@ export default function ResourcesPage() {
         <PageIntro
           eyebrow="Resources & Docs"
           title="Documentation and guides"
-          description="Detailed guide sheets and architecture descriptions for the Virtual Tracker client. Read sheets inside the codebase."
+          description="Detailed guide sheets and architecture descriptions for the My Virtual Tracker client. Read sheets inside the codebase."
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-12">

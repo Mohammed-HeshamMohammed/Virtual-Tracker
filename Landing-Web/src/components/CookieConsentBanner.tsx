@@ -21,7 +21,7 @@ export default function CookieConsentBanner() {
     <div className="fixed inset-x-0 bottom-20 z-40 border-t border-slate-800 bg-slate-900/95 px-4 py-4 shadow-lg backdrop-blur lg:bottom-0">
       <div className="mx-auto flex max-w-4xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-slate-300">
-          We use cookies to keep you signed in and remember your preferences across Virtual Tracker.
+          We use cookies to keep you signed in and remember your preferences across My Virtual Tracker.
         </p>
         <div className="flex shrink-0 gap-2">
           <button

@@ -14,7 +14,7 @@ export default function PageShell({
         section="navigation"
         fallback={
           <header className="fixed top-0 left-0 right-0 z-50 h-16 bg-white/95 border-b border-slate-200 px-6 flex items-center">
-            <span className="font-bold text-lg text-slate-900">Virtual Tracker</span>
+            <span className="font-bold text-lg text-slate-900">My Virtual Tracker</span>
           </header>
         }
       >

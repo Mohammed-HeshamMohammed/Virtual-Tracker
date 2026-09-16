@@ -27,8 +27,8 @@ export function AgentLinkedSuccessScreen({ onGoToDashboard }: { onGoToDashboard:
           <h1 className={cn("text-lg font-semibold", t.heading)}>Desktop agent linked</h1>
           <p className={cn("text-sm", t.body)}>
             {showFallback
-              ? "This tab didn't close on its own. Click below to open Virtual Tracker Agent."
-              : "Connecting to Virtual Tracker Agent and closing this tab…"}
+              ? "This tab didn't close on its own. Click below to open My Virtual Tracker."
+              : "Connecting to My Virtual Tracker and closing this tab…"}
           </p>
         </div>
 
@@ -46,7 +46,7 @@ export function AgentLinkedSuccessScreen({ onGoToDashboard }: { onGoToDashboard:
               }}
               className={cn("w-full rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors", t.btnPrimary)}
             >
-              Connect to Virtual Tracker Agent
+              Connect to My Virtual Tracker
             </button>
           ) : null}
           <button

@@ -52,7 +52,7 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <h1 className="text-xl font-bold text-slate-900 mb-1">Settings</h1>
-        <p className="text-xs text-slate-500 mb-6">Preferences for your Virtual Tracker account on this site.</p>
+        <p className="text-xs text-slate-500 mb-6">Preferences for your account on My Virtual Tracker, on this site.</p>
 
         <div className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-5">
           <div>
