@@ -72,6 +72,7 @@ import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
 import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole } from "../../http/role-hierarchy.js";
 import { buildAgentWorkspace } from "./workspace.service.js";
+import { buildWeekDays } from "./week-days.js";
 import {
   getProjectPg,
   getProjectBudgetPg,
@@ -100,6 +101,8 @@ import {
   getAppIconsByNamesPg,
   sumMemberActiveIdleSeconds,
   sumMemberActiveIdleSecondsForProject,
+  listDailyMemberActiveSeconds,
+  listMemberIdleSecondsByDay,
   sumAppLogSecondsByAppNameForProjectPg,
   recordSessionEventPg,
   touchPgSessionActivity,
@@ -365,7 +368,7 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const { todayDay } = currentDayRange(await getMemberTimezone(member.memberId));
+      const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(member.memberId));
       const projectId = (url.searchParams.get("projectId") || "").trim();
       const [
         dailyHours,
@@ -376,6 +379,8 @@ export async function routeActivity(req, res, url, origin) {
         todayWorkStatus,
         todayActivity,
         projectTodayActivity,
+        weekActiveRows,
+        weekIdleRows,
       ] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
@@ -387,6 +392,8 @@ export async function routeActivity(req, res, url, origin) {
         projectId
           ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, { fromDay: todayDay, toDay: todayDay })
           : null,
+        listDailyMemberActiveSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
+        listMemberIdleSecondsByDay(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
       ]);
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
       // `total` is the whole open workload, not a property of today, so it
@@ -408,6 +415,10 @@ export async function routeActivity(req, res, url, origin) {
           isMakeupDay: todayWorkStatus.isMakeupDay,
           todayActivity,
           projectTodayActivity,
+          // The member's week, one entry per day, from the same rollup as
+          // timerAllowance.workedTodaySeconds/workedWeekSeconds.
+          todayDay,
+          weekDays: buildWeekDays(weekStartDay, weekActiveRows, weekIdleRows),
         },
       });
     } catch (e) {
