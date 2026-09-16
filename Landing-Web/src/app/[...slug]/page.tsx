@@ -10,7 +10,7 @@ import { SLUG_PAGES } from "@/lib/product-content"
 
 const DEFAULT_PAGE = {
   title: "Page not found",
-  description: "This page is not part of the Virtual Tracker marketing site. Try Features, Demo, or Contact.",
+  description: "This page is not part of the My Virtual Tracker marketing site. Try Features, Demo, or Contact.",
   bullets: ["Features overview", "Product demo", "Contact"],
 }
 

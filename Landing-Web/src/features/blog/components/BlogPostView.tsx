@@ -3,7 +3,7 @@ import PageShell from "@/components/PageShell"
 
 const posts: Record<string, { title: string; date: string; content: string[] }> = {
   "desktop-agent-setup": {
-    title: "Setting up the Virtual Tracker desktop agent",
+    title: "Setting up the My Virtual Tracker desktop app",
     date: "June 2026",
     content: [
       "The Python agent in app/Python-App-Extension runs on Windows and macOS. It links to your workspace through a secure token exchange while the web dashboard timer is active.",
@@ -15,7 +15,7 @@ const posts: Record<string, { title: string; date: string; content: string[] }> 
     title: "Org hierarchy, invites, and member onboarding",
     date: "June 2026",
     content: [
-      "Virtual Tracker models organizations with member relationships, role ladders, and hierarchy-aware visibility enforced on the backend.",
+      "My Virtual Tracker models organizations with member relationships, role ladders, and hierarchy-aware visibility enforced on the backend.",
       "Admins can invite members in bulk, share open-link registration URLs, or pre-provision accounts before first sign-in.",
       "The people workspace includes a visual member tree, team rosters, ban management, and real-time presence over WebSocket and SSE.",
     ],
@@ -96,7 +96,7 @@ export function BlogPostView({ slug }: { slug: string }) {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-slate-800">Mohammed Hesham</h4>
-                  <p className="text-[10px] text-slate-400 font-light">Lead Developer, Virtual Tracker</p>
+                  <p className="text-[10px] text-slate-400 font-light">Lead Developer, My Virtual Tracker</p>
                 </div>
               </div>
               <Link

@@ -30,7 +30,7 @@ export default function IndustriesSection() {
         Built for teams that need<br />visibility without guesswork
       </h2>
       <p className="text-slate-500 text-center mb-12 max-w-2xl mx-auto">
-        Virtual Tracker targets operations leaders running remote teams, client delivery, and trial rollouts on Firebase.
+        My Virtual Tracker targets operations leaders running remote teams, client delivery, and trial rollouts on Firebase.
       </p>
       <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
         {SOLUTIONS.map((item, i) => (

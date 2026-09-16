@@ -1,4 +1,4 @@
-Virtual Tracker is a modern workforce productivity platform designed to help teams capture time faithfully, understand output clearly, and run operations with stronger visibility. The product supports time tracking, project management workflows, reporting, approvals, and billing automation for distributed organizations.
+My Virtual Tracker is a modern workforce productivity platform designed to help teams capture time faithfully, understand output clearly, and run operations with stronger visibility. The product supports time tracking, project management workflows, reporting, approvals, and billing automation for distributed organizations.
 
 The platform is geared toward teams that need transparency without friction, including agencies, software teams, field operations, consulting groups, and enterprise organizations. It combines timesheets, dashboards, performance signals, and integrations to support daily operations and executive reporting.
 

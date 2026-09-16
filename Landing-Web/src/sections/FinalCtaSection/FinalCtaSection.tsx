@@ -14,7 +14,7 @@ export default function FinalCtaSection() {
       <Section>
         <div className="text-5xl mb-4">💻</div>
         <h2 className="text-3xl md:text-5xl font-extrabold text-white mb-4">
-          Download Virtual Tracker Agent
+          Download My Virtual Tracker
         </h2>
         <p className="text-white/60 max-w-xl mx-auto mb-10 text-sm md:text-base">
           Get the desktop tracker for Windows, macOS, or Linux. Automated screenshots, task tracking, and seamless activity sync.

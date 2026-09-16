@@ -25,7 +25,7 @@ export default function PricingPage() {
       name: "Team",
       price: billingCycle === "monthly" ? "$15" : "$12",
       period: "per user / month",
-      description: "For teams deploying Virtual Tracker on their Firebase project.",
+      description: "For teams deploying My Virtual Tracker on their Firebase project.",
       features: ["Role-based visibility scopes", "Unlimited members & workspaces", "Presence & WebSocket monitoring", "API integration options"],
       cta: "Contact sales",
       href: "/contact",
@@ -46,14 +46,14 @@ export default function PricingPage() {
   const faqs = [
     {
       q: "Are there any licensing costs or hidden fees?",
-      a: "No. Virtual Tracker is an open-source evaluation build. You host it on your own Firebase project, paying only your standard Google Cloud platform limits."
+      a: "No. My Virtual Tracker is an open-source evaluation build. You host it on your own Firebase project, paying only your standard Google Cloud platform limits."
     },
     {
       q: "Can I transition my workspace from Trial to Team?",
       a: "Yes. Since all organizational nodes and Firestore collections live inside your database instance, upgrading is as simple as migrating configuration files."
     },
     {
-      q: "Does Virtual Tracker handle payroll payouts?",
+      q: "Does My Virtual Tracker handle payroll payouts?",
       a: "Currently, budget caps, timesheets, and pay rates are captured strictly as metadata values to calculate utilization. Actual billing integrations are gated."
     },
     {
@@ -68,7 +68,7 @@ export default function PricingPage() {
         <PageIntro
           eyebrow="Pricing & Plans"
           title="Evaluation and deployment options"
-          description="Virtual Tracker provides modular plans to evaluate the client or integrate it directly into your company's cloud infrastructure."
+          description="My Virtual Tracker provides modular plans to evaluate the client or integrate it directly into your company's cloud infrastructure."
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-20">

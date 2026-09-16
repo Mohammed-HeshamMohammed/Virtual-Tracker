@@ -65,8 +65,8 @@ export default function SolutionsPage() {
       <main className="bg-slate-50/50 text-slate-900 pb-24">
         <PageIntro
           eyebrow="Solutions"
-          title="Where Virtual Tracker fits"
-          description="Virtual Tracker models workflow coordination for different operational layers, keeping activity data secure and accountable."
+          title="Where My Virtual Tracker fits"
+          description="My Virtual Tracker models workflow coordination for different operational layers, keeping activity data secure and accountable."
         />
 
         <div className="mx-auto max-w-7xl px-6 lg:px-8 mt-12 space-y-12">

@@ -49,7 +49,7 @@ export function BlogListView() {
       <main className="bg-slate-50/50 text-slate-900 pb-24">
         <PageIntro
           eyebrow="Blog"
-          title="Notes from the Virtual Tracker codebase"
+          title="Notes from the My Virtual Tracker codebase"
           description="Practical engineering, role hierarchy details, and setup articles tied to features that exist in the trial client today."
         />
 
