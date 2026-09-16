@@ -4,10 +4,11 @@ use image::{ColorType, ImageEncoder};
 
 use crate::constants::{JPEG_QUALITY, MAX_SCREENSHOT_WIDTH};
 
-/// Strong enough that text and UI chrome are unreadable at this screenshot's
-/// resolution, while broad layout and colour stay visible - the screenshot
-/// still shows a messaging app was open, just not what was said in it.
-const SENSITIVE_BLUR_SIGMA: f32 = 24.0;
+/// Deliberately light - just enough softening that reading any text takes
+/// real effort and isn't worth it, not a full redaction. A screenshot of a
+/// messaging app is still recognisably a messaging app, with something open
+/// in it; it just isn't a clean, comfortable read of the conversation.
+const SENSITIVE_BLUR_SIGMA: f32 = 2.5;
 
 pub struct ScreenCapture;
 

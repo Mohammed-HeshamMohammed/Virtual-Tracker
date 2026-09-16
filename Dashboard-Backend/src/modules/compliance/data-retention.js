@@ -1,9 +1,11 @@
 import { isManagementRole } from "../../http/auth-context.js";
-import { deleteFromGCS } from "../../lib/gcs/upload.js";
+import { deleteFromGCS, uploadToGCS, resolveGcsBucketName } from "../../lib/gcs/upload.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import {
   getRetentionSettingsPg,
   setRetentionDaysPg,
+  findScreenshotsToArchivePg,
+  markScreenshotArchivedPg,
   findExpiredArchivedScreenshotsPg,
   deleteScreenshotsByIdPg,
   deleteExpiredInlineScreenshotsPg,
@@ -64,10 +66,46 @@ async function retentionDaysFor(dataType) {
   return settings.find((s) => s.dataType === dataType)?.retentionDays ?? 90;
 }
 
+// How long a screenshot sits as full inline Postgres bytea before being
+// offloaded to GCS. This used to only happen if someone ran
+// scripts/archive-screenshots.mjs by hand (or wired it into an external
+// cron) - nothing did, so screenshots sat inline for the full retention
+// window (90 days default) instead of this one, and the only thing the
+// daily in-process sweep did with an unarchived screenshot was delete it
+// outright once it aged past retention. Folding archiving into the same
+// sweep that already runs every 24h means it actually happens.
+const SCREENSHOT_ARCHIVE_DAYS = 7;
+
+async function archiveAgedScreenshots(archiveDays) {
+  // No bucket configured (self-hosted without GCS set up) - skip quietly
+  // rather than failing the same upload 500 times a day; deleteExpiredInlineScreenshotsPg
+  // below still enforces retention on these rows once they age out.
+  if (!resolveGcsBucketName()) {
+    return 0;
+  }
+  const rows = await findScreenshotsToArchivePg(archiveDays);
+  let archived = 0;
+  for (const row of rows) {
+    const objectPath = `activity-screenshots/${row.member_id}/${row.id}.webp`;
+    try {
+      await uploadToGCS(row.image_data, objectPath, "image/webp", false);
+      await markScreenshotArchivedPg(row.id, objectPath);
+      archived++;
+    } catch (err) {
+      // Leave image_data in place on failure - a screenshot that fails to
+      // archive stays fully intact in Postgres rather than being half-lost.
+      logSafeWarn("[data-retention] archive failed, leaving row for next sweep", { id: row.id, err });
+    }
+  }
+  return archived;
+}
+
 export async function runRetentionSweep() {
   const settings = await getRetentionSettings();
   const days = Object.fromEntries(settings.map((s) => [s.dataType, s.retentionDays]));
-  const result = { screenshotsArchivedDeleted: 0, screenshotsInlineDeleted: 0, appLogsDeleted: 0, urlLogsDeleted: 0, sessionsDeleted: 0 };
+  const result = { screenshotsArchived: 0, screenshotsArchivedDeleted: 0, screenshotsInlineDeleted: 0, appLogsDeleted: 0, urlLogsDeleted: 0, sessionsDeleted: 0 };
+
+  result.screenshotsArchived = await archiveAgedScreenshots(SCREENSHOT_ARCHIVE_DAYS);
 
   const expiredArchived = await findExpiredArchivedScreenshotsPg(days.screenshots ?? 90);
   const deletable = [];

@@ -7,8 +7,17 @@ import {
   setCaptureMinimizationSettingsPg,
 } from "../../lib/postgres/capture-minimization-postgres.service.js";
 
+// Trims and lowercases, then drops a trailing ".exe" - an admin may type an
+// "app" exclusion as either the display name ("Notion") or the raw
+// executable ("notion.exe"), and matchesExclusion only ever gets one spelling
+// of the running app from the server's side of an event (an up-to-date agent
+// already checks all three of its own candidate spellings client-side before
+// this is even reached - see Tauri-App-Extension's is_capture_excluded - so
+// this is purely a backstop for a stale or bypassed agent). Without this,
+// "notion.exe" and "Notion" never normalize to the same string and the
+// backstop silently fails to match depending on which one the admin picked.
 function normalizePattern(pattern) {
-  return String(pattern ?? "").trim().toLowerCase();
+  return String(pattern ?? "").trim().toLowerCase().replace(/\.exe$/, "");
 }
 
 function normalizeExclusionRow(row) {

@@ -49,15 +49,41 @@ pub fn is_messaging_target(process_name: &str, url: Option<&str>) -> bool {
         return true;
     }
     if let Some(url) = url {
-        let lower = url.to_lowercase();
-        if MESSAGING_URL_MARKERS
-            .iter()
-            .any(|marker| lower.contains(marker))
-        {
-            return true;
+        if let Some(host) = url_host(url) {
+            if MESSAGING_URL_MARKERS
+                .iter()
+                .any(|marker| host == *marker || host.ends_with(&format!(".{marker}")))
+            {
+                return true;
+            }
         }
     }
     false
+}
+
+/// The lowercased host of a URL, with scheme, userinfo, port, path, query and
+/// fragment all stripped - e.g. `https://user@web.whatsapp.com:443/a/b?x#y`
+/// becomes `web.whatsapp.com`.
+///
+/// A plain `url.contains(marker)` used to blur screenshots that had nothing
+/// to do with the marked service - "messenger.com" as a substring also
+/// matches an unrelated domain like "trendmessenger.com", and matches inside
+/// a path or query string on any site at all (a shared link, a redirect
+/// target, an ad-tracking parameter). Comparing only the host, and requiring
+/// it to equal the marker or end with it on a label boundary (".marker"),
+/// keeps every case the marker list was actually written for while dropping
+/// those false positives.
+fn url_host(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1).unwrap_or(url);
+    let authority_end = after_scheme.find(['/', '?', '#']).unwrap_or(after_scheme.len());
+    let authority = &after_scheme[..authority_end];
+    let host_and_port = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let host = host_and_port.split(':').next().unwrap_or(host_and_port).trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_lowercase())
+    }
 }
 
 #[cfg(test)]
@@ -102,5 +128,36 @@ mod tests {
             Some("https://github.com/")
         ));
         assert!(!is_messaging_target("chrome.exe", None));
+    }
+
+    #[test]
+    fn a_domain_that_merely_contains_a_marker_as_a_substring_is_not_matched() {
+        // "messenger.com" used to match anywhere in the URL string, including
+        // as a substring of an unrelated domain's name - a real false
+        // positive, not a hypothetical one.
+        assert!(!is_messaging_target(
+            "chrome.exe",
+            Some("https://trendmessenger.com/")
+        ));
+        assert!(!is_messaging_target(
+            "chrome.exe",
+            Some("https://example.com/go?to=messenger.com/spam")
+        ));
+    }
+
+    #[test]
+    fn a_subdomain_of_a_marked_host_still_matches() {
+        assert!(is_messaging_target(
+            "chrome.exe",
+            Some("https://sub.web.telegram.org/k/")
+        ));
+    }
+
+    #[test]
+    fn userinfo_and_port_in_the_url_do_not_defeat_host_matching() {
+        assert!(is_messaging_target(
+            "chrome.exe",
+            Some("https://user:pass@web.whatsapp.com:443/")
+        ));
     }
 }

@@ -3,12 +3,14 @@
  * Activity data retention (implementation.md Phase 4.7).
  *
  * activity_screenshots stores image_data as inline Postgres BYTEA on every
- * insert (activity-events-postgres.service.js's insertActivityScreenshot) -
- * the routes.js capture path's own comment already says "the archive job
- * moves rows out to GCS once they age out", but that job was never written.
- * This is it: run manually or wire into a periodic job (Coolify's own
- * scheduled-task feature, not an in-process scheduler this backend doesn't
- * have) - not auto-run on every boot like ensure-lookup-schema.js.
+ * insert (activity-events-postgres.service.js's insertActivityScreenshot).
+ * The archive step (moving rows out to GCS once they age out) now also runs
+ * automatically every 24h as part of the in-process retention sweep
+ * (data-retention.js's archiveAgedScreenshots, wired into runRetentionSweep -
+ * scheduled by data-retention-sweep.service.js at boot) using a fixed
+ * SCREENSHOT_ARCHIVE_DAYS. This script remains for manual runs: a dry-run
+ * preview, a one-off backfill, or archiving/retention on different day
+ * counts than the automatic sweep uses.
  *
  * Two independent steps:
  *   1. Archive: screenshots older than --archive-days (default 7) that still
