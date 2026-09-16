@@ -66,6 +66,8 @@ import { LogTimeModal } from "./components/LogTimeModal";
 import { TimeOffRequestModal } from "./components/TimeOffRequestModal";
 import { TaskDetailPanel, taskDetailHasContent } from "./components/stats/TaskDetailPanel";
 import { ProjectDetailPanel } from "./components/stats/ProjectDetailPanel";
+import { SessionControls } from "./components/stats/SessionControls";
+import { WeekChart } from "./components/stats/WeekChart";
 import { TitleBar } from "./components/common/TitleBar";
 import { TimezonePicker } from "./components/common/TimezonePicker";
 import { Icon } from "./components/common/Icon";
@@ -257,6 +259,23 @@ function MainApp() {
     height: 750,
   });
   const layoutKind: LayoutKind = windowLayout.kind;
+  const agentViewRef = useRef<HTMLDivElement>(null);
+  // The window itself eases to its new size (window_layout.rs); this settles
+  // the content into the new arrangement alongside it rather than snapping.
+  // Only user-made changes come through here - startup never animates.
+  const handleLayoutChanged = useCallback((layout: WindowLayout) => {
+    setWindowLayout(layout);
+    const el = agentViewRef.current;
+    if (!el || typeof el.animate !== "function") return;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    el.animate(
+      [
+        { opacity: 0.4, transform: "scale(0.985)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: 340, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+    );
+  }, []);
   const [showInsights, setShowInsights] = useState(false);
 
   useEffect(() => {
@@ -1767,6 +1786,38 @@ function MainApp() {
   // What the main pane's own project card shows: everything in Extended and
   // Focus, just the badges where the column (or the setting) takes the rest.
   const mainPaneProjectSection = layoutHasSideColumn || !insightsVisible ? "badges" : "all";
+  // Focus puts the tasks (and the time zone) in a column of their own on the
+  // right, and the tracking card gets the play/pause circle instead.
+  const isFocus = layoutKind === "focus";
+  // Standard and Wide moved what used to fill the bottom of the main pane
+  // into the side column (or switched it off), which left the pane empty
+  // under the stat tiles; the week chart takes that space. Focus only needs
+  // it when its own top-apps card is switched off. Extended always has it.
+  const showWeekChart =
+    layoutKind === "standard" || layoutKind === "wide" || (isFocus && !insightsVisible);
+  const startBlockedReason = taskTracking?.limitReached
+    ? taskTracking.allowanceMessage || "Maximum allowed work time reached."
+    : taskRequired && !selectedTaskId
+      ? "Pick a task first"
+      : !selectedProjectId
+        ? "Pick a project first"
+        : "";
+
+  const tasksList = (
+    <TasksList
+      signedIn={signedIn}
+      loading={!assignedTasksLoaded}
+      assignedTasks={assignedTasks}
+      selectedTaskId={selectedTaskId}
+      busy={busy}
+      sessionOpen={sessionOpen}
+      projectNameById={projectNameById}
+      onSelectTask={jumpToAssignedTask}
+    />
+  );
+  const timezonePicker = (
+    <TimezonePicker value={displayTimezone} onSelect={handleSelectTimezone} saving={savingTimezone} />
+  );
 
   if (signedIn && monitoringNotice?.requiresAcknowledgement) {
     return (
@@ -1834,13 +1885,14 @@ function MainApp() {
       />
 
       <div
+        ref={agentViewRef}
         key={isPanelView ? "panel" : "home"}
         className={`agent-view${isPanelView ? " settings-window view-settings" : " view-home"}`}
       >
       {view === "settings" ? (
         <SettingsPanel
           onBack={() => setView("home")}
-          onLayoutChanged={setWindowLayout}
+          onLayoutChanged={handleLayoutChanged}
           onShowInsightsChanged={setShowInsights}
         />
       ) : view === "profile" ? (
@@ -1897,16 +1949,7 @@ function MainApp() {
             /* Recently-touched first - see orderedProjects above. */
           />
 
-          <TasksList
-            signedIn={signedIn}
-            loading={!assignedTasksLoaded}
-            assignedTasks={assignedTasks}
-            selectedTaskId={selectedTaskId}
-            busy={busy}
-            sessionOpen={sessionOpen}
-            projectNameById={projectNameById}
-            onSelectTask={jumpToAssignedTask}
-          />
+          {isFocus ? null : tasksList}
         </div>
 
         <div className="side-panel-pinned">
@@ -1931,6 +1974,7 @@ function MainApp() {
               ) : null}
 
               <SidebarActions
+                showSessionButtons={!isFocus}
                 paused={paused}
                 tracking={tracking}
                 busy={busy}
@@ -2127,11 +2171,21 @@ function MainApp() {
                       </svg>
                     </button>
                   ) : null}
-                  <TimezonePicker
-                    value={displayTimezone}
-                    onSelect={handleSelectTimezone}
-                    saving={savingTimezone}
-                  />
+                  {isFocus ? (
+                    <SessionControls
+                      tracking={tracking}
+                      paused={paused}
+                      busy={busy}
+                      canStart={!startBlockedReason}
+                      blockedReason={startBlockedReason}
+                      onStart={() => void handleStart()}
+                      onPause={() => void handlePause()}
+                      onResume={() => void handleResume()}
+                      onStop={handleStopClick}
+                    />
+                  ) : (
+                    timezonePicker
+                  )}
                 </div>
 
                 {hoursTodayCards}
@@ -2154,7 +2208,7 @@ function MainApp() {
                   <ProjectDetailPanel
                     {...projectDetailProps}
                     section={mainPaneProjectSection}
-                    insightsElsewhere={showSideColumn}
+                    showScreenshots={!isFocus}
                   />
                 ) : showSideColumn ? null : (
                   <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
@@ -2170,6 +2224,15 @@ function MainApp() {
                   <p className="page-limit-banner">
                     {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
                   </p>
+                ) : null}
+
+                {showWeekChart ? (
+                  <WeekChart
+                    days={dashboardSummary?.weeklyActivity ?? []}
+                    loading={!dashboardLoaded}
+                    now={wallClockNow}
+                    timeZone={displayTimezone || undefined}
+                  />
                 ) : null}
               </>
             ) : !projectsLoaded || !assignedTasksLoaded ? (
@@ -2238,6 +2301,16 @@ function MainApp() {
             ) : (
               <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
             )}
+          </aside>
+        ) : null}
+
+        {signedIn && isFocus ? (
+          <aside className="tasks-column" aria-label="Your tasks">
+            <div className="tasks-column-zone">
+              <span className="stat-tile-label">Time zone</span>
+              {timezonePicker}
+            </div>
+            {tasksList}
           </aside>
         ) : null}
       </div>

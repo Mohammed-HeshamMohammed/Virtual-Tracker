@@ -251,7 +251,7 @@ fn save_preferences(
     // anything else must not resize it or snap it back to the centre.
     if previous.layout != preferences.layout || previous.show_insights != preferences.show_insights {
         if let Some(window) = app.get_webview_window("main") {
-            window_layout::apply(&window, &preferences.layout, preferences.show_insights);
+            window_layout::apply(&window, &preferences.layout, preferences.show_insights, true);
         }
     }
     // Autostart registration is best-effort here, same as every other caller
@@ -956,7 +956,7 @@ pub fn run() {
                 // Sized before anything is drawn, so a small screen never
                 // shows the standard window running off its bottom edge.
                 let layout_prefs = controller.get_app_settings().preferences;
-                let layout = window_layout::apply(&window, &layout_prefs.layout, layout_prefs.show_insights);
+                let layout = window_layout::apply(&window, &layout_prefs.layout, layout_prefs.show_insights, false);
                 log::info!(
                     "Window layout: {:?} ({}x{}, side column {}, preference {})",
                     layout.kind,

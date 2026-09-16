@@ -336,6 +336,31 @@ describe("SidebarActions", () => {
     expect(html).toContain("Stop");
   });
 
+  it("leaves the session buttons out in Focus, where the tracking card has them", () => {
+    const html = renderToStaticMarkup(
+      <SidebarActions
+        showSessionButtons={false}
+        paused={false}
+        tracking={true}
+        busy={false}
+        taskRequired={false}
+        selectedTaskId=""
+        selectedProjectId="p1"
+        taskTracking={null}
+        onResume={noop}
+        onPause={noop}
+        onStopClick={noop}
+        onStart={noop}
+        onOpenDashboard={noop}
+        onSignInAgain={noop}
+      />,
+    );
+    expect(html).not.toContain("Pause");
+    expect(html).not.toContain("Stop");
+    expect(html).not.toContain("Start tracking");
+    expect(html).toContain("Open dashboard");
+  });
+
   it("shows Resume tracking on a break", () => {
     const html = renderToStaticMarkup(
       <SidebarActions

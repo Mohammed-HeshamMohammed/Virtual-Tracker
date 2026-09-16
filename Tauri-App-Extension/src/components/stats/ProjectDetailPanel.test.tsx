@@ -34,7 +34,7 @@ function render(
     selectedScreenshotId: string | null;
     loading: boolean;
     section: "all" | "badges" | "insights";
-    insightsElsewhere: boolean;
+    showScreenshots: boolean;
   }> = {},
 ) {
   return renderToStaticMarkup(
@@ -49,7 +49,7 @@ function render(
       loading={overrides.loading ?? false}
       onSelectScreenshot={noop}
       section={overrides.section}
-      insightsElsewhere={overrides.insightsElsewhere}
+      showScreenshots={overrides.showScreenshots}
     />,
   );
 }
@@ -59,18 +59,17 @@ describe("ProjectDetailPanel", () => {
     expect(render(null)).toBe("");
   });
 
-  it("badges section with nothing to badge and no side column fills the space instead of vanishing", () => {
-    // With apps & screenshots switched off (Settings default), the side
-    // column never shows either - a bare `return null` here used to leave
-    // the whole rest of the main pane empty under the stat tiles.
-    const html = render(baseProject, { section: "badges", insightsElsewhere: false });
-    expect(html).toContain("Apps &amp; screenshots are off");
-    expect(html).toContain("page-empty");
+  it("a badges section with nothing to badge renders nothing - the week chart fills that space", () => {
+    expect(render(baseProject, { section: "badges" })).toBe("");
   });
 
-  it("badges section with nothing to badge stays empty when the side column is already showing the insights", () => {
-    const html = render(baseProject, { section: "badges", insightsElsewhere: true });
-    expect(html).toBe("");
+  it("leaves the screenshots out entirely when asked, even with some to show", () => {
+    const shot: ScreenshotRef = { id: "s1", capturedAt: "2024-01-01T12:00:00Z" };
+    const withShots = render(baseProject, { screenshots: [shot] });
+    const without = render(baseProject, { screenshots: [shot], showScreenshots: false });
+    expect(withShots).toContain("project-shots-card");
+    expect(without).not.toContain("project-shots-card");
+    expect(without).toContain("This week&#x27;s top apps");
   });
 
   it("flags a required stop note and an exhausted budget", () => {

@@ -21,11 +21,15 @@
 //!   (it doesn't shrink, so a hidden column would just be dead space) - for
 //!   anyone who wants the classic layout and has a monitor for it. Never
 //!   picked by Auto on its own, same as Wide.
-//! - **Focus** 1040x600 - screens too small even for Standard. No column;
-//!   the project/task lists show two rows instead of three, same as
-//!   Standard, and the main pane scrolls if it has to.
+//! - **Focus** 1100x600 - screens too small even for Standard. No apps &
+//!   screenshots column; the tasks get a narrow column of their own on the
+//!   right instead, so the sidebar only holds the projects, and the main
+//!   pane shows the top apps without the screenshots.
 //!
 //! The CSS side is `.layout-*` and `.no-side-column` in App.css.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{LogicalSize, WebviewWindow};
@@ -74,7 +78,7 @@ impl LayoutKind {
             Self::Standard => (1320.0, 660.0),
             Self::Wide => (1420.0, 820.0),
             Self::Extended => (1100.0, 750.0),
-            Self::Focus => (1040.0, 600.0),
+            Self::Focus => (1100.0, 600.0),
         }
     }
 
@@ -214,28 +218,108 @@ pub fn current(window: &WebviewWindow, preference: &str, show_insights: bool) ->
     resolve(preference, show_insights, work_area(window))
 }
 
-/// Sizes and re-centres the window for these settings.
-pub fn apply(window: &WebviewWindow, preference: &str, show_insights: bool) -> WindowLayout {
-    let layout = current(window, preference, show_insights);
-    let size = LogicalSize::new(layout.width, layout.height);
-    // tauri.conf.json's minimum is the original window's size, which would
-    // stop the window from getting any shorter or narrower - lift it,
-    // resize, then pin the new size as the minimum.
-    let _ = window.set_min_size(None::<LogicalSize<f64>>);
+/// How many steps a layout change takes to reach its new size, and how long
+/// each one lasts - about a fifth of a second in all.
+const RESIZE_STEPS: u32 = 14;
+const RESIZE_STEP: Duration = Duration::from_millis(14);
+
+/// Bumped by every resize, so an animation still running when the next layout
+/// is picked stops where it is instead of fighting the new one.
+static RESIZE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// The size at step `step` of `steps` on the way from `from` to `to`, easing
+/// out so the window settles into place rather than stopping dead.
+fn eased_size(from: (f64, f64), to: (f64, f64), step: u32, steps: u32) -> (f64, f64) {
+    let t = (step as f64 / steps.max(1) as f64).clamp(0.0, 1.0);
+    let eased = 1.0 - (1.0 - t).powi(3);
+    (
+        (from.0 + (to.0 - from.0) * eased).round(),
+        (from.1 + (to.1 - from.1) * eased).round(),
+    )
+}
+
+fn finish_resize(window: &WebviewWindow, (width, height): (f64, f64)) {
+    let size = LogicalSize::new(width, height);
     if let Err(err) = window.set_size(size) {
-        log::warn!(
-            "Could not resize the window for the {} layout: {err}",
-            preference
-        );
+        log::warn!("Could not resize the window for its layout: {err}");
     }
     let _ = window.set_min_size(Some(size));
     let _ = window.center();
+}
+
+/// Sizes and re-centres the window for these settings. `animate` eases it
+/// there over a fifth of a second - for a change the member just made in
+/// Settings; startup sizes it in one step before the window is shown.
+pub fn apply(window: &WebviewWindow, preference: &str, show_insights: bool, animate: bool) -> WindowLayout {
+    let layout = current(window, preference, show_insights);
+    let target = (layout.width, layout.height);
+    let generation = RESIZE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    // tauri.conf.json's minimum is the original window's size, which would
+    // stop the window from getting any shorter or narrower - lift it while
+    // resizing, then pin the new size as the minimum.
+    let _ = window.set_min_size(None::<LogicalSize<f64>>);
+
+    let from = window
+        .inner_size()
+        .ok()
+        .zip(window.scale_factor().ok())
+        .map(|(size, scale)| {
+            let logical = size.to_logical::<f64>(scale);
+            (logical.width.round(), logical.height.round())
+        });
+    match from {
+        Some(from) if animate && from != target => {
+            let window = window.clone();
+            // Off the command's thread: every window call hops to the main
+            // thread, which has to stay free to actually carry them out.
+            let spawned = std::thread::Builder::new()
+                .name("vt-layout-resize".into())
+                .spawn({
+                    let window = window.clone();
+                    move || {
+                        for step in 1..RESIZE_STEPS {
+                            if RESIZE_GENERATION.load(Ordering::SeqCst) != generation {
+                                return;
+                            }
+                            let (width, height) = eased_size(from, target, step, RESIZE_STEPS);
+                            let _ = window.set_size(LogicalSize::new(width, height));
+                            let _ = window.center();
+                            std::thread::sleep(RESIZE_STEP);
+                        }
+                        if RESIZE_GENERATION.load(Ordering::SeqCst) == generation {
+                            finish_resize(&window, target);
+                        }
+                    }
+                });
+            if spawned.is_err() {
+                finish_resize(&window, target);
+            }
+        }
+        _ => finish_resize(window, target),
+    }
     layout
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_layout_change_eases_from_the_old_size_to_exactly_the_new_one() {
+        let from = (1320.0, 660.0);
+        let to = (1100.0, 600.0);
+        assert_eq!(eased_size(from, to, 0, RESIZE_STEPS), from);
+        assert_eq!(eased_size(from, to, RESIZE_STEPS, RESIZE_STEPS), to);
+        let mut previous = from;
+        for step in 1..=RESIZE_STEPS {
+            let next = eased_size(from, to, step, RESIZE_STEPS);
+            assert!(next.0 <= previous.0 && next.1 <= previous.1, "never overshoots or reverses");
+            previous = next;
+        }
+        // Eases out: most of the distance is covered in the first half.
+        let halfway = eased_size(from, to, RESIZE_STEPS / 2, RESIZE_STEPS);
+        assert!(from.0 - halfway.0 > (from.0 - to.0) / 2.0);
+    }
 
     // Usable work areas, in logical pixels, once the taskbar is taken off.
     const BIG_MONITOR: (f64, f64) = (2560.0, 1392.0); // 1440p at 100%
@@ -319,7 +403,7 @@ mod tests {
             ("standard", (1320.0, 660.0)),
             ("wide", (1420.0, 820.0)),
             ("extended", (1100.0, 750.0)),
-            ("focus", (1040.0, 600.0)),
+            ("focus", (1100.0, 600.0)),
         ];
         for (name, expected) in sizes {
             assert_eq!(

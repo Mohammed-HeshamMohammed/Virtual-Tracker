@@ -2,6 +2,8 @@ import { Icon } from "../common/Icon";
 import type { TaskTimeTracking } from "../../types";
 
 type SidebarActionsProps = {
+  /** False in Focus, where the tracking card has its own play/pause and Stop. */
+  showSessionButtons?: boolean;
   paused: boolean;
   tracking: boolean;
   busy: boolean;
@@ -18,6 +20,7 @@ type SidebarActionsProps = {
 };
 
 export function SidebarActions({
+  showSessionButtons = true,
   paused,
   tracking,
   busy,
@@ -34,7 +37,7 @@ export function SidebarActions({
 }: SidebarActionsProps) {
   return (
     <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
-      {paused ? (
+      {!showSessionButtons ? null : paused ? (
         <div className="action-pair">
           <button className="btn btn-primary" type="button" disabled={busy} onClick={onResume}>
             Resume tracking

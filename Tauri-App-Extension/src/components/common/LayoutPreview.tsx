@@ -7,7 +7,7 @@ const FRAMES: Record<LayoutKind, { width: number; height: number; column: number
   standard: { width: 1320, height: 660, column: 310 },
   wide: { width: 1420, height: 820, column: 374 },
   extended: { width: 1100, height: 750, column: 0 },
-  focus: { width: 1040, height: 600, column: 0 },
+  focus: { width: 1100, height: 600, column: 0 },
 };
 
 const LARGEST = 1420;
@@ -36,13 +36,20 @@ export function LayoutPreview({
   const w = 100;
   const h = (frame.height / frameWidth) * 100;
   const pad = 3;
-  const sideW = (340 / frameWidth) * 100;
+  const isFocus = kind === "focus";
+  const sideW = ((isFocus ? 270 : 340) / frameWidth) * 100;
+  // Focus's tasks column on the right, in the same 0-100 space.
+  const tasksW = isFocus ? (240 / frameWidth) * 100 : 0;
   // The column's own width, in the same 0-100 space (the gap is `pad`).
   const columnW = ((frame.column - 14) / frameWidth) * 100;
-  const listRows = kind === "standard" || kind === "focus" ? 2 : 3;
+  const listRows = kind === "standard" ? 2 : 3;
 
   const mainX = sideW + pad;
-  const mainRight = hasColumn && showInsights ? w - pad - columnW - pad : w - pad;
+  const mainRight = isFocus
+    ? w - pad - tasksW - pad
+    : hasColumn && showInsights
+      ? w - pad - columnW - pad
+      : w - pad;
   const mainW = mainRight - mainX;
   const top = pad + 3;
   const bottom = h - pad;
@@ -71,7 +78,7 @@ export function LayoutPreview({
         {Array.from({ length: listRows }, (_, i) => (
           <rect key={`p${i}`} className="lp-row" x={pad} y={top + 10 + i * 4.2} width={sideW - pad * 2} height="3" rx="0.8" />
         ))}
-        {Array.from({ length: listRows }, (_, i) => (
+        {(isFocus ? [] : Array.from({ length: listRows })).map((_, i) => (
           <rect
             key={`t${i}`}
             className="lp-row"
@@ -100,6 +107,25 @@ export function LayoutPreview({
             height={Math.max(4, bottom - 2 - inlineInsightsY)}
             rx="1"
           />
+        ) : null}
+
+        {/* Focus: time zone over the task rows, in their own column. */}
+        {isFocus ? (
+          <>
+            <rect className="lp-pane" x={w - pad - tasksW} y={top} width={tasksW} height={bottom - top} rx="2.5" />
+            <rect className="lp-block" x={w - pad - tasksW + 2} y={top + 2} width={tasksW - 4} height="4" rx="1" />
+            {Array.from({ length: 5 }, (_, i) => (
+              <rect
+                key={`ft${i}`}
+                className="lp-row"
+                x={w - pad - tasksW + 2}
+                y={top + 9 + i * 4.2}
+                width={tasksW - 4}
+                height="3"
+                rx="0.8"
+              />
+            ))}
+          </>
         ) : null}
 
         {/* Side column: top apps over screenshots. */}

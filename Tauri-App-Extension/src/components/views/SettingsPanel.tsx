@@ -53,7 +53,7 @@ function layoutSize(kind: LayoutKind, showInsights: boolean): string {
     standard: [1320, 660, 310],
     wide: [1420, 820, 374],
     extended: [1100, 750, 0],
-    focus: [1040, 600, 0],
+    focus: [1100, 600, 0],
   };
   const [width, height, column] = sizes[kind];
   return `${showInsights ? width : width - column} × ${height}`;

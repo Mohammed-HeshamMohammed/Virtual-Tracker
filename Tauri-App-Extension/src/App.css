@@ -26,6 +26,9 @@
   --c-good: 75 226 119;
   --c-warn: 251 191 36;
   --c-bad: 251 113 133;
+  /* A session that is running right now - distinct from --c-good, which is
+     the same green as the start button. */
+  --c-live: 56 189 248;
   /* Hover/press films. White on dark, near-black on light - so
      rgb(var(--c-overlay) / .06) reads correctly in both. */
   --c-overlay: 255 255 255;
@@ -65,6 +68,7 @@
   --c-good: 5 150 105;
   --c-warn: 180 83 9;
   --c-bad: 190 24 60;
+  --c-live: 3 105 161;
   --c-overlay: 15 23 42;
 
   --on-surface: #171c1f;
@@ -94,6 +98,7 @@
     --c-good: 5 150 105;
     --c-warn: 180 83 9;
     --c-bad: 190 24 60;
+    --c-live: 3 105 161;
     --c-overlay: 15 23 42;
 
     --on-surface: #171c1f;
@@ -1163,8 +1168,11 @@ body {
 .stat-tile-value-row {
   margin-top: 5px;
   display: flex;
+  /* In a narrow tile (Focus) the "left of ..." suffix drops to its own line
+     rather than splitting the number or being cut off. */
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: 6px;
+  gap: 3px 6px;
   min-width: 0;
 }
 
@@ -1172,6 +1180,7 @@ body {
   font-size: 20px;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   color: var(--on-surface);
   font-variant-numeric: tabular-nums;
 }
@@ -4856,8 +4865,7 @@ select.modal-input {
 
 /* Two rows instead of three - the same 45px tallest row as the standard
    cap above, two of them plus the one 4px gap between them. */
-.layout-standard .side-tasklist-body,
-.layout-focus .side-tasklist-body {
+.layout-standard .side-tasklist-body {
   max-height: 94px;
 }
 
@@ -4903,9 +4911,12 @@ select.modal-input {
   flex-shrink: 0;
 }
 
+/* Focus leaves the screenshots out, so the top apps get whatever height the
+   pane has left rather than a fixed block that pushed it into scrolling. */
 .layout-focus .page-area > .project-detail-panel {
-  flex: 0 0 auto;
-  height: 300px;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* Pinned to the pane's bottom corner elsewhere; in a pane that scrolls that
@@ -5054,4 +5065,339 @@ select.modal-input {
   font-size: 10.5px;
   line-height: 1.35;
   color: var(--on-surface-faint);
+}
+
+/* ─── Your week (main pane) ───────────────────────────────────────────────── */
+
+/* Takes whatever height the main pane has left under the stat tiles - the
+   space the top apps and screenshots left behind when they moved into the
+   side column (or were switched off). */
+.week-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 0%;
+  min-height: 160px;
+}
+
+.week-chart-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.week-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+  font-size: 10.5px;
+  color: var(--on-surface-faint);
+}
+
+.week-chart-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.week-chart-total {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--on-surface-variant);
+}
+
+.week-chart-bars {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.week-chart-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+}
+
+.week-chart-value {
+  min-height: 13px;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  white-space: nowrap;
+}
+
+.week-chart-track {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 46px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 8px;
+  background: rgb(var(--c-well) / 0.55);
+  overflow: hidden;
+}
+
+.week-chart-stack {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: height 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.week-chart-active {
+  min-height: 2px;
+  background: linear-gradient(180deg, rgb(var(--c-good)), rgb(var(--c-good) / 0.7));
+}
+
+.week-chart-idle {
+  min-height: 2px;
+  background: rgb(var(--c-overlay) / 0.22);
+}
+
+.week-chart-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--on-surface-variant);
+}
+
+.week-chart-day.is-today .week-chart-label {
+  color: rgb(var(--c-good));
+}
+
+.week-chart-day.is-today .week-chart-track {
+  box-shadow: inset 0 0 0 1px rgb(var(--c-good) / 0.4);
+}
+
+.week-chart-day.is-future {
+  opacity: 0.45;
+}
+
+.week-chart-empty {
+  position: absolute;
+  inset: 0 0 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 12px;
+  color: var(--on-surface-faint);
+  pointer-events: none;
+}
+
+/* The banner is pinned to the pane's bottom corner, which is exactly where
+   the chart's last day ends - follow the content instead of covering it. */
+.page-area:has(> .week-chart) > .version-banner {
+  position: static;
+  align-self: flex-end;
+}
+
+/* ─── Focus: tasks column and session controls ────────────────────────────── */
+
+/* Focus is short - let the chart give up height before the pane has to scroll. */
+.layout-focus .week-chart {
+  min-height: 110px;
+}
+
+.layout-focus .side-panel {
+  width: 270px;
+}
+
+/* Same card as .side-column, on the other side of the main pane - Focus's
+   tasks live here so the sidebar only has to hold the projects. */
+.tasks-column {
+  width: 240px;
+  flex-shrink: 0;
+  min-height: 0;
+  margin: 44px 14px 14px 0;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--surface-high);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
+}
+
+.tasks-column-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgb(var(--c-line) / 0.15);
+}
+
+.tasks-column .tz-trigger {
+  max-width: 100%;
+  color: var(--on-surface-variant);
+  text-shadow: none;
+}
+
+.tasks-column .tz-trigger:hover:not(:disabled) {
+  background: rgb(var(--c-line) / 0.1);
+  border-color: rgb(var(--c-line) / 0.18);
+}
+
+.tasks-column .side-tasklist {
+  flex: 1;
+  min-height: 0;
+}
+
+.tasks-column .side-tasklist-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+}
+
+.session-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.session-toggle {
+  --tone: var(--c-good);
+  position: relative;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  color: rgb(var(--c-on-primary));
+  fill: currentColor;
+  background-color: rgb(var(--tone));
+  box-shadow: 0 6px 18px -4px rgb(var(--tone) / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.25);
+  transition:
+    background-color 0.35s ease,
+    box-shadow 0.35s ease,
+    transform 0.15s ease,
+    opacity 0.2s ease;
+}
+
+.session-toggle.is-tracking {
+  --tone: var(--c-live);
+}
+
+.session-toggle.is-paused {
+  --tone: var(--c-warn);
+}
+
+/* A slow ripple while the clock is running, so the state reads at a glance. */
+.session-toggle.is-tracking::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgb(var(--tone) / 0.55);
+  animation: session-ripple 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.session-toggle:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.session-toggle:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.session-toggle:focus-visible {
+  outline: 2px solid rgb(var(--tone) / 0.8);
+  outline-offset: 3px;
+}
+
+.session-toggle:disabled {
+  cursor: default;
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+.session-toggle-icon {
+  width: 20px;
+  height: 20px;
+  animation: session-icon-in 0.3s;
+}
+
+/* The triangle's weight sits left of its box; nudge it to look centred. */
+.session-toggle-icon.is-play {
+  margin-left: 3px;
+}
+
+.session-stop {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgb(var(--c-bad) / 0.45);
+  border-radius: 50%;
+  cursor: pointer;
+  color: rgb(var(--c-bad));
+  background: rgb(var(--c-bad) / 0.12);
+  animation: session-icon-in 0.3s;
+  transition: background-color 0.15s ease, transform 0.15s ease;
+}
+
+.session-stop svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.session-stop:hover:not(:disabled) {
+  background: rgb(var(--c-bad) / 0.22);
+  transform: scale(1.05);
+}
+
+.session-stop:focus-visible {
+  outline: 2px solid rgb(var(--c-bad) / 0.8);
+  outline-offset: 3px;
+}
+
+.session-stop:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@keyframes session-icon-in {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes session-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-toggle.is-tracking::after,
+  .session-toggle-icon,
+  .session-stop {
+    animation: none;
+  }
 }

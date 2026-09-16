@@ -92,14 +92,9 @@ type ProjectDetailPanelProps = {
    *  screenshots stack in the side column ("insights"). The standard layout
    *  renders all of it in one card, as it always has. */
   section?: "all" | "badges" | "insights";
-  /** Whether the week's top apps / screenshots are showing somewhere else
-   *  on screen right now (the side column). A "badges" section with nothing
-   *  to badge used to just return null unconditionally - fine when the side
-   *  column is carrying the insights instead, but with apps & screenshots
-   *  switched off entirely (the Settings default now) there was no side
-   *  column and nothing else to show either, so the whole rest of the main
-   *  pane sat empty under the stat tiles. */
-  insightsElsewhere?: boolean;
+  /** False leaves the screenshots out and gives the top apps the whole
+   *  card - the Focus layout, where the pane has no room for both. */
+  showScreenshots?: boolean;
 };
 
 /** The task-less counterpart to TaskProgressPanel/TaskDetailPanel - a
@@ -122,7 +117,7 @@ export function ProjectDetailPanel({
   timeZone,
   onSelectScreenshot,
   section = "all",
-  insightsElsewhere = false,
+  showScreenshots = true,
 }: ProjectDetailPanelProps) {
   if (!project) return null;
 
@@ -155,7 +150,7 @@ export function ProjectDetailPanel({
   // are: mid-transition, the previous project's shape stays up under the
   // shimmer rather than swapping layouts out from under it.
   const useBarList = !loading && hasApps && appBreakdown.length < RADAR_MIN_APPS;
-  const showShots = screenshots.length > 0 || loading;
+  const showShots = showScreenshots && (screenshots.length > 0 || loading);
   const axisCount = appBreakdown.length || RADAR_SKELETON_AXES;
   // Newest-first from the backend already - slicing keeps only the most
   // recent MAX_VISIBLE_SHOTS, so a screenshot arriving later naturally
@@ -165,17 +160,7 @@ export function ProjectDetailPanel({
   const showBadges = hasBadges && section !== "insights";
   const showInsights = (showChart || showShots) && section !== "badges";
 
-  if (section === "badges" && !showBadges) {
-    if (insightsElsewhere) return null;
-    return (
-      <div className="page-empty page-content-swap" style={{ animationDelay: "0.08s" }}>
-        <span className="page-empty-title">Apps &amp; screenshots are off</span>
-        <p className="page-empty-text">
-          Turn on "Show apps &amp; screenshots" in Settings to see this week's top apps here.
-        </p>
-      </div>
-    );
-  }
+  if (section === "badges" && !showBadges) return null;
 
   if (section === "badges") {
     return (
