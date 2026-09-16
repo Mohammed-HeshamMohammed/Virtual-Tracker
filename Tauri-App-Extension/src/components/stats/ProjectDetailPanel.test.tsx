@@ -33,6 +33,8 @@ function render(
     screenshotImages: Record<string, string>;
     selectedScreenshotId: string | null;
     loading: boolean;
+    section: "all" | "badges" | "insights";
+    insightsElsewhere: boolean;
   }> = {},
 ) {
   return renderToStaticMarkup(
@@ -46,6 +48,8 @@ function render(
       selectedScreenshotId={overrides.selectedScreenshotId ?? null}
       loading={overrides.loading ?? false}
       onSelectScreenshot={noop}
+      section={overrides.section}
+      insightsElsewhere={overrides.insightsElsewhere}
     />,
   );
 }
@@ -53,6 +57,20 @@ function render(
 describe("ProjectDetailPanel", () => {
   it("renders nothing without a project", () => {
     expect(render(null)).toBe("");
+  });
+
+  it("badges section with nothing to badge and no side column fills the space instead of vanishing", () => {
+    // With apps & screenshots switched off (Settings default), the side
+    // column never shows either - a bare `return null` here used to leave
+    // the whole rest of the main pane empty under the stat tiles.
+    const html = render(baseProject, { section: "badges", insightsElsewhere: false });
+    expect(html).toContain("Apps &amp; screenshots are off");
+    expect(html).toContain("page-empty");
+  });
+
+  it("badges section with nothing to badge stays empty when the side column is already showing the insights", () => {
+    const html = render(baseProject, { section: "badges", insightsElsewhere: true });
+    expect(html).toBe("");
   });
 
   it("flags a required stop note and an exhausted budget", () => {

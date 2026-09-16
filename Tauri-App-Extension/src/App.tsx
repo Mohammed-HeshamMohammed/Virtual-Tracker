@@ -2154,6 +2154,7 @@ function MainApp() {
                   <ProjectDetailPanel
                     {...projectDetailProps}
                     section={mainPaneProjectSection}
+                    insightsElsewhere={showSideColumn}
                   />
                 ) : showSideColumn ? null : (
                   <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
