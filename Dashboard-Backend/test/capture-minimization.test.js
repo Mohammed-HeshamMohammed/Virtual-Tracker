@@ -79,6 +79,22 @@ test("management can add an app exclusion, matched case-insensitively", async ()
   assert.equal(await isCaptureExcluded("app", "Slack.exe"), false);
 });
 
+test("an app exclusion matches regardless of whether either side carries the .exe suffix", async () => {
+  // An admin may type the pattern as the display name or the raw
+  // executable, and the agent event this is checked against may carry
+  // either spelling too (an up-to-date agent already checks all its own
+  // candidate spellings client-side; this is the server-side backstop for
+  // one that doesn't). Neither side's choice should matter.
+  reset();
+  await addCaptureExclusion({ matchType: "app", pattern: "notion.exe" }, ADMIN);
+  assert.equal(await isCaptureExcluded("app", "Notion"), true, "pattern has .exe, checked name does not");
+  assert.equal(await isCaptureExcluded("app", "notion.exe"), true, "both carry .exe");
+
+  reset();
+  await addCaptureExclusion({ matchType: "app", pattern: "Slack" }, ADMIN);
+  assert.equal(await isCaptureExcluded("app", "slack.exe"), true, "pattern has no .exe, checked name does");
+});
+
 test("an app exclusion does not match a domain exclusion check and vice versa", async () => {
   reset();
   await addCaptureExclusion({ matchType: "app", pattern: "chase.exe" }, ADMIN);

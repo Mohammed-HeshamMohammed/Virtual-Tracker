@@ -13,6 +13,16 @@ let expiredArchived;
 let deletedGcsObjects;
 /** @type {{ dataType: string, calls: number[] }[]} */
 let deleteCalls;
+/** @type {{ id: string, member_id: string, image_data: string|null, captured_at: string }[]} */
+let toArchive;
+/** @type {{ id: string, objectPath: string }[]} */
+let markedArchived;
+/** @type {string[]} */
+let uploadedObjects;
+/** @type {string|null} whether uploadToGCS should throw for this object path */
+let failUploadFor;
+/** @type {string} empty string means "no bucket configured", matching the real resolveGcsBucketName */
+let gcsBucketName;
 
 mock.module("../src/lib/postgres/data-retention-postgres.service.js", {
   namedExports: {
@@ -26,6 +36,10 @@ mock.module("../src/lib/postgres/data-retention-postgres.service.js", {
     setRetentionDaysPg: async (dataType, days, updatedBy) => {
       retentionDays.set(dataType, days);
       return { data_type: dataType, retention_days: days, updated_by: updatedBy, updated_at: new Date().toISOString() };
+    },
+    findScreenshotsToArchivePg: async () => toArchive,
+    markScreenshotArchivedPg: async (id, objectPath) => {
+      markedArchived.push({ id, objectPath });
     },
     findExpiredArchivedScreenshotsPg: async () => expiredArchived,
     deleteScreenshotsByIdPg: async (ids) => ids.length,
@@ -70,8 +84,17 @@ mock.module("../src/lib/gcs/upload.js", {
     },
     getPublicUrl: async () => null,
     getSignedUrl: async () => null,
-    resolveGcsBucketName: async () => null,
-    uploadToGCS: async () => null,
+    // Synchronous in the real module - archiveAgedScreenshots's `if
+    // (!resolveGcsBucketName())` guard would always pass on a Promise
+    // (always truthy) if this were mocked async, silently skipping the
+    // "no bucket configured" test case below.
+    resolveGcsBucketName: () => gcsBucketName,
+    uploadToGCS: async (_buffer, objectPath) => {
+      if (objectPath === failUploadFor) {
+        throw new Error("simulated GCS upload failure");
+      }
+      uploadedObjects.push(objectPath);
+    },
   },
 });
 
@@ -99,6 +122,11 @@ function reset() {
   expiredArchived = [];
   deletedGcsObjects = [];
   deleteCalls = [];
+  toArchive = [];
+  markedArchived = [];
+  uploadedObjects = [];
+  failUploadFor = null;
+  gcsBucketName = "test-bucket";
 }
 
 test("every known data type has a finite retention ceiling by default", async () => {
@@ -145,6 +173,38 @@ test("the sweep deletes expired rows across all four stores using each type's ow
   assert.equal(deleteCalls.find((c) => c.dataType === "app_logs").calls[0], 60);
   assert.equal(deleteCalls.find((c) => c.dataType === "url_logs").calls[0], 45);
   assert.equal(deleteCalls.find((c) => c.dataType === "sessions").calls[0], 400);
+});
+
+test("the sweep archives an aged inline screenshot to GCS and clears its inline image data", async () => {
+  // This used to only happen if someone ran scripts/archive-screenshots.mjs
+  // by hand - nothing auto-scheduled it, so a screenshot sat as full
+  // Postgres bytea for the entire retention window instead of being
+  // offloaded after a few days. It must now happen as part of the same
+  // sweep that already runs every 24h.
+  reset();
+  toArchive = [{ id: "shot-9", member_id: "m9", image_data: "raw-bytes", captured_at: new Date().toISOString() }];
+  const result = await runRetentionSweep();
+  assert.deepEqual(uploadedObjects, ["activity-screenshots/m9/shot-9.webp"]);
+  assert.deepEqual(markedArchived, [{ id: "shot-9", objectPath: "activity-screenshots/m9/shot-9.webp" }]);
+  assert.equal(result.screenshotsArchived, 1);
+});
+
+test("a failed upload leaves the screenshot inline for the next sweep instead of losing it", async () => {
+  reset();
+  toArchive = [{ id: "shot-bad", member_id: "m1", image_data: "raw-bytes", captured_at: new Date().toISOString() }];
+  failUploadFor = "activity-screenshots/m1/shot-bad.webp";
+  const result = await runRetentionSweep();
+  assert.deepEqual(markedArchived, [], "never marked archived - the row keeps its inline data");
+  assert.equal(result.screenshotsArchived, 0);
+});
+
+test("no GCS bucket configured skips archiving quietly instead of failing every row", async () => {
+  reset();
+  gcsBucketName = "";
+  toArchive = [{ id: "shot-1", member_id: "m1", image_data: "raw-bytes", captured_at: new Date().toISOString() }];
+  const result = await runRetentionSweep();
+  assert.deepEqual(uploadedObjects, []);
+  assert.equal(result.screenshotsArchived, 0);
 });
 
 test("the sweep deletes the GCS object before deleting an archived screenshot row", async () => {

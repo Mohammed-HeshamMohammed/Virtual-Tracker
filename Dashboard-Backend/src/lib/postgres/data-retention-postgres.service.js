@@ -29,6 +29,21 @@ export async function deleteScreenshotsByIdPg(ids) {
   return result.length;
 }
 
+export async function findScreenshotsToArchivePg(archiveDays, limit = 500) {
+  return query(
+    `SELECT id, member_id, image_data, captured_at
+     FROM activity_screenshots
+     WHERE image_data IS NOT NULL AND captured_at < now() - ($1 || ' days')::interval
+     ORDER BY captured_at ASC
+     LIMIT $2`,
+    [archiveDays, limit],
+  );
+}
+
+export async function markScreenshotArchivedPg(id, objectPath) {
+  await query(`UPDATE activity_screenshots SET screenshot_url = $2, image_data = NULL WHERE id = $1`, [id, objectPath]);
+}
+
 export async function deleteExpiredInlineScreenshotsPg(retentionDays) {
   const result = await query(
     `DELETE FROM activity_screenshots
