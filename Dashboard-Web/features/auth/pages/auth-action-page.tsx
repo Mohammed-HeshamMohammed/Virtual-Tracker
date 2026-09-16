@@ -50,7 +50,7 @@ export default function AuthActionPage() {
   useEffect(() => {
     if (mode === "unknown") {
       setState("unsupported")
-      setMessage("This sign-in link is not supported here. Return to Virtual Tracker and try again.")
+      setMessage("This sign-in link is not supported here. Return to My Virtual Tracker and try again.")
       return
     }
     if (!oobCode) {
@@ -107,7 +107,7 @@ export default function AuthActionPage() {
     }
 
     setState("unsupported")
-    setMessage("This sign-in link is not supported here. Return to Virtual Tracker and try again.")
+    setMessage("This sign-in link is not supported here. Return to My Virtual Tracker and try again.")
   }, [continueUrl, mode, oobCode, router])
 
   async function handlePasswordResetSubmit(e: React.FormEvent) {

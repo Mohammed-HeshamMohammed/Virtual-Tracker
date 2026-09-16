@@ -48,7 +48,7 @@ export function MigrateForm({
     <div className="space-y-4">
       <p className="text-xs text-slate-500 dark:text-slate-400">
         These people already sign in through the mobile app&apos;s Firebase Authentication. Select who should also
-        get access to Virtual Tracker — the role shown is suggested automatically from their mobile-app profile.
+        get access to My Virtual Tracker — the role shown is suggested automatically from their mobile-app profile.
       </p>
 
       <div className="relative">

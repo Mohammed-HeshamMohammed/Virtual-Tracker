@@ -143,7 +143,7 @@ export function InviteAcceptForm({ token }: { token: string }) {
         onSubmit={(e) => void onSubmit(e)}
         className={cn("space-y-4 rounded-2xl border p-8 shadow-2xl", styles.card)}
       >
-        <h1 className={cn("text-xl font-bold", styles.heading)}>Join Virtual Tracker</h1>
+        <h1 className={cn("text-xl font-bold", styles.heading)}>Join My Virtual Tracker</h1>
         <p className={cn("text-sm", styles.body)}>
           Create your sign-in. You will use this email and password to log in. You can verify your phone later from
           Profile or Manage myself.

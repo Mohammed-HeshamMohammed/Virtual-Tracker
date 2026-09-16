@@ -221,7 +221,7 @@ export function ManagePayrollPage({ onNavigate }: { onNavigate: (id: string) => 
               Want to use a different tool? No problem
             </h2>
             <p className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>
-              Virtual Tracker supports rich integrations with most popular payments methods.
+              My Virtual Tracker supports rich integrations with most popular payments methods.
             </p>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               <AlternatePayCard

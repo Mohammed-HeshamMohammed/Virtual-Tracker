@@ -101,7 +101,7 @@ export function TransferAcceptForm({ token }: { token: string }) {
     <div className={styles.card}>
       <h1 className={styles.heading}>Team invitation</h1>
       <p className={styles.body}>
-        <strong>{requesterName}</strong> has invited you to join their team on Virtual Tracker.
+        <strong>{requesterName}</strong> has invited you to join their team on My Virtual Tracker.
       </p>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
         Your role will remain unchanged unless specified in the invitation.

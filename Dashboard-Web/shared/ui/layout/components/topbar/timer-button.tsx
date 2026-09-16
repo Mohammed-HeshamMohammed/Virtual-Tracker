@@ -13,14 +13,14 @@ interface TimerButtonProps {
 
 /**
  * The top bar's Start button. It opens the Tools page, where the member gets
- * the Virtual Tracker Agent - and that is all it does.
+ * My Virtual Tracker - and that is all it does.
  *
  * It used to do far more. When no web timer was running it polled the
  * member's session every 8s and, finding one the agent had started, switched
  * on the dashboard's whole timer runtime ("adopt"). It was the only thing that
  * ever did. That runtime then watched the agent and paused its timer whenever
  * a status check came back "offline" - a heartbeat gap, a slow request, a
- * Redis restart - and showed "Start the Virtual Tracker Agent on this PC...
+ * Redis restart - and showed "Start My Virtual Tracker on this PC...
  * Timer paused until the agent reconnects" while the agent was plainly
  * running. The button also showed a live clock and hosted the timer toasts.
  *
@@ -37,8 +37,8 @@ export function TimerButton({ isCollapsed = false, onNavigate }: TimerButtonProp
       whileHover={{ scale: 1.03 }}
       whileTap={{ scale: 0.97 }}
       onClick={() => onNavigate("activity-tools")}
-      title="Get the Virtual Tracker Agent"
-      aria-label="Start: open Tools to get the Virtual Tracker Agent"
+      title="Get My Virtual Tracker"
+      aria-label="Start: open Tools to get My Virtual Tracker"
       className={cn(
         "relative flex items-center font-bold text-sm text-white rounded-xl overflow-hidden transition-shadow",
         isCollapsed ? "p-2.5" : "gap-2 px-4 py-2",

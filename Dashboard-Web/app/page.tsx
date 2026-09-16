@@ -4,8 +4,8 @@ import { AuthSessionLoader } from "@/features/auth"
 import { HomeClient } from "@/app/home-client"
 
 export const metadata: Metadata = {
-  title: "Virtual Tracker",
-  description: "Virtual Tracker",
+  title: "My Virtual Tracker",
+  description: "My Virtual Tracker",
 }
 
 export default function HomePage() {

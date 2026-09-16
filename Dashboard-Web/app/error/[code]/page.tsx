@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: HttpErrorRoutePageProps): Pro
   const status = normalizeHttpErrorCode(code)
   const definition = getHttpErrorDefinition(status)
   return {
-    title: `${definition.title} | Virtual Tracker`,
+    title: `${definition.title} | My Virtual Tracker`,
     description: definition.description,
   }
 }

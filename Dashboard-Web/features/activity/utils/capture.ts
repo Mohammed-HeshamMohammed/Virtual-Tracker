@@ -33,7 +33,7 @@ export async function captureViewportThumbnail(): Promise<string> {
     ctx.fillRect(0, 0, 320, 180)
     ctx.fillStyle = "#f8fafc"
     ctx.font = "bold 13px system-ui, sans-serif"
-    ctx.fillText("Virtual Tracker", 12, 28)
+    ctx.fillText("My Virtual Tracker", 12, 28)
     ctx.font = "11px system-ui, sans-serif"
     ctx.fillStyle = "#cbd5e1"
     const title = document.title.slice(0, 42) || "Untitled"
@@ -60,7 +60,7 @@ export function randomScreenshotDelayMs(): number {
 }
 
 export function trackedAppName(): string {
-  return isScreenCaptureActive() ? captureAppName() : "Browser · Virtual Tracker"
+  return isScreenCaptureActive() ? captureAppName() : "Browser · My Virtual Tracker"
 }
 
 export async function captureScreenshot(): Promise<string> {

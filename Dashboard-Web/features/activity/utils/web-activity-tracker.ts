@@ -55,7 +55,7 @@ export function createWebActivityTracker(options: WebActivityTrackerOptions) {
       events.push({
         type: "url",
         url: lastUrl,
-        pageTitle: taskPageTitle(document.title || "Virtual Tracker"),
+        pageTitle: taskPageTitle(document.title || "My Virtual Tracker"),
         durationSeconds: urlDurationSeconds(),
       })
     }
@@ -94,7 +94,7 @@ export function createWebActivityTracker(options: WebActivityTrackerOptions) {
         type: "screenshot",
         imageData,
         appName: trackedAppName(),
-        pageTitle: taskPageTitle(document.title || "Virtual Tracker"),
+        pageTitle: taskPageTitle(document.title || "My Virtual Tracker"),
         activityLevel: getActivityLevel(),
       },
     ])

@@ -99,7 +99,7 @@ export function ActivityToolsPage() {
             Agent Tracker setup
           </h2>
           <p className={cn("mt-1 text-sm leading-relaxed", isDark ? "text-slate-400" : "text-slate-600")}>
-            Time is tracked by the Virtual Tracker Agent. Download the installer for your OS, install it, sign
+            Time is tracked by My Virtual Tracker. Download the installer for your OS, install it, sign
             in, then start and stop tracking from the agent.
           </p>
         </div>

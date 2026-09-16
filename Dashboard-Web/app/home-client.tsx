@@ -79,7 +79,7 @@ function HomeClientInner() {
           <LauncherGoogleOAuthBanner message={sessionStatusMessage} onCancel={cancelPendingOAuthSignIn} />
           <div className="mx-auto mb-6 max-w-md rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-center text-sm text-emerald-100">
             Sign in below, then click <span className="font-semibold text-white">Link this account</span> to finish
-            connecting Virtual Tracker Agent.
+            connecting My Virtual Tracker.
           </div>
           <AuthPage1 />
         </AuthGateShell>
