@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeHomeStats, ACTIVITY_RING_CIRCUMFERENCE } from "./homeStats";
-import type { DashboardSummary, MemberLimits, ProjectBudgetStatus, TaskTimeTracking } from "../types";
+import type { MemberLimits, ProjectBudgetStatus, TaskTimeTracking, WeekDay } from "../types";
 
 const baseMemberLimits: MemberLimits = {
   dailyHours: 8,
@@ -29,11 +29,12 @@ const baseMemberLimits: MemberLimits = {
   isMakeupDay: false,
   todayActivity: { activeSeconds: 0, idleSeconds: 0 },
   projectTodayActivity: null,
+  todayDay: "",
+  weekDays: [],
 };
 
 const emptyInput = {
   memberLimits: null,
-  dashboardSummary: null,
   projectBudget: null,
   taskTracking: null,
   liveWorkedTodaySeconds: 0,
@@ -168,30 +169,66 @@ describe("computeHomeStats - activity ring (current project)", () => {
   });
 });
 
-describe("computeHomeStats - weekly activity (dashboardSummary)", () => {
-  const dashboardSummary: DashboardSummary = {
-    activityWeekPercent: 40,
-    weeklyActivity: [
-      { key: "mon", label: "MON", activeHours: 2, idleHours: 0.5 },
-      { key: "tue", label: "TUE", activeHours: 3, idleHours: 1 },
-    ],
-    recentProjects: [],
+describe("computeHomeStats - the week (chart, This week card, sidebar ring)", () => {
+  // Monday and Tuesday done, Wednesday is today with 10 minutes on the server.
+  const weekDays: WeekDay[] = [
+    { day: "2026-09-14", label: "Mon", activeSeconds: 2 * 3600, idleSeconds: 1800 },
+    { day: "2026-09-15", label: "Tue", activeSeconds: 3 * 3600, idleSeconds: 3600 },
+    { day: "2026-09-16", label: "Wed", activeSeconds: 600, idleSeconds: 0 },
+    { day: "2026-09-17", label: "Thu", activeSeconds: 0, idleSeconds: 0 },
+  ];
+  const limits: MemberLimits = {
+    ...baseMemberLimits,
+    workedTodaySeconds: 600,
+    workedWeekSeconds: 5 * 3600 + 600,
+    todayDay: "2026-09-16",
+    weekDays,
   };
 
-  it("sums the week's per-day hours into seconds", () => {
-    const stats = computeHomeStats({ ...emptyInput, dashboardSummary });
-    expect(stats.weekActiveSeconds).toBe(5 * 3600);
+  it("today's bar follows the live clock, the same number the Today card shows", () => {
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 900, tracking: true });
+    expect(stats.weekDays[2].activeSeconds).toBe(900);
+    expect(stats.weekDays[0].activeSeconds).toBe(2 * 3600);
+    expect(stats.workedTodayLabel).toBe("15m 0s");
+  });
+
+  it("the week total, the This week card and the chart all move with it", () => {
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 900, tracking: true });
+    expect(stats.weekActiveSeconds).toBe(5 * 3600 + 900);
+    expect(stats.weekWorkedLabel).toBe("5h 15m");
     expect(stats.weekIdleSeconds).toBe(1.5 * 3600);
   });
 
-  it("draws the ring from the payload's own percent, independent of today's activity ring", () => {
-    const stats = computeHomeStats({ ...emptyInput, dashboardSummary });
-    expect(stats.weekActivityDash).toBeCloseTo(0.4 * ACTIVITY_RING_CIRCUMFERENCE, 5);
+  it("never shows today below what the server has already recorded", () => {
+    // Shift-based members get workedTodaySeconds 0, so their live value counts
+    // from zero - the rollup's figure must still win.
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 0 });
+    expect(stats.weekDays[2].activeSeconds).toBe(600);
+    expect(stats.weekActiveSeconds).toBe(5 * 3600 + 600);
   });
 
-  it("is a flat zero with no dashboard summary yet", () => {
+  it("the ring is active over active plus idle, from the same week", () => {
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 600 });
+    const active = 5 * 3600 + 600;
+    const expected = Math.round((active / (active + 1.5 * 3600)) * 100);
+    expect(stats.weekActivityPercent).toBe(expected);
+    expect(stats.weekActivityDash).toBeCloseTo((expected / 100) * ACTIVITY_RING_CIRCUMFERENCE, 5);
+  });
+
+  it("an older backend without weekDays still gets a live week total", () => {
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits: { ...limits, weekDays: [], todayDay: "" },
+      liveWorkedTodaySeconds: 900,
+    });
+    expect(stats.weekDays).toEqual([]);
+    expect(stats.weekActiveSeconds).toBe(5 * 3600 + 900);
+  });
+
+  it("is a flat zero with nothing loaded yet", () => {
     const stats = computeHomeStats(emptyInput);
     expect(stats.weekActiveSeconds).toBe(0);
+    expect(stats.weekActivityPercent).toBeNull();
     expect(stats.weekActivityDash).toBe(0);
   });
 });

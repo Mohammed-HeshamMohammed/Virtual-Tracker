@@ -583,6 +583,10 @@ impl ApiClient {
                     idle_seconds: field("idleSeconds"),
                 }
             }),
+            today_day: data.get("todayDay").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            // Absent on an older backend - the week chart then falls back to an
+            // empty week rather than failing the whole limits fetch.
+            week_days: parse_week_days(data.get("weekDays")),
         })
     }
 
@@ -1028,6 +1032,12 @@ impl ApiClient {
     }
 }
 
+fn parse_week_days(node: Option<&Value>) -> Vec<crate::types::WeekDay> {
+    node.cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default()
+}
+
 /// Parses the `assignedToday` block on GET /api/activity/limits (T5,
 /// PLAN-livesyncandagenttimer.md §11). Absent on older backends - every
 /// field then keeps its zero default via #[derive(Default)], same fallback
@@ -1074,6 +1084,21 @@ fn parse_assigned_total(node: Option<&Value>) -> crate::types::AssignedTotal {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn week_days_parse_from_the_limits_payload_and_tolerate_its_absence() {
+        let payload = serde_json::json!([
+            { "day": "2026-09-14", "label": "Mon", "activeSeconds": 424, "idleSeconds": 12 },
+            { "day": "2026-09-15", "label": "Tue", "activeSeconds": 0, "idleSeconds": 0 }
+        ]);
+        let days = super::parse_week_days(Some(&payload));
+        assert_eq!(days.len(), 2);
+        assert_eq!(days[0].day, "2026-09-14");
+        assert_eq!(days[0].active_seconds, 424);
+        assert_eq!(days[0].idle_seconds, 12);
+        assert!(super::parse_week_days(None).is_empty());
+        assert!(super::parse_week_days(Some(&serde_json::json!("garbage"))).is_empty());
+    }
+
     use super::*;
     use crate::test_support::{fake_jwt, fake_server};
 

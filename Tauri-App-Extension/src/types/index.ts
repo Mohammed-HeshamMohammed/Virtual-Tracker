@@ -202,9 +202,15 @@ export type MemberLimits = {
   isMakeupDay: boolean;
   todayActivity: TodayActivity;
   projectTodayActivity: TodayActivity | null;
+  /** The member's local today, "YYYY-MM-DD" - which of weekDays is today. */
+  todayDay: string;
+  /** This week, Monday first, from the same rollup as workedWeekSeconds. */
+  weekDays: WeekDay[];
 };
 
 export type TodayActivity = { activeSeconds: number; idleSeconds: number };
+
+export type WeekDay = { day: string; label: string; activeSeconds: number; idleSeconds: number };
 
 
 export type TimeOffBalance = {

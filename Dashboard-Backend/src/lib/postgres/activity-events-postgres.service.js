@@ -847,6 +847,39 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
   };
 }
 
+/** Active seconds per local day, from the same rollup sumDailyMemberActiveSeconds reads. */
+export async function listDailyMemberActiveSeconds(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  // to_char, not the DATE itself - node-pg turns a DATE into a local-midnight
+  // Date object, which shifts the day for any server not running at UTC.
+  const result = await pgQuery(
+    `SELECT to_char(day, 'YYYY-MM-DD') AS day, active_seconds
+     FROM daily_member_active_seconds
+     WHERE member_id = $1 AND day >= $2::date AND day <= $3::date`,
+    [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
+/** Idle seconds per local day a session started on - the same basis as sumMemberActiveIdleSeconds. */
+export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT to_char((s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date, 'YYYY-MM-DD') AS day,
+            COALESCE(SUM(s.idle_seconds), 0) AS idle_seconds
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
+       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date
+     GROUP BY 1`,
+    [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
 export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   const pId = projectId ? parseProgressUuid(projectId) : null;

@@ -1,36 +1,24 @@
 import { fmtHours } from "../../utils/formatters";
-import type { WeeklyActivityDay } from "../../types";
+import type { WeekDay } from "../../types";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 type WeekChartProps = {
-  /** Monday-first, from GET /api/dashboard/general's weeklyActivity. */
-  days: WeeklyActivityDay[];
+  /** Monday first, from GET /api/activity/limits, today's active time already
+   *  following the live clock (computeHomeStats). */
+  days: WeekDay[];
+  /** The member's local today, "YYYY-MM-DD", as the server resolved it. */
+  todayDay: string;
   loading: boolean;
-  now: number;
-  timeZone?: string;
 };
 
-/** Which of the week's days is today, matched by its short label ("Mon")
- *  in the zone the rest of the page shows times in. -1 when it can't tell. */
-export function todayIndexFor(days: { label: string }[], now: number, timeZone?: string): number {
-  let label: string;
-  try {
-    label = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone }).format(now);
-  } catch {
-    label = new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(now);
-  }
-  return days.findIndex((d) => d.label === label);
-}
-
-export function WeekChart({ days, loading, now, timeZone }: WeekChartProps) {
-  const shown: WeeklyActivityDay[] = days.length
+export function WeekChart({ days, todayDay, loading }: WeekChartProps) {
+  const shown: WeekDay[] = days.length
     ? days
-    : DAY_LABELS.map((label) => ({ key: label.toLowerCase(), label, activeHours: 0, idleHours: 0 }));
-  const todayIndex = todayIndexFor(shown, now, timeZone);
-  const maxHours = Math.max(0, ...shown.map((d) => d.activeHours + d.idleHours));
-  const activeSeconds = Math.round(shown.reduce((sum, d) => sum + d.activeHours, 0) * 3600);
-  const empty = !loading && maxHours === 0;
+    : DAY_LABELS.map((label) => ({ day: "", label, activeSeconds: 0, idleSeconds: 0 }));
+  const maxSeconds = Math.max(0, ...shown.map((d) => d.activeSeconds + d.idleSeconds));
+  const activeSeconds = shown.reduce((sum, d) => sum + d.activeSeconds, 0);
+  const empty = !loading && maxSeconds === 0;
 
   return (
     <section className="stat-panel week-chart page-content-swap" style={{ animationDelay: "0.1s" }} aria-busy={loading}>
@@ -49,23 +37,25 @@ export function WeekChart({ days, loading, now, timeZone }: WeekChartProps) {
 
       <div className={`week-chart-bars${loading ? " is-loading" : ""}`}>
         {shown.map((day, index) => {
-          const active = Math.round(day.activeHours * 3600);
-          const idle = Math.round(day.idleHours * 3600);
-          const total = day.activeHours + day.idleHours;
+          const total = day.activeSeconds + day.idleSeconds;
           // A day with any time at all keeps a visible sliver next to a long one.
-          const heightPct = maxHours > 0 && total > 0 ? Math.max(4, (total / maxHours) * 100) : 0;
-          const future = todayIndex >= 0 && index > todayIndex;
+          const heightPct = maxSeconds > 0 && total > 0 ? Math.max(4, (total / maxSeconds) * 100) : 0;
+          const isToday = Boolean(todayDay) && day.day === todayDay;
+          // ISO dates compare correctly as strings.
+          const future = Boolean(todayDay && day.day) && day.day > todayDay;
           return (
             <div
-              key={day.key || day.label}
-              className={`week-chart-day${index === todayIndex ? " is-today" : ""}${future ? " is-future" : ""}`}
-              title={`${day.label}: ${fmtHours(active)} active, ${fmtHours(idle)} idle`}
+              key={day.day || day.label || index}
+              className={`week-chart-day${isToday ? " is-today" : ""}${future ? " is-future" : ""}`}
+              title={`${day.label}: ${fmtHours(day.activeSeconds)} active, ${fmtHours(day.idleSeconds)} idle`}
             >
-              <span className="week-chart-value">{active > 0 ? fmtHours(active) : ""}</span>
+              <span className="week-chart-value">{day.activeSeconds > 0 ? fmtHours(day.activeSeconds) : ""}</span>
               <div className="week-chart-track">
                 <div className="week-chart-stack" style={{ height: `${heightPct}%` }}>
-                  {idle > 0 ? <div className="week-chart-idle" style={{ flexGrow: idle }} /> : null}
-                  {active > 0 ? <div className="week-chart-active" style={{ flexGrow: active }} /> : null}
+                  {day.idleSeconds > 0 ? <div className="week-chart-idle" style={{ flexGrow: day.idleSeconds }} /> : null}
+                  {day.activeSeconds > 0 ? (
+                    <div className="week-chart-active" style={{ flexGrow: day.activeSeconds }} />
+                  ) : null}
                 </div>
               </div>
               <span className="week-chart-label">{day.label}</span>

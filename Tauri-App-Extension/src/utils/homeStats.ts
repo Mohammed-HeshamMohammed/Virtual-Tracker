@@ -1,11 +1,10 @@
-import type { DashboardSummary, MemberLimits, ProjectBudgetStatus, TaskTimeTracking } from "../types";
+import type { MemberLimits, ProjectBudgetStatus, TaskTimeTracking, WeekDay } from "../types";
 import { fmtHours, fmtLimitHours } from "./formatters";
 
 export const ACTIVITY_RING_CIRCUMFERENCE = 2 * Math.PI * 26;
 
 export type HomeStatsInput = {
   memberLimits: MemberLimits | null;
-  dashboardSummary: DashboardSummary | null;
   projectBudget: ProjectBudgetStatus | null;
   taskTracking: TaskTimeTracking | null;
   liveWorkedTodaySeconds: number;
@@ -14,7 +13,6 @@ export type HomeStatsInput = {
 
 export function computeHomeStats({
   memberLimits,
-  dashboardSummary,
   projectBudget,
   taskTracking,
   liveWorkedTodaySeconds,
@@ -67,26 +65,39 @@ export function computeHomeStats({
   const activityDash =
     activityPercent == null ? 0 : (activityPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE;
 
-  const weekActivityDash = dashboardSummary
-    ? (dashboardSummary.activityWeekPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE
-    : 0;
-  const weekActiveSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
-    (sum, day) => sum + day.activeHours * 3600,
-    0,
+  // The week, one entry per day, from the same server rollup as the Today and
+  // This week cards - with today's active time following the live clock, so
+  // the chart, the This week card and the sidebar ring all move together while
+  // tracking. The higher of the two, not the live value alone: the live value
+  // counts from zero for shift-based members (their workedTodaySeconds is
+  // never filled in), and it animates down to the server's figure after an
+  // idle rewind, which max() passes straight through.
+  const weekDays: WeekDay[] = (memberLimits?.weekDays ?? []).map((day) =>
+    day.day === memberLimits?.todayDay
+      ? { ...day, activeSeconds: Math.max(day.activeSeconds, liveWorkedTodaySeconds) }
+      : day,
   );
-  const weekIdleSeconds = (dashboardSummary?.weeklyActivity ?? []).reduce(
-    (sum, day) => sum + day.idleHours * 3600,
-    0,
-  );
+  const weekActiveSeconds = weekDays.length
+    ? weekDays.reduce((sum, day) => sum + day.activeSeconds, 0)
+    : memberLimits
+      ? // An older backend without weekDays - the week total, still live.
+        Math.max(0, memberLimits.workedWeekSeconds - memberLimits.workedTodaySeconds) + liveWorkedTodaySeconds
+      : 0;
+  const weekIdleSeconds = weekDays.reduce((sum, day) => sum + day.idleSeconds, 0);
+  const weekTrackedSeconds = weekActiveSeconds + weekIdleSeconds;
+  const weekActivityPercent =
+    weekTrackedSeconds > 0 ? Math.round((weekActiveSeconds / weekTrackedSeconds) * 100) : null;
+  const weekActivityDash =
+    weekActivityPercent == null ? 0 : (weekActivityPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE;
 
   const weeklyCapSeconds =
     memberLimits && !memberLimits.usesShifts && memberLimits.weeklyHours > 0
       ? Math.floor(memberLimits.weeklyHours * 3600)
       : 0;
-  const weekWorkedLabel = memberLimits ? fmtHours(memberLimits.workedWeekSeconds) : "—";
+  const weekWorkedLabel = memberLimits ? fmtHours(weekActiveSeconds) : "—";
   const weekUsedPercent =
     weeklyCapSeconds > 0 && memberLimits
-      ? Math.min(100, (memberLimits.workedWeekSeconds / weeklyCapSeconds) * 100)
+      ? Math.min(100, (weekActiveSeconds / weeklyCapSeconds) * 100)
       : 0;
   const weekOfLabel = weeklyCapSeconds > 0 && memberLimits ? `of ${fmtLimitHours(memberLimits.weeklyHours)}` : "";
   const weekFootLabel = !memberLimits
@@ -94,7 +105,7 @@ export function computeHomeStats({
     : memberLimits.usesShifts
       ? "shift-based — no weekly cap"
       : weeklyCapSeconds > 0
-        ? `${fmtHours(Math.max(0, weeklyCapSeconds - memberLimits.workedWeekSeconds))} left`
+        ? `${fmtHours(Math.max(0, weeklyCapSeconds - weekActiveSeconds))} left`
         : "no weekly cap";
 
   const projectedCapTimeLabel = (() => {
@@ -189,6 +200,8 @@ export function computeHomeStats({
     activityPercent,
     activityLabel,
     activityDash,
+    weekDays,
+    weekActivityPercent,
     weekActivityDash,
     weekActiveSeconds,
     weekIdleSeconds,

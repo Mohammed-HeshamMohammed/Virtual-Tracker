@@ -376,6 +376,27 @@ pub struct MemberLimits {
     /// ("current project"), separate from the sidebar's person-wide ring.
     #[serde(default)]
     pub project_today_activity: Option<TodayActivity>,
+    /// The member's local today, "YYYY-MM-DD" - which of `week_days` is today.
+    #[serde(default)]
+    pub today_day: String,
+    /// This week, Monday first, from the same rollup as worked_week_seconds.
+    #[serde(default)]
+    pub week_days: Vec<WeekDay>,
+}
+
+/// One day of the member's week - active seconds from the daily rollup,
+/// idle seconds from the sessions that started that day.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct WeekDay {
+    #[serde(default)]
+    pub day: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub active_seconds: i64,
+    #[serde(default)]
+    pub idle_seconds: i64,
 }
 
 // ── Agent workspace (GET /api/activity/workspace) ──────────────────────────

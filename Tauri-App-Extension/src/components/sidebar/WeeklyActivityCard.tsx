@@ -1,13 +1,13 @@
 import { fmtHours } from "../../utils/formatters";
 import { ACTIVITY_RING_CIRCUMFERENCE } from "../../utils/homeStats";
-import type { DashboardSummary } from "../../types";
 
 type WeeklyActivityCardProps = {
   signedIn: boolean;
   /** First load still in flight - show the placeholder instead of nothing, so
    *  the card does not pop into existence a beat after everything else. */
   loading: boolean;
-  dashboardSummary: DashboardSummary | null;
+  /** Active share of the week's tracked time; null before anything is tracked. */
+  weekActivityPercent: number | null;
   weekActivityDash: number;
   weekActiveSeconds: number;
   weekIdleSeconds: number;
@@ -16,19 +16,19 @@ type WeeklyActivityCardProps = {
 export function WeeklyActivityCard({
   signedIn,
   loading,
-  dashboardSummary,
+  weekActivityPercent,
   weekActivityDash,
   weekActiveSeconds,
   weekIdleSeconds,
 }: WeeklyActivityCardProps) {
   if (!signedIn) return null;
-  if (!dashboardSummary) {
-    return loading ? (
+  if (loading) {
+    return (
       <div className="side-skeleton side-panel-swap" aria-hidden="true">
         <span className="skeleton-bar skeleton-bar-lg" />
         <span className="skeleton-bar" />
       </div>
-    ) : null;
+    );
   }
   return (
     <section className="side-weekly side-panel-swap" style={{ animationDelay: "0.01s" }}>
@@ -50,7 +50,7 @@ export function WeeklyActivityCard({
               strokeDasharray={`${weekActivityDash} ${ACTIVITY_RING_CIRCUMFERENCE}`}
             />
           </svg>
-          <span className="activity-ring-value">{Math.round(dashboardSummary.activityWeekPercent)}%</span>
+          <span className="activity-ring-value">{weekActivityPercent == null ? "—" : `${weekActivityPercent}%`}</span>
         </div>
         <div className="activity-legend">
           <span className="activity-legend-row">

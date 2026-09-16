@@ -12,42 +12,41 @@ import { SidebarActions } from "./SidebarActions";
 import { SidebarFooter } from "./SidebarFooter";
 import { TeamStatusCard } from "./TeamStatusCard";
 import { ManagementCard } from "./ManagementCard";
-import type { AgentTask, DashboardSummary, ProjectInfo, WorkspaceTeam } from "../../types";
+import type { AgentTask, ProjectInfo, WorkspaceTeam } from "../../types";
 
 const noop = () => {};
 
 describe("WeeklyActivityCard", () => {
-  const dashboardSummary: DashboardSummary = {
-    activityWeekPercent: 62,
-    weeklyActivity: [],
-    recentProjects: [],
-  };
-
-  it("renders nothing when signed out, or signed in with no summary to come", () => {
+  it("renders nothing when signed out", () => {
     expect(
       renderToStaticMarkup(
-        <WeeklyActivityCard signedIn={false} loading={false} dashboardSummary={dashboardSummary} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
-      ),
-    ).toBe("");
-    expect(
-      renderToStaticMarkup(
-        <WeeklyActivityCard signedIn={true} loading={false} dashboardSummary={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+        <WeeklyActivityCard signedIn={false} loading={false} weekActivityPercent={62} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
       ),
     ).toBe("");
   });
 
-  it("renders a skeleton while the first summary is still loading", () => {
+  it("renders a skeleton while the week is still loading", () => {
     const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn loading dashboardSummary={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+      <WeeklyActivityCard signedIn loading weekActivityPercent={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
     );
     expect(html).toContain("skeleton-bar");
   });
 
-  it("renders the rounded percent once signed in with a summary", () => {
+  it("renders the percent and the week's active and idle time once loaded", () => {
     const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn loading={false} dashboardSummary={dashboardSummary} weekActivityDash={40} weekActiveSeconds={3600} weekIdleSeconds={600} />,
+      <WeeklyActivityCard signedIn loading={false} weekActivityPercent={62} weekActivityDash={40} weekActiveSeconds={3600} weekIdleSeconds={600} />,
     );
     expect(html).toContain("62%");
+    expect(html).toContain("1h 0s");
+    expect(html).toContain("10m 0s");
+  });
+
+  it("shows a dash rather than 0% before anything is tracked this week", () => {
+    const html = renderToStaticMarkup(
+      <WeeklyActivityCard signedIn loading={false} weekActivityPercent={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
+    );
+    expect(html).toContain("—");
+    expect(html).not.toContain("0%");
   });
 });
 

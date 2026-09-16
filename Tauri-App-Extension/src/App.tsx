@@ -1666,6 +1666,8 @@ function MainApp() {
     activityPercent,
     activityLabel,
     activityDash,
+    weekDays,
+    weekActivityPercent,
     weekActivityDash,
     weekActiveSeconds,
     weekIdleSeconds,
@@ -1691,7 +1693,6 @@ function MainApp() {
     taskScheduleLabel,
   } = computeHomeStats({
     memberLimits,
-    dashboardSummary,
     projectBudget,
     taskTracking,
     liveWorkedTodaySeconds,
@@ -1919,8 +1920,8 @@ function MainApp() {
         <div className="side-panel-scroll">
           <WeeklyActivityCard
             signedIn={signedIn}
-            loading={!dashboardLoaded}
-            dashboardSummary={dashboardSummary}
+            loading={!memberLimits}
+            weekActivityPercent={weekActivityPercent}
             weekActivityDash={weekActivityDash}
             weekActiveSeconds={weekActiveSeconds}
             weekIdleSeconds={weekIdleSeconds}
@@ -2228,10 +2229,9 @@ function MainApp() {
 
                 {showWeekChart ? (
                   <WeekChart
-                    days={dashboardSummary?.weeklyActivity ?? []}
-                    loading={!dashboardLoaded}
-                    now={wallClockNow}
-                    timeZone={displayTimezone || undefined}
+                    days={weekDays}
+                    todayDay={memberLimits?.todayDay ?? ""}
+                    loading={!memberLimits}
                   />
                 ) : null}
               </>
