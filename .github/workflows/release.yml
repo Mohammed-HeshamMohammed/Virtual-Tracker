@@ -260,4 +260,19 @@ jobs:
           releaseName: "Agent v${{ needs.bump.outputs.version }}"
           releaseDraft: false
           prerelease: false
+          # productName is "My Virtual Tracker" - the space is fine for the
+          # install folder, the Start Menu shortcut and every other local
+          # bundle name (NSIS/MSI/deb/rpm/AppImage/dmg all built and signed
+          # with it, unaffected by this), but tauri-action's default asset
+          # naming just re-uses that name verbatim for the uploaded GitHub
+          # Release asset, and the raw space in that upload request broke on
+          # all three platforms at once - a 500 on macOS ("Unicorn!" page,
+          # not a validation error), "Error saving asset" on Windows, "Error
+          # uploading" on Linux after the .deb alone got through. This only
+          # renames the uploaded copy (and, since assetNamePattern also
+          # drives latest.json's own download URLs, the updater's manifest
+          # stays consistent with it automatically) - Landing-Backend's own
+          # picker (download-routes.js) matches by trailing extension only,
+          # never by this prefix, so it needs no change for this.
+          assetNamePattern: "My-Virtual-Tracker_v[version]_[platform]_[arch][ext]"
           includeUpdaterJson: true
