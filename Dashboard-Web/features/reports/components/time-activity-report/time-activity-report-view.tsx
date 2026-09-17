@@ -1,12 +1,13 @@
 "use client"
 
-import { Fragment, useMemo, useState as useComponentState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState as useComponentState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   AlertCircle,
   Calendar,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Clock,
   CreditCard,
@@ -119,6 +120,12 @@ export function TimeActivityReportView({
     sortDir,
     sortedDisplayRows,
     tableDisplayRows,
+    pagedRows,
+    page,
+    setPage,
+    pageCount,
+    pageSize,
+    setPageSize,
     totals,
     visibleMetricColumns,
     toggleCol,
@@ -142,6 +149,22 @@ export function TimeActivityReportView({
       })),
     [memberFilterOptions],
   )
+
+  // The column picker used to live inside the table's own card, which clips
+  // anything (menus, tooltips) that would extend past its rounded corners -
+  // overflow-hidden there is load-bearing for the horizontal scroll and the
+  // corner radius, not something to drop. Moved to the toolbar instead, it
+  // needs its own outside-click handling in place of the backdrop the table
+  // card used to render behind it.
+  const columnPickerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showColumnPicker) return
+    function onPointerDown(e: MouseEvent) {
+      if (columnPickerRef.current && !columnPickerRef.current.contains(e.target as Node)) setShowColumnPicker(false)
+    }
+    document.addEventListener("mousedown", onPointerDown, true)
+    return () => document.removeEventListener("mousedown", onPointerDown, true)
+  }, [showColumnPicker, setShowColumnPicker])
 
   const canDeleteDay = canAddForOthers && groupBy === "date_per_day"
 
@@ -370,6 +393,28 @@ export function TimeActivityReportView({
                 <Clock className="h-4 w-4" />
               </button>
             </IconTooltip>
+            <div className="relative" ref={columnPickerRef}>
+              <IconTooltip text="Choose columns (period vs member rows)" placement="bottom">
+                <button
+                  type="button"
+                  onClick={() => setShowColumnPicker((v) => !v)}
+                  aria-label="Choose columns"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <Table2 className="h-4 w-4" />
+                </button>
+              </IconTooltip>
+              <AnimatePresence>
+                {showColumnPicker && (
+                  <ReportColumnPicker
+                    scope={columnPickerScope}
+                    onScopeChange={setColumnPickerScope}
+                    enabledCols={pickerEnabledCols}
+                    onToggle={toggleCol}
+                  />
+                )}
+              </AnimatePresence>
+            </div>
             <button
               type="button"
               onClick={() => setShowFilters(true)}
@@ -452,43 +497,7 @@ export function TimeActivityReportView({
         ) : null}
 
         <div ref={tableWidthRef} className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
-          <AnimatePresence>
-            {showColumnPicker && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-25 rounded-xl bg-slate-900/10 dark:bg-black/30"
-                onClick={() => setShowColumnPicker(false)}
-              />
-            )}
-          </AnimatePresence>
-          <div className="relative z-35 flex justify-end px-4 pb-0 pt-3">
-            <div className="relative">
-              <IconTooltip text="Choose columns (period vs member rows)" placement="bottom">
-                <button
-                  type="button"
-                  onClick={() => setShowColumnPicker((v) => !v)}
-                  aria-label="Choose columns"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  <Table2 className="h-4 w-4" />
-                </button>
-              </IconTooltip>
-              <AnimatePresence>
-                {showColumnPicker && (
-                  <ReportColumnPicker
-                    scope={columnPickerScope}
-                    onScopeChange={setColumnPickerScope}
-                    enabledCols={pickerEnabledCols}
-                    onToggle={toggleCol}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-
-          <div className="overflow-x-auto custom-scrollbar-x">
+          <div className="overflow-x-auto custom-scrollbar-x pt-3">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800">
@@ -525,7 +534,7 @@ export function TimeActivityReportView({
                 </tr>
               </thead>
               <tbody>
-                {tableDisplayRows.map((day) => {
+                {pagedRows.map((day) => {
                   const isExpanded = expandedRows.has(day.date)
                   const subRows = getSubRowsForDay(day.date)
                   return (
@@ -616,22 +625,50 @@ export function TimeActivityReportView({
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-50 dark:border-slate-800 px-5 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-50 dark:border-slate-800 px-5 py-3">
             <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-              Showing {tableDisplayRows.length} rows
+              {tableDisplayRows.length === 0
+                ? "No rows"
+                : `Showing ${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, tableDisplayRows.length)} of ${tableDisplayRows.length} rows`}
               <div className="relative">
-                <select className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none">
-                  <option>50</option>
-                  <option>100</option>
-                  <option>250</option>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none"
+                >
+                  {[25, 50, 100, 250].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
                 </select>
                 <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3 w-3 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               </div>
               per page
             </div>
-            <button className="flex h-7 w-7 items-center justify-center rounded bg-blue-500 dark:bg-blue-600 text-sm font-medium text-white" type="button">
-              1
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPage(page - 1)}
+                disabled={page <= 1}
+                aria-label="Previous page"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <span className="px-2 text-sm text-slate-500 dark:text-slate-400">
+                Page {page} of {pageCount}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(page + 1)}
+                disabled={page >= pageCount}
+                aria-label="Next page"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
         </div>
         </div>

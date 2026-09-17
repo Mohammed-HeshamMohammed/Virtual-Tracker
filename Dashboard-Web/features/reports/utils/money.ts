@@ -12,6 +12,21 @@ export function parseMoneyLabel(label: string): { currency: string; amount: numb
   return { currency, amount }
 }
 
+/** Drops a currency that summed to exactly zero and joins what's left.
+ *  A member with no pay rate configured converts to "$0.00" (the hardcoded
+ *  fallback in resolveCurrencyForDay/resolveRateForDay on the backend) even
+ *  on a team paid entirely in another currency - so a real "EGP 787.54" read
+ *  as "$0.00 + EGP 787.54", claiming a second currency that was never
+ *  actually earned. A currency contributing nothing has nothing to report. */
+function joinNonZero(byCurrency: Map<string, number>): string {
+  const real = [...byCurrency.entries()].filter(([, amount]) => amount !== 0)
+  if (real.length === 0) return formatMoney(0, "USD")
+  return real
+    .sort(([a], [b]) => (a === "USD" ? -1 : b === "USD" ? 1 : a.localeCompare(b)))
+    .map(([currency, amount]) => formatMoney(amount, currency))
+    .join(" + ")
+}
+
 export function sumMoneyStrings(amountList: string[]): string {
   const byCurrency = new Map<string, number>()
   for (const label of amountList) {
@@ -21,11 +36,7 @@ export function sumMoneyStrings(amountList: string[]): string {
       byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + amount)
     }
   }
-  if (byCurrency.size === 0) return formatMoney(0, "USD")
-  return [...byCurrency.entries()]
-    .sort(([a], [b]) => (a === "USD" ? -1 : b === "USD" ? 1 : a.localeCompare(b)))
-    .map(([currency, amount]) => formatMoney(amount, currency))
-    .join(" + ")
+  return joinNonZero(byCurrency)
 }
 
 export function sumMoneyByCurrency(rows: { amount: number; currency?: string }[]): string {
@@ -34,9 +45,5 @@ export function sumMoneyByCurrency(rows: { amount: number; currency?: string }[]
     const currency = (row.currency || "USD").toUpperCase()
     byCurrency.set(currency, (byCurrency.get(currency) ?? 0) + row.amount)
   }
-  if (byCurrency.size === 0) return formatMoney(0, "USD")
-  return [...byCurrency.entries()]
-    .sort(([a], [b]) => (a === "USD" ? -1 : b === "USD" ? 1 : a.localeCompare(b)))
-    .map(([currency, amount]) => formatMoney(amount, currency))
-    .join(" + ")
+  return joinNonZero(byCurrency)
 }
