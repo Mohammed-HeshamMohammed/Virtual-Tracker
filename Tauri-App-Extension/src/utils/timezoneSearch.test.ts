@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { zonesMatchingPlaceQuery } from "./timezoneSearch";
+import { beforeAll, describe, expect, it } from "vitest";
+import { preloadCityZones, zonesMatchingPlaceQuery } from "./timezoneSearch";
 
 describe("zonesMatchingPlaceQuery", () => {
+  // The generated city dataset loads lazily (see preloadCityZones's doc
+  // comment) - without this, every city-name assertion below would run
+  // before it's in memory and fail.
+  beforeAll(() => preloadCityZones());
+
   it("resolves a US state postal code to that state's zone", () => {
     expect(zonesMatchingPlaceQuery("ny")).toContain("America/New_York");
     expect(zonesMatchingPlaceQuery("ca")).toContain("America/Los_Angeles");
@@ -30,6 +35,31 @@ describe("zonesMatchingPlaceQuery", () => {
   it("resolves a common city nickname to its zone", () => {
     expect(zonesMatchingPlaceQuery("sf")).toContain("America/Los_Angeles");
     expect(zonesMatchingPlaceQuery("nyc")).toContain("America/New_York");
+  });
+
+  it("resolves a full US state name, not just its postal code", () => {
+    expect(zonesMatchingPlaceQuery("texas")).toContain("America/Chicago");
+    expect(zonesMatchingPlaceQuery("california")).toContain("America/Los_Angeles");
+    expect(zonesMatchingPlaceQuery("new york")).toContain("America/New_York");
+  });
+
+  it("resolves a real city name to its zone, even though the city's own name never appears in its IANA zone id", () => {
+    // The exact gap this was added for: "Dallas" is nowhere in
+    // "America/Chicago", the zone it actually uses.
+    expect(zonesMatchingPlaceQuery("dallas")).toContain("America/Chicago");
+    expect(zonesMatchingPlaceQuery("houston")).toContain("America/Chicago");
+    expect(zonesMatchingPlaceQuery("austin")).toContain("America/Chicago");
+    expect(zonesMatchingPlaceQuery("miami")).toContain("America/New_York");
+    expect(zonesMatchingPlaceQuery("seattle")).toContain("America/Los_Angeles");
+    // Nowhere near the US: the generated dataset is worldwide, not just US cities.
+    expect(zonesMatchingPlaceQuery("mumbai")).toContain("Asia/Kolkata");
+    expect(zonesMatchingPlaceQuery("dubai")).toContain("Asia/Dubai");
+  });
+
+  it("picks the more populous city when a name is shared", () => {
+    // There is also a much smaller Dallas in Oregon - the Texas one
+    // (population in the millions) is what a bare "dallas" should mean.
+    expect(zonesMatchingPlaceQuery("dallas")).not.toContain("America/Los_Angeles");
   });
 
   it("returns nothing for an empty or unmatched query", () => {

@@ -4652,6 +4652,17 @@ select.modal-input {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.34);
 }
 
+/* Portaled to document.body (TimezonePicker.tsx) so it floats over every
+   ancestor's overflow/stacking context instead of being clipped by one -
+   `.tasks-column` (Focus layout's right sidebar) is exactly such an
+   ancestor. top/left/max-height come from the trigger's own measured
+   position as inline styles; this only needs to stop treating them as
+   relative to a local parent that no longer exists. */
+.tz-menu-portal {
+  position: fixed;
+  overflow-y: auto;
+}
+
 /* Sits above the search field and option list - the live time for whatever
    zone is currently selected, kept visible while browsing other zones.
    "12:00 AM" on its own line, "Gambier GMT-09:00" underneath - same two-

@@ -1,5 +1,37 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { zonesMatchingPlaceQuery } from "../../utils/timezoneSearch";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { preloadCityZones, zonesMatchingPlaceQuery } from "../../utils/timezoneSearch";
+
+const MENU_WIDTH = 288;
+const MENU_GAP = 8;
+const MENU_MARGIN = 8;
+/** Tall enough for the clock + search box + a handful of rows before the
+ *  list itself takes over scrolling - just needs to be a safe upper bound
+ *  for the "does it fit below the trigger" check, not exact. */
+const MENU_MAX_HEIGHT = 420;
+
+type MenuStyle = { top: number; left: number; maxHeight: number };
+
+/** Where the menu lands relative to the viewport, not the trigger's own
+ *  parent - `.tasks-column` (Focus layout's right sidebar) clips overflow
+ *  for its rounded corners and scroll containment, and a plain `position:
+ *  absolute` menu got clipped to that ~240px box instead of floating over
+ *  the page. Portaling to `document.body` with a computed `position: fixed`
+ *  sidesteps every ancestor's overflow/stacking context, the same fix
+ *  already used for this app's other floating menus. */
+function computeMenuStyle(trigger: HTMLElement): MenuStyle {
+  const rect = trigger.getBoundingClientRect();
+  const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP;
+  const spaceAbove = rect.top - MENU_GAP;
+  const openUpward = spaceBelow < MENU_MAX_HEIGHT / 2 && spaceAbove > spaceBelow;
+  const maxHeight = Math.max(160, Math.min(MENU_MAX_HEIGHT, openUpward ? spaceAbove : spaceBelow));
+  const top = openUpward ? rect.top - MENU_GAP : rect.bottom + MENU_GAP;
+  const left = Math.min(
+    Math.max(MENU_MARGIN, rect.left),
+    window.innerWidth - MENU_WIDTH - MENU_MARGIN,
+  );
+  return { top: openUpward ? top - maxHeight : top, left, maxHeight };
+}
 
 /**
  * Every canonical IANA zone the runtime knows, straight from the platform.
@@ -85,7 +117,27 @@ export function TimezonePicker({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [menuStyle, setMenuStyle] = useState<MenuStyle | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return;
+    }
+    const sync = () => {
+      if (triggerRef.current) setMenuStyle(computeMenuStyle(triggerRef.current));
+    };
+    sync();
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("scroll", sync, true);
+      window.removeEventListener("resize", sync);
+    };
+  }, [open]);
 
   // Minute resolution is all a wall-clock badge needs; a 1s tick would just
   // burn re-renders on every task-progress poll cycle for no visible change.
@@ -104,7 +156,26 @@ export function TimezonePicker({
       .sort((a, b) => a.minutes - b.minutes || a.zone.localeCompare(b.zone));
   }, []);
 
-  const placeMatches = useMemo(() => zonesMatchingPlaceQuery(query), [query]);
+  // The 32k-city dataset loads lazily (see preloadCityZones's doc comment) -
+  // kick it off as soon as the menu opens, well before anyone's typed a
+  // query, and re-run place matching once it lands so a query typed while it
+  // was still loading doesn't get stuck without city results.
+  const [cityZonesReady, setCityZonesReady] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void preloadCityZones().then(() => {
+      if (!cancelled) setCityZonesReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  const placeMatches = useMemo(
+    () => zonesMatchingPlaceQuery(query),
+    [query, cityZonesReady],
+  );
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -122,7 +193,15 @@ export function TimezonePicker({
     if (!open) return;
     inputRef.current?.focus();
     function onDocPointerDown(event: PointerEvent) {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      // The menu itself is portaled to document.body (see computeMenuStyle's
+      // doc comment) - it is not a DOM descendant of rootRef, so a click
+      // inside it (selecting a zone) would otherwise read as "outside" and
+      // close the menu on pointerdown, before the option's own onClick had
+      // a chance to fire on an element that state update was about to
+      // unmount.
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     }
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
@@ -154,6 +233,7 @@ export function TimezonePicker({
     // would make every click drag the window instead of opening the menu.
     <div className="tz-picker" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="tz-trigger"
         title={`Timezone: ${current} (${offsetOf(current)}) - your day boundaries are resolved in this zone`}
@@ -180,49 +260,58 @@ export function TimezonePicker({
         </span>
       </button>
 
-      {open ? (
-        <div className="tz-menu" role="dialog" aria-label="Choose a timezone">
-          <div className="tz-menu-clock">
-            <span className="tz-menu-clock-time">{clockOf(current, now)}</span>
-            <span className="tz-menu-clock-zone">
-              {cityOf(current)} {offsetOf(current)}
-            </span>
-          </div>
-          <input
-            ref={inputRef}
-            className="tz-search"
-            type="text"
-            placeholder="Search city, country or offset"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          <div className="tz-list" role="listbox" tabIndex={-1}>
-            {filtered.length === 0 ? (
-              <div className="tz-empty">No timezone matches that.</div>
-            ) : (
-              filtered.map((z) => (
-                <button
-                  key={z.zone}
-                  type="button"
-                  role="option"
-                  aria-selected={z.zone === current}
-                  className={`tz-option${z.zone === current ? " is-current" : ""}`}
-                  onClick={() => {
-                    setOpen(false);
-                    if (z.zone !== current) onSelect(z.zone);
-                  }}
-                >
-                  <span className="tz-option-zone">{z.zone.replace(/_/g, " ")}</span>
-                  <span className="tz-option-offset">{z.offset}</span>
-                </button>
-              ))
-            )}
-          </div>
-          <p className="tz-note">
-            Changing this re-dates work already tracked today.
-          </p>
-        </div>
-      ) : null}
+      {open && menuStyle
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="tz-menu tz-menu-portal"
+              role="dialog"
+              aria-label="Choose a timezone"
+              style={{ top: menuStyle.top, left: menuStyle.left, maxHeight: menuStyle.maxHeight }}
+            >
+              <div className="tz-menu-clock">
+                <span className="tz-menu-clock-time">{clockOf(current, now)}</span>
+                <span className="tz-menu-clock-zone">
+                  {cityOf(current)} {offsetOf(current)}
+                </span>
+              </div>
+              <input
+                ref={inputRef}
+                className="tz-search"
+                type="text"
+                placeholder="Search city, country or offset"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+              <div className="tz-list" role="listbox" tabIndex={-1}>
+                {filtered.length === 0 ? (
+                  <div className="tz-empty">No timezone matches that.</div>
+                ) : (
+                  filtered.map((z) => (
+                    <button
+                      key={z.zone}
+                      type="button"
+                      role="option"
+                      aria-selected={z.zone === current}
+                      className={`tz-option${z.zone === current ? " is-current" : ""}`}
+                      onClick={() => {
+                        setOpen(false);
+                        if (z.zone !== current) onSelect(z.zone);
+                      }}
+                    >
+                      <span className="tz-option-zone">{z.zone.replace(/_/g, " ")}</span>
+                      <span className="tz-option-offset">{z.offset}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <p className="tz-note">
+                Changing this re-dates work already tracked today.
+              </p>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

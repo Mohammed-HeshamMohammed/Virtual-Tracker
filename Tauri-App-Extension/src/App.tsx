@@ -2240,7 +2240,16 @@ function MainApp() {
                   <ProjectDetailPanel
                     {...projectDetailProps}
                     section={mainPaneProjectSection}
-                    showScreenshots={!isFocus}
+                    // Focus fits the top-apps card to the pane without
+                    // scrolling by leaving screenshots out - but that used
+                    // to apply unconditionally, so turning "Show apps &
+                    // screenshots" on in Settings had no visible effect at
+                    // all in Focus. insightsVisible already carries that
+                    // setting (it's layoutKind === "extended" || showInsights,
+                    // and Focus is never "extended"), so this now only
+                    // trims screenshots when the member hasn't actually
+                    // asked for them - the page just scrolls if they have.
+                    showScreenshots={!isFocus || insightsVisible}
                   />
                 ) : showSideColumn ? null : (
                   <TaskDetailPanel detail={taskDetail} loading={taskDetailLoading} />
