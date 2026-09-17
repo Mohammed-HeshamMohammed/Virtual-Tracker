@@ -245,6 +245,24 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     [sortedDisplayRows],
   )
 
+  // "Showing 14 rows" with every one of them rendered used to be the whole
+  // pagination story - fine at 14, not at the hundreds of day/member rows a
+  // wide date range or a busy team builds up to. Filtering, grouping or
+  // sorting is a deliberate change of what the member is looking at, so it
+  // jumps back to page 1 rather than possibly landing on a now out-of-range
+  // page of a different result set.
+  const [pageSize, setPageSize] = useState(50)
+  const [page, setPage] = useState(1)
+  useEffect(() => {
+    setPage(1)
+  }, [memberFilter, projectFilter, trackedTimeFilter, groupBy, sortKey, sortDir, range?.from, range?.to, pageSize])
+  const pageCount = Math.max(1, Math.ceil(tableDisplayRows.length / pageSize))
+  const currentPage = Math.min(page, pageCount)
+  const pagedRows = useMemo(
+    () => tableDisplayRows.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [tableDisplayRows, currentPage, pageSize],
+  )
+
   const visibleMetricColumns = useMemo(
     () => TABLE_METRIC_COLUMNS.filter((c) => columnVisibleInTable(enabledPeriodCols, enabledMemberCols, c.key)),
     [enabledPeriodCols, enabledMemberCols]
@@ -340,6 +358,12 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     totals,
     sortedDisplayRows,
     tableDisplayRows,
+    pagedRows,
+    page: currentPage,
+    setPage,
+    pageCount,
+    pageSize,
+    setPageSize,
     visibleMetricColumns,
     toggleCol,
     handleSortClick,

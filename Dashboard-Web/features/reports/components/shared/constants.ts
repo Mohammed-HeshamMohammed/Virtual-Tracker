@@ -233,32 +233,20 @@ export const CHART_METRIC_PILL_ON: Record<TimeActivityMetric, string> = {
   total_spent: "border-amber-500 bg-amber-50 text-amber-900",
 }
 
+// Every entry here must have a matching column, in TABLE_METRIC_COLUMNS,
+// that actually renders and sorts - this used to also offer a generic
+// HR-profile column set (birthday, tax ID, vendor, ...) copied from a
+// different report's picker, none of which this report has ever had data
+// or a column for. Toggling one did nothing visible, which is what made
+// the whole picker feel arbitrary rather than broken in any one place.
 export const COLUMN_PICKER_SECTIONS: TimeActivityColumnPickerSection[] = [
-  { group: null, items: [{ key: "member", label: "Member" }] },
   {
-    group: "Info",
-    expandable: true,
-    subItems: [
-      { sub: "Identity", items: ["Employee ID", "Birthday", "IP address"] },
-      { sub: "Work contact", items: ["Work address", "Work email", "Work phone"] },
-      { sub: "Personal contact", items: ["Personal address", "Personal email", "Personal phone"] },
-    ],
-  },
-  {
-    group: "Employment",
-    expandable: true,
-    subItems: [
-      { sub: null, items: ["Client", "Project", "To-do", "Team"] },
-      { sub: "Job details", items: ["Job title", "Job type", "Department"] },
-      {
-        sub: "Hiring details",
-        items: ["Employment type", "In-office/Remote", "Employed through", "Name of Vendor/EOR/Subsidiary"],
-      },
-      { sub: "Accounting", items: ["Tax ID number", "Tax type", "Account code", "Currency"] },
-      {
-        sub: "Timeline",
-        items: ["Start date", "End date", "Termination reason", "Employment comment"],
-      },
+    group: null,
+    items: [
+      { key: "client", label: "Client" },
+      { key: "team", label: "Team" },
+      { key: "todo", label: "To-do" },
+      { key: "project", label: "Project" },
     ],
   },
   {
@@ -274,13 +262,8 @@ export const COLUMN_PICKER_SECTIONS: TimeActivityColumnPickerSection[] = [
     ],
   },
   {
-    group: "Spent",
-    expandable: true,
-    subItems: [
-      { sub: null, items: ["Select all"] },
-      { sub: "Spent details", items: ["Total spent", "Regular spent", "Pay rate"] },
-      { sub: null, items: ["Billed amount", "Billable time", "Non-billable time", "Notes"] },
-    ],
+    group: null,
+    items: [{ key: "total_spent", label: "Total spent" }],
   },
 ]
 

@@ -6,8 +6,18 @@ export function columnVisibleInTable(period: Set<string>, member: Set<string>, k
   return period.has(key) || member.has(key)
 }
 
+/** `totalSpent` can be "$0.00" or, for a team paid in more than one currency
+ *  with no exchange rate to unify them, "$0.00 + EGP 787.54" (sumMoneyByCurrency).
+ *  Stripping non-digits from the whole string ran the two numbers together
+ *  into one ("0.00787.54"), a number with no relation to either amount - split
+ *  on "+" first so each currency's figure is parsed on its own. Sorting a mixed
+ *  currency's face value against another currency's is still an approximation
+ *  (there's no rate to convert it properly), but it is at least the right
+ *  approximation: today's actual total, not two numbers glued together. */
 function spentUsd(s: string): number {
-  return Number.parseFloat(s.replace(/[^0-9.-]/g, "")) || 0
+  return s
+    .split("+")
+    .reduce((sum, part) => sum + (Number.parseFloat(part.replace(/[^0-9.-]/g, "")) || 0), 0)
 }
 
 export function comparePeriodRows(
