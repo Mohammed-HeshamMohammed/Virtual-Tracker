@@ -31,11 +31,18 @@ export function WeeklyActivityCard({
     );
   }
   return (
-    <section className="side-weekly side-panel-swap" style={{ animationDelay: "0.01s" }}>
-      <div className="side-tasklist-head">
+    // Nothing in this card is interactive (no buttons, no clicks) - it's
+    // otherwise just dead space in the sidebar, so it doubles as a window
+    // drag handle the same way the titlebar does.
+    <section
+      className="side-weekly side-panel-swap"
+      style={{ animationDelay: "0.01s" }}
+      data-tauri-drag-region
+    >
+      <div className="side-tasklist-head" data-tauri-drag-region>
         <span className="stat-tile-label">Weekly activity</span>
       </div>
-      <div className="side-weekly-ring-row">
+      <div className="side-weekly-ring-row" data-tauri-drag-region>
         <div className="activity-ring side-weekly-ring">
           <svg viewBox="0 0 60 60" aria-hidden="true">
             <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(8,16,34,0.9)" strokeWidth="6" />
