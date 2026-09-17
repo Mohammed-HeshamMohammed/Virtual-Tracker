@@ -62,10 +62,11 @@ pub struct ActivityTracker {
     progress: ProgressStore,
     on_status: Option<StatusCallback>,
     stop: Arc<AtomicBool>,
-    /// Set by `pause()`/cleared by `resume()`. While true, `tick()` skips its
-    /// normal fetch_session/status handling entirely (see `tick_paused`) -
-    /// crediting only idle time and periodically re-syncing to keep the
-    /// paused session from being swept up as abandoned.
+    /// Set by `pause()`/cleared by `resume()` or `note_stop_requested()`.
+    /// While true, `tick()` skips its normal fetch_session/status handling
+    /// entirely (see `tick_paused`) - crediting only idle time and
+    /// periodically re-syncing to keep the paused session from being swept
+    /// up as abandoned.
     paused: Arc<AtomicBool>,
     /// Set by `note_stop_requested()` (called from `AppController::stop_session`,
     /// which posts "stop" straight to the API without going through the tick
@@ -301,8 +302,18 @@ impl ActivityTracker {
     /// outside the tick loop (e.g. the Stop button), so the next tick's
     /// now-missing session reads as an intentional stop, not an abandonment
     /// to recover from.
+    ///
+    /// Also ends any break in progress. Without this, stopping from a
+    /// paused session left `paused` true forever - nothing else ever clears
+    /// it (only `resume()` does) - so every tick kept taking `tick_paused`'s
+    /// branch, which never calls `fetch_session()` and so could never
+    /// notice the session was gone: the loop believed it was on an endless
+    /// break for a session the server had already closed, `is_session_paused`
+    /// kept reporting true, and Stop read as doing nothing at all - clicking
+    /// it just left the agent exactly as paused as before.
     pub fn note_stop_requested(&self) {
         self.expect_stop.store(true, Ordering::SeqCst);
+        self.paused.store(false, Ordering::SeqCst);
     }
 
     /// The break button: marks the session idle server-side, preserving its
@@ -2014,6 +2025,26 @@ mod tests {
 
         assert!(state.idle_elapsed >= 1, "a break must still count as idle time by default");
         assert_eq!(state.active_elapsed, 0, "a break is never active time");
+    }
+
+    /// Clicking Stop from a paused session used to leave `paused` true
+    /// forever - nothing else ever cleared it, so every later tick kept
+    /// taking tick_paused's branch, which never calls fetch_session() and so
+    /// could never notice the session the Stop button had just closed. The
+    /// agent believed it was on an endless break; Stop read as doing nothing.
+    #[test]
+    fn stopping_a_paused_session_actually_ends_the_break() {
+        let base_url = fake_server(|_| (200, "{}".to_string()));
+        let tracker = test_tracker(base_url);
+        tracker.pause().expect("pause should succeed against the fake server");
+        assert!(tracker.is_paused(), "sanity check: pausing does pause");
+
+        tracker.note_stop_requested();
+
+        assert!(
+            !tracker.is_paused(),
+            "a stop must end the break, or the tick loop can never see the session is gone"
+        );
     }
 
     /// Screenshots must stop while the user is idle - a picture of an empty

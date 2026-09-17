@@ -928,10 +928,24 @@ function MainApp() {
     refreshMemberProfile,
   ]);
 
+  // Pausing (or stopping) flips `tracking` false the moment the poll after
+  // the click lands - session.activeSeconds itself doesn't change, but the
+  // clock used to drop the Math.max floor the instant tracking went false
+  // and take the server's raw figure outright. A poll that landed a beat
+  // ahead of the server's own rollup catching up to what the client had
+  // already ticked to locally read as a real second dropping off the clock,
+  // which then jumped back up once the next poll caught up - "goes backward
+  // then forward to what it was". The floor only needs to lift for a
+  // genuinely different session (a new one after Stop, or none at all) -
+  // never for the same session pausing or resuming.
+  const activeSecondsSessionIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const next = session?.activeSeconds ?? 0;
-    setLiveActiveSeconds((s) => (tracking ? Math.max(s, next) : next));
-  }, [session?.activeSeconds, tracking]);
+    const sessionId = session?.id ?? undefined;
+    const sameSession = sessionId !== undefined && sessionId === activeSecondsSessionIdRef.current;
+    activeSecondsSessionIdRef.current = sessionId;
+    setLiveActiveSeconds((s) => (sameSession ? Math.max(s, next) : next));
+  }, [session?.activeSeconds, session?.id]);
 
   useEffect(() => {
     if (!tracking) return;
@@ -939,10 +953,16 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [tracking]);
 
+  // Same reasoning as liveActiveSeconds above, keyed on the task instead of
+  // the session - switching which task is selected is the one case that
+  // should legitimately jump to a different (possibly lower) number.
+  const taskActiveSecondsTaskIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const next = taskTracking?.activeSeconds ?? 0;
-    setLiveTaskActiveSeconds((s) => (tracking ? Math.max(s, next) : next));
-  }, [taskTracking?.activeSeconds, tracking]);
+    const sameTask = Boolean(selectedTaskId) && selectedTaskId === taskActiveSecondsTaskIdRef.current;
+    taskActiveSecondsTaskIdRef.current = selectedTaskId || undefined;
+    setLiveTaskActiveSeconds((s) => (sameTask ? Math.max(s, next) : next));
+  }, [taskTracking?.activeSeconds, selectedTaskId]);
 
   useEffect(() => {
     if (!tracking) return;
@@ -955,8 +975,19 @@ function MainApp() {
   }, [taskLessSession]);
 
   const idleRewindFromRef = useRef<number | null>(null);
+  // Same jitter as liveActiveSeconds above, on the Today tile: dropping the
+  // floor the instant tracking went false (pause or stop) let a poll that
+  // hadn't yet caught up to the client's own count read as real seconds
+  // vanishing off Today, then reappearing on the next poll. Today only has
+  // one legitimate reason to actually go down - the calendar day turning
+  // over while the app stays open - so the floor lifts for that and nothing
+  // else; the idle-stage-3 rewind below still gets its own animated drop.
+  const workedTodayLocalDayRef = useRef<string | null>(null);
   useEffect(() => {
     const next = memberLimits?.workedTodaySeconds ?? 0;
+    const today = new Date().toDateString();
+    const sameDay = workedTodayLocalDayRef.current === today;
+    workedTodayLocalDayRef.current = today;
     const rewindFrom = idleRewindFromRef.current;
     if (rewindFrom != null && !tracking) {
       idleRewindFromRef.current = null;
@@ -965,7 +996,7 @@ function MainApp() {
         return;
       }
     }
-    setLiveWorkedTodaySeconds((s) => (tracking ? Math.max(s, next) : next));
+    setLiveWorkedTodaySeconds((s) => (sameDay ? Math.max(s, next) : next));
   }, [memberLimits?.workedTodaySeconds, tracking]);
 
   useEffect(() => {
@@ -1341,7 +1372,7 @@ function MainApp() {
       }
       if (result.session) {
         setSession(result.session);
-        toast.message("Tracking session paused");
+        toast.message("Tracking stopped");
       }
       setPaused(false);
       setStopNoteOpen(false);
