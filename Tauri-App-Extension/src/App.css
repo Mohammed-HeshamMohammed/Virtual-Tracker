@@ -5219,6 +5219,16 @@ select.modal-input {
   min-height: 110px;
 }
 
+/* The Activity tile sits in the same 3-up row as This week and the project
+   budget, which is fine at Wide/Standard's width but crams hard in Focus's
+   narrower pane - "active"/"idle" were taking up room the dot and number
+   already communicate on their own. Scoped to .activity-tile specifically so
+   the sidebar's own Weekly activity card (same markup, more room) keeps its
+   words. */
+.layout-focus .activity-tile .activity-legend-row em {
+  display: none;
+}
+
 .layout-focus .side-panel {
   width: 270px;
 }

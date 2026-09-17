@@ -45,7 +45,15 @@ export function WeeklyActivityCard({
       <div className="side-weekly-ring-row" data-tauri-drag-region>
         <div className="activity-ring side-weekly-ring">
           <svg viewBox="0 0 60 60" aria-hidden="true">
-            <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(8,16,34,0.9)" strokeWidth="6" />
+            <circle
+              cx="30"
+              cy="30"
+              r="26"
+              fill="none"
+              stroke="var(--on-surface-fainter)"
+              strokeOpacity={0.35}
+              strokeWidth="6"
+            />
             <circle
               cx="30"
               cy="30"

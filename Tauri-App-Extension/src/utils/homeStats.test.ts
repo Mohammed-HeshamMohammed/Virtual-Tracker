@@ -38,6 +38,9 @@ const emptyInput = {
   projectBudget: null,
   taskTracking: null,
   liveWorkedTodaySeconds: 0,
+  liveIdleTodaySeconds: 0,
+  liveActivityActiveSeconds: 0,
+  liveActivityIdleSeconds: 0,
   tracking: false,
 };
 
@@ -167,6 +170,35 @@ describe("computeHomeStats - activity ring (current project)", () => {
     expect(stats.activityLabel).toBe("75%");
     expect(stats.activityDash).toBeCloseTo(0.75 * ACTIVITY_RING_CIRCUMFERENCE, 5);
   });
+
+  it("follows the live clock on both sides, not just active, instead of sitting frozen between polls", () => {
+    const memberLimits = {
+      ...baseMemberLimits,
+      projectTodayActivity: { activeSeconds: 30, idleSeconds: 10 },
+    };
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits,
+      liveActivityActiveSeconds: 45,
+      liveActivityIdleSeconds: 25,
+    });
+    expect(stats.activityToday).toEqual({ activeSeconds: 45, idleSeconds: 25 });
+    expect(stats.activityPercent).toBe(Math.round((45 / 70) * 100));
+  });
+
+  it("never shows the ring below what the server has already recorded", () => {
+    const memberLimits = {
+      ...baseMemberLimits,
+      projectTodayActivity: { activeSeconds: 30, idleSeconds: 10 },
+    };
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits,
+      liveActivityActiveSeconds: 0,
+      liveActivityIdleSeconds: 0,
+    });
+    expect(stats.activityToday).toEqual({ activeSeconds: 30, idleSeconds: 10 });
+  });
 });
 
 describe("computeHomeStats - the week (chart, This week card, sidebar ring)", () => {
@@ -205,6 +237,27 @@ describe("computeHomeStats - the week (chart, This week card, sidebar ring)", ()
     const stats = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 0 });
     expect(stats.weekDays[2].activeSeconds).toBe(600);
     expect(stats.weekActiveSeconds).toBe(5 * 3600 + 600);
+  });
+
+  it("today's idle also follows the live clock, the same way active does", () => {
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits: limits,
+      liveWorkedTodaySeconds: 900,
+      liveIdleTodaySeconds: 120,
+      tracking: true,
+    });
+    expect(stats.weekDays[2].idleSeconds).toBe(120);
+    expect(stats.weekIdleSeconds).toBe(1.5 * 3600 + 120);
+  });
+
+  it("never shows today's idle below what the server has already recorded", () => {
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits: limits,
+      liveIdleTodaySeconds: 0,
+    });
+    expect(stats.weekDays[2].idleSeconds).toBe(0);
   });
 
   it("the ring is active over active plus idle, from the same week", () => {

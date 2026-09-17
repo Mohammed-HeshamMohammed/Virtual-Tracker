@@ -1005,6 +1005,50 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [tracking, session?.idleStage]);
 
+  // The idle side of the same day sat static until the next poll caught up -
+  // it's genuinely accumulating server-side the whole time the member is
+  // idle, this just shows that live instead of waiting to reveal it. Synced
+  // (day-keyed floor, same reasoning as liveWorkedTodaySeconds above) against
+  // the whole-day total for the week chart/sidebar ring, and separately
+  // against the Activity tile's own (differently-scoped) split.
+  const [liveIdleTodaySeconds, setLiveIdleTodaySeconds] = useState(0);
+  const [liveActivityActiveSeconds, setLiveActivityActiveSeconds] = useState(0);
+  const [liveActivityIdleSeconds, setLiveActivityIdleSeconds] = useState(0);
+
+  const idleTodayLocalDayRef = useRef<string | null>(null);
+  useEffect(() => {
+    const next = memberLimits?.todayActivity?.idleSeconds ?? 0;
+    const today = new Date().toDateString();
+    const sameDay = idleTodayLocalDayRef.current === today;
+    idleTodayLocalDayRef.current = today;
+    setLiveIdleTodaySeconds((s) => (sameDay ? Math.max(s, next) : next));
+  }, [memberLimits?.todayActivity?.idleSeconds]);
+
+  const activityTodayLocalDayRef = useRef<string | null>(null);
+  useEffect(() => {
+    const nextActive = memberLimits?.projectTodayActivity?.activeSeconds ?? 0;
+    const nextIdle = memberLimits?.projectTodayActivity?.idleSeconds ?? 0;
+    const today = new Date().toDateString();
+    const sameDay = activityTodayLocalDayRef.current === today;
+    activityTodayLocalDayRef.current = today;
+    setLiveActivityActiveSeconds((s) => (sameDay ? Math.max(s, nextActive) : nextActive));
+    setLiveActivityIdleSeconds((s) => (sameDay ? Math.max(s, nextIdle) : nextIdle));
+  }, [memberLimits?.projectTodayActivity?.activeSeconds, memberLimits?.projectTodayActivity?.idleSeconds]);
+
+  useEffect(() => {
+    if (!tracking) return;
+    const idle = (session?.idleStage ?? 0) !== 0;
+    const timer = window.setInterval(() => {
+      if (idle) {
+        setLiveIdleTodaySeconds((s) => s + 1);
+        setLiveActivityIdleSeconds((s) => s + 1);
+      } else {
+        setLiveActivityActiveSeconds((s) => s + 1);
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [tracking, session?.idleStage]);
+
   const prevIdleStageRef = useRef(0);
   useEffect(() => {
     const stage = session?.idleStage ?? 0;
@@ -1727,6 +1771,9 @@ function MainApp() {
     projectBudget,
     taskTracking,
     liveWorkedTodaySeconds,
+    liveIdleTodaySeconds,
+    liveActivityActiveSeconds,
+    liveActivityIdleSeconds,
     tracking,
   });
 

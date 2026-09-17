@@ -8,6 +8,14 @@ export type HomeStatsInput = {
   projectBudget: ProjectBudgetStatus | null;
   taskTracking: TaskTimeTracking | null;
   liveWorkedTodaySeconds: number;
+  /** Live-ticked mirror of liveWorkedTodaySeconds for the idle side of the
+   *  same day - see App.tsx's own effect for why idle needs one too. */
+  liveIdleTodaySeconds: number;
+  /** The Activity tile's own active/idle split (projectTodayActivity) is a
+   *  differently-scoped number from workedTodaySeconds, so it gets its own
+   *  live pair rather than reusing the two above. */
+  liveActivityActiveSeconds: number;
+  liveActivityIdleSeconds: number;
   tracking: boolean;
 };
 
@@ -16,6 +24,9 @@ export function computeHomeStats({
   projectBudget,
   taskTracking,
   liveWorkedTodaySeconds,
+  liveIdleTodaySeconds,
+  liveActivityActiveSeconds,
+  liveActivityIdleSeconds,
   tracking,
 }: HomeStatsInput) {
   const dailyCapSeconds =
@@ -53,7 +64,15 @@ export function computeHomeStats({
         ? ""
         : "not a working day";
 
-  const activityToday = memberLimits?.projectTodayActivity ?? undefined;
+  // Both sides follow the live clock the same way workedTodayLabel above
+  // does - active while working, idle while idle - so the ring and its
+  // legend keep moving instead of sitting frozen between polls.
+  const activityToday = memberLimits?.projectTodayActivity
+    ? {
+        activeSeconds: Math.max(memberLimits.projectTodayActivity.activeSeconds, liveActivityActiveSeconds),
+        idleSeconds: Math.max(memberLimits.projectTodayActivity.idleSeconds, liveActivityIdleSeconds),
+      }
+    : undefined;
   const activityTrackedSeconds = activityToday
     ? activityToday.activeSeconds + activityToday.idleSeconds
     : 0;
@@ -66,15 +85,19 @@ export function computeHomeStats({
     activityPercent == null ? 0 : (activityPercent / 100) * ACTIVITY_RING_CIRCUMFERENCE;
 
   // The week, one entry per day, from the same server rollup as the Today and
-  // This week cards - with today's active time following the live clock, so
-  // the chart, the This week card and the sidebar ring all move together while
-  // tracking. The higher of the two, not the live value alone: the live value
-  // counts from zero for shift-based members (their workedTodaySeconds is
-  // never filled in), and it animates down to the server's figure after an
-  // idle rewind, which max() passes straight through.
+  // This week cards - with today's active and idle time both following their
+  // live clocks, so the chart, the This week card and the sidebar ring all
+  // move together while tracking. The higher of the two, not the live value
+  // alone: the live value counts from zero for shift-based members (their
+  // workedTodaySeconds is never filled in), and it animates down to the
+  // server's figure after an idle rewind, which max() passes straight through.
   const weekDays: WeekDay[] = (memberLimits?.weekDays ?? []).map((day) =>
     day.day === memberLimits?.todayDay
-      ? { ...day, activeSeconds: Math.max(day.activeSeconds, liveWorkedTodaySeconds) }
+      ? {
+          ...day,
+          activeSeconds: Math.max(day.activeSeconds, liveWorkedTodaySeconds),
+          idleSeconds: Math.max(day.idleSeconds, liveIdleTodaySeconds),
+        }
       : day,
   );
   const weekActiveSeconds = weekDays.length
