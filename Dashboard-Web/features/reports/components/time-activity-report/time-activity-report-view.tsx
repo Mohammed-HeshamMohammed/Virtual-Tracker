@@ -1,9 +1,10 @@
 "use client"
 
-import { Fragment, useState as useComponentState } from "react"
+import { Fragment, useMemo, useState as useComponentState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
 import {
+  AlertCircle,
   Calendar,
   ChevronDown,
   ChevronRight,
@@ -14,6 +15,7 @@ import {
   Loader2,
   Play,
   Plus,
+  RefreshCw,
   Save,
   Table2,
   Trash2,
@@ -21,7 +23,7 @@ import {
 } from "lucide-react"
 import { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 import { cn } from "@/shared/utils/utils"
-import { useAuth } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
 import { isManagementRole } from "@/features/auth"
 import { changedEvent } from "@/infrastructure/api/change-events"
 import { AddManualEntryDialog } from "@/features/reports/components/time-activity-report/add-manual-entry-dialog"
@@ -45,8 +47,10 @@ import { ReportPeriodMetricCell } from "@/features/reports/components/time-activ
 import { ReportTimeActivityChart } from "@/features/reports/components/time-activity-report/report-chart"
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
+import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/forms/searchable-select-field"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
+  ALL_MEMBERS_VALUE,
   STANDARD_REPORT_ORG_LABEL,
   MEMBER_TIMEZONE_LABEL,
   TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
@@ -60,8 +64,18 @@ function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
 }
 
-export function TimeActivityReportView({ days, memberRows, entries, onRangeApply, range, onReload }: TimeActivityReportViewProps) {
+export function TimeActivityReportView({
+  days,
+  memberRows,
+  entries,
+  onRangeApply,
+  range,
+  onReload,
+  loading,
+  error,
+}: TimeActivityReportViewProps) {
   const { memberRole } = useAuth()
+  const { isDark } = useTheme()
   const canAddForOthers = isManagementRole(memberRole)
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
   const [sendOpen, setSendOpen] = useComponentState(false)
@@ -115,6 +129,19 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
     saveView,
     justSaved,
   } = useTimeAndActivityReport({ days, memberRows, entries, range })
+
+  // Same searchable, avatar-bearing member picker as Manual Time Requests
+  // (ManualTimeContent) and the Add Manual Entry dialog on this page, rather
+  // than the plain enum dropdown a fixed list like "Data grouped by" uses.
+  const memberSelectOptions = useMemo<SearchableSelectOption[]>(
+    () =>
+      memberFilterOptions.map((o) => ({
+        value: o.value,
+        label: o.label,
+        meta: o.value === ALL_MEMBERS_VALUE ? undefined : <ReportMemberAvatar initials={o.avatar} imageUrl={o.avatarUrl} />,
+      })),
+    [memberFilterOptions],
+  )
 
   const canDeleteDay = canAddForOthers && groupBy === "date_per_day"
 
@@ -226,12 +253,13 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
         <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
           <div className="flex min-w-40 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</div>
-            <ReportSimpleDropdown
+            <SearchableSelectField
               value={memberFilter}
-              onChange={setMemberFilter}
-              options={memberFilterOptions}
-              width="w-48"
-              accentBar={false}
+              onChange={(v) => setMemberFilter(v ?? ALL_MEMBERS_VALUE)}
+              options={memberSelectOptions}
+              placeholder="All members"
+              isDark={isDark}
+              className="w-48"
             />
           </div>
 
@@ -363,6 +391,40 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
 
         <div className="border-t border-slate-200 dark:border-slate-700" />
 
+        {error ? (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+            <span className="flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </span>
+            {onReload ? (
+              <button
+                type="button"
+                onClick={onReload}
+                className="flex shrink-0 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-transparent dark:text-red-400 dark:hover:bg-red-500/10"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Retry
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* A refetch (new date range, manual reload) never unmounts this view -
+            see TimeAndActivity.tsx - so it dims what's already on screen and
+            says so, rather than the page flashing to a skeleton and every
+            filter/sort/grouping choice resetting with it. */}
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs font-medium text-slate-400 dark:text-slate-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Refreshing…
+          </div>
+        ) : null}
+
+        <div
+          aria-busy={loading}
+          className={cn("space-y-6 transition-opacity", loading && "pointer-events-none opacity-60")}
+        >
         <div className="grid grid-cols-3 gap-4">
           {statCards.map((card, i) => (
             <motion.div
@@ -571,6 +633,7 @@ export function TimeActivityReportView({ days, memberRows, entries, onRangeApply
               1
             </button>
           </div>
+        </div>
         </div>
       </div>
 
