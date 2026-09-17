@@ -17,15 +17,15 @@ use tiny_http::{Response, Server};
 /// the test process, so keep it fast and panic-free.
 pub fn fake_server<F>(mut handler: F) -> String
 where
-    F: FnMut(&tiny_http::Request) -> (u16, String) + Send + 'static,
+    F: FnMut(&mut tiny_http::Request) -> (u16, String) + Send + 'static,
 {
     let server = Server::http("127.0.0.1:0").expect("bind fake test server");
     let addr = server.server_addr();
     thread::Builder::new()
         .name("vt-test-fake-server".into())
         .spawn(move || {
-            for request in server.incoming_requests() {
-                let (status, body) = handler(&request);
+            for mut request in server.incoming_requests() {
+                let (status, body) = handler(&mut request);
                 let response = Response::from_string(body).with_status_code(status);
                 let _ = request.respond(response);
             }

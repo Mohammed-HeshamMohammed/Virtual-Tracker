@@ -364,7 +364,20 @@ function MainApp() {
     if (!sessionOpen) void applyStagedUpdate();
   }, [sessionOpen, applyStagedUpdate]);
 
+  // refreshGuarded's own in-flight flag only stops its periodic 5s timer from
+  // overlapping itself - it does nothing for the many other call sites below
+  // that await this refresh() directly right after an action (pause, resume,
+  // start, stop, sign-in...). Those two could genuinely run concurrently: a
+  // periodic poll already in flight when the member clicks Pause, resolving
+  // *after* the action's own refresh() does, its still-"active"/pre-pause
+  // snapshot overwriting the fresher post-pause one - session, paused and
+  // every number on Today/the break clock flickering back to the stale
+  // reading before the next poll corrected it a few seconds later. Tagging
+  // each call and only applying the response from the one still-latest by
+  // the time it lands closes that regardless of which finishes last.
+  const refreshSeqRef = useRef(0);
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeqRef.current;
     const [nextProfile, nextLink, nextSession, nextConnection, nextNotice, nextPaused] = await Promise.all([
       invoke<ProfileInfo>("get_profile"),
       invoke<LinkStatus>("get_link_status"),
@@ -373,6 +386,7 @@ function MainApp() {
       invoke<MonitoringNoticeView | null>("get_monitoring_notice").catch(() => undefined),
       invoke<boolean>("is_session_paused").catch(() => false),
     ]);
+    if (seq !== refreshSeqRef.current) return;
     setProfile(nextProfile);
     setLink(nextLink);
     setConnection(nextConnection);

@@ -81,6 +81,13 @@ pub struct ActivityTracker {
     /// Read by the controller on stop/quit so the final flush carries the real
     /// numbers instead of hardcoded 0s.
     task_progress: Arc<Mutex<(Option<String>, u64, u64)>>,
+    /// Mirrors `TickState::last_project_id` (see that field's own comment) so
+    /// `pause()`/`resume()` - called directly from the controller, outside
+    /// the tick loop - can reach it too. Sticky by design: sets once a
+    /// task-less session reports a project id and is never cleared, so a
+    /// break taken on a calling-project session still has somewhere to read
+    /// its project id from when the button is pressed again.
+    last_project_id: Arc<Mutex<String>>,
     /// Current idle escalation stage, readable by the UI.
     /// 0 = working, 3 = stopped for idling (1/2 no longer used - idle time is
     /// decided solely by the project's own allowance now, no separate
@@ -253,6 +260,7 @@ impl ActivityTracker {
             expect_stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
+            last_project_id: Arc::new(Mutex::new(String::new())),
             idle_stage: Arc::new(Mutex::new(0)),
             pending_stop: Arc::new(Mutex::new(None)),
             last_synthetic_warning_at: Mutex::new(None),
@@ -323,9 +331,24 @@ impl ActivityTracker {
     pub fn pause(&self) -> Result<(), String> {
         let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
         let task_id = task_id.filter(|id| !id.is_empty());
-        self.api
-            .lock()
-            .post_session_action("idle", task_id.as_deref(), None, active_seconds, idle_seconds, None, Some("member_pause"))?;
+        // A calling (task-less) session has no task id for the server to
+        // derive its project from, and this always used to pass None here
+        // regardless - which relied entirely on the server still having the
+        // session open with its project id already attached, and produced
+        // "taskId or projectId is required to start a timer" whenever that
+        // fallback came up empty. last_project_id (set from the session
+        // itself in tick()) is the same value try_recover_lost_session
+        // already trusts for this exact case.
+        let project_id = task_id.is_none().then(|| self.last_project_id.lock().clone()).filter(|id| !id.is_empty());
+        self.api.lock().post_session_action(
+            "idle",
+            task_id.as_deref(),
+            project_id.as_deref(),
+            active_seconds,
+            idle_seconds,
+            None,
+            Some("member_pause"),
+        )?;
         self.paused.store(true, Ordering::SeqCst);
         self.emit_status("Timer paused — on a break");
         Ok(())
@@ -334,9 +357,17 @@ impl ActivityTracker {
     pub fn resume(&self) -> Result<(), String> {
         let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
         let task_id = task_id.filter(|id| !id.is_empty());
-        self.api
-            .lock()
-            .post_session_action("resume", task_id.as_deref(), None, active_seconds, idle_seconds, None, Some("member_resume"))?;
+        // Same reasoning as pause() above.
+        let project_id = task_id.is_none().then(|| self.last_project_id.lock().clone()).filter(|id| !id.is_empty());
+        self.api.lock().post_session_action(
+            "resume",
+            task_id.as_deref(),
+            project_id.as_deref(),
+            active_seconds,
+            idle_seconds,
+            None,
+            Some("member_resume"),
+        )?;
         self.paused.store(false, Ordering::SeqCst);
         self.emit_status("Task session active");
         Ok(())
@@ -887,6 +918,7 @@ impl ActivityTracker {
             .to_string();
         if !session_project_id.is_empty() {
             state.last_project_id = session_project_id.clone();
+            *self.last_project_id.lock() = session_project_id.clone();
         }
 
         if self.tick_idle_escalation(
@@ -2044,6 +2076,45 @@ mod tests {
         assert!(
             !tracker.is_paused(),
             "a stop must end the break, or the tick loop can never see the session is gone"
+        );
+    }
+
+    /// A task-less (calling-project) session has no task id for the server to
+    /// derive its project from on pause/resume - pause()/resume() used to
+    /// always send `None` for the project id regardless, relying entirely on
+    /// the server still having the session open with a project id already
+    /// attached. Whenever that fallback came up empty this produced "taskId
+    /// or projectId is required to start a timer" even though a project was
+    /// plainly selected. last_project_id - populated from the session's own
+    /// field in tick(), the exact value try_recover_lost_session already
+    /// trusts for this same case - closes that gap.
+    #[test]
+    fn pausing_a_task_less_session_sends_its_project_id_so_the_server_can_find_it() {
+        let captured_body = std::sync::Arc::new(Mutex::new(String::new()));
+        let captured_for_server = std::sync::Arc::clone(&captured_body);
+        let url = fake_server(move |request| {
+            let path = request.url().split('?').next().unwrap_or("").to_string();
+            match (request.method(), path.as_str()) {
+                (Method::Get, "/api/activity/session") => (200, ACTIVE_SESSION_TASK_LESS.to_string()),
+                (Method::Post, "/api/activity/session") => {
+                    let mut body = String::new();
+                    let _ = request.as_reader().read_to_string(&mut body);
+                    *captured_for_server.lock() = body;
+                    (200, r#"{"data": {"id": "sess-2", "status": "idle"}}"#.to_string())
+                }
+                _ => (404, "{}".to_string()),
+            }
+        });
+        let tracker = test_tracker(url);
+        let mut state = TickState::new();
+        tracker.tick(&mut state);
+
+        tracker.pause().expect("pause should succeed once the project id travels with it");
+
+        let body = captured_body.lock().clone();
+        assert!(
+            body.contains(r#""projectId":"proj-1""#),
+            "pause must send the task-less session's project id, got: {body}"
         );
     }
 
