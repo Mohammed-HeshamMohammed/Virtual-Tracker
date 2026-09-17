@@ -98,4 +98,11 @@ export type TimeActivityReportViewProps = TimeActivityReportData & {
   onRangeApply?: (start: Date, end: Date) => void
   range?: { from: string; to: string }
   onReload?: () => void
+  /** A refetch (new date range, manual reload) is in flight. The view stays
+   *  mounted and shows this in place - it must NOT unmount for a refresh, or
+   *  every filter/sort/grouping choice resets with it. */
+  loading?: boolean
+  /** A refetch failed. Previous data and every selection stay on screen;
+   *  this only adds a dismissible-by-retry banner over it. */
+  error?: string | null
 }

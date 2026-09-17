@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ReportCalendarGrid,
   ReportColumnPicker,
@@ -55,6 +55,11 @@ export function TimeAndActivityReport() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  // A ref, not state: it must read as current inside the same effect run's
+  // .then/.catch the instant a load succeeds, with no extra render in
+  // between - state read in a closure from before that render would still
+  // say "never loaded" for the first refetch after the first success.
+  const hasLoadedOnceRef = useRef(false)
 
   useEffect(() => {
     let cancelled = false
@@ -62,11 +67,16 @@ export function TimeAndActivityReport() {
     setError(null)
     fetchTimeAndActivityReport({ from: toDateParam(range.start), to: toDateParam(range.end) })
       .then((data) => {
-        if (!cancelled) setReportData(data)
+        if (cancelled) return
+        hasLoadedOnceRef.current = true
+        setReportData(data)
       })
       .catch((err: unknown) => {
         if (cancelled) return
-        setReportData(buildDefaultTimeActivityReportData())
+        // Only a first load has nothing on screen yet to fall back to - a
+        // refetch (new date range, manual reload) that fails must leave the
+        // table exactly as it was, not blank it out under an error page.
+        if (!hasLoadedOnceRef.current) setReportData(buildDefaultTimeActivityReportData())
         setError(err instanceof Error ? err.message : "Request failed")
       })
       .finally(() => {
@@ -77,9 +87,14 @@ export function TimeAndActivityReport() {
     }
   }, [range, reloadKey])
 
-  if (loading) return <ReportSkeleton tiles={3} rows={8} columns={6} />
-  if (error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
+  if (!hasLoadedOnceRef.current && loading) return <ReportSkeleton tiles={3} rows={8} columns={6} />
+  if (!hasLoadedOnceRef.current && error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
 
+  // Past the first load, the view stays mounted through every later refetch -
+  // unmounting it here (the old behaviour) tore down useTimeAndActivityReport
+  // along with it, wiping the member/project filters, grouping, sort and
+  // column choices back to defaults on every date-range change or reload,
+  // which read as the whole page resetting itself.
   return (
     <TimeActivityReportView
       days={reportData.days}
@@ -88,6 +103,8 @@ export function TimeAndActivityReport() {
       onRangeApply={(start, end) => setRange({ start, end })}
       range={{ from: toDateParam(range.start), to: toDateParam(range.end) }}
       onReload={() => setReloadKey((k) => k + 1)}
+      loading={loading}
+      error={error}
     />
   )
 }

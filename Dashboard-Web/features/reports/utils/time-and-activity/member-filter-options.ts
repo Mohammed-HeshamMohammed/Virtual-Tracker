@@ -1,14 +1,30 @@
 import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
+import { initialsFromName } from "@/features/members/utils/build-tree"
 import type { TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
+
+export type MemberFilterOption = { value: string; label: string; avatar: string; avatarUrl?: string | null }
 
 export function getMemberFilterOptions(
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
   rosterNames: string[] = [],
-): { value: string; label: string }[] {
-  const names = Array.from(
-    new Set([...rosterNames, ...Object.values(memberRows).flatMap((rows) => rows.map((r) => r.name))]),
-  ).sort()
-  return [{ value: ALL_MEMBERS_VALUE, label: "All members" }, ...names.map((name) => ({ value: name, label: name }))]
+): MemberFilterOption[] {
+  // First sighting per name wins - the avatar doesn't change day to day, and
+  // a roster name with no activity in range has no row to pull one from at
+  // all, so it falls back to plain initials like everywhere else does.
+  const byName = new Map<string, { avatar: string; avatarUrl?: string | null }>()
+  for (const rows of Object.values(memberRows)) {
+    for (const r of rows) {
+      if (!byName.has(r.name)) byName.set(r.name, { avatar: r.avatar, avatarUrl: r.avatarUrl })
+    }
+  }
+  const names = Array.from(new Set([...rosterNames, ...byName.keys()])).sort()
+  return [
+    { value: ALL_MEMBERS_VALUE, label: "All members", avatar: "" },
+    ...names.map((name) => {
+      const known = byName.get(name)
+      return { value: name, label: name, avatar: known?.avatar ?? initialsFromName(name), avatarUrl: known?.avatarUrl ?? null }
+    }),
+  ]
 }
 
 export function getProjectFilterOptions(
