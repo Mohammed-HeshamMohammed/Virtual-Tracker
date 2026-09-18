@@ -413,7 +413,6 @@ export function TimeActivityReportView({
                   className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
                 >
                   <Download className="h-3.5 w-3.5" />
-                  Download
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
