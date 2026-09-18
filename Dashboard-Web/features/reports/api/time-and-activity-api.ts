@@ -42,6 +42,7 @@ interface RawEntry {
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
   entries?: RawEntry[]
+  currency?: TimeActivityReportData["currency"]
 }
 
 function initialsFor(name: string): string {
@@ -184,19 +185,20 @@ function mapReport(raw: RawTimeAndActivityReport, range?: { from: string; to: st
     memberRows[day.date] = day.members.map(toMemberSubRow)
   }
   const entries = (raw.entries ?? []).map(toEntry)
-  return { days, memberRows, entries }
+  return { days, memberRows, entries, currency: raw.currency }
 }
 
 export async function fetchTimeAndActivityReport(range: {
   from: string
   to: string
   memberId?: string
+  displayCurrency?: string
 }): Promise<TimeActivityReportData> {
   const params = new URLSearchParams({ from: range.from, to: range.to })
   if (range.memberId) params.set("memberId", range.memberId)
   // The server converts every amount into one currency; this asks for the
   // viewer's own and falls back to the workspace default when there is no rate.
-  const viewerCurrency = resolveViewerCurrency()
+  const viewerCurrency = range.displayCurrency || resolveViewerCurrency()
   if (viewerCurrency) params.set("displayCurrency", viewerCurrency)
   const res = await apiFetch(apiPath(`/api/reports/time-and-activity?${params.toString()}`))
   if (!res.ok) {

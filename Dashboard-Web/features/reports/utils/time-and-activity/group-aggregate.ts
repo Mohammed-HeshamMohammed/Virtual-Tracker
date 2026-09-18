@@ -1,7 +1,7 @@
 import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
 import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityGroupBy, TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
-import type { TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import type { ActivityLevelFilter, ManualTimeFilter, TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import { sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 function initialsFor(name: string): string {
@@ -39,13 +39,22 @@ export function filterEntries(
   entries: TimeActivityEntry[],
   memberFilter: string,
   projectFilter: string,
-  trackedTimeFilter: TrackedTimeFilter
+  trackedTimeFilter: TrackedTimeFilter,
+  manualTimeFilter: ManualTimeFilter = "all",
+  activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityEntry[] {
   return entries.filter((e) => {
     if (memberFilter !== ALL_MEMBERS_VALUE && e.memberName !== memberFilter) return false
     if (projectFilter !== ALL_PROJECTS_VALUE && e.projectName !== projectFilter) return false
     if (trackedTimeFilter === "with" && e.activeSeconds <= 0) return false
     if (trackedTimeFilter === "without" && e.activeSeconds > 0) return false
+    if (manualTimeFilter === "with" && e.manualSeconds <= 0) return false
+    if (manualTimeFilter === "without" && e.manualSeconds > 0) return false
+    const total = e.activeSeconds + e.idleSeconds
+    const activityPct = total > 0 ? Math.round((e.activeSeconds / total) * 100) : 0
+    if (activityLevelFilter === "under_50" && activityPct >= 50) return false
+    if (activityLevelFilter === "50_to_79" && (activityPct < 50 || activityPct >= 80)) return false
+    if (activityLevelFilter === "80_plus" && activityPct < 80) return false
     return true
   })
 }

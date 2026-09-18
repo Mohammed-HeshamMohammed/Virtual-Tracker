@@ -68,13 +68,24 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
 }
 
 export type TrackedTimeFilter = "all" | "with" | "without"
+export type ManualTimeFilter = "all" | "with" | "without"
+export type ActivityLevelFilter = "all" | "under_50" | "50_to_79" | "80_plus"
+
+function matchesActivityLevel(activityPct: number, filter: ActivityLevelFilter): boolean {
+  if (filter === "under_50") return activityPct < 50
+  if (filter === "50_to_79") return activityPct >= 50 && activityPct < 80
+  if (filter === "80_plus") return activityPct >= 80
+  return true
+}
 
 export function getFilteredSubRows(
   date: string,
   memberFilter: string,
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
   projectFilter: string = ALL_PROJECTS_VALUE,
-  trackedTimeFilter: TrackedTimeFilter = "all"
+  trackedTimeFilter: TrackedTimeFilter = "all",
+  manualTimeFilter: ManualTimeFilter = "all",
+  activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityMemberSubRow[] {
   const rows = memberRows[date] ?? []
   return rows.filter((r) => {
@@ -82,6 +93,9 @@ export function getFilteredSubRows(
     if (projectFilter !== ALL_PROJECTS_VALUE && !r.projectNames.includes(projectFilter)) return false
     if (trackedTimeFilter === "with" && r.trackedHours <= 0) return false
     if (trackedTimeFilter === "without" && r.trackedHours > 0) return false
+    if (manualTimeFilter === "with" && r.manualHours <= 0) return false
+    if (manualTimeFilter === "without" && r.manualHours > 0) return false
+    if (!matchesActivityLevel(r.activityPct, activityLevelFilter)) return false
     return true
   })
 }
@@ -91,12 +105,28 @@ export function buildDisplayDay(
   memberFilter: string,
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
   projectFilter: string = ALL_PROJECTS_VALUE,
-  trackedTimeFilter: TrackedTimeFilter = "all"
+  trackedTimeFilter: TrackedTimeFilter = "all",
+  manualTimeFilter: ManualTimeFilter = "all",
+  activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityDayRow {
-  if (memberFilter === ALL_MEMBERS_VALUE && projectFilter === ALL_PROJECTS_VALUE && trackedTimeFilter === "all") {
+  if (
+    memberFilter === ALL_MEMBERS_VALUE &&
+    projectFilter === ALL_PROJECTS_VALUE &&
+    trackedTimeFilter === "all" &&
+    manualTimeFilter === "all" &&
+    activityLevelFilter === "all"
+  ) {
     return day
   }
-  const subs = getFilteredSubRows(day.date, memberFilter, memberRows, projectFilter, trackedTimeFilter)
+  const subs = getFilteredSubRows(
+    day.date,
+    memberFilter,
+    memberRows,
+    projectFilter,
+    trackedTimeFilter,
+    manualTimeFilter,
+    activityLevelFilter,
+  )
   if (subs.length === 0) {
     return {
       ...day,

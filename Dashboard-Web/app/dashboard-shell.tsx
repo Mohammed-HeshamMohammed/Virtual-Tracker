@@ -113,7 +113,8 @@ export function DashboardShell() {
           >
             <div
               className={cn(
-                "dashboard-shell-scroll scrollbar-hide h-full w-full max-w-full rounded-3xl transition-colors duration-300",
+                "dashboard-shell-scroll h-full w-full max-w-full rounded-3xl transition-colors duration-300",
+                activeItem === "reports-time" ? "custom-scrollbar" : "scrollbar-hide",
                 isFullBleedPage(activeItem) ? "overflow-hidden p-4 sm:p-5" : "overflow-y-auto p-8",
                 isDark
                   ? "bg-[#101417] shadow-[0_8px_40px_0_rgba(75,226,119,0.04)]"

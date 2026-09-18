@@ -20,7 +20,6 @@ import {
 import { projectTypeDef } from "@/features/projects/config/project-types"
 import { getTasks } from "@/features/tasks/api/task-api"
 import { createTimeEntry } from "@/features/timesheets/api/timesheet-api"
-import { parseHoursInput } from "@/features/timesheets/components/approvals/components/ManualTimeContent"
 import { useAuth, useTheme } from "@/shared/providers/app"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
@@ -30,12 +29,6 @@ import { initialsFromName } from "@/features/members/utils/build-tree"
 function todayLocal(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
-}
-
-function formatSeconds(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.round((seconds % 3600) / 60)
-  return `${h}:${String(m).padStart(2, "0")}`
 }
 
 const inputCls =
@@ -75,10 +68,16 @@ export function AddManualEntryDialog({
   const [taskId, setTaskId] = useState("")
   const [date, setDate] = useState(todayLocal)
   const [hours, setHours] = useState("")
+  const [minutes, setMinutes] = useState("")
   const [description, setDescription] = useState("")
   const [billable, setBillable] = useState(true)
 
-  const durationSeconds = useMemo(() => parseHoursInput(hours), [hours])
+  const durationSeconds = useMemo(() => {
+    const h = Number(hours || 0)
+    const m = Number(minutes || 0)
+    if (!Number.isInteger(h) || h < 0 || !Number.isInteger(m) || m < 0 || m > 59) return 0
+    return h * 3600 + m * 60
+  }, [hours, minutes])
 
   useEffect(() => {
     if (!open) return
@@ -88,6 +87,7 @@ export function AddManualEntryDialog({
     setTaskId("")
     setDate(todayLocal())
     setHours("")
+    setMinutes("")
     setDescription("")
     setBillable(true)
     setTasks([])
@@ -250,7 +250,7 @@ export function AddManualEntryDialog({
       return
     }
     if (durationSeconds <= 0) {
-      setError("Enter how long they worked, e.g. 1:30, 1.5 or 90m.")
+      setError("Enter hours or minutes worked. Minutes must be between 0 and 59.")
       return
     }
     if (!description.trim()) {
@@ -283,7 +283,7 @@ export function AddManualEntryDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Add time for someone</DialogTitle>
@@ -342,20 +342,38 @@ export function AddManualEntryDialog({
               />
             </div>
             <div>
-              <label htmlFor="ame-hours" className={labelCls}>
-                Time worked
-              </label>
-              <input
-                id="ame-hours"
-                type="text"
-                value={hours}
-                onChange={(e) => setHours(e.target.value)}
-                placeholder="1:30, 1.5 or 90m"
-                className={inputCls}
-              />
-              {hours && durationSeconds > 0 ? (
-                <p className="mt-1 text-xs text-slate-400">= {formatSeconds(durationSeconds)}</p>
-              ) : null}
+              <span className={labelCls}>Time worked</span>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label htmlFor="ame-hours" className="sr-only">Hours</label>
+                  <input
+                    id="ame-hours"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={hours}
+                    onChange={(e) => setHours(e.target.value)}
+                    placeholder="Hours"
+                    className={inputCls}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="ame-minutes" className="sr-only">Minutes</label>
+                  <input
+                    id="ame-minutes"
+                    type="number"
+                    min="0"
+                    max="59"
+                    step="1"
+                    inputMode="numeric"
+                    value={minutes}
+                    onChange={(e) => setMinutes(e.target.value)}
+                    placeholder="Minutes"
+                    className={inputCls}
+                  />
+                </div>
+              </div>
             </div>
             {projectHasTasks ? (
               <div>

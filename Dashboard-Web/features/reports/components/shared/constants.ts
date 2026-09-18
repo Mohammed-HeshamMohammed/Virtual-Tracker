@@ -199,26 +199,6 @@ export const DATE_RANGE_PRESETS = [
   "Last month",
 ] as const
 
-export const CUSTOM_FILTER_FIELDS = [
-  "Activity %",
-  "Total hours",
-  "Bill rate",
-  "Project",
-  "Member",
-  "Client",
-  "Tags",
-  "Notes",
-]
-
-export const CUSTOM_FILTER_OPERATORS = [
-  "is",
-  "is not",
-  "is greater than",
-  "is less than",
-  "contains",
-  "does not contain",
-]
-
 export const CHART_METRIC_ORDER: TimeActivityMetric[] = ["total_hours", "activity", "total_spent"]
 
 export const CHART_SERIES_STYLES: Record<TimeActivityMetric, { stroke: string; gradientId: string }> = {

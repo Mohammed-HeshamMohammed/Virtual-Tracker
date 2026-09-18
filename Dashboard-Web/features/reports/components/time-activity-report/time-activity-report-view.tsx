@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState as useComponentState } from "react"
 import { createPortal } from "react-dom"
 import { AnimatePresence, motion } from "framer-motion"
+import * as ContextMenu from "@radix-ui/react-context-menu"
 import {
   AlertCircle,
   Calendar,
@@ -13,11 +14,11 @@ import {
   CreditCard,
   Download,
   Filter,
+  Focus,
   Loader2,
   Play,
   Plus,
   RefreshCw,
-  Save,
   Table2,
   Trash2,
   TrendingUp,
@@ -74,8 +75,11 @@ export function TimeActivityReportView({
   onReload,
   loading,
   error,
+  displayCurrency = "",
+  resolvedDisplayCurrency,
+  onDisplayCurrencyChange,
 }: TimeActivityReportViewProps) {
-  const { memberRole } = useAuth()
+  const { memberRole, currentMember } = useAuth()
   const { isDark } = useTheme()
   const canAddForOthers = isManagementRole(memberRole)
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
@@ -97,6 +101,10 @@ export function TimeActivityReportView({
     projectFilterOptions,
     trackedTimeFilter,
     setTrackedTimeFilter,
+    manualTimeFilter,
+    setManualTimeFilter,
+    activityLevelFilter,
+    setActivityLevelFilter,
     clearFilters,
     expandedRows,
     toggleRow,
@@ -112,10 +120,7 @@ export function TimeActivityReportView({
     filterPanelLayout,
     dateLabel,
     setDateLabel,
-    enabledPeriodCols,
-    enabledMemberCols,
-    columnPickerScope,
-    setColumnPickerScope,
+    enabledCols,
     sortKey,
     sortDir,
     sortedDisplayRows,
@@ -130,12 +135,9 @@ export function TimeActivityReportView({
     visibleMetricColumns,
     toggleCol,
     handleSortClick,
-    pickerEnabledCols,
     getSubRowsForDay,
     groupColumnLabel,
-    saveView,
-    justSaved,
-  } = useTimeAndActivityReport({ days, memberRows, entries, range })
+  } = useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName: currentMember?.name })
 
   // Same searchable, avatar-bearing member picker as Manual Time Requests
   // (ManualTimeContent) and the Add Manual Entry dialog on this page, rather
@@ -274,7 +276,7 @@ export function TimeActivityReportView({
     <div className="relative isolate">
       <div ref={reportColumnRef} className="report-print-area relative mx-auto max-w-[1400px] space-y-6 px-6 py-6">
         <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
-          <div className="flex min-w-40 flex-col gap-1">
+          <div className="flex min-w-60 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</div>
             <SearchableSelectField
               value={memberFilter}
@@ -282,17 +284,17 @@ export function TimeActivityReportView({
               options={memberSelectOptions}
               placeholder="All members"
               isDark={isDark}
-              className="w-48"
+              className="w-60"
             />
           </div>
 
-          <div className="flex min-w-40 flex-col gap-1">
+          <div className="flex min-w-60 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Projects</div>
             <ReportSimpleDropdown
               value={projectFilter}
               onChange={setProjectFilter}
               options={projectFilterOptions}
-              width="w-48"
+              width="w-60"
               accentBar={false}
             />
           </div>
@@ -356,23 +358,6 @@ export function TimeActivityReportView({
                 </button>
               </IconTooltip>
             ) : null}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Export"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-blue-500 dark:text-blue-400 transition-colors hover:bg-blue-50 dark:hover:bg-blue-950/60"
-                >
-                  <Download className="h-4 w-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(tableDisplayRows, "time-and-activity", groupColumnLabel)}>
-                  To CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
             <IconTooltip text="Send" placement="bottom">
               <button
                 type="button"
@@ -394,7 +379,7 @@ export function TimeActivityReportView({
               </button>
             </IconTooltip>
             <div className="relative" ref={columnPickerRef}>
-              <IconTooltip text="Choose columns (period vs member rows)" placement="bottom">
+              <IconTooltip text="Choose columns" placement="bottom">
                 <button
                   type="button"
                   onClick={() => setShowColumnPicker((v) => !v)}
@@ -407,9 +392,7 @@ export function TimeActivityReportView({
               <AnimatePresence>
                 {showColumnPicker && (
                   <ReportColumnPicker
-                    scope={columnPickerScope}
-                    onScopeChange={setColumnPickerScope}
-                    enabledCols={pickerEnabledCols}
+                    enabledCols={enabledCols}
                     onToggle={toggleCol}
                   />
                 )}
@@ -423,14 +406,23 @@ export function TimeActivityReportView({
               <Filter className="h-3.5 w-3.5" />
               Filter
             </button>
-            <button
-              type="button"
-              onClick={saveView}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
-            >
-              <Save className="h-3.5 w-3.5" />
-              {justSaved ? "Saved" : "Save"}
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(tableDisplayRows, "time-and-activity", groupColumnLabel)}>
+                  To CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -556,7 +548,7 @@ export function TimeActivityReportView({
                           </div>
                         </td>
                         {fittedMetricColumns.map((col) => {
-                          const on = enabledPeriodCols.has(col.key)
+                          const on = enabledCols.has(col.key)
                           return (
                             <td key={col.key} className={cn("px-4 py-3.5", !on && "text-slate-300 dark:text-slate-700")}>
                               {on ? <ReportPeriodMetricCell day={day} colKey={col.key} /> : <span className="text-sm">—</span>}
@@ -568,54 +560,68 @@ export function TimeActivityReportView({
                       <AnimatePresence>
                         {isExpanded &&
                           subRows.map((member, mi) => (
-                            <motion.tr
-                              key={`${day.date}-${member.name}`}
-                              initial={{ opacity: 0 }}
-                              animate={{ opacity: 1 }}
-                              exit={{ opacity: 0 }}
-                              transition={{ delay: mi * 0.03 }}
-                              className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
-                            >
-                              <td className="px-5 py-3">
-                                <div className="flex items-center gap-2.5 pl-6">
-                                  <ReportMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} />
-                                  <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
-                                </div>
-                              </td>
-                              {fittedMetricColumns.map((col) => {
-                                const on = enabledMemberCols.has(col.key)
-                                return (
-                                  <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
-                                    {on ? (
-                                      <ReportMemberMetricCell member={member} colKey={col.key} />
-                                    ) : (
-                                      <span className="text-sm">—</span>
-                                    )}
+                            <ContextMenu.Root key={`${day.date}-${member.name}`}>
+                              <ContextMenu.Trigger asChild>
+                                <motion.tr
+                                  initial={{ opacity: 0 }}
+                                  animate={{ opacity: 1 }}
+                                  exit={{ opacity: 0 }}
+                                  transition={{ delay: mi * 0.03 }}
+                                  className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
+                                >
+                                  <td className="px-5 py-3">
+                                    <div className="flex items-center gap-2.5 pl-6">
+                                      <ReportMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} />
+                                      <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
+                                    </div>
                                   </td>
-                                )
-                              })}
-                              {canDeleteDay ? (
-                                <td className="px-4 py-3 text-right">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation()
-                                      confirmDeleteDay(member.memberId, day.date, member.name, day.dateLabel)
-                                    }}
-                                    disabled={deletingKey === `${member.memberId}::${day.date}`}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
-                                    title="Delete this day's activity and its screenshots, app usage, and URL visits"
-                                    aria-label="Delete this day's activity"
+                                  {fittedMetricColumns.map((col) => {
+                                    const on = enabledCols.has(col.key)
+                                    return (
+                                      <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
+                                        {on ? (
+                                          <ReportMemberMetricCell member={member} colKey={col.key} />
+                                        ) : (
+                                          <span className="text-sm">—</span>
+                                        )}
+                                      </td>
+                                    )
+                                  })}
+                                  {canDeleteDay ? (
+                                    <td className="px-4 py-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          confirmDeleteDay(member.memberId, day.date, member.name, day.dateLabel)
+                                        }}
+                                        disabled={deletingKey === `${member.memberId}::${day.date}`}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-500 dark:hover:bg-red-500/10 dark:hover:text-red-400"
+                                        title="Delete this day's activity and its screenshots, app usage, and URL visits"
+                                        aria-label="Delete this day's activity"
+                                      >
+                                        {deletingKey === `${member.memberId}::${day.date}` ? (
+                                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                      </button>
+                                    </td>
+                                  ) : null}
+                                </motion.tr>
+                              </ContextMenu.Trigger>
+                              <ContextMenu.Portal>
+                                <ContextMenu.Content className="z-100 min-w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
+                                  <ContextMenu.Item
+                                    onSelect={() => setMemberFilter(member.name)}
+                                    className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"
                                   >
-                                    {deletingKey === `${member.memberId}::${day.date}` ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    )}
-                                  </button>
-                                </td>
-                              ) : null}
-                            </motion.tr>
+                                    <Focus className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                                    Focus on {member.name}
+                                  </ContextMenu.Item>
+                                </ContextMenu.Content>
+                              </ContextMenu.Portal>
+                            </ContextMenu.Root>
                           ))}
                       </AnimatePresence>
                     </Fragment>
@@ -636,7 +642,7 @@ export function TimeActivityReportView({
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none"
                 >
-                  {[25, 50, 100, 250].map((n) => (
+                  {[4, 8].map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
@@ -695,6 +701,13 @@ export function TimeActivityReportView({
                   panelStyle={filterPanelLayout}
                   trackedTimeFilter={trackedTimeFilter}
                   setTrackedTimeFilter={setTrackedTimeFilter}
+                  manualTimeFilter={manualTimeFilter}
+                  setManualTimeFilter={setManualTimeFilter}
+                  activityLevelFilter={activityLevelFilter}
+                  setActivityLevelFilter={setActivityLevelFilter}
+                  displayCurrency={displayCurrency}
+                  resolvedDisplayCurrency={resolvedDisplayCurrency}
+                  setDisplayCurrency={onDisplayCurrencyChange ?? (() => {})}
                   onClearFilters={clearFilters}
                 />
               </>

@@ -4,10 +4,8 @@ import { useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Check, ChevronLeft } from "lucide-react"
 import { COLUMN_LABEL_KEY_MAP, COLUMN_PICKER_SECTIONS } from "@/features/reports/components/shared/constants"
-import { cn } from "@/shared/utils/utils"
 import type {
   TimeActivityColumnPickerLeafItem,
-  TimeActivityColumnPickerScope,
   TimeActivityColumnPickerSection,
 } from "@/features/reports/models/time-and-activity"
 
@@ -16,13 +14,9 @@ function isLeafItem(item: TimeActivityColumnPickerLeafItem | string): item is Ti
 }
 
 export function ReportColumnPicker({
-  scope,
-  onScopeChange,
   enabledCols,
   onToggle,
 }: {
-  scope: TimeActivityColumnPickerScope
-  onScopeChange: (s: TimeActivityColumnPickerScope) => void
   enabledCols: Set<string>
   onToggle: (k: string) => void
 }) {
@@ -74,34 +68,6 @@ export function ReportColumnPicker({
       transition={{ duration: 0.14 }}
       className="absolute right-0 top-10 z-30 max-h-[520px] w-64 overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-xl"
     >
-      <div className="flex gap-1 border-b border-slate-100 dark:border-slate-800 p-1.5">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onScopeChange("period")
-          }}
-          className={cn(
-            "flex-1 rounded-lg py-2 text-xs font-semibold transition-colors",
-            scope === "period" ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-          )}
-        >
-          Period
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onScopeChange("member")
-          }}
-          className={cn(
-            "flex-1 rounded-lg py-2 text-xs font-semibold transition-colors",
-            scope === "member" ? "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
-          )}
-        >
-          Member rows
-        </button>
-      </div>
       <div className="max-h-[440px] overflow-y-auto custom-scrollbar py-1">
         {COLUMN_PICKER_SECTIONS.map((section, si) => (
           <div key={si}>
