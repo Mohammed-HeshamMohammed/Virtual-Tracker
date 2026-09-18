@@ -155,12 +155,9 @@ export function TimeActivityReportView({
     [memberFilterOptions],
   )
 
-  // The column picker used to live inside the table's own card, which clips
-  // anything (menus, tooltips) that would extend past its rounded corners -
-  // overflow-hidden there is load-bearing for the horizontal scroll and the
-  // corner radius, not something to drop. Moved to the toolbar instead, it
-  // needs its own outside-click handling in place of the backdrop the table
-  // card used to render behind it.
+  // Keep the picker open/close behavior independent of the table's horizontal
+  // scroll region so the menu can sit in the table header without swallowing
+  // clicks elsewhere on the page.
   const columnPickerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!showColumnPicker) return
@@ -381,26 +378,6 @@ export function TimeActivityReportView({
                 <Clock className="h-4 w-4" />
               </button>
             </IconTooltip>
-            <div className="relative" ref={columnPickerRef}>
-              <IconTooltip text="Choose columns" placement="bottom">
-                <button
-                  type="button"
-                  onClick={() => setShowColumnPicker((v) => !v)}
-                  aria-label="Choose columns"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800"
-                >
-                  <Table2 className="h-4 w-4" />
-                </button>
-              </IconTooltip>
-              <AnimatePresence>
-                {showColumnPicker && (
-                  <ReportColumnPicker
-                    enabledCols={enabledCols}
-                    onToggle={toggleCol}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
             <button
               type="button"
               onClick={() => setShowFilters(true)}
@@ -490,7 +467,27 @@ export function TimeActivityReportView({
           </div>
         ) : null}
 
-        <div ref={tableWidthRef} className="relative overflow-hidden rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+        <div ref={tableWidthRef} className="relative z-20 overflow-visible rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
+          <div className="relative flex justify-end border-b border-slate-100 px-4 py-2 dark:border-slate-800" ref={columnPickerRef}>
+            <IconTooltip text="Choose columns" placement="bottom">
+              <button
+                type="button"
+                onClick={() => setShowColumnPicker((v) => !v)}
+                aria-label="Choose columns"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800"
+              >
+                <Table2 className="h-4 w-4" />
+              </button>
+            </IconTooltip>
+            <AnimatePresence>
+              {showColumnPicker && (
+                <ReportColumnPicker
+                  enabledCols={enabledCols}
+                  onToggle={toggleCol}
+                />
+              )}
+            </AnimatePresence>
+          </div>
           <div className="overflow-x-auto custom-scrollbar-x pt-3">
             <table className="w-full">
               <thead>
