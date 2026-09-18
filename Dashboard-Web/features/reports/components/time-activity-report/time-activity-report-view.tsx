@@ -7,10 +7,12 @@ import * as ContextMenu from "@radix-ui/react-context-menu"
 import {
   AlertCircle,
   Calendar,
+  CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   CreditCard,
   Download,
   Filter,
@@ -61,6 +63,7 @@ import {
 } from "@/features/reports/components/shared/constants"
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
+import { copyTextToClipboard } from "@/shared/utils/clipboard"
 
 function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
@@ -618,6 +621,25 @@ export function TimeActivityReportView({
                                     <Focus className="h-4 w-4 text-blue-500 dark:text-blue-400" />
                                     Focus on {member.name}
                                   </ContextMenu.Item>
+                                  <ContextMenu.Item
+                                    onSelect={() => onRangeApply?.(parseDayParam(day.date), parseDayParam(day.date))}
+                                    className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"
+                                  >
+                                    <CalendarDays className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                                    Show only {day.dateLabel}
+                                  </ContextMenu.Item>
+                                  <ContextMenu.Separator className="mx-2 my-1 h-px bg-slate-100 dark:bg-slate-800" />
+                                  <ContextMenu.Item
+                                    onSelect={() =>
+                                      void copyTextToClipboard(
+                                        `${member.name} — ${day.dateLabel}\nTotal hours: ${member.totalHours}\nActivity: ${member.activityPct}%\nTotal spent: ${member.totalSpent}`,
+                                      )
+                                    }
+                                    className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"
+                                  >
+                                    <Copy className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                                    Copy record summary
+                                  </ContextMenu.Item>
                                 </ContextMenu.Content>
                               </ContextMenu.Portal>
                             </ContextMenu.Root>
@@ -641,7 +663,7 @@ export function TimeActivityReportView({
                   onChange={(e) => setPageSize(Number(e.target.value))}
                   className="appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 pl-2 pr-6 text-sm text-slate-600 dark:text-slate-300 focus:outline-none"
                 >
-                  {[4, 8].map((n) => (
+                  {[4, 8, 15, 18, 25].map((n) => (
                     <option key={n} value={n}>
                       {n}
                     </option>
