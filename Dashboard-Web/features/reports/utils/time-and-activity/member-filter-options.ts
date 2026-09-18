@@ -28,7 +28,12 @@ export function getMemberFilterOptions(
     { value: ALL_MEMBERS_VALUE, label: "All members", avatar: "" },
     ...names.map((name) => {
       const known = byName.get(name)
-      return { value: name, label: name, avatar: known?.avatar ?? initialsFromName(name), avatarUrl: known?.avatarUrl ?? null }
+      return {
+        value: name,
+        label: name === self ? "Myself" : name,
+        avatar: known?.avatar ?? initialsFromName(name),
+        avatarUrl: known?.avatarUrl ?? null,
+      }
     }),
   ]
 }
