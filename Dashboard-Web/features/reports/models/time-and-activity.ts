@@ -62,15 +62,6 @@ export interface TimeActivityEntry {
   currency: string
 }
 
-export interface TimeActivityCustomFilterRow {
-  id: string
-  field: string
-  operator: string
-  value: string
-}
-
-export type TimeActivityColumnPickerScope = "period" | "member"
-
 export interface TimeActivityColumnPickerLeafItem {
   key?: string
   label?: string
@@ -92,12 +83,21 @@ export interface TimeActivityReportData {
   days: TimeActivityDayRow[]
   memberRows: Record<string, TimeActivityMemberSubRow[]>
   entries: TimeActivityEntry[]
+  currency?: {
+    displayCurrency: string
+    orgCurrency: string
+    requestedUnavailable: boolean
+    rateAsOf: string | null
+  }
 }
 
 export type TimeActivityReportViewProps = TimeActivityReportData & {
   onRangeApply?: (start: Date, end: Date) => void
   range?: { from: string; to: string }
   onReload?: () => void
+  displayCurrency?: string
+  resolvedDisplayCurrency?: string
+  onDisplayCurrencyChange?: (currency: string) => void
   /** A refetch (new date range, manual reload) is in flight. The view stays
    *  mounted and shows this in place - it must NOT unmount for a refresh, or
    *  every filter/sort/grouping choice resets with it. */

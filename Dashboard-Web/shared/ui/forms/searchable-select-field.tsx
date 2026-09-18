@@ -5,7 +5,6 @@ import { createPortal } from "react-dom"
 import { Check, ChevronDown } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { FORM_SCROLL_HIDDEN } from "@/shared/ui/forms/form-styles"
 import { FLOATING_MENU_ATTR, FLOATING_MENU_Z_CLASS } from "@/shared/ui/forms/floating-menu"
 import { useFloatingMenuPosition } from "@/shared/ui/forms/use-floating-menu-position"
 
@@ -132,6 +131,7 @@ export function SearchableSelectField({
             >
             <div className={cn("shrink-0 border-b p-2", isDark ? "border-[#3d4a3d]/40" : "border-slate-50")}>
               <input
+                autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search…"
@@ -143,7 +143,7 @@ export function SearchableSelectField({
                 )} aria-label="Interactive control"
               />
             </div>
-            <div className={cn("min-h-0 flex-1 overflow-y-auto py-1", FORM_SCROLL_HIDDEN)} style={{ maxHeight: listMaxHeight }}>
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto py-1" style={{ maxHeight: listMaxHeight }}>
               {clearable && value !== null ? (
                 <button
                   type="button"

@@ -7,6 +7,7 @@ export type MemberFilterOption = { value: string; label: string; avatar: string;
 export function getMemberFilterOptions(
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
   rosterNames: string[] = [],
+  currentMemberName = "",
 ): MemberFilterOption[] {
   // First sighting per name wins - the avatar doesn't change day to day, and
   // a roster name with no activity in range has no row to pull one from at
@@ -17,7 +18,12 @@ export function getMemberFilterOptions(
       if (!byName.has(r.name)) byName.set(r.name, { avatar: r.avatar, avatarUrl: r.avatarUrl })
     }
   }
-  const names = Array.from(new Set([...rosterNames, ...byName.keys()])).sort()
+  const self = currentMemberName.trim()
+  const names = Array.from(new Set([...rosterNames, ...byName.keys(), self].filter(Boolean))).sort((a, b) => {
+    if (a === self) return -1
+    if (b === self) return 1
+    return a.localeCompare(b)
+  })
   return [
     { value: ALL_MEMBERS_VALUE, label: "All members", avatar: "" },
     ...names.map((name) => {

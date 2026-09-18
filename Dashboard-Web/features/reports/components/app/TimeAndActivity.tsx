@@ -55,6 +55,7 @@ export function TimeAndActivityReport() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [displayCurrency, setDisplayCurrency] = useState("")
   // A ref, not state: it must read as current inside the same effect run's
   // .then/.catch the instant a load succeeds, with no extra render in
   // between - state read in a closure from before that render would still
@@ -65,7 +66,11 @@ export function TimeAndActivityReport() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchTimeAndActivityReport({ from: toDateParam(range.start), to: toDateParam(range.end) })
+    fetchTimeAndActivityReport({
+      from: toDateParam(range.start),
+      to: toDateParam(range.end),
+      displayCurrency: displayCurrency || undefined,
+    })
       .then((data) => {
         if (cancelled) return
         hasLoadedOnceRef.current = true
@@ -85,7 +90,7 @@ export function TimeAndActivityReport() {
     return () => {
       cancelled = true
     }
-  }, [range, reloadKey])
+  }, [range, reloadKey, displayCurrency])
 
   if (!hasLoadedOnceRef.current && loading) return <ReportSkeleton tiles={3} rows={8} columns={6} />
   if (!hasLoadedOnceRef.current && error) return <ReportErrorState message={error} onRetry={() => setReloadKey((k) => k + 1)} />
@@ -105,6 +110,9 @@ export function TimeAndActivityReport() {
       onReload={() => setReloadKey((k) => k + 1)}
       loading={loading}
       error={error}
+      displayCurrency={displayCurrency}
+      resolvedDisplayCurrency={reportData.currency?.displayCurrency}
+      onDisplayCurrencyChange={setDisplayCurrency}
     />
   )
 }

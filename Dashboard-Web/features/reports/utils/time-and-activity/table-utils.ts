@@ -2,10 +2,6 @@ import type { TimeActivityDayRow } from "@/features/reports/models/time-and-acti
 
 import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
 
-export function columnVisibleInTable(period: Set<string>, member: Set<string>, key: string): boolean {
-  return period.has(key) || member.has(key)
-}
-
 /** `totalSpent` can be "$0.00" or, for a team paid in more than one currency
  *  with no exchange rate to unify them, "$0.00 + EGP 787.54" (sumMoneyByCurrency).
  *  Stripping non-digits from the whole string ran the two numbers together

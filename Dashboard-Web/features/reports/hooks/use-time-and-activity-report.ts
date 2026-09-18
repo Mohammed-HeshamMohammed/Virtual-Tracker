@@ -6,13 +6,14 @@ import { attachForwardWheelToDocument } from "@/features/reports/utils/time-and-
 import {
   buildDisplayDay,
   buildGroupedRows,
-  columnVisibleInTable,
   comparePeriodRows,
   filterEntries,
   getFilteredSubRows,
   getMemberFilterOptions,
   getProjectFilterOptions,
   groupByColumnLabel,
+  type ActivityLevelFilter,
+  type ManualTimeFilter,
   type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
@@ -37,10 +38,13 @@ const SAVED_VIEW_KEY = "reports:time-and-activity:view"
 type SavedView = {
   groupBy: TimeActivityGroupBy
   memberFilter: string
-  enabledPeriodCols: string[]
-  enabledMemberCols: string[]
+  enabledCols?: string[]
+  enabledPeriodCols?: string[]
+  enabledMemberCols?: string[]
   projectFilter?: string
   trackedTimeFilter?: TrackedTimeFilter
+  manualTimeFilter?: ManualTimeFilter
+  activityLevelFilter?: ActivityLevelFilter
 }
 
 function loadSavedView(): SavedView | null {
@@ -55,9 +59,10 @@ function loadSavedView(): SavedView | null {
 
 export type UseTimeAndActivityReportParams = TimeActivityReportData & {
   range?: { from: string; to: string }
+  currentMemberName?: string
 }
 
-export function useTimeAndActivityReport({ days, memberRows, entries, range }: UseTimeAndActivityReportParams) {
+export function useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName }: UseTimeAndActivityReportParams) {
   const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
@@ -82,7 +87,10 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
   const [trackedTimeFilter, setTrackedTimeFilter] = useState<TrackedTimeFilter>(
     savedView?.trackedTimeFilter ?? "all"
   )
-  const [justSaved, setJustSaved] = useState(false)
+  const [manualTimeFilter, setManualTimeFilter] = useState<ManualTimeFilter>(savedView?.manualTimeFilter ?? "all")
+  const [activityLevelFilter, setActivityLevelFilter] = useState<ActivityLevelFilter>(
+    savedView?.activityLevelFilter ?? "all",
+  )
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [showColumnPicker, setShowColumnPicker] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -158,13 +166,13 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     setDateLabel(first && last ? `${first} - ${last}` : "")
   }, [days, range])
 
-  const [enabledPeriodCols, setEnabledPeriodCols] = useState<Set<string>>(
-    () => new Set(savedView?.enabledPeriodCols ?? DEFAULT_PERIOD_COLS)
-  )
-  const [enabledMemberCols, setEnabledMemberCols] = useState<Set<string>>(
-    () => new Set(savedView?.enabledMemberCols ?? DEFAULT_PERIOD_COLS)
-  )
-  const [columnPickerScope, setColumnPickerScope] = useState<"period" | "member">("period")
+  const [enabledCols, setEnabledCols] = useState<Set<string>>(() => {
+    const saved = savedView?.enabledCols ?? [
+      ...(savedView?.enabledPeriodCols ?? []),
+      ...(savedView?.enabledMemberCols ?? []),
+    ]
+    return new Set(saved.length > 0 ? saved : DEFAULT_PERIOD_COLS)
+  })
   const [sortKey, setSortKey] = useState<string>("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
@@ -184,25 +192,58 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     }
   }, [])
 
-  const memberFilterOptions = useMemo(() => getMemberFilterOptions(memberRows, rosterNames), [memberRows, rosterNames])
+  const memberFilterOptions = useMemo(
+    () => getMemberFilterOptions(memberRows, rosterNames, currentMemberName),
+    [memberRows, rosterNames, currentMemberName],
+  )
   const projectFilterOptions = useMemo(() => getProjectFilterOptions(memberRows), [memberRows])
 
   const displayRows = useMemo(() => {
     const noFilters =
-      memberFilter === ALL_MEMBERS_VALUE && projectFilter === ALL_PROJECTS_VALUE && trackedTimeFilter === "all"
+      memberFilter === ALL_MEMBERS_VALUE &&
+      projectFilter === ALL_PROJECTS_VALUE &&
+      trackedTimeFilter === "all" &&
+      manualTimeFilter === "all" &&
+      activityLevelFilter === "all"
     const filtered = noFilters
       ? days
       : days.filter(
-          (d) => getFilteredSubRows(d.date, memberFilter, memberRows, projectFilter, trackedTimeFilter).length > 0
+          (d) =>
+            getFilteredSubRows(
+              d.date,
+              memberFilter,
+              memberRows,
+              projectFilter,
+              trackedTimeFilter,
+              manualTimeFilter,
+              activityLevelFilter,
+            ).length > 0,
         )
-    return filtered.map((d) => buildDisplayDay(d, memberFilter, memberRows, projectFilter, trackedTimeFilter))
-  }, [memberFilter, projectFilter, trackedTimeFilter, days, memberRows])
+    return filtered.map((d) =>
+      buildDisplayDay(
+        d,
+        memberFilter,
+        memberRows,
+        projectFilter,
+        trackedTimeFilter,
+        manualTimeFilter,
+        activityLevelFilter,
+      ),
+    )
+  }, [memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter, days, memberRows])
 
   const groupedResult = useMemo(() => {
     if (groupBy === "date_per_day") return null
-    const filtered = filterEntries(entries, memberFilter, projectFilter, trackedTimeFilter)
+    const filtered = filterEntries(
+      entries,
+      memberFilter,
+      projectFilter,
+      trackedTimeFilter,
+      manualTimeFilter,
+      activityLevelFilter,
+    )
     return buildGroupedRows(filtered, groupBy)
-  }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter])
+  }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter])
 
   const groupColumnLabel = groupByColumnLabel(groupBy)
 
@@ -251,11 +292,11 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
   // sorting is a deliberate change of what the member is looking at, so it
   // jumps back to page 1 rather than possibly landing on a now out-of-range
   // page of a different result set.
-  const [pageSize, setPageSize] = useState(50)
+  const [pageSize, setPageSize] = useState(8)
   const [page, setPage] = useState(1)
   useEffect(() => {
     setPage(1)
-  }, [memberFilter, projectFilter, trackedTimeFilter, groupBy, sortKey, sortDir, range?.from, range?.to, pageSize])
+  }, [memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter, groupBy, sortKey, sortDir, range?.from, range?.to, pageSize])
   const pageCount = Math.max(1, Math.ceil(tableDisplayRows.length / pageSize))
   const currentPage = Math.min(page, pageCount)
   const pagedRows = useMemo(
@@ -264,21 +305,16 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
   )
 
   const visibleMetricColumns = useMemo(
-    () => TABLE_METRIC_COLUMNS.filter((c) => columnVisibleInTable(enabledPeriodCols, enabledMemberCols, c.key)),
-    [enabledPeriodCols, enabledMemberCols]
+    () => TABLE_METRIC_COLUMNS.filter((c) => enabledCols.has(c.key)),
+    [enabledCols]
   )
 
   function toggleRow(date: string) {
-    setExpandedRows((prev) => {
-      const s = new Set(prev)
-      s.has(date) ? s.delete(date) : s.add(date)
-      return s
-    })
+    setExpandedRows((prev) => (prev.has(date) ? new Set() : new Set([date])))
   }
 
   function toggleCol(key: string) {
-    const setter = columnPickerScope === "period" ? setEnabledPeriodCols : setEnabledMemberCols
-    setter((prev) => {
+    setEnabledCols((prev) => {
       const s = new Set(prev)
       if (s.has(key)) s.delete(key)
       else s.add(key)
@@ -294,29 +330,11 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     }
   }
 
-  const pickerEnabledCols = columnPickerScope === "period" ? enabledPeriodCols : enabledMemberCols
-
   function clearFilters() {
     setProjectFilter(ALL_PROJECTS_VALUE)
     setTrackedTimeFilter("all")
-  }
-
-  function saveView() {
-    const view: SavedView = {
-      groupBy,
-      memberFilter,
-      enabledPeriodCols: [...enabledPeriodCols],
-      enabledMemberCols: [...enabledMemberCols],
-      projectFilter,
-      trackedTimeFilter,
-    }
-    try {
-      window.localStorage.setItem(SAVED_VIEW_KEY, JSON.stringify(view))
-    } catch {
-      // Storage unavailable (private browsing, quota) - view just won't persist.
-    }
-    setJustSaved(true)
-    setTimeout(() => setJustSaved(false), 1500)
+    setManualTimeFilter("all")
+    setActivityLevelFilter("all")
   }
 
   return {
@@ -333,6 +351,10 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     projectFilterOptions,
     trackedTimeFilter,
     setTrackedTimeFilter,
+    manualTimeFilter,
+    setManualTimeFilter,
+    activityLevelFilter,
+    setActivityLevelFilter,
     clearFilters,
     expandedRows,
     toggleRow,
@@ -348,10 +370,7 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     filterPanelLayout,
     dateLabel,
     setDateLabel,
-    enabledPeriodCols,
-    enabledMemberCols,
-    columnPickerScope,
-    setColumnPickerScope,
+    enabledCols,
     sortKey,
     sortDir,
     displayRows,
@@ -367,13 +386,18 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range }: U
     visibleMetricColumns,
     toggleCol,
     handleSortClick,
-    pickerEnabledCols,
     getSubRowsForDay: (date: string) =>
       groupedResult
         ? (groupedResult.subRowsByKey[date] ?? [])
-        : getFilteredSubRows(date, memberFilter, memberRows, projectFilter, trackedTimeFilter),
+        : getFilteredSubRows(
+            date,
+            memberFilter,
+            memberRows,
+            projectFilter,
+            trackedTimeFilter,
+            manualTimeFilter,
+            activityLevelFilter,
+          ),
     groupColumnLabel,
-    saveView,
-    justSaved,
   }
 }
