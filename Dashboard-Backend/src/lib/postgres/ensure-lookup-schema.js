@@ -707,6 +707,24 @@ const MEMBER_DATA_DDL = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_notif_recipient_created ON notifications (recipient_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread ON notifications (recipient_id, read) WHERE read = false`,
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_version VARCHAR(32)",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_platform VARCHAR(32)",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_last_opened_at TIMESTAMPTZ",
+  `CREATE TABLE IF NOT EXISTS agent_notifications (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id    UUID         NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  type            VARCHAR(40)  NOT NULL,
+  title           VARCHAR(160) NOT NULL,
+  message         TEXT         NOT NULL,
+  target_version  VARCHAR(32),
+  read_at         TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  created_by      UUID         REFERENCES members(id) ON DELETE SET NULL
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_notifications_recipient_created
+   ON agent_notifications (recipient_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_notifications_recipient_unread
+   ON agent_notifications (recipient_id, created_at DESC) WHERE read_at IS NULL`,
   `CREATE TABLE IF NOT EXISTS member_tree_cache (
   member_id    UUID        PRIMARY KEY,
   ancestors    JSONB       NOT NULL DEFAULT '[]'::jsonb,
