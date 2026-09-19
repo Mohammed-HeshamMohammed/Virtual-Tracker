@@ -515,6 +515,74 @@ export async function sendOnboardingReminderEmail(input) {
   return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[onboarding-reminder-email]" });
 }
 
+export async function sendAgentUpdateReminderEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const currentVersion = typeof input.currentVersion === "string" ? input.currentVersion.trim() : "";
+  const targetVersion = typeof input.targetVersion === "string" ? input.targetVersion.trim() : "";
+  if (!email || !currentVersion || !targetVersion) return { sent: false, channel: "skipped" };
+
+  const name = greeting(input.displayName);
+  const appUrl = typeof input.appUrl === "string" && input.appUrl.trim() ? input.appUrl.trim() : appSignInUrl();
+  const notes = typeof input.releaseNotes === "string" ? input.releaseNotes.trim().slice(0, 1000) : "";
+  const subject = `Update Virtual Tracker to v${targetVersion}`;
+  const text = [
+    `Hi ${name},`,
+    "",
+    `Your Virtual Tracker v${currentVersion} can be updated to v${targetVersion}.`,
+    notes ? `What changed: ${notes}` : "",
+    "",
+    "Open Virtual Tracker and choose Check for updates. An active timer will not be interrupted.",
+    appUrl,
+  ].filter(Boolean).join("\n");
+  const html = buildAuthBrandedEmailHtml({
+    title: "Virtual Tracker update available",
+    subtitle: `Update from v${escapeHtml(currentVersion)} to v${escapeHtml(targetVersion)}`,
+    badge: "Tracker update",
+    badgeVariant: "invite",
+    preheader: `Virtual Tracker v${targetVersion} is available.`,
+    bodyHtml: `
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(name)},</p>
+      <p style="margin:0 0 14px;">Your Virtual Tracker <strong>v${escapeHtml(currentVersion)}</strong> can be updated to <strong>v${escapeHtml(targetVersion)}</strong>.</p>
+      ${notes ? `<p style="margin:0 0 14px;">${escapeHtml(notes)}</p>` : ""}
+      <p style="margin:0 0 14px;">Open Virtual Tracker and choose <strong>Check for updates</strong>. If you are tracking, installation waits until the timer stops.</p>
+      ${linkFallbackHtml(appUrl)}
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail()),
+  });
+  return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[agent-update-reminder-email]" });
+}
+
+export async function sendAgentInstallInstructionsEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const targetVersion = typeof input.targetVersion === "string" ? input.targetVersion.trim() : "";
+  if (!email || !targetVersion) return { sent: false, channel: "skipped" };
+
+  const name = greeting(input.displayName);
+  const appUrl = typeof input.appUrl === "string" && input.appUrl.trim() ? input.appUrl.trim() : appSignInUrl();
+  const subject = "Install the latest Virtual Tracker app";
+  const text = [
+    `Hi ${name},`,
+    "",
+    `Install or open Virtual Tracker v${targetVersion} to finish setup and receive the latest improvements.`,
+    "",
+    appUrl,
+  ].join("\n");
+  const html = buildAuthBrandedEmailHtml({
+    title: "Install the latest Virtual Tracker",
+    subtitle: `Version ${escapeHtml(targetVersion)} is ready`,
+    badge: "Tracker setup",
+    badgeVariant: "invite",
+    preheader: "Install or open the latest Virtual Tracker desktop app.",
+    bodyHtml: `
+      <p style="margin:0 0 14px;">Hi ${escapeHtml(name)},</p>
+      <p style="margin:0 0 14px;">Install or open <strong>Virtual Tracker v${escapeHtml(targetVersion)}</strong> to finish setup and receive the latest improvements.</p>
+      ${linkFallbackHtml(appUrl)}
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail()),
+  });
+  return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[agent-install-instructions-email]" });
+}
+
 
 export async function sendContactInquiryEmail(input) {
   const to = typeof input.to === "string" ? input.to.trim().toLowerCase() : "";

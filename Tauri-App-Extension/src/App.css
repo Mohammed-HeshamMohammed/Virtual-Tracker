@@ -282,6 +282,181 @@ body {
   cursor: not-allowed;
 }
 
+.titlebar-notifications {
+  position: relative;
+  height: 26px;
+}
+
+.notification-badge {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: rgb(var(--c-bad));
+  color: white;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 13px;
+  text-align: center;
+}
+
+.notification-dropdown {
+  position: absolute;
+  top: 31px;
+  right: -42px;
+  width: min(340px, calc(100vw - 24px));
+  max-height: 390px;
+  overflow: hidden;
+  border: 1px solid var(--outline-variant);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--on-surface);
+  box-shadow: 0 18px 50px rgb(0 0 0 / 0.35);
+  pointer-events: auto;
+}
+
+.notification-dropdown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--outline-variant);
+  font-size: 12px;
+}
+
+.notification-dropdown-head button {
+  border: 0;
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.notification-list {
+  max-height: 338px;
+  overflow-y: auto;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 13px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--surface);
+}
+
+.notification-item.unread {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.notification-item-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.notification-item-copy strong,
+.notification-item-copy p,
+.notification-item-copy time {
+  display: block;
+}
+
+.notification-item-copy strong {
+  font-size: 11px;
+}
+
+.notification-item-copy p {
+  margin: 3px 0;
+  color: var(--on-surface-variant);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.notification-item-copy time {
+  color: var(--on-surface-variant);
+  font-size: 9px;
+}
+
+.notification-update-btn {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 7px;
+  padding: 6px 8px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--on-surface-variant);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tracker-update-banner {
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 42px 10px 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--outline-variant));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+}
+
+.tracker-update-banner > div {
+  min-width: 0;
+}
+
+.tracker-update-banner strong,
+.tracker-update-banner span {
+  display: block;
+}
+
+.tracker-update-banner strong {
+  font-size: 11px;
+}
+
+.tracker-update-banner span {
+  margin-top: 2px;
+  color: var(--on-surface-variant);
+  font-size: 10px;
+}
+
+.tracker-update-banner.state-error {
+  border-color: rgb(var(--c-bad) / 0.45);
+  background: rgb(var(--c-bad) / 0.09);
+}
+
+.tracker-update-banner button {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tracker-update-banner button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .spin {
   animation: spin 0.8s linear infinite;
 }

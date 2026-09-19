@@ -14,6 +14,8 @@ import {
   sendContactInquiryEmail,
   sendReportDeliveryEmail,
   sendOnboardingReminderEmail,
+  sendAgentUpdateReminderEmail,
+  sendAgentInstallInstructionsEmail,
 } from "./email-builders.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
@@ -30,6 +32,8 @@ const ALLOWED_TEMPLATES = new Set([
   "contact-inquiry",
   "report-delivery",
   "onboarding-reminder",
+  "agent-update-reminder",
+  "agent-install-instructions",
 ]);
 
 export async function routeEmail(req, res, url, origin) {
@@ -190,6 +194,24 @@ async function dispatchEmailTemplate(template, body) {
         email: body.email,
         displayName: body.displayName,
         step: body.step,
+        appUrl: body.appUrl,
+      });
+
+    case "agent-update-reminder":
+      return sendAgentUpdateReminderEmail({
+        email: body.email,
+        displayName: body.displayName,
+        currentVersion: body.currentVersion,
+        targetVersion: body.targetVersion,
+        releaseNotes: body.releaseNotes,
+        appUrl: body.appUrl,
+      });
+
+    case "agent-install-instructions":
+      return sendAgentInstallInstructionsEmail({
+        email: body.email,
+        displayName: body.displayName,
+        targetVersion: body.targetVersion,
         appUrl: body.appUrl,
       });
 

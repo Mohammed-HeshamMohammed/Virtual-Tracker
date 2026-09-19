@@ -204,6 +204,35 @@ fn get_version() -> String {
 }
 
 #[tauri::command]
+async fn report_agent_open(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.report_agent_open()).await
+}
+
+#[tauri::command]
+async fn get_agent_notifications(
+    state: tauri::State<'_, AppState>,
+) -> Result<crate::types::AgentNotificationList, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.get_agent_notifications()).await
+}
+
+#[tauri::command]
+async fn mark_agent_notification_read(
+    state: tauri::State<'_, AppState>,
+    notification_id: String,
+) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.mark_agent_notification_read(&notification_id)).await
+}
+
+#[tauri::command]
+async fn mark_all_agent_notifications_read(state: tauri::State<'_, AppState>) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.mark_all_agent_notifications_read()).await
+}
+
+#[tauri::command]
 fn get_profile(state: tauri::State<'_, AppState>) -> ProfileInfo {
     state.controller.get_profile()
 }
@@ -780,6 +809,10 @@ pub fn run() {
             minimize_current,
             close_window,
             get_version,
+            report_agent_open,
+            get_agent_notifications,
+            mark_agent_notification_read,
+            mark_all_agent_notifications_read,
             set_tray_status,
             get_profile,
             get_link_status,

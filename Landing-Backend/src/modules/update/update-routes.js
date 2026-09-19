@@ -44,7 +44,8 @@ async function fetchManifest(release, pat) {
 
 export async function routeUpdateFeed(req, res, url, origin) {
   const match = UPDATE_PATH_RE.exec(url.pathname);
-  if (!match) return false;
+  const isLatestMetadata = url.pathname === "/api/agent/update/latest";
+  if (!match && !isLatestMetadata) return false;
 
   if (req.method !== "GET") {
     applyCors(res, origin);
@@ -53,13 +54,30 @@ export async function routeUpdateFeed(req, res, url, origin) {
     return true;
   }
 
-  const [, target, arch] = match;
   const env = getEnv();
   const pat = env.github.pat;
 
   try {
     const release = await getLatestRelease(env.github.repoOwner, env.github.repoName, pat);
     const manifest = await fetchManifest(release, pat);
+    if (isLatestMetadata) {
+      const body = JSON.stringify({
+        version: manifest.version,
+        notes: manifest.notes ?? "",
+        pub_date: manifest.pub_date,
+      });
+      applyCors(res, origin);
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=60, stale-while-revalidate=240",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end(body);
+      return true;
+    }
+
+    const [, target, arch] = match;
     const platform = manifest.platforms?.[`${target}-${arch}`];
 
     if (!platform) {

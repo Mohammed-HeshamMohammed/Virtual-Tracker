@@ -347,6 +347,21 @@ export type DashboardSummary = {
   recentProjects: RecentProjectSummary[];
 };
 
+export type AgentNotification = {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  targetVersion: string | null;
+  read: boolean;
+  createdAt: string | null;
+};
+
+export type AgentNotificationList = {
+  notifications: AgentNotification[];
+  unreadCount: number;
+};
+
 export type DropdownOption = {
   id: string;
   label: string;

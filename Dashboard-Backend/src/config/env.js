@@ -164,6 +164,18 @@ export function buildEnv(source = process.env) {
     auth: Object.freeze({
       backendUrl: readString(source, "AUTH_BACKEND_URL", "http://localhost:5712"),
     }),
+
+    landing: Object.freeze({
+      backendUrl: readString(
+        source,
+        "LANDING_BACKEND_URL",
+        isProduction ? "https://api.myvirtualtracker.com" : "http://localhost:5714",
+      ),
+    }),
+
+    agent: Object.freeze({
+      inboxMinVersion: readString(source, "AGENT_INBOX_MIN_VERSION", "1.0.24"),
+    }),
   });
 }
 

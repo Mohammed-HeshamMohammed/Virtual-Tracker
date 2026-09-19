@@ -1,6 +1,7 @@
 //! Backend HTTP client, split by domain: this file owns the struct plus auth/token
 //! plumbing shared by every call; each submodule owns one group of endpoints.
 mod classification;
+mod agent_notifications;
 mod compliance;
 mod events;
 mod link;

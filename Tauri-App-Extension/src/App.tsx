@@ -22,6 +22,8 @@ import type {
   WindowLayout,
   ActionResult,
   AgentTask,
+  AgentNotification,
+  AgentNotificationList,
   AgentWorkspace,
   ScreenshotRef,
   TaskDetail,
@@ -150,6 +152,12 @@ function MainApp() {
   const [monitoringNotice, setMonitoringNotice] = useState<MonitoringNoticeView | null>(null);
   const [acceptingNotice, setAcceptingNotice] = useState(false);
   const [version, setVersion] = useState("0.4.0");
+  const [updateNotice, setUpdateNotice] = useState<{
+    version: string;
+    state: "downloading" | "ready" | "error";
+  } | null>(null);
+  const [agentNotifications, setAgentNotifications] = useState<AgentNotification[]>([]);
+  const [agentNotificationUnreadCount, setAgentNotificationUnreadCount] = useState(0);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState("");
@@ -305,12 +313,14 @@ function MainApp() {
   const applyStagedUpdate = useCallback(async () => {
     const staged = pendingUpdateRef.current;
     if (!staged || !isSafeToApplyUpdate()) return;
-    pendingUpdateRef.current = null;
     try {
       await staged.install();
+      pendingUpdateRef.current = null;
       await relaunch();
     } catch (err) {
       console.error("update install failed", err);
+      setUpdateNotice({ version: staged.version, state: "error" });
+      toast.error("The update could not be installed. You can retry without interrupting tracking.");
     }
   }, [isSafeToApplyUpdate]);
 
@@ -320,9 +330,11 @@ function MainApp() {
       try {
         const update = pendingUpdateRef.current ?? (await check());
         if (!update) {
+          setUpdateNotice(null);
           if (manual) toast.message("You're up to date");
           return;
         }
+        setUpdateNotice({ version: update.version, state: "downloading" });
         // Safe whatever the session state is: this only writes a verified
         // installer to disk. ponytail: staged in memory, so a restart before a
         // safe point just re-downloads ~4 MB - persisting it is H.2.4's job,
@@ -331,6 +343,7 @@ function MainApp() {
           await update.download();
           pendingUpdateRef.current = update;
         }
+        setUpdateNotice({ version: update.version, state: "ready" });
         if (isSafeToApplyUpdate()) {
           await applyStagedUpdate();
         } else if (manual) {
@@ -349,6 +362,69 @@ function MainApp() {
   );
 
   const signedIn = Boolean(profile?.signedIn);
+
+  const refreshAgentNotifications = useCallback(async () => {
+    const data = await invoke<AgentNotificationList>("get_agent_notifications");
+    setAgentNotifications(data.notifications ?? []);
+    setAgentNotificationUnreadCount(data.unreadCount ?? 0);
+  }, []);
+
+  const markAgentNotificationRead = useCallback(async (notificationId: string) => {
+    try {
+      await invoke("mark_agent_notification_read", { notificationId });
+      setAgentNotifications((current) => current.map((item) => item.id === notificationId ? { ...item, read: true } : item));
+      setAgentNotificationUnreadCount((current) => Math.max(0, current - 1));
+    } catch (error) {
+      console.error("could not mark tracker notification read", error);
+    }
+  }, []);
+
+  const markAllAgentNotificationsRead = useCallback(async () => {
+    try {
+      await invoke("mark_all_agent_notifications_read");
+      setAgentNotifications((current) => current.map((item) => ({ ...item, read: true })));
+      setAgentNotificationUnreadCount(0);
+    } catch (error) {
+      console.error("could not mark tracker notifications read", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!signedIn) {
+      setAgentNotifications([]);
+      setAgentNotificationUnreadCount(0);
+      return;
+    }
+    let lastReportAt = 0;
+    let reportInFlight = false;
+    const reportIfDue = async (force = false) => {
+      if (reportInFlight || (!force && Date.now() - lastReportAt < 30 * 60_000)) return;
+      reportInFlight = true;
+      try {
+        await invoke("report_agent_open");
+        lastReportAt = Date.now();
+      } catch (error) {
+        console.error("tracker version report failed", error);
+      } finally {
+        reportInFlight = false;
+      }
+    };
+    const syncAgentState = () => {
+      void reportIfDue();
+      void refreshAgentNotifications().catch((error) => console.error("tracker notifications fetch failed", error));
+    };
+    void reportIfDue(true);
+    void refreshAgentNotifications().catch((error) => console.error("tracker notifications fetch failed", error));
+    const onFocus = () => syncAgentState();
+    window.addEventListener("focus", onFocus);
+    const timer = window.setInterval(() => {
+      void refreshAgentNotifications().catch((error) => console.error("tracker notifications fetch failed", error));
+    }, 5 * 60_000);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(timer);
+    };
+  }, [signedIn, refreshAgentNotifications]);
   const staleSession = connection === "signedOut" && signedIn;
   const tracking =
     (session?.status || "").toLowerCase() === "active" ||
@@ -1975,7 +2051,39 @@ function MainApp() {
         checkingUpdate={checkingUpdate}
         theme={themePref}
         onCycleTheme={handleCycleTheme}
+        notifications={agentNotifications}
+        unreadCount={agentNotificationUnreadCount}
+        onMarkNotificationRead={(id) => void markAgentNotificationRead(id)}
+        onMarkAllNotificationsRead={() => void markAllAgentNotificationsRead()}
+        onNotificationUpdate={(notification) => {
+          if (!notification.read) void markAgentNotificationRead(notification.id);
+          void checkForUpdate(true);
+        }}
       />
+
+      {updateNotice ? (
+        <div className={`tracker-update-banner state-${updateNotice.state}`} role="status">
+          <div>
+            <strong>Tracker v{updateNotice.version} is available</strong>
+            <span>
+              {updateNotice.state === "downloading"
+                ? "Downloading the signed update…"
+                : updateNotice.state === "error"
+                  ? "Installation failed. Your tracker is still usable."
+                  : sessionOpen
+                    ? "Ready — installs when tracking stops."
+                    : "Ready to install and restart."}
+            </span>
+          </div>
+          <button
+            type="button"
+            disabled={checkingUpdate || updateNotice.state === "downloading" || sessionOpen}
+            onClick={() => void checkForUpdate(true)}
+          >
+            {updateNotice.state === "error" ? "Retry" : sessionOpen ? "Waiting for timer" : "Update now"}
+          </button>
+        </div>
+      ) : null}
 
       <div
         ref={agentViewRef}

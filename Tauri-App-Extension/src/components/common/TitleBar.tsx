@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { ThemePreference } from "../../types";
+import type { AgentNotification, ThemePreference } from "../../types";
 
 const NEXT_THEME: Record<ThemePreference, ThemePreference> = {
   system: "light",
@@ -50,6 +51,11 @@ export function TitleBar({
   checkingUpdate,
   theme,
   onCycleTheme,
+  notifications = [],
+  unreadCount = 0,
+  onMarkNotificationRead,
+  onMarkAllNotificationsRead,
+  onNotificationUpdate,
 }: {
   title?: string;
   showBrand?: boolean;
@@ -58,7 +64,31 @@ export function TitleBar({
   checkingUpdate?: boolean;
   theme?: ThemePreference;
   onCycleTheme?: (next: ThemePreference) => void;
+  notifications?: AgentNotification[];
+  unreadCount?: number;
+  onMarkNotificationRead?: (id: string) => void;
+  onMarkAllNotificationsRead?: () => void;
+  onNotificationUpdate?: (notification: AgentNotification) => void;
 }) {
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const notificationRootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!notificationsOpen) return;
+    const close = (event: MouseEvent) => {
+      if (!notificationRootRef.current?.contains(event.target as Node)) setNotificationsOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotificationsOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [notificationsOpen]);
+
   return (
     <header className="titlebar">
       <div className="titlebar-drag" data-tauri-drag-region>
@@ -91,6 +121,51 @@ export function TitleBar({
           >
             <ThemeGlyph theme={theme} />
           </button>
+        ) : null}
+        {onCheckUpdate ? (
+          <div className="titlebar-notifications" ref={notificationRootRef}>
+            <button
+              className="win-btn"
+              type="button"
+              title="Tracker notifications"
+              aria-label={`Tracker notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
+              aria-expanded={notificationsOpen}
+              onClick={() => setNotificationsOpen((open) => !open)}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.35-1.65h-4.7A2.5 2.5 0 0 0 12 22Zm7-5-1.8-2.25V10a5.2 5.2 0 0 0-4.2-5.1V4a1 1 0 1 0-2 0v.9A5.2 5.2 0 0 0 6.8 10v4.75L5 17v1h14v-1Z" />
+              </svg>
+              {unreadCount > 0 ? <span className="notification-badge">{Math.min(unreadCount, 99)}</span> : null}
+            </button>
+            {notificationsOpen ? (
+              <div className="notification-dropdown" role="dialog" aria-label="Tracker notifications">
+                <div className="notification-dropdown-head">
+                  <strong>Tracker notifications</strong>
+                  {unreadCount > 0 ? <button type="button" onClick={onMarkAllNotificationsRead}>Mark all read</button> : null}
+                </div>
+                <div className="notification-list">
+                  {notifications.length ? notifications.map((notification) => (
+                    <article
+                      key={notification.id}
+                      className={`notification-item${notification.read ? "" : " unread"}`}
+                      onClick={() => { if (!notification.read) onMarkNotificationRead?.(notification.id); }}
+                    >
+                      <div className="notification-item-copy">
+                        <strong>{notification.title}</strong>
+                        <p>{notification.message}</p>
+                        {notification.createdAt ? <time>{new Date(notification.createdAt).toLocaleString()}</time> : null}
+                      </div>
+                      {notification.targetVersion ? (
+                        <button type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationUpdate?.(notification); }}>
+                          Update now
+                        </button>
+                      ) : null}
+                    </article>
+                  )) : <p className="notification-empty">No tracker notifications</p>}
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
         {onCheckUpdate ? (
           <button

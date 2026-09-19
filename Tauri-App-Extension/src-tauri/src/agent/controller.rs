@@ -733,6 +733,37 @@ impl AgentController {
         }
     }
 
+    pub fn report_agent_open(&self) -> Result<(), String> {
+        let platform = match std::env::consts::OS {
+            "windows" => "windows",
+            "macos" => "macos",
+            "linux" => "linux",
+            other => return Err(format!("Unsupported tracker platform: {other}")),
+        };
+        self.api
+            .lock()
+            .report_agent_open(crate::constants::APP_VERSION, platform)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn get_agent_notifications(&self) -> Result<crate::types::AgentNotificationList, String> {
+        self.api.lock().fetch_agent_notifications().map_err(|error| error.to_string())
+    }
+
+    pub fn mark_agent_notification_read(&self, notification_id: &str) -> Result<(), String> {
+        self.api
+            .lock()
+            .mark_agent_notification_read(notification_id)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn mark_all_agent_notifications_read(&self) -> Result<(), String> {
+        self.api
+            .lock()
+            .mark_all_agent_notifications_read()
+            .map_err(|error| error.to_string())
+    }
+
     pub fn list_projects(&self) -> Result<Vec<crate::types::ProjectInfo>, String> {
         self.api.lock().fetch_viewer_projects()
     }

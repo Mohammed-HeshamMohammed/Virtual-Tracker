@@ -32,6 +32,7 @@ import { routeNotifications } from "../modules/notifications/routes.js";
 import { routeDashboard } from "../modules/dashboard/routes.js";
 import { routeBootstrap } from "../modules/bootstrap/routes.js";
 import { routeAuthIdentity } from "../modules/auth/identity-routes.js";
+import { routeAgentVersions } from "../modules/agent-versions/routes.js";
 import { isAuthnApiPath } from "../modules/auth/authn-paths.js";
 import { probeBackendReadiness } from "../modules/auth/readiness.js";
 import { isSessionCookiePath } from "../modules/auth/session-cookie.js";
@@ -196,6 +197,7 @@ export async function handleRequest(req, res) {
     if (await routeMemberInvites(req, res, url, origin)) return;
     if (await routeMemberMigration(req, res, url, origin)) return;
     if (await routeMemberOnboarding(req, res, url, origin)) return;
+    if (await routeAgentVersions(req, res, url, origin)) return;
     if (await routeMemberTransferRequests(req, res, url, origin)) return;
     if (await routeMemberRelationships(req, res, url, origin)) return;
     if (await routeActivity(req, res, url, origin)) return;
