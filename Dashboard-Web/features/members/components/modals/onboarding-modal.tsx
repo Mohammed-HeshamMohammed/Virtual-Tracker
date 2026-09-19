@@ -8,6 +8,7 @@ import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { Toggle } from "@/shared/ui/toggle";
 import { getMemberOnboarding, sendMemberOnboardingReminder, type MemberOnboardingRow } from "@/features/members/services/member-onboarding"
 import { useAuth } from "@/shared/providers/app"
+import { AppVersionsTab } from "@/features/members/components/modals/app-versions-tab"
 
 const ONBOARDING_ROWS_PER_PAGE = 5
 
@@ -20,6 +21,7 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
   const [sendingReminderForId, setSendingReminderForId] = useComponentState<string | null>(null)
   const [page, setPage] = useComponentState(0)
   const [isClosing, setIsClosing] = useComponentState(false)
+  const [activeTab, setActiveTab] = useComponentState<"onboarding" | "versions">("onboarding")
   const handleClose = () => {
     setIsClosing(true)
     onClose()
@@ -118,7 +120,7 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
           <div>
             <h2 className="text-xl font-bold text-slate-800 dark:text-slate-100">Team onboarding</h2>
             <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-500 dark:text-slate-400">
-              See the progress of members invited via email and send reminders to help them get fully onboarded.
+              Review onboarding progress, tracker versions, and update delivery.
             </p>
           </div>
           <button onClick={handleClose} className="mt-1 rounded-lg p-1.5 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800" type="button">
@@ -126,6 +128,26 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        <div className="flex gap-1 border-b border-slate-100 px-8 dark:border-slate-800">
+          {(["onboarding", "versions"] as const).map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "border-b-2 px-3 py-2 text-sm font-semibold transition-colors",
+                activeTab === tab
+                  ? "border-blue-500 text-blue-600 dark:border-emerald-400 dark:text-emerald-400"
+                  : "border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200",
+              )}
+            >
+              {tab === "onboarding" ? "Onboarding" : "App versions"}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "onboarding" ? (
+          <>
         <div className="flex items-center gap-3 px-8 pb-4">
           <Toggle checked={showOnboarded} onChange={() => setShowOnboarded((v) => !v)} />
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Show onboarded members</span>
@@ -253,6 +275,12 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
             </p>
           </div>
         </div>
+          </>
+        ) : (
+          <div className="px-8 pb-7 pt-5">
+            <AppVersionsTab />
+          </div>
+        )}
       </motion.div>
     </motion.div>
   )
