@@ -86,7 +86,7 @@ mock.module("../src/http/team-member-assign-policy.js", {
     canAssignMemberToTeam: () => true,
     canBeTeamLead: () => true,
     canBeTeamMember: () => true,
-    isClientRole: () => false,
+    isClientRole: (roleName) => roleName === "Client",
     TEAM_CLIENT_DENIED_MESSAGE: "client",
     TEAM_INELIGIBLE_MEMBER_MESSAGE: "ineligible",
     TEAM_LEAD_ROLE_DENIED_MESSAGE: "lead",
@@ -163,6 +163,7 @@ mock.module("../src/modules/schema/catalog/index.js", {
       ["teams", { key: "teams", collection: "teams", fields: { id: "uuid", name: "string" } }],
       ["employment", { key: "employment", collection: "employment", fields: { id: "uuid", member_id: "uuid" } }],
       ["task-comments", { key: "task-comments", collection: "tasks", fields: { id: "uuid", task_id: "uuid", body: "text" } }],
+      ["tasks", { key: "tasks", collection: "tasks", fields: { id: "uuid", title: "string", status: "string" } }],
       ["projects", { key: "projects", collection: "projects", fields: { id: "uuid", client_can_manage: "boolean", client_can_track: "boolean" } }],
       ["time-entries", { key: "time-entries", collection: "time_entries", fields: { id: "uuid", member_id: "uuid", project_id: "uuid", status: "string" } }],
     ]),
@@ -375,16 +376,41 @@ test("a comment cannot be created on a task the viewer cannot access", async () 
   assert.deepEqual(stub.writes, [], "no comment may be written for an inaccessible task");
 });
 
-// A client_can_manage client can edit a project's tasks - that's the whole
-// point of the flag - but the flag itself, and its independent
-// client_can_track sibling, are not theirs to grant themselves.
-test("a client_can_manage client can PATCH their project's ordinary fields", async () => {
+// Clients have absolute read-only access to Project Management. "tasks"
+// itself isn't in MANAGEMENT_WRITE_KEYS (employees may edit their own
+// tasks), and task comments/subtasks/attachments are only gated by task
+// visibility - so both need an explicit client block of their own.
+
+test("a client cannot PATCH a task even when nothing else would block it", async () => {
+  reset(CLIENT);
+  stub.rows["tasks:t1"] = { id: "t1", project_id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/tasks/t1", { title: "Renamed by client" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, []);
+});
+
+test("a client cannot create a task comment even when nothing else would block it", async () => {
+  reset(CLIENT);
+  const { req, res, url } = makeReqRes("POST", "/api/tasks/t1/comments", { body: "hi" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, []);
+});
+
+// Clients have absolute read-only access to Project Management: unlike the
+// old client_can_manage bypass, a project flagged client_can_manage grants no
+// write access to the "projects" entity at all (task creation is a separate,
+// narrower allowance covered elsewhere - see task-creation-restriction.test.js
+// and viewerCanCreateProjectTasks).
+test("a client_can_manage client still cannot PATCH the project's ordinary fields", async () => {
   reset(CLIENT);
   stub.clientManagesProjectId = "p1";
   stub.rows["projects:p1"] = { id: "p1" };
   const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { name: "Renamed by client" });
   await routeSchemaCrud(req, res, url, {}, undefined);
-  assert.equal(stub.writes.includes("update:projects:p1"), true, "an ordinary field edit must succeed");
+  assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
+  assert.deepEqual(stub.writes, [], "no write may reach the database");
 });
 
 test("a client_can_manage client cannot grant themselves client_can_track via the same PATCH", async () => {

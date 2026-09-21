@@ -172,7 +172,9 @@ export function canCreateTasksInProject(
   clientCanManage = false,
 ): boolean {
   if (canCreateTasksByOrgRole(orgRole)) return true
-  if (normalizeMemberRole(orgRole) === "client") return clientCanManage === true
+  // Clients have absolute read-only access to Project Management, even on a
+  // project flagged "client can manage".
+  if (normalizeMemberRole(orgRole) === "client") return false
   if (!memberId) return false
   const managesAnyProject = projectMembers.some(
     (row) => row.memberId === memberId && isProjectManagerRole(row.projectRole),
@@ -230,23 +232,25 @@ export function canClassifyActivity(role: string): boolean {
   return key === "owner" || key === "superadmin" || key === "admin"
 }
 
-export function defaultNavItemForRole(_role: string): string {
+export function defaultNavItemForRole(role: string): string {
+  if (normalizeMemberRole(role) === "client") return "reports-work-sessions"
   return "command-center"
 }
 
 const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "settings"])
 
-const CLIENT_EXCLUDED_PAGE_IDS = new Set(["calendar-timeoff"])
+// pm-clients is excluded for the Clients role: it lists every client company
+// in the org, and a client login must never see other customers' records.
+const CLIENT_EXCLUDED_PAGE_IDS = new Set(["calendar-timeoff", "pm-clients"])
 
-const CLIENT_SECTION_IDS = new Set([
-  "dashboard",
-  "timesheets",
-  "activity",
-  "project-management",
-  "reports",
-  "people",
-  "settings",
-  "financials",
+const CLIENT_SECTION_IDS = new Set(["timesheets", "activity", "project-management", "reports"])
+
+const CLIENT_ALLOWED_REPORT_PAGE_IDS = new Set([
+  "reports-all",
+  "reports-work-sessions",
+  "reports-apps-urls",
+  "reports-daily-limits",
+  "reports-weekly-limits",
 ])
 
 export function isReadOnlyRole(role: string): boolean {
@@ -269,29 +273,47 @@ export function allowedNavSectionIds(role: string): Set<string> {
   return ids
 }
 
+// Single source of truth for what the Clients role can see: both the
+// rendered sidebar (visibleNavSections) and the page-navigation guard
+// (isPageAllowedForRole, via getClientPageIds) build off this so a page
+// hidden from the sidebar can never be reached by direct navigation either.
+function clientVisibleSections(): NavSection[] {
+  const hidden = clientHiddenPageIds()
+  const sections = NAV_SECTIONS.filter((s) => CLIENT_SECTION_IDS.has(s.id))
+  return sections.map((s) => {
+    if (s.id === "timesheets") {
+      return { ...s, pages: s.pages?.filter((p) => p.id === "timesheets-view") }
+    }
+    if (s.id === "reports") {
+      return {
+        ...s,
+        pages: s.pages?.filter((p) => CLIENT_ALLOWED_REPORT_PAGE_IDS.has(p.id)),
+        subsections: s.subsections
+          ?.map((sub) => ({
+            ...sub,
+            items: sub.items.filter((item) => CLIENT_ALLOWED_REPORT_PAGE_IDS.has(item.id)),
+          }))
+          .filter((sub) => sub.items.length > 0),
+      }
+    }
+    return {
+      ...s,
+      pages: s.pages?.filter((p) => !hidden.has(p.id)),
+      subsections: s.subsections?.map((sub) => ({
+        ...sub,
+        items: sub.items.filter((item) => !hidden.has(item.id)),
+      })),
+    }
+  })
+}
+
 export function visibleNavSections(role: string): NavSection[] {
   if (canAccessAllSidebarTabs(role)) return NAV_SECTIONS
 
-  const isClient = normalizeMemberRole(role) === "client"
+  if (normalizeMemberRole(role) === "client") return clientVisibleSections()
+
   const allowedSectionIds = allowedNavSectionIds(role)
   const sections = NAV_SECTIONS.filter((s) => allowedSectionIds.has(s.id))
-
-  if (isClient) {
-    const hidden = clientHiddenPageIds()
-    return sections.map((s) => {
-      if (s.id === "timesheets") {
-        return { ...s, pages: s.pages?.filter((p) => p.id === "timesheets-view") }
-      }
-      return {
-        ...s,
-        pages: s.pages?.filter((p) => !hidden.has(p.id)),
-        subsections: s.subsections?.map((sub) => ({
-          ...sub,
-          items: sub.items.filter((item) => !hidden.has(item.id)),
-        })),
-      }
-    })
-  }
 
   return sections.map((s) => {
     if (s.id === "dashboard") {
@@ -327,9 +349,15 @@ let clientPageIdsCache: Set<string> | null = null
 
 function getClientPageIds(): Set<string> {
   if (!clientPageIdsCache) {
-    clientPageIdsCache = collectPageIdsForSections(CLIENT_SECTION_IDS, false)
-    for (const id of CLIENT_EXCLUDED_PAGE_IDS) clientPageIdsCache.delete(id)
-    clientPageIdsCache.add("profile")
+    const ids = new Set<string>()
+    for (const section of clientVisibleSections()) {
+      for (const page of section.pages ?? []) ids.add(page.id)
+      for (const sub of section.subsections ?? []) {
+        for (const item of sub.items) ids.add(item.id)
+      }
+    }
+    ids.add("profile")
+    clientPageIdsCache = ids
   }
   return new Set(clientPageIdsCache)
 }
