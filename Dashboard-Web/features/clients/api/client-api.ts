@@ -187,3 +187,40 @@ export async function deleteClient(id: string): Promise<void> {
   const res = await apiFetch(apiPath(`/api/clients/${id}`), { method: "DELETE" })
   if (!res.ok) throw new Error(`Failed to delete client: ${res.status}`)
 }
+
+/** First-sign-in client self-setup (ClientSelfSetupGate). */
+export type ClientSelfSetupStatus = {
+  required: boolean
+  clientId?: string
+  autoLinked?: boolean
+  prefill?: { name: string; email: string; phone: string }
+}
+
+export async function fetchClientSelfSetupStatus(): Promise<ClientSelfSetupStatus> {
+  const res = await apiFetch(apiPath("/api/clients/self-setup"))
+  const json = await readJsonSafe<ApiEnvelope<ClientSelfSetupStatus>>(res)
+  if (!res.ok) throw extractApiError(res.status, "Failed to check client setup", json)
+  if (!json?.success || !json.data) throw new Error(json?.error || "Failed to check client setup")
+  return json.data
+}
+
+export async function completeClientSelfSetup(data: ClientFormData): Promise<void> {
+  const res = await apiFetch(apiPath("/api/clients/self-setup"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    // Only what a client may set about themselves; the server ignores the rest.
+    body: JSON.stringify({
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      address: data.address,
+      city: data.city,
+      state: data.state,
+      zip: data.zip,
+      country: data.country,
+    }),
+  })
+  const json = await readJsonSafe<ApiEnvelope<unknown>>(res)
+  if (!res.ok) throw extractApiError(res.status, "Failed to save your client details", json)
+  if (!json?.success) throw new Error(json?.error || "Failed to save your client details")
+}

@@ -14,6 +14,7 @@ import { LauncherGoogleOAuthBanner } from "@/features/auth/components/launcher-g
 import { GOOGLE_OAUTH_REDIRECT_MESSAGE } from "@/features/auth"
 import { AuthGateShell } from "@/features/auth/components/auth-gate-shell"
 import { DashboardShell } from "@/app/dashboard-shell"
+import { ClientSelfSetupGate } from "@/features/clients/components/client-self-setup-gate"
 import { InviteAcceptForm } from "@/features/members"
 import { TransferAcceptForm } from "@/features/members"
 import { DASHBOARD_PATH } from "@/features/auth"
@@ -118,7 +119,11 @@ function HomeClientInner() {
     )
   }
 
-  return <DashboardShell />
+  return (
+    <ClientSelfSetupGate>
+      <DashboardShell />
+    </ClientSelfSetupGate>
+  )
 }
 
 export function HomeClient() {
