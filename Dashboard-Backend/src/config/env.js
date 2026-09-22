@@ -146,6 +146,9 @@ export function buildEnv(source = process.env) {
 
     postgres: Object.freeze({
       url: readString(source, "POSTGRES_URL"),
+      // See ensure-tenancy-rls.js's own doc comment: a one-way deploy, off
+      // by default, turned on only after a staging soak.
+      tenancyRlsEnabled: readBool(source, "POSTGRES_TENANCY_RLS_ENABLED", false),
     }),
 
     features: Object.freeze({

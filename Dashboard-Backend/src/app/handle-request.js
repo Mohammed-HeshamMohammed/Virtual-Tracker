@@ -11,6 +11,7 @@ import { routeMemberRemoveFromTree } from "../modules/members/routes/member-remo
 import { routeMemberInvites } from "../modules/members/routes/member-invites.routes.js";
 import { routeMemberMigration } from "../modules/members/routes/member-migration.routes.js";
 import { routeMemberRelationships } from "../modules/member-relationships/routes.js";
+import { routeCustomerAccounts } from "../modules/customer-accounts/routes.js";
 import { routeMemberTransferRequests } from "../modules/hierarchy/routes.js";
 import { routeMemberOnboarding } from "../modules/member-onboarding/routes.js";
 import { routeSchemaCrud } from "../modules/schema/routes.js";
@@ -200,6 +201,7 @@ export async function handleRequest(req, res) {
     if (await routeAgentVersions(req, res, url, origin)) return;
     if (await routeMemberTransferRequests(req, res, url, origin)) return;
     if (await routeMemberRelationships(req, res, url, origin)) return;
+    if (await routeCustomerAccounts(req, res, url, origin)) return;
     if (await routeActivity(req, res, url, origin)) return;
     if (await routeCompliance(req, res, url, origin)) return;
     if (await routeClassification(req, res, url, origin)) return;

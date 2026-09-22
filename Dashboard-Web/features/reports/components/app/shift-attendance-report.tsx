@@ -54,6 +54,10 @@ function formatDay(day: string): string {
 
 const STATUS_STYLE: Record<string, string> = {
   worked: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300",
+  // A scheduled day that was worked but came in under the member's own
+  // configured daily hours. Deliberately its own colour between worked and
+  // missed - it is neither.
+  short: "bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300",
   missed: "bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-300",
   excused: "bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300",
   "time-off": "bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300",
@@ -62,6 +66,7 @@ const STATUS_STYLE: Record<string, string> = {
 
 const STATUS_LABEL: Record<string, string> = {
   worked: "Worked",
+  short: "Short",
   missed: "Missed",
   excused: "Excused",
   "time-off": "Time off",
@@ -153,18 +158,23 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
 
   const summary = useMemo(() => {
     const worked = rows.filter((r) => r.status === "worked").length
+    const short = rows.filter((r) => r.status === "short").length
     const missed = rows.filter((r) => r.status === "missed").length
     const excused = rows.filter((r) => r.status === "excused" || r.status === "time-off").length
     const unscheduled = rows.filter((r) => r.status === "unscheduled").length
     // Excused days are neither kept nor broken, so they are left out of the
-    // rate rather than counted against the member.
-    const scheduled = worked + missed
+    // rate rather than counted against the member. A short day IS a
+    // scheduled day that was turned up for, so it belongs in the denominator
+    // - counting it only against the member would punish someone who worked
+    // most of their day the same as someone who worked none of it.
+    const scheduled = worked + short + missed
     return {
       worked,
+      short,
       missed,
       excused,
       unscheduled,
-      rate: scheduled > 0 ? Math.round((worked / scheduled) * 100) : 0,
+      rate: scheduled > 0 ? Math.round(((worked + short) / scheduled) * 100) : 0,
     }
   }, [rows])
 
@@ -178,6 +188,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
         rangeLabel: dateLabel,
         summary: [
           { label: "Worked", value: String(summary.worked) },
+          { label: "Short", value: String(summary.short) },
           { label: "Missed", value: String(summary.missed) },
           { label: "Excused", value: String(summary.excused) },
           { label: "Unscheduled", value: String(summary.unscheduled) },
@@ -189,6 +200,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
             title: "Days by status",
             data: [
               { label: "Worked", value: summary.worked },
+              { label: "Short", value: summary.short },
               { label: "Missed", value: summary.missed },
               { label: "Excused", value: summary.excused },
               { label: "Unscheduled", value: summary.unscheduled },
@@ -244,6 +256,7 @@ function ShiftAttendanceTable({ filters }: { filters: ReportFilterState }) {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             {[
               ["Worked", String(summary.worked)],
+              ["Short", String(summary.short)],
               ["Missed", String(summary.missed)],
               ["Excused", String(summary.excused)],
               ["Unscheduled", String(summary.unscheduled)],

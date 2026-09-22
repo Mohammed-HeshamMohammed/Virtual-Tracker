@@ -50,7 +50,11 @@ export interface ProjectData {
   health: ProjectHealthItem[]
   utilizationPercent: number
   utilizationOffset: number
-  utilizationMembers: { optimal: number; over: number; under: number }
+  utilizationMembers: { onTrack: number; over: number; under: number; noLimit: number }
+  /** How many members the percentage was actually computed from - everyone
+   *  with a weekly limit set. Zero means the ring's 0% is "nobody has a
+   *  limit configured", not "nobody worked". */
+  utilizationCounted: number
   utilizationBreakdown: UtilizationMember[]
 }
 
@@ -58,10 +62,12 @@ export type UtilizationMember = {
   id: string
   name: string
   initials: string
-  percent: number
+  /** null when the member has no weekly limit configured - there is no
+   *  capacity to divide by, so there is no honest percentage to show. */
+  percent: number | null
   hours: number
-  capacityHours: number
-  load: "optimal" | "over" | "under"
+  capacityHours: number | null
+  load: "on_track" | "over" | "under" | "no_limit"
 }
 
 export type ActivityFeedItem = {
@@ -105,6 +111,7 @@ export type ApiProjectData = {
   utilizationPercent: number
   utilizationOffset: number
   utilizationMembers: ProjectData["utilizationMembers"]
+  utilizationCounted?: number
   utilizationBreakdown: UtilizationMember[]
 }
 

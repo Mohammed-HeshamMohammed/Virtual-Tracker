@@ -16,9 +16,11 @@ import { sanitizePersonNameInput } from "@/shared/validation/person-name"
 import { NotifyToastHost } from "@/shared/ui/layout"
 import type { NotifyAlertTone } from "@/shared/ui/alert-notify"
 import { listAssignableRoles } from "@/features/auth/permissions/role-hierarchy"
-import { canMigrateMembers } from "@/features/auth"
+import { canMigrateMembers, isOwnerOrSuperAdminRole } from "@/features/auth"
 import { useAuth } from "@/shared/providers/app"
 import { resolveInviteUrl } from "@/features/members/api/member-api"
+import { CustomerAccountForm } from "@/features/customer-accounts/components/customer-account-form"
+import type { CreateCustomerAccountResult } from "@/features/customer-accounts/models/customer-account"
 
 export interface AddMembersModalProps {
   onClose: () => void
@@ -130,8 +132,13 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
   const assignableRoles = useMemo(() => listAssignableRoles(memberRole), [memberRole])
   const defaultRole = assignableRoles[assignableRoles.length - 1] ?? "Viewer"
   const canMigrate = canMigrateMembers(memberRole ?? "")
+  // US-1: the tab is visible only to Owners/Super Admins - the backend
+  // rejects every other role from every customer-accounts endpoint
+  // regardless, so this is a UI convenience, not the enforcement boundary.
+  const canSeeCustomerAccounts = isOwnerOrSuperAdminRole(memberRole ?? "")
 
-  const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate">("invites")
+  const [mode, setMode] = useComponentState<"invites" | "accounts" | "migrate" | "customer">("invites")
+  const [customerBusy, setCustomerBusy] = useComponentState(false)
   const [isSubmitting, setIsSubmitting] = useComponentState(false)
   const [isClosing, setIsClosing] = useComponentState(false)
   const handleClose = useCallback(() => {
@@ -169,7 +176,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
 
   const [toast, setToast] = useComponentState<{ message: string; title: string; tone: NotifyAlertTone } | null>(null)
   const [shareLinkBusy, setShareLinkBusy] = useComponentState(false)
-  const prevModeRef = useRef<"invites" | "accounts" | "migrate">("invites")
+  const prevModeRef = useRef<"invites" | "accounts" | "migrate" | "customer">("invites")
   const dismissToast = useCallback(() => {
     setToast(null)
   }, [])
@@ -184,7 +191,10 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     if (mode === "migrate" && !canMigrate) {
       setMode("invites")
     }
-  }, [assignableRoles, defaultRole, inviteRole, accountRole, mode, canMigrate])
+    if (mode === "customer" && !canSeeCustomerAccounts) {
+      setMode("invites")
+    }
+  }, [assignableRoles, defaultRole, inviteRole, accountRole, mode, canMigrate, canSeeCustomerAccounts])
 
   const resolveMigrateRole = useCallback(
     (user: MigratableAuthUser): MemberRole =>
@@ -267,6 +277,23 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
     const nextVal = field === "firstName" || field === "lastName" ? sanitizePersonNameInput(val) : val
     setAccountForm((prev) => ({ ...prev, [field]: nextVal }))
   }
+
+  const handleCustomerAccountCreated = useCallback(
+    async (result: CreateCustomerAccountResult) => {
+      const copied = await copyTextToClipboard(result.inviteUrl)
+      setToast({
+        title: "Customer account created",
+        tone: "info",
+        message: result.emailSent
+          ? `Invite sent to ${result.tenant.email}.${copied ? " Link also copied to clipboard." : `\n\n${result.inviteUrl}`}`
+          : `Email delivery is not configured. Share this link with ${result.tenant.email} manually:\n\n${result.inviteUrl}`,
+      })
+      // Stays open (unlike the other tabs' handlers, which close immediately)
+      // so the Owner can copy the invite link before it scrolls out of view -
+      // same reasoning as handleShareInviteLink just above.
+    },
+    [],
+  )
 
   function formatShareLinkExpiry(expiresAt: string | null): string {
     if (!expiresAt) return "7 days"
@@ -484,6 +511,7 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                 { id: "invites" as const, label: "Send invites" },
                 { id: "accounts" as const, label: "Create account" },
                 ...(canMigrate ? [{ id: "migrate" as const, label: "Migrate" }] : []),
+                ...(canSeeCustomerAccounts ? [{ id: "customer" as const, label: "Customer accounts" }] : []),
               ] as const
             ).map((tab) => {
               const active = mode === tab.id
@@ -561,6 +589,12 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
                   onRoleChange={setAccountRole}
                   onToggleWelcomeEmail={() => setSendWelcomeEmail((v) => !v)}
                 />
+              ) : mode === "customer" ? (
+                <CustomerAccountForm
+                  onCreated={handleCustomerAccountCreated}
+                  onError={(message) => setToast({ message, title: "Customer accounts", tone: "error" })}
+                  onBusyChange={setCustomerBusy}
+                />
               ) : (
                 <MigrateForm
                   users={migratableUsers}
@@ -603,23 +637,31 @@ export function AddMembersModal({ onClose, onAdd, onShareLink, onPending, onSucc
           <div className="flex gap-2">
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100 transition-colors" type="button"
+              disabled={mode === "customer" && customerBusy}
+              className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-100 transition-colors disabled:opacity-50" type="button"
             >
-              Cancel
+              {mode === "customer" ? "Close" : "Cancel"}
             </button>
-            <button
-              onClick={() => void handleSend()}
-              disabled={isSubmitting}
-              className="px-5 py-2 bg-blue-500 dark:bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 dark:hover:bg-emerald-500 transition-colors disabled:opacity-50" type="button"
-            >
-              {isSubmitting
-                ? "Checking…"
-                : mode === "invites"
-                  ? "Send invites"
-                  : mode === "accounts"
-                    ? "Create account"
-                    : "Migrate"}
-            </button>
+            {mode === "customer" ? null : (
+              // CustomerAccountForm renders its own submit button instead of
+              // this shared one - the unlock step makes "Send invites"/
+              // "Create account" the wrong label for every stage of that
+              // pane, and disabling this one instead of hiding it would
+              // leave a dead button sitting next to the pane's real one.
+              <button
+                onClick={() => void handleSend()}
+                disabled={isSubmitting}
+                className="px-5 py-2 bg-blue-500 dark:bg-emerald-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-600 dark:hover:bg-emerald-500 transition-colors disabled:opacity-50" type="button"
+              >
+                {isSubmitting
+                  ? "Checking…"
+                  : mode === "invites"
+                    ? "Send invites"
+                    : mode === "accounts"
+                      ? "Create account"
+                      : "Migrate"}
+              </button>
+            )}
           </div>
         </div>
       </motion.div>

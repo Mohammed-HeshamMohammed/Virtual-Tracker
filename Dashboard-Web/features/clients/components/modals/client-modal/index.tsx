@@ -54,6 +54,7 @@ import {
 } from "@/features/clients/components/modals/client-modal/client-modal-motion"
 
 const TABS_AFTER_GENERAL = MODAL_TABS.slice(1)
+const SELF_SETUP_TABS: ModalTab[] = ["General", "Contact info"]
 
 const CLIENT_MEMBER_TAB = "Member" as const
 type ClientModalTab = ModalTab | typeof CLIENT_MEMBER_TAB
@@ -90,6 +91,7 @@ export function ClientModal({
   initialData,
   editClientId,
   onEntityGone,
+  selfSetup,
 }: {
   onClose: () => void
   onSave: (c: ClientFormData, meta: ClientSaveMeta) => void | Promise<void>
@@ -99,13 +101,26 @@ export function ClientModal({
   initialData?: ApiClient
   editClientId?: string
   onEntityGone?: (message: string) => void
+  /**
+   * A Client filling in their OWN client record on first sign-in
+   * (ClientSelfSetupGate). The same form, cut down to what a client may say
+   * about themselves: General + Contact info, name and email editable, no
+   * member picker (it is always them), no projects/budget/invoicing (the
+   * organization's call), and no way to dismiss it.
+   */
+  selfSetup?: { prefill: { name: string; email: string; phone: string } }
 }) {
   const isEdit = mode === "edit"
+  const isSelf = Boolean(selfSetup)
   const [tab, setTab] = useComponentState<ClientModalTab>("General")
   const [addNewClientMember, setAddNewClientMember] = useComponentState(false)
   const [memberDraft, setMemberDraft] = useComponentState<ClientMemberDraft>(() => emptyClientMemberDraft())
   const [form, setForm] = useComponentState<ClientFormData>(() =>
-    initialData ? clientFormFromApi(initialData) : emptyClient(),
+    initialData
+      ? clientFormFromApi(initialData)
+      : selfSetup
+        ? { ...emptyClient(), ...selfSetup.prefill }
+        : emptyClient(),
   )
   const [addressExpanded, setAddressExpanded] = useComponentState(false)
   const [projectOptions, setProjectOptions] = useComponentState<ProjectOption[]>([])
@@ -144,6 +159,9 @@ export function ClientModal({
   }, [addNewClientMember, memberDraft])
 
   useEffect(() => {
+    // The project list is management-only, and a self-setup form has no
+    // Projects tab to put it in.
+    if (isSelf) return
     let cancelled = false
     getClientFormConfig()
       .then((config) => {
@@ -160,7 +178,7 @@ export function ClientModal({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [isSelf])
 
   useEffect(() => {
     if (!initialData) return
@@ -229,8 +247,11 @@ export function ClientModal({
   }
 
   const memberDraftComplete = isClientMemberDraftComplete(memberDraft)
-  const canSaveClient =
-    addNewClientMember && !isEdit ? memberDraftComplete : Boolean(form.name.trim())
+  const canSaveClient = isSelf
+    ? Boolean(form.name.trim() && form.email.trim())
+    : addNewClientMember && !isEdit
+      ? memberDraftComplete
+      : Boolean(form.name.trim())
 
   async function handleSave() {
     if (saving) return
@@ -239,7 +260,7 @@ export function ClientModal({
       setTab(CLIENT_MEMBER_TAB)
       return
     }
-    const validationError = validateClientForm(form)
+    const validationError = validateClientForm(form) ?? (isSelf && !form.email.trim() ? "Email is required." : null)
     if (validationError) {
       setSaveError(validationError)
       return
@@ -372,7 +393,7 @@ export function ClientModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       className={cn("fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6", theme.modal.overlay)}
-      onClick={onClose}
+      onClick={isSelf ? undefined : onClose}
     >
       <MotionConfig transition={{ layout: CLIENT_MODAL_LAYOUT, opacity: CLIENT_MODAL_CROSSFADE }}>
       <motion.div
@@ -395,12 +416,17 @@ export function ClientModal({
         <div className={cn("flex shrink-0 items-center justify-between border-b px-5 py-4", theme.modal.headerBorder)}>
           <div>
             <h2 className={cn("text-lg font-bold", theme.modal.title)}>
-              {isEdit ? "Edit client" : "New client"}
+              {isSelf ? "Your client details" : isEdit ? "Edit client" : "New client"}
             </h2>
             <p className={cn("mt-0.5 text-sm", theme.modal.subtitle)}>
-              {isEdit ? "Update client details and linked projects" : "Fill in the details to create a new client"}
+              {isSelf
+                ? "Before you continue, tell us who you are. Your organization uses this for your projects and invoices."
+                : isEdit
+                  ? "Update client details and linked projects"
+                  : "Fill in the details to create a new client"}
             </p>
           </div>
+          {isSelf ? null : (
           <button
             type="button"
             onClick={onClose}
@@ -411,11 +437,16 @@ export function ClientModal({
           >
             <X className={cn("h-5 w-5", theme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
           </button>
+          )}
         </div>
 
         <LayoutGroup id="client-modal-tabs">
           <div className={cn("flex shrink-0 gap-1 border-b px-5", TAB_BAR_SCROLL, theme.modal.headerBorder)}>
-            {isEdit ? MODAL_TABS.map((t) => renderTabButton(t)) : renderCreateModeTabs()}
+            {isSelf
+              ? SELF_SETUP_TABS.map((t) => renderTabButton(t))
+              : isEdit
+                ? MODAL_TABS.map((t) => renderTabButton(t))
+                : renderCreateModeTabs()}
           </div>
         </LayoutGroup>
 
@@ -434,7 +465,7 @@ export function ClientModal({
           >
               {tab === "General" && (
                 <motion.div layout className={FORM_STACK} transition={{ layout: CLIENT_MODAL_LAYOUT }}>
-                  {!isEdit ? (
+                  {!isEdit && !isSelf ? (
                     <div className={cn("flex items-center justify-between gap-4 rounded-xl border p-4", theme.card)}>
                       <div className="min-w-0">
                         <p className={cn("text-sm font-medium", theme.bodyText)}>Add new client member</p>
@@ -449,7 +480,7 @@ export function ClientModal({
                     </div>
                   ) : null}
 
-                  {isEdit ? (
+                  {isSelf ? null : isEdit ? (
                     <ClientMemberSelector
                       selected={form.clientMember}
                       onChange={(memberId) => void handleMemberSelect(memberId)}
@@ -493,17 +524,23 @@ export function ClientModal({
                     />
                   )}
 
-                  <FormField
-                    label="Name"
-                    required
-                    hint={
-                      addNewClientMember && !isEdit
-                        ? "Filled from the Member tab"
-                        : "Filled from the selected client member"
-                    }
-                  >
-                    <PreviewField value={form.name} placeholder={addNewClientMember ? "Complete the Member tab" : "Select a client member"} />
-                  </FormField>
+                  {isSelf ? (
+                    <FormField label="Name" required hint="Your name, or your company name">
+                      <Input value={form.name} onChange={(v) => set("name", v)} placeholder="Client name" />
+                    </FormField>
+                  ) : (
+                    <FormField
+                      label="Name"
+                      required
+                      hint={
+                        addNewClientMember && !isEdit
+                          ? "Filled from the Member tab"
+                          : "Filled from the selected client member"
+                      }
+                    >
+                      <PreviewField value={form.name} placeholder={addNewClientMember ? "Complete the Member tab" : "Select a client member"} />
+                    </FormField>
+                  )}
                   <div className={FORM_FIELD}>
                     <div className="mb-1.5 flex items-center justify-between">
                       <span className={theme.label}>Address</span>
@@ -562,19 +599,25 @@ export function ClientModal({
                       />
                     </div>
                   </FormField>
-                  <FormField
-                    label="Email addresses"
-                    hint={
-                      addNewClientMember && !isEdit
-                        ? "Preview from the Member tab; not editable here"
-                        : "Preview from member profile; not editable here"
-                    }
-                  >
-                    <PreviewField
-                      value={form.email}
-                      placeholder={addNewClientMember ? "Complete the Member tab" : "Select a client member"}
-                    />
-                  </FormField>
+                  {isSelf ? (
+                    <FormField label="Email addresses" required hint="Where invoices and project updates should go">
+                      <Input value={form.email} onChange={(v) => set("email", v)} placeholder="name@company.com" />
+                    </FormField>
+                  ) : (
+                    <FormField
+                      label="Email addresses"
+                      hint={
+                        addNewClientMember && !isEdit
+                          ? "Preview from the Member tab; not editable here"
+                          : "Preview from member profile; not editable here"
+                      }
+                    >
+                      <PreviewField
+                        value={form.email}
+                        placeholder={addNewClientMember ? "Complete the Member tab" : "Select a client member"}
+                      />
+                    </FormField>
+                  )}
                 </div>
               )}
 
@@ -838,10 +881,15 @@ export function ClientModal({
         <div className={cn("flex shrink-0 items-center justify-between border-t px-5 py-4", theme.footer.border, theme.modal.footerBg)}>
           <LayoutGroup id="client-modal-footer-dots">
             <div className="flex gap-1">
-            {isEdit ? MODAL_TABS.map((t) => renderFooterDot(t)) : renderCreateModeFooterDots()}
+            {isSelf
+              ? SELF_SETUP_TABS.map((t) => renderFooterDot(t))
+              : isEdit
+                ? MODAL_TABS.map((t) => renderFooterDot(t))
+                : renderCreateModeFooterDots()}
             </div>
           </LayoutGroup>
           <div className="flex items-center gap-2">
+            {isSelf ? null : (
             <button
               type="button"
               onClick={onClose}
@@ -849,6 +897,7 @@ export function ClientModal({
             >
               Cancel
             </button>
+            )}
             <button
               type="button"
               onClick={() => void handleSave()}
@@ -858,7 +907,15 @@ export function ClientModal({
                 theme.accent.primarySolid,
               )}
             >
-              {saving ? "Saving…" : isEdit ? "Save changes" : addNewClientMember ? "Save client & member" : "Save client"}
+              {saving
+                ? "Saving…"
+                : isSelf
+                  ? "Save and continue"
+                  : isEdit
+                    ? "Save changes"
+                    : addNewClientMember
+                      ? "Save client & member"
+                      : "Save client"}
             </button>
           </div>
         </div>

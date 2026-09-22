@@ -67,11 +67,14 @@ export function SelectField<T extends string>({
         typeof document !== "undefined" &&
         createPortal(
           <div className={cn("fixed inset-0 pointer-events-none", FLOATING_MENU_Z_CLASS)}>
-            <div
-              className="absolute inset-0 pointer-events-auto"
-              aria-hidden
-              onMouseDown={() => setOpen(false)}
-            />
+            {/* No full-screen click-catcher here. One used to sit on top of the
+                whole page while this was open: clicking any OTHER control -
+                the next filter along - landed on the catcher instead, closed
+                this menu, and the control itself never received the click,
+                so every switch between filters cost a swallowed click
+                (PLAN-bug-fixes-round-1.md item 5). The document-level
+                mousedown listener above already closes it on an outside
+                click, with no DOM of its own to intercept anything. */}
             <div
               ref={menuRef}
               {...{ [FLOATING_MENU_ATTR]: "" }}

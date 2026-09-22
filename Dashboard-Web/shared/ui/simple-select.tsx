@@ -41,6 +41,24 @@ export function SimpleSelect({
 }) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+
+  // Outside-click close via a document listener rather than a full-screen
+  // catcher element. The catcher (both the portal and inline variants)
+  // swallowed the click meant for whatever control sat underneath it - open
+  // this, click the next dropdown along, and that dropdown did not open
+  // (PLAN-bug-fixes-round-1.md item 5). A listener has no DOM footprint, so
+  // the real click always reaches its real target.
+  useEffect(() => {
+    if (!open) return
+    function onMouseDown(e: MouseEvent) {
+      const target = e.target as Node
+      if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return
+      setOpen(false)
+    }
+    document.addEventListener("mousedown", onMouseDown)
+    return () => document.removeEventListener("mousedown", onMouseDown)
+  }, [open])
   const [menuPos, setMenuPos] = useState({ top: 0, left: 0, width: 0 })
   const safeOptions = useMemo(() => normalizeOptions(options), [options])
   const displayValue = typeof value === "string" ? value : String(value ?? "")
@@ -130,8 +148,8 @@ export function SimpleSelect({
               transition={{ duration: 0.1 }}
               className={cn("fixed inset-0 pointer-events-none", PORTAL_DROPDOWN_BACKDROP_Z)}
             >
-              <div className="absolute inset-0 pointer-events-auto" aria-hidden onClick={() => setOpen(false)} />
               <motion.div
+                ref={menuRef}
                 className={cn(
                   "fixed pointer-events-auto rounded-xl border py-1",
                   menuSurfaceClass,
@@ -165,18 +183,6 @@ export function SimpleSelect({
         <AnimatePresence>
           {open && (
             <>
-              <div
-                className="fixed inset-0 z-10"
-                onClick={() => setOpen(false)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    e.currentTarget.click()
-                  }
-                }}
-              />
               <motion.div
                 key="simple-select-inline-menu"
                 initial={{ opacity: 0, y: -4 }}

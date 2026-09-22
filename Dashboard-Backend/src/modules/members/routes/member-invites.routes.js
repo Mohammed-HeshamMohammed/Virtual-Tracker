@@ -40,6 +40,10 @@ import {
   recordInviteRegisterSuccess,
 } from "../../../http/invite-abuse-guard.js";
 import { resolveAppPublicUrl } from "../../auth/app-public-url.js";
+import { resolveTenantGrantCached } from "../../customer-accounts/tenant-grant-cache.js";
+import { SeatLimitError, withSeatsAvailable } from "../../customer-accounts/seat-usage.service.js";
+import { MAIN_TENANT_ID } from "../../../lib/postgres/ensure-tenancy-schema.js";
+import { isOwnerOrSuperAdminRole } from "../../../http/role-hierarchy.js";
 import {
   assertInviteAvailableForRegistration,
   resolveInviteExpiryMs,
@@ -76,6 +80,54 @@ function randomTempPassword() {
   let s = "";
   for (let i = 0; i < 14; i += 1) s += chars[crypto.randomInt(chars.length)];
   return `${s}!a1`;
+}
+
+/**
+ * §14.4: a pending invite into an expired customer tenant must not be
+ * redeemable - "expired" means "no one in that tree can log in or use the
+ * data", and a not-yet-accepted invite is the one path into that tree that
+ * skips auth-middleware.js's own per-request gate entirely (invite preview
+ * and registration are both PUBLIC_API_ROUTES, reachable before anyone has
+ * signed in to have a tenant checked against). Main-org invites always pass
+ * this (tenant_id defaults to MAIN_TENANT_ID, whose grant never expires).
+ */
+async function assertInviteTenantActive(row) {
+  const tenantId = typeof row?.tenant_id === "string" ? row.tenant_id : null;
+  if (!tenantId) return { ok: true };
+  const grant = await resolveTenantGrantCached(tenantId);
+  if (grant && !grant.active) {
+    return {
+      ok: false,
+      httpStatus: 403,
+      error:
+        grant.lifecycle === "removing" || grant.lifecycle === "removed"
+          ? "This invite is no longer valid."
+          : "This invite's account has expired. Contact the account owner.",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Where an accepted invite's new member goes in the tree. Normally under the
+ * inviter; an invite created from a tree node ("add a member here") carries
+ * `tree_parent_member_id`, checked against the inviter's scope when it was
+ * created. If that member has since left, fall back to the inviter rather
+ * than attaching the newcomer to a removed member.
+ */
+async function resolveInviteTreeParent(row, inviterMemberId) {
+  const treeParent = typeof row?.tree_parent_member_id === "string" ? row.tree_parent_member_id : "";
+  if (!treeParent || treeParent === inviterMemberId) return inviterMemberId;
+  const rows = await query("SELECT id FROM members WHERE id = $1 AND status = 'active' LIMIT 1", [treeParent]);
+  return rows.length ? treeParent : inviterMemberId;
+}
+
+/** Main-org Owners/Super Admins may set their own organization's seat
+ *  limit; nobody may set a customer account's from inside it. */
+function canEditOwnSeatLimit(viewer) {
+  if (!viewer) return false;
+  const tenantId = viewer.tenantId || MAIN_TENANT_ID;
+  return tenantId === MAIN_TENANT_ID && isOwnerOrSuperAdminRole(viewer.roleName);
 }
 
 async function findInviteByToken(db, token) {
@@ -131,6 +183,12 @@ async function promotePendingMemberCore(db, auth, uid) {
     updated_at: new Date(),
     firebase_uid: uid,
   };
+  // Same reasoning as the invite/register path above: preprovisioning is
+  // completed from a public, unauthenticated call, so the pending record's
+  // own tenant_id (not context) is what carries forward.
+  if (typeof p.tenant_id === "string" && p.tenant_id) {
+    memberPayload.tenant_id = p.tenant_id;
+  }
   let roleName = "Viewer";
   if (typeof p.role_id === "string" && p.role_id) {
     const resolvedRoleName = await resolveRoleNameById(db, p.role_id);
@@ -142,6 +200,15 @@ async function promotePendingMemberCore(db, auth, uid) {
 
   const projects = await getPendingAuthProjectIds(db, uid);
 
+  // This pending row is the seat being converted, so it is not counted
+  // against itself. Normally a no-op: the seat was checked when the pending
+  // account was created. Throws SeatLimitError if the limit has since been
+  // lowered below what is in use; migrate reports that per person.
+  await withSeatsAvailable(
+    typeof p.tenant_id === "string" && p.tenant_id ? p.tenant_id : MAIN_TENANT_ID,
+    1,
+    { excludePendingUids: [uid] },
+  );
   await createMemberPg(memberPayload);
   const creatorRoleName = await resolveInviteCreatorRoleName(db, p);
   await syncMemberPrimaryRole(
@@ -315,6 +382,69 @@ export async function routeMemberInvites(req, res, url, origin) {
     return true;
   }
 
+  // Seats occupied vs open for the caller's own tenant, for the People
+  // page's header (PLAN-bug-fixes-round-1.md item 18). Read-only, and
+  // scoped to the caller's own tenant from their session - never a
+  // parameter, so nobody can read another tenant's headcount.
+  if (pn === "/api/members/seats" && req.method === "GET") {
+    const viewer = getAuthContext(req);
+    if (!requireManagementRole(viewer)) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
+      return true;
+    }
+    try {
+      const { getTenantSeatUsage } = await import("../../customer-accounts/seat-usage.service.js");
+      const usage = await getTenantSeatUsage(viewer?.tenantId);
+      if (!usage) {
+        sendJson(res, origin, 200, { success: true, data: null });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: { ...usage, canEdit: canEditOwnSeatLimit(viewer) } });
+    } catch (e) {
+      logSafeError("[members/seats]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not load seat usage." });
+    }
+    return true;
+  }
+
+  // Sets the main organization's own seat limit ({ seats: number | null },
+  // null = unlimited). Main-org Owners/Super Admins only: a customer
+  // account's limit is what it was sold, set from the Customer Accounts tab
+  // by the main org - letting a customer's own Owner raise it here would
+  // make that limit meaningless.
+  if (pn === "/api/members/seats" && req.method === "PATCH") {
+    const viewer = getAuthContext(req);
+    if (!canEditOwnSeatLimit(viewer)) {
+      sendJson(res, origin, 403, { success: false, error: "Only Owners and Super Admins can change the seat limit." });
+      return true;
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
+      return true;
+    }
+    if (!body || typeof body !== "object" || !("seats" in body) || Object.keys(body).length !== 1) {
+      sendJson(res, origin, 400, { success: false, error: "Send { seats: number } or { seats: null } for unlimited." });
+      return true;
+    }
+    try {
+      const { setTenantSeatLimit, getTenantSeatUsage } = await import("../../customer-accounts/seat-usage.service.js");
+      await setTenantSeatLimit(MAIN_TENANT_ID, body.seats);
+      const usage = await getTenantSeatUsage(MAIN_TENANT_ID);
+      sendJson(res, origin, 200, { success: true, data: { ...usage, canEdit: true } });
+    } catch (e) {
+      const status = typeof e?.status === "number" ? e.status : 500;
+      if (status === 500) logSafeError("[members/seats PATCH]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Could not update the seat limit." : e.message,
+      });
+    }
+    return true;
+  }
+
   if (pn === "/api/members/validate-add" && req.method === "POST") {
     if (!requireManagementRole(getAuthContext(req))) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
@@ -354,6 +484,11 @@ export async function routeMemberInvites(req, res, url, origin) {
     const availability = assertInviteAvailableForRegistration(row);
     if (!availability.ok) {
       sendJson(res, origin, availability.httpStatus, { success: false, error: availability.error });
+      return true;
+    }
+    const tenantGate = await assertInviteTenantActive(row);
+    if (!tenantGate.ok) {
+      sendJson(res, origin, tenantGate.httpStatus, { success: false, error: tenantGate.error });
       return true;
     }
     const inviteKind = typeof row.invite_kind === "string" ? row.invite_kind : "email";
@@ -457,6 +592,11 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, availability.httpStatus, { success: false, error: availability.error });
       return true;
     }
+    const tenantGate = await assertInviteTenantActive(row);
+    if (!tenantGate.ok) {
+      sendJson(res, origin, tenantGate.httpStatus, { success: false, error: tenantGate.error });
+      return true;
+    }
     const inviteKind = typeof row.invite_kind === "string" ? row.invite_kind : "email";
     const inviteEmail = (typeof row.email === "string" ? row.email : "").trim().toLowerCase();
     if (inviteKind === "email" && inviteEmail && inviteEmail !== email) {
@@ -468,6 +608,27 @@ export async function routeMemberInvites(req, res, url, origin) {
       recordInviteRegisterFailure(req, email);
       sendJson(res, origin, 400, { success: false, error: preCheck.message, reason: preCheck.reason });
       return true;
+    }
+    // Before the sign-in account is created, so a refusal leaves nothing
+    // behind. This invite's own pending row already holds the seat being
+    // taken, so it is excluded - an ordinary email invite always fits; this
+    // bites for a reused share link, or a tenant whose limit was lowered.
+    try {
+      await withSeatsAvailable(
+        typeof row.tenant_id === "string" && row.tenant_id ? row.tenant_id : MAIN_TENANT_ID,
+        1,
+        { excludeInviteIds: [inv.id] },
+      );
+    } catch (seatErr) {
+      if (seatErr instanceof SeatLimitError) {
+        sendJson(res, origin, seatErr.status, {
+          success: false,
+          error: "This organization has no open seats right now. Ask whoever invited you to free one.",
+          code: seatErr.code,
+        });
+        return true;
+      }
+      throw seatErr;
     }
     try {
       const displayName = `${firstName} ${lastName}`.trim();
@@ -503,6 +664,18 @@ export async function routeMemberInvites(req, res, url, origin) {
         updated_at: new Date(),
         firebase_uid: uid,
       };
+      // §Phase 4: the accepted invite's tenant becomes the new member's
+      // tenant - this route is a PUBLIC_API_ROUTES entry (runs before any
+      // tenant is known from an authenticated session), so it has to be
+      // told explicitly rather than inheriting one from context the way
+      // every other member-creation path does. Only set the key when the
+      // invite actually carries one (main-org invites do too, once
+      // ensure-tenancy-schema.js has backfilled `invites`) - `createMemberPg`
+      // inserts whatever key is present, and an explicit NULL would
+      // override the column's own DEFAULT rather than falling through to it.
+      if (typeof row.tenant_id === "string" && row.tenant_id) {
+        memberPayload.tenant_id = row.tenant_id;
+      }
       await createMemberPg(memberPayload);
       const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
       await syncMemberPrimaryRole(
@@ -529,8 +702,9 @@ export async function routeMemberInvites(req, res, url, origin) {
           const inviterMember = await getMemberByFirebaseUidPg(inviterUid);
           if (inviterMember) {
             const inviterMemberId = String(inviterMember.id);
+            const parentMemberId = await resolveInviteTreeParent(row, inviterMemberId);
             await recordMemberRelationship(db, {
-              parentMemberId: inviterMemberId,
+              parentMemberId,
               childMemberId: memberId,
               relationshipType: "invite",
               createdBy: inviterMemberId,
@@ -627,13 +801,27 @@ export async function routeMemberInvites(req, res, url, origin) {
       created_by: (typeof body.createdBy === "string" && body.createdBy.trim()) || viewer?.memberId || null,
       created_by_uid: typeof body.createdByUid === "string" ? body.createdByUid : viewer?.uid ?? "",
       updated_by: null,
+      // The inviter's own tenant - see /api/invites/bulk: left to the
+      // column DEFAULT, a customer account's link enrolled people into the
+      // main organization.
+      tenant_id: viewer?.tenantId || MAIN_TENANT_ID,
       ...shareLinkInviteFields(),
     };
-    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by","tenant_id"];
     const colList = INVITE_COLS.join(", ");
     const phList = INVITE_COLS.map((_, i) => `$${i + 1}`).join(", ");
     const vals = INVITE_COLS.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
-    await query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals);
+    try {
+      await withSeatsAvailable(payload.tenant_id, 1, {
+        insert: (client) => client.query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals),
+      });
+    } catch (e) {
+      if (e instanceof SeatLimitError) {
+        sendJson(res, origin, e.status, { success: false, error: e.message, code: e.code });
+        return true;
+      }
+      throw e;
+    }
     const appOrigin = typeof body.appOrigin === "string" && body.appOrigin.startsWith("http") ? body.appOrigin : "";
     const inviteBase = resolveAppPublicUrl(appOrigin);
     const invitePath = `/invite/${token}`;
@@ -710,6 +898,19 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, status, { success: false, error: eligible.message, reason: eligible.reason });
       return true;
     }
+    // The pre-provisioned account takes a seat from now on (it is counted in
+    // pending_auth_members), so it has to fit now. Checked before the
+    // sign-in account is created so a refusal leaves nothing behind.
+    const preprovisionTenantId = viewer?.tenantId || MAIN_TENANT_ID;
+    try {
+      await withSeatsAvailable(preprovisionTenantId, 1);
+    } catch (seatErr) {
+      if (seatErr instanceof SeatLimitError) {
+        sendJson(res, origin, seatErr.status, { success: false, error: seatErr.message, code: seatErr.code });
+        return true;
+      }
+      throw seatErr;
+    }
     try {
       const userRecord = await auth.createUser({
         email,
@@ -720,12 +921,15 @@ export async function routeMemberInvites(req, res, url, origin) {
       const uid = userRecord.uid;
       const role_id = await resolveRoleIdByName(db, roleName);
       await query(
-        `INSERT INTO pending_auth_members (firebase_uid, email, display_name, phone_number, role_id, pay_rate, created_by_uid, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO pending_auth_members (firebase_uid, email, display_name, phone_number, role_id, pay_rate, created_by_uid, created_at, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
          ON CONFLICT (firebase_uid) DO UPDATE SET
            email = EXCLUDED.email, display_name = EXCLUDED.display_name, phone_number = EXCLUDED.phone_number,
            role_id = EXCLUDED.role_id, pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
-        [uid, email, name, phone || "", role_id, payRate, createdByUid, new Date()],
+        // tenant_id: the creator's own tenant. Left to the column DEFAULT
+        // (main), a customer account's pre-provisioned people were
+        // promoted into the main organization at first sign-in.
+        [uid, email, name, phone || "", role_id, payRate, createdByUid, new Date(), preprovisionTenantId],
       );
       await db.collection(USER_PROFILES_COLLECTION).doc(uid).set(
         {

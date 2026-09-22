@@ -247,6 +247,7 @@ function TreeMemberNode({
   isHovered,
   onHover,
   isRoot,
+  onAdd,
 }: {
   node: HierarchyPointNode<TreeChartNode>
   top: number
@@ -259,6 +260,8 @@ function TreeMemberNode({
   isHovered: boolean
   onHover: (id: string | null) => void
   isRoot: boolean
+  /** Shown as a "+" badge on the hovered node when set. */
+  onAdd?: () => void
 }) {
   const radius = isRoot ? 18 : 16
   const hasChildren = Boolean(node.data.children?.length)
@@ -353,6 +356,23 @@ function TreeMemberNode({
         />
       ) : null}
 
+      {isHovered && onAdd ? (
+        <Group
+          top={radius - 2}
+          left={radius - 2}
+          onClick={(event) => {
+            event.stopPropagation()
+            onAdd()
+          }}
+          onDoubleClick={(event) => event.stopPropagation()}
+          style={{ cursor: "pointer" }}
+        >
+          <title>{`Add member under ${displayName}`}</title>
+          <circle r={8} fill={theme.highlightStroke} stroke={isDark ? "#151b2d" : "#ffffff"} strokeWidth={1.5} />
+          <path d="M -3.5 0 H 3.5 M 0 -3.5 V 3.5" stroke="#ffffff" strokeWidth={1.75} strokeLinecap="round" />
+        </Group>
+      ) : null}
+
       {isHovered ? (
         <Group top={-(radius + 30)}>
           <rect
@@ -390,6 +410,9 @@ export type TreeChartProps = {
   isDark?: boolean
   margin?: { top: number; right: number; bottom: number; left: number }
   highlightNodeId?: string
+  /** Enables the per-node "+" badge for nodes where canAddChild says yes. */
+  onAddChild?: (id: string) => void
+  canAddChild?: (id: string) => boolean
 }
 
 export function TreeChart({
@@ -400,6 +423,8 @@ export function TreeChart({
   isDark = false,
   margin = defaultMargin,
   highlightNodeId,
+  onAddChild,
+  canAddChild,
 }: TreeChartProps) {
   const { layout, orientation, linkType, stepPercent } = settings
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set())
@@ -516,6 +541,11 @@ export function TreeChart({
                     isHovered={hoveredNodeId === node.data.id}
                     onHover={setHoveredNodeId}
                     isRoot={node.depth === 0}
+                    onAdd={
+                      onAddChild && node.data.id !== "__virtual_root__" && (canAddChild?.(node.data.id) ?? true)
+                        ? () => onAddChild(node.data.id)
+                        : undefined
+                    }
                   />
                 )
               })}

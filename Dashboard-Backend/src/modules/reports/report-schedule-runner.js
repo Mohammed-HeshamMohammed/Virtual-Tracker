@@ -7,6 +7,8 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { isEmployeeRole, isViewerRole } from "../../http/role-hierarchy.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
+import { withTenant } from "../../lib/postgres/client.js";
+import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -90,28 +92,39 @@ export async function processDueReportSchedules(db) {
     // and otherwise the creator's - the person who chose the delivery time.
     const clockMemberId = schedule.member_id ?? schedule.created_by;
     try {
-      const tzMap = await getMemberTimezones(db, [clockMemberId]);
-      const timeZone = tzMap.get(clockMemberId) ?? "UTC";
+      // §15.2: this loop has no HTTP request to carry a tenant through
+      // auth-context.js, so it opens its own scope per schedule instead -
+      // every query below (timezone lookup, audience resolution, the report
+      // itself) runs against exactly the one tenant this schedule belongs
+      // to, never mixing rows across tenants the way one unscoped query
+      // over every schedule at once would risk.
+      const { processedHere, sentHere, skippedHere } = await withTenant(schedule.tenant_id ?? MAIN_TENANT_ID, async () => {
+        const tzMap = await getMemberTimezones(db, [clockMemberId]);
+        const timeZone = tzMap.get(clockMemberId) ?? "UTC";
 
-      if (!isReportScheduleDue(schedule, timeZone, now)) continue;
+        if (!isReportScheduleDue(schedule, timeZone, now)) {
+          return { processedHere: 0, sentHere: 0, skippedHere: 0 };
+        }
 
-      const audience = await resolveScheduleAudience(db, schedule);
-      if (!audience) {
-        skipped += 1;
-        logSafeWarn(
-          `[report-schedule] schedule ${schedule.id} skipped: its creator can no longer view this report`,
-        );
-        continue;
-      }
+        const audience = await resolveScheduleAudience(db, schedule);
+        if (!audience) {
+          logSafeWarn(
+            `[report-schedule] schedule ${schedule.id} skipped: its creator can no longer view this report`,
+          );
+          return { processedHere: 0, sentHere: 0, skippedHere: 1 };
+        }
 
-      processed += 1;
-      const didSend = await runReportSchedule(db, schedule, timeZone, audience);
-      if (didSend) {
-        sent += 1;
-        await markReportScheduleSentPg(schedule.id);
-      } else {
+        const didSend = await runReportSchedule(db, schedule, timeZone, audience);
+        if (didSend) {
+          await markReportScheduleSentPg(schedule.id);
+          return { processedHere: 1, sentHere: 1, skippedHere: 0 };
+        }
         logSafeWarn(`[report-schedule] delivery failed for schedule ${schedule.id}, will retry next check`);
-      }
+        return { processedHere: 1, sentHere: 0, skippedHere: 0 };
+      });
+      processed += processedHere;
+      sent += sentHere;
+      skipped += skippedHere;
     } catch (err) {
       logSafeWarn(`[report-schedule] failed for schedule ${schedule.id}:`, err);
     }

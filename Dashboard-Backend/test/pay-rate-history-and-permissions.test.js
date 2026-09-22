@@ -332,3 +332,55 @@ test("getMemberProfileFormSections maps pay_rate_history rows into the payBill s
   assert.equal(form.payRateHistory[1].id, "h1");
   assert.equal(form.payRateHistory[1].previousRate, null);
 });
+
+// PLAN-bug-fixes-round-1.md item 14. The People page's batch actions each
+// send ONE field. payBill used to be treated as a complete record with every
+// missing field defaulted, so a partial update destroyed the rest of the row.
+test("batch 'Edit pay period' does not zero the pay rate", async () => {
+  reset();
+  seedMember(MEMBER_ID, "Target", "Member");
+  seedMember(SUPERMANAGER_ACTOR, "Sam", "Supermanager");
+  stub.actorRoleName = "Super Manager";
+  stub.existingPayRate = { rate: "40.00", currency: "EGP", pay_period: "None", note: "Senior", effective_date: "2026-01-01" };
+
+  // Exactly what the batch modal sends for this action - payPeriod alone.
+  await updateMemberProfile(null, MEMBER_ID, { payBill: { payPeriod: "Weekly" } }, SUPERMANAGER_ACTOR);
+
+  assert.equal(stub.insertedHistory.length, 1);
+  const row = stub.insertedHistory[0];
+  assert.equal(row.pay_period, "Weekly", "the field that was sent is applied");
+  assert.equal(row.rate, 40, "parsePayRate(undefined) used to write 0 here");
+  assert.equal(row.currency, "EGP", "currency used to be reset to USD");
+  assert.equal(row.note, "Senior", "note used to be wiped");
+});
+
+test("batch 'Edit pay rate' does not reset the pay period to None", async () => {
+  reset();
+  seedMember(MEMBER_ID, "Target", "Member");
+  seedMember(SUPERMANAGER_ACTOR, "Sam", "Supermanager");
+  stub.actorRoleName = "Super Manager";
+  stub.existingPayRate = { rate: "40.00", currency: "USD", pay_period: "Monthly", note: "", effective_date: "2026-01-01" };
+
+  await updateMemberProfile(null, MEMBER_ID, { payBill: { payRate: "55", currency: "USD" } }, SUPERMANAGER_ACTOR);
+
+  const row = stub.insertedHistory[0];
+  assert.equal(row.rate, 55);
+  assert.equal(row.pay_period, "Monthly");
+});
+
+test("an explicitly sent empty note still clears it - present means overwrite", async () => {
+  reset();
+  seedMember(MEMBER_ID, "Target", "Member");
+  seedMember(SUPERMANAGER_ACTOR, "Sam", "Supermanager");
+  stub.actorRoleName = "Super Manager";
+  stub.existingPayRate = { rate: "40.00", currency: "USD", pay_period: "None", note: "Old note", effective_date: "2026-01-01" };
+
+  await updateMemberProfile(
+    null,
+    MEMBER_ID,
+    { payBill: { payRate: "40", currency: "USD", payPeriod: "None", note: "" } },
+    SUPERMANAGER_ACTOR,
+  );
+
+  assert.equal(stub.insertedHistory[0].note, "");
+});

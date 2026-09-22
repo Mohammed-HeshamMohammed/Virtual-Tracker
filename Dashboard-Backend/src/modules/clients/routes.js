@@ -22,6 +22,11 @@ import {
   resolveClientInvoicingSettings,
   updateClientWithDetails,
 } from "./services/client-service.js";
+import {
+  ClientSelfSetupError,
+  completeClientSelfSetup,
+  getClientSelfSetupStatus,
+} from "./services/client-self-setup.js";
 import { getClientPg, updateClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
@@ -60,6 +65,33 @@ async function readJsonBody(req) {
 
 export async function routeClients(req, res, url, db, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
+
+  // Client self-setup (client-self-setup.js): the signed-in Client's own
+  // status and form submit. Deliberately NOT management-gated - these are
+  // the only client-record routes a Client may call, and each is scoped to
+  // the caller's own member id from the session, never a parameter.
+  if (pn === "/api/clients/self-setup" && (req.method === "GET" || req.method === "POST")) {
+    const viewer = getAuthContext(req);
+    try {
+      if (req.method === "GET") {
+        sendJson(res, origin, 200, { success: true, data: await getClientSelfSetupStatus(viewer) });
+      } else {
+        const body = await readJsonBody(req).catch(() => {
+          throw new ClientSelfSetupError(400, "Invalid JSON body");
+        });
+        const data = await completeClientSelfSetup(db, viewer, body);
+        sendJson(res, origin, 201, { success: true, data });
+      }
+    } catch (e) {
+      const status = e instanceof ClientSelfSetupError ? e.status : 500;
+      if (status === 500) logSafeError("[clients/self-setup]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Could not save your client details." : e.message,
+      });
+    }
+    return true;
+  }
 
   if (pn === "/api/clients/form-config" && req.method === "GET") {
     if (!assertManagementRole(req, res, origin)) return true;

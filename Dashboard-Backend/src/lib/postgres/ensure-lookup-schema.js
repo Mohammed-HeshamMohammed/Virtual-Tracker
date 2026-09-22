@@ -322,6 +322,10 @@ END $$`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites (invite_token) WHERE invite_token <> ''`,
   `CREATE INDEX IF NOT EXISTS idx_invites_email ON invites (email)`,
   `CREATE INDEX IF NOT EXISTS idx_invites_status ON invites (status)`,
+  // Set when an invite is created from a node in the member tree ("add a
+  // member here"): on acceptance the new member is placed under this member
+  // instead of under whoever sent the invite. NULL keeps the old behaviour.
+  "ALTER TABLE invites ADD COLUMN IF NOT EXISTS tree_parent_member_id UUID",
   `CREATE TABLE IF NOT EXISTS pending_auth_members (
   firebase_uid      VARCHAR(128) PRIMARY KEY,
   email             VARCHAR(255) NOT NULL DEFAULT '',

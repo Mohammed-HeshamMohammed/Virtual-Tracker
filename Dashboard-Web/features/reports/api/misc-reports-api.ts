@@ -736,7 +736,10 @@ export async function fetchPaymentsRecordedReport(range: ReportQuery): Promise<P
 }
 
 
-export type ShiftAttendanceStatus = "worked" | "missed" | "excused" | "time-off" | "unscheduled"
+/** "short" = a scheduled day that was worked, but for less than the member's
+ *  own configured daily hours (limits.daily). Only ever produced when such a
+ *  limit is set - see resolveAttendanceStatus in the backend. */
+export type ShiftAttendanceStatus = "worked" | "short" | "missed" | "excused" | "time-off" | "unscheduled"
 
 export interface ShiftAttendanceRow {
   memberId: string
@@ -748,6 +751,10 @@ export interface ShiftAttendanceRow {
    *  it falls outside the member's usual working days. */
   makeupDay: boolean
   activeSeconds: number
+  /** The member's configured daily hours for this day, in seconds. 0 when no
+   *  daily limit is set, in which case a day is only ever worked or missed -
+   *  never "short", because there is no agreed length to fall short of. */
+  expectedSeconds?: number
   status: ShiftAttendanceStatus
 }
 

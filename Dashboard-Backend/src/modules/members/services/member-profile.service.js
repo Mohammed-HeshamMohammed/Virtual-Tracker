@@ -556,12 +556,31 @@ export async function updateMemberProfile(db, memberId, body, updatedBy = "", op
       throw new Error("Only Super Manager and above can edit pay rates.");
     }
 
-    const payRate = parsePayRate(payBill.payRate);
-    const currency =
-      typeof payBill.currency === "string" && payBill.currency.trim() ? payBill.currency.trim().toUpperCase() : "USD";
-    const payPeriod = typeof payBill.payPeriod === "string" ? payBill.payPeriod : "None";
-    const note = typeof payBill.note === "string" ? payBill.note.trim() : "";
     const existingPayRate = await getSingleByMemberId(db, "pay_rates", memberId);
+
+    // A field that is ABSENT from payBill keeps its stored value; only a
+    // field that is actually sent overwrites it. This used to treat payBill
+    // as a complete record and default every missing field, so a partial
+    // update destroyed the rest of the row - and the batch actions on the
+    // People page all send partial updates (PLAN-bug-fixes-round-1.md item
+    // 14): "Edit pay period" sent no payRate, parsePayRate(undefined) is 0,
+    // and every selected member's pay rate was silently zeroed; "Edit pay
+    // rate" sent no payPeriod and reset everyone's pay period to "None".
+    // The single-member Pay & Billing form always sends every field, so it
+    // behaves exactly as before. An explicitly sent empty value (note: "")
+    // still clears, because it is present.
+    const sent = (key) => Object.prototype.hasOwnProperty.call(payBill, key) && payBill[key] !== undefined;
+    const payRate = sent("payRate") ? parsePayRate(payBill.payRate) : parsePayRate(existingPayRate?.rate ?? 0);
+    const currency =
+      sent("currency") && typeof payBill.currency === "string" && payBill.currency.trim()
+        ? payBill.currency.trim().toUpperCase()
+        : String(existingPayRate?.currency || "USD");
+    const payPeriod =
+      sent("payPeriod") && typeof payBill.payPeriod === "string"
+        ? payBill.payPeriod
+        : String(existingPayRate?.pay_period || "None");
+    const note =
+      sent("note") && typeof payBill.note === "string" ? payBill.note.trim() : String(existingPayRate?.note ?? "");
     const effectiveDate =
       typeof payBill.effectiveDate === "string" && payBill.effectiveDate.trim()
         ? payBill.effectiveDate.trim()

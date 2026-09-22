@@ -48,6 +48,14 @@ const WRITABLE_COLUMNS = [
   "privileged_role_owner_granted",
   "privileged_role_owner_granted_at",
   "timezone",
+  // §Phase 4: invite acceptance carries the invite's tenant_id onto the new
+  // member row (the one place a member's tenant is set at creation - every
+  // other path, direct-account-creation and migration, defaults to
+  // MAIN_TENANT_ID via the column's ordinary backfill/DEFAULT). Every other
+  // caller of createMemberPg simply omits this key, in which case the
+  // column falls back to whatever ensure-tenancy-schema.js's own
+  // ALTER TABLE ... DEFAULT resolves to for a fresh row.
+  "tenant_id",
 ];
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);
@@ -97,6 +105,7 @@ export async function getMemberAuthContextPg(firebaseUid) {
       m.status,
       m.security_stamp,
       m.must_change_password,
+      m.tenant_id,
       r.id AS role_id,
       COALESCE(r.name, 'Viewer') AS role_name,
       COALESCE(r.hierarchy_level, 10) AS hierarchy_level,
