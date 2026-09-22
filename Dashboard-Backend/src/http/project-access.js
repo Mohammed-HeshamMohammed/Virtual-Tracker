@@ -71,9 +71,7 @@ export async function viewerCanCreateProjectTasks(db, viewer, projectId) {
 
   const roleKey = normalizeRole(viewer.roleName);
   if (ORG_PROJECT_TASK_ADMIN_ROLES.has(roleKey)) return true;
-  // Clients have absolute read-only access to Project Management, even on a
-  // project flagged client_can_manage.
-  if (roleKey === "client") return false;
+  if (roleKey === "client") return clientMayManageProject(viewer, pid);
 
   const rows = await query(
     "SELECT project_role FROM project_members WHERE project_id = $1 AND member_id = $2 LIMIT 10",
@@ -128,9 +126,9 @@ export async function viewerCanWriteProject(db, viewer, projectId) {
   const pid = typeof projectId === "string" ? projectId.trim() : "";
   if (!pid || !viewer?.memberId) return false;
 
-  // Clients have absolute read-only access to Project Management, even on a
-  // project flagged client_can_manage.
-  if (normalizeRole(viewer.roleName) === "client") return false;
+  if (normalizeRole(viewer.roleName) === "client") {
+    return clientMayManageProject(viewer, pid);
+  }
 
   const allowedProjects = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
   if (allowedProjects === null) return true;

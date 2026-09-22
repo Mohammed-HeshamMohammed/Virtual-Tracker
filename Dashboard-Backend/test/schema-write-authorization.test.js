@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 
 const AUTH_CONTEXT = Symbol.for("virtual-tracker.auth-context");
 
-/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null, memberOnProject: boolean, project: any, task: any, taskAssigned: boolean }} */
+/** @type {{ writes: string[], viewer: any, rows: Record<string, any>, clientManagesProjectId: string | null, clientTracksProjectId: string | null, memberOnProject: boolean, project: any, task: any, taskAssigned: boolean, taskAccessAllowed: boolean }} */
 const stub = {
   writes: [],
   viewer: null,
@@ -27,6 +27,9 @@ const stub = {
   project: { id: "p1", type: "calling", require_task_to_track: true },
   task: null,
   taskAssigned: true,
+  // The gate under test for task children: defaults to "viewer cannot see
+  // this task" so the existing negative case needs nothing extra set.
+  taskAccessAllowed: false,
 };
 
 mock.module("../src/http/auth-context.js", {
@@ -115,8 +118,7 @@ mock.module("../src/http/team-edit-access.js", {
 });
 mock.module("../src/http/task-access.js", {
   namedExports: {
-    // The gate under test for task children: viewer cannot see this task.
-    canAccessTask: async () => ({ allowed: false }),
+    canAccessTask: async () => ({ allowed: stub.taskAccessAllowed }),
     assertTaskAccessible: async () => null,
     canSyncTaskAssignments: () => true,
     assertCanReviewTasks: async () => null,
@@ -309,6 +311,7 @@ function reset(viewer) {
   stub.project = { id: "p1", type: "calling", require_task_to_track: true };
   stub.task = null;
   stub.taskAssigned = true;
+  stub.taskAccessAllowed = false;
   lastResponse = null;
 }
 
@@ -376,12 +379,12 @@ test("a comment cannot be created on a task the viewer cannot access", async () 
   assert.deepEqual(stub.writes, [], "no comment may be written for an inaccessible task");
 });
 
-// Clients have absolute read-only access to Project Management. "tasks"
-// itself isn't in MANAGEMENT_WRITE_KEYS (employees may edit their own
+// "tasks" itself isn't in MANAGEMENT_WRITE_KEYS (employees may edit their own
 // tasks), and task comments/subtasks/attachments are only gated by task
-// visibility - so both need an explicit client block of their own.
+// visibility - so a client PATCHing either one needs its own explicit gate,
+// tied to the same client_can_manage flag task creation already respects.
 
-test("a client cannot PATCH a task even when nothing else would block it", async () => {
+test("a client without client_can_manage cannot PATCH a task", async () => {
   reset(CLIENT);
   stub.rows["tasks:t1"] = { id: "t1", project_id: "p1" };
   const { req, res, url } = makeReqRes("PATCH", "/api/tasks/t1", { title: "Renamed by client" });
@@ -390,27 +393,44 @@ test("a client cannot PATCH a task even when nothing else would block it", async
   assert.deepEqual(stub.writes, []);
 });
 
-test("a client cannot create a task comment even when nothing else would block it", async () => {
+test("a client_can_manage client CAN PATCH a task on their managed project", async () => {
   reset(CLIENT);
+  stub.clientManagesProjectId = "p1";
+  stub.rows["tasks:t1"] = { id: "t1", project_id: "p1" };
+  const { req, res, url } = makeReqRes("PATCH", "/api/tasks/t1", { title: "Renamed by client" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("update:tasks:t1"), true, "expected the write to go through");
+});
+
+test("a client without client_can_manage cannot create a task comment", async () => {
+  reset(CLIENT);
+  stub.task = { id: "t1", project_id: "p1" };
   const { req, res, url } = makeReqRes("POST", "/api/tasks/t1/comments", { body: "hi" });
   await routeSchemaCrud(req, res, url, {}, undefined);
   assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
   assert.deepEqual(stub.writes, []);
 });
 
-// Clients have absolute read-only access to Project Management: unlike the
-// old client_can_manage bypass, a project flagged client_can_manage grants no
-// write access to the "projects" entity at all (task creation is a separate,
-// narrower allowance covered elsewhere - see task-creation-restriction.test.js
-// and viewerCanCreateProjectTasks).
-test("a client_can_manage client still cannot PATCH the project's ordinary fields", async () => {
+test("a client_can_manage client CAN create a task comment on their managed project", async () => {
+  reset(CLIENT);
+  stub.clientManagesProjectId = "p1";
+  stub.task = { id: "t1", project_id: "p1" };
+  stub.taskAccessAllowed = true;
+  const { req, res, url } = makeReqRes("POST", "/api/tasks/t1/comments", { body: "hi" });
+  await routeSchemaCrud(req, res, url, {}, undefined);
+  assert.equal(stub.writes.includes("create:task-comments"), true, "expected the write to go through");
+});
+
+// A client_can_manage client can edit a project's tasks - that's the whole
+// point of the flag - but the flag itself, and its independent
+// client_can_track sibling, are not theirs to grant themselves.
+test("a client_can_manage client can PATCH their project's ordinary fields", async () => {
   reset(CLIENT);
   stub.clientManagesProjectId = "p1";
   stub.rows["projects:p1"] = { id: "p1" };
   const { req, res, url } = makeReqRes("PATCH", "/api/projects/p1", { name: "Renamed by client" });
   await routeSchemaCrud(req, res, url, {}, undefined);
-  assert.equal(lastResponse.status, 403, "expected 403, got " + JSON.stringify(lastResponse));
-  assert.deepEqual(stub.writes, [], "no write may reach the database");
+  assert.equal(stub.writes.includes("update:projects:p1"), true, "an ordinary field edit must succeed");
 });
 
 test("a client_can_manage client cannot grant themselves client_can_track via the same PATCH", async () => {

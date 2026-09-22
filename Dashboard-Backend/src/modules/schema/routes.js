@@ -3,6 +3,7 @@ import { canAccessMember } from "../../http/authorization.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { canAccessTask } from "../../http/task-access.js";
 import {
+  clientMayManageProject,
   clientMayTrackProject,
   getViewerProjectIds,
   isProjectMemberForTimer,
@@ -111,11 +112,12 @@ const TASK_CHILD_WRITE_KEYS = new Set([
   "task-hours",
 ]);
 
-// Project-management task collaboration - clients have absolute read-only
-// access to these. task-hours is deliberately excluded: it's a time-tracking
-// action gated by the existing client_can_track project flag instead (see
-// memberMayTrackTaskLess), which this change doesn't touch.
-const TASK_CHILD_CLIENT_BLOCKED_KEYS = new Set(["task-subtasks", "task-comments", "task-attachments"]);
+// Project-management task collaboration - a client may only write these when
+// their client_can_manage flag is on for the task's project (the same rule
+// task creation and ordinary task field edits follow). task-hours is
+// deliberately excluded: it's a time-tracking action gated by the existing
+// client_can_track project flag instead (see memberMayTrackTaskLess).
+const TASK_CHILD_CLIENT_GATED_KEYS = new Set(["task-subtasks", "task-comments", "task-attachments"]);
 
 async function assertTaskChildWritable(req, res, origin, db, entityKey, body, existingData) {
   if (!TASK_CHILD_WRITE_KEYS.has(entityKey)) return true;
@@ -124,15 +126,19 @@ async function assertTaskChildWritable(req, res, origin, db, entityKey, body, ex
     sendJson(res, origin, 401, { success: false, error: "Authorization required." });
     return false;
   }
-  if (TASK_CHILD_CLIENT_BLOCKED_KEYS.has(entityKey) && isClientRole(viewer.roleName)) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
-  }
   const taskId =
     (typeof body.task_id === "string" && body.task_id) ||
     (typeof body.taskId === "string" && body.taskId) ||
     (typeof existingData?.task_id === "string" && existingData.task_id) ||
     "";
+  if (TASK_CHILD_CLIENT_GATED_KEYS.has(entityKey) && isClientRole(viewer.roleName)) {
+    const task = taskId ? await getTaskPg(taskId) : null;
+    const projectId = task ? String(task.project_id ?? task.projectId ?? "") : "";
+    if (!projectId || !(await clientMayManageProject(viewer, projectId))) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+      return false;
+    }
+  }
   if (!taskId) return true;
   const result = await canAccessTask(db, viewer.memberId, viewer.roleName, taskId);
   if (!result.allowed) {
@@ -271,12 +277,6 @@ async function assertTeamWriteAuthorized(
 async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, body, existingData, resourceId) {
   if (!PROJECT_WRITE_KEYS.has(entityKey)) return true;
   const viewer = getAuthContext(req);
-  // Clients have absolute read-only access to Project Management: unlike
-  // the old client_can_manage bypass, there is no per-project override here.
-  if (!requireManagementRole(viewer)) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
-  }
   let projectId = "";
   if (entityKey === "projects") {
     projectId = resourceId || (typeof body.id === "string" ? body.id : "");
@@ -286,6 +286,23 @@ async function assertProjectWriteAuthorized(req, res, origin, db, entityKey, bod
       (typeof body.projectId === "string" && body.projectId) ||
       (typeof existingData?.project_id === "string" && existingData.project_id) ||
       "";
+  }
+  const clientManages = projectId ? await clientMayManageProject(viewer, projectId) : false;
+  if (!clientManages && !requireManagementRole(viewer)) {
+    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+    return false;
+  }
+  if (
+    clientManages &&
+    entityKey === "projects" &&
+    (Object.prototype.hasOwnProperty.call(body, "client_can_manage") ||
+      Object.prototype.hasOwnProperty.call(body, "client_can_track"))
+  ) {
+    sendJson(res, origin, 403, {
+      success: false,
+      error: "Only the project's organization can change who may manage or track it.",
+    });
+    return false;
   }
   if (projectId) {
     const allowed = await viewerCanWriteProject(db, viewer, projectId);
@@ -438,15 +455,35 @@ async function assertGenericWriteAuthorized(
   options = {},
 ) {
   if (requiresManagementWriteGate(entityKey) && !requireManagementRole(getAuthContext(req))) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
+    const viewer = getAuthContext(req);
+    const projectId =
+      (typeof body?.project_id === "string" && body.project_id) ||
+      (typeof body?.projectId === "string" && body.projectId) ||
+      (typeof existingData?.project_id === "string" && existingData.project_id) ||
+      (entityKey === "projects" ? options.resourceId || "" : "");
+    if (!projectId || !(await clientMayManageProject(viewer, projectId))) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+      return false;
+    }
   }
   // "tasks" isn't in MANAGEMENT_WRITE_KEYS (employees can edit their own
-  // tasks), but Clients have absolute read-only access to Project
-  // Management, so they're blocked from task edits specifically here.
-  if (entityKey === "tasks" && isClientRole(getAuthContext(req)?.roleName)) {
-    sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-    return false;
+  // tasks) so it never went through the gate above - this was previously
+  // wide open to any project-visible member with no role check at all.
+  // A client may edit a task only when client_can_manage is on for its
+  // project, the same rule task creation already follows.
+  if (entityKey === "tasks") {
+    const viewer = getAuthContext(req);
+    if (isClientRole(viewer?.roleName)) {
+      const projectId =
+        (typeof body?.project_id === "string" && body.project_id) ||
+        (typeof body?.projectId === "string" && body.projectId) ||
+        (typeof existingData?.project_id === "string" && existingData.project_id) ||
+        "";
+      if (!projectId || !(await clientMayManageProject(viewer, projectId))) {
+        sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+        return false;
+      }
+    }
   }
   if (!(await assertTaskChildWritable(req, res, origin, db, entityKey, body, existingData))) return false;
   if (!(await assertTeamWriteAuthorized(req, res, origin, db, entityKey, body, existingData, options))) return false;
