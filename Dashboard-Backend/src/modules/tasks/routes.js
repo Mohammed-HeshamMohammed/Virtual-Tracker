@@ -1,6 +1,7 @@
 import { requireAuthContext } from "../../http/auth-context.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { isClientRole } from "../../http/team-member-assign-policy.js";
+import { clientMayManageProject } from "../../http/project-access.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { assertCanReviewTasks, assertTaskAccessible, canAccessTask, canSyncTaskAssignments } from "../../http/task-access.js";
@@ -741,17 +742,20 @@ export async function routeTasks(req, res, url, db, origin) {
     const taskId = taskReviewMatch[1];
     const reviewer = assertCanReviewTasks(req, res, origin);
     if (!reviewer) return true;
-    // isReviewCenterRole (assertCanReviewTasks's gate) includes "client" so
-    // it can view the review queue, but a client's absolute read-only access
-    // to Project Management means they can never submit a decision here -
-    // without this, a task with no in-review assignment rows would fall to
-    // the updateTaskPg() branch below with no management check at all.
-    if (isClientRole(reviewer.roleName)) {
-      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
-      return true;
-    }
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
     if (!access) return true;
+    // isReviewCenterRole (assertCanReviewTasks's gate) includes "client" so
+    // it can view the review queue, but only a client_can_manage project lets
+    // a client actually submit a decision - without this, a task with no
+    // in-review assignment rows would fall to the updateTaskPg() branch below
+    // with no management check at all.
+    if (isClientRole(reviewer.roleName)) {
+      const projectId = String(access.task?.project_id ?? access.task?.projectId ?? "");
+      if (!projectId || !(await clientMayManageProject(reviewer, projectId))) {
+        sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+        return true;
+      }
+    }
     try {
       const body = await readJsonBody(req);
       rejectUnknownFields(body, ["decision"]);

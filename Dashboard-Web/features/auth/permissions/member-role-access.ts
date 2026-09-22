@@ -172,9 +172,7 @@ export function canCreateTasksInProject(
   clientCanManage = false,
 ): boolean {
   if (canCreateTasksByOrgRole(orgRole)) return true
-  // Clients have absolute read-only access to Project Management, even on a
-  // project flagged "client can manage".
-  if (normalizeMemberRole(orgRole) === "client") return false
+  if (normalizeMemberRole(orgRole) === "client") return clientCanManage === true
   if (!memberId) return false
   const managesAnyProject = projectMembers.some(
     (row) => row.memberId === memberId && isProjectManagerRole(row.projectRole),
