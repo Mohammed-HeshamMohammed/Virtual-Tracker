@@ -16,6 +16,18 @@ export const ASSIGNABLE_ROLE_NAMES = [
   "Viewer",
 ];
 
+// Enterprise Super Manager / Enterprise Manager are grant types, not labels
+// (PLAN-customer-accounts-and-tenancy.md §7, §16.1): exactly one member per
+// tenant holds one, it is the tenant's paid membership itself, and it is
+// reachable only through the customer-accounts create path - never through
+// an ordinary role dropdown and never by assignment from inside a tree.
+// Deliberately absent from ASSIGNABLE_ROLE_NAMES for that reason.
+const ENTERPRISE_ROLE_KEYS = new Set(["enterprisesupermanager", "enterprisemanager"]);
+
+export function isEnterpriseRole(roleName) {
+  return ENTERPRISE_ROLE_KEYS.has(normalizeRoleKey(roleName));
+}
+
 export function isAdminLevelRole(roleName) {
   const key = normalizeRoleKey(roleName);
   return key === "admin" || key === "superadmin" || key === "owner";
@@ -63,7 +75,12 @@ export function canCreateMembers(roleName) {
     key === "superadmin" ||
     key === "admin" ||
     key === "supermanager" ||
-    key === "manager"
+    key === "manager" ||
+    // A customer root builds their own tree under their granted role (spec's
+    // "Customer hierarchy and seats") - same creation right as the ordinary
+    // ranks they sit alongside, just within their own tenant (enforced by
+    // RLS, not by this function).
+    ENTERPRISE_ROLE_KEYS.has(key)
   );
 }
 
@@ -78,6 +95,11 @@ export function maxAssignableRank(actorRoleName) {
 export function canAssignRole(actorRoleName, targetRoleName) {
   const targetKey = normalizeRoleKey(targetRoleName);
   if (targetKey === "owner") return false;
+  // Unconditional, from every actor including Owner - an Enterprise role is
+  // granted only through the customer-accounts create path (§16.1), never
+  // assigned. Checked before the rank arithmetic below so a future rank
+  // change to the enterprise tiers can't accidentally open this back up.
+  if (ENTERPRISE_ROLE_KEYS.has(targetKey)) return false;
   if (!canCreateMembers(actorRoleName)) return false;
   const targetRank = rolePrivilegeRank(targetRoleName);
   if (targetRank < 0) return false;

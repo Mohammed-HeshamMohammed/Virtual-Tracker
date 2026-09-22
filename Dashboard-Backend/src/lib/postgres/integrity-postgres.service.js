@@ -1,6 +1,9 @@
 import { getPostgresPool } from "./client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
+// Same KNOWN GAP as activity-events-postgres.service.js's own pgQuery - see
+// its comment. Tracked for the RLS cutover checklist, not fixed here to
+// avoid touching its passing test fixtures in this pass.
 async function pgQuery(sql, params = []) {
   const pool = getPostgresPool();
   if (!pool) return null;

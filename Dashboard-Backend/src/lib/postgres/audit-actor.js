@@ -23,9 +23,17 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 const storage = new AsyncLocalStorage();
 
+/**
+ * The same store also carries the request's tenant id (PLAN-customer-
+ * accounts-and-tenancy.md §3.2): both are "who/what this request is",
+ * published onto the connection the same way and at the same moment
+ * (setAuthContext, the one place a request's viewer becomes known), so one
+ * async-local store serves both rather than wrapping every request twice.
+ */
+
 /** Wraps one request so writes inside it can be attributed. */
 export function runWithAuditActor(fn) {
-  return storage.run({ id: null }, fn);
+  return storage.run({ id: null, tenantId: null }, fn);
 }
 
 /** Called once the request's viewer is known. */
@@ -38,6 +46,29 @@ export function setAuditActor(memberId) {
 
 export function currentAuditActor() {
   return storage.getStore()?.id ?? null;
+}
+
+/** Called once the request's tenant is known (setAuthContext). */
+export function setRequestTenantId(tenantId) {
+  const store = storage.getStore();
+  if (!store) return;
+  store.tenantId = typeof tenantId === "string" && tenantId.trim() ? tenantId.trim() : null;
+}
+
+export function currentTenantId() {
+  return storage.getStore()?.tenantId ?? null;
+}
+
+/**
+ * The background-work equivalent of runWithAuditActor: a sweep or a
+ * scheduled-report iteration has no HTTP request to wrap, so it opens its
+ * own frame here instead of going through setAuthContext (see client.js's
+ * withTenant, and PLAN-customer-accounts-and-tenancy.md §15.2). No actor is
+ * published in this frame - "System" is still the honest author for
+ * background work, only the tenant scope changes per iteration.
+ */
+export function runWithTenantId(tenantId, fn) {
+  return storage.run({ id: null, tenantId: typeof tenantId === "string" ? tenantId : null }, fn);
 }
 
 /**

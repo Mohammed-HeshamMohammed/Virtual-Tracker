@@ -47,7 +47,7 @@ export const COMPAT_BODY_SCHEMAS = {
     "expectedUpdatedAt",
   ],
   createInvite: ["email", "roleId", "payRate", "currency", "createdBy", "createdByUid"],
-  bulkInvites: ["rows", "role", "inviteKind", "appOrigin", "createdBy", "createdByUid"],
+  bulkInvites: ["rows", "role", "inviteKind", "appOrigin", "createdBy", "createdByUid", "treeParentMemberId"],
   bulkInviteRow: ["email", "pay_rate", "payRate", "currency", "created_by"],
   patchInvite: ["status", "pay_rate", "role_id", "role", "currency"],
   orgFieldOption: [

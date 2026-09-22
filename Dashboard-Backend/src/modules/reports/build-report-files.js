@@ -17,6 +17,33 @@ function escapeCsvCell(value) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/**
+ * The report's own resolved currency, not a hardcoded dollar sign. The
+ * workspace picks a display currency and report-currency.js resolves it per
+ * request (the viewer's own where there is a rate for it, the org's
+ * otherwise); this file used to print `$${amount}` regardless, so a
+ * workspace running in EGP got its total labelled in dollars while every
+ * other figure in the same PDF was converted.
+ *
+ * Falls back to plain 2dp when a currency code is missing or unknown to
+ * Intl, rather than throwing mid-render or guessing a symbol.
+ */
+function formatReportMoney(amount, currencyCode) {
+  const value = Number(amount) || 0;
+  const code = String(currencyCode || "").trim().toUpperCase();
+  if (!/^[A-Z]{3}$/.test(code)) return value.toFixed(2);
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: code,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${code} ${value.toFixed(2)}`;
+  }
+}
+
 export function buildTimeAndActivityCsv(payload) {
   const header = ["Date", "Member", "Active hours", "Idle hours"];
   const rows = payload.days.flatMap((day) =>
@@ -58,7 +85,10 @@ export async function buildTimeAndActivityPdf(payload, opts = {}) {
     summary: [
       { label: "Total active", value: formatHms(totalActiveSeconds) },
       { label: "Average activity", value: `${activityPct}%` },
-      { label: "Total spent", value: `$${totalSpent.toFixed(2)}` },
+      {
+        label: "Total spent",
+        value: formatReportMoney(totalSpent, opts.currency ?? payload.currency?.displayCurrency),
+      },
     ],
     charts: [
       ...(dailyActiveHours.length > 0

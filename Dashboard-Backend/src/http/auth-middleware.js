@@ -8,6 +8,7 @@ import { readIdToken } from "./auth-token.js";
 import { setAuthContext } from "./auth-context.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
 import { getMemberByFirebaseUidPg, getMemberByIdPg, getMemberAuthContextPg } from "../lib/postgres/members-postgres.service.js";
+import { resolveTenantGrantCached } from "../modules/customer-accounts/tenant-grant-cache.js";
 
 const PUBLIC_API_ROUTES = [
   { method: "POST", pattern: /^\/api\/auth\/session-bootstrap$/ },
@@ -135,6 +136,10 @@ export async function authenticateRequest(req, url, db) {
       isManagement: Boolean(memberData.is_management),
       securityStamp: typeof memberData.security_stamp === "string" ? memberData.security_stamp : undefined,
       email: typeof decoded.email === "string" ? decoded.email : undefined,
+      // Feeds setAuthContext -> setRequestTenantId -> client.js's per-query
+      // RLS publish (§3.2). Always populated once ensureTenancySchema has
+      // run (every existing member is backfilled to MAIN_TENANT_ID).
+      tenantId: typeof memberData.tenant_id === "string" ? memberData.tenant_id : undefined,
     };
     setAuthContext(req, context);
     return { ok: true, context };
@@ -181,6 +186,28 @@ export async function enforceApiAuthentication(req, url, db) {
         error: banGate.error,
         code: banGate.code,
       };
+    }
+    // PLAN-customer-accounts-and-tenancy.md §4.3, §16.4: the Enterprise
+    // grant, re-validated on every request - a hard cutoff the instant
+    // period_end passes, checked here so it applies uniformly to every
+    // member in the tree, not just the root (their own tenant_id is what
+    // makes that true, with no extra lookup). The main tenant's period_end
+    // is 'infinity', so this is a no-op for every ordinary member without
+    // special-casing type='main' here.
+    const tenantId = typeof memberData?.tenant_id === "string" ? memberData.tenant_id : null;
+    if (tenantId) {
+      const grant = await resolveTenantGrantCached(tenantId);
+      if (grant && !grant.active) {
+        return {
+          allowed: false,
+          status: 403,
+          error:
+            grant.lifecycle === "removing" || grant.lifecycle === "removed"
+              ? "This account has been removed."
+              : "Your subscription has expired. Please contact your provider.",
+          code: grant.lifecycle === "live" ? "SUBSCRIPTION_EXPIRED" : "TENANT_REMOVED",
+        };
+      }
     }
     const hierarchyGate = checkHierarchyAccess(memberData, url.pathname, req.method ?? "GET");
     if (hierarchyGate.blocked) {

@@ -117,6 +117,7 @@ import {
 } from "./agent-heartbeat.js";
 import { isWebActionOnAgentSession, normalizeSessionReason } from "./session-reasons.js";
 import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
+import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
 async function getMemberTodayWorkStatus(db, memberId) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
@@ -2006,6 +2007,30 @@ export async function routeActivity(req, res, url, origin) {
         await revokeAgentDevicesForMember(verified.memberId);
         sendJson(res, origin, 403, { success: false, error: "This account is no longer active." });
         return true;
+      }
+
+      // §14.4: agent reauth is a PUBLIC_API_ROUTES entry - it runs before
+      // auth-middleware.js's per-request gate ever sees this device, so an
+      // expired tenant would otherwise keep minting fresh custom tokens for
+      // an agent that then gets rejected by every OTHER endpoint anyway.
+      // 403 here matches §14.5's status-code choice exactly: the agent
+      // already classifies 401/403 as terminal (ApiError::Rejected) and
+      // stops retrying, so this reaches an already-correct code path with
+      // zero agent-side changes.
+      const tenantId = typeof memberRow.tenant_id === "string" ? memberRow.tenant_id : null;
+      if (tenantId) {
+        const grant = await resolveTenantGrantCached(tenantId);
+        if (grant && !grant.active) {
+          sendJson(res, origin, 403, {
+            success: false,
+            error:
+              grant.lifecycle === "removing" || grant.lifecycle === "removed"
+                ? "This account has been removed."
+                : "Your subscription has expired. Please contact your provider.",
+            code: grant.lifecycle === "live" ? "SUBSCRIPTION_EXPIRED" : "TENANT_REMOVED",
+          });
+          return true;
+        }
       }
 
       const firebaseUid = String(memberRow.firebase_uid || memberRow.firebaseUid || "").trim();

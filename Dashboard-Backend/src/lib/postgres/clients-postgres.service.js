@@ -1,6 +1,8 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { currentTenantId } from "./audit-actor.js";
+import { MAIN_TENANT_ID } from "./ensure-tenancy-schema.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
 
 function uuidOrNull(value) {
@@ -22,10 +24,14 @@ export async function listClientsPg({ limit = 1000 } = {}) {
 export async function createClientPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
+    // tenant_id: the creating request's tenant, explicitly. Left to the
+    // column DEFAULT (the main tenant), a customer account's clients landed
+    // in the main organization - the retrofit ensure-tenancy-schema.js asks
+    // every create path for.
     `INSERT INTO clients (
        id, member_id, name, street_address, city, state, zip, country, phone_number,
-       email_addresses, status, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12)
+       email_addresses, status, created_by, updated_by, tenant_id
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13)
      RETURNING *`,
     [
       id,
@@ -40,6 +46,7 @@ export async function createClientPg(data) {
       data.emailAddresses ?? "",
       data.status ?? "active",
       uuidOrNull(data.actorId),
+      data.tenantId ?? currentTenantId() ?? MAIN_TENANT_ID,
     ],
   );
   const client = rows[0] ?? null;

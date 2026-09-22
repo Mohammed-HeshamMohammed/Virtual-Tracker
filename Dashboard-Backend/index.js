@@ -23,6 +23,8 @@ import { getDb } from "./src/config/firebase.js";
 import { logStartup, logDbStatus, logError } from "./src/core/logger.js";
 import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstrap.js";
 import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
+import { ensureTenancySchema, runHighVolumeTenancyMigrations } from "./src/lib/postgres/ensure-tenancy-schema.js";
+import { ensureTenancyRls } from "./src/lib/postgres/ensure-tenancy-rls.js";
 import { backfillMemberAvatarUrls } from "./src/modules/auth/avatar-backfill.js";
 import { backfillMemberDisplayNames } from "./src/modules/members/services/member-name-backfill.js";
 import { cleanupCallingProjectTasks } from "./src/modules/projects/calling-project-task-cleanup.js";
@@ -98,6 +100,26 @@ export async function startServer(port = getEnv().server.port) {
     const schemaResult = await ensurePostgresLookupSchema();
     if (schemaResult.ok === false) {
       logError(new Error(schemaResult.error ?? "Postgres lookup schema ensure failed"), "postgres-lookup-schema");
+    }
+    // Runs after the lookup schema above: it ALTERs tables the lookup schema
+    // just created/ensured, and its own audit-trigger replacement depends on
+    // audit_logs already having its tenant_id column (see
+    // ensure-tenancy-schema.js's AUDIT_TRIGGER_DDL comment).
+    const tenancyResult = await ensureTenancySchema();
+    if (tenancyResult.ok === false) {
+      logError(new Error(tenancyResult.error ?? "Postgres tenancy schema ensure failed"), "postgres-tenancy-schema");
+    } else {
+      // Fire-and-forget: CONCURRENTLY builds and VALIDATE CONSTRAINT scans on
+      // the high-volume tables take real time on a populated database and
+      // must not delay the server coming up. A miss just means another pass
+      // next boot - see the function's own comment.
+      runHighVolumeTenancyMigrations().catch((err) => logError(err, "tenancy-high-volume-migration"));
+    }
+    // Inert unless POSTGRES_TENANCY_RLS_ENABLED=true - see that flag's own
+    // comment in ensure-tenancy-rls.js.
+    const rlsResult = await ensureTenancyRls();
+    if (rlsResult.ok === false) {
+      logError(new Error(rlsResult.error ?? "Postgres tenancy RLS ensure failed"), "postgres-tenancy-rls");
     }
     backfillMemberAvatarUrls(db).catch((err) => logError(err, "avatar-backfill"));
     backfillMemberDisplayNames().catch((err) => logError(err, "member-name-backfill"));

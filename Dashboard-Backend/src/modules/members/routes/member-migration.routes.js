@@ -1,4 +1,5 @@
 import { FieldPath } from "firebase-admin/firestore";
+import { MAIN_TENANT_ID } from "../../../lib/postgres/ensure-tenancy-schema.js";
 import { getDb, getAuthAdmin } from "../../../config/firebase.js";
 import { requireAuthContext } from "../../../http/auth-context.js";
 import { assertMigrationManagementRole } from "../../../http/member-migration-policy.js";
@@ -219,12 +220,14 @@ export async function routeMemberMigration(req, res, url, origin) {
         }
 
         await pgQuery(
-          `INSERT INTO pending_auth_members (firebase_uid, email, display_name, role_id, pay_rate, created_by_uid, created_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
+          `INSERT INTO pending_auth_members (firebase_uid, email, display_name, role_id, pay_rate, created_by_uid, created_at, tenant_id)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
            ON CONFLICT (firebase_uid) DO UPDATE SET
              email = EXCLUDED.email, display_name = EXCLUDED.display_name, role_id = EXCLUDED.role_id,
              pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
-          [uid, email, userRecord.displayName || "", roleIdByName.get(roleName), 0, viewer.uid, new Date()],
+          // The migrating admin's own tenant - promotePendingMemberCore
+          // carries this row's tenant_id onto the member it creates.
+          [uid, email, userRecord.displayName || "", roleIdByName.get(roleName), 0, viewer.uid, new Date(), viewer.tenantId || MAIN_TENANT_ID],
         );
 
         try {

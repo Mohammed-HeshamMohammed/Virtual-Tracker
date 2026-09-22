@@ -7,6 +7,9 @@ import { getAuthContext, requireManagementRole } from "../../http/auth-context.j
 import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
+import { resolveMemberRoleName } from "../activity/activity-scope.js";
+import { SeatLimitError, withSeatsAvailable } from "../customer-accounts/seat-usage.service.js";
+import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 import { canViewerManageInvite } from "../../http/invite-scope.js";
 import { validateMemberRoleChange, validateRoleAssignment } from "../../http/role-assignment-guard.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
@@ -1216,12 +1219,23 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
     }
-    const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" && body.roleId.trim() ? body.roleId : null, pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId || null, created_by_uid: viewer?.uid ?? "", updated_by: null };
-    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+    const payload = { id: crypto.randomUUID(), email: typeof body.email === "string" ? body.email.trim().toLowerCase() : "", invite_token: crypto.randomBytes(24).toString("hex"), invite_kind: "email", role_id: typeof body.roleId === "string" && body.roleId.trim() ? body.roleId : null, pay_rate: typeof body.payRate === "number" ? body.payRate : 0, currency: typeof body.currency === "string" ? body.currency : "USD", status: "pending_signup", sent_at: new Date(), accepted_at: null, created_by: viewer?.memberId || null, created_by_uid: viewer?.uid ?? "", updated_by: null, tenant_id: viewer?.tenantId || MAIN_TENANT_ID };
+    const INVITE_COLS = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by","tenant_id"];
     const colList = INVITE_COLS.join(", ");
     const phList = INVITE_COLS.map((_, i) => `$${i + 1}`).join(", ");
     const vals = INVITE_COLS.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
-    await query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals);
+    // Same tenant stamping and seat lock as /api/invites/bulk below.
+    try {
+      await withSeatsAvailable(payload.tenant_id, 1, {
+        insert: (client) => client.query(`INSERT INTO invites (${colList}) VALUES (${phList})`, vals),
+      });
+    } catch (e) {
+      if (e instanceof SeatLimitError) {
+        sendJson(res, origin, e.status, { success: false, error: e.message, code: e.code });
+        return true;
+      }
+      throw e;
+    }
     const inviteBase = resolveAppPublicUrl(typeof body.appOrigin === "string" ? body.appOrigin : "");
     const inviteUrl = `${inviteBase}/invite/${payload.invite_token}`;
     let emailSent = false;
@@ -1267,6 +1281,40 @@ export async function routeCompatibility(req, res, url, db, origin) {
       return true;
     }
     const inviteKind = body.inviteKind === "open_link" ? "open_link" : "email";
+    // "Add a member here" from the member tree: the invitee is placed under
+    // this member on acceptance instead of under the inviter. The inviter
+    // must be allowed to manage that position (or be it) - otherwise this
+    // would let anyone hang people off any branch of the organization.
+    let treeParentMemberId = null;
+    if (body.treeParentMemberId != null && body.treeParentMemberId !== "") {
+      const candidate = typeof body.treeParentMemberId === "string" ? body.treeParentMemberId.trim() : "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)) {
+        sendJson(res, origin, 400, { success: false, error: "treeParentMemberId must be a member id." });
+        return true;
+      }
+      const parentRows = await query("SELECT id FROM members WHERE id = $1 AND status = 'active' LIMIT 1", [candidate]);
+      if (!parentRows.length) {
+        sendJson(res, origin, 404, { success: false, error: "The member to place the invitee under was not found." });
+        return true;
+      }
+      if (!(await canManageMember(db, viewer?.memberId, viewer?.roleName, candidate))) {
+        sendJson(res, origin, 403, { success: false, error: "You cannot add members under that member." });
+        return true;
+      }
+      // The same rules recordMemberRelationship enforces on acceptance -
+      // checked now, because by then a refusal only gets logged and the new
+      // member lands outside the tree with nobody told why.
+      const parentRoleKey = String((await resolveMemberRoleName(db, candidate)) || "").trim().toLowerCase();
+      if (parentRoleKey === "client") {
+        sendJson(res, origin, 400, { success: false, error: "Clients cannot have members placed under them." });
+        return true;
+      }
+      if (parentRoleKey === "owner" && roleName.trim().toLowerCase() === "owner") {
+        sendJson(res, origin, 400, { success: false, error: "An Owner cannot report to another Owner." });
+        return true;
+      }
+      treeParentMemberId = candidate;
+    }
     const appOrigin = typeof body.appOrigin === "string" && body.appOrigin.startsWith("http") ? body.appOrigin.replace(/\/$/, "") : "";
     const auth = getAuthAdmin();
     if (inviteKind === "email" && !auth) {
@@ -1298,10 +1346,12 @@ export async function routeCompatibility(req, res, url, db, origin) {
       }
     }
     const inviteBase = resolveAppPublicUrl(appOrigin);
-    const created = [];
-    let emailsSent = 0;
-    let emailsFailed = 0;
-    let emailChannel;
+    // The inviter's own tenant. The column's DEFAULT is the main tenant, so
+    // leaving it out (as this used to) put a customer account's own invites
+    // - and so the people who accepted them - into the main organization.
+    const inviteTenantId = viewer?.tenantId || MAIN_TENANT_ID;
+    const role_id = await resolveRoleIdByName(db, roleName);
+    const pending = [];
     for (const row of rows) {
       const email = typeof row?.email === "string" ? row.email.trim().toLowerCase() : "";
       if (inviteKind === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) continue;
@@ -1309,8 +1359,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
       const id = crypto.randomUUID();
       const payRaw = typeof row?.pay_rate === "number" ? row.pay_rate : typeof row?.payRate === "number" ? row.payRate : 0;
       const pay_rate = Number.isFinite(payRaw) ? payRaw : 0;
-      const role_id = await resolveRoleIdByName(db, roleName);
-      const payload = {
+      pending.push({
         id,
         email: inviteKind === "email" ? email : "",
         invite_token: token,
@@ -1324,14 +1373,40 @@ export async function routeCompatibility(req, res, url, db, origin) {
         created_by: viewer?.memberId || null,
         created_by_uid: viewer?.uid ?? "",
         updated_by: null,
+        tree_parent_member_id: treeParentMemberId,
+        tenant_id: inviteTenantId,
         ...(inviteKind === "open_link" ? shareLinkInviteFields() : {}),
-      };
-      const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
-      const bulkColList = bulkCols.join(", ");
-      const bulkPhList = bulkCols.map((_, i) => `$${i + 1}`).join(", ");
-      const bulkVals = bulkCols.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
-      await query(`INSERT INTO invites (${bulkColList}) VALUES (${bulkPhList})`, bulkVals);
-      const invitePath = `/invite/${token}`;
+      });
+    }
+    const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by","tree_parent_member_id","tenant_id"];
+    const bulkColList = bulkCols.join(", ");
+    const bulkPhList = bulkCols.map((_, i) => `$${i + 1}`).join(", ");
+    // Every pending invite holds a seat. All of this request's rows are
+    // inserted under one lock on the tenant row, so a request either fits
+    // entirely or is refused before anything is created or emailed.
+    try {
+      await withSeatsAvailable(inviteTenantId, pending.length, {
+        insert: async (client) => {
+          for (const payload of pending) {
+            const bulkVals = bulkCols.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));
+            await client.query(`INSERT INTO invites (${bulkColList}) VALUES (${bulkPhList})`, bulkVals);
+          }
+        },
+      });
+    } catch (e) {
+      if (e instanceof SeatLimitError) {
+        sendJson(res, origin, e.status, { success: false, error: e.message, code: e.code });
+        return true;
+      }
+      throw e;
+    }
+    const created = [];
+    let emailsSent = 0;
+    let emailsFailed = 0;
+    let emailChannel;
+    for (const payload of pending) {
+      const { id, email } = payload;
+      const invitePath = `/invite/${payload.invite_token}`;
       const inviteUrl = `${inviteBase}${invitePath}`;
       let emailSent = false;
       if (inviteKind === "email" && email) {

@@ -19,7 +19,26 @@ import { addProjectMemberPg, listProjectIdsForMemberPg, removeProjectMemberPg } 
 import { query as pgQuery, isPostgresConfigured } from "../../../lib/postgres/client.js";
 import { getMemberByIdPg, getMembersByIdsPg, updateMemberPg } from "../../../lib/postgres/members-postgres.service.js";
 
-const DEFAULT_ROLES = ["Owner", "Super Admin", "Admin", "Super Manager", "Manager", "Team Lead", "Employee", "Intern", "Client", "Viewer"];
+// Enterprise Super Manager / Enterprise Manager are the two Customer
+// Accounts grant roles (see PLAN-customer-accounts-and-tenancy.md §16.1) -
+// seeded here like every other role so `roles.id` exists for them, but never
+// assignable through the ordinary role dropdowns (role-hierarchy.js keeps
+// them out of ASSIGNABLE_ROLE_NAMES) and reachable only through the
+// customer-accounts create path.
+const DEFAULT_ROLES = [
+  "Owner",
+  "Super Admin",
+  "Admin",
+  "Super Manager",
+  "Manager",
+  "Team Lead",
+  "Employee",
+  "Intern",
+  "Client",
+  "Viewer",
+  "Enterprise Super Manager",
+  "Enterprise Manager",
+];
 
 export async function resolveRoleNameById(db, roleId) {
   if (typeof roleId !== "string" || !roleId) return "";
@@ -92,7 +111,14 @@ export const ROLE_PRIVILEGE_RANK = Object.assign(Object.create(null), {
   superadmin: 90,
   admin: 80,
   supermanager: 70,
+  // Same tier as supermanager/manager so maxAssignableRank's actorRank - 10
+  // gives the tenant root exactly the ordinary ladder below them (§16.1) -
+  // Enterprise Super Manager -> Manager and below, Enterprise Manager ->
+  // Team Lead and below. Distinct keys because they are a distinct grant
+  // (see §4.3: the role IS the tenant membership), not distinct authority.
+  enterprisesupermanager: 70,
   manager: 60,
+  enterprisemanager: 60,
   teamlead: 50,
   employee: 40,
   intern: 30,
