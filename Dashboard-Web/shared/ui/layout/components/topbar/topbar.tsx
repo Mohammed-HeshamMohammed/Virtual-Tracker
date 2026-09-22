@@ -32,7 +32,7 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
     )}>
       <Breadcrumbs activeItem={activeItem} onNavigate={onNavigate} />
 
-      <motion.div layout="position" className="flex items-center justify-center">
+      <motion.div layout="position" className="flex items-center justify-center px-4 min-w-0">
         <GlobalSearchBar
           onNavigate={onNavigate}
           memberRole={memberRole}

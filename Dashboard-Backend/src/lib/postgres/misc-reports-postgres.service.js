@@ -525,9 +525,17 @@ export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay, limi
      scoped_members AS (
        SELECT m.id,
               COALESCE(NULLIF(m.timezone, ''), 'UTC') AS zone,
-              COALESCE(ts.work_days, '[0,1,2,3,4]'::jsonb) AS work_days
+              COALESCE(ts.work_days, '[0,1,2,3,4]'::jsonb) AS work_days,
+              -- The member's configured daily hours, so a scheduled day can
+              -- be judged against what was actually expected of them rather
+              -- than only "was anything at all tracked". 0 means no daily
+              -- limit is set, and a day is then only ever worked/missed -
+              -- inventing an expected length for someone who has none
+              -- configured would manufacture "short" days nobody agreed to.
+              COALESCE(l.daily, 0) AS daily_hours
        FROM members m
        LEFT JOIN time_settings ts ON ts.member_id = m.id
+       LEFT JOIN limits l ON l.member_id = m.id
        WHERE m.status <> 'banned'
          AND ($3::uuid[] IS NULL OR m.id = ANY($3::uuid[]))
      ),
@@ -568,7 +576,8 @@ export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay, limi
             (mo.member_id IS NOT NULL) AS makeup_day,
             (ol.member_id IS NOT NULL) AS on_leave,
             (mf.member_id IS NOT NULL) AS makeup_agreed,
-            COALESCE(w.active_seconds, 0) AS active_seconds
+            COALESCE(w.active_seconds, 0) AS active_seconds,
+            (sm.daily_hours * 3600)::bigint AS expected_seconds
      FROM scoped_members sm
      CROSS JOIN days d
      LEFT JOIN worked    w  ON w.member_id  = sm.id AND w.day  = d.day
@@ -589,17 +598,22 @@ export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay, limi
     rows: rows.slice(0, capped).map((r) => {
       const activeSeconds = Math.max(0, Number(r.active_seconds) || 0);
       const scheduled = r.working_day === true || r.makeup_day === true;
+      const expectedSeconds = Math.max(0, Number(r.expected_seconds) || 0);
       return {
         memberId: String(r.member_id),
         day: toDayString(r.day),
         scheduled,
         makeupDay: r.makeup_day === true,
         activeSeconds,
+        /** 0 when the member has no daily limit configured. */
+        expectedSeconds,
         status: resolveAttendanceStatus({
           scheduled,
           worked: activeSeconds > 0,
           onLeave: r.on_leave === true,
           makeupAgreed: r.makeup_agreed === true,
+          activeSeconds,
+          expectedSeconds,
         }),
       };
     }),
@@ -611,8 +625,24 @@ export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay, limi
  * Order matters: a day that was worked is "worked" whatever else was true of
  * it - someone who tracked time while nominally on leave did the work.
  */
-export function resolveAttendanceStatus({ scheduled, worked, onLeave, makeupAgreed }) {
-  if (worked) return scheduled ? "worked" : "unscheduled";
+export function resolveAttendanceStatus({
+  scheduled,
+  worked,
+  onLeave,
+  makeupAgreed,
+  activeSeconds = 0,
+  expectedSeconds = 0,
+}) {
+  if (worked) {
+    if (!scheduled) return "unscheduled";
+    // A scheduled day that was worked, but for less than the member's own
+    // configured daily hours, is neither a clean "worked" nor a "missed" -
+    // it is the case this report previously could not express at all. Only
+    // ever applies when a daily limit is actually set (expectedSeconds > 0);
+    // with none configured there is no length to fall short of.
+    if (expectedSeconds > 0 && activeSeconds < expectedSeconds) return "short";
+    return "worked";
+  }
   if (!scheduled) return "unscheduled";
   if (onLeave) return "time-off";
   if (makeupAgreed) return "excused";

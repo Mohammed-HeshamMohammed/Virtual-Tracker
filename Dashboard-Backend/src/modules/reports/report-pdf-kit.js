@@ -187,9 +187,16 @@ function drawLineChart(doc, chart, y) {
     if (i % labelStep !== 0 && i !== n - 1) return;
     doc.text(p.label, xAt(i), axisY + 12, { align: "center" });
   });
+  // Every point labelled, not just the last - see the same change in
+  // Dashboard-Web's report-pdf-kit.ts for why a single right-hand number
+  // made the exported line chart unreadable.
   if (n > 0) {
     setInk(doc);
-    doc.text(fmt(points[n - 1].value), xAt(n - 1), yAt(points[n - 1].value) - 6, { align: "center" });
+    const valueStep = n <= 12 ? 1 : Math.ceil(n / 12);
+    points.forEach((p, i) => {
+      if (i % valueStep !== 0 && i !== n - 1) return;
+      doc.text(fmt(p.value), xAt(i), yAt(p.value) - 6, { align: "center" });
+    });
   }
 
   return axisY + 26;

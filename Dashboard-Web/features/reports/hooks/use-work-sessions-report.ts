@@ -308,10 +308,15 @@ export function useWorkSessionsReport() {
     [memberOptions]
   )
 
+  // null means "no filter applied - everything shows"; an empty Set means
+  // "nothing is selected - show nothing" (buildWorkSessionRows' own
+  // `size === 0 -> return false` in utils/work-sessions.ts). Clear used to
+  // set null here, identical to Select all, so "Clear projects" re-selected
+  // every project instead of deselecting them.
   const selectAllProjects = useCallback(() => setProjectFilter(null), [])
   const selectAllMembers = useCallback(() => setMemberFilter(null), [])
-  const clearProjects = useCallback(() => setProjectFilter(null), [])
-  const clearMembers = useCallback(() => setMemberFilter(null), [])
+  const clearProjects = useCallback(() => setProjectFilter(new Set<string>()), [])
+  const clearMembers = useCallback(() => setMemberFilter(new Set<string>()), [])
 
   return {
     loading,

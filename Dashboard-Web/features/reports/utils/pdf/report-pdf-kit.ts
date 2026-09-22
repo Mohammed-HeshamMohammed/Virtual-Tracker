@@ -246,9 +246,20 @@ function drawLineChart(doc: jsPDF, chart: ReportPdfLineChart, y: number): number
     if (i % labelStep !== 0 && i !== n - 1) return
     doc.text(p.label, xAt(i), axisY + 12, { align: "center" })
   })
+
+  // Every point gets its value, not just the last one. Markers were already
+  // drawn above, but with a single number on the far right the reader could
+  // see THAT the line moved without being able to read what it moved
+  // between - which is what made the exported chart unreadable. Thinned by
+  // the same labelStep as the x-axis so a long range does not overprint
+  // itself, and the last point is always kept.
   if (n > 0) {
     setInk(doc)
-    doc.text(fmt(points[n - 1].value), xAt(n - 1), yAt(points[n - 1].value) - 6, { align: "center" })
+    const valueStep = n <= 12 ? 1 : Math.ceil(n / 12)
+    points.forEach((p, i) => {
+      if (i % valueStep !== 0 && i !== n - 1) return
+      doc.text(fmt(p.value), xAt(i), yAt(p.value) - 6, { align: "center" })
+    })
   }
 
   return axisY + 26

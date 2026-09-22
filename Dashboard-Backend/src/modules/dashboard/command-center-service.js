@@ -84,17 +84,49 @@ function buildWeeklyTrend(tasks, projectId, dailyTotals, timeZone = "UTC") {
   });
 }
 
-function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
-  let optimal = 0;
+/**
+ * Utilization is hours tracked this week against each member's configured
+ * weekly capacity (limits.weekly).
+ *
+ * Members with no weekly limit set used to be `continue`d over entirely -
+ * they vanished from the percentage AND from every bucket, so a workspace
+ * that does not set an explicit weekly cap on each person (a supported,
+ * common setup - "no cap" is a real mode elsewhere in this product) saw a
+ * widget reading 0% with 0 members in all three buckets and reasonably
+ * concluded it was broken. They now get their own `noLimit` bucket: visible,
+ * counted, and excluded only from the percentage, which genuinely cannot be
+ * computed without a capacity to divide by. Inventing a default capacity
+ * (40h, say) for someone who deliberately has none configured would produce
+ * a number nobody asked for and quietly mis-state the team's load.
+ */
+export function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
+  let onTrack = 0;
   let over = 0;
   let under = 0;
+  let noLimit = 0;
   let pctSum = 0;
   let count = 0;
   const members = [];
 
   for (const [memberId, seconds] of memberSeconds.entries()) {
     const capacity = capacityByMember.get(memberId) ?? 0;
-    if (capacity <= 0) continue;
+    const meta = memberMeta?.get(memberId) || { name: "Team member", initials: "??" };
+    const hours = Math.round((seconds / 3600) * 10) / 10;
+
+    if (capacity <= 0) {
+      noLimit += 1;
+      members.push({
+        id: memberId,
+        name: meta.name,
+        initials: meta.initials,
+        percent: null,
+        hours,
+        capacityHours: null,
+        load: "no_limit",
+      });
+      continue;
+    }
+
     count += 1;
     const pct = Math.round((seconds / capacity) * 100);
     pctSum += Math.min(150, pct);
@@ -103,31 +135,43 @@ function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
       over += 1;
       load = "over";
     } else if (pct >= 60) {
-      optimal += 1;
-      load = "optimal";
+      onTrack += 1;
+      load = "on_track";
     } else {
       under += 1;
     }
 
-    const meta = memberMeta?.get(memberId) || { name: "Team member", initials: "??" };
     members.push({
       id: memberId,
       name: meta.name,
       initials: meta.initials,
       percent: pct,
-      hours: Math.round((seconds / 3600) * 10) / 10,
+      hours,
       capacityHours: Math.round((capacity / 3600) * 10) / 10,
       load,
     });
   }
 
-  members.sort((a, b) => b.percent - a.percent);
+  // Members with a real percentage first (highest load at the top), then the
+  // no-limit ones - they have no percentage to rank by and should not sort
+  // as if they were at 0%.
+  members.sort((a, b) => {
+    if (a.percent === null && b.percent === null) return 0;
+    if (a.percent === null) return 1;
+    if (b.percent === null) return -1;
+    return b.percent - a.percent;
+  });
+
   const utilizationPercent = count ? Math.round(pctSum / count) : 0;
   const utilizationOffset = Math.max(0, 251.2 - (Math.min(100, utilizationPercent) / 100) * 251.2);
   return {
     utilizationPercent,
     utilizationOffset,
-    utilizationMembers: { optimal, over, under },
+    // `optimal` kept as an alias of onTrack so an older client that has not
+    // picked up the rename still renders a number rather than "undefined
+    // Members".
+    utilizationMembers: { onTrack, optimal: onTrack, over, under, noLimit },
+    utilizationCounted: count,
     utilizationBreakdown: members.slice(0, 8),
   };
 }
@@ -474,26 +518,47 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const rowMemberMeta = rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
   const projectNameById = new Map(projectRows.map((row) => [row.id, row.name]));
 
-  const globalFeed = screenshotRows.slice(0, 2).map((d) => {
-    const meta = rowMemberMeta.get(String(d.member_id ?? "")) || { name: "Unknown", initials: "??" };
-    const captured = toIso(d.captured_at);
-    return {
-      person: meta.name,
-      avatar: meta.initials,
-      action: "captured a screenshot",
-      project: str(d, "project_name") || "Active session",
-      time: relativeTime(captured || new Date().toISOString()),
-      activityBadge: `${Math.round(d.activity_level ?? 0)}% Activity`,
-      type: "screenshot",
-      screenshotId: String(d.id ?? ""),
-    };
-  });
+  // "Recent Activity" had only a count cap (the slice(0, 8) below), never an
+  // age cap - so on a quiet week the feed kept showing items from days ago
+  // to fill its eight slots, and nothing ever aged out of it. Anything older
+  // than this window is dropped regardless of how empty that leaves the
+  // feed: an empty "nothing recent" state is honest, stale entries are not.
+  const FEED_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+  const feedCutoffMs = Date.now() - FEED_MAX_AGE_MS;
+
+  const globalFeed = screenshotRows
+    .filter((d) => {
+      const captured = toIso(d.captured_at);
+      const ms = captured ? Date.parse(captured) : NaN;
+      // An unparseable timestamp is kept rather than silently dropped - the
+      // row is real, only its date is unreadable.
+      return !Number.isFinite(ms) || ms >= feedCutoffMs;
+    })
+    .slice(0, 2)
+    .map((d) => {
+      const meta = rowMemberMeta.get(String(d.member_id ?? "")) || { name: "Unknown", initials: "??" };
+      const captured = toIso(d.captured_at);
+      return {
+        person: meta.name,
+        avatar: meta.initials,
+        action: "captured a screenshot",
+        project: str(d, "project_name") || "Active session",
+        time: relativeTime(captured || new Date().toISOString()),
+        activityBadge: `${Math.round(d.activity_level ?? 0)}% Activity`,
+        type: "screenshot",
+        screenshotId: String(d.id ?? ""),
+      };
+    });
 
   const feedTasks = isPersonalView
     ? scopedTasks.filter((task) => task.assigneeId === viewerMemberId)
     : scopedTasks;
   const doneTaskFeed = feedTasks
-    .filter((task) => task.status === "done")
+    // timestampMs() yields 0 for a row with no usable updated_at/created_at.
+    // Keep those, the same way an unreadable screenshot timestamp is kept
+    // above - a real completed task should not disappear from the feed just
+    // because its date is unreadable.
+    .filter((task) => task.status === "done" && (task.updatedMs === 0 || task.updatedMs >= feedCutoffMs))
     .sort((a, b) => b.updatedMs - a.updatedMs)
     .slice(0, 4)
     .map((task) => ({

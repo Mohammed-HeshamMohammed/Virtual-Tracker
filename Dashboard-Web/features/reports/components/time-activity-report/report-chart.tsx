@@ -271,10 +271,34 @@ export function ReportTimeActivityChart({
               const d   = days[hovered]
               const cx  = padL + hovered * slotW + slotW / 2
               const pct = cx / vbW
+
+              // The top of whichever bar is hovered, in viewBox units. Single
+              // metric: that bar's own top. Multi: the tallest of the grouped
+              // bars, so the card clears all of them rather than overlapping
+              // the tall one while clearing the short one.
+              const barTopVb = !multi && singleBar
+                ? singleBar.yAt(singleBar.series[hovered] ?? 0)
+                : multiBar
+                  ? Math.min(
+                      ...multiBar.map(({ norm }) => padT + plotH - (norm[hovered] ?? 0) * plotH),
+                    )
+                  : padT + plotH
+
+              // viewBox units map 1:1 to CSS pixels vertically here: the
+              // wrapper is exactly CHART_H tall and the viewBox is CHART_H
+              // high, so no scaling factor is needed.
+              const TOOLTIP_GAP = 10
+              const APPROX_TOOLTIP_H = 30 + activeMetrics.length * 18
+              // Above the bar when it fits, otherwise just below its top -
+              // never the old fixed `top-3`, which sat on top of any bar
+              // tall enough to reach it.
+              const wantsTop = barTopVb - TOOLTIP_GAP - APPROX_TOOLTIP_H
+              const topPx = wantsTop >= padT ? wantsTop : barTopVb + TOOLTIP_GAP
+
               return (
                 <div
-                  className="pointer-events-none absolute top-3 z-20"
-                  style={{ left: `calc(${pct * 100}% - 80px)` }}
+                  className="pointer-events-none absolute z-20"
+                  style={{ left: `calc(${pct * 100}% - 80px)`, top: `${topPx}px` }}
                 >
                   <div className="rounded-lg bg-slate-800 px-3 py-2 text-xs text-white shadow-xl min-w-[140px]">
                     <div className="mb-1.5 font-semibold text-[11px] text-slate-200">{d.dateLabel}</div>

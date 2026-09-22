@@ -25,8 +25,30 @@ function resolveSupportContactEmail() {
   return DEFAULT_SUPPORT_EMAIL;
 }
 
+const DEFAULT_APP_URL = "https://app.myvirtualtracker.com";
+
+/**
+ * The app URL every emailed link points at.
+ *
+ * This used to return FRONTEND_ORIGIN verbatim, so whatever shape that
+ * variable happened to be in went straight into a link someone clicks from
+ * their inbox: a trailing slash produced "…com//invite/x", a comma-separated
+ * CORS-style list produced a URL containing a comma, and a value that was
+ * not a URL at all (or was accidentally set to the API host) produced a link
+ * that simply did not open the app. Mirrors Dashboard-Backend's
+ * resolveAppPublicUrl, which already trims and validates the same way.
+ */
 function appSignInUrl() {
-  return getEnv().cors.frontendOrigin || "https://app.myvirtualtracker.com";
+  const raw = String(getEnv().cors.frontendOrigin || "").trim();
+  // FRONTEND_ORIGIN is sometimes reused as a CORS list; the app itself is
+  // the first entry.
+  const first = raw.split(",")[0].trim();
+  if (!first.startsWith("http://") && !first.startsWith("https://")) {
+    return DEFAULT_APP_URL;
+  }
+  let end = first.length;
+  while (end > 0 && first[end - 1] === "/") end--;
+  return first.slice(0, end) || DEFAULT_APP_URL;
 }
 
 function formatWhen(iso = new Date().toISOString()) {

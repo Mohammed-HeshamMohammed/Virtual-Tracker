@@ -225,7 +225,15 @@ export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds
     getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
     getManualTimeEntryRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
   ]);
-  const memberIdsInResult = [...new Set(rawRows.map((r) => r.member_id))];
+  // Both sources, not just the tracked one. A member whose only activity in
+  // the range is a manually added entry has no activity_sessions row at all -
+  // which is the whole point of manual time, covering a day nothing was
+  // tracked - so building this from rawRows alone left them out of the name,
+  // timezone and pay-rate maps below, and their manual hours never landed in
+  // the report's totals.
+  const memberIdsInResult = [
+    ...new Set([...rawRows, ...manualRows].map((r) => r.member_id).filter(Boolean)),
+  ];
   const [nameMap, tzMap] = await Promise.all([
     buildMemberMetaMap(db, memberIdsInResult),
     getMemberTimezones(db, memberIdsInResult),
@@ -276,7 +284,13 @@ async function buildReportAttachment(payload, fileType, rangeLbl) {
       contentType: "text/csv",
     };
   }
-  const pdf = await buildTimeAndActivityPdf(payload, { title: "Time & Activity Report", rangeLabel: rangeLbl });
+  const pdf = await buildTimeAndActivityPdf(payload, {
+    title: "Time & Activity Report",
+    rangeLabel: rangeLbl,
+    // Whatever report-currency.js resolved for this request - the PDF used
+    // to print a hardcoded "$" here regardless of the workspace's currency.
+    currency: payload.currency?.displayCurrency,
+  });
   return {
     filename: `${baseName}.pdf`,
     contentBase64: pdf.toString("base64"),

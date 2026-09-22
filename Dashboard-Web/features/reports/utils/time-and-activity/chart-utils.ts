@@ -4,7 +4,12 @@ import { formatMoney } from "@/shared/utils/workspace-currency"
 export function buildYTicks(maxVal: number, metric: TimeActivityMetric): number[] {
   if (maxVal <= 0) return metric === "activity" ? [0, 25, 50, 75, 100] : [0, 1, 2, 3, 4]
   if (metric === "activity") return [0, 25, 50, 75, 100]
-  const pad = maxVal * 0.08
+  // 8% headroom left the tallest bar all but touching the top of the plot -
+  // worst on a one-day range, where that bar is also the only thing on
+  // screen, and it left the hover tooltip (which sits above the bar) with
+  // nowhere to go. 22% keeps the peak visibly below the ceiling at every
+  // range length.
+  const pad = maxVal * 0.22
   const top = maxVal + pad
   const step = top <= 10 ? 1 : top <= 24 ? 2 : top <= 48 ? 4 : Math.ceil(top / 6)
   const ticks: number[] = []

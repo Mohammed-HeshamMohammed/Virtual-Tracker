@@ -36,24 +36,39 @@ export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationS
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <motion.span
-            key={d.id + "-util"}
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.4 }}
-            className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight"
-          >
-            {d.utilizationPercent}%
-          </motion.span>
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-widest uppercase">Utilized</span>
+          {d.utilizationCounted > 0 ? (
+            <>
+              <motion.span
+                key={d.id + "-util"}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.4 }}
+                className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight"
+              >
+                {d.utilizationPercent}%
+              </motion.span>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 tracking-widest uppercase">Utilized</span>
+            </>
+          ) : (
+            // Not "0% utilized" - there is simply nothing to measure against
+            // until someone has a weekly limit set. Saying 0% here is what
+            // made this widget read as broken.
+            <span className="px-6 text-center text-[11px] font-semibold leading-tight text-slate-400 dark:text-slate-500">
+              No weekly limits set
+            </span>
+          )}
         </div>
       </div>
 
       <div className="w-full space-y-3 mb-6">
         {[
-          { dot: "bg-emerald-500 dark:bg-emerald-400", label: "Optimal Load",  value: `${d.utilizationMembers.optimal} Members` },
-          { dot: "bg-rose-500 dark:bg-rose-400",   label: "Over Capacity", value: `${d.utilizationMembers.over} Members`    },
-          { dot: "bg-slate-200 dark:bg-slate-700", label: "Underutilized", value: `${d.utilizationMembers.under} Members`   },
+          { dot: "bg-emerald-500 dark:bg-emerald-400", label: "On track",      value: `${d.utilizationMembers.onTrack} Members` },
+          { dot: "bg-rose-500 dark:bg-rose-400",       label: "Over capacity", value: `${d.utilizationMembers.over} Members`    },
+          { dot: "bg-amber-400 dark:bg-amber-500",     label: "Under capacity", value: `${d.utilizationMembers.under} Members`  },
+          // Members with no weekly limit configured. They used to be dropped
+          // from this widget entirely, which made a workspace that does not
+          // set weekly caps look like it had no team at all.
+          { dot: "bg-slate-200 dark:bg-slate-700",     label: "No limit set",  value: `${d.utilizationMembers.noLimit} Members` },
         ].map((row, i) => (
           <div key={row.label} className="flex justify-between items-center text-sm font-medium">
             <div className="flex items-center gap-2.5">
