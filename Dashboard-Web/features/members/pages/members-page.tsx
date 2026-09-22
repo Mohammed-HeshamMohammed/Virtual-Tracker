@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState as useComponentState, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { AlertCircle, Check, Download, Network, RefreshCw, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
+import { AlertCircle, Building2, Check, Download, Network, RefreshCw, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
 import { useTheme } from "@/shared/providers/app"
@@ -127,6 +127,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     canUseBatchMemberActions,
     canCreateTransferRequests,
     canViewMembersTree,
+    isOwner,
+    isSuperAdmin,
     canSeeAllMembers,
     memberRole: viewerRole,
   } = usePermissions()
@@ -602,6 +604,15 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 >
                   <ShieldBan className="h-4 w-4 text-rose-500" />
                   Banned members
+                </button>
+              )}
+              {(isOwner || isSuperAdmin) && (
+                <button
+                  onClick={() => onNavigate?.("people-customer-accounts")}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80" type="button"
+                >
+                  <Building2 className="h-4 w-4 text-blue-500" />
+                  Customer accounts
                 </button>
               )}
               <button

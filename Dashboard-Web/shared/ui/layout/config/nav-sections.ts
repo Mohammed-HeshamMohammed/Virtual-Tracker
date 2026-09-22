@@ -140,6 +140,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Members", id: "people-members" },
       { label: "Members tree", id: "people-members-tree", hideFromDropdown: true },
       { label: "Banned members", id: "people-member-bans", hideFromDropdown: true },
+      // Owner/Super Admin only (PeopleSectionContent guards it; the backend
+      // enforces the same boundary regardless) - hidden from the dropdown
+      // like "Banned members" above, same reasoning: a sensitive management
+      // surface, not a page every role browsing People should stumble into.
+      { label: "Customer accounts", id: "people-customer-accounts", hideFromDropdown: true },
       { label: "Teams",   id: "people-teams"   },
     ],
   },
@@ -179,6 +184,7 @@ export const PAGE_PARENTS: Record<string, string> = {
   "settings-billing-plans": "settings-billing",
   "people-members-tree": "people-members",
   "people-member-bans": "people-members",
+  "people-customer-accounts": "people-members",
 }
 
 export function sortedItems<T extends { sortLast?: boolean; hideFromDropdown?: boolean }>(

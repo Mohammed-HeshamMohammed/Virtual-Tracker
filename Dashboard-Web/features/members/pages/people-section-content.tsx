@@ -3,9 +3,12 @@
 import { useEffect, useRef, type MutableRefObject } from "react"
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
+import { useAuth } from "@/shared/providers/app"
+import { isOwnerOrSuperAdminRole } from "@/features/auth"
 import { MembersPage } from "@/features/members/pages/members-page"
 import { MemberTreePage } from "@/features/members/pages/member-tree-page"
 import { MemberBansPage } from "@/features/members/pages/member-bans-page"
+import { CustomerAccountsPage } from "@/features/customer-accounts/pages/customer-accounts-page"
 import { TeamsPage } from "@/features/teams"
 import { PeopleTeamScopeProvider } from "@/features/members/context/people-team-scope-context"
 import {
@@ -31,6 +34,8 @@ function renderMemberSubpage(activeItem: PeopleMemberSubpageId, onNavigate: Navi
       return <MemberTreePage />
     case "people-member-bans":
       return <MemberBansPage />
+    case "people-customer-accounts":
+      return <CustomerAccountsPage />
     default:
       return <MembersPage onNavigate={onNavigate} />
   }
@@ -38,6 +43,10 @@ function renderMemberSubpage(activeItem: PeopleMemberSubpageId, onNavigate: Navi
 
 export function PeopleSectionContent({ activeItem, onNavigate }: PeopleSectionContentProps) {
   const { canManageMemberBans } = usePermissions()
+  const { memberRole } = useAuth()
+  // US-1: "Admins cannot see this list" - Owner/Super Admin only, backend
+  // enforces the same boundary on every endpoint regardless of this guard.
+  const canSeeCustomerAccounts = isOwnerOrSuperAdminRole(memberRole ?? "")
   const reduceMotion = useReducedMotion()
   const previousPageRef = useRef(activeItem)
 
@@ -45,7 +54,10 @@ export function PeopleSectionContent({ activeItem, onNavigate }: PeopleSectionCo
     if (activeItem === "people-member-bans" && !canManageMemberBans) {
       onNavigate("people-members")
     }
-  }, [activeItem, canManageMemberBans, onNavigate])
+    if (activeItem === "people-customer-accounts" && !canSeeCustomerAccounts) {
+      onNavigate("people-members")
+    }
+  }, [activeItem, canManageMemberBans, canSeeCustomerAccounts, onNavigate])
 
   return (
     <PeopleTeamScopeProvider>
@@ -53,6 +65,7 @@ export function PeopleSectionContent({ activeItem, onNavigate }: PeopleSectionCo
         activeItem={activeItem}
         onNavigate={onNavigate}
         canManageMemberBans={canManageMemberBans}
+        canSeeCustomerAccounts={canSeeCustomerAccounts}
         reduceMotion={reduceMotion}
         previousPageRef={previousPageRef}
       />
@@ -64,14 +77,20 @@ function PeopleSectionContentInner({
   activeItem,
   onNavigate,
   canManageMemberBans,
+  canSeeCustomerAccounts,
   reduceMotion,
   previousPageRef,
 }: PeopleSectionContentProps & {
   canManageMemberBans: boolean
+  canSeeCustomerAccounts: boolean
   reduceMotion: boolean | null
   previousPageRef: MutableRefObject<PeopleSectionPageId>
 }) {
   if (activeItem === "people-member-bans" && !canManageMemberBans) {
+    return <MembersPage onNavigate={onNavigate} />
+  }
+
+  if (activeItem === "people-customer-accounts" && !canSeeCustomerAccounts) {
     return <MembersPage onNavigate={onNavigate} />
   }
 
