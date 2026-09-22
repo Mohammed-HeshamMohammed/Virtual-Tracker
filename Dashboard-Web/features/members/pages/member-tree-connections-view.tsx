@@ -24,6 +24,9 @@ export const DEFAULT_TREE_CHART_TRANSFORM: TreeChartTransform = {
   scale: 1,
 }
 
+/** Movement (px) before a press becomes a pan. Below it, it is a click. */
+const DRAG_THRESHOLD_PX = 4
+
 const MIN_ZOOM = 0.35
 const MAX_ZOOM = 2.5
 const ZOOM_STEP = 1.15
@@ -66,6 +69,9 @@ export function MemberTreeConnectionsView({
   transformRef.current = transform
   const dragStateRef = useRef<{
     active: boolean
+    /** True once the press has moved far enough to count as a pan. */
+    panning: boolean
+    pointerId: number
     startX: number
     startY: number
     originX: number
@@ -73,6 +79,8 @@ export function MemberTreeConnectionsView({
     originScale: number
   }>({
     active: false,
+    panning: false,
+    pointerId: -1,
     startX: 0,
     startY: 0,
     originX: 0,
@@ -106,6 +114,7 @@ export function MemberTreeConnectionsView({
 
   const endDrag = useCallback(() => {
     dragStateRef.current.active = false
+    dragStateRef.current.panning = false
     setIsDragging(false)
   }, [])
 
@@ -113,16 +122,21 @@ export function MemberTreeConnectionsView({
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return
 
+      // No pointer capture yet. Capturing on every press retargeted the
+      // browser's click/dblclick to this viewport, so a node's own
+      // double-click (expand/collapse, promised by the hint below) never
+      // fired. Capture is taken in handlePointerMove, only once the press
+      // has actually moved - a stationary click still reaches the node.
       dragStateRef.current = {
         active: true,
+        panning: false,
+        pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         originX: transformRef.current.x,
         originY: transformRef.current.y,
         originScale: transformRef.current.scale,
       }
-      setIsDragging(true)
-      event.currentTarget.setPointerCapture(event.pointerId)
     },
     [],
   )
@@ -132,6 +146,16 @@ export function MemberTreeConnectionsView({
       if (!dragStateRef.current.active) return
       const dx = event.clientX - dragStateRef.current.startX
       const dy = event.clientY - dragStateRef.current.startY
+      if (!dragStateRef.current.panning) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+        dragStateRef.current.panning = true
+        setIsDragging(true)
+        try {
+          event.currentTarget.setPointerCapture(dragStateRef.current.pointerId)
+        } catch {
+          // The pointer may already be gone (released between events).
+        }
+      }
       onTransformChange({
         x: dragStateRef.current.originX + dx,
         y: dragStateRef.current.originY + dy,

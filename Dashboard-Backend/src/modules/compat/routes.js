@@ -7,6 +7,7 @@ import { getAuthContext, requireManagementRole } from "../../http/auth-context.j
 import { isOrgProjectAdminRole } from "../../http/project-access.js";
 import { canUseBatchMemberActions, assertMembersRemovable, BATCH_MEMBER_ACTIONS_DENIED_MESSAGE } from "../../http/batch-member-actions.js";
 import { canAccessMember, canManageMember } from "../../http/authorization.js";
+import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { canViewerManageInvite } from "../../http/invite-scope.js";
 import { validateMemberRoleChange, validateRoleAssignment } from "../../http/role-assignment-guard.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
@@ -1267,6 +1268,40 @@ export async function routeCompatibility(req, res, url, db, origin) {
       return true;
     }
     const inviteKind = body.inviteKind === "open_link" ? "open_link" : "email";
+    // "Add a member here" from the member tree: the invitee is placed under
+    // this member on acceptance instead of under the inviter. The inviter
+    // must be allowed to manage that position (or be it) - otherwise this
+    // would let anyone hang people off any branch of the organization.
+    let treeParentMemberId = null;
+    if (body.treeParentMemberId != null && body.treeParentMemberId !== "") {
+      const candidate = typeof body.treeParentMemberId === "string" ? body.treeParentMemberId.trim() : "";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(candidate)) {
+        sendJson(res, origin, 400, { success: false, error: "treeParentMemberId must be a member id." });
+        return true;
+      }
+      const parentRows = await query("SELECT id FROM members WHERE id = $1 AND status = 'active' LIMIT 1", [candidate]);
+      if (!parentRows.length) {
+        sendJson(res, origin, 404, { success: false, error: "The member to place the invitee under was not found." });
+        return true;
+      }
+      if (!(await canManageMember(db, viewer?.memberId, viewer?.roleName, candidate))) {
+        sendJson(res, origin, 403, { success: false, error: "You cannot add members under that member." });
+        return true;
+      }
+      // The same rules recordMemberRelationship enforces on acceptance -
+      // checked now, because by then a refusal only gets logged and the new
+      // member lands outside the tree with nobody told why.
+      const parentRoleKey = String((await resolveMemberRoleName(db, candidate)) || "").trim().toLowerCase();
+      if (parentRoleKey === "client") {
+        sendJson(res, origin, 400, { success: false, error: "Clients cannot have members placed under them." });
+        return true;
+      }
+      if (parentRoleKey === "owner" && roleName.trim().toLowerCase() === "owner") {
+        sendJson(res, origin, 400, { success: false, error: "An Owner cannot report to another Owner." });
+        return true;
+      }
+      treeParentMemberId = candidate;
+    }
     const appOrigin = typeof body.appOrigin === "string" && body.appOrigin.startsWith("http") ? body.appOrigin.replace(/\/$/, "") : "";
     const auth = getAuthAdmin();
     if (inviteKind === "email" && !auth) {
@@ -1324,9 +1359,10 @@ export async function routeCompatibility(req, res, url, db, origin) {
         created_by: viewer?.memberId || null,
         created_by_uid: viewer?.uid ?? "",
         updated_by: null,
+        tree_parent_member_id: treeParentMemberId,
         ...(inviteKind === "open_link" ? shareLinkInviteFields() : {}),
       };
-      const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by"];
+      const bulkCols = ["id","email","invite_token","invite_kind","role_id","pay_rate","currency","status","sent_at","accepted_at","created_by","created_by_uid","updated_by","tree_parent_member_id"];
       const bulkColList = bulkCols.join(", ");
       const bulkPhList = bulkCols.map((_, i) => `$${i + 1}`).join(", ");
       const bulkVals = bulkCols.map((c) => payload[c] instanceof Date ? payload[c] : (payload[c] ?? null));

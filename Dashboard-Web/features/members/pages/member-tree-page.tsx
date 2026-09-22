@@ -1,13 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState as useComponentState } from "react"
-import { GitBranch, LayoutList, Maximize2, Minus, Network, Plus, Share2, ShieldAlert, Users } from "lucide-react"
+import { GitBranch, LayoutList, Maximize2, Minus, Network, Plus, Share2, ShieldAlert, UserPlus, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { type MemberTreeScope } from "@/features/members/services/member-tree"
+import { type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
+import { AddMemberAtNodeModal } from "@/features/members/components/modals/add-member-at-node-modal"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import {
   buildMemberTreeBranches,
   countTreeMembers,
@@ -105,15 +107,20 @@ function TreeNodeCard({
   branch,
   isDark,
   currentMemberId,
+  onAddHere,
 }: {
   branch: MemberTreeBranch
   isDark: boolean
   currentMemberId?: string
+  /** Absent when the viewer cannot add members at all. */
+  onAddHere?: (node: MemberTreeNode) => void
 }) {
   const [expanded, setExpanded] = useComponentState(true)
   const { node, children, depth } = branch
   const isSelf = node.id === currentMemberId
   const hasChildren = children.length > 0
+  // Clients cannot have anyone under them (the backend refuses the edge).
+  const canAddHere = Boolean(onAddHere) && !isClientRole(node.role)
 
   return (
     <li className="relative">
@@ -180,6 +187,20 @@ function TreeNodeCard({
               </button>
             ) : null}
           </div>
+          {canAddHere ? (
+            <button
+              type="button"
+              onClick={() => onAddHere?.(node)}
+              title={`Add member under ${node.name}`}
+              aria-label={`Add member under ${node.name}`}
+              className={cn(
+                "shrink-0 rounded-lg p-1.5 transition-colors",
+                isDark ? "text-[#bccbb9] hover:bg-[#2e3447] hover:text-[#4be277]" : "text-slate-400 hover:bg-slate-100 hover:text-blue-600",
+              )}
+            >
+              <UserPlus className="h-4 w-4" />
+            </button>
+          ) : null}
         </div>
 
         {hasChildren && expanded ? (
@@ -190,6 +211,7 @@ function TreeNodeCard({
                 branch={child}
                 isDark={isDark}
                 currentMemberId={currentMemberId}
+                onAddHere={onAddHere}
               />
             ))}
           </ul>
@@ -232,19 +254,40 @@ function MemberTreeScopeView({
   onScopeChange: (scope: MemberTreeScope) => void
 }) {
   const { memberId } = useAuth()
+  const { canManageMembers } = usePermissions()
   const t = isDark ? dark : light
+  // "Add member here" (item 16): which node the invite modal is open for.
+  const [addUnder, setAddUnder] = useComponentState<MemberTreeNode | null>(null)
 
   const [viewMode, setViewMode] = useComponentState<TreeViewMode>("list")
-  const [error, setError] = useComponentState("")
+  // One error per scope. They used to share a single error, so a failure
+  // loading one scope (for a manager: the organization tree, which is a
+  // guaranteed 403) showed up while looking at the other, and could land
+  // after the visible scope had already loaded and cleared it.
+  const [scopeErrors, setScopeErrors] = useComponentState<Record<MemberTreeScope, string>>({
+    organization: "",
+    team: "",
+  })
+  const error = scopeErrors[viewScope] ?? ""
+  const setError = useCallback(
+    (message: string) => setScopeErrors((prev) => ({ ...prev, [viewScope]: message })),
+    [viewScope],
+  )
   const [chartSettings, setChartSettings] = useComponentState<TreeChartDisplaySettings>(DEFAULT_TREE_CHART_SETTINGS)
   const [chartTransform, setChartTransform] = useComponentState(DEFAULT_TREE_CHART_TRANSFORM)
 
-  const handleTreeError = useCallback((err: unknown) => {
-    setError(err instanceof Error ? err.message : "Failed to load member tree")
+  const handleOrgError = useCallback((err: unknown) => {
+    setScopeErrors((prev) => ({ ...prev, organization: err instanceof Error ? err.message : "Failed to load member tree" }))
+  }, [])
+  const handleTeamError = useCallback((err: unknown) => {
+    setScopeErrors((prev) => ({ ...prev, team: err instanceof Error ? err.message : "Failed to load member tree" }))
   }, [])
 
-  const organizationTree = useMemberTreeData("organization", handleTreeError)
-  const teamTree = useMemberTreeData("team", handleTreeError)
+  // canToggleScope is exactly "may load the organization scope" (Owner/
+  // Super Admin/Admin - the same roles the backend's requireOrgTreeRole
+  // allows), so nobody else fires a request that can only be refused.
+  const organizationTree = useMemberTreeData("organization", handleOrgError, { allowed: canToggleScope })
+  const teamTree = useMemberTreeData("team", handleTeamError)
 
   const activeTree = viewScope === "organization" ? organizationTree : teamTree
   const {
@@ -262,7 +305,7 @@ function MemberTreeScopeView({
 
   useEffect(() => {
     if (nodes.length > 0) setError("")
-  }, [viewScope, nodes.length])
+  }, [viewScope, nodes.length, setError])
 
   useEffect(() => {
     setChartTransform(DEFAULT_TREE_CHART_TRANSFORM)
@@ -282,7 +325,7 @@ function MemberTreeScopeView({
     } finally {
       setIsRefreshing(false)
     }
-  }, [isRefreshing, refetch])
+  }, [isRefreshing, refetch, setError])
 
   const tree = useMemo(
     () =>
@@ -477,7 +520,13 @@ function MemberTreeScopeView({
               <div className="space-y-6">
                 <ul className="space-y-3">
                   {tree.map((root) => (
-                    <TreeNodeCard key={root.node.id} branch={root} isDark={isDark} currentMemberId={memberId} />
+                    <TreeNodeCard
+                      key={root.node.id}
+                      branch={root}
+                      isDark={isDark}
+                      currentMemberId={memberId}
+                      onAddHere={canManageMembers ? setAddUnder : undefined}
+                    />
                   ))}
                 </ul>
                 {orphanNodes.length > 0 ? (
@@ -527,6 +576,7 @@ function MemberTreeScopeView({
         )}
       </div>
       </div>
+      {addUnder ? <AddMemberAtNodeModal parent={addUnder} onClose={() => setAddUnder(null)} /> : null}
     </div>
   )
 }

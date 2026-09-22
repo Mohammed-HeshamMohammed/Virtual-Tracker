@@ -105,6 +105,20 @@ async function assertInviteTenantActive(row) {
   return { ok: true };
 }
 
+/**
+ * Where an accepted invite's new member goes in the tree. Normally under the
+ * inviter; an invite created from a tree node ("add a member here") carries
+ * `tree_parent_member_id`, checked against the inviter's scope when it was
+ * created. If that member has since left, fall back to the inviter rather
+ * than attaching the newcomer to a removed member.
+ */
+async function resolveInviteTreeParent(row, inviterMemberId) {
+  const treeParent = typeof row?.tree_parent_member_id === "string" ? row.tree_parent_member_id : "";
+  if (!treeParent || treeParent === inviterMemberId) return inviterMemberId;
+  const rows = await query("SELECT id FROM members WHERE id = $1 AND status = 'active' LIMIT 1", [treeParent]);
+  return rows.length ? treeParent : inviterMemberId;
+}
+
 async function findInviteByToken(db, token) {
   if (!token || typeof token !== "string" || token.length < 16) return null;
   const rows = await query("SELECT * FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
@@ -348,6 +362,31 @@ export async function routeMemberInvites(req, res, url, origin) {
     return true;
   }
 
+  // Seats occupied vs open for the caller's own tenant, for the People
+  // page's header (PLAN-bug-fixes-round-1.md item 18). Read-only, and
+  // scoped to the caller's own tenant from their session - never a
+  // parameter, so nobody can read another tenant's headcount.
+  if (pn === "/api/members/seats" && req.method === "GET") {
+    const viewer = getAuthContext(req);
+    if (!requireManagementRole(viewer)) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
+      return true;
+    }
+    try {
+      const { getTenantSeatUsage } = await import("../../customer-accounts/seat-usage.service.js");
+      const usage = await getTenantSeatUsage(viewer?.tenantId);
+      if (!usage) {
+        sendJson(res, origin, 200, { success: true, data: null });
+        return true;
+      }
+      sendJson(res, origin, 200, { success: true, data: usage });
+    } catch (e) {
+      logSafeError("[members/seats]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not load seat usage." });
+    }
+    return true;
+  }
+
   if (pn === "/api/members/validate-add" && req.method === "POST") {
     if (!requireManagementRole(getAuthContext(req))) {
       sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
@@ -584,8 +623,9 @@ export async function routeMemberInvites(req, res, url, origin) {
           const inviterMember = await getMemberByFirebaseUidPg(inviterUid);
           if (inviterMember) {
             const inviterMemberId = String(inviterMember.id);
+            const parentMemberId = await resolveInviteTreeParent(row, inviterMemberId);
             await recordMemberRelationship(db, {
-              parentMemberId: inviterMemberId,
+              parentMemberId,
               childMemberId: memberId,
               relationshipType: "invite",
               createdBy: inviterMemberId,

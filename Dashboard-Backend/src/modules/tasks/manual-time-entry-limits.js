@@ -1,6 +1,8 @@
 import { query } from "../../lib/postgres/client.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "./task-workload-validation.js";
 import {
+  computeProjectSpentPg,
+  getProjectBudgetPg,
   getProjectMemberLimitPg,
   getProjectTrackedSecondsPg,
   resolveMemberHourlyRatePg,
@@ -102,6 +104,12 @@ export async function assertManualTimeEntryWithinLimits(db, { memberId, projectI
   }
 
   if (!projectId) return;
+
+  // Before the per-member block below, not after it: that block returns
+  // early whenever the member has no per-project limit - the common case -
+  // which would make the project's own budget unreachable for most entries.
+  await assertWithinProjectBudget(db, { projectId, durationSeconds, excludeEntryId });
+
   const limit = await getProjectMemberLimitPg(projectId, memberId);
   if (!limit) return;
   const cap = Number(limit.cost ?? 0);
@@ -134,4 +142,59 @@ export async function assertManualTimeEntryWithinLimits(db, { memberId, projectI
     err.code = "PROJECT_MEMBER_LIMIT_REACHED";
     throw err;
   }
+}
+
+/**
+ * The project's own overall budget, as opposed to the per-member limit
+ * checked above. Manual time was the one way hours could enter a project
+ * without the tracker measuring them, and nothing capped it against the
+ * project budget - so an Hours-based budget could be typed straight past
+ * (PLAN-bug-fixes-round-1.md item 6).
+ *
+ * Enforced only for `per_project` Hours-based budgets:
+ *   - A Cost-based budget is a money ceiling that pay/bill rates decide;
+ *     the per-member block above already handles the money case at the
+ *     level where a rate is actually known.
+ *   - A `per_person` budget caps each member separately, while
+ *     computeProjectSpentPg returns the project-wide total - comparing
+ *     those two would reject entries nowhere near an individual's cap.
+ *     Left unenforced rather than enforced wrongly.
+ *
+ * Tracked time is deliberately never blocked this way: cutting off a
+ * running timer because a budget ran out would destroy work someone
+ * actually did. A manual entry has not happened yet, so refusing it costs
+ * nothing but the typing.
+ */
+async function assertWithinProjectBudget(db, { projectId, durationSeconds, excludeEntryId }) {
+  const budgetRow = await getProjectBudgetPg(projectId);
+  if (!budgetRow) return;
+  if (String(budgetRow.type) !== "Hours based") return;
+  if (String(budgetRow.scope ?? "per_project") !== "per_project") return;
+
+  // Hours-based budgets keep their hours cap in `cost` - the column is
+  // shared with cost-based budgets, which hold money in it.
+  const capHours = Number(budgetRow.cost ?? 0);
+  if (!(capHours > 0)) return;
+
+  let spentHours = Number(await computeProjectSpentPg(db, projectId, budgetRow)) || 0;
+  // On an edit, the project total above already contains this entry at its
+  // OLD duration - adding the new one on top would count it twice and
+  // refuse perfectly valid edits (e.g. shortening an entry). Same reason the
+  // member-level checks above pass excludeEntryId down.
+  if (excludeEntryId) {
+    const rows = await query(
+      `SELECT duration FROM time_entries WHERE id = $1 AND project_id = $2 AND status <> 'rejected'`,
+      [excludeEntryId, projectId],
+    );
+    spentHours = Math.max(0, spentHours - (Number(rows[0]?.duration) || 0) / 3600);
+  }
+  const addedHours = durationSeconds / 3600;
+  if (spentHours + addedHours <= capHours) return;
+
+  const remaining = Math.max(0, capHours - spentHours);
+  const err = new Error(
+    `This entry would put this project at ${(spentHours + addedHours).toFixed(1)}h, over its ${capHours}h budget - ${remaining.toFixed(1)}h remain.`,
+  );
+  err.code = "PROJECT_BUDGET_REACHED";
+  throw err;
 }

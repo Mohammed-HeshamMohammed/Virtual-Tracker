@@ -64,7 +64,23 @@ test("Time & Activity chart: tooltip is positioned off the hovered bar, not pinn
     "tooltip must not be pinned to a fixed top offset",
   )
   assert.match(src, /barTopVb/, "tooltip position must derive from the hovered bar's top")
-  assert.match(src, /top:\s*`\$\{topPx\}px`/)
+  // When there is no room above a tall bar it goes BESIDE the bar. An
+  // earlier fallback put it "just below the bar's top" - on the bar again,
+  // which only showed up when measured in a browser.
+  assert.match(src, /barRightVb \+ TOOLTIP_GAP/, "tall bars get a side placement")
+  assert.doesNotMatch(src, /barTopVb \+ TOOLTIP_GAP/, "never placed below a bar's top, i.e. on the bar")
+})
+
+test("Time & Activity chart: manual time is stacked, not left out (item 6)", () => {
+  const src = code(read("features/reports/components/time-activity-report/report-chart.tsx"))
+  // getMetricNumeric("total_hours") is trackedHours alone, while the
+  // table's Total hours is tracked + manual - the chart had been silently
+  // dropping manual time.
+  assert.match(src, /manualSeries/)
+  assert.match(src, /MANUAL_BAR_COLOR/)
+  // The split tooltip's Tracked row must be the tracked part only, not
+  // totalHours (which already includes the Manual row beneath it).
+  assert.match(src, /formatHoursClock\(d\.trackedHours/)
 })
 
 test("Time & Activity chart: the peak keeps real headroom (item 7)", () => {

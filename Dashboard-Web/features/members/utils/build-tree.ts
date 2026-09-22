@@ -89,17 +89,25 @@ export function buildMemberTreeBranches(
     ? sanitizeTreeEdges(withoutOwnerNesting, rootMemberId)
     : withoutOwnerNesting.filter((e) => e.parent_member_id !== e.child_member_id)
 
-  const childMap = new Map<string, string[]>()
-  const childIds = new Set<string>()
-
+  // One parent per member. Every edge used to be added, so a member with
+  // two parent edges rendered under BOTH - drawn twice, with two connection
+  // lines - in the list and the chart alike (PLAN-bug-fixes-round-1.md item
+  // 17). The last edge wins, the same rule the backend uses when it
+  // classifies roots and orphans (visual-tree's childToParent map), so the
+  // tree drawn here and the placement the server reasoned about agree.
+  const parentOf = new Map<string, string>()
   for (const edge of scopedEdges) {
     if (!nodeMap.has(edge.parent_member_id) || !nodeMap.has(edge.child_member_id)) continue
-    const list = childMap.get(edge.parent_member_id) || []
-    if (!list.includes(edge.child_member_id)) {
-      list.push(edge.child_member_id)
-    }
-    childMap.set(edge.parent_member_id, list)
-    childIds.add(edge.child_member_id)
+    parentOf.set(edge.child_member_id, edge.parent_member_id)
+  }
+
+  const childMap = new Map<string, string[]>()
+  const childIds = new Set<string>()
+  for (const [childId, parentId] of parentOf) {
+    const list = childMap.get(parentId) || []
+    list.push(childId)
+    childMap.set(parentId, list)
+    childIds.add(childId)
   }
 
   const orphanSet = new Set(
@@ -125,7 +133,48 @@ export function buildMemberTreeBranches(
     return { node: nodeMap.get(id)!, children, depth }
   }
 
-  return roots.map((r) => toBranch(r.id, new Set(), 0))
+  const branches = roots.map((r) => toBranch(r.id, new Set(), 0))
+
+  // An explicit rootMemberId asks for that one branch only - never add
+  // anything else to it.
+  if (rootMemberId && nodeMap.has(rootMemberId)) return branches
+
+  // Nobody silently disappears. Roots used to be only the valid roots (or
+  // parentless nodes), so any member whose chain did not reach one -
+  // typically the reports of an orphaned member, since orphans are left out
+  // of the roots and listed separately - was drawn nowhere at all, in
+  // either view. Their topmost unreached member becomes a branch of its own.
+  const rendered = new Set<string>()
+  const collect = (items: MemberTreeBranch[]) => {
+    for (const b of items) {
+      rendered.add(b.node.id)
+      collect(b.children)
+    }
+  }
+  collect(branches)
+
+  const pending = () => nodes.filter((n) => !rendered.has(n.id) && !orphanSet.has(n.id))
+  let remaining = pending()
+  while (remaining.length > 0) {
+    const remainingIds = new Set(remaining.map((n) => n.id))
+    // Topmost first: a member whose parent is not itself waiting to be
+    // placed. If every remaining member's parent is also remaining (a pure
+    // cycle), take one to break it.
+    const tops = remaining.filter((n) => {
+      const parentId = parentOf.get(n.id)
+      return !parentId || !remainingIds.has(parentId)
+    })
+    const next = tops.length > 0 ? tops : [remaining[0]]
+    for (const n of next) {
+      if (rendered.has(n.id)) continue
+      const branch = toBranch(n.id, new Set(), 0)
+      collect([branch])
+      branches.push(branch)
+    }
+    remaining = pending()
+  }
+
+  return branches
 }
 
 export function countTreeMembers(branches: MemberTreeBranch[]): number {

@@ -274,31 +274,27 @@ The feed is capped at a **fixed count of 8**, with no age cutoff. "Limit of life
 
 ## Summary table
 
+All items are implemented on `fix/bugs-round-1`: round 1 is commit b292891, round 2 is the commit after it.
+
 | # | Area | Status |
 |---|---|---|
-| 1 | TopBar search | **Root-caused** — fixed-width div, one-line-ish fix |
-| 2 | T&A tooltip position | **Root-caused** — `top-3` hardcoded |
-| 3 | Members PDF (points, single member) | Points: confirmed gap in PDF kit. Single member: plausible cause found, needs repro |
-| 4 | Onboarding email link | Not yet located — quick grep needed |
-| 5 | Filter click errors (T&A) | Not reproduced — needs your description or a live repro session |
-| 6 | Manual time not reflected | **Root-caused** — member-union bug in `routes.js`, one-line fix. Budget-limit + chart-color: not yet located / new UI work |
-| 7 | Single-day chart scaling | **Root-caused** — 8% padding too tight |
-| 8 | PDF currency | **Root-caused** for scheduled PDFs (hardcoded `$`). Browser-PDF variant: found the two divergent sources, not yet traced to the line |
-| 9 | Work Sessions filter Select/Clear all | **Root-caused** — `clearProjects`/`clearMembers` are copy-paste bugs of `selectAll*` |
-| 10 | Work Sessions table (columns, rows, scroll) | New functionality — reuse existing column-picker pattern |
-| 11 | Apps & URLs chart + row limit | **Needs your confirmation** which chart is meant |
-| 12 | Manual Requests → budget/reports | Likely the same bug as #6 — fix #6 first, re-verify |
-| 13 | Shift Attendance real limits | **Needs a product decision** — schema has no shift-times table by design |
-| 14 | Batch Actions (all) | Not reproduced — best done as a live QA pass, not static reading |
-| 15 | Organization scope in tree | Located the toggle, not the failure |
-| 16 | Add nodes to tree | New functionality — needs a spec |
-| 17 | Tree connection display | Not reproduced |
-| 18 | Seats indicator | **Mostly infrastructure already exists** from the tenancy work — needs a configurable main-tenant seat limit + small UI |
-| 20 | Team Utilization | **Root-caused** — members with no weekly limit are silently dropped. Renaming needs your spec |
-| 21 | Recent Activity Feed | **Confirmed** dead "..." button + count-only cap (no time cutoff). Broader "recreate" claim needs repro |
-
-**Ready to implement now, no further input needed:** 1, 2, 6 (the reflection half), 7, 8 (the scheduled-PDF half), 9.
-
-**Needs a short answer from you before I build it right:** 4 (confirm it's really just the link), 11 (which chart), 13 (what "real time limits" means), 19/20's renaming, 20/21's "cycle" definition, 16 (what "add a node" means).
-
-**Needs a live repro session (screen-share or me driving a dev server against real data) rather than more static reading:** 3's single-member half, 5, 12 (after #6 lands), 14, 15, 17, the "recreate" half of 20.
+| 1 | TopBar search | Done (r1): grows to max-w-xl, and the results menu has a minimum width so rows stay readable |
+| 2 | T&A tooltip position | Done (r1, r2): anchored above the bar with a CSS transform, and placed beside tall bars; checked in the browser |
+| 3 | Members PDF | Done: every point is labelled (r1). The "by member" chart now uses real per-member totals (r2); it had been plotting projects |
+| 4 | Onboarding email link | Done (r1): FRONTEND_ORIGIN is trimmed and validated |
+| 5 | Filter click errors | Done (r2): full-screen click-catcher overlays swallowed the next click. Removed in favour of an outside-mousedown listener; checked in the browser |
+| 6 | Manual time | Done: report totals (r1). Chart stacks manual time in its own colour, and the manual-entry project budget is enforced for hours-based per-project budgets (r2) |
+| 7 | Single-day chart | Done: 22% headroom (r1). The axis now rounds up rather than down, and bars are capped at 72px wide (r2) |
+| 8 | PDF currency | Done (r1) |
+| 9 | Work Sessions Select/Clear all | Done (r1) |
+| 10 | Work Sessions table | Done (r2): rows-per-group limit (10/25/50/All) with "Show more", internal scroll, sticky header, "Columns" menu |
+| 11 | Apps & URLs row limit | Done (r2): 10 rows per group with "Show more", internal scroll, sticky header. "The chart" was read as the PDF chart, fixed under #3 |
+| 12 | Approved manual requests | Fixed by #6: approving only flips the status, and budget/reports already count everything that isn't rejected. Open question: should *pending* manual time count toward the budget? |
+| 13 | Shift Attendance | Done (r1): judged against limits.daily, with a new "short" state |
+| 14 | Batch Actions | Done (r2): partial pay/bill updates no longer zero the fields they didn't send; counts come from the ids actually submitted; removed "Edit bill rate", which had no backing field |
+| 15 | Organization scope in tree | Done (r2): the org tree only loads for roles that are allowed it, and errors are kept per scope |
+| 16 | Add nodes to tree | Done (r2): a "+" on each list-view node sends invites that place the new member under that node on acceptance (`invites.tree_parent_member_id`, checked against the inviter's manage scope) |
+| 17 | Tree connection display | Done (r2): one parent per member, stray branches are rendered, and dragging no longer steals clicks (capture starts after a 4px threshold) |
+| 18 | Seats indicator | Done (r2): `GET /api/members/seats` plus the header indicator; hidden while the tenant is unlimited |
+| 20 | Team Utilization | Done (r1) |
+| 21 | Recent Activity Feed | Done (r1) |

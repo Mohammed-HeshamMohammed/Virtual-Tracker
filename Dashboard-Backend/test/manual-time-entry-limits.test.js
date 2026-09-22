@@ -20,6 +20,11 @@ const stub = {
   projectLimit: null,
   projectSpentSeconds: 0,
   rate: 0,
+  // Project-wide budget (PLAN-bug-fixes-round-1.md item 6). null = none,
+  // so every pre-existing case below is unaffected.
+  projectBudget: null,
+  projectBudgetSpentHours: 0,
+  existingEntryDuration: 0,
 };
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
@@ -34,12 +39,17 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     getProjectMemberLimitPg: async () => stub.projectLimit,
     getProjectTrackedSecondsPg: async () => stub.projectSpentSeconds,
     resolveMemberHourlyRatePg: async () => stub.rate,
+    getProjectBudgetPg: async () => stub.projectBudget,
+    computeProjectSpentPg: async () => stub.projectBudgetSpentHours,
   },
 });
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     query: async (sql, params) => {
+      if (sql.includes("SELECT duration FROM time_entries")) {
+        return [{ duration: stub.existingEntryDuration }];
+      }
       // The member-scoped tracked+manual query always carries fromDay/toDay
       // as params[1]/params[2] (member_id is params[0]).
       const key = `${params[1]}|${params[2]}`;
@@ -58,6 +68,9 @@ function reset() {
   stub.projectLimit = null;
   stub.projectSpentSeconds = 0;
   stub.rate = 0;
+  stub.projectBudget = null;
+  stub.projectBudgetSpentHours = 0;
+  stub.existingEntryDuration = 0;
 }
 
 test("no limits configured at all is a no-op", async () => {
@@ -175,5 +188,60 @@ test("a zero or missing duration is a no-op regardless of how tight the limits a
   stub.trackedSeconds["2026-08-25|2026-08-25"] = 5 * HOUR;
   await assert.doesNotReject(() =>
     assertManualTimeEntryWithinLimits(null, { memberId: "m1", projectId: null, date: "2026-08-25", durationSeconds: 0 }),
+  );
+});
+
+// Project-wide budget (PLAN-bug-fixes-round-1.md item 6): manual time had no
+// ceiling against the project's own Hours budget, only the per-member limit.
+const HOURS_BUDGET = { type: "Hours based", scope: "per_project", cost: 10 };
+
+test("a manual entry that would push an Hours budget over is refused", async () => {
+  reset();
+  stub.projectBudget = HOURS_BUDGET;
+  stub.projectBudgetSpentHours = 8;
+  await assert.rejects(
+    () => assertManualTimeEntryWithinLimits(null, { memberId: "m1", projectId: "p1", date: "2026-08-25", durationSeconds: 3 * HOUR }),
+    (err) => err.code === "PROJECT_BUDGET_REACHED",
+  );
+});
+
+test("an entry that lands exactly on the budget is allowed", async () => {
+  reset();
+  stub.projectBudget = HOURS_BUDGET;
+  stub.projectBudgetSpentHours = 8;
+  await assert.doesNotReject(() =>
+    assertManualTimeEntryWithinLimits(null, { memberId: "m1", projectId: "p1", date: "2026-08-25", durationSeconds: 2 * HOUR }),
+  );
+});
+
+test("a cost-based budget is not checked against hours", async () => {
+  reset();
+  stub.projectBudget = { type: "Cost based", scope: "per_project", cost: 10 };
+  stub.projectBudgetSpentHours = 999;
+  await assert.doesNotReject(() =>
+    assertManualTimeEntryWithinLimits(null, { memberId: "m1", projectId: "p1", date: "2026-08-25", durationSeconds: 50 * HOUR }),
+  );
+});
+
+test("a per-person budget is not compared against the project-wide total", async () => {
+  reset();
+  stub.projectBudget = { type: "Hours based", scope: "per_person", cost: 10 };
+  stub.projectBudgetSpentHours = 999;
+  await assert.doesNotReject(() =>
+    assertManualTimeEntryWithinLimits(null, { memberId: "m1", projectId: "p1", date: "2026-08-25", durationSeconds: 5 * HOUR }),
+  );
+});
+
+test("editing an entry does not count its old duration twice", async () => {
+  reset();
+  stub.projectBudget = HOURS_BUDGET;
+  // 9h spent INCLUDING this entry's current 4h. Shortening it to 3h leaves
+  // 5h + 3h = 8h, well under 10h - naive 9h + 3h = 12h would wrongly refuse.
+  stub.projectBudgetSpentHours = 9;
+  stub.existingEntryDuration = 4 * HOUR;
+  await assert.doesNotReject(() =>
+    assertManualTimeEntryWithinLimits(null, {
+      memberId: "m1", projectId: "p1", date: "2026-08-25", durationSeconds: 3 * HOUR, excludeEntryId: "e1",
+    }),
   );
 });

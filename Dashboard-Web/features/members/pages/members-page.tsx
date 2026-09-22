@@ -11,7 +11,7 @@ import { useAuth } from "@/shared/providers/app"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { usePageSearch } from "@/shared/ui/layout"
 import { getInvites } from "@/infrastructure/api"
-import { resolveInviteUrl } from "@/features/members/api/member-api"
+import { resolveInviteUrl, fetchSeatUsage, type SeatUsage } from "@/features/members/api/member-api"
 import {
   ALL_MEMBER_COLS,
   MEMBER_IMPORT_EXPORT_COMING_SOON_MESSAGE,
@@ -455,6 +455,25 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     if (!canManageMembers) setActiveTab("members")
   }, [canManageMembers])
 
+  // Seat usage for the header indicator. Re-read whenever the member or
+  // invite lists change, since both feed the "occupied" count - adding an
+  // invite consumes a seat before anyone accepts it.
+  const [seatUsage, setSeatUsage] = useComponentState<SeatUsage | null>(null)
+  useEffect(() => {
+    if (!canManageMembers) return
+    let cancelled = false
+    fetchSeatUsage()
+      .then((usage) => {
+        if (!cancelled) setSeatUsage(usage)
+      })
+      // A missing or failing seat endpoint must never break the People page -
+      // the indicator simply does not render.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [canManageMembers, members.length, invites.length])
+
   useEffect(() => {
     setSelectedMembers(new Set())
     setSelectedInvites(new Set())
@@ -462,12 +481,16 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
 
   async function handleBatchModalConfirm(payload: {
     action: BatchEditAction
+    ids: string[]
     payBill?: { payRate?: string; currency?: string; payPeriod?: string }
     workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) {
+    // payload.ids is what the modal actually cleared for this action (for the
+    // remove actions: the selection minus Owners). Counts in the messages
+    // below use it too, so "Removed 5" is never reported when 4 happened.
     if (payload.action === "removeFromTree") {
-      const count = selectedMembers.size
-      await handleBatchRemoveFromTree(Array.from(selectedMembers))
+      const count = payload.ids.length
+      await handleBatchRemoveFromTree(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
@@ -477,8 +500,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       return
     }
     if (payload.action === "remove") {
-      const count = selectedMembers.size
-      await handleRemoveMembers(Array.from(selectedMembers))
+      const count = payload.ids.length
+      await handleRemoveMembers(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
@@ -491,8 +514,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       ...(payload.payBill ? { payBill: payload.payBill } : {}),
       ...(payload.workLimits ? { workLimits: payload.workLimits } : {}),
     }
-    const count = selectedMembers.size
-    await handleBatchUpdateMembers(Array.from(selectedMembers), patch)
+    const count = payload.ids.length
+    await handleBatchUpdateMembers(payload.ids, patch)
     setSelectedMembers(new Set())
     setAddMembersToast({
       title: "Batch actions",
@@ -578,6 +601,44 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                     : "bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300"
                 )}>{visibleInvites.length}</span>
               </button>
+
+              {/* Seats occupied vs open, next to the Members header
+                  (PLAN-bug-fixes-round-1.md item 18). "Used" counts active
+                  members plus pending invites - the same definition that
+                  actually blocks the next invite, so this number and the
+                  error someone hits can never disagree. Hidden entirely
+                  when no real seat limit is set, rather than showing a
+                  placeholder total. */}
+              {seatUsage && !seatUsage.unlimited && seatUsage.seatLimit !== null && (
+                <div className="ml-1 flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-xs font-semibold shadow-sm tabular-nums">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    <span className="text-slate-800 dark:text-slate-100">{seatUsage.seatLimit}</span> Seats
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-600">||</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    <span className="text-slate-800 dark:text-slate-100">{seatUsage.seatsUsed}</span> Occupied
+                  </span>
+                  <span className="text-slate-300 dark:text-slate-600">||</span>
+                  <span
+                    className={cn(
+                      seatUsage.seatsOpen === 0
+                        ? "text-red-600 dark:text-red-400"
+                        : "text-slate-500 dark:text-slate-400",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        seatUsage.seatsOpen === 0
+                          ? "text-red-600 dark:text-red-400"
+                          : "text-slate-800 dark:text-slate-100",
+                      )}
+                    >
+                      {seatUsage.seatsOpen}
+                    </span>{" "}
+                    Open
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

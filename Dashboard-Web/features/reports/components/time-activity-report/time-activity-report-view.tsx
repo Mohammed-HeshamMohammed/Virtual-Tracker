@@ -139,6 +139,7 @@ export function TimeActivityReportView({
     toggleCol,
     handleSortClick,
     getSubRowsForDay,
+    memberTotals,
     groupColumnLabel,
   } = useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName: currentMember?.name })
 
@@ -200,12 +201,12 @@ export function TimeActivityReportView({
   }
 
   function downloadPdf() {
-    const byMemberHours = new Map<string, number>()
-    for (const day of sortedDisplayRows) {
-      for (const member of getSubRowsForDay(day.date)) {
-        byMemberHours.set(member.name, (byMemberHours.get(member.name) ?? 0) + member.trackedHours)
-      }
-    }
+    // memberTotals comes straight from the filtered entries, so this chart
+    // is per-member in EVERY grouping mode. Walking getSubRowsForDay here
+    // used to plot project names under a "by member" title whenever the
+    // table was grouped by member or by week, because a sub-row is only a
+    // member in some modes (see the hook's own comment).
+    const byMemberHours = new Map<string, number>(memberTotals.map((m) => [m.name, m.hours]))
     downloadReportPdf({
       title: "Time & Activity Report",
       subtitle: "Time worked, activity levels, and amounts earned per project or to-do.",

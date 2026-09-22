@@ -12,9 +12,18 @@ export function buildYTicks(maxVal: number, metric: TimeActivityMetric): number[
   const pad = maxVal * 0.22
   const top = maxVal + pad
   const step = top <= 10 ? 1 : top <= 24 ? 2 : top <= 48 ? 4 : Math.ceil(top / 6)
+  // Ticks run until one reaches or passes `top`, and that tick becomes the
+  // axis maximum. The loop used to stop at the last tick BELOW top, which
+  // rounded the ceiling down and ate the headroom: at 8% padding a 10h peak
+  // got a max tick of exactly 10 (bar flush with the ceiling), and even at
+  // 22% a 19h peak got 22 - under 16%. Rounding up keeps the padding real.
   const ticks: number[] = []
-  for (let v = 0; v <= top + 1e-6; v += step) ticks.push(Math.round(v * 100) / 100)
-  if (ticks.length < 2) ticks.push(Math.round(top * 10) / 10)
+  let v = 0
+  for (;;) {
+    ticks.push(Math.round(v * 100) / 100)
+    if (v >= top - 1e-6) break
+    v += step
+  }
   return ticks
 }
 
