@@ -1139,6 +1139,23 @@ export type SeatUsage = {
   seatsUsed: number
   seatsOpen: number | null
   unlimited: boolean
+  /** Main-org Owners/Super Admins only - a customer account's limit is set
+   *  from the Customer Accounts tab, never from inside the account. */
+  canEdit?: boolean
+}
+
+/** `null` = unlimited. Refused below the number of seats already in use. */
+export async function updateSeatLimit(seats: number | null): Promise<SeatUsage | null> {
+  const res = await apiFetch(apiPath("/api/members/seats"), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seats }),
+  })
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string; data?: SeatUsage | null }
+  if (!res.ok || json.success !== true) {
+    throw new Error(json.error || `Failed to update the seat limit: ${res.status}`)
+  }
+  return json.data ?? null
 }
 
 export async function fetchSeatUsage(): Promise<SeatUsage | null> {

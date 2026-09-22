@@ -29,6 +29,7 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { recordCustomerAccountAudit } from "./audit.service.js";
 import { invalidateTenantGrantCache } from "./tenant-grant-cache.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
+import { usedSeatsSql } from "./seat-usage.service.js";
 import {
   seedLookupTablePostgresIfEmpty,
   seedOrgFieldOptionsPostgresIfEmpty,
@@ -122,39 +123,6 @@ function assertValidSeatLimit(seatLimit) {
   return n;
 }
 
-/**
- * §14.2: FOR UPDATE on the tenant row is the whole point - counting rows
- * does not by itself block a concurrent insert, so without this lock two
- * simultaneous invites can both read `used = limit - 1` and both succeed.
- * The ONLY place a seat is consumed; every add/invite path in a customer
- * tree must call this inside its own transaction before inserting.
- */
-export async function assertSeatAvailable(client, tenantId) {
-  const tenantRows = await client.query(
-    `SELECT id, seat_limit FROM tenants WHERE id = $1 AND lifecycle = 'live' FOR UPDATE`,
-    [tenantId],
-  );
-  const tenant = tenantRows.rows[0];
-  if (!tenant) {
-    throw new CustomerAccountError(404, "Customer account not found.", "NOT_FOUND");
-  }
-
-  const usedRows = await client.query(
-    `SELECT (SELECT count(*) FROM members WHERE tenant_id = $1 AND status = 'active')
-          + (SELECT count(*) FROM invites WHERE tenant_id = $1 AND status = 'pending_signup') AS used`,
-    [tenantId],
-  );
-  const used = Number(usedRows.rows[0]?.used ?? 0);
-  if (used >= tenant.seat_limit) {
-    throw new CustomerAccountError(
-      409,
-      `All ${tenant.seat_limit} seats are in use. Remove someone to free a seat.`,
-      "SEAT_LIMIT_REACHED",
-    );
-  }
-  return { seatLimit: tenant.seat_limit, used };
-}
-
 /** Phase 4: create a customer tenant + its root invite. */
 export async function createCustomerTenant({ email, periodEnd, seatLimit, grantedRole, actorId, appOrigin }) {
   assertValidGrantedRole(grantedRole);
@@ -219,17 +187,15 @@ export async function createCustomerTenant({ email, periodEnd, seatLimit, grante
 }
 
 /** US-5: email, role, seats used/limit, period end, status - one list row
- *  per tenant, joined against the same used-seats definition as
- *  assertSeatAvailable (kept in sync deliberately: both read
- *  status='active'/'pending_signup', see that function's own comment). */
+ *  per tenant. Seats used is seat-usage.service.js's usedSeatsSql, the one
+ *  definition every seat figure and the add/invite guard share. */
 export async function listCustomerTenants() {
   return query(
     `SELECT
        t.id, t.granted_role, t.seat_limit, t.period_start, t.period_end, t.lifecycle, t.created_at,
        COALESCE(root.work_email, invite_email.email) AS email,
        (t.lifecycle = 'live' AND now() < t.period_end) AS active,
-       (SELECT count(*) FROM members m WHERE m.tenant_id = t.id AND m.status = 'active')
-         + (SELECT count(*) FROM invites i WHERE i.tenant_id = t.id AND i.status = 'pending_signup') AS seats_used
+       ${usedSeatsSql("t.id")} AS seats_used
      FROM tenants t
      LEFT JOIN members root ON root.id = t.root_user_id
      LEFT JOIN LATERAL (
@@ -247,8 +213,7 @@ export async function getCustomerTenantDetail(tenantId) {
        t.root_user_id,
        COALESCE(root.work_email, invite_email.email) AS email,
        (t.lifecycle = 'live' AND now() < t.period_end) AS active,
-       (SELECT count(*) FROM members m WHERE m.tenant_id = t.id AND m.status = 'active')
-         + (SELECT count(*) FROM invites i WHERE i.tenant_id = t.id AND i.status = 'pending_signup') AS seats_used
+       ${usedSeatsSql("t.id")} AS seats_used
      FROM tenants t
      LEFT JOIN members root ON root.id = t.root_user_id
      LEFT JOIN LATERAL (
@@ -294,8 +259,7 @@ export async function changeCustomerTenantSeats(tenantId, seatLimit, actorId) {
     if (!tenant) throw new CustomerAccountError(404, "Customer account not found.", "NOT_FOUND");
 
     const usedRows = await client.query(
-      `SELECT (SELECT count(*) FROM members WHERE tenant_id = $1 AND status = 'active')
-            + (SELECT count(*) FROM invites WHERE tenant_id = $1 AND status = 'pending_signup') AS used`,
+      `SELECT ${usedSeatsSql("$1")} AS used`,
       [tenantId],
     );
     const used = Number(usedRows.rows[0]?.used ?? 0);

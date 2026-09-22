@@ -274,7 +274,7 @@ The feed is capped at a **fixed count of 8**, with no age cutoff. "Limit of life
 
 ## Summary table
 
-All items are implemented on `fix/bugs-round-1`: round 1 is commit b292891, round 2 is the commit after it.
+All items are implemented on `fix/bugs-round-1`: round 1 is commit b292891, round 2 is 517b325a, and round 3 is the commit after it (seat enforcement, tenant stamping, the seat-limit editor, and "+" in the chart view).
 
 | # | Area | Status |
 |---|---|---|
@@ -293,8 +293,8 @@ All items are implemented on `fix/bugs-round-1`: round 1 is commit b292891, roun
 | 13 | Shift Attendance | Done (r1): judged against limits.daily, with a new "short" state |
 | 14 | Batch Actions | Done (r2): partial pay/bill updates no longer zero the fields they didn't send; counts come from the ids actually submitted; removed "Edit bill rate", which had no backing field |
 | 15 | Organization scope in tree | Done (r2): the org tree only loads for roles that are allowed it, and errors are kept per scope |
-| 16 | Add nodes to tree | Done (r2): a "+" on each list-view node sends invites that place the new member under that node on acceptance (`invites.tree_parent_member_id`, checked against the inviter's manage scope) |
+| 16 | Add nodes to tree | Done (r2, r3): a "+" on each node sends invites that place the new member under that node on acceptance (`invites.tree_parent_member_id`, checked against the inviter's manage scope). In the list view the "+" is a button on each card; in the connections chart it appears on hover (r3). Clients never get one |
 | 17 | Tree connection display | Done (r2): one parent per member, stray branches are rendered, and dragging no longer steals clicks (capture starts after a 4px threshold) |
-| 18 | Seats indicator | Done (r2): `GET /api/members/seats` plus the header indicator; hidden while the tenant is unlimited |
+| 18 | Seats indicator | Done (r2, r3): header readout, plus a "Set seat limit" editor for main-org Owners/Super Admins (`PATCH /api/members/seats`; can't go below the seats in use). r3 also made limits actually enforced: `assertSeatAvailable` had never been called, so no limit was enforced anywhere. Every invite/add path now runs `withSeatsAvailable` and stamps the inviter's `tenant_id` (they had defaulted to the main org). A used seat is an active member, a pending invite or a pre-provisioned account |
 | 20 | Team Utilization | Done (r1) |
 | 21 | Recent Activity Feed | Done (r1) |

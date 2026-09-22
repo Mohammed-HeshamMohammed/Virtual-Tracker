@@ -12,6 +12,7 @@ import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { usePageSearch } from "@/shared/ui/layout"
 import { getInvites } from "@/infrastructure/api"
 import { resolveInviteUrl, fetchSeatUsage, type SeatUsage } from "@/features/members/api/member-api"
+import { SeatIndicator } from "@/features/members/components/seat-indicator"
 import {
   ALL_MEMBER_COLS,
   MEMBER_IMPORT_EXPORT_COMING_SOON_MESSAGE,
@@ -602,43 +603,7 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 )}>{visibleInvites.length}</span>
               </button>
 
-              {/* Seats occupied vs open, next to the Members header
-                  (PLAN-bug-fixes-round-1.md item 18). "Used" counts active
-                  members plus pending invites - the same definition that
-                  actually blocks the next invite, so this number and the
-                  error someone hits can never disagree. Hidden entirely
-                  when no real seat limit is set, rather than showing a
-                  placeholder total. */}
-              {seatUsage && !seatUsage.unlimited && seatUsage.seatLimit !== null && (
-                <div className="ml-1 flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-xs font-semibold shadow-sm tabular-nums">
-                  <span className="text-slate-500 dark:text-slate-400">
-                    <span className="text-slate-800 dark:text-slate-100">{seatUsage.seatLimit}</span> Seats
-                  </span>
-                  <span className="text-slate-300 dark:text-slate-600">||</span>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    <span className="text-slate-800 dark:text-slate-100">{seatUsage.seatsUsed}</span> Occupied
-                  </span>
-                  <span className="text-slate-300 dark:text-slate-600">||</span>
-                  <span
-                    className={cn(
-                      seatUsage.seatsOpen === 0
-                        ? "text-red-600 dark:text-red-400"
-                        : "text-slate-500 dark:text-slate-400",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        seatUsage.seatsOpen === 0
-                          ? "text-red-600 dark:text-red-400"
-                          : "text-slate-800 dark:text-slate-100",
-                      )}
-                    >
-                      {seatUsage.seatsOpen}
-                    </span>{" "}
-                    Open
-                  </span>
-                </div>
-              )}
+              <SeatIndicator usage={seatUsage} onChange={setSeatUsage} />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

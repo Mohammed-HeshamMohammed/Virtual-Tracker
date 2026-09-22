@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "@/shared/utils/utils"
 import type { MemberTreeEdge, MemberTreeNode } from "@/features/members/services/member-tree"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import {
   buildMemberTreeBranches,
   memberBranchesToTreeChartData,
@@ -53,6 +54,7 @@ export function MemberTreeConnectionsView({
   settings,
   transform,
   onTransformChange,
+  onAddHere,
 }: {
   nodes: MemberTreeNode[]
   edges: MemberTreeEdge[]
@@ -63,7 +65,25 @@ export function MemberTreeConnectionsView({
   settings: TreeChartDisplaySettings
   transform: TreeChartTransform
   onTransformChange: (next: TreeChartTransform) => void
+  /** "Add member here" (item 16); absent when the viewer cannot add members. */
+  onAddHere?: (node: MemberTreeNode) => void
 }) {
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
+  const handleAddChild = useCallback(
+    (id: string) => {
+      const node = nodeById.get(id)
+      if (node) onAddHere?.(node)
+    },
+    [nodeById, onAddHere],
+  )
+  // Clients cannot have anyone under them (the backend refuses the edge).
+  const canAddChild = useCallback(
+    (id: string) => {
+      const node = nodeById.get(id)
+      return Boolean(node) && !isClientRole(node!.role)
+    },
+    [nodeById],
+  )
   const viewportRef = useRef<HTMLDivElement>(null)
   const transformRef = useRef(transform)
   transformRef.current = transform
@@ -233,6 +253,8 @@ export function MemberTreeConnectionsView({
           settings={settings}
           isDark={isDark}
           highlightNodeId={currentMemberId}
+          onAddChild={onAddHere ? handleAddChild : undefined}
+          canAddChild={canAddChild}
         />
       </div>
 
@@ -242,7 +264,9 @@ export function MemberTreeConnectionsView({
           isDark ? "border-[#3d4a3d]/40 bg-[#191f31]/90 text-[#bccbb9]" : "border-slate-200 bg-white/90 text-slate-500",
         )}
       >
-        Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse
+        {onAddHere
+          ? "Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse · Hover a node and click + to add a member under them"
+          : "Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse"}
       </div>
     </div>
   )

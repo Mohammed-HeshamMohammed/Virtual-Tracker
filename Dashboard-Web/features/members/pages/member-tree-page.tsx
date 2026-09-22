@@ -569,6 +569,7 @@ function MemberTreeScopeView({
                   settings={chartSettings}
                   transform={chartTransform}
                   onTransformChange={setChartTransform}
+                  onAddHere={canManageMembers ? setAddUnder : undefined}
                 />
               </div>
             )}
