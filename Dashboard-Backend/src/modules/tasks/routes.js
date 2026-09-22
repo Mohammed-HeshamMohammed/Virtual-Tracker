@@ -1,7 +1,7 @@
 import { requireAuthContext } from "../../http/auth-context.js";
 import { isEmployeeRole } from "../../http/role-hierarchy.js";
 import { isClientRole } from "../../http/team-member-assign-policy.js";
-import { clientMayManageProject } from "../../http/project-access.js";
+import { clientMayManageProject, clientMayTrackProject } from "../../http/project-access.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import { assertCanReviewTasks, assertTaskAccessible, canAccessTask, canSyncTaskAssignments } from "../../http/task-access.js";
@@ -657,6 +657,16 @@ export async function routeTasks(req, res, url, db, origin) {
     const taskId = taskHoursMatch[1];
     const access = await assertTaskAccessible(req, res, origin, db, taskId);
     if (!access) return true;
+    // Logging hours against a task is a time-tracking action, gated by the
+    // same client_can_track flag the live timer and manual time entries
+    // already enforce - task visibility alone isn't enough for a client.
+    if (isClientRole(access.viewer.roleName)) {
+      const projectId = String(access.task?.project_id ?? access.task?.projectId ?? "");
+      if (!projectId || !(await clientMayTrackProject(access.viewer, projectId))) {
+        sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+        return true;
+      }
+    }
     try {
       const body = await readJsonBody(req);
       rejectUnknownFields(body, ["hours_spent", "hoursSpent"]);
@@ -708,11 +718,23 @@ export async function routeTasks(req, res, url, db, origin) {
       }
       const ownerId = row.user_id ?? "";
       const viewer = access.viewer;
-      const canEdit =
-        ownerId === viewer.memberId || isManagementRole(viewer.roleName) || isReviewCenterRole(viewer.roleName);
+      // isReviewCenterRole includes "client" for review-queue visibility, not
+      // for editing someone else's logged hours - a client may only ever
+      // touch their own row, and only on a client_can_track project.
+      const isClient = isClientRole(viewer.roleName);
+      const canEdit = isClient
+        ? ownerId === viewer.memberId
+        : ownerId === viewer.memberId || isManagementRole(viewer.roleName) || isReviewCenterRole(viewer.roleName);
       if (!canEdit) {
         sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
         return true;
+      }
+      if (isClient) {
+        const projectId = String(access.task?.project_id ?? access.task?.projectId ?? "");
+        if (!projectId || !(await clientMayTrackProject(viewer, projectId))) {
+          sendJson(res, origin, 403, { success: false, error: "Insufficient permissions for this operation." });
+          return true;
+        }
       }
 
       const nextHoursSpent = hoursSpent !== undefined ? Number(hoursSpent) : row.hours_spent;
