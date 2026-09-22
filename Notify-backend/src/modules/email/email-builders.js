@@ -25,8 +25,30 @@ function resolveSupportContactEmail() {
   return DEFAULT_SUPPORT_EMAIL;
 }
 
+const DEFAULT_APP_URL = "https://app.myvirtualtracker.com";
+
+/**
+ * The app URL every emailed link points at.
+ *
+ * This used to return FRONTEND_ORIGIN verbatim, so whatever shape that
+ * variable happened to be in went straight into a link someone clicks from
+ * their inbox: a trailing slash produced "…com//invite/x", a comma-separated
+ * CORS-style list produced a URL containing a comma, and a value that was
+ * not a URL at all (or was accidentally set to the API host) produced a link
+ * that simply did not open the app. Mirrors Dashboard-Backend's
+ * resolveAppPublicUrl, which already trims and validates the same way.
+ */
 function appSignInUrl() {
-  return getEnv().cors.frontendOrigin || "https://app.myvirtualtracker.com";
+  const raw = String(getEnv().cors.frontendOrigin || "").trim();
+  // FRONTEND_ORIGIN is sometimes reused as a CORS list; the app itself is
+  // the first entry.
+  const first = raw.split(",")[0].trim();
+  if (!first.startsWith("http://") && !first.startsWith("https://")) {
+    return DEFAULT_APP_URL;
+  }
+  let end = first.length;
+  while (end > 0 && first[end - 1] === "/") end--;
+  return first.slice(0, end) || DEFAULT_APP_URL;
 }
 
 function formatWhen(iso = new Date().toISOString()) {
@@ -719,4 +741,49 @@ export async function sendReportDeliveryEmail(input) {
     : undefined;
 
   return sendTransactionalEmail({ to: email, subject, text, html, attachments, logPrefix: "[report-delivery]" });
+}
+
+/**
+ * The 6-digit unlock code for the Customer Accounts tab (Owner/Super Admin
+ * only - see Dashboard-Backend's customer-accounts module). Deliberately
+ * plain and short-lived: this is a possession check ("you can read this
+ * inbox right now"), not a long-lived credential, so the email carries no
+ * link and no account details - just the code and how long it is good for.
+ */
+export async function sendCustomerAccountsUnlockCodeEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const code = typeof input.code === "string" ? input.code.trim() : "";
+  if (!email || !code) return { sent: false, channel: "skipped" };
+
+  const minutes = Number.isFinite(input.expiresInMinutes) ? input.expiresInMinutes : 10;
+  const subject = "Your Customer Accounts verification code";
+  const text = [
+    "A verification code was requested to open the Customer Accounts tab on your account.",
+    "",
+    `Code: ${code}`,
+    "",
+    `This code expires in ${minutes} minutes and can only be used once.`,
+    "",
+    "If you did not request this, you can ignore this email - the code will expire on its own.",
+  ].join("\n");
+
+  const html = buildAuthBrandedEmailHtml({
+    title: "Customer Accounts verification",
+    subtitle: "Confirm it's you before opening this tab",
+    badge: "Security code",
+    badgeVariant: "alert",
+    preheader: `Your verification code is ${code}.`,
+    bodyHtml: `
+      <p style="margin:0 0 14px;">A verification code was requested to open the Customer Accounts tab.</p>
+      ${calloutHtml(
+        "info",
+        "Your code",
+        `<p style="margin:0;font-size:28px;font-weight:800;letter-spacing:0.12em;">${escapeHtml(code)}</p>`,
+      )}
+      <p style="margin:14px 0 0;">This code expires in ${minutes} minutes and can only be used once. If you did not request this, no action is needed.</p>
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail(), { showAutoNotice: true }),
+  });
+
+  return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[customer-accounts-unlock-code]" });
 }
