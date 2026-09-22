@@ -1,6 +1,21 @@
 import crypto from "node:crypto";
 import { query } from "./client.js";
 import { getLookupData, invalidateLookupCache } from "./lookup-cache.js";
+import { currentTenantId } from "./audit-actor.js";
+import { MAIN_TENANT_ID } from "./ensure-tenancy-schema.js";
+
+/**
+ * §15.4, §15.5: lookup_tables and org_field_options are customer-editable
+ * (job titles, departments, custom field options), so unlike `roles` every
+ * read and write in this file is scoped to the request's tenant, resolved
+ * implicitly from context rather than threaded as an extra parameter
+ * through the many existing callers of these functions - same pattern the
+ * rest of the tenancy design uses everywhere (client.js's own publishing,
+ * lookup-cache.js's per-tenant entries above).
+ */
+function tenantIdOrMain() {
+  return currentTenantId() ?? MAIN_TENANT_ID;
+}
 
 function actorIdOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -69,8 +84,8 @@ export async function listLookupPostgresRows(entityKey, url) {
   }
 
   const category = LOOKUP_ENTITY_CATEGORY[entityKey];
-  const conditions = ["category = $1"];
-  const params = [category];
+  const conditions = ["category = $1", "tenant_id = $2"];
+  const params = [category, tenantIdOrMain()];
   for (const field of ["name", "list_ranking"]) {
     const value = url.searchParams.get(field) ?? url.searchParams.get(field.replace(/_([a-z])/g, (_, c) => c.toUpperCase()));
     if (value !== null && value !== "") {
@@ -92,8 +107,8 @@ export async function getLookupPostgresRow(entityKey, id) {
   }
   const category = LOOKUP_ENTITY_CATEGORY[entityKey];
   const rows = await query(
-    `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE id = $1 AND category = $2 LIMIT 1`,
-    [id, category],
+    `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE id = $1 AND category = $2 AND tenant_id = $3 LIMIT 1`,
+    [id, category, tenantIdOrMain()],
   );
   return rows[0] ? normalizeLookupRow(rows[0]) : null;
 }
@@ -120,10 +135,11 @@ export async function createLookupPostgresRow(entityKey, payload) {
   }
 
   const category = LOOKUP_ENTITY_CATEGORY[entityKey];
+  const tenantId = tenantIdOrMain();
   const rows = await query(
-    `INSERT INTO lookup_tables (id, category, name, list_ranking, created_by, updated_by)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     ON CONFLICT (category, name) DO NOTHING
+    `INSERT INTO lookup_tables (id, category, name, list_ranking, created_by, updated_by, tenant_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (tenant_id, category, name) DO NOTHING
      RETURNING ${LOOKUP_COLUMNS.join(", ")}`,
     [
       payload.id,
@@ -132,13 +148,14 @@ export async function createLookupPostgresRow(entityKey, payload) {
       payload.list_ranking ?? null,
       actorIdOrNull(payload.created_by),
       actorIdOrNull(payload.updated_by),
+      tenantId,
     ],
   );
   invalidateLookupCache();
   if (rows[0]) return normalizeLookupRow(rows[0]);
   const existing = await query(
-    `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE category = $1 AND name = $2 LIMIT 1`,
-    [category, payload.name],
+    `SELECT ${LOOKUP_COLUMNS.join(", ")} FROM lookup_tables WHERE category = $1 AND name = $2 AND tenant_id = $3 LIMIT 1`,
+    [category, payload.name, tenantId],
   );
   return existing[0] ? normalizeLookupRow(existing[0]) : null;
 }
@@ -159,9 +176,9 @@ export async function updateLookupPostgresRow(entityKey, id, payload, existing) 
   const merged = { ...existing, ...payload, id };
   const rows = await query(
     `UPDATE lookup_tables SET name = $3, list_ranking = $4, updated_by = $5
-     WHERE id = $1 AND category = $2
+     WHERE id = $1 AND category = $2 AND tenant_id = $6
      RETURNING ${LOOKUP_COLUMNS.join(", ")}`,
-    [id, category, merged.name, merged.list_ranking ?? null, merged.updated_by ?? null],
+    [id, category, merged.name, merged.list_ranking ?? null, merged.updated_by ?? null, tenantIdOrMain()],
   );
   invalidateLookupCache();
   return normalizeLookupRow(rows[0]);
@@ -172,7 +189,7 @@ export async function deleteLookupPostgresRow(entityKey, id) {
     await query("DELETE FROM roles WHERE id = $1", [id]);
   } else {
     const category = LOOKUP_ENTITY_CATEGORY[entityKey];
-    await query("DELETE FROM lookup_tables WHERE id = $1 AND category = $2", [id, category]);
+    await query("DELETE FROM lookup_tables WHERE id = $1 AND category = $2 AND tenant_id = $3", [id, category, tenantIdOrMain()]);
   }
   invalidateLookupCache();
 }
@@ -185,7 +202,10 @@ export async function lookupRowExistsInPostgres(collection, id) {
   }
   const category = LOOKUP_COLLECTION_TO_CATEGORY[collection];
   if (!category) return false;
-  const rows = await query("SELECT 1 FROM lookup_tables WHERE id = $1 AND category = $2 LIMIT 1", [id, category]);
+  const rows = await query(
+    "SELECT 1 FROM lookup_tables WHERE id = $1 AND category = $2 AND tenant_id = $3 LIMIT 1",
+    [id, category, tenantIdOrMain()],
+  );
   return rows.length > 0;
 }
 
@@ -281,10 +301,10 @@ export async function listOrgFieldOptionsPg(type) {
 export async function createOrgFieldOptionPg(payload) {
   const id = crypto.randomUUID();
   const rows = await query(
-    `INSERT INTO org_field_options (id, type, label, position, modified_by)
-     VALUES ($1,$2,$3,$4,$5)
+    `INSERT INTO org_field_options (id, type, label, position, modified_by, tenant_id)
+     VALUES ($1,$2,$3,$4,$5,$6)
      RETURNING id, type, label, position, created_at, updated_at, modified_by`,
-    [id, payload.type, payload.label, payload.position ?? 0, payload.modified_by ?? null],
+    [id, payload.type, payload.label, payload.position ?? 0, payload.modified_by ?? null, tenantIdOrMain()],
   );
   invalidateLookupCache();
   const row = rows[0];
@@ -298,8 +318,8 @@ export async function seedLookupTablePostgresIfEmpty(collection, names, actor) {
   const category = LOOKUP_COLLECTION_TO_CATEGORY[collection];
   if (!category) return [];
   const [{ count }] = await query(
-    "SELECT COUNT(*)::int AS count FROM lookup_tables WHERE category = $1",
-    [category],
+    "SELECT COUNT(*)::int AS count FROM lookup_tables WHERE category = $1 AND tenant_id = $2",
+    [category, tenantIdOrMain()],
   );
   if (Number(count) > 0) return [];
 
@@ -322,8 +342,8 @@ export async function seedLookupTablePostgresIfEmpty(collection, names, actor) {
 
 export async function seedOrgFieldOptionsPostgresIfEmpty(type, labels) {
   const [{ count }] = await query(
-    "SELECT COUNT(*)::int AS count FROM org_field_options WHERE type = $1",
-    [type],
+    "SELECT COUNT(*)::int AS count FROM org_field_options WHERE type = $1 AND tenant_id = $2",
+    [type, tenantIdOrMain()],
   );
   if (Number(count) > 0) return [];
 

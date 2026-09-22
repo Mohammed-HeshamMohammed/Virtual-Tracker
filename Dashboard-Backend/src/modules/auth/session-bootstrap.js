@@ -13,6 +13,7 @@ import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { validateSessionAuthorization } from "./session-authorization.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
+import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
 export async function handleSessionBootstrap(req, res, origin, url) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
@@ -103,6 +104,30 @@ export async function handleSessionBootstrap(req, res, origin, url) {
             gateErr.status = gov.status;
             gateErr.code = gov.code;
             throw gateErr;
+          }
+
+          // §14.4: session-bootstrap is this member's first authenticated
+          // call after Firebase sign-in succeeds - the earliest point an
+          // expired customer tenant can be told "expired" rather than
+          // landing on a half-loaded dashboard that then fails every
+          // subsequent request. Same grant check as auth-middleware.js's
+          // per-request gate; this route sits ahead of that middleware
+          // entirely (session-bootstrap is one of the paths a fresh sign-in
+          // must reach before it has anything to authenticate WITH), so it
+          // needs its own copy rather than inheriting the gate for free.
+          const tenantId = typeof memberData?.tenant_id === "string" ? memberData.tenant_id : null;
+          if (tenantId) {
+            const grant = await resolveTenantGrantCached(tenantId);
+            if (grant && !grant.active) {
+              const gateErr = new Error(
+                grant.lifecycle === "removing" || grant.lifecycle === "removed"
+                  ? "This account has been removed."
+                  : "Your subscription has expired. Please contact your provider.",
+              );
+              gateErr.status = 403;
+              gateErr.code = grant.lifecycle === "live" ? "SUBSCRIPTION_EXPIRED" : "TENANT_REMOVED";
+              throw gateErr;
+            }
           }
         }
 

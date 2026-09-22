@@ -40,6 +40,7 @@ import {
   recordInviteRegisterSuccess,
 } from "../../../http/invite-abuse-guard.js";
 import { resolveAppPublicUrl } from "../../auth/app-public-url.js";
+import { resolveTenantGrantCached } from "../../customer-accounts/tenant-grant-cache.js";
 import {
   assertInviteAvailableForRegistration,
   resolveInviteExpiryMs,
@@ -76,6 +77,32 @@ function randomTempPassword() {
   let s = "";
   for (let i = 0; i < 14; i += 1) s += chars[crypto.randomInt(chars.length)];
   return `${s}!a1`;
+}
+
+/**
+ * §14.4: a pending invite into an expired customer tenant must not be
+ * redeemable - "expired" means "no one in that tree can log in or use the
+ * data", and a not-yet-accepted invite is the one path into that tree that
+ * skips auth-middleware.js's own per-request gate entirely (invite preview
+ * and registration are both PUBLIC_API_ROUTES, reachable before anyone has
+ * signed in to have a tenant checked against). Main-org invites always pass
+ * this (tenant_id defaults to MAIN_TENANT_ID, whose grant never expires).
+ */
+async function assertInviteTenantActive(row) {
+  const tenantId = typeof row?.tenant_id === "string" ? row.tenant_id : null;
+  if (!tenantId) return { ok: true };
+  const grant = await resolveTenantGrantCached(tenantId);
+  if (grant && !grant.active) {
+    return {
+      ok: false,
+      httpStatus: 403,
+      error:
+        grant.lifecycle === "removing" || grant.lifecycle === "removed"
+          ? "This invite is no longer valid."
+          : "This invite's account has expired. Contact the account owner.",
+    };
+  }
+  return { ok: true };
 }
 
 async function findInviteByToken(db, token) {
@@ -131,6 +158,12 @@ async function promotePendingMemberCore(db, auth, uid) {
     updated_at: new Date(),
     firebase_uid: uid,
   };
+  // Same reasoning as the invite/register path above: preprovisioning is
+  // completed from a public, unauthenticated call, so the pending record's
+  // own tenant_id (not context) is what carries forward.
+  if (typeof p.tenant_id === "string" && p.tenant_id) {
+    memberPayload.tenant_id = p.tenant_id;
+  }
   let roleName = "Viewer";
   if (typeof p.role_id === "string" && p.role_id) {
     const resolvedRoleName = await resolveRoleNameById(db, p.role_id);
@@ -356,6 +389,11 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, availability.httpStatus, { success: false, error: availability.error });
       return true;
     }
+    const tenantGate = await assertInviteTenantActive(row);
+    if (!tenantGate.ok) {
+      sendJson(res, origin, tenantGate.httpStatus, { success: false, error: tenantGate.error });
+      return true;
+    }
     const inviteKind = typeof row.invite_kind === "string" ? row.invite_kind : "email";
     const email = typeof row.email === "string" ? row.email.trim() : "";
     const expiryMs = resolveInviteExpiryMs(row);
@@ -457,6 +495,11 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, availability.httpStatus, { success: false, error: availability.error });
       return true;
     }
+    const tenantGate = await assertInviteTenantActive(row);
+    if (!tenantGate.ok) {
+      sendJson(res, origin, tenantGate.httpStatus, { success: false, error: tenantGate.error });
+      return true;
+    }
     const inviteKind = typeof row.invite_kind === "string" ? row.invite_kind : "email";
     const inviteEmail = (typeof row.email === "string" ? row.email : "").trim().toLowerCase();
     if (inviteKind === "email" && inviteEmail && inviteEmail !== email) {
@@ -503,6 +546,18 @@ export async function routeMemberInvites(req, res, url, origin) {
         updated_at: new Date(),
         firebase_uid: uid,
       };
+      // §Phase 4: the accepted invite's tenant becomes the new member's
+      // tenant - this route is a PUBLIC_API_ROUTES entry (runs before any
+      // tenant is known from an authenticated session), so it has to be
+      // told explicitly rather than inheriting one from context the way
+      // every other member-creation path does. Only set the key when the
+      // invite actually carries one (main-org invites do too, once
+      // ensure-tenancy-schema.js has backfilled `invites`) - `createMemberPg`
+      // inserts whatever key is present, and an explicit NULL would
+      // override the column's own DEFAULT rather than falling through to it.
+      if (typeof row.tenant_id === "string" && row.tenant_id) {
+        memberPayload.tenant_id = row.tenant_id;
+      }
       await createMemberPg(memberPayload);
       const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
       await syncMemberPrimaryRole(

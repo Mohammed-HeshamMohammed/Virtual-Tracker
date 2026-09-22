@@ -720,3 +720,48 @@ export async function sendReportDeliveryEmail(input) {
 
   return sendTransactionalEmail({ to: email, subject, text, html, attachments, logPrefix: "[report-delivery]" });
 }
+
+/**
+ * The 6-digit unlock code for the Customer Accounts tab (Owner/Super Admin
+ * only - see Dashboard-Backend's customer-accounts module). Deliberately
+ * plain and short-lived: this is a possession check ("you can read this
+ * inbox right now"), not a long-lived credential, so the email carries no
+ * link and no account details - just the code and how long it is good for.
+ */
+export async function sendCustomerAccountsUnlockCodeEmail(input) {
+  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const code = typeof input.code === "string" ? input.code.trim() : "";
+  if (!email || !code) return { sent: false, channel: "skipped" };
+
+  const minutes = Number.isFinite(input.expiresInMinutes) ? input.expiresInMinutes : 10;
+  const subject = "Your Customer Accounts verification code";
+  const text = [
+    "A verification code was requested to open the Customer Accounts tab on your account.",
+    "",
+    `Code: ${code}`,
+    "",
+    `This code expires in ${minutes} minutes and can only be used once.`,
+    "",
+    "If you did not request this, you can ignore this email - the code will expire on its own.",
+  ].join("\n");
+
+  const html = buildAuthBrandedEmailHtml({
+    title: "Customer Accounts verification",
+    subtitle: "Confirm it's you before opening this tab",
+    badge: "Security code",
+    badgeVariant: "alert",
+    preheader: `Your verification code is ${code}.`,
+    bodyHtml: `
+      <p style="margin:0 0 14px;">A verification code was requested to open the Customer Accounts tab.</p>
+      ${calloutHtml(
+        "info",
+        "Your code",
+        `<p style="margin:0;font-size:28px;font-weight:800;letter-spacing:0.12em;">${escapeHtml(code)}</p>`,
+      )}
+      <p style="margin:14px 0 0;">This code expires in ${minutes} minutes and can only be used once. If you did not request this, no action is needed.</p>
+    `.trim(),
+    footerHtml: supportFooterHtml(resolveSupportContactEmail(), { showAutoNotice: true }),
+  });
+
+  return sendTransactionalEmail({ to: email, subject, text, html, logPrefix: "[customer-accounts-unlock-code]" });
+}

@@ -16,6 +16,7 @@ import {
   sendOnboardingReminderEmail,
   sendAgentUpdateReminderEmail,
   sendAgentInstallInstructionsEmail,
+  sendCustomerAccountsUnlockCodeEmail,
 } from "./email-builders.js";
 import { isDuplicate, logDelivery } from "../notify-log/notify-log.service.js";
 
@@ -34,6 +35,7 @@ const ALLOWED_TEMPLATES = new Set([
   "onboarding-reminder",
   "agent-update-reminder",
   "agent-install-instructions",
+  "customer-accounts-unlock-code",
 ]);
 
 export async function routeEmail(req, res, url, origin) {
@@ -213,6 +215,13 @@ async function dispatchEmailTemplate(template, body) {
         displayName: body.displayName,
         targetVersion: body.targetVersion,
         appUrl: body.appUrl,
+      });
+
+    case "customer-accounts-unlock-code":
+      return sendCustomerAccountsUnlockCodeEmail({
+        email: body.email,
+        code: body.code,
+        expiresInMinutes: body.expiresInMinutes,
       });
 
     case "contact-inquiry":
