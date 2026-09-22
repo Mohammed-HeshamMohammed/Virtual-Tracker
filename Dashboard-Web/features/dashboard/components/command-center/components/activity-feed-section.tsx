@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Image from "next/image"
-import { Monitor, MoreHorizontal } from "lucide-react"
+import { Monitor } from "lucide-react"
 import { fetchActivityScreenshotImage } from "@/features/activity/services/activity-api"
 import type { ActivityFeedItem } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
@@ -103,11 +103,14 @@ export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionPro
                       </p>
                       <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">Project: {item.project} · {item.time}</p>
                     </div>
+                    {/* The "..." button that used to sit here had no
+                        onClick and no menu behind it - a control that looked
+                        interactive and did nothing. Removed rather than
+                        wired to an invented action; the badge still renders
+                        when there is one to show. */}
                     {item.activityBadge ? (
                       <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-1 rounded-md self-start shrink-0">{item.activityBadge}</span>
-                    ) : (
-                      <button className="text-slate-400 dark:text-slate-500 hover:text-green-700 dark:hover:text-green-400 transition-colors shrink-0" type="button"><MoreHorizontal className="w-5 h-5" /></button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               </div>

@@ -6,7 +6,9 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(
   superadmin: 90,
   admin: 80,
   supermanager: 70,
+  enterprisesupermanager: 70,
   manager: 60,
+  enterprisemanager: 60,
   teamlead: 50,
   employee: 40,
   intern: 30,
@@ -25,6 +27,17 @@ export const ASSIGNABLE_ROLE_NAMES: MemberRole[] = [
   "Client",
   "Viewer",
 ]
+
+// Enterprise Super Manager / Enterprise Manager are grant types, not labels
+// (see PLAN-customer-accounts-and-tenancy.md §7, §16.1): exactly one member
+// per tenant holds one, it IS the tenant's paid membership, and it is
+// reachable only through the Customer Accounts create tab - never through an
+// ordinary role dropdown and never by assignment from inside a tree.
+const ENTERPRISE_ROLE_KEYS = new Set(["enterprisesupermanager", "enterprisemanager"])
+
+export function isEnterpriseRole(roleName: string): boolean {
+  return ENTERPRISE_ROLE_KEYS.has(normalizeMemberRole(roleName))
+}
 
 function roleRank(roleName: string): number {
   const key = normalizeMemberRole(roleName)
@@ -54,7 +67,8 @@ export function canCreateMembers(roleName: string): boolean {
     key === "superadmin" ||
     key === "admin" ||
     key === "supermanager" ||
-    key === "manager"
+    key === "manager" ||
+    ENTERPRISE_ROLE_KEYS.has(key)
   )
 }
 
@@ -69,6 +83,9 @@ export function maxAssignableRank(actorRoleName: string): number {
 export function canAssignRole(actorRoleName: string, targetRoleName: string): boolean {
   const targetKey = normalizeMemberRole(targetRoleName)
   if (targetKey === "owner") return false
+  // Unconditional, from every actor including Owner - an Enterprise role is
+  // granted only through the customer-accounts create path, never assigned.
+  if (ENTERPRISE_ROLE_KEYS.has(targetKey)) return false
   if (!canCreateMembers(actorRoleName)) return false
   const targetRank = roleRank(targetRoleName)
   if (targetRank < 0) return false
@@ -118,6 +135,13 @@ const BLOCKED_TARGET_KEYS_BY_ACTOR: Record<string, Set<string>> = {
   supermanager: new Set(["owner", "admin", "superadmin"]),
   supermanger: new Set(["owner", "admin", "superadmin"]),
   manager: new Set(["owner", "admin", "superadmin", "supermanager", "supermanger"]),
+  // Same ceilings as supermanager/manager above (§16.1), plus Enterprise
+  // roles are never a manageable target for anyone - there is exactly one
+  // per tenant and it changes only through the account-management path.
+  enterprisesupermanager: new Set(["owner", "admin", "superadmin", "enterprisesupermanager", "enterprisemanager"]),
+  enterprisemanager: new Set([
+    "owner", "admin", "superadmin", "supermanager", "supermanger", "enterprisesupermanager", "enterprisemanager",
+  ]),
 }
 
 export function canActorManageTargetRole(actorRoleName: string, targetRoleName: string): boolean {

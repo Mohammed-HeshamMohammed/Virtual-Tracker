@@ -245,6 +245,40 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
     return buildGroupedRows(filtered, groupBy)
   }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter])
 
+  /**
+   * Hours per member, aggregated straight from the filtered entries rather
+   * than from whatever the table's sub-rows happen to be.
+   *
+   * The PDF's "Tracked hours by member" chart used to walk getSubRowsForDay,
+   * but a sub-row is only a MEMBER in some grouping modes - group by member
+   * or by week and subKeyLabelFor returns PROJECTS (see group-aggregate.ts),
+   * so that chart silently plotted project names under a "by member" title.
+   * Aggregating here is correct in every mode, and respects the same filters
+   * the table does.
+   */
+  const memberTotals = useMemo(() => {
+    const filtered = filterEntries(
+      entries,
+      memberFilter,
+      projectFilter,
+      trackedTimeFilter,
+      manualTimeFilter,
+      activityLevelFilter,
+    )
+    const byMember = new Map<string, { name: string; hours: number }>()
+    for (const e of filtered) {
+      const prev = byMember.get(e.memberId)
+      // Tracked + manual, matching what the table's own totalHours shows -
+      // a member whose day was entirely manual should not plot as zero.
+      const hours = (e.activeSeconds + e.manualSeconds) / 3600
+      if (prev) prev.hours += hours
+      else byMember.set(e.memberId, { name: e.memberName, hours })
+    }
+    return [...byMember.values()]
+      .filter((m) => m.hours > 0)
+      .sort((a, b) => b.hours - a.hours)
+  }, [entries, memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter])
+
   const groupColumnLabel = groupByColumnLabel(groupBy)
 
   const activeRows = groupedResult ? groupedResult.rows : displayRows
@@ -340,6 +374,7 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
   return {
     chartMetrics,
     toggleChartMetric,
+    memberTotals,
     groupBy,
     setGroupBy,
     groupByOptions: GROUP_BY_OPTIONS,

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState as useComponentState, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { AlertCircle, Check, Download, Network, RefreshCw, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
+import { AlertCircle, Building2, Check, Download, Network, RefreshCw, Search, ShieldBan, SlidersHorizontal, Table2, Upload, UserPlus, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
 import { useTheme } from "@/shared/providers/app"
@@ -11,7 +11,8 @@ import { useAuth } from "@/shared/providers/app"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { usePageSearch } from "@/shared/ui/layout"
 import { getInvites } from "@/infrastructure/api"
-import { resolveInviteUrl } from "@/features/members/api/member-api"
+import { resolveInviteUrl, fetchSeatUsage, type SeatUsage } from "@/features/members/api/member-api"
+import { SeatIndicator } from "@/features/members/components/seat-indicator"
 import {
   ALL_MEMBER_COLS,
   MEMBER_IMPORT_EXPORT_COMING_SOON_MESSAGE,
@@ -127,6 +128,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     canUseBatchMemberActions,
     canCreateTransferRequests,
     canViewMembersTree,
+    isOwner,
+    isSuperAdmin,
     canSeeAllMembers,
     memberRole: viewerRole,
   } = usePermissions()
@@ -453,6 +456,25 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     if (!canManageMembers) setActiveTab("members")
   }, [canManageMembers])
 
+  // Seat usage for the header indicator. Re-read whenever the member or
+  // invite lists change, since both feed the "occupied" count - adding an
+  // invite consumes a seat before anyone accepts it.
+  const [seatUsage, setSeatUsage] = useComponentState<SeatUsage | null>(null)
+  useEffect(() => {
+    if (!canManageMembers) return
+    let cancelled = false
+    fetchSeatUsage()
+      .then((usage) => {
+        if (!cancelled) setSeatUsage(usage)
+      })
+      // A missing or failing seat endpoint must never break the People page -
+      // the indicator simply does not render.
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [canManageMembers, members.length, invites.length])
+
   useEffect(() => {
     setSelectedMembers(new Set())
     setSelectedInvites(new Set())
@@ -460,12 +482,16 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
 
   async function handleBatchModalConfirm(payload: {
     action: BatchEditAction
+    ids: string[]
     payBill?: { payRate?: string; currency?: string; payPeriod?: string }
     workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) {
+    // payload.ids is what the modal actually cleared for this action (for the
+    // remove actions: the selection minus Owners). Counts in the messages
+    // below use it too, so "Removed 5" is never reported when 4 happened.
     if (payload.action === "removeFromTree") {
-      const count = selectedMembers.size
-      await handleBatchRemoveFromTree(Array.from(selectedMembers))
+      const count = payload.ids.length
+      await handleBatchRemoveFromTree(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
@@ -475,8 +501,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       return
     }
     if (payload.action === "remove") {
-      const count = selectedMembers.size
-      await handleRemoveMembers(Array.from(selectedMembers))
+      const count = payload.ids.length
+      await handleRemoveMembers(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
@@ -489,8 +515,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       ...(payload.payBill ? { payBill: payload.payBill } : {}),
       ...(payload.workLimits ? { workLimits: payload.workLimits } : {}),
     }
-    const count = selectedMembers.size
-    await handleBatchUpdateMembers(Array.from(selectedMembers), patch)
+    const count = payload.ids.length
+    await handleBatchUpdateMembers(payload.ids, patch)
     setSelectedMembers(new Set())
     setAddMembersToast({
       title: "Batch actions",
@@ -576,6 +602,8 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                     : "bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300"
                 )}>{visibleInvites.length}</span>
               </button>
+
+              <SeatIndicator usage={seatUsage} onChange={setSeatUsage} />
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -602,6 +630,15 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
                 >
                   <ShieldBan className="h-4 w-4 text-rose-500" />
                   Banned members
+                </button>
+              )}
+              {(isOwner || isSuperAdmin) && (
+                <button
+                  onClick={() => onNavigate?.("people-customer-accounts")}
+                  className="flex items-center gap-2 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white/90 dark:bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 shadow-sm transition-all hover:bg-slate-100/80 dark:hover:bg-slate-700/80" type="button"
+                >
+                  <Building2 className="h-4 w-4 text-blue-500" />
+                  Customer accounts
                 </button>
               )}
               <button

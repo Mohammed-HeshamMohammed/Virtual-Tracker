@@ -109,7 +109,10 @@ export function GlobalSearchBar({ onNavigate, memberRole, activePageId }: Global
   const showDropdown = open && query.trim().length > 0
 
   return (
-    <motion.div ref={rootRef} layout="position" className="relative w-72">
+    // Grows with whatever the topbar's centre column gives it rather than
+    // sitting at a fixed 288px with empty space either side; max-w keeps it
+    // from swallowing the whole header on a wide screen.
+    <motion.div ref={rootRef} layout="position" className="relative w-full max-w-xl">
       <div className={cn("flex items-center gap-2 px-3 py-1.5 rounded-xl w-full border transition-all", t.searchWrap)}>
         <Search className={cn("w-4 h-4 shrink-0", t.searchIcon)} />
         <input
@@ -144,7 +147,12 @@ export function GlobalSearchBar({ onNavigate, memberRole, activePageId }: Global
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
             transition={{ duration: 0.14, ease: [0.22, 1, 0.36, 1] }}
             className={cn(
-              "absolute left-0 right-0 top-[calc(100%+0.5rem)] z-100 max-h-80 overflow-y-auto rounded-xl py-1.5 shadow-xl",
+              // Each row carries a title, a breadcrumb path AND a description
+              // (see the result rows below), which all wrap badly when the
+              // menu is locked to the input's own width. min-w gives it a
+              // readable floor on a narrow header; it still stretches with
+              // the input when there is more room.
+              "absolute left-0 right-0 top-[calc(100%+0.5rem)] z-100 min-w-[26rem] max-h-80 overflow-y-auto rounded-xl py-1.5 shadow-xl",
               t.dropdown,
             )}
           >

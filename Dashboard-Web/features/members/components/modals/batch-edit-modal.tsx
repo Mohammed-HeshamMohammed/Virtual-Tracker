@@ -77,6 +77,9 @@ export function BatchEditModal({
   onClose: () => void
   onConfirm: (payload: {
     action: BatchEditAction
+    /** The members this action actually applies to - for the remove actions,
+     *  the selection with Owners filtered out (see removableMembers). */
+    ids: string[]
     value?: string
     payBill?: { payRate?: string; currency?: string; payPeriod?: string }
     workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
@@ -135,17 +138,21 @@ export function BatchEditModal({
     setBusy(true)
     try {
       if (action === "removeFromTree" || action === "remove") {
-        await onConfirm({ action })
+        // The filtered list, not the raw selection. This modal already
+        // excludes Owners and warns about it, but used to send only the
+        // action - and the page then removed every selected id anyway.
+        await onConfirm({ action, ids: effectiveIds })
         onClose()
         return
       }
       if (action === "payRate" || action === "billRate") {
-        await onConfirm({ action, payBill: { payRate: value.trim(), currency } })
+        await onConfirm({ action, ids: effectiveIds, payBill: { payRate: value.trim(), currency } })
       } else if (action === "payPeriod") {
-        await onConfirm({ action, payBill: { payPeriod: value || "None" } })
+        await onConfirm({ action, ids: effectiveIds, payBill: { payPeriod: value || "None" } })
       } else if (action === "workTimeLimits") {
         await onConfirm({
           action,
+          ids: effectiveIds,
           workLimits: {
             weeklyLimit: workLimitsState.weeklyLimit,
             dailyLimit: workLimitsState.dailyLimit,

@@ -2,6 +2,7 @@ export const PEOPLE_MEMBER_SUBPAGE_IDS = [
   "people-members",
   "people-members-tree",
   "people-member-bans",
+  "people-customer-accounts",
 ] as const
 
 export type PeopleMemberSubpageId = (typeof PEOPLE_MEMBER_SUBPAGE_IDS)[number]
@@ -10,6 +11,7 @@ export const PEOPLE_MEMBER_SUBPAGE_ORDER = [
   "people-members",
   "people-members-tree",
   "people-member-bans",
+  "people-customer-accounts",
 ] as const
 
 export function isPeopleMemberSubpage(pageId: string): pageId is PeopleMemberSubpageId {

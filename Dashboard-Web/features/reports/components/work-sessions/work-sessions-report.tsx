@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment } from "react"
+import { Fragment, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
@@ -238,6 +238,20 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
   const visibleCols = COLUMN_META.filter((c) => columnVisibility[c.key])
   const colCount = visibleCols.length + (canDelete ? 1 : 0)
 
+  // How many sessions each group shows before a "Show more" row
+  // (PLAN-bug-fixes-round-1.md item 10). A busy member over a month is
+  // hundreds of rows under one header; without a cap the page just grows.
+  // 0 = no cap. A group the reader expands stays expanded.
+  const [rowsPerGroup, setRowsPerGroup] = useState<number>(10)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupExpanded = (key: string) =>
+    setExpandedGroups((prev) => {
+      const n = new Set(prev)
+      if (n.has(key)) n.delete(key)
+      else n.add(key)
+      return n
+    })
+
   function confirmDeleteSession(row: { id: string; memberName: string; date: string; durationHms: string }) {
     const ok = window.confirm(
       `Delete this work session for ${row.memberName} on ${row.date} (${row.durationHms})? ` +
@@ -422,11 +436,36 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                 </DropdownMenu>
                 <Popover>
                   <PopoverTrigger asChild>
-                    <Button type="button" variant="ghost" size="icon" className="text-slate-500 dark:text-white/45" aria-label="Table settings">
+                    {/* Was an unlabelled gear icon - column customisation existed
+                        but was easy to miss entirely, which is how it read as
+                        "not there". */}
+                    <Button type="button" variant="ghost" size="sm" className="gap-1 text-slate-600 dark:text-[#bccbb9]" aria-label="Table settings">
                       <Settings2 className="h-4 w-4" />
+                      Columns
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-56 p-3" align="end">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Rows per group</div>
+                    <div className="mb-3 grid grid-cols-4 gap-1">
+                      {[10, 25, 50, 0].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => {
+                            setRowsPerGroup(n)
+                            setExpandedGroups(new Set())
+                          }}
+                          className={cn(
+                            "rounded-md px-2 py-1 text-xs font-medium",
+                            rowsPerGroup === n
+                              ? "bg-blue-500 text-white"
+                              : "text-slate-600 hover:bg-slate-50 dark:text-[#dce1fb] dark:hover:bg-white/5",
+                          )}
+                        >
+                          {n === 0 ? "All" : n}
+                        </button>
+                      ))}
+                    </div>
                     <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Columns</div>
                     <div className="space-y-1">
                       {COLUMN_META.map((c) => (
@@ -463,9 +502,12 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
             <ReportErrorState message={error} onRetry={retry} />
           ) : (
           <div className="overflow-hidden rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
-            <div className={cn("overflow-x-auto custom-scrollbar-x", tableCollapsed && "hidden")}>
+            {/* Bounded height with its own scrollbar, header pinned, so a long
+                range scrolls inside the table instead of pushing the whole
+                page down (item 10). */}
+            <div className={cn("max-h-[65vh] overflow-auto custom-scrollbar-x", tableCollapsed && "hidden")}>
               <table className="w-full min-w-[900px] table-fixed">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white dark:bg-[#151b2d]">
                   <tr className="border-b border-slate-100 dark:border-white/10">
                     {visibleCols.map((c) => (
                       <th
@@ -517,7 +559,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                         </td>
                       </tr>
                       {!collapsedGroups.has(g.key)
-                        ? g.rows.map((r) => (
+                        ? (rowsPerGroup > 0 && !expandedGroups.has(g.key) ? g.rows.slice(0, rowsPerGroup) : g.rows).map((r) => (
                             <tr key={r.id} className="border-b border-slate-100 bg-white transition-colors hover:bg-slate-50/80 dark:border-white/10 dark:bg-[#151b2d] dark:hover:bg-white/5">
                               {columnVisibility.client ? (
                                 <td className="px-4 py-3 text-sm text-slate-800 dark:text-[#dce1fb]">{r.client}</td>
@@ -598,6 +640,21 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                             </tr>
                           ))
                         : null}
+                      {!collapsedGroups.has(g.key) && rowsPerGroup > 0 && g.rows.length > rowsPerGroup ? (
+                        <tr className="border-b border-slate-100 dark:border-white/10">
+                          <td colSpan={colCount} className="px-4 py-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroupExpanded(g.key)}
+                              className="text-xs font-medium text-blue-500 hover:text-blue-600"
+                            >
+                              {expandedGroups.has(g.key)
+                                ? "Show fewer"
+                                : `Show ${g.rows.length - rowsPerGroup} more`}
+                            </button>
+                          </td>
+                        </tr>
+                      ) : null}
                     </Fragment>
                   ))}
                   {filteredRows.length === 0 ? (

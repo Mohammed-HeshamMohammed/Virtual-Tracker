@@ -5,7 +5,12 @@ const ROLE_PRIVILEGE_RANK: Record<string, number> = Object.assign(Object.create(
   superadmin: 90,
   admin: 80,
   supermanager: 70,
+  // See role-hierarchy.ts for why these sit at the same rank as
+  // supermanager/manager rather than getting their own tier - the grant
+  // (PLAN-customer-accounts-and-tenancy.md §4.3, §16.1), not extra authority.
+  enterprisesupermanager: 70,
   manager: 60,
+  enterprisemanager: 60,
   teamlead: 50,
   employee: 40,
   intern: 30,
@@ -117,6 +122,13 @@ export function getMemberRoleLabel(
   return fromFields || fallback
 }
 
+// A customer tenant's root runs their own tree the way an Owner/Admin runs
+// the main one - full project/task/classification control within it (spec's
+// "Customer hierarchy and seats": Create/edit/delete their projects,
+// employees, tasks; control their classification and tracking rules - all
+// "Customer tree: own tree only"). RLS is what confines that to their own
+// tenant, not a narrower nav here; a customer root left out of this set
+// would be unable to operate the tenant they are paying for.
 const PRIVILEGED_SIDEBAR_ROLE_KEYS = new Set([
   "owner",
   "superadmin",
@@ -124,6 +136,8 @@ const PRIVILEGED_SIDEBAR_ROLE_KEYS = new Set([
   "supermanager",
   "supermanger", // legacy typo in some records
   "manager",
+  "enterprisesupermanager",
+  "enterprisemanager",
 ])
 
 export function canAccessAllSidebarTabs(role: string): boolean {
@@ -145,6 +159,8 @@ const ORG_TASK_CREATE_ROLES = new Set([
   "admin",
   "supermanager",
   "supermanger",
+  "enterprisesupermanager",
+  "enterprisemanager",
 ])
 
 export function canCreateTasksByOrgRole(role: string): boolean {
@@ -227,7 +243,12 @@ export function canManageActivityData(role: string): boolean {
 
 export function canClassifyActivity(role: string): boolean {
   const key = normalizeMemberRole(role)
-  return key === "owner" || key === "superadmin" || key === "admin"
+  // A customer's classification/tracking rules are theirs alone to set -
+  // the spec's "Never" column is about the MAIN org's Owner/Super Admin
+  // reaching INTO a customer tenant, not the customer managing their own
+  // (RLS is what enforces the boundary; this is the customer managing
+  // themselves, same as an Admin classifying the main org's activity).
+  return key === "owner" || key === "superadmin" || key === "admin" || key === "enterprisesupermanager" || key === "enterprisemanager"
 }
 
 export function defaultNavItemForRole(role: string): string {

@@ -17,7 +17,11 @@ const groups: {
     label: "BATCH EDIT MEMBERS",
     items: [
       { label: "Edit pay rate", action: "payRate" },
-      { label: "Edit bill rate", action: "billRate" },
+      // "Edit bill rate" removed (PLAN-bug-fixes-round-1.md item 14). There
+      // is no member-level bill rate anywhere in the schema - pay_rates has
+      // a single `rate`, and bill rates exist only per project - so this
+      // action had nowhere real to write and silently overwrote the PAY
+      // rate instead. Bill rates are set per project in project settings.
       { label: "Edit pay period", action: "payPeriod" },
       { label: "Work time & limits", action: "workTimeLimits" },
       { label: "Remove from tree", danger: true, action: "removeFromTree" },

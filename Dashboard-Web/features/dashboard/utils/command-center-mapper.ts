@@ -63,6 +63,10 @@ function mapProject(project: CommandCenterApiPayload["projects"][number]): Proje
     utilizationPercent: project.utilizationPercent,
     utilizationOffset: project.utilizationOffset,
     utilizationMembers: project.utilizationMembers,
+    // Older payloads (a backend not yet carrying this) report 0 counted
+    // members, which the widget renders as "No weekly limits set" rather
+    // than a misleading 0%.
+    utilizationCounted: project.utilizationCounted ?? 0,
     utilizationBreakdown: project.utilizationBreakdown ?? [],
   }
 }

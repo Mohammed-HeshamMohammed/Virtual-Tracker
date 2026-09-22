@@ -72,6 +72,18 @@ function UsageTable<T extends { memberName: string; durationHms: string; categor
       return n
     })
   const grouped = useMemo(() => groupReportRows(rows, keyForUsageGroup), [rows])
+  // Row cap per member group (PLAN-bug-fixes-round-1.md item 11). One
+  // member's week is easily 100+ distinct apps/sites; the long tail of
+  // one-minute entries buried the handful that account for the day. Rows
+  // arrive longest-first, so the cap keeps the ones that matter on screen.
+  const ROWS_PER_GROUP = 10
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set())
+  const toggleGroupExpanded = (key: string) =>
+    setExpandedGroups((prev) => {
+      const n = new Set(prev)
+      n.has(key) ? n.delete(key) : n.add(key)
+      return n
+    })
   const th = cn(
     "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide",
     isDark ? "text-white/40" : "text-slate-500"
@@ -83,8 +95,11 @@ function UsageTable<T extends { memberName: string; durationHms: string; categor
         <div className={cn("text-sm font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-800")}>{title}</div>
         <div className={cn("mt-0.5 text-xs", isDark ? "text-white/40" : "text-slate-500")}>{caption}</div>
       </div>
+      {/* Bounded height with its own scrollbar and a pinned header, so a
+          long range scrolls inside the table rather than the whole page. */}
+      <div className="max-h-[60vh] overflow-auto">
       <table className="w-full border-collapse text-sm">
-        <thead>
+        <thead className={cn("sticky top-0 z-10", isDark ? "bg-[#151b2d]" : "bg-slate-50")}>
           <tr className={cn("border-b", isDark ? "border-white/10 bg-white/3" : "border-slate-200 bg-slate-50")}>
             <th className={th}>Member</th>
             <th className={th}>{labelHeader}</th>
@@ -125,7 +140,7 @@ function UsageTable<T extends { memberName: string; durationHms: string; categor
                 </td>
               </tr>
               {!collapsedGroups.has(g.key)
-                ? g.rows.map((row, i) => (
+                ? (expandedGroups.has(g.key) ? g.rows : g.rows.slice(0, ROWS_PER_GROUP)).map((row, i) => (
                     <tr key={`${row.memberName}-${getLabel(row)}-${i}`} className={cn(
                       "border-b transition-colors last:border-b-0",
                       isDark ? "border-white/10 hover:bg-white/2" : "border-slate-100 hover:bg-slate-50/80"
@@ -142,10 +157,24 @@ function UsageTable<T extends { memberName: string; durationHms: string; categor
                     </tr>
                   ))
                 : null}
+              {!collapsedGroups.has(g.key) && g.rows.length > ROWS_PER_GROUP ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-2 text-center">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupExpanded(g.key)}
+                      className="text-xs font-medium text-blue-500 hover:text-blue-600"
+                    >
+                      {expandedGroups.has(g.key) ? "Show fewer" : `Show ${g.rows.length - ROWS_PER_GROUP} more`}
+                    </button>
+                  </td>
+                </tr>
+              ) : null}
             </Fragment>
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

@@ -815,6 +815,9 @@ export type CreateInvitesBulkOptions = {
   appOrigin?: string
   createdBy?: string
   createdByUid?: string
+  /** Place the invitee under this member when they accept, instead of under
+   *  the inviter (the member tree's "Add member here"). */
+  treeParentMemberId?: string
 }
 
 export type CreateInvitesBulkResult = {
@@ -840,6 +843,7 @@ export async function createInvitesBulk(
       appOrigin: options.appOrigin,
       createdBy: options.createdBy,
       createdByUid: options.createdByUid,
+      ...(options.treeParentMemberId ? { treeParentMemberId: options.treeParentMemberId } : {}),
     }),
   })
   const json = (await res.json()) as ApiEnvelope<Invite[]> & {
@@ -1125,4 +1129,40 @@ export async function renewInvite(id: string): Promise<Invite> {
   const json = (await res.json()) as ApiEnvelope<Invite> & { error?: string }
   if (!res.ok || !json.success) throw new Error(json.error || `Failed to renew invite: ${res.status}`)
   return normalizeInvite((pickPayload(json) ?? {}) as Record<string, unknown>)
+}
+
+/** Seats occupied vs open for the signed-in person's own tenant, for the
+ *  People page header. `unlimited` when no real seat limit is set, in which
+ *  case seatLimit/seatsOpen are null rather than a placeholder number. */
+export type SeatUsage = {
+  seatLimit: number | null
+  seatsUsed: number
+  seatsOpen: number | null
+  unlimited: boolean
+  /** Main-org Owners/Super Admins only - a customer account's limit is set
+   *  from the Customer Accounts tab, never from inside the account. */
+  canEdit?: boolean
+}
+
+/** `null` = unlimited. Refused below the number of seats already in use. */
+export async function updateSeatLimit(seats: number | null): Promise<SeatUsage | null> {
+  const res = await apiFetch(apiPath("/api/members/seats"), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ seats }),
+  })
+  const json = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string; data?: SeatUsage | null }
+  if (!res.ok || json.success !== true) {
+    throw new Error(json.error || `Failed to update the seat limit: ${res.status}`)
+  }
+  return json.data ?? null
+}
+
+export async function fetchSeatUsage(): Promise<SeatUsage | null> {
+  const res = await apiFetch(apiPath("/api/members/seats"))
+  const json = (await res.json()) as { success?: boolean; error?: string; data?: SeatUsage | null }
+  if (!res.ok || json.success !== true) {
+    throw new Error(json.error || `Failed to load seat usage: ${res.status}`)
+  }
+  return json.data ?? null
 }

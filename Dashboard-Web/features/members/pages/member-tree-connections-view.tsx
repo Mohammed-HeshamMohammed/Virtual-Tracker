@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { cn } from "@/shared/utils/utils"
 import type { MemberTreeEdge, MemberTreeNode } from "@/features/members/services/member-tree"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import {
   buildMemberTreeBranches,
   memberBranchesToTreeChartData,
@@ -23,6 +24,9 @@ export const DEFAULT_TREE_CHART_TRANSFORM: TreeChartTransform = {
   y: 0,
   scale: 1,
 }
+
+/** Movement (px) before a press becomes a pan. Below it, it is a click. */
+const DRAG_THRESHOLD_PX = 4
 
 const MIN_ZOOM = 0.35
 const MAX_ZOOM = 2.5
@@ -50,6 +54,7 @@ export function MemberTreeConnectionsView({
   settings,
   transform,
   onTransformChange,
+  onAddHere,
 }: {
   nodes: MemberTreeNode[]
   edges: MemberTreeEdge[]
@@ -60,12 +65,33 @@ export function MemberTreeConnectionsView({
   settings: TreeChartDisplaySettings
   transform: TreeChartTransform
   onTransformChange: (next: TreeChartTransform) => void
+  /** "Add member here" (item 16); absent when the viewer cannot add members. */
+  onAddHere?: (node: MemberTreeNode) => void
 }) {
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
+  const handleAddChild = useCallback(
+    (id: string) => {
+      const node = nodeById.get(id)
+      if (node) onAddHere?.(node)
+    },
+    [nodeById, onAddHere],
+  )
+  // Clients cannot have anyone under them (the backend refuses the edge).
+  const canAddChild = useCallback(
+    (id: string) => {
+      const node = nodeById.get(id)
+      return Boolean(node) && !isClientRole(node!.role)
+    },
+    [nodeById],
+  )
   const viewportRef = useRef<HTMLDivElement>(null)
   const transformRef = useRef(transform)
   transformRef.current = transform
   const dragStateRef = useRef<{
     active: boolean
+    /** True once the press has moved far enough to count as a pan. */
+    panning: boolean
+    pointerId: number
     startX: number
     startY: number
     originX: number
@@ -73,6 +99,8 @@ export function MemberTreeConnectionsView({
     originScale: number
   }>({
     active: false,
+    panning: false,
+    pointerId: -1,
     startX: 0,
     startY: 0,
     originX: 0,
@@ -106,6 +134,7 @@ export function MemberTreeConnectionsView({
 
   const endDrag = useCallback(() => {
     dragStateRef.current.active = false
+    dragStateRef.current.panning = false
     setIsDragging(false)
   }, [])
 
@@ -113,16 +142,21 @@ export function MemberTreeConnectionsView({
     (event: React.PointerEvent<HTMLDivElement>) => {
       if (event.button !== 0) return
 
+      // No pointer capture yet. Capturing on every press retargeted the
+      // browser's click/dblclick to this viewport, so a node's own
+      // double-click (expand/collapse, promised by the hint below) never
+      // fired. Capture is taken in handlePointerMove, only once the press
+      // has actually moved - a stationary click still reaches the node.
       dragStateRef.current = {
         active: true,
+        panning: false,
+        pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         originX: transformRef.current.x,
         originY: transformRef.current.y,
         originScale: transformRef.current.scale,
       }
-      setIsDragging(true)
-      event.currentTarget.setPointerCapture(event.pointerId)
     },
     [],
   )
@@ -132,6 +166,16 @@ export function MemberTreeConnectionsView({
       if (!dragStateRef.current.active) return
       const dx = event.clientX - dragStateRef.current.startX
       const dy = event.clientY - dragStateRef.current.startY
+      if (!dragStateRef.current.panning) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
+        dragStateRef.current.panning = true
+        setIsDragging(true)
+        try {
+          event.currentTarget.setPointerCapture(dragStateRef.current.pointerId)
+        } catch {
+          // The pointer may already be gone (released between events).
+        }
+      }
       onTransformChange({
         x: dragStateRef.current.originX + dx,
         y: dragStateRef.current.originY + dy,
@@ -209,6 +253,8 @@ export function MemberTreeConnectionsView({
           settings={settings}
           isDark={isDark}
           highlightNodeId={currentMemberId}
+          onAddChild={onAddHere ? handleAddChild : undefined}
+          canAddChild={canAddChild}
         />
       </div>
 
@@ -218,7 +264,9 @@ export function MemberTreeConnectionsView({
           isDark ? "border-[#3d4a3d]/40 bg-[#191f31]/90 text-[#bccbb9]" : "border-slate-200 bg-white/90 text-slate-500",
         )}
       >
-        Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse
+        {onAddHere
+          ? "Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse · Hover a node and click + to add a member under them"
+          : "Drag anywhere to pan · Scroll to zoom · Double-click node to expand/collapse"}
       </div>
     </div>
   )
