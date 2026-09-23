@@ -26,6 +26,9 @@ export interface AgentVersionMember {
   status: AgentVersionStatus
   supportsAgentInbox: boolean
   canReceiveEmail: boolean
+  /** This tracker is too old to update itself: it is served no updates at
+   *  all and stays on this version until someone reinstalls it by hand. */
+  needsManualReinstall?: boolean
 }
 
 export interface AgentVersionGroup {

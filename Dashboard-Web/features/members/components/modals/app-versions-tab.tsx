@@ -151,7 +151,7 @@ export function AppVersionsTab() {
               : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800",
           )}>
             <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{groupLabel(group)}</span>
-            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{group.memberCount} member{group.memberCount === 1 ? "" : "s"}{group.status === "latest" ? " · Latest" : group.status === "outdated" ? " · Outdated" : ""}</span>
+            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{group.memberCount} member{group.memberCount === 1 ? "" : "s"}{group.status === "latest" ? " · Latest" : group.status === "outdated" ? " · Outdated" : ""}{group.members.some((m) => m.needsManualReinstall) ? " · Needs reinstall" : ""}</span>
           </button>
         ))}
       </div>
@@ -193,7 +193,18 @@ export function AppVersionsTab() {
                   const emailDisabled = !updateAllowed || !member.canReceiveEmail || busyKey !== ""
                   return (
                     <tr key={member.memberId} className="text-sm text-slate-700 dark:text-slate-200">
-                      <td className="px-4 py-3"><span className="block font-medium">{member.displayName}</span><span className="block text-xs text-slate-400">{member.email || "No email"}</span></td>
+                      <td className="px-4 py-3">
+                        <span className="block font-medium">{member.displayName}</span>
+                        <span className="block text-xs text-slate-400">{member.email || "No email"}</span>
+                        {member.needsManualReinstall ? (
+                          <span
+                            title="This tracker is too old to update itself. It receives no updates until it is reinstalled from the download page."
+                            className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                          >
+                            Needs reinstall
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-3 capitalize">{member.agentPlatform || "—"}</td>
                       <td className="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">{formatOpened(member.agentLastOpenedAt)}</td>
                       <td className="px-3 py-3 text-center"><button type="button" title={!updateAllowed ? "A valid outdated version is required" : !member.supportsAgentInbox ? "This tracker version cannot receive in-app notifications" : "Send in-app reminder"} disabled={appDisabled} onClick={() => void sendOne(member, "app")} className="rounded-full p-2 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"><Bell className="h-4 w-4" /></button></td>
