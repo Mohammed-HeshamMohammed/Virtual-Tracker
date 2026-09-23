@@ -1438,7 +1438,15 @@ export async function routeCompatibility(req, res, url, db, origin) {
         return true;
       }
       const viewer = getAuthContext(req);
-      const rows = await query("SELECT * FROM invites ORDER BY sent_at DESC LIMIT 200", []);
+      // Scoped to the caller's own tenant. Without this the list relied
+      // entirely on RLS, which is off by default (ensure-tenancy-rls.js), so
+      // a customer account's Owner - who passes the see-all check below and
+      // so skips the created_by_uid narrowing - was served the main
+      // organization's pending invites, emails included.
+      const rows = await query(
+        "SELECT * FROM invites WHERE tenant_id = $1 ORDER BY sent_at DESC LIMIT 200",
+        [viewer?.tenantId || MAIN_TENANT_ID],
+      );
       let invites = rows.map((d) => normalizeDoc({ id: String(d.id), ...d }));
       if (viewer) {
         const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);

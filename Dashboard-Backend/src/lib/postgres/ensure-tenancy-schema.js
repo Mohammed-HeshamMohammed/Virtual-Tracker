@@ -121,6 +121,43 @@ $$ LANGUAGE sql STABLE`,
  * table's create path needs that explicit pass before customer tenants can
  * safely operate on their own data. Tracked, not hidden.
  */
+/**
+ * The tenant a row lands in when an INSERT does not name one itself.
+ *
+ * This used to be the literal main tenant, which made every un-retrofitted
+ * write path (projects, tasks, teams, time entries, ... - the ~229 call
+ * sites this file's own comment counts) put a CUSTOMER's rows in the main
+ * organization. Retrofitting each of them is the alternative; reading the
+ * request's tenant here does the same job in one place, because client.js
+ * publishes `app.tenant_id` on every statement it runs (see publishTenantId
+ * and withTransaction's SET LOCAL). So:
+ *
+ *   - A request from a customer tenant inserts into that tenant.
+ *   - An explicit tenant_id in the INSERT still wins - a column DEFAULT only
+ *     applies when the column is omitted - so the paths already retrofitted
+ *     (members, invites, clients, the customer-accounts module) are
+ *     unaffected and keep saying what they mean.
+ *   - Background work with no tenant frame (sweeps, the scheduled-report
+ *     runner outside its withTenant block) publishes '', which NULLIF turns
+ *     into NULL and COALESCE sends to the main tenant - exactly today's
+ *     behaviour, unchanged.
+ *
+ * This fixes row OWNERSHIP on write. It is not by itself read isolation: a
+ * query with no tenant predicate still returns other tenants' rows until
+ * RLS is on (ensure-tenancy-rls.js) or the query filters explicitly.
+ */
+const TENANT_DEFAULT_EXPR = `COALESCE(NULLIF(current_setting('app.tenant_id', true), '')::uuid, '${MAIN_TENANT_ID}'::uuid)`;
+
+/**
+ * Applied on every boot, separately from ADD COLUMN: `ADD COLUMN IF NOT
+ * EXISTS` does nothing at all once the column is there, so a database that
+ * already ran the old migration would otherwise keep the old literal
+ * default forever.
+ */
+function tenantDefaultDdl(table) {
+  return `ALTER TABLE ${table} ALTER COLUMN tenant_id SET DEFAULT ${TENANT_DEFAULT_EXPR}`;
+}
+
 function tenantColumnDdl(table) {
   return [
     // REFERENCES ... ON DELETE CASCADE (rather than a bare UUID column) is
@@ -128,7 +165,8 @@ function tenantColumnDdl(table) {
     // $1` instead of ~75 hand-ordered DELETEs - Postgres already knows every
     // table's dependency graph, more reliable than a manually authored
     // FK-safe order would be without a live database to verify it against.
-    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '${MAIN_TENANT_ID}' REFERENCES tenants(id) ON DELETE CASCADE`,
+    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT ${TENANT_DEFAULT_EXPR} REFERENCES tenants(id) ON DELETE CASCADE`,
+    tenantDefaultDdl(table),
     `UPDATE ${table} SET tenant_id = '${MAIN_TENANT_ID}' WHERE tenant_id IS NULL`,
     `ALTER TABLE ${table} ALTER COLUMN tenant_id SET NOT NULL`,
     `CREATE INDEX IF NOT EXISTS idx_${table}_tenant ON ${table} (tenant_id)`,
@@ -149,9 +187,10 @@ function tenantColumnDdl(table) {
  */
 function tenantColumnDdlHighVolume(table) {
   return [
-    // DEFAULT here for the same reason as tenantColumnDdl above - its own
-    // doc comment explains the tradeoff.
-    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '${MAIN_TENANT_ID}' REFERENCES tenants(id) ON DELETE CASCADE`,
+    // DEFAULT here for the same reason as tenantColumnDdl above - see
+    // TENANT_DEFAULT_EXPR's doc comment.
+    `ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT ${TENANT_DEFAULT_EXPR} REFERENCES tenants(id) ON DELETE CASCADE`,
+    tenantDefaultDdl(table),
     `UPDATE ${table} SET tenant_id = '${MAIN_TENANT_ID}' WHERE tenant_id IS NULL`,
     `DO $$
 BEGIN
@@ -173,6 +212,10 @@ function singletonKeyMigrationDdl({ name, oldKey }) {
   return [
     `ALTER TABLE ${name} ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE`,
     `UPDATE ${name} SET tenant_id = '${MAIN_TENANT_ID}' WHERE tenant_id IS NULL`,
+    // Same default as every other scoped table: these are per-tenant rows
+    // now, and an upsert from a customer's own settings page names no
+    // tenant_id.
+    tenantDefaultDdl(name),
     `ALTER TABLE ${name} ALTER COLUMN tenant_id SET NOT NULL`,
     // Drop the CHECK (id = 1) singleton guard where one exists - harmless
     // no-op via DO block when the table's guard was an enum PK instead
@@ -325,6 +368,19 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER`,
 ];
 
+/** Exposed for the write-ownership test: the exact statements this
+ *  migration runs, so the tenant DEFAULT can be asserted as generated SQL
+ *  rather than as a regex over this file. */
+export function listTenancySchemaStatements() {
+  return [
+    ...CONTROL_PLANE_DDL,
+    ...TENANT_COLUMN_DDL,
+    ...SINGLETON_KEY_DDL,
+    ...UNIQUE_CONSTRAINT_DDL,
+    ...AUDIT_TRIGGER_DDL,
+  ];
+}
+
 export async function ensureTenancySchema() {
   if (!isPostgresConfigured()) {
     return { ok: true, skipped: true };
@@ -336,13 +392,7 @@ export async function ensureTenancySchema() {
 
   const client = await pool.connect();
   try {
-    for (const statement of [
-      ...CONTROL_PLANE_DDL,
-      ...TENANT_COLUMN_DDL,
-      ...SINGLETON_KEY_DDL,
-      ...UNIQUE_CONSTRAINT_DDL,
-      ...AUDIT_TRIGGER_DDL,
-    ]) {
+    for (const statement of listTenancySchemaStatements()) {
       await client.query(statement);
     }
     return { ok: true };
